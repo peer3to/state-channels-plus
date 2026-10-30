@@ -46,5 +46,5 @@ and that every started root was closed.
 - `runs a transition above the default call gas when raised to its requirement`: UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P5, REQ-MIRROR-4-H9C4YS.T1.P10
 - `an inline executor runs a transition whose replay requirement exceeds the default call gas`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P1
 - `a dedicated executor thread runs a transition whose replay requirement exceeds the default call gas`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P2
-- `a rejected startup replay requirement read rejects readiness with no inline executor and closes the runtime`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P3
-- `a rejected startup replay requirement read rejects readiness with no dedicated executor thread and closes the runtime`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P4
+- `a rejected startup replay requirement read rejects readiness, ends the inline executor it started, and closes the runtime`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P3
+- `a rejected startup replay requirement read rejects readiness, ends the dedicated executor thread it started, and closes the runtime`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P4

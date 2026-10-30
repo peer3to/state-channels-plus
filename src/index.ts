@@ -1,3 +1,5 @@
+// First: it counts every WebAssembly instance this thread creates after it.
+import "@/utils/threadResources";
 import Clock from "@/Clock";
 import {
     AContractExecutor,
@@ -79,6 +81,8 @@ export { Status, isCommittedParticipantStatus } from "@/types";
 export type { ChannelId } from "@/types";
 export type { default as P2pInstance } from "@/evm/P2pInstance";
 export type { P2pSetupOptions } from "@/evm/p2pRuntime/setupP2pRuntime";
+export { createRpcNodesProvider } from "@/evm/p2pRuntime/RuntimeChainContext";
+export type { default as MultiRpcProvider } from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 export {
     EventBus,
     attachContractEvents,
@@ -101,6 +105,13 @@ export { Address } from "@ethereumjs/util";
 
 export * from "@/utils/logging";
 export { errorMessage } from "@/utils/errorMessage";
+export {
+    getErrorWasmDiagnostics,
+    type RuntimeEnvironment,
+    type ThreadResources,
+    type WasmFailureDiagnostics,
+    type WasmMemoryProbe
+} from "@/utils/threadResources";
 export {
     connectStateChannelManager,
     mergeStateChannelManagerAbi,

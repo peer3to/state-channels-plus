@@ -25,7 +25,7 @@ export async function stopWithRejectedAndPendingProbes() {
         f.h.getPeer(0),
         async (sm, args, { ethers }) => {
             const spectate = sm.p2pManager.localRpc.spectateService;
-            const sync = spectate.sync;
+            const sync = spectate.syncBlockSource;
             const probes: {
                 release: () => void;
                 fail: (error: Error) => void;
@@ -34,7 +34,7 @@ export async function stopWithRejectedAndPendingProbes() {
             const entered = new Promise<void>((resolve) => {
                 bothEntered = resolve;
             });
-            spectate.sync = (...parameters) =>
+            spectate.syncBlockSource = (...parameters) =>
                 new Promise<boolean>((resolve, reject) => {
                     probes.push({
                         release: () =>
@@ -106,7 +106,7 @@ export async function stopWithRejectedAndPendingProbes() {
                 };
             } finally {
                 for (const probe of probes) probe.release();
-                spectate.sync = sync;
+                spectate.syncBlockSource = sync;
                 queue.dispose = dispose;
             }
         },

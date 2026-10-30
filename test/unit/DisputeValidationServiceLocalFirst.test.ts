@@ -578,10 +578,10 @@ describe("Unit: DisputeValidationService local-first reads", function () {
             const block1Author = h.peers.find(
                 (p) => p.address === block1!.author
             )!;
-            await h
-                .control(block1Author)
-                .validation.postBlockCalldataOnChain(block1!.encodedSignedBlock)
-                .request();
+            await h.transition.postBlockCalldataOnChainWait(
+                block1Author,
+                block1!.encodedSignedBlock
+            );
             const reads = await h.mirror.observe(
                 auditorIndex,
                 "validateTimeoutCalldataPostedProof"
@@ -610,10 +610,10 @@ describe("Unit: DisputeValidationService local-first reads", function () {
             const block1Author = h.peers.find(
                 (p) => p.address === block1!.author
             )!;
-            await h
-                .control(block1Author)
-                .validation.postBlockCalldataOnChain(block1!.encodedSignedBlock)
-                .request();
+            await h.transition.postBlockCalldataOnChainWait(
+                block1Author,
+                block1!.encodedSignedBlock
+            );
             // the hook fires after the auditor's mirror took the commitment
             await h.event.waitForPeers(
                 "onPostedCalldata",

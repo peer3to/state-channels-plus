@@ -95,8 +95,8 @@ export abstract class ARpcRouter<TTransport extends ATransport = ATransport> {
 
     /**
      * Sends a request-style RPC to a single peer and resolves with the value the
-     * peer's handler returns. The promise rejects on a remote error, transport
-     * disconnect, or after `timeoutMs` (time safety).
+     * peer's handler returns. The promise rejects on a remote error, the close
+     * of the peer's last live transport, or after `timeoutMs` (time safety).
      */
     public sendRpcRequest<TResult = unknown>(
         rpc: Rpc,
@@ -182,6 +182,13 @@ export abstract class ARpcRouter<TTransport extends ATransport = ATransport> {
         for (const [requestId, pending] of this.pendingRpcRequests) {
             if (pending.transport === transport)
                 this.rejectRpcRequest(requestId, reason);
+        }
+    }
+
+    /** Keeps `from`'s pending requests, with their deadlines, pending on `to`. */
+    public movePendingRpcRequests(from: TTransport, to: TTransport): void {
+        for (const pending of this.pendingRpcRequests.values()) {
+            if (pending.transport === from) pending.transport = to;
         }
     }
 

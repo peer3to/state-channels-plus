@@ -11,7 +11,7 @@ import { errorMessage } from "@/utils/errorMessage";
 import {
     type ContractErrorName,
     type CustomEvmError,
-    type RaceConditionErrorHandlers,
+    type EvmErrorHandlers,
     tryDecodeCustomError,
     tryHandleEvmError
 } from "@/utils/evmErrorHandler";
@@ -453,7 +453,7 @@ export default class ReductionExecutor {
             })
             .catch(async (error) => {
                 let raceErrorName: ReductionRaceErrorName | undefined;
-                const handlers: RaceConditionErrorHandlers = {};
+                const handlers: EvmErrorHandlers = {};
                 for (const errorName of REDUCTION_RACE_ERRORS) {
                     handlers[errorName] = () => {
                         raceErrorName = errorName;

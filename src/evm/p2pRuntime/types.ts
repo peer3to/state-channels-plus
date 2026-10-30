@@ -1,4 +1,4 @@
-import type { EvmCustomPrecompileManifest } from "@/evm/EvmFactory";
+import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
 import type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";
 import type { CustomRpcManifest } from "@/rpc/network/registry";
 import type { Config } from "@/utils/config";

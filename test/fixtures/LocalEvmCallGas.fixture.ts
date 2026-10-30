@@ -93,7 +93,6 @@ export async function deployMathMachine(
             timestamp: 0n
         },
         body: {
-            encodedData: "0x",
             data: machineInterface.encodeFunctionData("add", [1n])
         }
     };

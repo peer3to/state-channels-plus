@@ -1,5 +1,5 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
-import type { EvmCustomPrecompileFactory } from "@/evm/EvmFactory";
+import type { EvmCustomPrecompileFactory } from "@/evm/EvmCustomPrecompiles";
 import type {
     AInternalRpcRoot,
     RuntimeConnection

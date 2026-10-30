@@ -196,7 +196,7 @@ describe("Unit: SnapshotAssemblyService", function () {
                     participant: writer.address,
                     timestamp
                 },
-                body: { encodedData: call.data, data: call.data }
+                body: { data: call.data }
             });
 
             const r = await h.execOnHost(
@@ -290,7 +290,7 @@ describe("Unit: SnapshotAssemblyService", function () {
                             participant,
                             timestamp
                         },
-                        body: { encodedData: call.data, data: call.data }
+                        body: { data: call.data }
                     }),
                     Type.Transaction
                 ) as string;
@@ -338,7 +338,7 @@ describe("Unit: SnapshotAssemblyService", function () {
                     participant: other.address,
                     timestamp
                 },
-                body: { encodedData: call.data, data: call.data }
+                body: { data: call.data }
             });
 
             const r = await h.execOnHost(
@@ -423,7 +423,7 @@ describe("Unit: SnapshotAssemblyService", function () {
                     participant: writer.address,
                     timestamp
                 },
-                body: { encodedData: call.data, data: call.data }
+                body: { data: call.data }
             });
 
             const r = await h.execOnHost(
@@ -507,7 +507,7 @@ describe("Unit: SnapshotAssemblyService", function () {
                     participant: writer.address,
                     timestamp
                 },
-                body: { encodedData: call.data, data: call.data }
+                body: { data: call.data }
             });
 
             const r = await h.execOnHost(
@@ -582,7 +582,7 @@ describe("Unit: SnapshotAssemblyService", function () {
                     participant: writer.address,
                     timestamp
                 },
-                body: { encodedData: call.data, data: call.data }
+                body: { data: call.data }
             });
             // well-formed inbound block whose message the state machine has no
             // handler for

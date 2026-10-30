@@ -3,7 +3,10 @@ import {
     assertDetachedFailureBeforeRootDisposalSurfaces
 } from "@test/fixtures/DetachedWorkDisposalFixture";
 import { assertWorkerParentLoss } from "@test/fixtures/node/LostParentFixture";
-import { assertRootDiagnostics } from "@test/fixtures/node/RootDiagnosticsFixture";
+import {
+    assertChildFailureWasmDiagnostics,
+    assertRootDiagnostics
+} from "@test/fixtures/node/RootDiagnosticsFixture";
 import { assertTwoHopFailure } from "@test/fixtures/node/TwoHopFailureFixture";
 import {
     assertRefusedHandleCloseStillDrains,
@@ -66,6 +69,9 @@ describe("RuntimeLifecycle", () => {
     });
     it("records pending root requests once and ignores failures after closure", async () => {
         await assertRootDiagnostics(true);
+    });
+    it("logs the failed worker's WebAssembly diagnostics, or none for an ordinary error, and this thread's resources with pending requests", async () => {
+        await assertChildFailureWasmDiagnostics();
     });
     it("disposes a standalone leaf once through the common root contract", async () => {
         await assertRootDisposalTree("leaf");

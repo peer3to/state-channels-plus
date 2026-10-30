@@ -3,6 +3,7 @@ import { expect } from "chai";
 
 describe("RelayerPool", function () {
     let fixture: RelayerPoolFixture;
+    const relayFailure = new Error("relay unavailable");
 
     beforeEach(function () {
         fixture = new RelayerPoolFixture();
@@ -24,7 +25,7 @@ describe("RelayerPool", function () {
         const urls = ["wss://relay-a.example", "wss://relay-b.example"];
         const pool = fixture.pool(urls, [0, 0]);
 
-        pool.onFailure(urls[0], () => undefined);
+        pool.onFailure(urls[0], relayFailure, () => undefined);
 
         expect(pool.next()).to.equal(urls[1]);
     });
@@ -34,7 +35,7 @@ describe("RelayerPool", function () {
         const pool = fixture.pool(urls, [0.5]);
         let retries = 0;
 
-        pool.onFailure(urls[0], () => {
+        pool.onFailure(urls[0], relayFailure, () => {
             retries += 1;
         });
         fixture.tick(124);
@@ -48,7 +49,7 @@ describe("RelayerPool", function () {
         const pool = fixture.pool([url], [0.5]);
         let retries = 0;
 
-        pool.onFailure(url, () => {
+        pool.onFailure(url, relayFailure, () => {
             retries += 1;
         });
 
@@ -64,27 +65,27 @@ describe("RelayerPool", function () {
         const pool = fixture.pool([url], [1]);
         let retries = 0;
 
-        pool.onFailure(url, () => {
+        pool.onFailure(url, relayFailure, () => {
             retries += 1;
         });
         fixture.tick(1000);
-        pool.onFailure(url, () => {
+        pool.onFailure(url, relayFailure, () => {
             retries += 1;
         });
         fixture.tick(2000);
-        pool.onFailure(url, () => {
+        pool.onFailure(url, relayFailure, () => {
             retries += 1;
         });
         fixture.tick(4000);
-        pool.onFailure(url, () => {
+        pool.onFailure(url, relayFailure, () => {
             retries += 1;
         });
         fixture.tick(8000);
-        pool.onFailure(url, () => {
+        pool.onFailure(url, relayFailure, () => {
             retries += 1;
         });
         fixture.tick(16000);
-        pool.onFailure(url, () => {
+        pool.onFailure(url, relayFailure, () => {
             retries += 1;
         });
         fixture.tick(29999);
@@ -97,12 +98,12 @@ describe("RelayerPool", function () {
         const url = "wss://relay.example";
         const pool = fixture.pool([url], [1]);
 
-        pool.onFailure(url, () => undefined);
+        pool.onFailure(url, relayFailure, () => undefined);
         fixture.tick(1000);
-        pool.onFailure(url, () => undefined);
+        pool.onFailure(url, relayFailure, () => undefined);
         fixture.tick(2000);
         pool.onSuccess();
-        pool.onFailure(url, () => undefined);
+        pool.onFailure(url, relayFailure, () => undefined);
 
         fixture.tick(999);
         expect(fixture.timerCount()).to.equal(1);
@@ -115,7 +116,7 @@ describe("RelayerPool", function () {
         const pool = fixture.pool(urls, [0.5, 0]);
         let retries = 0;
 
-        pool.onFailure(urls[0], () => {
+        pool.onFailure(urls[0], relayFailure, () => {
             retries += 1;
         });
         pool.onSuccess();
@@ -126,20 +127,38 @@ describe("RelayerPool", function () {
         expect(pool.next()).to.equal(urls[0]);
     });
 
-    it("deduplicates paired error and close failures for one connection", function () {
-        const url = "wss://relay.example";
-        const pool = fixture.pool([url], [0.5]);
-        let retries = 0;
+    it("logs each failure with its relayer, reason and counts", function () {
+        const urls = ["wss://relay-a.example", "wss://relay-b.example"];
+        const pool = fixture.pool(urls, [0.5]);
+        const nextFailure = new Error("next relay failure");
 
-        pool.onFailure(url, () => {
-            retries += 1;
-        });
-        pool.onFailure(url, () => {
-            retries += 1;
-        });
+        pool.onFailure(urls[0], relayFailure, () => undefined);
+        fixture.tick(125);
+        pool.onFailure(urls[1], nextFailure, () => undefined);
 
-        expect(fixture.timerCount()).to.equal(1);
-        fixture.tick(500);
-        expect(retries).to.equal(1);
+        expect(fixture.warnings()).to.deep.equal([
+            [
+                "Holepunch relayer failed",
+                {
+                    relayerUrl: urls[0],
+                    reason: relayFailure,
+                    excludedCount: 1,
+                    total: 2
+                }
+            ],
+            [
+                "Holepunch relayer failed",
+                {
+                    relayerUrl: urls[1],
+                    reason: nextFailure,
+                    excludedCount: 2,
+                    total: 2
+                }
+            ],
+            [
+                "All holepunch relayers failed, retrying pool after backoff",
+                { delayMs: 500, cappedBackoffMs: 1000, relayerUrls: urls }
+            ]
+        ]);
     });
 });

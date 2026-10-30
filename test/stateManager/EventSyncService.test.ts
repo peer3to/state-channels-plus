@@ -3,7 +3,10 @@ import {
     assertDirectSlashRecovery,
     assertRecoveredSlashTimestampAndDedup
 } from "@test/fixtures/DisputeSlashRecoveryStaging";
-import { assertListenerStopWindow } from "@test/fixtures/EventListenerStopFixture";
+import {
+    assertListenerStopWindow,
+    assertNoDispatchAfterStop
+} from "@test/fixtures/EventListenerStopFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -20,6 +23,9 @@ const CATCH_UP_HANDLERS = [
 describe("EventSyncService", function () {
     it("drops subscription callbacks while stop is still draining scheduled work", async () => {
         await assertListenerStopWindow(TestSession.getHarness());
+    });
+    it("starts no log dispatch after stop, so a recovery still running in a disposing runtime needs nothing its disposal closes", async () => {
+        await assertNoDispatchAfterStop(TestSession.getHarness());
     });
     it("authoritative slash recovery returns no change for an empty chain set", async function () {
         await assertDirectSlashRecovery(TestSession.getHarness(), false);

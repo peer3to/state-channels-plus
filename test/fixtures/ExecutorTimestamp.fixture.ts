@@ -128,11 +128,9 @@ export async function assertExplicitExecutorClock(
     );
     await Clock.init(shifted);
     const root = await createRoot(ContractExecutorRoot, {
-        args: {
-            customPrecompiles: [],
-            clockAdjustmentSeconds: adjustment
-        }
+        args: { customPrecompiles: [] }
     });
+    root.executor.configure({ clockAdjustmentSeconds: adjustment });
     try {
         expect(Clock.isInitialized()).to.equal(true);
         expect(

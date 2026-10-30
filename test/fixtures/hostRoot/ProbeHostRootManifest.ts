@@ -19,6 +19,14 @@ export function nonClassHostRootManifest(): HostRootManifest {
     return { module: PROBE_HOST_ROOT_MODULE, exportName: "NOT_A_HOST_ROOT" };
 }
 
+/** The probe application whose readiness fails (see FailingReadyRpc). */
+export function failingReadyRpcManifest(): CustomRpcManifest {
+    return {
+        module: path.resolve(__dirname, "FailingReadyRpc.ts"),
+        exportName: "FailingReadyRpc"
+    };
+}
+
 /** The test application's network root, which emits the declared events. */
 export function probeRpcManifest(): CustomRpcManifest {
     return {

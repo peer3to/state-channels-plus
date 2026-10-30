@@ -374,23 +374,18 @@ export class ValidationProbeService extends ANetworkRpcService<
     }
 
     /**
-     * Post a block's calldata on-chain the way the chain-fallback path does.
-     * Returns the chain block number the post landed in.
+     * Broadcast a block's calldata post the way the chain-fallback path does.
+     * Returns at once with its transaction hash: the caller waits for it on
+     * its own provider, outside this RPC's deadline.
      */
     public async postBlockCalldataOnChain(
         encodedSignedBlock: string
-    ): Promise<{ blockNumber: number; onChainTimestamp: Timestamp }> {
+    ): Promise<{ transactionHash: string }> {
         const tx = await this.sm.stateChannelManagerContract.postBlockCalldata(
             Codec.decode(encodedSignedBlock, Type.SignedBlock),
             Clock.getTimeInSeconds() + 1000
         );
-        const receipt = await tx.wait();
-        if (!receipt) throw new Error("postBlockCalldata produced no receipt");
-        const chainBlock = await receipt.getBlock();
-        return {
-            blockNumber: receipt.blockNumber,
-            onChainTimestamp: chainBlock.timestamp
-        };
+        return { transactionHash: tx.hash };
     }
 
     /**

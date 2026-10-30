@@ -3,6 +3,7 @@ import {
     assertBundledHostRootAppliesPeerConfig,
     assertDefaultHostRootStarts,
     assertDisposalDrainsThenRejects,
+    assertFailedBuildRepliesPromptly,
     assertManifestHostRootServesProbe,
     assertNonClassManifestRejects,
     assertSecondDeployCompleteRejects,
@@ -29,6 +30,12 @@ describe("ApplicationHostRoot", function () {
     });
     it("a manifest whose export is not a class rejects setup inline", async function () {
         await assertNonClassManifestRejects(false);
+    });
+    it("a failed build answers the setup without waiting out the reply drain in a worker", async function () {
+        await assertFailedBuildRepliesPromptly(true);
+    });
+    it("a failed build answers the setup without waiting out the reply drain inline", async function () {
+        await assertFailedBuildRepliesPromptly(false);
     });
     it("rejects with the service error's name, message and code in a worker", async function () {
         await assertServiceErrorKeepsIdentity(true);

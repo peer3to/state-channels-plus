@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: shared honest-leaver dispute staging
 import { stageInboundBlockedExit } from "./BotConnectionFixesStaging";
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
+import { chainSnapshot } from "./MilestoneSyncStaging";
 import { runtimeIsClosed } from "./RuntimeRootObservation";
 import { StateSnapshot } from "@/models";
 import { Status } from "@/types";
@@ -68,10 +69,9 @@ async function stageHeldLeaverExitPost(h: MathPeerTestHarness) {
         leaver.index,
         "auditingData"
     );
-    // chain events from here on include every payout of the leaver's exit
-    const fromBlock = await h
-        .getPeer(others[0]!)
-        .p2pInstance.chainSigner.provider!.getBlockNumber();
+    // the chain snapshot below every payout of the leaver's exit
+    const chainBefore = await chainSnapshot(h);
+    const withdrawalsBefore = await chainTotalWithdrawals(h);
     await h.transition.participantLeaveStateTransition({
         leaverIndex: leaver.index,
         waitForPeers: others
@@ -83,7 +83,8 @@ async function stageHeldLeaverExitPost(h: MathPeerTestHarness) {
         leaverReduction,
         send,
         rebuild,
-        fromBlock
+        chainBefore,
+        withdrawalsBefore
     };
 }
 
@@ -107,22 +108,58 @@ async function latestOutboundExitAmounts(
     return amounts.map((amount) => BigInt(amount));
 }
 
-// the exit amounts the chain paid to `participant` from `fromBlock` on
+// the channel's withdrawals the chain has applied
+async function chainTotalWithdrawals(h: MathPeerTestHarness): Promise<bigint> {
+    const balance = await h.channelManager.getChannelBalance(h.channelId);
+    return BigInt(balance.totalWithdrawals.amount);
+}
+
+// the exit amounts the chain paid to `participant` since `chainBefore`: the
+// observer's outbound blocks between the two chain snapshots, which the chain
+// verifies against both snapshots' outbound heads, and whose payouts match the
+// chain's applied withdrawals since `withdrawalsBefore`
 async function chainExitAmounts(
     h: MathPeerTestHarness,
+    observerIndex: number,
     participant: string,
-    fromBlock: number
+    chainBefore: StateSnapshot,
+    withdrawalsBefore: bigint
 ): Promise<bigint[]> {
-    const logs = await h.channelManager.queryFilter(
-        h.channelManager.filters.OutboundMessagesProcessed(h.channelId),
-        fromBlock
+    const chainAfter = await chainSnapshot(h);
+    const paid = (
+        await h
+            .control(h.getPeer(observerIndex))
+            .query.getOutboundMessageBlocksInRange({
+                upperBlockHash: String(
+                    chainAfter.latestOutboundMessageBlockHash
+                ),
+                lowerBlockHash: String(
+                    chainBefore.latestOutboundMessageBlockHash
+                )
+            })
+            .request()
+    ).encodedMessageBlocks.map((encoded) =>
+        Codec.decode(encoded, Type.MessageBlock)
     );
-    return logs.flatMap((log) =>
-        Codec.decode(
-            Codec.encode(log.args.messageBlock, Type.MessageBlock),
-            Type.MessageBlock
-        )
-            .messages.filter(
+    expect(
+        await h.channelManager.verifyOutboundMessageBlocks(
+            paid,
+            chainBefore.snapshotData,
+            chainAfter.snapshotData
+        ),
+        "the outbound blocks the chain applied"
+    ).to.equal(true);
+    expect(
+        (await chainTotalWithdrawals(h)) - withdrawalsBefore,
+        "the chain paid every message of those blocks"
+    ).to.equal(
+        paid
+            .flatMap((block) => block.messages)
+            .reduce((sum, message) => sum + BigInt(message.balance.amount), 0n)
+    );
+    return paid.flatMap((block) =>
+        block.messages
+            .filter(
                 (message) => message.messageType === id("EXIT_CHANNEL_MESSAGE")
             )
             .map((message) => Codec.decode(message.data, Type.ExitChannel))
@@ -186,7 +223,8 @@ async function stageKillPeriodSelfRemoval(h: MathPeerTestHarness) {
         leaverReduction,
         send,
         rebuild,
-        fromBlock
+        chainBefore,
+        withdrawalsBefore
     } = await stageHeldLeaverExitPost(h);
     let reductionReleased = false;
     // the reduced state's terminal abort may already have removed the host
@@ -247,7 +285,8 @@ async function stageKillPeriodSelfRemoval(h: MathPeerTestHarness) {
             signedAtDispute,
             snapshotBeforeRelease: snapshotBeforeRelease!,
             exitAmounts,
-            fromBlock,
+            chainBefore,
+            withdrawalsBefore,
             releaseReduction
         };
     } catch (error) {
@@ -383,7 +422,13 @@ export async function assertHonestLeaverExitPaidOnce(
         // the chain paid the leaver one exit, with its exit block amount;
         // the self-removal added no second exit
         expect(
-            await chainExitAmounts(h, leaver.address, staged.fromBlock)
+            await chainExitAmounts(
+                h,
+                honest[0]!,
+                leaver.address,
+                staged.chainBefore,
+                staged.withdrawalsBefore
+            )
         ).to.deep.equal(staged.exitAmounts);
         // deposits still equal withdrawals plus the state balance
         await h.assert.snapshot.verifyOnChainChannelBalanceInvariant({

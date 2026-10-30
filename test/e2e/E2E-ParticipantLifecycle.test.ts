@@ -511,11 +511,10 @@ describe("E2E: Participant Lifecycle", function () {
             expect(
                 (await h.channelManager.getParticipants(h.channelId)).length
             ).to.equal(0);
+            // the channel close lands after the membership drop that reports the leave
+            await h.event.waitUntilPeerStatus(lone.index, Status.NOT_OPENED);
             expect(lone.eventSpies.onLeftChannel?.callCount).to.equal(1);
             expect(lone.eventSpies.onAbort?.called).to.equal(false);
-            expect(await h.control(lone).query.getStatus().request()).to.equal(
-                Status.NOT_OPENED
-            );
         });
         it("every participant leaves and a JOIN lands before any exit snapshot is posted: the refused exit posts fall back to the leave watchdogs' self-removal disputes, whose reduction seats the joiner as the only participant and keeps the channel open; each leaver gets onLeftChannel once with no abort, the exits and the deposit are counted once, and the joiner authors the next block", async function () {
             const h = TestSession.getHarness();

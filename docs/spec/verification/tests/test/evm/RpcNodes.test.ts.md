@@ -27,6 +27,29 @@ no unhandled rejection may surface. A second unsubscribe case has the proxy answ
 `eth_unsubscribe` with an error on a live socket; no unhandled rejection may surface and the
 provider keeps answering reads.
 
+The log cases deploy a contract whose every call emits one topicless log and subscribe its address
+filter on a provider over two proxied nodes. A record-only listener on each node socket shows when a
+log reached every socket. The once case emits a warm-up log and two more, waits until both sockets delivered the
+last one, and expects every one of the three logs exactly once from the provider, every log a `Log`
+bound to the provider, and no `eth_newFilter` at either proxy. The failover case makes the second proxy fail `eth_getFilterChanges`
+(so a filter poll there would fail), cuts the first node and expects the next log once. The destroy
+case awaits the subscription and then destroys the provider at once, while the node sockets'
+`eth_subscribe` requests can still be in flight, and expects no unhandled rejection. The
+unsubscribe case removes the last listener, waits for one `eth_unsubscribe` at every proxy, and expects
+no unhandled rejection and no listener left.
+
+The reconnect case cuts the first proxy, restores it, waits for the second `eth_subscribe` at that
+proxy and for one more read answered on the reopened socket, then cuts the second node, so only the
+reopened socket can deliver; the next log must arrive exactly once. The bound case runs one proxied
+node: the proxy withholds the notifications of two logs at blocks `b` and `b + 1`, the test mines
+blocks with `hardhat_mine` so the next log lands at `b + 128` and is delivered, then releases the two
+withheld notifications in order. The provider must deliver the log at `b + 1` (127 below) and not the
+one at `b` (128 below). The exported startup case calls `createRpcNodesProvider` from the SDK index
+with every proxy cut and endpoint URLs that carry a secret path and query; it expects a rejection
+starting with "Chain access requires a reachable WebSocket provider at ", naming every proxy by
+scheme and host and without the secret, and, after every proxy is restored, no request at any proxy
+within the one-second window (every node was destroyed).
+
 ## Tests
 
 - `doubles the reconnect delay from 250 ms up to a 5 s bound`: UNIT-TEST-RPC-NODE-1-VTXH1M.P1, REQ-CHAINOBS-3-N137ZP.T1.P1
@@ -42,6 +65,12 @@ provider keeps answering reads.
 - `answers reads through the next node while the first is cut`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P4, REQ-CHAINOBS-2-2NCSQ3.T1.P3
 - `fails a read over to the next node when the first drops mid-request`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P5, REQ-CHAINOBS-2-2NCSQ3.T1.P4
 - `relays each new block once from the node sockets without polling`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P6
+- `relays each matching log once from the node sockets`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P15, REQ-CHAINOBS-4-JA3YF8.T1.P1
+- `keeps relaying logs through the next node socket after the first drops`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P16, REQ-CHAINOBS-4-JA3YF8.T1.P2
+- `subscribes a reconnected node socket again and relays its logs once`: REQ-CHAINOBS-4-JA3YF8.T1.P5
+- `does not relay a log 128 or more blocks below the highest relayed log`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P18, REQ-CHAINOBS-4-JA3YF8.T1.P6
+- `leaves no unhandled rejection when destroyed right after a log subscription`: UNIT-TEST-RPC-NODE-1-VTXH1M.P13, REQ-CHAINOBS-4-JA3YF8.T1.P3
+- `unsubscribes every node socket when the last log listener goes`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P17, REQ-CHAINOBS-4-JA3YF8.T1.P4
 - `leaves no unhandled rejection when a node socket's unsubscribe is answered after destroy`: UNIT-TEST-RPC-NODE-1-VTXH1M.P11
 - `leaves no unhandled rejection and keeps reading when a node answers an unsubscribe with an error`: UNIT-TEST-RPC-NODE-1-VTXH1M.P12
 - `starts the runtime chain context while one of its nodes is unreachable`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P5, REQ-CHAINOBS-1-5JTHY8.T1.P5
@@ -53,6 +82,7 @@ provider keeps answering reads.
 - `rejects a read in flight when destroyed`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P9, REQ-CHAINOBS-2-2NCSQ3.T1.P8
 - `rejects a read waiting for a node when destroyed`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P10, REQ-CHAINOBS-2-2NCSQ3.T1.P9
 - `rejects a read waiting for a node when reconnects stop`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P11, REQ-CHAINOBS-2-2NCSQ3.T1.P10
+- `rejects the exported chain access startup when no node is reachable and destroys every node`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P13, REQ-CHAINOBS-4-JA3YF8.T1.P7
 - `starts the runtime chain context without waiting for a silent node`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P7, REQ-CHAINOBS-1-5JTHY8.T1.P7
 - `logs nothing and leaves no unhandled rejection when destroyed during a connection attempt`: UNIT-TEST-RPC-NODE-1-VTXH1M.P9
 - `keeps a node whose heartbeat is answered with an error`: UNIT-TEST-RPC-NODE-1-VTXH1M.P10, REQ-CHAINOBS-3-N137ZP.T1.P16

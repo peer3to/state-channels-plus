@@ -7,7 +7,7 @@ Exercises: [SpectateService.ts](../../../../implementation/source/src/rpc/networ
 
 The declarations drive the real SpectateService through request policy, proof verification and multi-peer synchronization. Pinned requests accept a minimum height or a verified successor; delayed-install cases hold the responder's VM write and verify both peers remain unblacklisted. An unprovable height retains mutual blacklist liability. A valid proof below the requested minimum is rejected.
 
-The policy cases distinguish initial load from pinned recovery and preserve a synced observer on caller-owned recovery failure. Snapshot races accept already-landed state. Responder cases recover committed disputes missing locally, refuse an unreadable window, and prove the successor when local dispute events are suppressed. These are component scenarios through real collaborators, including the RPC boundary. The skipped reduce-data case is the named gap UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P10: `rpcStub.holdInboundMessageStorage` puts a responder's local diamond inbound head above its inbound storage, but a participant responder's audit of the window's disputes then fails on the same missing run before it stores them, so its window read refuses first; a spectator responder, which persists disputes without auditing, is not yet staged.
+The policy cases distinguish initial load from pinned recovery and preserve a synced observer on caller-owned recovery failure. Snapshot races accept already-landed state. Responder cases recover committed disputes missing locally, fail a request whose window the responder cannot read yet without blacklisting the requester (the requester takes one counted close), and prove the successor when local dispute events are suppressed. These are component scenarios through real collaborators, including the RPC boundary. The skipped reduce-data case is the named gap UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P10: `rpcStub.holdInboundMessageStorage` puts a responder's local diamond inbound head above its inbound storage, but a participant responder's audit of the window's disputes then fails on the same missing run before it stores them, so its window read fails first; a spectator responder, which persists disputes without auditing, is not yet staged.
 
 The batching case records one finality call containing two predicates and the exact rejection reason `dispute window not linked`. Its two windows are identical, so it does not test result-index mapping; that belongs to distinct-window lineage scenarios.
 
@@ -81,16 +81,17 @@ blacklist.
 - `sync accepts a reduction landing after its chain window was persisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P22
 - `plain pinned sync accepts a proved successor of the requested fork`: REQ-SYNC-1-T2589H.T1.P9, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P19
 - `plain pinned sync refuses an unknown fork`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P20
+- `one still-syncing answer shared by a plain sync and three block-source syncs gives one counted close and no blacklist`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P116, REQ-SPC-3-AZBKR1.T1.P10
 - `one sync request supports initial load and exact recovery`: INV-SYNC-2-AT3RXE.T1.P1
 - `exact recovery failure preserves a synced observer runtime`: INV-SYNC-3-A7A2ED.T1.P4
 - `a dispute opens on the pinned fork after the proof was served → accepted, responder neither rejected nor blacklisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P28
 - `the same-fork target snapshot lands before validation → accepts the proof`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P13, UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P8, INV-SYNC-2-AT3RXE.T1.P3
 - `a last-milestone block whose bytes do not decode → milestones invalid, the sync does not throw`: none
 - `on-chain snapshot ahead of the payload genesis on the same fork → milestones and the latest-fork outbound run verified from it, accepted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P34
-- `requester's provider behind the responder's after a snapshot post → the sync waits until its chain head reaches the payload's chain block, then verifies from the moved anchor and accepts; responder kept`: INV-SYNC-2-AT3RXE.T1.P4, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114
-- `requester's provider stays behind the payload's chain block for one agreement window → not synced with no verdict: no rejection, responder neither blacklisted nor cut`: INV-SYNC-3-A7A2ED.T1.P34, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P115
-- `responder's own provider lags the logs another node streamed into its local diamond → the payload names the streamed block, the lagging requester waits for it and accepts; responder kept`: INV-SYNC-2-AT3RXE.T1.P5, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P117
-- `requester's sync service stops while it waits for its chain head → not synced at once with no verdict, before the agreement window ends`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P116
+- `requester's provider behind the responder's after a snapshot post → the sync waits until its chain head reaches the payload's chain block, then verifies from the moved anchor and accepts; responder kept`: INV-SYNC-2-AT3RXE.T1.P4, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P117
+- `requester's provider stays behind the payload's chain block for one agreement window → not synced with no verdict: no rejection, responder neither blacklisted nor cut`: INV-SYNC-3-A7A2ED.T1.P34, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P118
+- `responder's own provider lags the logs another node streamed into its local diamond → the payload names the streamed block, the lagging requester waits for it and accepts; responder kept`: INV-SYNC-2-AT3RXE.T1.P5, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P120
+- `requester's sync service stops while it waits for its chain head → not synced at once with no verdict, before the agreement window ends`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P119
 - `a milestone prepended wholly below the on-chain anchor carrying a snapshot above it → sync accepted, neither its block nor the snapshot is stored`: none
 - `milestone snapshot at the requester's own finalized point altered → accepted from that point, the altered snapshot is not stored`: none
 - `every milestone below the on-chain anchor with a forged newer snapshot → rejected, milestones invalid`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P33
@@ -124,6 +125,6 @@ blacklist.
 - `window already reduced locally by a concurrent sync, with forged confirmation signatures, an uncommitted dispute and a forged window snapshot → accepted, none of them stored`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P113
 - `chain-final unadopted window synced by a requester that handled none of its dispute logs → the sync stores no confirmation, and the requester, now on the reduced fork, recovers every window dispute from chain logs without auditing`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P25
 - `committed dispute missing locally → recovers before generating the payload`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P9
-- `reduce data unavailable for a disputed window → payload refused (needs a mirror ahead of storage)`: none
-- `dispute window unavailable → payload refused, no throw`: none
+- `reduce data unavailable for a disputed window → the request fails, the requester is not blacklisted (needs a mirror ahead of storage)`: none
+- `dispute window unavailable → the request fails, the requester is not blacklisted`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P6, REQ-SPC-3-AZBKR1.T1.P7
 - `all dispute events suppressed → recovers and proves the successor fork`: none

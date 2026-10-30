@@ -7,7 +7,9 @@ Exercises: [GasUsageRecorder.ts](../../../../implementation/source/src/evm/gasUs
 
 A three-peer session opens a channel, produces one block, and then has that block's own author
 post its calldata on chain through the real manager contract — the only sender the contract
-accepts for it. The peer's table is then read back through the shipped public surface,
+accepts for it. The author's host only broadcasts the post (`ValidationProbeService.postBlockCalldataOnChain`
+returns the transaction hash); the harness `postBlockCalldataOnChainWait` waits for the receipt on the
+harness provider, outside the host request's deadline. The peer's table is then read back through the shipped public surface,
 `P2pInstance.getGasUsageTable()`, which crosses the chain-signer port and unwraps the endpoint's
 named field, so the e2e fails if that surface ever answers the wrapper instead of the rows. The
 oracles are the row for `postBlockCalldata`: it is keyed on the manager contract's own address and

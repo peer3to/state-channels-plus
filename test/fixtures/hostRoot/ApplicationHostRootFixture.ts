@@ -7,15 +7,20 @@ import {
 import { EvmStateMachine } from "@/evm";
 import type P2pInstance from "@/evm/P2pInstance";
 import DeploymentBridgeSigner from "@/evm/signer/DeploymentBridgeSigner";
-import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
+import {
+    IN_FLIGHT_REPLY_DRAIN_MS,
+    type RuntimeConnection
+} from "@/rpc/internal/AInternalRpcRoot";
 import { childDisposedError } from "@/rpc/internal/RemoteRoot";
 import type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";
 import { config } from "@/utils/config";
 import { bundleProbeHostRoot } from "@test/fixtures/hostRoot/BundledProbeHostRoot";
+import { FAILING_READY_MESSAGE } from "@test/fixtures/hostRoot/FailingReadyRpc";
 import type { ProbeSlowReply } from "@test/fixtures/hostRoot/probe/HostProbeService";
 import type { ProbeHostRoot } from "@test/fixtures/hostRoot/ProbeHostRoot";
 import {
     PROBE_HOST_ROOT_MODULE,
+    failingReadyRpcManifest,
     nonClassHostRootManifest,
     probeHostRootManifest,
     probeRpcManifest
@@ -201,6 +206,53 @@ export async function assertNonClassManifestRejects(
         );
         expect(failure.message).to.equal(
             `Host root module "${PROBE_HOST_ROOT_MODULE}" must export a host root class`
+        );
+    } finally {
+        await instance?.dispose();
+        stopRuntimeTransportModesFixture();
+    }
+}
+
+/**
+ * A runtime whose build fails (its application's readiness rejects) answers
+ * the setup as soon as its disposal is done: the failed build's own reply is
+ * not awaited by that disposal's in-flight reply drain.
+ */
+export async function assertFailedBuildRepliesPromptly(
+    runSdkInThread: boolean
+): Promise<void> {
+    await startRuntimeTransportModesFixture();
+    let instance: P2pInstance<MathStateMachine> | undefined;
+    try {
+        const setup = await prepareRuntimeSetup({
+            runSdkInThread,
+            vmDedicatedThread: false
+        });
+        const failure = await rejectionOf(
+            EvmStateMachine.p2pSetup(
+                setup.scm,
+                setup.deployedStateMachine,
+                setup.deployStateMachine,
+                {
+                    ...setup.setupOptions,
+                    customRpcManifest: failingReadyRpcManifest(),
+                    hostRootManifest: probeHostRootManifest()
+                }
+            ).then((resolved) => {
+                // Kept so an unexpected setup is still disposed.
+                instance = resolved;
+            })
+        );
+        const answeredAtMs = Date.now();
+        expect(failure.message).to.include(FAILING_READY_MESSAGE);
+        const failedAtMs = Number(
+            failure.message
+                .split(FAILING_READY_MESSAGE)[1]
+                .trim()
+                .split(/\s/)[0]
+        );
+        expect(answeredAtMs - failedAtMs).to.be.below(
+            IN_FLIGHT_REPLY_DRAIN_MS / 2
         );
     } finally {
         await instance?.dispose();

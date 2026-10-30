@@ -32,6 +32,7 @@ Targeted connect composition
 - [x] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P6` — Both lobby founders publish channel discovery records only after becoming PARTICIPATING
 - [x] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P7` — Both lobby founders open the same channel; a later spectator discovers it, synchronizes on that channel and connects to both founders
 - [x] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P8` — A later joiner discovers the lobby-opened channel and connectToChannel with shouldJoin succeeds, with its address present among on-chain pending participants
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P9` — a participating caller's connect with a balance tops up through the join owner's collection: when one threshold member answers only after the request deadline, connect returns `false` and keeps `PARTICIPATING`
 
 ## UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ
 
@@ -43,3 +44,12 @@ Ordinary lobby join leave
 - [x] `UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P1` — same-topic leave ends both joins
 - [x] `UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P2` — a rejected second join on the signer keeps the leave
 - [x] `UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P3` — a differently cased leave counts, and a later leave of another topic returns false and does not undo it
+
+## UNIT-TEST-LOCAL-P2P-SIGNER-3-3XWPRV
+
+Targeted connect cancel before matching starts
+
+- Setup: Hold the first on-chain opened-status read of an unopened target's connect with opening permission, cancel the connect during that read, then release the read
+- Oracle: The cancel returns true; the connect returns false and no matching session or targeted topic exists
+
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-3-3XWPRV.P1` — a cancel during the opened-status read is kept, and the connect ends false without starting matching

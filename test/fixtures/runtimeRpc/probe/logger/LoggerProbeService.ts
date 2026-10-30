@@ -86,6 +86,11 @@ export class LoggerProbeService extends AInternalRpcService<LoggerProbeRpcMethod
         const uploader = Reflect.get(this.logger, "logUploader") as LogUploader;
         uploader.captureUnhandled(new Error(message), "unhandledRejection");
     }
+    /** Every later upload of this realm's logger waits exactly `jitterMs` before it posts. */
+    public pinUploadJitter(jitterMs: number): void {
+        const uploader = Reflect.get(this.logger, "logUploader") as LogUploader;
+        Reflect.set(uploader, "getJitterMs", () => jitterMs);
+    }
 }
 
 export type LoggerProbeRoot = AInternalRpcRoot & {

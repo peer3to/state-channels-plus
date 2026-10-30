@@ -6,6 +6,7 @@ import {
     type SharedLoggerContext
 } from "@/utils/logging/Logger";
 import { LogStore } from "@/utils/logging/logStore";
+import { LogUploader } from "@/utils/logging/LogUploader";
 import { NodeLogger } from "@/utils/logging/node/NodeLogger";
 import { NodeLogUploader } from "@/utils/logging/node/NodeLogUploader";
 import { ethers } from "ethers";
@@ -193,13 +194,15 @@ export function createUploaderFixture(opts: {
     // replaces the default channel/peer identity, e.g. a thread name and no channel
     sharedContext?: SharedLoggerContext;
     maxStoreBytes?: number;
+    /** The uploader class, e.g. from a second copy of the module. */
+    Uploader?: typeof NodeLogUploader;
 }): UploaderFixture {
     const logStore = new LogStore(opts.maxStoreBytes ?? 1024 * 1024, true);
     const sharedContext: SharedLoggerContext = opts.sharedContext ?? {
         channelId: ethers.ZeroHash,
         peerAddress: ethers.Wallet.createRandom().address
     };
-    const logUploader = new NodeLogUploader(
+    const logUploader = new (opts.Uploader ?? NodeLogUploader)(
         logStore,
         {
             uploadEndpoint: opts.uploadEndpoint,
@@ -219,6 +222,36 @@ export function createUploaderFixture(opts: {
         true
     );
     return { logUploader, logStore, logger };
+}
+
+/**
+ * The Node uploader from a second copy of the uploader modules, as a runtime
+ * extension built separately from the SDK loads its own copy into a thread.
+ */
+export function loadSeparateNodeLogUploader(): typeof NodeLogUploader {
+    // Found by their loaded exports: a path alias in a string is not rewritten
+    // where the tests run compiled.
+    const paths = [LogUploader, NodeLogUploader].map((loaded) => {
+        const module = Object.values(require.cache).find((cached) =>
+            Object.values(cached?.exports ?? {}).includes(loaded)
+        );
+        if (!module) throw new Error(`${loaded.name} module is not loaded`);
+        return module.id;
+    });
+    const loaded = paths.map((path) => require.cache[path]);
+    for (const path of paths) delete require.cache[path];
+    try {
+        const separate: typeof NodeLogUploader = require(
+            paths[1]
+        ).NodeLogUploader;
+        if (separate === NodeLogUploader)
+            throw new Error("The uploader module was not loaded again");
+        return separate;
+    } finally {
+        paths.forEach((path, index) => {
+            require.cache[path] = loaded[index];
+        });
+    }
 }
 
 export function messagesOf(receiver: LogReceiver, index: number): string[] {

@@ -14,6 +14,7 @@ import type {
     TimeoutSelectionProbe,
     DisconnectCleanupProbe,
     TransportRetirementProbe,
+    RemoteRetirementProbe,
     BulkPenaltyProbe,
     ConnectedPeerFallbackProbe,
     ConnectionsChangedProbe,
@@ -35,6 +36,8 @@ import type {
     NegotiationAbortProbe,
     RelayAdmissionProbe,
     UpgradeBanPolicyProbe,
+    WebRTCConnectionStatesProbe,
+    WebRTCConnectionStatesScenario,
     UnblacklistBanPolicyProbe,
     UnblacklistBanPolicyScenario,
     HolepunchTopicProbe,
@@ -171,6 +174,10 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         address: string
     ): Promise<TransportRetirementProbe> {
         return this.service.probeTransportRetirement(address);
+    }
+
+    public probeRemoteRetirement(address: string): RemoteRetirementProbe {
+        return this.service.probeRemoteRetirement(address);
     }
 
     public probeBulkPenalty(
@@ -381,6 +388,13 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
 
     public probeUpgradeBanPolicy(address: string): UpgradeBanPolicyProbe {
         return this.service.probeUpgradeBanPolicy(address);
+    }
+
+    public probeWebRTCConnectionStates(
+        address: string,
+        scenario: WebRTCConnectionStatesScenario
+    ): Promise<WebRTCConnectionStatesProbe> {
+        return this.service.probeWebRTCConnectionStates(address, scenario);
     }
 
     public probeExplicitBlacklist(address: string): BanPolicyProbe {

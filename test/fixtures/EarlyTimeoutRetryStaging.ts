@@ -847,10 +847,11 @@ export async function assertSignedPredecessorPostGrantsNoTime(
     await h.rpcStub.holdCalldataPostedEventsExceptLeader(author.index);
     // post well after the block reached the observer
     await sleep((timeConfig.p2pTime + timeConfig.agreementTime) * 1000);
-    const { onChainTimestamp } = await h
-        .control(author)
-        .validation.postBlockCalldataOnChain(previous.encodedSignedBlock)
-        .request();
+    const { onChainTimestamp } =
+        await h.transition.postBlockCalldataOnChainWait(
+            author,
+            previous.encodedSignedBlock
+        );
     await h.control(observer).stub.waitForHeldCalldataPostedEvent().request();
     expect(
         await storeUnappliedPost(h, observer.index, {

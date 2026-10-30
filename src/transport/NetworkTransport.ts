@@ -68,7 +68,9 @@ abstract class NetworkTransport extends ATransport {
     }
 
     protected afterClose(isExpected: boolean): void {
-        if (!isExpected) {
+        // A peer still connected over another transport did not disconnect:
+        // the remote retired this one after a transport upgrade.
+        if (!isExpected && !this.isPeerStillConnected()) {
             this.p2pManager.stateManager.p2pEventHooks?.onDisconnection?.(
                 this.peerAddress as Address
             );
@@ -77,6 +79,16 @@ abstract class NetworkTransport extends ATransport {
         // close cannot inherit another caller's policy.
         this.p2pManager.disconnectConnection(this, DisconnectPolicy.ALLOW);
         this._close();
+    }
+
+    private isPeerStillConnected(): boolean {
+        if (!this.peerAddress) return false;
+        return (
+            this.p2pManager.profileManager
+                .getProfileByEvmAddress(this.peerAddress as Address)
+                ?.getLiveTransports()
+                .some((live) => live !== this) ?? false
+        );
     }
 
     send(rpc: Rpc): void {

@@ -9,13 +9,13 @@
 - [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)
   Contradicts: Responder step 4 puts the on-chain-tip-to-genesis outbound range in every payload; `generateSyncPayload` sends it only across forks and `applySyncResponse` requires it empty on the same fork, decided by no requirement. See [`OQ-IMPL-SYNC-BOUNDARY-1-4AFPKM` (Same-fork outbound range in the sync payload)](../../../../../../open-questions.md#oq-impl-sync-boundary-1-4afpkm).
 - [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
-  Contradicts: a local reduction out-of-gas in `sync` on a window the chain has reduced is classified as invalid served evidence and blacklists the responder (on an unreduced window it is no verdict); reduction gas sufficiency is unverified ([`FIND-SYNC-REDUCTION-GAS-1-AJE985`](../../../../../../../audit/open-findings.md#find-sync-reduction-gas-1-aje985)).
+  Contradicts: a local reduction out-of-gas in `requestSync` on a window the chain has reduced is classified as invalid served evidence and blacklists the responder (on an unreduced window it is no verdict); reduction gas sufficiency is unverified ([`FIND-SYNC-REDUCTION-GAS-1-AJE985`](../../../../../../../audit/open-findings.md#find-sync-reduction-gas-1-aje985)).
 - [`INV-SYNC-4-Z6HER7` (Read-only trust establishment)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-4-z6her7)
 - [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-1-t2589h)
-  Partial: [`DEF-10-199C7F`](../../../../../../../audit/open-findings.md#def-10-199c7f): honest can't-prove-yet refusal punishes the requester (fault taxonomy pending).
 - [`REQ-SYNC-2-TNT4F4` (Economic soundness before adoption)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-2-tnt4f4)
 - [`REQ-SYNC-3-1P5ZHT` (Suffix through the standard pipeline)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-3-1p5zht)
 - [`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)
+- [`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../../../../../../../specification/peer-communication/synchronization.md#req-spc-3-azbkr1)
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
 - [`REQ-MSG-9-BFN9P5` (Spectating MUST be fail-closed)](../../../../../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5)
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
@@ -27,8 +27,8 @@
 
 Requester verification chain
 
-- Setup: Serve payloads with each element individually forged; alter echoes; force each abort step and snapshot race; both requester roles; a requester chain view behind the responder's that catches up, never catches up, or whose sync service stops during the wait
-- Oracle: Every forgery aborts at its step with role-correct consequences; echoes ignored; no transaction ever sent; valid payload adopts and replays; a chain view behind the payload's chain block is waited for up to one agreement window, then the sync fails with no verdict
+- Setup: Serve payloads with each element individually forged; alter echoes; force each abort step and snapshot race; both requester roles; a responder that answers it is still in its own initial sync, alone or to a `requestSync` caller and `syncBlockSource` callers sharing one request; a requester chain view behind the responder's that catches up, never catches up, or whose sync service stops during the wait
+- Oracle: Every forgery aborts at its step with role-correct consequences; echoes ignored; no transaction ever sent; valid payload adopts and replays; a still-syncing answer is `SyncResult.ResponderSyncing` from `requestSync` with no close, strike or blacklist, and `false` from `syncBlockSource` with one counted close (allow-retry, no blacklist) per answer however many block-source callers share it; a chain view behind the payload's chain block is waited for up to one agreement window, then the sync fails with no verdict
 
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P1` — forged dispute window
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P2` — altered echo ignored
@@ -137,25 +137,28 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P111` — a chain-final window the chain has not adopted, served with an extra signature on each dispute confirmation, a confirmation of an uncommitted dispute and a latest snapshot with another timestamp: the sync is accepted and none of them is stored
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P112` — the P111 payload while the reduction lands on chain after the requester's finality read and before its window fetch, so its local reduction returns early: the sync is accepted and none of the forged inputs is stored
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P113` — the P111 payload while a concurrent sync of the genuine payload reduces the window in the requester's local diamond first: the sync is accepted and none of the forged inputs is stored
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114` — a requester whose provider lags a snapshot post the responder has seen: the sync waits until its chain head reaches the payload's chain block, verifies from the moved anchor and accepts, with the responder kept
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P115` — the requester's provider never reaches the payload's chain block: after one agreement window the sync fails with no verdict, no rejection, and the responder neither blacklisted nor disconnected
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P116` — the requester's sync service stops while the sync waits for its chain head: the sync fails at once with no verdict
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P117` — the responder's own provider lags logs another node streamed into its local diamond: the payload names the streamed block, the lagging requester waits for it and accepts, with the responder kept
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114` — a sync call with no explicit timeout gets a request deadline of two agreement windows: a responder that does not answer in time fails it only after two windows
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P115` — a responder that answers it is still in its own initial sync: `requestSync` returns `SyncResult.ResponderSyncing` at once, the requester keeps the connection with no strike, and neither side blacklists the other
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P116` — one still-syncing answer shared by a `requestSync` caller and three `syncBlockSource` callers: one request, `requestSync` returns `SyncResult.ResponderSyncing`, every `syncBlockSource` returns false, and the requester counts one strike with no blacklist
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P117` — a requester whose provider lags a snapshot post the responder has seen: the sync waits until its chain head reaches the payload's chain block, verifies from the moved anchor and accepts, with the responder kept
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P118` — the requester's provider never reaches the payload's chain block: after one agreement window the sync fails with no verdict, no rejection, and the responder neither blacklisted nor disconnected
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P119` — the requester's sync service stops while the sync waits for its chain head: the sync fails at once with no verdict
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P120` — the responder's own provider lags logs another node streamed into its local diamond: the payload names the streamed block, the lagging requester waits for it and accepts, with the responder kept
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 
 Responder proving
 
 - Setup: Request latest/pinned/height-0/above-latest/unknown-fork targets from varied local states
-- Oracle: Pinned forks or verified successors proven; unrelated or unavailable targets refused; malformed height rejected pre-walk; same-fork payload omits cross-fork evidence; refusal consequence documents [`DEF-10-199C7F`](../../../../../../../audit/open-findings.md#def-10-199c7f)
+- Oracle: Pinned forks or verified successors proven; unrelated targets refused; a responder whose own view lags a disputed window fails the request without a verdict on the requester; malformed height rejected pre-walk; same-fork payload omits cross-fork evidence; refusal consequence documents [`DEF-10-199C7F`](../../../../../../../audit/open-findings.md#def-10-199c7f)
 
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P1` — latest-target success
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P2` — height-0 pin
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P3` — above-latest refused
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P4` — unknown fork refused
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P5` — malformed height cheap-rejected
-- [ ] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P6` — lagging-responder refusal (documents [`DEF-10-199C7F`](../../../../../../../audit/open-findings.md#def-10-199c7f))
+- [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P6` — a responder whose disputed window is not yet locally readable: the request fails with an error reply and neither side blacklists the other
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P7` — pinned-target success
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P8` — same-fork payload emits an empty pre-genesis outbound segment while preserving the latest-fork outbound proof
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P9` — a recovered dispute window identifies a successor whose genesis is not installed; proof serving uses the computed genesis before installation
-- [ ] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P10` — a disputed window whose disputes the responder holds but whose reduce consumed an inbound block its local diamond applied and its inbound storage lacks: the responder refuses to serve, without throwing
+- [ ] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P10` — a disputed window whose disputes the responder holds but whose reduce consumed an inbound block its local diamond applied and its inbound storage lacks: the request fails with an error reply and the requester is not blacklisted

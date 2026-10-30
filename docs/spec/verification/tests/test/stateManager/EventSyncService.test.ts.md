@@ -50,6 +50,7 @@ listener is left behind.
 ## Tests
 
 - `drops subscription callbacks while stop is still draining scheduled work`: UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P3
+- `starts no log dispatch after stop, so a recovery still running in a disposing runtime needs nothing its disposal closes`: UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P24
 - `authoritative slash recovery returns no change for an empty chain set`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P34, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P5
 - `authoritative slash recovery exposes a failed source read`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P35, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P6, REQ-CHAINOBS-3-N137ZP.T1.P33
 - `authoritative slash recovery preserves the kill timestamp and deduplicates a repeated query`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P36, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P7

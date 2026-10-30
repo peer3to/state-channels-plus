@@ -4,6 +4,7 @@ import { BlockConfirmationEthersType } from "@/types/ethers";
 import type { Address, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import * as factory from "@test/factory";
+import { probeSyncingQueuedSource } from "@test/fixtures/MilestoneSyncStaging";
 import {
     restoreDequeuedEntry,
     stagePrunedObserver,
@@ -23,6 +24,7 @@ import {
 } from "@test/fixtures/QueueIntakeFixture";
 import {
     assertOutsiderProofDoesNotAdmitCopy,
+    assertSyncingAbsentSenderTakesOneStrike,
     stageAbsentGossipAcrossUnreducedWindow
 } from "@test/fixtures/QueueNetworkRetentionFixture";
 import { MathTestSession } from "@test/harness";
@@ -111,7 +113,7 @@ describe("Unit: BlockQueueManager", () => {
             f.h.getPeer(0),
             async (sm, args, { ethers }) => {
                 const spectate = sm.p2pManager.localRpc.spectateService;
-                const sync = spectate.sync;
+                const sync = spectate.syncBlockSource;
                 let release!: () => void;
                 const gate = new Promise<void>((resolve) => {
                     release = resolve;
@@ -131,7 +133,7 @@ describe("Unit: BlockQueueManager", () => {
                     drainEntered();
                     return dispose.call(queue);
                 };
-                spectate.sync = async (...parameters) => {
+                spectate.syncBlockSource = async (...parameters) => {
                     entered();
                     await gate;
                     try {
@@ -165,7 +167,7 @@ describe("Unit: BlockQueueManager", () => {
                     return { stoppedWhileHeld, syncedWhenStopped };
                 } finally {
                     release();
-                    spectate.sync = sync;
+                    spectate.syncBlockSource = sync;
                     queue.dispose = dispose;
                 }
             },
@@ -237,9 +239,9 @@ describe("Unit: BlockQueueManager", () => {
             f.h.getPeer(0),
             async (sm, args, { ethers }) => {
                 const spectate = sm.p2pManager.localRpc.spectateService;
-                const sync = spectate.sync;
+                const sync = spectate.syncBlockSource;
                 let syncCalls = 0;
-                spectate.sync = (...parameters) => {
+                spectate.syncBlockSource = (...parameters) => {
                     syncCalls++;
                     return sync.apply(spectate, parameters);
                 };
@@ -289,7 +291,7 @@ describe("Unit: BlockQueueManager", () => {
                     return { isDisposed: sm.isDisposed, syncCalls };
                 } finally {
                     release();
-                    spectate.sync = sync;
+                    spectate.syncBlockSource = sync;
                     sm.timeoutManager.scheduleTask = schedule;
                     localRpc.dispose = disposeLocalRpc;
                 }
@@ -394,6 +396,10 @@ describe("Unit: BlockQueueManager", () => {
 
     it("sync succeeds but the sender is still absent: blacklisted with no queue entry", async () => {
         await assertOutsiderProofDoesNotAdmitCopy("success");
+    });
+
+    it("an intake-gate sync whose payload fails validation blacklists the sender through the sync with no queue entry", async () => {
+        await assertOutsiderProofDoesNotAdmitCopy("invalid");
     });
 
     it("an oversized verified eligibility cache does not expand the N-source allowance", async () => {
@@ -505,7 +511,7 @@ describe("Unit: BlockQueueManager", () => {
         }
     });
 
-    it("sync with no sender transport ends intake without queueing the block", async () => {
+    it("sync with no sender transport ends intake with a counted close, no blacklist and no queued block", async () => {
         const f = new QueueIntakeFixture();
         await f.start();
         try {
@@ -513,12 +519,31 @@ describe("Unit: BlockQueueManager", () => {
             expect((await f.observation()).syncRequests).to.equal(0);
             expect((await f.observation()).completedSyncs).to.equal(1);
             expect(await f.retention()).to.equal(null);
+            // the failed request is the sync's counted close, not a verdict
             expect(
                 await f.control.query.isBlacklisted(f.strangers[0]).request()
-            ).to.equal(true);
+            ).to.equal(false);
+            expect(
+                await f.control.query.getStrikes(f.strangers[0]).request()
+            ).to.equal(1);
         } finally {
             await f.close();
         }
+    });
+
+    it("an absent sender still in its own initial sync answers the intake sync that it is still syncing: one counted close, no blacklist and no queued block", async () => {
+        await assertSyncingAbsentSenderTakesOneStrike();
+    });
+
+    it("a queued block's source still in its own initial sync answers the expiry probe that it is still syncing: one counted close and no blacklist", async () => {
+        const h = MathTestSession.getHarness();
+        const probed = await probeSyncingQueuedSource(h);
+        expect(probed).to.deep.equal({
+            wasQueued: true,
+            strikesBefore: 0,
+            strikesAfter: 1,
+            isBlacklisted: false
+        });
     });
 
     describe("posted calldata keeps its strategy through the queue", function () {

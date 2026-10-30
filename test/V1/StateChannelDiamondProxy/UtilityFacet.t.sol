@@ -146,7 +146,6 @@ contract UtilityFacetTest is Test {
         b.transaction.header.forkId = keccak256("canonical-fork");
         b.transaction.header.transactionCnt = 1;
         b.transaction.header.timestamp = 1;
-        b.transaction.body.encodedData = hex"123456";
         b.transaction.body.data = hex"ab";
         b.stateSnapshotHash = keccak256("canonical-snapshot");
         b.previousBlockHash = keccak256("canonical-prev");
@@ -159,7 +158,6 @@ contract UtilityFacetTest is Test {
         assertEq(decoded.transaction.header.forkId, keccak256("canonical-fork"), "forkId changed");
         assertEq(decoded.transaction.header.transactionCnt, 1, "transactionCnt changed");
         assertEq(decoded.transaction.header.timestamp, 1, "timestamp changed");
-        assertEq(keccak256(decoded.transaction.body.encodedData), keccak256(hex"123456"), "encodedData changed");
         assertEq(keccak256(decoded.transaction.body.data), keccak256(hex"ab"), "body data changed");
         assertEq(decoded.messageBlocks.length, 1, "messageBlocks length changed");
         assertEq(decoded.messageBlocks[0].messages.length, 1, "messages length changed");

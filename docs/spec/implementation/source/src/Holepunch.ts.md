@@ -4,6 +4,7 @@
 
 ## Requirements
 
+- [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../specification/runtime/execution.md#req-runtime-3-vqxw59)
 - [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
 - [`REQ-UPG-6-BC60XD` (Discovery topic leave is byte-exact and durable)](../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd)
     - Partial: `leave` — a relayed leave stays announced, so [`REQ-UPG-6-BC60XD.T1.P8`](../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd.t1.p8) stays open ([`FIND-UPG-RELAY-2-0TVHJ4`](../../../audit/open-findings.md#find-upg-relay-2-0tvhj4)).
@@ -59,3 +60,12 @@ Outbound connection attempt log on a shared swarm
 
 - [x] `UNIT-TEST-HOLEPUNCH-ATTEMPT-1-H6QZVK.P1` — one attempt message per dial, none for an update without a dial
 - [x] `UNIT-TEST-HOLEPUNCH-ATTEMPT-1-H6QZVK.P2` — another owner's `update` listener survives setup and dispose; dispose removes Holepunch's own
+
+## UNIT-TEST-HOLEPUNCH-DISPOSE-1-EXNRFP
+
+Disposal on a browser relay that has not answered the first listen
+
+- Setup: Build a browser-mode Holepunch whose relay socket is a recording WebSocket, so the real Hyperswarm and relay client run against a relayer that never answers; open the socket, join a topic, then dispose.
+- Oracle: The disposal resolves: on the relay path the swarm's teardown is started, not awaited, because the closed relay socket is its only link and the first listen's reply can never arrive.
+
+- [x] `UNIT-TEST-HOLEPUNCH-DISPOSE-1-EXNRFP.P1` — a disposal while the first topic announce still waits on the relayer's listening reply resolves

@@ -1,12 +1,13 @@
 // @spec-test-coverage-ignore: deterministic timing for RelayerPool component tests
 
 import { RelayerPool } from "@/transport/relay/RelayerPool";
-import { createLogger } from "@/utils";
+import { type Logger, createLogger } from "@/utils";
 import sinon from "sinon";
 
 export class RelayerPoolFixture {
     private sandbox = sinon.createSandbox();
     private clock?: sinon.SinonFakeTimers;
+    private warnSpy?: sinon.SinonSpy;
 
     public pool(urls: string[], randomValues: number[]): RelayerPool {
         this.clock = this.sandbox.useFakeTimers();
@@ -17,10 +18,18 @@ export class RelayerPoolFixture {
             index += 1;
             return value;
         });
-        return new RelayerPool(
-            urls,
-            createLogger({}, {}, { level: "error", attachErrorListener: false })
+        const logger: Logger = createLogger(
+            {},
+            {},
+            { level: "error", attachErrorListener: false }
         );
+        this.warnSpy = this.sandbox.spy(logger, "warn");
+        return new RelayerPool(urls, logger);
+    }
+
+    /** The message and details of each warning the pool logged. */
+    public warnings(): unknown[][] {
+        return (this.warnSpy?.getCalls() ?? []).map((call) => call.args);
     }
 
     public tick(milliseconds: number): void {
@@ -34,5 +43,6 @@ export class RelayerPoolFixture {
     public cleanup(): void {
         this.sandbox.restore();
         this.clock = undefined;
+        this.warnSpy = undefined;
     }
 }

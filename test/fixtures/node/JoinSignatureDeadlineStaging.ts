@@ -1,94 +1,89 @@
-// @spec-test-coverage-ignore: isolated chain-time staging for the exact join deadline boundary
+// @spec-test-coverage-ignore: local-clock staging for the exact join deadline boundary
 import { Codec, SignatureUtils, Type } from "@/utils";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
-import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import assert from "node:assert/strict";
+
+/** How far around the responder's clock reading the joiner pre-signs deadlines. */
+const DEADLINE_SPAN_SECONDS = 30;
 
 export async function assertJoinSignatureDeadlineBoundary(
     h: MathPeerTestHarness
 ) {
-    // The harness already owns and tears down a node when no URL is supplied.
-    // Environment changes are confined to this test process and its startup.
-    const providerUrl = process.env.PROVIDER_URL;
-    const hardhatUrl = process.env.HARDHAT_NODE_URL;
-    const managerCacheDir = process.env.E2E_MANAGER_CACHE_DIR;
-    delete process.env.PROVIDER_URL;
-    delete process.env.HARDHAT_NODE_URL;
-    // Deployment markers belong to the shared chain, never this private node.
-    delete process.env.E2E_MANAGER_CACHE_DIR;
-    try {
-        await h.lifecycle.start(2, 0);
-    } finally {
-        if (providerUrl === undefined) delete process.env.PROVIDER_URL;
-        else process.env.PROVIDER_URL = providerUrl;
-        if (hardhatUrl === undefined) delete process.env.HARDHAT_NODE_URL;
-        else process.env.HARDHAT_NODE_URL = hardhatUrl;
-        if (managerCacheDir === undefined)
-            delete process.env.E2E_MANAGER_CACHE_DIR;
-        else process.env.E2E_MANAGER_CACHE_DIR = managerCacheDir;
-    }
-    // Verify ownership before any node-wide mutation; never pause a shared slot.
-    assert(Reflect.get(h, "ownNode"), "deadline test must own its chain node");
+    await h.lifecycle.start(2, 0);
     const joiner = await h.join.addSpectatorWait();
-    await h.provider.send("evm_setIntervalMining", [0]);
-    try {
-        const block = await h.provider.send("eth_getBlockByNumber", [
-            "latest",
-            false
-        ]);
-        const timestamp = Number(block.timestamp);
-        // Let the responder's real provider observe the last mined block before
-        // checking equality. No Clock implementation or response is replaced.
-        await waitFor(
-            async () =>
-                (await h.execOnHost(
-                    h.getPeer(0),
-                    async (sm) =>
-                        (await sm.stateChannelManagerContract.runner!.provider!.getBlock(
-                            "latest"
-                        ))!.timestamp
-                )) === timestamp,
-            h.event.protocolEventTimeoutMs()
+    const responder = h.getPeer(0);
+    const responderTime = await h.execOnHost(responder, async (_sm, _args, m) =>
+        m.Clock.getTimeInSeconds()
+    );
+    // One signed request per deadline around the responder's clock, so the
+    // responder can pick the exact one for the second it reads.
+    const requests: Record<string, string> = {};
+    for (
+        let deadline = responderTime - DEADLINE_SPAN_SECONDS;
+        deadline <= responderTime + DEADLINE_SPAN_SECONDS;
+        deadline++
+    ) {
+        const signed = await SignatureUtils.signJoinChannel(
+            {
+                participant: joiner.address,
+                channelId: h.channelId,
+                balance: { amount: 500n, data: "0x00" },
+                deadlineTimestamp: BigInt(deadline)
+            },
+            joiner.signer
         );
-        const request = async (deadlineTimestamp: bigint) => {
-            const signed = await SignatureUtils.signJoinChannel(
+        requests[deadline] = String(
+            Codec.encode(
                 {
-                    participant: joiner.address,
-                    channelId: h.channelId,
-                    balance: { amount: 500n, data: "0x00" },
-                    deadlineTimestamp
+                    encodedJoinChannel: String(signed.encoded),
+                    signature: String(signed.signature)
                 },
-                joiner.signer
-            );
-            const encodedRequest = String(
-                Codec.encode(
-                    {
-                        encodedJoinChannel: String(signed.encoded),
-                        signature: String(signed.signature)
-                    },
-                    Type.SignedJoinChannel
-                )
-            );
-            const response = await h.execOnHost(
-                h.getPeer(joiner.index),
-                (sm, args) =>
-                    sm.p2pManager.remoteRpc.joinChannelService
-                        .requestJoinSignature(args.encodedRequest)
-                        .request(args.responder),
-                {
-                    encodedRequest,
-                    responder: h.getPeer(0).address
-                }
-            );
-            return SignatureUtils.getSignerAddress(
-                String(signed.encoded),
-                String(response.signature)
-            );
-        };
-        expect(await request(BigInt(timestamp))).to.equal(h.getPeer(0).address);
-        await assert.rejects(request(BigInt(timestamp - 1)), /join expired/);
-    } finally {
-        await h.provider.send("evm_setIntervalMining", [1000]);
+                Type.SignedJoinChannel
+            )
+        );
     }
+    const result = await h.execOnHost(
+        responder,
+        async (sm, args, m) => {
+            const transport =
+                sm.p2pManager.profileManager.getTransportByEvmAddress(
+                    args.joiner
+                );
+            if (!transport) throw new Error("Expected connected joiner");
+            const service = sm.p2pManager.localRpc.joinChannelService;
+            const settle = (encoded: string | undefined) => {
+                if (!encoded)
+                    throw new Error("No request signed for this second");
+                return service.signJoinRequest(transport, encoded).then(
+                    (response) => String(response.signature),
+                    (error: unknown) =>
+                        error instanceof Error ? error.message : String(error)
+                );
+            };
+            for (;;) {
+                // signJoinRequest checks the deadline before its first await,
+                // so both checks below read the clock in this synchronous run
+                const now = m.Clock.getTimeInSeconds();
+                const exact = settle(args.requests[now]);
+                const late = settle(args.requests[now - 1]);
+                const isSameSecond = m.Clock.getTimeInSeconds() === now;
+                const outcomes = await Promise.all([exact, late]);
+                if (isSameSecond) return { now, outcomes };
+            }
+        },
+        { joiner: joiner.address, requests }
+    );
+    const {
+        now,
+        outcomes: [exact, late]
+    } = result;
+    const exactRequest = Codec.decode(requests[now], Type.SignedJoinChannel);
+    // the request whose deadline is the responder's current second is signed
+    expect(
+        SignatureUtils.getSignerAddress(
+            String(exactRequest.encodedJoinChannel),
+            exact
+        )
+    ).to.equal(responder.address);
+    expect(late).to.equal("requestJoinSignature: join expired");
 }

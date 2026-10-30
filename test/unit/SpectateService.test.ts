@@ -1,6 +1,9 @@
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
-import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
+import {
+    SyncResult,
+    type SyncRequest
+} from "@/rpc/network/services/spectate/SpectateService";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
@@ -18,6 +21,7 @@ import {
     stageAnchoredSyncPayload
 } from "@test/fixtures/HistoricSyncStaging";
 import { applySyncFromChainAheadResponder } from "@test/fixtures/LaggingChainViewSyncStaging";
+import { shareSyncingAnswerAcrossCallers } from "@test/fixtures/MilestoneSyncStaging";
 import {
     applyDisputedSyncPayload,
     applySyncPayload,
@@ -103,6 +107,9 @@ describe("Unit: SpectateService", function () {
                 const response = await sm.p2pManager.remoteRpc.spectateService
                     .onSpectateRequest(request)
                     .request(source);
+                if (!("encodedSyncPayload" in response)) {
+                    throw new Error("responder still syncing");
+                }
                 return sm.p2pManager.localRpc.spectateService
                     .applySyncResponse(
                         source,
@@ -147,7 +154,7 @@ describe("Unit: SpectateService", function () {
             const accepted = await h.execOnHost(
                 observer,
                 async (sm, args) =>
-                    sm.p2pManager.localRpc.spectateService.sync(
+                    sm.p2pManager.localRpc.spectateService.requestSync(
                         args.source,
                         sm.channelId,
                         args.forkId,
@@ -155,7 +162,7 @@ describe("Unit: SpectateService", function () {
                     ),
                 { source: source.address, forkId: sourceForkId }
             );
-            expect(accepted).to.equal(true);
+            expect(accepted).to.equal(SyncResult.Synced);
             expect(
                 await h.control(observer).query.getForkId().request()
             ).to.equal(successor);
@@ -178,7 +185,7 @@ describe("Unit: SpectateService", function () {
         const accepted = await h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.sync(
+                sm.p2pManager.localRpc.spectateService.requestSync(
                     args.source,
                     sm.channelId,
                     args.forkId,
@@ -186,10 +193,20 @@ describe("Unit: SpectateService", function () {
                 ),
             { source: source.address, forkId: ethers.id("unknown-pinned-fork") }
         );
-        expect(accepted).to.equal(false);
+        expect(accepted).not.to.equal(SyncResult.Synced);
         expect(await h.control(observer).query.getForkId().request()).to.equal(
             before
         );
+    });
+    it("one still-syncing answer shared by a plain sync and three block-source syncs gives one counted close and no blacklist", async function () {
+        const h = TestSession.getHarness();
+        const shared = await shareSyncingAnswerAcrossCallers(h);
+        expect(shared).to.deep.equal({
+            results: [SyncResult.ResponderSyncing, false, false, false],
+            answeredRequests: 1,
+            strikes: 1,
+            isBlacklisted: false
+        });
     });
     describe("sync request policy", function () {
         const channelId = ethers.id("spectate-policy-channel");
@@ -1017,7 +1034,7 @@ describe("Unit: SpectateService", function () {
             const syncing = h.execOnHost(
                 h.getPeer(2),
                 (sm, { source }) =>
-                    sm.p2pManager.localRpc.spectateService.sync(
+                    sm.p2pManager.localRpc.spectateService.requestSync(
                         source,
                         sm.channelId
                     ),
@@ -1046,7 +1063,7 @@ describe("Unit: SpectateService", function () {
                 { mode: "atLeast" }
             );
             await requester.stub.restoreHoldSpectateSyncApplication().request();
-            expect(await syncing).to.equal(true);
+            expect(await syncing).to.equal(SyncResult.Synced);
             expect(
                 await h
                     .control(responder)
@@ -1083,7 +1100,7 @@ describe("Unit: SpectateService", function () {
                     h.execOnHost(
                         h.getPeer(2),
                         (sm, { source }) =>
-                            sm.p2pManager.localRpc.spectateService.sync(
+                            sm.p2pManager.localRpc.spectateService.requestSync(
                                 source,
                                 sm.channelId
                             ),
@@ -1134,7 +1151,7 @@ describe("Unit: SpectateService", function () {
             const syncing = h.execOnHost(
                 h.getPeer(2),
                 (sm, { source }) =>
-                    sm.p2pManager.localRpc.spectateService.sync(
+                    sm.p2pManager.localRpc.spectateService.requestSync(
                         source,
                         sm.channelId
                     ),
@@ -1151,7 +1168,7 @@ describe("Unit: SpectateService", function () {
                 sm.p2pManager.localRpc.spectateService.dispose();
             });
             await requester.stub.restoreHoldSpectateSyncApplication().request();
-            expect(await syncing).to.equal(false);
+            expect(await syncing).not.to.equal(SyncResult.Synced);
             expect(await h.query.reducedForkOnChain(forkId)).to.equal(
                 ethers.ZeroHash
             );
@@ -1180,7 +1197,7 @@ describe("Unit: SpectateService", function () {
             const syncing = h.execOnHost(
                 h.getPeer(2),
                 (sm, { source }) =>
-                    sm.p2pManager.localRpc.spectateService.sync(
+                    sm.p2pManager.localRpc.spectateService.requestSync(
                         source,
                         sm.channelId
                     ),
@@ -1226,7 +1243,7 @@ describe("Unit: SpectateService", function () {
                     .request()
             ).to.equal(1);
             await reduceWindowOnChain(h, 0, forkId);
-            expect(await syncing).to.equal(true);
+            expect(await syncing).to.equal(SyncResult.Synced);
             expect(
                 await h
                     .control(responder)
@@ -1644,7 +1661,7 @@ describe("Unit: SpectateService", function () {
             await restoreEvents(false);
         });
 
-        // no test: "reduce data unavailable -> refuse to serve" needs the
+        // no test: "reduce data unavailable -> the request fails" needs the
         // responder's local diamond inbound head above its inbound storage
         // (computeReductionLocally takes the reduced inbound head from the
         // mirror, getReduceData walks storage) while it still holds every
@@ -1657,13 +1674,13 @@ describe("Unit: SpectateService", function () {
         // window with a held inbound write is not in the harness yet. The
         // undefined outcome itself is pinned by
         // "Unit: AgreementManager ... unrecoverable reduce run -> undefined".
-        it.skip("reduce data unavailable for a disputed window → payload refused (needs a mirror ahead of storage)", function () {});
+        it.skip("reduce data unavailable for a disputed window → the request fails, the requester is not blacklisted (needs a mirror ahead of storage)", function () {});
 
         // the sibling gap that IS stageable: the window's own disputes are
-        // on-chain but unreadable locally. we must not serve a proof we could
-        // not build - and must not throw either, which is what the old
-        // "Disputes unavailable after event recovery" did
-        it("dispute window unavailable → payload refused, no throw", async function () {
+        // on-chain but unreadable locally. the responder must not serve a
+        // proof it could not build, and its own lag is no verdict on the
+        // requester -> the request fails, nobody is blacklisted
+        it("dispute window unavailable → the request fails, the requester is not blacklisted", async function () {
             const h = TestSession.getHarness();
             const observerIndex = 0;
             const { forkId, race, restoreEvents } =
@@ -1672,32 +1689,48 @@ describe("Unit: SpectateService", function () {
                     maliciousPeerIndex: 2,
                     passFirst: true
                 });
+            const responder = h.getPeer(observerIndex);
+            const requester = h.getPeer(1);
 
             // blinded recovery: the missing dispute can never be recovered
             const blinded = await h.rpcStub.hideChainLogs(observerIndex);
-            let threw = "";
-            let syncResult: unknown = "unset";
+            let refusal = "";
+            let accepted: boolean;
             try {
-                syncResult = await h
-                    .control(h.getPeer(observerIndex))
+                // the responder's own refusal names the unreadable window
+                await h
+                    .control(responder)
                     .spectate.generateSyncPayload(h.channelId!, forkId, 0)
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() })
+                    .catch((e: unknown) => {
+                        refusal = e instanceof Error ? e.message : String(e);
+                    });
+                accepted = await h
+                    .control(requester)
+                    .spectate.sync(responder.address, forkId, 0)
                     .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
-            } catch (e) {
-                threw = e instanceof Error ? e.message : String(e);
+            } finally {
+                await blinded.restore();
             }
-            await blinded.restore();
 
-            expect(
-                threw,
-                "generateSyncPayload must refuse, not throw"
-            ).to.equal("");
-            expect(
-                syncResult,
-                "a window we cannot read must not be served as a proof"
-            ).to.be.null;
+            expect(refusal).to.contain("dispute window unavailable for fork");
+            expect(accepted, "a window we cannot read must not be served").to.be
+                .false;
             expect(
                 await h
-                    .control(h.getPeer(observerIndex))
+                    .control(responder)
+                    .query.isBlacklisted(requester.address)
+                    .request(),
+                "the responder's own lag must not blacklist the requester"
+            ).to.equal(false);
+            // the failed request is one counted close on the requester's side
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: requester,
+                target: responder
+            });
+            expect(
+                await h
+                    .control(responder)
                     .query.getDisputeFraudProofTypes()
                     .request()
             ).to.deep.equal([]);

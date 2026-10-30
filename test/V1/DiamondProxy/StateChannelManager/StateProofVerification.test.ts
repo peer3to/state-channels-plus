@@ -223,7 +223,7 @@ async function openChannelWithBlockZeroDispute(
                     transactionCnt: 0n,
                     timestamp: BigInt(genesisStruct.timestamp)
                 },
-                body: { encodedData: "0x", data: "0x" }
+                body: { data: "0x" }
             },
             stateSnapshotHash: StateSnapshot.from(latestStateSnapshot).hash,
             previousBlockHash: genesis.hash,

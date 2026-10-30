@@ -3,6 +3,7 @@ import {
     assertAbortCancelsTimeout,
     assertAbortUploadsLogsWithinBound,
     assertClockOwnedProviderReleasedOnDispose,
+    assertDisposeAfterErrorUploadsVmLogs,
     assertProviderShutdownOrder,
     assertVmThreadEndCancelsHeldUpload,
     assertWorkerHostAbortUploadsLogs
@@ -26,6 +27,9 @@ describe("StateManager abort", function () {
     });
     it("uploads the worker host's, main thread's and VM worker's logs before the client closes, without waiting for the bound", async function () {
         await assertWorkerHostAbortUploadsLogs();
+    });
+    it("sends the VM worker's upload an error started right before a dispose, before the worker ends", async function () {
+        await assertDisposeAfterErrorUploadsVmLogs();
     });
     it("cancels session-owned timeout work", async function () {
         await assertAbortCancelsTimeout();

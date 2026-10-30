@@ -214,7 +214,7 @@ export class ByzantineRpcMethods extends ANetworkRpcMethods<ByzantineService> {
                 transactionCnt: BigInt(height),
                 timestamp: BigInt(Clock.getTimeInSeconds())
             },
-            body: { encodedData, data: encodedData }
+            body: { data: encodedData }
         };
 
         const blockStruct: BlockStruct = {

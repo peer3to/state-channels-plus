@@ -21,10 +21,10 @@ restored entry is judged in the same context and the request appears. Timeout sc
 recorded rather than run, so no dispute is submitted by either case.
 
 Two shutdown cases run host-side on a live peer with a future queued block. In the first, the real
-queue timeout probes the block's source and the probe is held at its `sync` call; `stop()` must
+queue timeout probes the block's source and the probe is held at its `syncBlockSource` call; `stop()` must
 still be pending when it reaches the queue drain, and it resolves only after the released probe settled. In the
 second, `stop()` is held at the custom RPC disposal after it set `isDisposed`; the real queue
-timeout then fires and must start no `sync`. Any detached failure fails either test through the
+timeout then fires and must start no `syncBlockSource`. Any detached failure fails either test through the
 session teardown.
 
 Three drain cases cover the rest of the tracked work (staging in `test/fixtures/QueueDrainStaging.ts`).
@@ -43,7 +43,7 @@ copy; the spectator must still apply the next block and hold no queued entry for
 Four past-block cases (staging in `test/fixtures/PastBlockStaging.ts`) run on an observer that
 authored-and-finalized three blocks and then pruned heights 0 and 1, as a compact sync proof leaves
 them, so height 1 is empty below the next height 3. The genuine block 1, re-ingested as a network
-copy, is dropped at intake: it is not queued or stored, the next height stays 3, no `sync` call is
+copy, is dropped at intake: it is not queued or stored, the next height stays 3, no `syncBlockSource` call is
 recorded, and no peer is blacklisted or has a fraud proof. A full copy of the stored block 2, whose
 stored copy keeps only its author's signature, still merges its confirmation signatures. A crafted
 live entry at height 1 run through `onBlockConfirmation` (`runBlockIngest`) is settled before
@@ -55,7 +55,7 @@ Two more past-block cases cover the queue expiry and the restore. An early reque
 is dropped holds no block after three final blocks; its queue timeouts, queued-entry executions and
 queue drains are held. The genuine block 1, ingested from its author, queues above the next height 0. The requester then installs peer 0's served compact sync proof: the next height is 3 and height
 1 holds no block, while the entry is still queued. Run, the held queue timeout drops the entry
-itself: no queued execution is scheduled, no `sync` call is recorded, the entry is not queued or
+itself: no queued execution is scheduled, no `syncBlockSource` call is recorded, the entry is not queued or
 stored, and no peer is blacklisted or has a fraud proof. In the second case the entry is dequeued
 and handed to the real `restoreQueuedEntry`, as a strategy hook does: it is processed with the
 connection kept, it is not queued again, and no second queue timeout is armed. Without the past
@@ -65,7 +65,7 @@ again.
 Three probe cases stage a real unreduced window: peer 1 self-removes (neither peer reduces on its
 own; peer 0 still applies chain events), gossips peer 0 a junk first block on the window's successor
 fork, and answers every sync with its real payload, which proves that fork only through the
-unreduced window. Peer 0's queue-timeout probe waits inside `sync`; once peer 1 reduces the window
+unreduced window. Peer 0's queue-timeout probe waits inside `syncBlockSource`; once peer 1 reduces the window
 on chain, peer 0 asks it again and blacklists it. Evidence posted by peer 0 during the wait moves the
 kill period's end and changes nothing. Stopping peer 0 during the wait resolves `stop` and peer 1 is
 never asked again.
@@ -90,6 +90,7 @@ the still-absent spectator is blacklisted.
 - `stopping the runtime while a source probe waits for the chain's reduction ends the wait: stop resolves and the supplier is not asked again`: REQ-SYNC-4-AWHFPA.T1.P11
 - `an absent sender's gossip whose sync meets a window the chain has not reduced stays pending through the kill period, then the sender is asked again after the reduction and blacklisted`: REQ-SYNC-4-AWHFPA.T1.P19
 - `sync succeeds but the sender is still absent: blacklisted with no queue entry`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P36
+- `an intake-gate sync whose payload fails validation blacklists the sender through the sync with no queue entry`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P59, REQ-GOSSIP-4-J5Z4DF.T1.P48
 - `a drain that dequeues a stored copy still drains the queued next block`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P47
 - `an oversized verified eligibility cache does not expand the N-source allowance`: REQ-QSTORE-2-VYWJAQ.T1.P39, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P14
 - `an explicit validation strategy stays outside the queued storage clone boundary`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P16
@@ -99,7 +100,9 @@ the still-absent spectator is blacklisted.
 - `wrong channel is rejected before sender refresh or retention`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P24
 - `forged author is rejected before sender refresh or retention`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P25
 - `a failed unknown copy preserves the existing honest contribution`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P28
-- `sync with no sender transport ends intake without queueing the block`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P34
+- `sync with no sender transport ends intake with a counted close, no blacklist and no queued block`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P34
+- `an absent sender still in its own initial sync answers the intake sync that it is still syncing: one counted close, no blacklist and no queued block`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P60, REQ-SPC-3-AZBKR1.T1.P8
+- `a queued block's source still in its own initial sync answers the expiry probe that it is still syncing: one counted close and no blacklist`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P61, REQ-SPC-3-AZBKR1.T1.P9
 - `a queued copy that merged a gossip copy → the gossip source is cut and a forced check is requested`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P17, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P38, UNIT-TEST-BLOCK-INGEST-1-JV64AS.P5, UNIT-TEST-STATE-MANAGER-7-YRC0N3.P1
 - `posted calldata queued above the next height → restored, then judged as calldata once its height is next`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P18, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P39
 - `gossip: a genuine block at a free height below the next height → dropped: not queued, stored or executed, no sync probe, no source cut, no fraud proof`: REQ-BLOCK-PIPE-1-SS24D1.T1.P7, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P48

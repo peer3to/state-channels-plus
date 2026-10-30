@@ -19,6 +19,11 @@ import type {
     MatchedNegotiationOptions,
     NegotiationOutcome
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
+import {
+    UNKNOWN_STATE,
+    type WebRTCConnectionCallbacks,
+    type WebRTCConnectionStateSnapshot
+} from "@/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionTypes";
 import type { RpcRequestId } from "@/rpc/router/ARpcRouter";
 import { MAX_RPC_FRAME_BYTES } from "@/rpc/Rpc";
 import type Rpc from "@/rpc/Rpc";
@@ -37,6 +42,7 @@ import {
     getChecksumAddress
 } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
+import type { Logger } from "@/utils/logging";
 import type { TimeoutManager } from "@/utils/TimeoutManager";
 import {
     RecordingBannablePeerInfo,
@@ -176,12 +182,18 @@ export type DisconnectCleanupProbe = {
 };
 
 export type TransportRetirementProbe = {
-    oldRequestError: string;
+    isOldRequestPendingOnReplacement: boolean;
+    oldRequestValue: string;
     oldConnectionRemoved: boolean;
     replacementConnected: boolean;
     replacementValue: string;
     pendingCount: number;
     timerCount: number;
+};
+
+export type RemoteRetirementProbe = {
+    hookCallsAfterRemoteRetirement: number;
+    hookCallsAfterLastClose: number;
 };
 
 export type BulkPenaltyProbe = {
@@ -602,6 +614,35 @@ export type UpgradeBanPolicyProbe = {
     banCallsAfterStaleClose: boolean[];
     banCallsAfterCurrentClose: boolean[];
     banCallsAfterFallback: boolean[];
+};
+
+/** A state the WebRTC connection reports, or a wait between reports. */
+export type WebRTCStateStep =
+    | WebRTCConnectionStateSnapshot
+    | { waitMs: number };
+export type WebRTCStateSteps = WebRTCStateStep[];
+
+export type WebRTCConnectionStatesScenario = {
+    steps: WebRTCStateSteps;
+    /** How long to wait after the steps. */
+    waitMs: number;
+    /** A second connection for the same peer replaces the first after the steps. */
+    shouldReplace?: boolean;
+    /** False: the first connection never gets a data channel, so it has no transport. */
+    hasDataChannel?: boolean;
+};
+
+export type WebRTCConnectionStatesProbe = {
+    /** Whether the WebRTC transport is open after the steps and the wait; false without one. */
+    transportOpen: boolean;
+    /** With a replacing connection: whether its transport is open. */
+    replacementOpen?: boolean;
+    /** The peers whose factory connection the service closed, in order. */
+    factoryCloses: string[];
+    /** The peers whose connection the service still tracks. */
+    trackedPeers: string[];
+    warnings: string[];
+    infos: string[];
 };
 
 export type UnblacklistBanPolicyScenario =
@@ -1527,9 +1568,6 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         const profile = this.registerProfile(oldTransport, address);
         this.p2pManager.addConnection(oldTransport);
         const oldRequest = this.beginRequest(oldTransport, 1000);
-        const oldRequestError = oldRequest.promise.catch(
-            (error: Error) => error.message
-        );
         const originalAgreementTime =
             this.p2pManager.stateManager.timeConfig.agreementTime;
         this.p2pManager.stateManager.timeConfig.agreementTime = 0.005;
@@ -1539,7 +1577,23 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 replacement
             );
             this.p2pManager.addConnection(replacement);
-            await new Promise((resolve) => setTimeout(resolve, 15));
+            // The grace period retires the original transport.
+            await new Promise<void>((resolve) => {
+                if (oldTransport.isClosed) resolve();
+                else oldTransport.onClosed(() => resolve());
+            });
+            const isOldRequestPendingOnReplacement =
+                this.p2pManager.rpcRouter.pendingRequestsFor(oldTransport)
+                    .length === 0 &&
+                this.p2pManager.rpcRouter.pendingRequestsFor(replacement)
+                    .length === 1;
+            // The reply to the request sent before the upgrade arrives over the replacement.
+            this.response(
+                replacement,
+                oldRequest.requestId,
+                true,
+                "old-settled-by-replacement"
+            );
 
             const replacementRequest = this.beginRequest(replacement, 1000);
             this.response(
@@ -1549,7 +1603,8 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 "replacement-live"
             );
             return {
-                oldRequestError: await oldRequestError,
+                isOldRequestPendingOnReplacement,
+                oldRequestValue: await oldRequest.promise,
                 oldConnectionRemoved:
                     !this.p2pManager.openConnections.includes(oldTransport),
                 replacementConnected:
@@ -1560,6 +1615,40 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         } finally {
             this.p2pManager.stateManager.timeConfig.agreementTime =
                 originalAgreementTime;
+        }
+    }
+
+    /**
+     * The remote retires the original transport after an upgrade: our side
+     * sees an unexpected close while the replacement stays live, then the
+     * replacement closes too.
+     */
+    public probeRemoteRetirement(addressInput: string): RemoteRetirementProbe {
+        const address = getChecksumAddress(addressInput);
+        const oldTransport = this.transport(address);
+        const replacement = this.transport(address);
+        this.registerProfile(oldTransport, address);
+        this.p2pManager.addConnection(oldTransport);
+        this.p2pManager.profileManager.updateTransport(address, replacement);
+        this.p2pManager.addConnection(replacement);
+        let hookCalls = 0;
+        const unsubscribe = this.p2pManager.stateManager.events.on(
+            "p2pEventHooks",
+            "onDisconnection",
+            () => {
+                hookCalls += 1;
+            }
+        );
+        try {
+            oldTransport.close();
+            const hookCallsAfterRemoteRetirement = hookCalls;
+            replacement.close();
+            return {
+                hookCallsAfterRemoteRetirement,
+                hookCallsAfterLastClose: hookCalls
+            };
+        } finally {
+            unsubscribe();
         }
     }
 
@@ -2526,6 +2615,88 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             banCallsAfterCurrentClose,
             banCallsAfterFallback: [...peerInfo.banCalls]
         };
+    }
+
+    /**
+     * Opens a WebRTC connection to `address` through a stand-in connection
+     * factory and, unless `hasDataChannel` is false, hands the setup service
+     * a recording data channel, so the service creates and owns the
+     * transport. Plays `steps`: each reports a connection state or waits.
+     * With `shouldReplace`, a second connection for the same peer replaces
+     * the first after the steps. Then waits `waitMs` and records whether each
+     * transport's channel is open, the factory closes, the peers the service
+     * still tracks and the setup service's log messages. The waits run on
+     * fake timers, installed for the host's whole thread from the first
+     * step to the record; a timer still pending at the record is dropped.
+     */
+    public async probeWebRTCConnectionStates(
+        address: string,
+        {
+            steps,
+            waitMs,
+            shouldReplace = false,
+            hasDataChannel = true
+        }: WebRTCConnectionStatesScenario
+    ): Promise<WebRTCConnectionStatesProbe> {
+        const service = this.p2pManager.localRpc.webRTCSetupService;
+        const connections: WebRTCConnectionCallbacks[] = [];
+        const factoryCloses: string[] = [];
+        service.setConnectionFactory({
+            createOffer: async () => ({}),
+            acceptOffer: async (_peer, _offer, callbacks) => {
+                connections.push(callbacks);
+                return {};
+            },
+            applyAnswer: async () => undefined,
+            addIceCandidate: async () => undefined,
+            close: async (peer) => {
+                factoryCloses.push(String(peer));
+            },
+            getState: () => UNKNOWN_STATE
+        });
+        const logger = Reflect.get(service, "logger") as Logger;
+        const warn = sinon.spy(logger, "warn");
+        const info = sinon.spy(logger, "info");
+        const connect = async (isChannelOpened: boolean) => {
+            await service.acceptWebRTCOffer(address, {});
+            const channel = new RecordingWebRTCDataChannel();
+            const callbacks = connections.at(-1)!;
+            if (isChannelOpened) callbacks.onDataChannel(channel);
+            return { channel, callbacks, isChannelOpened };
+        };
+        let clock: sinon.SinonFakeTimers | undefined;
+        try {
+            const first = await connect(hasDataChannel);
+            clock = sinon.useFakeTimers({
+                toFake: ["setTimeout", "clearTimeout"]
+            });
+            for (const step of steps) {
+                if ("waitMs" in step) await clock.tickAsync(step.waitMs);
+                else first.callbacks.onConnectionStateChange(step);
+            }
+            const replacement = shouldReplace ? await connect(true) : undefined;
+            await clock.tickAsync(waitMs);
+            const trackedPeers = [
+                ...(
+                    Reflect.get(service, "currentWatches") as Map<
+                        string,
+                        unknown
+                    >
+                ).keys()
+            ];
+            return {
+                transportOpen: first.isChannelOpened && !first.channel.closed,
+                replacementOpen: replacement && !replacement.channel.closed,
+                factoryCloses,
+                trackedPeers,
+                warnings: warn.args.map(([message]) => String(message)),
+                infos: info.args.map(([message]) => String(message))
+            };
+        } finally {
+            clock?.restore();
+            warn.restore();
+            info.restore();
+        }
     }
 
     public probeExplicitBlacklist(address: string): BanPolicyProbe {

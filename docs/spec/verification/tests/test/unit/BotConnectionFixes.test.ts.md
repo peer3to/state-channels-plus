@@ -34,6 +34,12 @@ fires it while the joiner's clock is still at or before the deadline; a record-o
 shows the check armed the `join authorization expiry` timer again, and once the chain passed the
 deadline the joiner ends `SYNCED` with one `onLeftChannel`.
 
+The first `U71` case starts two founders, has both leave and send their exits on their leave turns, and
+waits for both `onLeftChannel` events. The oracles are the closed channel with no participants, then
+each founder reaching `NOT_OPENED`, awaited by status: the leave check reports `onLeftChannel` when the
+membership drops, before the channel-close handler sets `NOT_OPENED`, and the specification does not
+order the two.
+
 The second `U71` case runs the same two-founder flow with both founders' exit posts parked before they
 prepare. Once both exit blocks are committed, a JOIN lands that no block can consume, because no member is
 left to author one. The last leaver's parked post is released and refused, and its result is parked. One

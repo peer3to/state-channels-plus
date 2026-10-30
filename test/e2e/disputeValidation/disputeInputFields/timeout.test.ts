@@ -369,12 +369,11 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             ...validSignedBlock,
             signature: badSignature
         };
-        const { blockNumber, onChainTimestamp } = await h
-            .control(writer)
-            .validation.postBlockCalldataOnChain(
+        const { blockNumber, onChainTimestamp } =
+            await h.transition.postBlockCalldataOnChainWait(
+                writer,
                 Codec.encode(postedSignedBlock, Type.SignedBlock) as string
-            )
-            .request();
+            );
         const previousBlock = await h
             .control(h.getPeer(1))
             .query.getBlockByHeight(forkId, timeoutHeight - 1)
