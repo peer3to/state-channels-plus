@@ -18,6 +18,7 @@ import type {
     StateRequestParams,
     StorageDiffCatchUp,
     StorageDiffSnapshot,
+    SubscribeResult,
     SubscriptionId
 } from "@/utils/storageDiff/storageDiffWire";
 
@@ -38,14 +39,12 @@ const MAX_APPLIED_BLOCKS = 128;
 const OWN_TRANSACTION_WAIT_MS = 4_000;
 
 /**
- * Longest the mirror waits, after following a new account, for the feed to
- * push its snapshot before it asks for the account's state itself. A feed
- * that already holds the account pushes it at once; one that must rebuild it
- * from history pushes it when that is done. It stays below the 3 s deadline
- * of the SDK's own RPCs (dispute.constructDispute reads through the mirror):
- * a slow first sync falls back to lazy reads before such a call times out.
+ * Safety net only, not the normal path: the longest the mirror waits for the
+ * snapshot of an account the feed said is `ready` (complete, pushed at once)
+ * on a socket that stays open. A snapshot the feed says is `syncing` or
+ * `lazy` is not waited for at all, and a lost socket ends the wait at once.
  */
-export const SNAPSHOT_WAIT_MS = 1_000;
+export const SNAPSHOT_CEILING_MS = 5_000;
 
 /**
  * Passes over one read the mirror makes before giving up on it: each pass
@@ -425,7 +424,9 @@ export class MirrorChain {
             onLost: (reason) => void this.onFeedLost(feed, reason)
         });
         this.feed = feed;
-        this.subscription = await feed.subscribe([...this.tracked]);
+        this.subscription = (
+            await feed.subscribe([...this.tracked])
+        ).subscription;
     }
 
     /** Takes the service's best head as the head. */
@@ -450,9 +451,14 @@ export class MirrorChain {
             const added = misses
                 .map((miss) => miss.address)
                 .filter((address) => !this.tracked.has(address));
-            // the feed pushes a snapshot of each new account: wait for it
+            // registered before following, so a snapshot that comes during it is applied at once
             const snapshots = this.expectSnapshots(added);
-            await this.track(added);
+            const statuses = await this.track(added);
+            // only a snapshot the feed has ready is waited for; a syncing
+            // account is read lazily now and takes its snapshot when it comes
+            snapshots.release(
+                added.filter((address) => statuses[address] !== "ready")
+            );
             await snapshots.settled();
             // following may have cleared the cache; the pass then starts over
             const head = this.head;
@@ -505,6 +511,7 @@ export class MirrorChain {
      * all of them, or for the bound.
      */
     private expectSnapshots(addresses: AccountAddress[]): {
+        release: (addresses: AccountAddress[]) => void;
         settled: () => Promise<void>;
     } {
         const waiting = addresses.filter(
@@ -519,6 +526,13 @@ export class MirrorChain {
                 if (--remaining === 0) resolveAll();
             });
         return {
+            release: (released) => {
+                for (const address of released) {
+                    const done = this.awaitedSnapshots.get(address);
+                    this.awaitedSnapshots.delete(address);
+                    done?.();
+                }
+            },
             settled: async () => {
                 if (remaining === 0) return;
                 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -526,7 +540,7 @@ export class MirrorChain {
                     timer = setTimeout(() => {
                         this.counters.snapshotTimeouts++;
                         resolve();
-                    }, SNAPSHOT_WAIT_MS);
+                    }, SNAPSHOT_CEILING_MS);
                 });
                 await Promise.race([all, expired]);
                 clearTimeout(timer);
@@ -652,23 +666,27 @@ export class MirrorChain {
     }
 
     /** Follows `addresses` too: one subscription for the whole set, then a catch-up. */
-    private async track(addresses: AccountAddress[]): Promise<void> {
-        if (addresses.length === 0) return;
+    private async track(
+        addresses: AccountAddress[]
+    ): Promise<SubscribeResult["accounts"]> {
+        if (addresses.length === 0) return {};
         const head = this.head;
         const feed = this.feed;
         if (!head || !feed)
             throw new MirrorUnavailableError("Mirror is not following");
         const previous = this.subscription;
-        this.subscription = await feed.subscribe([
+        const subscribed = await feed.subscribe([
             ...this.tracked,
             ...addresses
         ]);
+        this.subscription = subscribed.subscription;
         for (const address of addresses) {
             this.tracked.add(address);
             this.trackedSince.set(address, head.number);
         }
         if (previous) await feed.unsubscribe(previous);
         await this.catchUp(head.number + 1n);
+        return subscribed.accounts;
     }
 
     private noteIncludedHead(head: IncludedHeadRecord): void {
@@ -806,12 +824,20 @@ export class MirrorChain {
         this.log("warn", "Storage diff service connection lost", {
             error: reason
         });
+        // a read waiting for a snapshot holds the lock: it need not wait for one now
+        this.releaseAwaited();
         await this.lock.lock();
         try {
             if (this.feed === feed) await this.disconnect();
         } finally {
             this.lock.unlock();
         }
+    }
+
+    /** Ends every wait for a snapshot. */
+    private releaseAwaited(): void {
+        for (const done of [...this.awaitedSnapshots.values()]) done();
+        this.awaitedSnapshots.clear();
     }
 
     /** Drops the socket and the cached state, which nothing feeds now. */

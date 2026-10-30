@@ -9,6 +9,7 @@ import type {
     StorageDiffCatchUp,
     StorageDiffSnapshot,
     StorageDiffState,
+    SubscribeResult,
     SubscriptionId
 } from "@/utils/storageDiff/storageDiffWire";
 
@@ -41,8 +42,12 @@ export type MirrorFeedHandlers = {
  * `MirrorFeedOpener` the mirror is given.
  */
 export interface MirrorFeed {
-    /** Follows `addresses`: their snapshot, then each block's record. */
-    subscribe(addresses: AccountAddress[]): Promise<SubscriptionId>;
+    /**
+     * Follows `addresses`: their snapshot, then each block's record. The
+     * answer says, per address, whether a snapshot is ready, to follow, or
+     * not coming.
+     */
+    subscribe(addresses: AccountAddress[]): Promise<SubscribeResult>;
     unsubscribe(subscription: SubscriptionId): Promise<void>;
     /** The records from `fromBlock` to the head, the included head and the head's environment. */
     catchUp(

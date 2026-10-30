@@ -15,6 +15,7 @@ import {
     type RpcBlock,
     type StateRequestParams,
     type StorageDiffSnapshot,
+    type SubscribeResult,
     type StorageDiffCatchUp,
     type StorageDiffState,
     type SubscriptionId
@@ -64,13 +65,16 @@ export class StorageDiffSocket extends WebSocketProvider implements MirrorFeed {
     }
 
     /** Subscribes to every canonical block's record for `addresses`. */
-    async subscribe(addresses: AccountAddress[]): Promise<SubscriptionId> {
-        const id = await this.request("scp_subscribeContractStorage", [
+    async subscribe(addresses: AccountAddress[]): Promise<SubscribeResult> {
+        const result = (await this.request("scp_subscribeContractStorage", [
             addresses
-        ]);
-        if (typeof id !== "string")
+        ])) as SubscribeResult;
+        if (
+            typeof result?.subscription !== "string" ||
+            typeof result.accounts !== "object"
+        )
             throw new Error("Malformed storage diff subscription");
-        return id;
+        return result;
     }
 
     async unsubscribe(subscription: SubscriptionId): Promise<void> {

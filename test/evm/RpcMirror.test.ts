@@ -4,7 +4,7 @@ import {
     withSubstrateNode,
     type SubstrateContract
 } from "../fixtures/node/SubstrateChildTrieNode";
-import { SNAPSHOT_WAIT_MS } from "@/evm/p2pRuntime/rpcNodes/mirror/MirrorChain";
+import { SNAPSHOT_CEILING_MS } from "@/evm/p2pRuntime/rpcNodes/mirror/MirrorChain";
 import { sleep } from "@/utils";
 import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
 import { DepthIncludedHeadStrategy } from "@/utils/node/storageDiff/includedHead/DepthIncludedHeadStrategy";
@@ -12,6 +12,7 @@ import { NOT_RETAINED_ERROR_CODE } from "@/utils/storageDiff/storageDiffWire";
 import {
     deployCommitProbe,
     deployEnvironmentProbe,
+    backfillAtService,
     deployMirroredStorage,
     headNumber,
     nodeRequests,
@@ -66,10 +67,11 @@ describe("MirrorRpcProvider", function () {
         });
     });
 
-    it("reads the first read of a slot from the snapshot the service pushed, with no scp_getState and no node read", async function () {
+    it("reads the first read of a slot the service has ready from the snapshot it pushed, with no scp_getState and no node read", async function () {
         await withMirrorSession(async (session) => {
             const { storage, address } = await deployMirroredStorage(session);
             await (await storage.setValue(5n)).wait();
+            await backfillAtService(session, [address]);
 
             const word = await session.provider.getStorage(address, 0);
 
@@ -90,6 +92,8 @@ describe("MirrorRpcProvider", function () {
             await first.storage.getValue();
             const second = await deployMirroredStorage(session);
             await (await second.storage.setValue(5n)).wait();
+            await backfillAtService(session, [second.address]);
+            const asked = serviceRequests(session, "scp_getState").length;
             const held = session.service.holdReplies(
                 "scp_subscribeContractStorage"
             );
@@ -101,29 +105,60 @@ describe("MirrorRpcProvider", function () {
             held.release();
 
             expect(BigInt(await read)).to.equal(5n);
-            expect(serviceRequests(session, "scp_getState")).to.have.length(0);
-            expect(session.provider.mirrorStatistics).to.include({
-                lazyReads: 0
-            });
+            expect(serviceRequests(session, "scp_getState")).to.have.length(
+                asked
+            );
         });
     });
 
-    it("reads an account the service keeps lazy at once, without waiting for a snapshot", async function () {
+    it("reads an account the service says is syncing at once, and answers locally once its snapshot has come", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, address } = await deployMirroredStorage(session);
+            await (await storage.setValue(5n)).wait();
+            const release = session.service.holdNotifications("scp_snapshot");
+
+            const started = Date.now();
+            const word = await session.provider.getStorage(address, 0);
+            const elapsed = Date.now() - started;
+
+            expect(BigInt(word)).to.equal(5n);
+            expect(elapsed).to.be.lessThan(SNAPSHOT_CEILING_MS / 4);
+            expect(session.provider.mirrorStatistics).to.include({
+                lazyReads: 1,
+                snapshotTimeouts: 0,
+                snapshots: 0
+            });
+            release();
+            await waitFor(
+                () => session.provider.mirrorStatistics?.snapshots === 1,
+                5_000,
+                20
+            );
+            // the code and the slot are local now: a contract call needs no lazy read
+            expect(await storage.getValue()).to.equal(5n);
+            expect(session.provider.mirrorStatistics?.lazyReads).to.equal(1);
+        });
+    });
+
+    it("reads an account the service says is lazy at once, without waiting for a snapshot", async function () {
         await withMirrorSession(
             async (session) => {
                 const { storage, address } =
                     await deployMirroredStorage(session);
                 await (await storage.setValue(5n)).wait();
+                await backfillAtService(session, [address]);
+                // the notice is held back: the subscribe answer alone says lazy
+                const release =
+                    session.service.holdNotifications("scp_snapshot");
 
                 const started = Date.now();
                 const word = await session.provider.getStorage(address, 0);
                 const elapsed = Date.now() - started;
+                release();
 
                 expect(BigInt(word)).to.equal(5n);
-                // far below the wait for a snapshot that is not coming
-                expect(elapsed).to.be.lessThan(SNAPSHOT_WAIT_MS / 2);
+                expect(elapsed).to.be.lessThan(SNAPSHOT_CEILING_MS / 4);
                 expect(session.provider.mirrorStatistics).to.include({
-                    lazyNotices: 1,
                     snapshotTimeouts: 0,
                     snapshots: 0,
                     lazyReads: 1
@@ -133,24 +168,107 @@ describe("MirrorRpcProvider", function () {
         );
     });
 
-    it("falls back to a lazy read within the snapshot wait, before a 3 s RPC deadline, when the snapshot is held back", async function () {
+    it("keeps an account lazy when the backfill of a syncing account ends without a snapshot", async function () {
+        await withMirrorSession(
+            async (session) => {
+                const { storage, address } =
+                    await deployMirroredStorage(session);
+                await (await storage.setValue(5n)).wait();
+
+                const word = await session.provider.getStorage(address, 0);
+                await waitFor(
+                    () => session.provider.mirrorStatistics?.lazyNotices === 1,
+                    5_000,
+                    20
+                );
+
+                expect(BigInt(word)).to.equal(5n);
+                expect(session.provider.mirrorStatistics).to.include({
+                    snapshots: 0,
+                    snapshotTimeouts: 0
+                });
+                // still lazy: a slot the mirror has not read is asked for
+                expect(await session.provider.getStorage(address, 1)).to.equal(
+                    ZeroHash
+                );
+                expect(session.provider.mirrorStatistics).to.include({
+                    lazyReads: 2,
+                    snapshots: 0
+                });
+            },
+            { backfillBlocks: new MiscountingBlockSource() }
+        );
+    });
+
+    it("keeps an account lazy when the backfill of a syncing account fails", async function () {
         await withMirrorSession(async (session) => {
             const { storage, address } = await deployMirroredStorage(session);
             await (await storage.setValue(5n)).wait();
-            const release = session.service.holdNotifications("scp_snapshot");
+            // the service has staged the blocks; the backfill's own reads fail
+            await sleep(500);
+            session.relay.failNext("eth_getBlockByNumber", 50);
+
+            const word = await session.provider.getStorage(address, 0);
+            await waitFor(
+                () => session.provider.mirrorStatistics?.lazyNotices === 1,
+                10_000,
+                20
+            );
+
+            expect(BigInt(word)).to.equal(5n);
+            // still lazy: a slot the mirror has not read is asked for
+            expect(await session.provider.getStorage(address, 1)).to.equal(
+                ZeroHash
+            );
+            expect(session.provider.mirrorStatistics).to.include({
+                lazyReads: 2,
+                snapshots: 0,
+                snapshotTimeouts: 0
+            });
+        });
+    });
+
+    it("waits no longer than the safety ceiling for a snapshot the service has ready and never delivers", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, address } = await deployMirroredStorage(session);
+            await (await storage.setValue(5n)).wait();
+            await backfillAtService(session, [address]);
+            session.service.dropNotifications("scp_snapshot");
 
             const started = Date.now();
             const word = await session.provider.getStorage(address, 0);
             const elapsed = Date.now() - started;
-            release();
 
             expect(BigInt(word)).to.equal(5n);
-            expect(elapsed).to.be.greaterThan(SNAPSHOT_WAIT_MS * 0.8);
-            expect(elapsed).to.be.lessThan(3_000);
+            expect(elapsed).to.be.greaterThan(SNAPSHOT_CEILING_MS * 0.9);
+            expect(elapsed).to.be.lessThan(SNAPSHOT_CEILING_MS * 2);
             expect(session.provider.mirrorStatistics).to.include({
                 snapshotTimeouts: 1,
                 lazyReads: 1
             });
+        });
+    });
+
+    it("stops waiting for a snapshot at once when the service connection drops", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, address } = await deployMirroredStorage(session);
+            await (await storage.setValue(5n)).wait();
+            await backfillAtService(session, [address]);
+            session.service.dropNotifications("scp_snapshot");
+
+            const started = Date.now();
+            const read = session.provider.getStorage(address, 0);
+            await sleep(300);
+            session.service.cut();
+            const word = await read;
+            const elapsed = Date.now() - started;
+
+            // the node answers: far below the ceiling
+            expect(BigInt(word)).to.equal(5n);
+            expect(elapsed).to.be.lessThan(SNAPSHOT_CEILING_MS / 2);
+            expect(
+                session.provider.mirrorStatistics?.snapshotTimeouts
+            ).to.equal(0);
         });
     });
 
@@ -318,7 +436,8 @@ describe("MirrorRpcProvider", function () {
                     await writeSlot(session.signer, writer, 1, 5n);
                     await writeSlot(session.signer, writer, 2, 7n);
                     contract.changes.push(deployed, deployed + 1, deployed + 2);
-                    // the first read follows the account and takes its complete snapshot
+                    // the service has the account complete: the mirror takes its snapshot
+                    await backfillAtService(session, [writer]);
                     expect(
                         BigInt(await session.provider.getStorage(writer, 1))
                     ).to.equal(5n);
@@ -398,11 +517,10 @@ describe("MirrorRpcProvider", function () {
         });
     });
 
-    it("asks the service for exactly the missing fields, at the head block, when no snapshot comes", async function () {
+    it("asks the service for exactly the missing fields, at the head block, for an account that is syncing", async function () {
         await withMirrorSession(async (session) => {
             const { storage, address } = await deployMirroredStorage(session);
             await (await storage.setValue(5n)).wait();
-            session.service.dropNotifications("scp_snapshot");
             const head = await session.chain.getBlock(
                 await headNumber(session)
             );
@@ -431,7 +549,7 @@ describe("MirrorRpcProvider", function () {
             expect(session.provider.mirrorStatistics).to.include({
                 lazyReads: 1,
                 lazyFields: 1,
-                snapshotTimeouts: 1
+                snapshotTimeouts: 0
             });
         });
     });
@@ -441,10 +559,13 @@ describe("MirrorRpcProvider", function () {
             const { storage, address } = await deployMirroredStorage(session);
             await (await storage.setValue(5n)).wait();
             await session.provider.getStorage(address, 0);
+            const asked = serviceRequests(session, "scp_getState").length;
 
             await session.provider.getStorage(address, 0);
 
-            expect(serviceRequests(session, "scp_getState")).to.have.length(0);
+            expect(serviceRequests(session, "scp_getState")).to.have.length(
+                asked
+            );
             expect(nodeStateReads(session)).to.equal(0);
         });
     });
@@ -456,13 +577,16 @@ describe("MirrorRpcProvider", function () {
             expect(
                 BigInt(await session.provider.getStorage(address, 0))
             ).to.equal(5n);
+            const asked = serviceRequests(session, "scp_getState").length;
 
             await (await storage.setValue(0n)).wait();
 
             expect(await session.provider.getStorage(address, 0)).to.equal(
                 ZeroHash
             );
-            expect(serviceRequests(session, "scp_getState")).to.have.length(0);
+            expect(serviceRequests(session, "scp_getState")).to.have.length(
+                asked
+            );
             expect(nodeStateReads(session)).to.equal(0);
         });
     });

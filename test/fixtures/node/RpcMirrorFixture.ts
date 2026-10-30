@@ -3,6 +3,7 @@ import { installMirrorShadowCheck } from "../MirrorShadowCheck";
 import { RpcNodeProxy } from "./RpcNodeProxy";
 import {
     deployNumberStorage,
+    StorageDiffClient,
     withStorageDiffUpstream,
     type StorageDiffServiceSettings
 } from "./StorageDiffService.fixture";
@@ -220,6 +221,25 @@ export function serviceRequests(session: MirrorSession, method: string) {
     return session.service.forwardedRequests.filter(
         (request) => request.method === method
     );
+}
+
+/**
+ * Lets the session's storage diff service backfill `addresses` before the
+ * mirror asks for them, so they are `ready` (or `lazy`) at its subscribe.
+ */
+export async function backfillAtService(
+    session: MirrorSession,
+    addresses: string[]
+): Promise<void> {
+    const client = await StorageDiffClient.connect(session.storageDiff.url);
+    try {
+        const subscription = await client.subscribe(
+            addresses.map((address) => address.toLowerCase())
+        );
+        await client.nextSnapshot(subscription);
+    } finally {
+        client.close();
+    }
 }
 
 /** State reads the provider sent to the node: slots, balances and code. */
