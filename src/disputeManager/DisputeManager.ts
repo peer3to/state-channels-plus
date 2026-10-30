@@ -323,10 +323,11 @@ class DisputeManager {
                             { forkId, channelId: this.channelId }
                         );
                     },
-                    // the snapshot passed a stored forged-inbound proof's height -> rebuild once without it
+                    // the snapshot passed a stored forged-inbound proof's height, or moved its fork past
+                    // the genesis a WrongGenesis proof needs -> rebuild: construction reads the chain and leaves it out
                     RaceConditionBlockHeightTooOld: () => {
                         this.logger.info(
-                            "dispute retry: fraud proof below the snapshot's inbound head",
+                            "dispute retry: a fraud proof the chain no longer judges",
                             { forkId, channelId: this.channelId }
                         );
                         retryWithoutStaleProof = true;
@@ -569,7 +570,7 @@ class DisputeManager {
                     },
                     RaceConditionBlockHeightTooOld: () => {
                         this.logger.info(
-                            `killDispute no-op: forged inbound block below the snapshot's inbound head for dispute ${formattedHash}`,
+                            `killDispute no-op: a nested fraud proof the chain no longer judges for dispute ${formattedHash}`,
                             { disputeMeta }
                         );
                     }

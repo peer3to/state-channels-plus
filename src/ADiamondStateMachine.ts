@@ -1,4 +1,4 @@
-import { Address, Bytes } from "./types/types";
+import { Address, Bytes, ForkId } from "./types/types";
 
 import type { LocalDiamondContract } from "./utils/localDiamond";
 import {
@@ -79,6 +79,22 @@ abstract class ADiamondStateMachine {
         if (!(await this.isBalanceLesserThan(zeroBalance, balance))) {
             throw new Error(`${label} must be greater than zero`);
         }
+    }
+
+    /**
+     * `chainSnapshot`, the channel's on-chain snapshot, is on `forkId` past its genesis by the contract's own genesis
+     * predicate: the chain no longer judges that fork's block 0.
+     */
+    public async isForkPastGenesis(
+        chainSnapshot: StateSnapshotStruct,
+        forkId: ForkId
+    ): Promise<boolean> {
+        return (
+            String(chainSnapshot.forkId) === forkId &&
+            !(await this.localDiamondContract.isGenesisSnapshotWithoutTimeCheck(
+                chainSnapshot
+            ))
+        );
     }
 
     public abstract dispose(): Promise<void> | void;

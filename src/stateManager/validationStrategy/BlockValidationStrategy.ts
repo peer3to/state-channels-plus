@@ -207,6 +207,30 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             this.p2pManager.disconnectAndBlacklistPeers(culprits);
             return BlockValidationResult.DISCONNECT;
         }
+        // the chain holds the fork past genesis -> it no longer judges block 0, a proof would revert
+        const stateManager = this.p2pManager.stateManager;
+        if (
+            await stateManager.diamondStateMachine.isForkPastGenesis(
+                await stateManager.stateChannelManagerContract.getStateSnapshot(
+                    block.channelId
+                ),
+                block.forkId
+            )
+        ) {
+            // another author's block 0 against the stored one -> cut, nothing to prove
+            if (this.storage.blocks.getBlock(block.forkId, 0)) {
+                this.p2pManager.disconnectAndBlacklistPeers(
+                    getSourcePeersAndAuthor(entry)
+                );
+                return BlockValidationResult.DISCONNECT;
+            }
+            // our own genesis may be the wrong one (a past-genesis sync cannot check its timestamp) -> drop, no verdict
+            this.logger.warn(
+                "Unlinked block 0 on a fork the chain holds past genesis - dropped",
+                { block: LoggerUtils.getBlockMetadata(block, this.storage) }
+            );
+            return BlockValidationResult.DUPLICATE;
+        }
         this.logger.warn("Wrong genesis detected", {
             blockAuthor: block.author,
             blockHeight: block.height

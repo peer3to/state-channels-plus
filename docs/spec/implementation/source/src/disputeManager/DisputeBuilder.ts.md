@@ -65,6 +65,8 @@ Construction correctness
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P18` — a stored forged-inbound proof over a fabricated inbound block above the snapshot's inbound head is bundled into `fraudProofsToApply` and its target added to `onChainSlashes`
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P19` — a stale forged-inbound proof stored before a valid proof against the same participant: the valid proof is applied and the participant is added to `onChainSlashes`
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P20` — a stored forged-inbound proof citing a genuine inbound block still stored above the snapshot's inbound head is left out and its target is not added
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P21` — a stored WrongGenesis proof while the chain holds its fork past genesis is left out and its target is not added
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P22` — a stored WrongGenesis proof while the chain still holds the fork's genesis is bundled and its target is added
 
 ## UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ
 

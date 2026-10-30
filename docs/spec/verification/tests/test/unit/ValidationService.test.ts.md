@@ -1,7 +1,7 @@
 # ValidationService.test.ts
 
 Test file: [test/unit/ValidationService.test.ts](../../../../../../test/unit/ValidationService.test.ts)
-Exercises: [ValidationService.ts](../../../../implementation/source/src/stateManager/ingest/ValidationService.ts.md)
+Exercises: [ValidationService.ts](../../../../implementation/source/src/stateManager/ingest/ValidationService.ts.md), [BlockValidationStrategy.ts](../../../../implementation/source/src/stateManager/validationStrategy/BlockValidationStrategy.ts.md)
 
 ## Overview
 
@@ -34,6 +34,13 @@ top-up. A spectator synced afterwards, which never stored the top-up, runs the r
 through the validation probe: a block carrying the pruned genuine top-up is not flagged, and a
 fabricated inbound block one above the snapshot's inbound head is flagged and returned.
 
+Two wrong-genesis cases first author blocks 0 and 1 and post the latest snapshot, so the chain
+holds the fork past its genesis (`WrongGenesisPastGenesisStaging`). With the observer's block 0
+pruned below the anchor, an unlinked block 0 is dropped with no verdict; against a stored block 0,
+another author's unlinked block 0 disconnects its sources and author. Neither stores a fraud proof
+or raises a dispute. A synced spectator fed the same kind of block through the spectating hook,
+once the chain is past genesis, does not abort and stores no proof.
+
 ## Tests
 
 - `a linked insertion from the wrong leader reaches the SDK deviation without changing state or eligibility`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P22
@@ -52,6 +59,7 @@ fabricated inbound block one above the snapshot's inbound head is flagged and re
 - `pending participant records live double-sign fraud and stays pending`: UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P21, REQ-BLOCK-PIPE-3-WW2SB7.T1.P12
 - `observer live arrivals abort on double-sign fraud without requesting a dispute`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P15
 - `observer wrongGenesisDetected keeps the spectator reaction without submitting a dispute`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P30
+- `observer wrongGenesisDetected while the chain holds the fork past genesis → no abort, no fraud proof, no dispute`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P36
 - `observer invalidStateTransitionDetected keeps the spectator reaction without submitting a dispute`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P31
 - `observer objectiveInvalidTimestampDetected keeps the spectator reaction without submitting a dispute`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P32
 - `observer forgedInboundMessageBlockDetected keeps the spectator reaction without submitting a dispute`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P33
@@ -64,6 +72,8 @@ fabricated inbound block one above the snapshot's inbound head is flagged and re
 - `height above nextHeight → blockIsNotNextAndIsInTheFuture → NOT_READY, requeued`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P10, UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P16, REQ-BLOCK-PIPE-3-WW2SB7.T1.P5
 - `next block, wrong previousBlockHash → blockIsNotLinkedAndIsNotFirstBlock → DISCONNECT`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P11
 - `height-0 block not linked to genesis → wrongGenesisDetected → DISPUTE + WrongGenesis proof`: UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P13, UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P24
+- `height-0 block not linked to genesis while the chain holds the fork past genesis, no block 0 stored → dropped, no fraud proof, no dispute, nobody disconnected`: UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P27
+- `conflict at height 0 from another author while the chain holds the fork past genesis → DISCONNECT of sources and author, no fraud proof, no dispute`: UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P28
 - `linked next block by the wrong leader → invalidStateTransitionDetected → DISPUTE + InvalidStateTransition proof`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P12, UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P11, UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P25
 - `outsider author relayed by another peer → relayer and author both cut`: UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P9, REQ-BLOCK-PIPE-3-WW2SB7.T1.P4
 - `spectating: missing genesis → supplier and author both cut, spectator keeps spectating`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P13, REQ-BLOCK-PIPE-3-WW2SB7.T1.P10

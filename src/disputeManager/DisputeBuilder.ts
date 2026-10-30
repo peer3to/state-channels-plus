@@ -21,7 +21,10 @@ import { errorMessage } from "@/utils/errorMessage";
 import { preferLocal } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
-import { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    SnapshotDataStruct,
+    StateSnapshotStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeConfirmationStruct,
     DisputeStruct,
@@ -334,6 +337,8 @@ export default class DisputeBuilder {
         }
 
         const fraudProofsToApply: FraudProofStruct[] = [];
+        // read once, and only when a WrongGenesis proof is stored
+        let chainSnapshot: StateSnapshotStruct | undefined;
         for (const participant of difference(participants, slashedOnChain)) {
             for (const fraudProof of this.storage.fraudProofs.getFraudProofsForParticipant(
                 participant
@@ -353,6 +358,30 @@ export default class DisputeBuilder {
                     ))
                 )
                     continue;
+                // a WrongGenesis proof the chain no longer judges (its fork past genesis) reverts the multicall too
+                if (
+                    Number(fraudProof.proofType) ===
+                    toSolidityFraudProofType(FraudProofType.WrongGenesis)
+                ) {
+                    chainSnapshot ??=
+                        await this.stateChannelManagerContract.getStateSnapshot(
+                            this.channelId
+                        );
+                    const invalidBlock = Codec.decode(
+                        Codec.decode(
+                            fraudProof.encodedProof,
+                            FraudProofType.WrongGenesis
+                        ).invalidBlock.encodedBlock,
+                        Type.Block
+                    );
+                    if (
+                        await this.diamondStateMachine.isForkPastGenesis(
+                            chainSnapshot,
+                            String(invalidBlock.transaction.header.forkId)
+                        )
+                    )
+                        continue;
+                }
                 fraudProofsToApply.push(fraudProof);
                 slashedOnChain.add(participant);
                 break;

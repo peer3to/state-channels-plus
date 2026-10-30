@@ -42,3 +42,5 @@ Consequence profile
 - [x] `UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P24` — normalization strips an unrecoverable confirmation and punishes only its supplier
 - [x] `UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P25` — shared malformed confirmation punishes both actual suppliers
 - [x] `UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P26` — duplicate malformed bytes use one charged slot and are removed once
+- [x] `UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P27` — an unlinked block 0 while the chain holds the fork past genesis and no block 0 is stored: dropped with no verdict, no fraud proof, no dispute, nobody disconnected
+- [x] `UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P28` — another author's unlinked block 0 against the stored one while the chain holds the fork past genesis: its sources and author are disconnected, no fraud proof, no dispute

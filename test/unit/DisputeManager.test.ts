@@ -55,6 +55,10 @@ import {
     killTimeoutCalldataRefutationWithScaledEstimate,
     killWithScaledEstimate
 } from "@test/fixtures/ReplayGasLimitStaging";
+import {
+    stageChainPastGenesis,
+    storeWrongGenesisProofAndConstruct
+} from "@test/fixtures/WrongGenesisPastGenesisStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -1088,6 +1092,33 @@ describe("Unit: DisputeManager", function () {
 
             expect(r.attached).to.equal(ZeroAddress);
             expect(r.stored).to.equal(3);
+        });
+
+        // the chain no longer judges a WrongGenesis proof once it holds the fork past genesis -> it would revert the multicall
+        it("stored WrongGenesis proof while the chain holds the fork past genesis → constructDispute leaves it out, author not marked slashed", async function () {
+            const h = TestSession.getHarness();
+            const { forkId } = await stageChainPastGenesis(h);
+            const r = await storeWrongGenesisProofAndConstruct(
+                h,
+                h.getPeer(1),
+                forkId
+            );
+            expect(r.stored).to.equal(true);
+            expect(r.fraudProofCount).to.equal(0);
+            expect(r.authorMarkedSlashed).to.equal(false);
+        });
+
+        it("stored WrongGenesis proof while the chain still holds the genesis → constructDispute bundles it, author marked slashed", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const r = await storeWrongGenesisProofAndConstruct(
+                h,
+                h.getPeer(1),
+                h.activeForkId!
+            );
+            expect(r.stored).to.equal(true);
+            expect(r.fraudProofCount).to.equal(1);
+            expect(r.authorMarkedSlashed).to.equal(true);
         });
     });
 
