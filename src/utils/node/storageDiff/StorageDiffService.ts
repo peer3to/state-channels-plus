@@ -1212,19 +1212,89 @@ export class StorageDiffService {
         }
         canonical.splice(ancestor + 1);
         canonical.push(...staged);
+        // complete accounts a block wrote, with the entries the cache holds after it
+        const written: {
+            address: AccountAddress;
+            block: StagedBlock;
+            cached: number;
+        }[] = [];
         for (const record of staged.slice(below ? 1 : 0)) {
             this.stateCache.applyForward(record);
+            for (const address of Object.keys(record.post))
+                if (this.stateCache.isComplete(address))
+                    written.push({
+                        address,
+                        block: record,
+                        cached: this.stateCache.nonZeroSlots(address)
+                    });
         }
         canonical.splice(0, Math.max(0, canonical.length - this.retention));
         for (const record of staged.slice(below ? 1 : 0)) this.publish(record);
         for (const waiter of [...this.headWaiters]) waiter();
         this.scheduleSave();
+        void this.verifyEntryCounts(written);
         const head = canonical[canonical.length - 1];
         this.checkIncludedAncestry();
         this.includedStrategy?.bestHeadCommitted({
             number: BigInt(head.number),
             hash: head.hash
         });
+    }
+
+    /**
+     * Counts, on the chain, the storage entries of each complete account a
+     * block wrote and compares them with what the cache holds after that
+     * block (a source that cannot count never refuses). An account that
+     * differs stays lazy from then on, as after a backfill that came up short.
+     */
+    private async verifyEntryCounts(
+        written: {
+            address: AccountAddress;
+            block: StagedBlock;
+            cached: number;
+        }[]
+    ): Promise<void> {
+        await Promise.all(
+            written.map(async ({ address, block, cached }) => {
+                try {
+                    const held = await this.backfillBlocks.countStorageEntries(
+                        address,
+                        { number: BigInt(block.number) }
+                    );
+                    if (held === undefined || held === cached) return;
+                    await this.enqueue(async () => {
+                        // a reorg may have dropped the block, or the account been demoted
+                        if (
+                            this.retainedIndex(block.hash) < 0 ||
+                            !this.stateCache.isComplete(address)
+                        )
+                            return;
+                        this.logger.warn(
+                            "A block's write left fewer storage entries cached than the chain holds; the account stays lazy",
+                            {
+                                address,
+                                block: block.number,
+                                cached,
+                                onChain: held
+                            }
+                        );
+                        this.stateCache.markLazy(address);
+                        this.lazyAccounts.add(address);
+                        for (const peer of this.peers.values()) {
+                            peer.snapshotted.delete(address);
+                            if (!peer.closing)
+                                this.sendSnapshots(peer, [address]);
+                        }
+                    });
+                } catch (error) {
+                    if (!this.stopping.signal.aborted)
+                        this.logger.warn("Cannot count an account's entries", {
+                            address,
+                            reason: this.sanitize(describeError(error))
+                        });
+                }
+            })
+        );
     }
 
     /**

@@ -664,3 +664,16 @@ export async function deployNestedWriter(
         )
     );
 }
+
+/** Whether a debug_traceBlockByNumber request asks for the call frames. */
+export function asksCallFrames(params: unknown[]): boolean {
+    return (params[1] as { tracer?: string }).tracer === "callTracer";
+}
+
+/** The call frames of a block with a failed frame in each transaction. */
+export function withFailedFrames(result: unknown): unknown {
+    return (result as { result: object }[]).map((entry) => ({
+        ...entry,
+        result: { ...entry.result, error: "execution reverted" }
+    }));
+}

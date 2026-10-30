@@ -18,14 +18,16 @@ export type SubstrateContract = {
     tipHash: () => string;
     /** The account info the node holds; null for no account. */
     info: string | null;
-    /** Entries in the child trie at the tip. */
-    entries: number;
+    /** Entries in the child trie, or per block number. */
+    entries: number | ((blockNumber: number) => number);
 };
 
 export type SubstrateNode = {
     url: string;
     /** Child trie root reads answered so far. */
     rootReads: () => number;
+    /** Requests answered so far, by method. */
+    requests: () => Record<string, number>;
 };
 
 /**
@@ -37,13 +39,21 @@ export async function withSubstrateNode<T>(
     use: (node: SubstrateNode) => Promise<T>
 ): Promise<T> {
     let rootReads = 0;
+    const requests: Record<string, number> = {};
     const server = new WebSocketServer({ port: 0, host: "127.0.0.1" });
     await new Promise((resolve) => server.once("listening", resolve));
-    const keys = Array.from(
-        { length: contract.entries },
-        (_, i) => "0x" + i.toString(16).padStart(64, "0")
-    );
+    const keysAt = (blockNumber: number) => {
+        const count =
+            typeof contract.entries === "number"
+                ? contract.entries
+                : contract.entries(blockNumber);
+        return Array.from(
+            { length: count },
+            (_, i) => "0x" + i.toString(16).padStart(64, "0")
+        );
+    };
     const answer = (method: string, params: unknown[]): unknown => {
+        requests[method] = (requests[method] ?? 0) + 1;
         if (method === "chain_getBlockHash") {
             const number = params[0] as number;
             return number === contract.tipNumber
@@ -64,12 +74,18 @@ export async function withSubstrateNode<T>(
             );
         }
         if (method === "childstate_getKeysPaged") {
-            const [, , count, last] = params as [
+            const [, , count, last, hash] = params as [
                 string,
                 string,
                 number,
-                string | null
+                string | null,
+                string
             ];
+            const keys = keysAt(
+                String(hash).startsWith("0xblock")
+                    ? Number(String(hash).slice("0xblock".length))
+                    : contract.tipNumber
+            );
             const from = last === null ? 0 : keys.indexOf(last) + 1;
             return keys.slice(from, from + count);
         }
@@ -98,7 +114,8 @@ export async function withSubstrateNode<T>(
         const { port } = server.address() as AddressInfo;
         return await use({
             url: `ws://127.0.0.1:${port}`,
-            rootReads: () => rootReads
+            rootReads: () => rootReads,
+            requests: () => ({ ...requests })
         });
     } finally {
         for (const client of server.clients) client.terminate();

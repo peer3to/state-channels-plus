@@ -1,4 +1,5 @@
 import {
+    asksCallFrames,
     deployNestedWriter,
     deployNumberStorage,
     deployRevertProbe,
@@ -9,6 +10,7 @@ import {
     setValue,
     slotKey,
     storageWord,
+    withFailedFrames,
     withStorageDiffSession,
     writeSlot
 } from "../../fixtures/node/StorageDiffService.fixture";
@@ -21,19 +23,6 @@ import { Wallet, toQuantity } from "ethers";
 
 /** Time is the input: how long a read that must wait is watched for. */
 const ABSENCE_WINDOW_MS = 500;
-
-/** Whether a debug_traceBlockByNumber request asks for the call frames. */
-function asksCallFrames(params: unknown[]): boolean {
-    return (params[1] as { tracer?: string }).tracer === "callTracer";
-}
-
-/** The call frames of a block with a failed frame in each transaction. */
-function withFailedFrames(result: unknown): unknown {
-    return (result as { result: object }[]).map((entry) => ({
-        ...entry,
-        result: { ...entry.result, error: "execution reverted" }
-    }));
-}
 
 describe("StorageDiffService blocks", function () {
     it("serves the best head as the upstream returns it, with full and with hashed transactions", async function () {

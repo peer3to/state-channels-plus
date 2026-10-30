@@ -93,6 +93,19 @@ export class StateCache {
         return this.complete.has(address);
     }
 
+    /** How many cached slots of `address` hold a non-zero word. */
+    nonZeroSlots(address: AccountAddress): number {
+        let count = 0;
+        for (const word of this.slots.get(address)?.values() ?? [])
+            if (BigInt(word) !== 0n) count++;
+        return count;
+    }
+
+    /** Stops treating `address` as complete; what is cached stays. */
+    markLazy(address: AccountAddress): void {
+        this.complete.delete(address);
+    }
+
     /**
      * Makes `account` the complete state of `address`: every slot it ever
      * wrote, and its balance, nonce and code. Replaces what was cached.

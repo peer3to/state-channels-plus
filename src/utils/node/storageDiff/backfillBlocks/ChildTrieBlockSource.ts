@@ -27,6 +27,10 @@ const KEYS_PAGE = 1000;
 export class ChildTrieBlockSource extends ABackfillBlockSource {
     private readonly assetHubUrl: string;
     private client?: Promise<UpstreamRpcClient>;
+    // A contract keeps its child trie id for life.
+    private readonly rootKeys = new Map<AccountAddress, string>();
+    // Block hash reads in flight, by number: contracts counted at one block share the read.
+    private readonly blockHashes = new Map<number, Promise<unknown>>();
     private closed = false;
 
     /** `assetHubUrl`: `ws://` or `wss://` Asset Hub Substrate node (not eth-rpc). */
@@ -90,9 +94,7 @@ export class ChildTrieBlockSource extends ABackfillBlockSource {
         at: { number: bigint }
     ): Promise<number> {
         const node = await this.connect();
-        const hash = await node.request("chain_getBlockHash", [
-            Number(at.number)
-        ]);
+        const hash = await this.blockHashOf(node, Number(at.number));
         const rootKey = await this.rootKeyOf(node, address, hash);
         let count = 0;
         let last: unknown = null;
@@ -123,13 +125,32 @@ export class ChildTrieBlockSource extends ABackfillBlockSource {
         address: AccountAddress,
         hash: unknown
     ): Promise<string> {
+        const known = this.rootKeys.get(address);
+        if (known) return known;
         const info = await node.request("state_getStorage", [
             reviveAccountInfoKey(address),
             hash
         ]);
         const trieId = typeof info === "string" ? trieIdOf(info) : undefined;
         if (!trieId) throw new Error("The address is not a contract");
-        return childStorageKey(trieId);
+        const key = childStorageKey(trieId);
+        this.rootKeys.set(address, key);
+        return key;
+    }
+
+    private blockHashOf(
+        node: UpstreamRpcClient,
+        number: number
+    ): Promise<unknown> {
+        let hash = this.blockHashes.get(number);
+        if (!hash) {
+            hash = node.request("chain_getBlockHash", [number]);
+            this.blockHashes.set(number, hash);
+            // only reads in flight are shared: a reorg may change the hash later
+            const forget = () => this.blockHashes.delete(number);
+            hash.then(forget, forget);
+        }
+        return hash;
     }
 
     private connect(): Promise<UpstreamRpcClient> {

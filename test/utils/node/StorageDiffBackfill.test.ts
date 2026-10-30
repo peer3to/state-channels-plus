@@ -1,4 +1,5 @@
 import {
+    asksCallFrames,
     deploySlotWriter,
     dumpedAccount,
     slotKey,
@@ -10,7 +11,8 @@ import {
 } from "../../fixtures/node/StorageDiffService.fixture";
 import {
     RECORDED_ACCOUNT_INFO,
-    withSubstrateNode
+    withSubstrateNode,
+    type SubstrateNode
 } from "../../fixtures/node/SubstrateChildTrieNode";
 import { sleep } from "@/utils";
 import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
@@ -392,8 +394,9 @@ describe("StorageDiffService persisted cache", function () {
 describe("StorageDiffService backfill checked against the chain", function () {
     /** A node of the writer's chain with `entries` child trie entries. */
     async function backfillWith(
-        entries: number,
+        entries: number | ((blockNumber: number) => number),
         run: (context: {
+            node: SubstrateNode;
             session: Parameters<
                 Parameters<typeof withStorageDiffUpstream>[0]
             >[0];
@@ -426,6 +429,7 @@ describe("StorageDiffService backfill checked against the chain", function () {
                     const client = await StorageDiffClient.connect(service.url);
                     try {
                         await run({
+                            node,
                             session,
                             writer,
                             client,
@@ -549,6 +553,118 @@ describe("StorageDiffService backfill checked against the chain", function () {
                         message.includes("stays lazy")
                     )
                 ).to.deep.equal([]);
+            }
+        );
+    });
+
+    // the chain holds one more entry from the block of the write on
+    const WRITE_ADDS_ENTRY = (firstBlock: () => number) => (n: number) =>
+        n >= firstBlock() ? 3 : 2;
+
+    /** Waits until `done` holds, up to a bound. */
+    async function until(done: () => boolean): Promise<boolean> {
+        for (let i = 0; i < 150 && !done(); i++) await sleep(20);
+        return done();
+    }
+
+    it("keeps an account lazy and tells its subscriber when a block's trace omits a write the chain holds", async function () {
+        let writeBlock = Number.MAX_SAFE_INTEGER;
+        await backfillWith(
+            WRITE_ADDS_ENTRY(() => writeBlock),
+            async ({ session, writer, client, service }) => {
+                const subscription = await client.subscribe([writer]);
+                await client.nextSnapshot(subscription);
+                await backfilled(service);
+                // the trace of the next block lists the account but not the slot it wrote
+                session.relay.tamper(
+                    "debug_traceBlockByNumber",
+                    (result, params) =>
+                        asksCallFrames(params)
+                            ? result
+                            : (
+                                  result as {
+                                      result: {
+                                          pre: object;
+                                          post: Record<string, object>;
+                                      };
+                                  }[]
+                              ).map((entry) => ({
+                                  ...entry,
+                                  result: {
+                                      pre: entry.result.pre,
+                                      post: {
+                                          ...entry.result.post,
+                                          [writer]: { storage: {} }
+                                      }
+                                  }
+                              }))
+                );
+
+                // the chain holds the entry from the next block on
+                writeBlock = (await session.provider.getBlockNumber()) + 1;
+                await writeSlot(session.signer, writer, 3, 9n);
+                const notice = await Promise.race([
+                    client.nextSnapshot(subscription),
+                    sleep(3000).then(() => undefined)
+                ]);
+
+                expect(notice?.lazy).to.deep.equal([writer]);
+                expect(notice?.accounts).to.deep.equal({});
+                const warning = session.warnings.find(({ message }) =>
+                    message.includes("write left fewer storage entries")
+                );
+                expect(warning?.meta[0]).to.include({
+                    address: writer,
+                    cached: 2,
+                    onChain: 3
+                });
+                // lazy from now on: an unnamed slot is fetched when asked for
+                const fetched = service.statistics.lazyFieldFetches;
+                const head = await client.getDiffs([writer], writeBlock);
+                await client.getState(head[0].hash, [
+                    { address: writer, slots: [slotKey(9)] }
+                ]);
+                expect(service.statistics.lazyFieldFetches - fetched).to.equal(
+                    1
+                );
+            }
+        );
+    });
+
+    it("keeps an account complete when the count after a write matches, at the cost of one hash read and one key page", async function () {
+        let writeBlock = Number.MAX_SAFE_INTEGER;
+        await backfillWith(
+            WRITE_ADDS_ENTRY(() => writeBlock),
+            async ({ node, session, writer, client, service }) => {
+                const subscription = await client.subscribe([writer]);
+                await client.nextSnapshot(subscription);
+                await backfilled(service);
+                const before = node.requests();
+
+                // the chain holds the entry from the next block on
+                writeBlock = (await session.provider.getBlockNumber()) + 1;
+                await writeSlot(session.signer, writer, 3, 9n);
+                const counted = () =>
+                    (node.requests().childstate_getKeysPaged ?? 0) -
+                    (before.childstate_getKeysPaged ?? 0);
+                expect(await until(() => counted() >= 1)).to.equal(true);
+                await sleep(200);
+
+                const after = node.requests();
+                const cost = (method: string) =>
+                    (after[method] ?? 0) - (before[method] ?? 0);
+                // the trie id is cached: no account info read, no root read
+                expect({
+                    blockHash: cost("chain_getBlockHash"),
+                    keyPages: cost("childstate_getKeysPaged"),
+                    accountInfo: cost("state_getStorage")
+                }).to.deep.equal({ blockHash: 1, keyPages: 1, accountInfo: 0 });
+                expect(
+                    session.warnings.filter(({ message }) =>
+                        message.includes("write left fewer storage entries")
+                    )
+                ).to.deep.equal([]);
+                expect(client.unreadSnapshots(subscription)).to.deep.equal([]);
             }
         );
     });
