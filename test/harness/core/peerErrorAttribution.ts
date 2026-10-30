@@ -1,6 +1,11 @@
 // @spec-test-coverage-ignore: harness error attribution support; assertions belong to the calling test declarations
 import type { HostHandlerExecutionContext } from "@/evm/p2pRuntime/HostHandlerExecutionContext";
-import { DetachedPromises, maybeStampErrorWithPeerAddress } from "@/utils";
+import { IN_FLIGHT_REPLY_DRAIN_MS } from "@/rpc/internal/AInternalRpcRoot";
+import {
+    DetachedPromises,
+    maybeStampErrorWithPeerAddress,
+    sleep
+} from "@/utils";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 /**
@@ -13,6 +18,12 @@ import { AsyncLocalStorage } from "node:async_hooks";
  * stamped with it. `TestSession.setFirstDetachedError` uses the stamp to
  * ignore errors from byzantine/left-channel peers.
  *
+ * The host root disposes its context at its disposal cut-off. Work the
+ * context collected and still pending a grace period later stops holding
+ * the session's drain: a send frozen at the cut never settles. Work failing
+ * within the grace, such as an abort's own cause or a connect it answers
+ * false, still surfaces.
+ *
  * Worker peers don't need this: one worker thread = one peer, so the
  * `P2pRuntimeClientRoot` / `quiesceHosts` boundaries attribute errors directly.
  */
@@ -22,9 +33,16 @@ export class PeerIdentityExecutionContext
     // one store shared by all inline peers
     private static readonly currentPeerIdentityStorage = new AsyncLocalStorage<{
         peerAddress: string;
+        context: PeerIdentityExecutionContext;
     }>();
 
     private static detachedRejectionStampingInstalled = false;
+
+    private markDisposed!: () => void;
+    // Resolves one reply-drain bound after the runtime's cut-off.
+    private readonly disposal = new Promise<void>((resolve) => {
+        this.markDisposed = resolve;
+    }).then(() => sleep(IN_FLIGHT_REPLY_DRAIN_MS));
 
     constructor(private readonly peerAddress: string) {}
 
@@ -38,7 +56,7 @@ export class PeerIdentityExecutionContext
      */
     runHandler<T>(handlerBody: () => T): T {
         return PeerIdentityExecutionContext.currentPeerIdentityStorage.run(
-            { peerAddress: this.peerAddress },
+            { peerAddress: this.peerAddress, context: this },
             () => {
                 try {
                     const result = handlerBody();
@@ -60,6 +78,11 @@ export class PeerIdentityExecutionContext
         );
     }
 
+    // Implements HostHandlerExecutionContext.dispose: the runtime is cut.
+    dispose(): void {
+        this.markDisposed();
+    }
+
     /**
      * Address of the peer whose handler the caller is running under, if any.
      *
@@ -76,7 +99,8 @@ export class PeerIdentityExecutionContext
     /**
      * Patch `DetachedPromises.collect` (once): a promise collected while a
      * peer's handler runs gets its eventual rejection stamped with that peer's
-     * address.
+     * address, and counts as settled once that peer's runtime was cut a grace
+     * period ago.
      */
     static installDetachedPromiseRejectionStamping(): void {
         if (PeerIdentityExecutionContext.detachedRejectionStampingInstalled) {
@@ -86,14 +110,20 @@ export class PeerIdentityExecutionContext
 
         const originalCollect = DetachedPromises.collect.bind(DetachedPromises);
         DetachedPromises.collect = (promise: Promise<unknown>): void => {
-            const peerAddress =
-                PeerIdentityExecutionContext.getPeerAddressOfCurrentAsyncContext();
+            const store =
+                PeerIdentityExecutionContext.currentPeerIdentityStorage.getStore();
             originalCollect(
-                peerAddress
-                    ? promise.catch((error: unknown) => {
-                          maybeStampErrorWithPeerAddress(error, peerAddress);
-                          throw error;
-                      })
+                store
+                    ? Promise.race([
+                          promise.catch((error: unknown) => {
+                              maybeStampErrorWithPeerAddress(
+                                  error,
+                                  store.peerAddress
+                              );
+                              throw error;
+                          }),
+                          store.context.disposal
+                      ])
                     : promise
             );
         };

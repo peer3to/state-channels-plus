@@ -1512,7 +1512,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
-    public getDisposeWaitTask(): { entered: number; running: number } {
+    public getDisposeWaitTask(): { entered: number } {
         return this.service.getDisposeWaitTask();
     }
 
@@ -4045,6 +4045,16 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         index: number
     ): Promise<{ transportClosed: boolean }> {
         return this.service.injectCapturedRequestFrame(index);
+    }
+
+    /** Count inbound frames from `peerAddress` from now on. */
+    public countInboundFramesFrom(peerAddress: string): boolean {
+        this.service.countInboundFramesFrom(peerAddress);
+        return true;
+    }
+
+    public getInboundFrameCount(): number {
+        return this.service.inboundFrameCount;
     }
 
     public restoreInboundRequestFrames(): boolean {

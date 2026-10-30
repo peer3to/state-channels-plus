@@ -39,6 +39,7 @@ import type {
 } from "@/types/types";
 import {
     Codec,
+    getChecksumAddress,
     LocalDiscoveryServer,
     multicallLastCallRevertData,
     sleep,
@@ -940,6 +941,8 @@ export class StubService extends ANetworkRpcService<
         transport: NetworkTransport;
     }[] = [];
     private restoreRequestFrameCapture?: () => void;
+    /** Inbound frames counted from one sender since the count started. */
+    public inboundFrameCount = 0;
 
     /**
      * Shift the clock read that directly follows this peer's next
@@ -3100,6 +3103,27 @@ export class StubService extends ANetworkRpcService<
         return { transportClosed };
     }
 
+    /**
+     * Count every inbound frame (request, response or one-way) this peer's
+     * router receives from `peerAddress`, from now on. It stays installed for
+     * the runtime's life.
+     */
+    public countInboundFramesFrom(peerAddress: string): void {
+        const router = this.p2pManager.rpcRouter;
+        const onRpc = router.onRpc;
+        const count = () => (this.inboundFrameCount += 1);
+        this.inboundFrameCount = 0;
+        router.onRpc = function (serializedRpc, transport) {
+            if (
+                transport.peerAddress &&
+                getChecksumAddress(transport.peerAddress) ===
+                    getChecksumAddress(peerAddress)
+            )
+                count();
+            return onRpc.call(this, serializedRpc, transport);
+        };
+    }
+
     public restoreInboundRequestFrames(): void {
         this.restoreRequestFrameCapture?.();
         this.restoreRequestFrameCapture = undefined;
@@ -3340,9 +3364,8 @@ export class StubService extends ANetworkRpcService<
 
     /**
      * Start one real timeout-manager task that stays running until the
-     * timeout manager's own dispose begins. The release runs after the
-     * synchronous part of dispose, so dispose provably starts its bounded
-     * wait with this task in flight, and the task then settles inside it.
+     * timeout manager's own dispose ran, so dispose provably meets this
+     * task in flight.
      */
     public holdScheduledTaskUntilDispose(): void {
         const timeoutManager = this.sm.timeoutManager;
@@ -3350,9 +3373,8 @@ export class StubService extends ANetworkRpcService<
         this.disposeWaitTaskGate = gate;
         const dispose = timeoutManager.dispose.bind(timeoutManager);
         timeoutManager.dispose = () => {
-            const disposal = dispose();
+            dispose();
             gate.release();
-            return disposal;
         };
         timeoutManager.scheduleTask(
             async () => {
@@ -3364,16 +3386,9 @@ export class StubService extends ANetworkRpcService<
         );
     }
 
-    /** Entries of the dispose-wait task and the manager's running task count. */
-    public getDisposeWaitTask(): { entered: number; running: number } {
-        const running = Reflect.get(
-            this.sm.timeoutManager,
-            "runningTasks"
-        ) as Set<Promise<void>>;
-        return {
-            entered: this.disposeWaitTaskGate?.entered ?? 0,
-            running: running.size
-        };
+    /** Entries of the dispose-wait task. */
+    public getDisposeWaitTask(): { entered: number } {
+        return { entered: this.disposeWaitTaskGate?.entered ?? 0 };
     }
 
     /** One releasable pause shared by the reduction-control stubs. */
