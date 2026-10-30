@@ -111,6 +111,27 @@ describe("MirrorRpcProvider", function () {
         });
     });
 
+    it("waits for the snapshot of an account the service has ready instead of reading lazily", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, address } = await deployMirroredStorage(session);
+            await (await storage.setValue(5n)).wait();
+            await backfillAtService(session, [address]);
+            const release = session.service.holdNotifications("scp_snapshot");
+
+            const read = session.provider.getStorage(address, 0);
+            await sleep(300);
+            release();
+            const word = await read;
+
+            expect(BigInt(word)).to.equal(5n);
+            expect(session.provider.mirrorStatistics).to.include({
+                lazyReads: 0,
+                snapshots: 1,
+                snapshotTimeouts: 0
+            });
+        });
+    });
+
     it("reads an account the service says is syncing at once, and answers locally once its snapshot has come", async function () {
         await withMirrorSession(async (session) => {
             const { storage, address } = await deployMirroredStorage(session);
@@ -240,8 +261,9 @@ describe("MirrorRpcProvider", function () {
             const elapsed = Date.now() - started;
 
             expect(BigInt(word)).to.equal(5n);
-            expect(elapsed).to.be.greaterThan(SNAPSHOT_CEILING_MS * 0.9);
-            expect(elapsed).to.be.lessThan(SNAPSHOT_CEILING_MS * 2);
+            // the ceiling is 5 s, a safety net: stated here, not read from the constant
+            expect(elapsed).to.be.greaterThan(4_500);
+            expect(elapsed).to.be.lessThan(8_000);
             expect(session.provider.mirrorStatistics).to.include({
                 snapshotTimeouts: 1,
                 lazyReads: 1
