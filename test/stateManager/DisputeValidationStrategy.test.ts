@@ -19,30 +19,24 @@ describe("DisputeValidationStrategy", function () {
         expect(matrix.NOT_ENOUGH_TIME).to.equal("throw");
     });
 
-    it("continues a local not-linked replay when committed structure is clean", async function () {
+    it("outsider author without the executed participant snapshots -> the signature-union check throws", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(4, 0);
         await h.transition.advanceState();
-        const result = await h
-            .control(h.getPeer(0))
-            .validation.probeCleanCommittedDivergence()
-            .request();
-
-        expect(result.result).to.equal("SUCCESS");
-        expect(result.proofStored).to.equal(false);
-    });
-
-    it("continues outsider checks when participant snapshots are unavailable", async function () {
-        const h = TestSession.getHarness();
-        await h.lifecycle.start(4, 0);
-        await h.transition.advanceState();
-        const result = await h
+        const failure = await h
             .control(h.getPeer(0))
             .validation.probeMissingParticipantSnapshots()
-            .request();
+            .request()
+            .then(
+                () => null,
+                (error: unknown) =>
+                    error instanceof Error ? error.message : String(error)
+            );
 
-        expect(result.earlyAuthorResult).to.equal("SUCCESS");
-        expect(result.signatureUnionResult).to.equal("SUCCESS");
-        expect(result.proofStored).to.equal(false);
+        // the ingest pipeline always passes the snapshots it executed: their
+        // absence is a bug, not a reason to skip the outsider check
+        expect(failure).to.contain(
+            "notAllSingersAreParticipants needs the executed participant snapshots"
+        );
     });
 });

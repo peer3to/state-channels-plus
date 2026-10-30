@@ -1,9 +1,5 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
-import type {
-    DisputeService,
-    DisputeValidationRun,
-    PersistDisputeDataProjection
-} from "./DisputeService";
+import type { DisputeService, DisputeValidationRun } from "./DisputeService";
 import {
     DISPUTE_TAMPER_STRATEGIES,
     type DisputeTamperStrategy
@@ -112,40 +108,28 @@ export class DisputeRpcMethods extends ANetworkRpcMethods<DisputeService> {
         return this.service.runDisputeValidation(encodedDispute, options);
     }
 
-    /** Run the real persistDisputeDataWithoutAudit; storage presence projection. */
-    public persistDisputeDataWithoutAudit(
-        encodedDispute: string,
-        options: {
-            encodedAuditingData?: string;
-            includeUnfinalizedBlocks: boolean;
-            /** Post-decode override; "" is not ABI-encodable (see service). */
-            latestFinalizedStateStateMachineStateOverride?: string;
-        }
-    ): PersistDisputeDataProjection {
-        return this.service.persistDisputeDataWithoutAudit(
-            encodedDispute,
-            options
-        );
-    }
-
     /**
-     * Recompute auditing data for a (tampered) state proof; ABI-encoded.
-     * `disputeLatestInboundMessageBlockHash` is the anchor an auditor bounds
-     * the inbound range with (`DisputeValidationService.continueOtherChecks`).
+     * This peer's own proof through `blockHeight` (-1: the empty genesis
+     * proof) and the auditing data DisputeManager builds for it, ABI-encoded.
+     * `disputeLatestInboundMessageBlockHash` is the bound an auditor recomputes
+     * the inbound range with (default: the inbound head not behind that state).
      */
-    public async getAuditingData(
+    public async buildOwnAuditingData(
         forkId: ForkId,
-        encodedStateProof: string,
+        blockHeight: number,
         options?: { disputeLatestInboundMessageBlockHash?: Hash }
-    ): Promise<{ isPartial: boolean; encodedAuditingData: string }> {
-        const { isPartial, auditingData } =
-            await this.service.disputeManager.getAuditingData(
+    ): Promise<{ encodedStateProof: string; encodedAuditingData: string }> {
+        const { stateProof, auditingData } =
+            await this.service.buildOwnAuditingData(
                 forkId,
-                Codec.decode(encodedStateProof, Type.StateProof),
-                options
+                blockHeight,
+                options?.disputeLatestInboundMessageBlockHash
             );
         return {
-            isPartial,
+            encodedStateProof: Codec.encode(
+                stateProof,
+                Type.StateProof
+            ) as string,
             encodedAuditingData: Codec.encode(
                 auditingData,
                 Type.DisputeAuditingData
@@ -247,15 +231,24 @@ export class DisputeRpcMethods extends ANetworkRpcMethods<DisputeService> {
         return true;
     }
 
-    /** Plant a fresh timeout for `participant` at head+1 height on `forkId`. */
+    /**
+     * This peer's self-removal dispute through its SDK: the force-exit flag,
+     * then its dispute. Returns whether its dispute marker is set.
+     */
+    public async startSelfRemovalDispute(forkId: ForkId): Promise<boolean> {
+        this.service.storage.forceExit.setForceExit(true);
+        await this.service.disputeManager.dispute(forkId);
+        return this.service.storage.disputes.didIDispute(forkId);
+    }
+
+    /** Plant a fresh timeout for `participant` at head+1 height on `forkId` (0 on a fork with no block). */
     public plantFreshTimeout(forkId: ForkId, participant: string): boolean {
         const latestBlock = this.service.storage.blocks.getLatestBlock(forkId);
-        if (!latestBlock) {
-            throw new Error(`plantFreshTimeout: no latest block for ${forkId}`);
-        }
         this.service.storage.timeout.storeTimeout(forkId, {
             participant,
-            blockHeight: BigInt(Number(latestBlock.height) + 1),
+            blockHeight: latestBlock
+                ? BigInt(Number(latestBlock.height) + 1)
+                : 0n,
             minTimeStamp: BigInt(Clock.getTimeInSeconds()),
             isForced: false,
             previousBlockProducer: ZeroAddress,

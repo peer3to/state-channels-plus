@@ -7,13 +7,20 @@ import {
 } from "../core/testTimeConfig";
 import { EventSpies } from "../core/types";
 import Clock from "@/Clock";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { LeaveChannelState } from "@/stateManager/membership/LeaveChannelService";
 import { Status } from "@/types";
 import { Hash } from "@/types/types";
 import { Logger, sleep } from "@/utils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
+
+/** How long a host handler call takes to reach its main-thread spy. */
+const SPY_FORWARD_WINDOW_MS = 500;
 
 /**
  * EventActions handles all event spy management and queries.
@@ -24,10 +31,11 @@ import { waitFor } from "@test/utils/waitFor";
  * - Assert event calls
  */
 export class EventActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
     constructor(
-        private harness: PeerTestHarness<TCustomRpc>,
+        private harness: PeerTestHarness<THost>,
         private logger: Logger
     ) {}
 
@@ -40,6 +48,32 @@ export class EventActions<
         const spy = peer.eventSpies[eventName];
         const count = spy ? spy.callCount : 0;
         return count;
+    }
+
+    /** The summed call counts of several event spies of one peer. */
+    getEventCallCounts(
+        peerIndex: number,
+        eventNames: readonly (keyof EventSpies)[]
+    ): number {
+        return eventNames.reduce(
+            (total, eventName) =>
+                total + this.getEventCallCount(peerIndex, eventName),
+            0
+        );
+    }
+
+    /**
+     * Wait until every contract event the peer scheduled has settled, then
+     * for the handler calls to reach the spies: the host forwards them over
+     * the runtime port, and they may arrive just after the drain returns.
+     */
+    async settleContractEvents(peerIndex: number): Promise<void> {
+        await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .validation.drainScheduledEvents()
+            .request();
+        // time is the input: the forwarding delay of the spied handler calls
+        await sleep(SPY_FORWARD_WINDOW_MS);
     }
 
     /**
@@ -68,7 +102,7 @@ export class EventActions<
         await this.harness.eventCountsBarrier.waitFor(condition, {
             timeoutMs: waitTimeoutMs,
             timeoutMessageFn: () => {
-                let actualCounts: Array<{
+                const actualCounts: Array<{
                     peerId: number;
                     actualCount: number;
                 }> = [];
@@ -172,6 +206,24 @@ export class EventActions<
         return gap;
     }
 
+    /**
+     * Wait until the chain's own clock is past `timestamp`. E2E nodes are
+     * interval-mined, so this only reads the latest block. Peer clocks only
+     * estimate chain time, so a deadline they report as passed may not be on
+     * chain yet.
+     */
+    async waitForChainTimeAfter(
+        timestamp: number,
+        timeoutMs = this.protocolEventTimeoutMs()
+    ): Promise<void> {
+        await waitFor(
+            async () =>
+                ((await this.harness.provider.getBlock("latest"))?.timestamp ??
+                    0) > timestamp,
+            timeoutMs
+        );
+    }
+
     hostExecTimeoutMs(): number {
         return this.protocolEventTimeoutMs({ withFirstBlockGrace: true }) * 2;
     }
@@ -265,12 +317,64 @@ export class EventActions<
         );
     }
 
-    async waitUntilLeavePhase(
+    /** Calls the peer's leave and waits for the `onLeftChannel` that leave emits. */
+    async leaveChannelWait(peerIndex: number): Promise<void> {
+        // an earlier membership of this runtime may have emitted one already
+        const previousCount = this.getEventCallCount(
+            peerIndex,
+            "onLeftChannel"
+        );
+        await this.harness
+            .getPeer(peerIndex)
+            .p2pInstance.p2pSigner.leaveChannel();
+        await this.waitUntilLeftChannel(peerIndex, previousCount);
+    }
+
+    /**
+     * Waits for an `onLeftChannel` of the peer after the `previousCount` it
+     * had emitted, whatever ended its membership. Read `previousCount` before
+     * the action that ends a membership when the runtime may have emitted
+     * one for an earlier membership (a failed join, a removal).
+     */
+    async waitUntilLeftChannel(
         peerIndex: number,
-        phase: LeaveChannelState["phase"]
+        previousCount = 0
+    ): Promise<void> {
+        const timeoutMs = this.protocolEventTimeoutMs();
+        await this.harness.eventCountsBarrier.waitFor(
+            () =>
+                this.getEventCallCount(peerIndex, "onLeftChannel") >
+                previousCount,
+            {
+                timeoutMs,
+                timeoutMessage: `Peer ${peerIndex} did not leave the channel within ${timeoutMs}ms`
+            }
+        );
+    }
+
+    /** Waits until the peer's instance disposed itself after its leave. */
+    async waitUntilDisposed(peerIndex: number): Promise<void> {
+        const signer = this.harness.getPeer(peerIndex).p2pInstance.p2pSigner;
+        await waitFor(
+            () =>
+                signer.getChannelStatus().then(
+                    () => false,
+                    (error: Error) => {
+                        if (error.message.includes("disposed")) return true;
+                        throw error;
+                    }
+                ),
+            this.protocolEventTimeoutMs()
+        );
+    }
+
+    /** Waits until a flag of the peer's exit is set. */
+    async waitUntilLeaveState(
+        peerIndex: number,
+        flag: Exclude<keyof LeaveChannelState, "forkId">
     ): Promise<void> {
         const peer = this.harness.getPeer(peerIndex);
-        // Leave phases have no event of their own to wake the event barrier.
+        // Exit flags have no event of their own to wake the event barrier.
         await waitFor(
             async () =>
                 (
@@ -278,7 +382,7 @@ export class EventActions<
                         .control(peer)
                         .query.getLeaveChannelState()
                         .request()
-                )?.phase === phase,
+                )?.[flag] === true,
             this.protocolEventTimeoutMs()
         );
     }

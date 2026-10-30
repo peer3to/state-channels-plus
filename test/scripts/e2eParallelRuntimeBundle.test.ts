@@ -2,6 +2,7 @@
 import { createSocketPair } from "../fixtures/distributed/testTransport";
 import { expect } from "chai";
 import { execFileSync } from "child_process";
+import crypto from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -23,6 +24,9 @@ const {
     extractRuntimeBundle,
     assertCompatible
 } = require("../../scripts/e2e-parallel/distributed/runtimeExtractor.js");
+const {
+    diffSourceFiles
+} = require("../../scripts/e2e-parallel/distributed/workspaceCache.js");
 
 function initializeRepository(root: string): void {
     fs.mkdirSync(root, { recursive: true });
@@ -106,7 +110,31 @@ describe("distributed source workspace", function () {
                 "module.exports = {};\n"
             );
 
+            fs.writeFileSync(
+                path.join(project, "test-costs.json"),
+                '{"version":1,"tasks":{}}'
+            );
+            fs.writeFileSync(
+                path.join(project, "test-costs.overrides.json"),
+                "{}"
+            );
             const manifest = await buildRuntimeBundle(project, transfer);
+            expect(
+                manifest.files.some((entry: { path: string }) =>
+                    /test-costs(?:\.overrides)?\.json$/.test(entry.path)
+                )
+            ).to.equal(false);
+            fs.writeFileSync(
+                path.join(project, "test-costs.json"),
+                '{"version":1,"tasks":{"measured":{}}}'
+            );
+            fs.writeFileSync(
+                path.join(project, "test-costs.overrides.json"),
+                '{"adjusted":{}}'
+            );
+            const costsOnly = await buildRuntimeManifest(project);
+            expect(costsOnly.sourceDigest).to.equal(manifest.sourceDigest);
+
             expect(manifest.version).to.equal(3);
             expect(manifest.rootProjectPath).to.equal("project");
             expect(manifest.runnerEntry).to.equal(
@@ -123,6 +151,12 @@ describe("distributed source workspace", function () {
                     (entry: { name: string }) => entry.name === "project"
                 ).hasYarnLock
             ).to.equal(true);
+            // Without declared build outputs the workers still build it.
+            expect(
+                manifest.repositories.find(
+                    (entry: { name: string }) => entry.name === "project"
+                ).prepareScript
+            ).to.equal("compile");
             for (const directory of excludedSourceRoots) {
                 expect(
                     manifest.files.some((entry: { path: string }) =>
@@ -184,6 +218,236 @@ describe("distributed source workspace", function () {
                     maxExpandedBytes: 1024 * 1024
                 }
             );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("ships the declared build outputs of the root and its linked repository and drops their worker prepare", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "build-outputs-"));
+        const project = path.join(root, "project");
+        const linked = path.join(root, "linked");
+        try {
+            initializeRepository(project);
+            initializeRepository(linked);
+            fs.writeFileSync(
+                path.join(project, "package.json"),
+                JSON.stringify({
+                    name: "project",
+                    dependencies: { linked: "link:../linked" },
+                    scripts: { compile: "true" },
+                    peer3TestDistribution: {
+                        prepareScript: "compile",
+                        cachedPrepareScript: "compile",
+                        buildOutputs: [
+                            "dist",
+                            "artifacts",
+                            "generated.ts",
+                            "missing"
+                        ]
+                    }
+                })
+            );
+            fs.writeFileSync(
+                path.join(project, ".gitignore"),
+                "dist\nartifacts\ngenerated.ts\n"
+            );
+            fs.mkdirSync(path.join(project, "dist", "nested"), {
+                recursive: true
+            });
+            fs.writeFileSync(path.join(project, "dist", "a.js"), "a");
+            fs.writeFileSync(path.join(project, "dist", "nested", "b.js"), "b");
+            fs.mkdirSync(path.join(project, "artifacts"));
+            fs.writeFileSync(path.join(project, "artifacts", "C.json"), "{}");
+            fs.writeFileSync(path.join(project, "generated.ts"), "export {};");
+            fs.writeFileSync(
+                path.join(linked, "package.json"),
+                JSON.stringify({
+                    name: "linked",
+                    scripts: { compile: "true" },
+                    peer3TestDistribution: {
+                        prepareScript: "compile",
+                        buildOutputs: ["dist"]
+                    }
+                })
+            );
+            fs.writeFileSync(path.join(linked, ".gitignore"), "dist\n");
+            fs.mkdirSync(path.join(linked, "dist"));
+            fs.writeFileSync(path.join(linked, "dist", "l.js"), "l");
+            const runner = path.join(
+                linked,
+                "scripts",
+                "e2e-parallel",
+                "distributed"
+            );
+            fs.mkdirSync(runner, { recursive: true });
+            fs.writeFileSync(path.join(runner, "worker.js"), "");
+
+            const manifest = await buildRuntimeManifest(project);
+            const byPath = new Map(
+                manifest.files.map(
+                    (entry: { path: string; sha256: string }) => [
+                        entry.path,
+                        entry
+                    ]
+                )
+            );
+            for (const output of [
+                "project/dist/a.js",
+                "project/dist/nested/b.js",
+                "project/artifacts/C.json",
+                "project/generated.ts",
+                "linked/dist/l.js"
+            ]) {
+                expect(byPath.has(output), output).to.equal(true);
+            }
+            expect(
+                (byPath.get("project/dist/a.js") as { sha256: string }).sha256
+            ).to.equal(crypto.createHash("sha256").update("a").digest("hex"));
+            expect(
+                manifest.files.some((entry: { path: string }) =>
+                    entry.path.includes("missing")
+                )
+            ).to.equal(false);
+            const repositories = Object.fromEntries(
+                manifest.repositories.map(
+                    (entry: {
+                        name: string;
+                        prepareScript: string | null;
+                        cachedPrepareScript: string | null;
+                    }) => [entry.name, entry]
+                )
+            );
+            expect(repositories.project.prepareScript).to.equal(null);
+            expect(repositories.project.cachedPrepareScript).to.equal(null);
+            expect(repositories.linked.prepareScript).to.equal(null);
+            expect(repositories.linked.cachedPrepareScript).to.equal(null);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("sends only the build outputs whose content changed", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "build-outputs-"));
+        const project = path.join(root, "project");
+        try {
+            initializeRepository(project);
+            fs.writeFileSync(
+                path.join(project, "package.json"),
+                JSON.stringify({
+                    name: "project",
+                    peer3TestDistribution: { buildOutputs: ["dist"] }
+                })
+            );
+            fs.writeFileSync(path.join(project, ".gitignore"), "dist\n");
+            fs.mkdirSync(path.join(project, "dist"));
+            fs.writeFileSync(path.join(project, "dist", "a.js"), "a");
+            fs.writeFileSync(path.join(project, "dist", "b.js"), "b");
+            fs.writeFileSync(path.join(project, "dist", "gone.js"), "gone");
+            // build tools can leave group/other-writable outputs
+            fs.chmodSync(path.join(project, "dist", "a.js"), 0o666);
+            const runner = path.join(
+                project,
+                "scripts",
+                "e2e-parallel",
+                "distributed"
+            );
+            fs.mkdirSync(runner, { recursive: true });
+            fs.writeFileSync(path.join(runner, "worker.js"), "");
+
+            const before = await buildRuntimeManifest(project);
+            // a rebuild rewrites b.js with the same bytes and changes a.js
+            fs.writeFileSync(path.join(project, "dist", "a.js"), "a2");
+            expect(
+                before.files.find(
+                    (entry: { path: string }) =>
+                        entry.path === "project/dist/a.js"
+                ).mode
+            ).to.equal(0o644);
+            fs.writeFileSync(path.join(project, "dist", "b.js"), "b");
+            fs.rmSync(path.join(project, "dist", "gone.js"));
+            const after = await buildRuntimeManifest(project);
+
+            expect(diffSourceFiles(before.files, after.files)).to.deep.equal({
+                changed: ["project/dist/a.js"],
+                deleted: ["project/dist/gone.js"]
+            });
+            const delta = path.join(root, "delta.tgz");
+            const deltaManifest = await buildDeltaBundle(
+                after,
+                ["project/dist/a.js"],
+                delta
+            );
+            // the delta archive is checked against the manifest entry
+            expect(deltaManifest.fileCount).to.equal(1);
+            expect(deltaManifest.expandedBytes).to.equal(2);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("gives a cached file the archived mode when a delta rewrites it", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cached-mode-"));
+        const project = path.join(root, "project");
+        const workspace = path.join(root, "workspace");
+        try {
+            initializeRepository(project);
+            fs.writeFileSync(
+                path.join(project, "package.json"),
+                JSON.stringify({
+                    name: "project",
+                    peer3TestDistribution: { buildOutputs: ["dist"] }
+                })
+            );
+            fs.writeFileSync(path.join(project, ".gitignore"), "dist\n");
+            fs.mkdirSync(path.join(project, "dist"));
+            fs.writeFileSync(path.join(project, "dist", "a.json"), "new");
+            const runner = path.join(
+                project,
+                "scripts",
+                "e2e-parallel",
+                "distributed"
+            );
+            fs.mkdirSync(runner, { recursive: true });
+            fs.writeFileSync(path.join(runner, "worker.js"), "");
+            const manifest = await buildRuntimeManifest(project);
+            const relative = "project/dist/a.json";
+            const expected = manifest.files.find(
+                (entry: { path: string }) => entry.path === relative
+            );
+            expect(expected.mode).to.equal(0o644);
+            // the cached copy has other content and another mode
+            const cached = path.join(workspace, relative);
+            fs.mkdirSync(path.dirname(cached), { recursive: true });
+            fs.writeFileSync(cached, "old");
+            fs.chmodSync(cached, 0o600);
+            const changed = manifest.files.filter(
+                (entry: { path: string }) =>
+                    entry.path === relative ||
+                    entry.path === "project/package.json"
+            );
+            const delta = path.join(root, "delta.tgz");
+            const deltaManifest = await buildDeltaBundle(
+                manifest,
+                changed.map((entry: { path: string }) => entry.path),
+                delta
+            );
+
+            await extractRuntimeBundle(
+                delta,
+                workspace,
+                { ...manifest, ...deltaManifest },
+                {
+                    maxCompressedBytes: 1024 * 1024,
+                    maxExpandedBytes: 1024 * 1024
+                },
+                changed
+            );
+
+            expect({
+                content: fs.readFileSync(cached, "utf8"),
+                mode: fs.statSync(cached).mode & 0o777
+            }).to.deep.equal({ content: "new", mode: 0o644 });
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

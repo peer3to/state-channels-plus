@@ -1,5 +1,10 @@
 // @spec-test-coverage-ignore: real SDK root-creation staging; executable evidence is mapped from test/rpc/RootCreation.test.ts
-import { createUploaderFixture } from "../logging/LogUploader.fixture";
+import {
+    createUploaderFixture,
+    crashLogUploadOverrides,
+    decodeUpload,
+    startLogReceiver
+} from "../logging/LogUploader.fixture";
 import { withRuntimeRpc } from "../RpcRouterFixture";
 import type {
     AInternalRpcRoot,
@@ -9,15 +14,19 @@ import { createRoot } from "@/rpc/internal/createRoot";
 import type { RemoteRoot } from "@/rpc/internal/RemoteRoot";
 import { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
 import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
-import { config } from "@/utils/config";
+import { config, createConfig } from "@/utils/config";
 import type { LogEntry, Logger } from "@/utils/logging/Logger";
 import { ownerContextRecords } from "@test/fixtures/customRpc/OwnerContextRpcManifest";
 import type { RuntimeProbeRoot } from "@test/fixtures/runtimeRpc/probe/runtime/RuntimeProbeService";
 import { RootCreationControl } from "@test/fixtures/runtimeRpc/RootCreationControl";
+import { BOOTSTRAP_CONFIG_MARKER_MB } from "@test/fixtures/workerRoot/BootstrapConfigMarker";
+import { LoggerProbeExecutorRoot } from "@test/fixtures/workerRoot/LoggerProbeExecutorRoot";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import path from "node:path";
 
+// Worker entries shared with the browser gate.
+const WORKER_ROOT_ENTRIES = path.join(__dirname, "../workerRoot");
 // The executor worker entry installs the runtime probe during startup.
 const PROBE_EXECUTOR_ENTRY = path.join(__dirname, "RuntimeRpcExecutorEntry.ts");
 const MISSING_PRECOMPILE = {
@@ -47,7 +56,7 @@ async function createParentlessWorker(
             createRoot(ContractExecutorRoot, {
                 mode: "worker",
                 workerUrl: PROBE_EXECUTOR_ENTRY,
-                args: { config, customPrecompiles: [] },
+                args: { customPrecompiles: [] },
                 logger
             }),
         (root) => parents.push(root)
@@ -75,7 +84,6 @@ async function createCrashingParentlessWorker(
                 mode: "worker",
                 workerUrl: PROBE_EXECUTOR_ENTRY,
                 args: {
-                    config,
                     customPrecompiles: [
                         {
                             address: CRASH_ADDRESS,
@@ -109,7 +117,7 @@ async function failParentlessWorker(): Promise<AInternalRpcRoot> {
                 createRoot(ContractExecutorRoot, {
                     mode: "worker",
                     workerUrl: PROBE_EXECUTOR_ENTRY,
-                    args: { config, customPrecompiles: [MISSING_PRECOMPILE] }
+                    args: { customPrecompiles: [MISSING_PRECOMPILE] }
                 }),
             (root) => parents.push(root)
         );
@@ -131,6 +139,75 @@ function expectReleased(worker: ParentlessWorker) {
     expect(worker.handle.isClosed).to.equal(true);
     expect(worker.parent.isDisposing).to.equal(true);
     expect(worker.parent.connections.size).to.equal(0);
+}
+
+/**
+ * Creates a worker root whose class checks, before the root is built, that
+ * the worker already holds the creating thread's config.
+ */
+export async function assertWorkerStartsWithCreatorConfig(): Promise<void> {
+    const before = { ...config };
+    createConfig({
+        ...before,
+        CRASH_LOG_MAX_SIZE_MB: BOOTSTRAP_CONFIG_MARKER_MB
+    });
+    try {
+        const handle = await createRoot(ContractExecutorRoot, {
+            mode: "worker",
+            workerUrl: path.join(
+                WORKER_ROOT_ENTRIES,
+                "BootstrapConfigRootEntry.ts"
+            ),
+            args: { customPrecompiles: [] }
+        });
+        await handle.dispose();
+    } finally {
+        createConfig(before);
+    }
+}
+
+/**
+ * Only the creating thread's config names the receiver. A worker root that
+ * installs no config itself writes one marker line and uploads its own store;
+ * the receiver must get that line under the worker's thread name.
+ */
+export async function assertWorkerRootUploadsWithCreatorConfig(
+    entryFile: string,
+    threadName: string
+): Promise<void> {
+    const receiver = await startLogReceiver();
+    const before = { ...config };
+    createConfig({ ...before, ...crashLogUploadOverrides(receiver.url) });
+    try {
+        const handle = await createRoot(LoggerProbeExecutorRoot, {
+            mode: "worker",
+            workerUrl: path.join(WORKER_ROOT_ENTRIES, entryFile),
+            args: { customPrecompiles: [] }
+        });
+        try {
+            const probe = handle.rpc.loggerProbe;
+            const marker = `worker root upload ${threadName}`;
+            expect((await probe.context().request()).threadName).to.equal(
+                threadName
+            );
+            await probe.write(marker).request();
+            expect((await probe.own().request()).ok).to.equal(true);
+            const uploads = receiver.requests.filter((upload) =>
+                decodeUpload(upload).some((entry) => entry.message === marker)
+            );
+            expect(uploads).to.have.length(1);
+            expect(uploads[0].threadName).to.equal(threadName);
+            const [entry] = decodeUpload(uploads[0]).filter(
+                (entry) => entry.message === marker
+            );
+            expect(entry.sharedContext.threadName).to.equal(threadName);
+        } finally {
+            await handle.dispose();
+        }
+    } finally {
+        createConfig(before);
+        await receiver.close();
+    }
 }
 
 export async function assertParentlessWorkerServes(): Promise<void> {

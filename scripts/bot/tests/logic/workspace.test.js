@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
+const { realTmpdir } = require("../fixtures/temp");
 const { checkReadRoots, snapshotName } = require("../../workspace");
 const { sandboxArgs } = require("../../adapters/codex");
 const { sandboxSettings } = require("../../adapters/claude");
@@ -98,6 +99,29 @@ describe("review workspace sandbox roots", function () {
                 JSON.stringify(args)
             );
         });
+    });
+    it("refuses a Codex sandbox when codex is installed directly under a home reached through a symlink", async function () {
+        const base = await fs.mkdtemp(path.join(realTmpdir(), "review-link-"));
+        const previous = { home: process.env.HOME, execPath: process.execPath };
+        try {
+            const realHome = path.join(base, "real-home");
+            const linkedHome = path.join(base, "linked-home");
+            await fs.mkdir(path.join(realHome, "bin"), { recursive: true });
+            await fs.symlink(realHome, linkedHome);
+            process.env.HOME = linkedHome;
+            process.execPath = "/usr/local/bin/node";
+            const codex = path.join(linkedHome, "bin", "codex");
+            await fs.writeFile(codex, "#!/bin/sh\n", { mode: 0o755 });
+            const stateRoot = path.join(linkedHome, "work", "review");
+            assert.throws(
+                () => sandboxArgs(workspaceUnder(stateRoot), codex, stateRoot),
+                { code: "ISOLATION_UNVERIFIED" }
+            );
+        } finally {
+            process.env.HOME = previous.home;
+            process.execPath = previous.execPath;
+            await fs.rm(base, { recursive: true, force: true });
+        }
     });
     it("names snapshot files after the API route and page", function () {
         assert.equal(

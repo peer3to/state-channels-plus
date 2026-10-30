@@ -3,7 +3,7 @@ import type {
     CustomRpcConstructor,
     CustomRpcManifest
 } from "@/rpc/network/registry";
-import { importModuleFromManifest } from "@platform/moduleLoader";
+import { resolveManifestExport } from "@/utils/moduleLoader/resolveManifestExport";
 
 export async function resolveCustomRpcConstructor<
     TCustomRpc extends MainRpcService = MainRpcService,
@@ -19,22 +19,10 @@ export async function resolveCustomRpcConstructor<
 > {
     if (!manifest) return undefined;
 
-    const module = await importModuleFromManifest(manifest.module);
-    const exported = manifest.exportName
-        ? module[manifest.exportName]
-        : module.default;
-
-    if (typeof exported !== "function") {
-        throw new Error(
-            `Custom RPC module "${manifest.module}" must export a custom RPC constructor`
-        );
-    }
-
     return {
-        customRpc: exported as CustomRpcConstructor<
-            TCustomRpc,
-            TCustomRpcOptions
-        >,
+        customRpc: await resolveManifestExport<
+            CustomRpcConstructor<TCustomRpc, TCustomRpcOptions>
+        >(manifest, "Custom RPC", "custom RPC constructor"),
         customRpcOptions: manifest.options
     };
 }

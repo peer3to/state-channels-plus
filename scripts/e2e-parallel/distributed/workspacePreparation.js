@@ -1,5 +1,7 @@
 const fs = require("fs");
+const crypto = require("crypto");
 const path = require("path");
+const { PREPARATION_VERSION } = require("./workspaceCache");
 const { buildWorkerEnvironment } = require("./remoteEnvironment");
 
 function run(command, args, options) {
@@ -82,13 +84,49 @@ async function prepareWorkspace(workspaceRoot, manifest, options) {
     };
     for (const repository of manifest.repositories) {
         const cwd = path.join(workspaceRoot, repository.path);
-        const install = options.shouldInstall?.(repository) !== false;
+        const dependencyInputs = [
+            "package.json",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+            "package-lock.json",
+            ".npmrc",
+            "pnpm-workspace.yaml"
+        ];
+        const dependencyDigest = crypto
+            .createHash("sha256")
+            .update(
+                JSON.stringify({
+                    version: PREPARATION_VERSION,
+                    repository: repository.path,
+                    nativeModules: repository.verifyNativeModules,
+                    files: (manifest.files || []).filter((entry) =>
+                        dependencyInputs.some(
+                            (file) =>
+                                entry.path === `${repository.path}/${file}`
+                        )
+                    )
+                })
+            )
+            .digest("hex");
+        const dependencyMarker = path.join(
+            storeDir,
+            `prepared-dependencies-${crypto.createHash("sha256").update(cwd).digest("hex")}.json`
+        );
+        const dependenciesPresent = fs.existsSync(
+            path.join(cwd, "node_modules")
+        );
+        const dependenciesPrepared =
+            dependenciesPresent &&
+            fs.existsSync(dependencyMarker) &&
+            fs.readFileSync(dependencyMarker, "utf8") === dependencyDigest;
+        const install = !dependenciesPrepared;
         options.onStage?.(
             install
                 ? `Installing dependencies for ${repository.name}`
                 : `Reusing dependencies for ${repository.name}`
         );
         if (install) {
+            fs.rmSync(dependencyMarker, { force: true });
             options.onOutput(
                 "stdout",
                 Buffer.from(`Installing ${repository.name}\n`)
@@ -151,6 +189,9 @@ async function prepareWorkspace(workspaceRoot, manifest, options) {
                 );
             }
         }
+        // Persist only after installation and native validation succeeded. A later
+        // compiler failure must not invalidate completed dependency preparation.
+        fs.writeFileSync(dependencyMarker, dependencyDigest);
         const prepareScript = options.selectPrepareScript
             ? options.selectPrepareScript(repository)
             : repository.prepareScript;

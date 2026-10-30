@@ -5,7 +5,6 @@ import { withRuntimeRpc } from "../RpcRouterFixture";
 import { createRoot } from "@/rpc/internal/createRoot";
 import { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
 import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
-import { config } from "@/utils/config";
 import { rootWorkerUrl } from "@platform/rootWorkerRuntime";
 import { expect } from "chai";
 
@@ -27,7 +26,7 @@ export async function assertRootStartupFailureRecovery() {
                         "../worker/ContractExecutorRootEntry.js"
                     ),
                     mode: "worker",
-                    args: { config, customPrecompiles: [] }
+                    args: { customPrecompiles: [] }
                 })
             );
         } catch (error) {
@@ -42,7 +41,7 @@ export async function assertRootStartupFailureRecovery() {
             parent,
             mode: "worker",
             workerUrl: rootWorkerUrl("../worker/ContractExecutorRootEntry.js"),
-            args: { config, customPrecompiles: [] }
+            args: { customPrecompiles: [] }
         });
         try {
             await replacement.awaitReady();
@@ -65,7 +64,7 @@ export async function assertExitDuringDisposal(): Promise<void> {
             parent,
             mode: "worker",
             workerUrl: require.resolve("./ExitDuringRootDisposalEntry"),
-            args: { config, customPrecompiles: [] }
+            args: { customPrecompiles: [] }
         });
         await expect(child.dispose()).to.be.rejectedWith(
             "Root worker exited with 23"

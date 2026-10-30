@@ -8,12 +8,15 @@ error ErrorDuplicateParticipant(address participant);
 
 //State transition replay
 error ErrorStateTransitionFrameOutOfGas();
+// A gas-capped local dispute computation used up its whole budget.
+error ErrorDisputeExecutionOutOfGas(uint256 gasLimit, uint256 gasUsed);
 
 //Calldata errors
 error ErrorBlockCalldataAlreadyPosted(
     bytes32 forkId, uint256 transactionCnt, address participant, bytes32 existingCommitment
 );
 error ErrorBlockCalldataMsgSenderNotBlockAuthor(address expectedAuthor, address actualSender);
+error ErrorNonCanonicalEncoding();
 
 //StateSnapshot errors
 error ErrorStateSnapshotNotValid(bytes32 currentForkId, bytes32 targetForkId);
@@ -23,6 +26,8 @@ error ErrorOutboundMessageBlocksInvalid(
     uint256 lowerLatestOutboundMessageBlockHeight,
     uint256 outboundMessageBlockCount
 );
+// `addBalance` ran out of gas while summing an outbound run: no verdict, the caller must fund the call.
+error ErrorOutboundBalanceSumOutOfGas();
 error ErrorOutboundMessageBalanceMismatch(address participant, uint256 expectedAmount, uint256 actualAmount);
 error ErrorInboundMessageBlockAlreadyPersisted(bytes32 channelId, bytes32 blockHash);
 error ErrorSnapshotsNotProvided();
@@ -110,6 +115,7 @@ error ErrorInvalidLatestState(bytes32 expectedStateMachineStateHash, bytes32 act
 
 //Race conditions
 error RaceConditionChannelAlreadyOpen(bytes32 channelId);
+error RaceConditionOpenChannelExpired(uint256 deadlineTimestamp, uint256 currentTimestamp);
 error RaceConditionBlockCalldataTimestampTooLate(uint256 maxTimestamp, uint256 currentTimestamp);
 error RaceConditionSnapshotForkMismatch(bytes32 currentForkId, bytes32 submittedForkId);
 error RaceConditionBlockHeightTooOld(uint256 currentBlockHeight, uint256 submittedBlockHeight);

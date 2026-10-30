@@ -1,12 +1,7 @@
-# test/evm/EvmFactory.test.ts — Test Report
+# EvmFactory.test.ts
 
-> **Test file:** [test/evm/EvmFactory.test.ts](../../../../../../test/evm/EvmFactory.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [EvmFactory.ts](../../../../implementation/source/src/evm/EvmFactory.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/evm/EvmFactory.test.ts](../../../../../../test/evm/EvmFactory.test.ts)
+Exercises: [EvmFactory.ts](../../../../implementation/source/src/evm/EvmFactory.ts.md)
 
 ## Overview
 
@@ -14,6 +9,22 @@ The first case is a composition regression for bare `createEvm` with no owner: i
 the public factory with one caller-supplied precompile and a record-only logger, then issues two
 `runCall`s. It asserts the custom precompile executes once and returns its ABI-encoded value unchanged,
 and that a `log(string)` call to `CONSOLE_ADDRESS` still reaches the console precompile.
+
+The trie-size case builds a bare `createEvm` EVM, installs runtime code that stores eight calldata words
+in storage slots 0-7, and calls it 51 times with random calldata through `runCall`. It reads the entry
+count of the state manager's trie database (the account trie and every storage trie share it) after the
+first call and after the last, and asserts the two are equal. Without node pruning the count grows with
+every call.
+
+The two pruning-safety cases use the same slot writer through the
+[SlotWriterEvm fixture](../../../../../../test/fixtures/SlotWriterEvmFixture.ts) and read slots through a
+shallow copy of the EVM's state manager with empty caches, set to the current state root, so only the trie
+database answers. The identical-storage case puts the code at two addresses, writes the same random words to
+both, rewrites the first five times, then asserts the second reads back the shared words, writes new words
+without an exception and reads those back. With `prefixStorageTrieKeys` removed it fails: the second contract
+reads all zeros. The revert case commits one write, records the state root, then runs a rewrite between
+`evm.journal.checkpoint()` and `evm.journal.revert()`, as `ContractExecutor` simulation does, and asserts the
+state root and every slot are the committed ones.
 
 The other cases create real SDK-owned contract executors ([ExecutorOwnerFixture](../../../../../../test/fixtures/node/ExecutorOwnerFixture.ts))
 whose manifest loads [RuntimeValuePrecompile](../../../../../../test/fixtures/node/RuntimeValuePrecompile.ts).
@@ -45,23 +56,19 @@ finished`, and that the host executor error list is empty. No executor, verifier
 mocked. Hardfork selection and jumpdest
 caching are out of scope.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                              | Covers                                                                                                                                                                                                                                                                                                         |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`EvmFactory > should execute custom precompiles without disabling the built-in console precompile`](../../../../../../test/evm/EvmFactory.test.ts#L38) (line 38)                             | [`UNIT-TEST-EVM-FACTORY-1-002C8D.P3`](../../../../implementation/source/src/evm/EvmFactory.ts.md#unit-test-evm-factory-1-002c8d.p3)                                                                                                                                                                            |
-| [`EvmFactory > gives a manifest precompile its inline executor root during startup and releases its child with that executor`](../../../../../../test/evm/EvmFactory.test.ts#L103) (line 103) | [`UNIT-TEST-EVM-FACTORY-1-002C8D.P1`](../../../../implementation/source/src/evm/EvmFactory.ts.md#unit-test-evm-factory-1-002c8d.p1), [`REQ-RUNTIME-3-VQXW59.T1.P71`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p71)                                                               |
-| [`EvmFactory > gives a manifest precompile its worker executor root during startup`](../../../../../../test/evm/EvmFactory.test.ts#L107) (line 107)                                           | [`UNIT-TEST-EVM-FACTORY-1-002C8D.P2`](../../../../implementation/source/src/evm/EvmFactory.ts.md#unit-test-evm-factory-1-002c8d.p2), [`REQ-RUNTIME-3-VQXW59.T1.P72`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p72)                                                               |
-| [`EvmFactory > finishes an admitted precompile call and queued deploy and simulation before disposing the precompile child`](../../../../../../test/evm/EvmFactory.test.ts#L111) (line 111)   | [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P1`](../../../../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p1), [`REQ-RUNTIME-3-VQXW59.T1.P73`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p73) |
-| [`EvmFactory > rejects executor calls, deploys and simulations that arrive after disposal began without entering the EVM`](../../../../../../test/evm/EvmFactory.test.ts#L115) (line 115)     | [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P2`](../../../../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p2), [`REQ-RUNTIME-3-VQXW59.T1.P74`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p74) |
-| [`EvmFactory > keeps an admitted operation's failure while disposal waits for it`](../../../../../../test/evm/EvmFactory.test.ts#L119) (line 119)                                             | [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P3`](../../../../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p3), [`REQ-RUNTIME-3-VQXW59.T1.P75`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p75) |
-| [`EvmFactory > shares one completion across repeated executor disposal during admitted work`](../../../../../../test/evm/EvmFactory.test.ts#L123) (line 123)                                  | [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P4`](../../../../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p4), [`REQ-RUNTIME-3-VQXW59.T1.P76`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p76) |
-| [`EvmFactory > abandons an admitted call stuck past the drain limit, closes the child, and reports no error`](../../../../../../test/evm/EvmFactory.test.ts#L127) (line 127)                  | [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P5`](../../../../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p5), [`REQ-RUNTIME-3-VQXW59.T1.P77`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p77) |
-| [`EvmFactory > keeps the disposal rejection for an admitted call that succeeds after the drain limit`](../../../../../../test/evm/EvmFactory.test.ts#L131) (line 131)                         | [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P6`](../../../../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p6), [`REQ-RUNTIME-3-VQXW59.T1.P79`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p79) |
-| [`EvmFactory > keeps the disposal rejection for an admitted call that fails after the drain limit`](../../../../../../test/evm/EvmFactory.test.ts#L135) (line 135)                            | [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P7`](../../../../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p7), [`REQ-RUNTIME-3-VQXW59.T1.P80`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p80) |
-| [`EvmFactory > rejects queued deploy and simulation callers released after the drain limit`](../../../../../../test/evm/EvmFactory.test.ts#L139) (line 139)                                   | [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P8`](../../../../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p8), [`REQ-RUNTIME-3-VQXW59.T1.P81`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p81) |
+- `should execute custom precompiles without disabling the built-in console precompile`: UNIT-TEST-EVM-FACTORY-1-002C8D.P3
+- `keeps the trie database the same size while calls rewrite the same storage slots`: UNIT-TEST-EVM-FACTORY-1-002C8D.P4
+- `keeps a contract's storage intact while another contract with identical storage rewrites its slots`: UNIT-TEST-EVM-FACTORY-1-002C8D.P5
+- `keeps the state root and every slot when a checkpointed call that rewrites the slots is reverted`: UNIT-TEST-EVM-FACTORY-1-002C8D.P6
+- `gives a manifest precompile its inline executor root during startup and releases its child with that executor`: UNIT-TEST-EVM-FACTORY-1-002C8D.P1, REQ-RUNTIME-3-VQXW59.T1.P71
+- `gives a manifest precompile its worker executor root during startup`: UNIT-TEST-EVM-FACTORY-1-002C8D.P2, REQ-RUNTIME-3-VQXW59.T1.P72
+- `finishes an admitted precompile call and queued deploy and simulation before disposing the precompile child`: UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P1, REQ-RUNTIME-3-VQXW59.T1.P73
+- `rejects executor calls, deploys and simulations that arrive after disposal began without entering the EVM`: UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P2, REQ-RUNTIME-3-VQXW59.T1.P74
+- `keeps an admitted operation's failure while disposal waits for it`: UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P3, REQ-RUNTIME-3-VQXW59.T1.P75
+- `shares one completion across repeated executor disposal during admitted work`: UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P4, REQ-RUNTIME-3-VQXW59.T1.P76
+- `abandons an admitted call stuck past the drain limit, closes the child, and reports no error`: UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P5, REQ-RUNTIME-3-VQXW59.T1.P77
+- `keeps the disposal rejection for an admitted call that succeeds after the drain limit`: UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P6, REQ-RUNTIME-3-VQXW59.T1.P79
+- `keeps the disposal rejection for an admitted call that fails after the drain limit`: UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P7, REQ-RUNTIME-3-VQXW59.T1.P80
+- `rejects queued deploy and simulation callers released after the drain limit`: UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P8, REQ-RUNTIME-3-VQXW59.T1.P81

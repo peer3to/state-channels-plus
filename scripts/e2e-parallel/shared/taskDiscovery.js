@@ -20,7 +20,11 @@ function getStringLiteralValue(node) {
 
 function isDescribeCallee(expression) {
     const text = expression.getText();
-    return text === "describe" || text.startsWith("describe.");
+    return (
+        text === "describe" ||
+        text === "xdescribe" ||
+        text.startsWith("describe.")
+    );
 }
 
 /** Mocha full title: outer describe … inner describe … it (space-separated). */
@@ -46,9 +50,38 @@ function collectDescribeTitlesFromIt(itCall) {
     return titles;
 }
 
-function extractMochaTests(filePath) {
+// One inventory per source text, shared by discovery and run-end cost pruning.
+// Values contain plain declarations, not retained ts-morph projects.
+const mochaInventories = new Map();
+
+function readMochaTestInventory(filePath) {
+    const file = path.resolve(filePath);
+    const source = fs.readFileSync(file, "utf8");
+    const cached = mochaInventories.get(file);
+    if (cached?.source === source) return cached;
     const project = new Project();
-    const sourceFile = project.addSourceFileAtPath(filePath);
+    // Replace only the project's in-memory source; the file already exists on disk.
+    const sourceFile = project.createSourceFile(file, source, {
+        overwrite: true
+    });
+    const inventory = {
+        source,
+        malformed: !!sourceFile.compilerNode.parseDiagnostics?.length,
+        active: extractMochaDeclarations(sourceFile, filePath, false),
+        all: extractMochaDeclarations(sourceFile, filePath, true)
+    };
+    mochaInventories.set(file, inventory);
+    return inventory;
+}
+
+function extractMochaTests(filePath, { includeInactive = false } = {}) {
+    const inventory = readMochaTestInventory(filePath);
+    if (includeInactive && inventory.malformed)
+        throw new Error(`Cannot inspect malformed test source: ${filePath}`);
+    return includeInactive ? inventory.all : inventory.active;
+}
+
+function extractMochaDeclarations(sourceFile, filePath, includeInactive) {
     const tests = [];
     let requiresFileFallback = false;
 
@@ -58,15 +91,26 @@ function extractMochaTests(filePath) {
         .getDescendantsOfKind(SyntaxKind.CallExpression)
         .forEach((callExpr) => {
             const expr = callExpr.getExpression();
-            if (expr.getText() !== "it") return;
+            if (
+                expr.getText() !== "it" &&
+                !(
+                    includeInactive &&
+                    ["it.skip", "it.only", "xit"].includes(expr.getText())
+                )
+            )
+                return;
 
             const args = callExpr.getArguments();
-            if (args.length < 2) return;
+            if (args.length < 1 || (!includeInactive && args.length < 2))
+                return;
             const secondArg = args[1];
             const isFunction =
-                secondArg.getKind() === SyntaxKind.ArrowFunction ||
-                secondArg.getKind() === SyntaxKind.FunctionExpression;
-            if (!isFunction) return;
+                secondArg?.getKind() === SyntaxKind.ArrowFunction ||
+                secondArg?.getKind() === SyntaxKind.FunctionExpression;
+            if (!isFunction && !(includeInactive && args.length === 1)) {
+                if (includeInactive) requiresFileFallback = true;
+                return;
+            }
 
             const testName = getStringLiteralValue(args[0]);
             if (!testName) {
@@ -106,6 +150,9 @@ function extractMochaTests(filePath) {
 // with source maps keeping stack traces on the .ts lines. `--source-tests`
 // runs the sources under ts-node as before.
 const COMPILED_ROOT = "dist";
+// loads dist/hardhat.config.js from the project root -> hardhat never starts
+// ts-node and the project root stays the root
+const COMPILED_HARDHAT_CONFIG = "hardhat.compiled.config.js";
 
 function compiledTestPath(filePath) {
     const relative = path.relative(process.cwd(), path.resolve(filePath));
@@ -206,12 +253,29 @@ function discoverTasks(
     grep,
     e2eDir = path.resolve("test/e2e"),
     testPattern = DEFAULT_MOCHA_TEST_PATTERN,
-    { compiled = false } = {}
+    {
+        compiled = false,
+        includeParallelScript = true,
+        includeBrowser = true
+    } = {}
 ) {
     const files = globSync(path.join(testDir, testPattern), { nodir: true })
         .filter(isMochaTestFile)
+        .filter(
+            (file) =>
+                includeParallelScript ||
+                !/^e2eParallel.*\.test\.[cm]?[jt]s$/.test(path.basename(file))
+        )
+        .filter(
+            (file) =>
+                includeBrowser || !readRequiredRunners(file).includes("browser")
+        )
         .sort();
     const resolvedE2eDir = path.resolve(e2eDir);
+    const hardhatArgs =
+        compiled && fs.existsSync(COMPILED_HARDHAT_CONFIG)
+            ? ["--config", COMPILED_HARDHAT_CONFIG, "test", "--no-compile"]
+            : ["test", "--no-compile"];
     const tasks = [];
     for (const f of files) {
         const resolvedFile = path.resolve(f);
@@ -230,11 +294,12 @@ function discoverTasks(
                 const taskGrep = `^${escapeRegex(fullTitle)}$`;
                 tasks.push({
                     label: `test:${path.basename(f)}:${fullTitle}`,
-                    args: ["test", "--no-compile", runFile, "--grep", taskGrep],
+                    args: [...hardhatArgs, runFile, "--grep", taskGrep],
                     logName: sanitizeFileName(
                         `${path.basename(f, path.extname(f))}__${fullTitle}`
                     ),
                     fullTitle,
+                    sourceFile: f,
                     runner: TASK_RUNNERS.HARDHAT,
                     isE2E,
                     ...requires
@@ -249,9 +314,10 @@ function discoverTasks(
             );
             tasks.push({
                 label: `test:${path.basename(f)}:${test}`,
-                args: ["test", "--no-compile", runFile, "--grep", taskGrep],
+                args: [...hardhatArgs, runFile, "--grep", taskGrep],
                 logName,
                 fullTitle,
+                sourceFile: f,
                 runner: TASK_RUNNERS.HARDHAT,
                 isE2E,
                 ...requires
@@ -296,6 +362,7 @@ module.exports = {
     isDescribeCallee,
     collectDescribeTitlesFromIt,
     extractMochaTests,
+    readMochaTestInventory,
     enumerateMochaTests,
     escapeRegex,
     sanitizeFileName,

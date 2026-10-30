@@ -51,9 +51,14 @@ replacement RPC layer. No standalone counterpart roots or mocks are allowed.
 
 ## HarnessControlRpc — the host-side control surface
 
-`test/fixtures/customRpc/harnessControl/HarnessControlRpc.ts` is a custom RPC
-(`extends MainRpcService`) that every peer is built with. It groups host-side
-operations into focused services. Call them from the client:
+`test/fixtures/customRpc/harnessControl/HarnessControlRpc.ts` adds the
+host-side control services to a custom RPC with the `withHarnessControl(Base)`
+mixin. They stay network services on the custom RPC, so an application's real
+custom RPC runs in tests with them (`withHarnessControl(AppRpc)` keeps its
+services and `TEvents`). `HarnessControlRpc` is
+`withHarnessControl(MainRpcService)`, the SDK's own root that SDK test RPCs
+extend. Every peer is built with one of them. Call the services from the
+client:
 
 ```ts
 harness.control(peer).query.getForkId().request(); // loopback to self
@@ -77,8 +82,8 @@ Each service is a directory `services/<name>/` with two classes:
   method here is callable by a crafted payload. Helpers go on the service; reach
   them via `this.service.*`.
 
-Then register it in `HarnessControlRpc` (field + `new …Service(p2pManager)` in the
-constructor). **Map by the action that uses it**: balance math → `balance`,
+Then register it in `withHarnessControl` (field on `HarnessControlServices` and
+on the mixin class + `new …Service(p2pManager)` in the mixin constructor). **Map by the action that uses it**: balance math → `balance`,
 read-only queries → `query`, state-transition ops → `transition`, etc. If a
 harness `FooActions` drives it, its host methods belong in a `foo` service —
 don't grow a catch-all.
@@ -109,12 +114,16 @@ lags the chain for real. It never replaces a read's answer.
 
 ## The harness object model
 
-- `PeerTestHarness<TCustomRpc extends HarnessControlRpc = HarnessControlRpc,
-TStateMachine>` — the base is `HarnessControlRpc` (not `MainRpcService`), so
-  every harness instance is type-required to expose the control services.
+- `PeerTestHarness<THost extends P2pRuntimeHostRoot<HarnessControlRpcShape> =
+P2pRuntimeHostRoot<HarnessControlRpc>, TStateMachine>` — typed by the peer's
+  **host root**, whose application (`ApplicationOf<THost>`) must carry the
+  control services, so every harness instance is type-required to expose them.
+  `TestPeer<THost, TContract>` holds `p2pInstance: P2pInstance<TContract, THost>`,
+  so `peer.p2pInstance.host` is typed by the host root the manifest names
+  (`HarnessOptions<THost>.hostRootManifest` is a `HostRootManifest<THost>`).
   `MathPeerTestHarness` fixes `TStateMachine = MathStateMachine`.
 - Behaviour lives in **action classes** (`test/harness/actions/*`), each generic
-  over the same `TCustomRpc` and taking `harness: PeerTestHarness<TCustomRpc>`.
+  over the same `THost` and taking `harness: PeerTestHarness<THost>`.
   `Math*` subclasses specialize them for the math state machine.
 - Events (spies + barriers) stay on the **main thread**: the host forwards
   `p2pEventHooks` + `EventHandler` invocations over the port and
@@ -136,25 +145,32 @@ TStateMachine>` — the base is `HarnessControlRpc` (not `MainRpcService`), so
 
 ### Typing model — why `control()` has the one cast
 
-`peer.p2pInstance.hostRpc` is `RemoteRpcProxyType<TCustomRpc>`. That proxy type is
-a **non-homomorphic mapped type** (it filters keys with an `as` clause), and TS
-will **not** expand it over a generic `TCustomRpc` — so even though
-`TCustomRpc extends HarnessControlRpc`, `.query`/`.network`/… are invisible on a
-generic peer, and `PeerTestHarness<TCustomRpc>` is not assignable to
-`PeerTestHarness<HarnessControlRpc>`.
+`peer.p2pInstance.hostRpc` is `RemoteRpcProxyType<ApplicationOf<THost>>`. That
+proxy type is a **non-homomorphic mapped type** (it filters keys with an `as`
+clause), and TS will **not** expand it over a generic `THost` — so even though
+`THost extends P2pRuntimeHostRoot<HarnessControlRpcShape>`, `.query`/`.network`/…
+are invisible on a generic peer, and `PeerTestHarness<THost>` is not assignable
+to `PeerTestHarness<P2pRuntimeHostRoot<HarnessControlRpc>>`.
 
 Resolution (don't re-litigate this):
 
 - The generic is propagated through every action class so `new XActions(this)`
   type-checks with no cast.
 - `PeerTestHarness.control(peer)` holds the **single** bridge cast
-  (`hostRpc as unknown as RemoteRpcProxyType<HarnessControlRpc>`) — the one spot
-  that narrows a generic peer to the services it actually runs. Member access
+  (`hostRpc as unknown as RemoteRpcProxyType<HarnessControlRpcShape>`) — the one
+  spot that narrows a generic peer to the services it actually runs. Typing the
+  harness by the host root does not remove it: the constraint names the
+  services, but the mapped proxy type still does not expand over `THost`. Member access
   goes through `control()`; `SyncCoordinator` receives `control` as an injected
   fn so it needs no cast of its own.
-- A test with its _own_ custom RPC (`PeerTestHarness<PingPongRpc>`) reads its
-  extra services off the concrete `peer.p2pInstance.hostRpc` directly, or casts
-  `control(p)` once to its RPC type (see `E2E-PingService`).
+- A test with its _own_ custom RPC
+  (`PeerTestHarness<P2pRuntimeHostRoot<PingPongRpc>>`) reads its extra services
+  off the concrete `peer.p2pInstance.hostRpc` directly, with no cast. Only a
+  harness whose type does not name the manifest's RPC (a shared session
+  harness given a custom manifest) casts `control(p)` once to its RPC type. A
+  test with its own host root
+  (`PeerTestHarness<ProbeHostRoot>`) reads its host services off the concrete
+  `peer.p2pInstance.host` with no cast.
 
 Don't add `as unknown as` at call sites to reach control services — route through
 `control()`.
@@ -194,6 +210,13 @@ Don't add `as unknown as` at call sites to reach control services — route thro
   the real code path; the recorded call proves the boundary was reached, and
   the real side effect must have its own coverage on an e2e path where it can
   run for real.
+- **Stubs on inline peers patch instance members, never prototypes or
+  module-level singletons.** Inline peers co-located in one process share the
+  module graph; a patch on an instance dies with its peer, a patch on a
+  prototype or on process-global state such as `Clock` leaks the fault into
+  every other peer in the process. The one exception is a single-runtime
+  fixture (no co-located peers) that patches a prototype or re-initialises
+  `Clock` and restores it in `finally`.
 - **Test files contain tests, not helpers.** Any staging used (or usable) by
   more than one test lives in the harness where other tests can discover it:
   host-side manipulations as concrete `stubX`/`restoreX` pairs on the `stub`
@@ -264,6 +287,10 @@ work; it does not cancel or dispose the feature operation.
   asks for that change. `timeConfig` is protocol input, not a test wait budget.
   Diagnose and fix the ordering, detached-work, lifecycle, or event-barrier bug
   that made the test depend on extra protocol time.
+- The harness baseline `p2pTime` is 5 (Luka, 2026-10-10): one staging step under
+  load can idle the table past `p2pTime + agreementTime`. The per-test widenings
+  he approved are listed in `docs/spec/audit/verification.md` ("Test timing
+  inputs"); any new one needs his explicit approval and an entry there.
 - Do not hardcode timeout values for protocol, event, status, sync, dispute, or
   snapshot waits. Omit the timeout when the action has a derived default, or use
   `h.event.protocolEventTimeoutMs(...)` when a lower-level API requires one.
@@ -316,7 +343,7 @@ with the suite still green.
   forge and browser tiers), or `--grep <regexp>` for the narrowest relevant
   task.
 - Browser gates and Mocha files marked `// @distributed-requires: browser` need
-  a protocol 14 worker host whose runner image was built with
+  a protocol 14 or newer worker host whose runner image was built with
   `yarn test:parallel:image`. Without one they are skipped after the discovery
   window with a warning that lists them; check a green run for it. A Mocha file
   that launches Chromium must carry that marker in its leading comments. See

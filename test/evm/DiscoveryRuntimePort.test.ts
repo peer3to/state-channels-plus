@@ -1,3 +1,4 @@
+import { TransportType, type OpenConnection } from "@/transport";
 import { Status } from "@/types";
 import {
     addressesEqual,
@@ -6,12 +7,14 @@ import {
     Type,
     sleep
 } from "@/utils";
+import { assertAuthoredLeaveFallback } from "@test/fixtures/AuthoredLeaveFailureStaging";
 import {
-    assertAuthoredLeaveFallback,
-    assertExitFallbackFailureGuards
-} from "@test/fixtures/AuthoredLeaveFailureStaging";
-import { assertClean, setup } from "@test/fixtures/DiscoveryRuntimePortStaging";
+    assertClean,
+    expectLeftHandoffEndsJoins,
+    setup
+} from "@test/fixtures/DiscoveryRuntimePortStaging";
 import { assertPendingLeaveGuard } from "@test/fixtures/PendingLeaveStaging";
+import { waitUntilScheduledReductionEntered } from "@test/fixtures/ReductionScheduleStaging";
 import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -35,6 +38,16 @@ describe("connectToChannel input validation", function () {
                 autoOpen: "yes" as never
             })
         ).to.be.rejectedWith("autoOpen must be a boolean");
+        await assertClean(h);
+    });
+
+    it("non-boolean shouldSpectateWhenFull rejects before state mutation", async function () {
+        const { h, signer } = await setup();
+        await expect(
+            signer.connectToChannel(ethers.id("bad-spectate-when-full"), {
+                shouldSpectateWhenFull: "yes" as never
+            })
+        ).to.be.rejectedWith("shouldSpectateWhenFull must be a boolean");
         await assertClean(h);
     });
 
@@ -549,6 +562,31 @@ describe("connectToChannel signer contract", function () {
         ).to.equal(Status.PENDING_PARTICIPANT);
     });
 
+    it("shouldJoin with shouldSpectateWhenFull on an already-open full target reaches the host: connect returns false and the runtime stays SYNCED with no abort", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(3, { autoConnect: false, maxChannelParticipants: 2 });
+        const channelId = ethers.id("already-open-full-spectate-join");
+        await Promise.all(
+            h.peers.slice(0, 2).map((peer) =>
+                peer.p2pInstance.p2pSigner.connectToChannel(channelId, {
+                    autoOpen: true
+                })
+            )
+        );
+
+        expect(
+            await h.peers[2].p2pInstance.p2pSigner.connectToChannel(channelId, {
+                shouldJoin: true,
+                shouldSpectateWhenFull: true
+            })
+        ).to.equal(false);
+        // without the option the host aborts the runtime on the full channel
+        expect(
+            await h.control(h.peers[2]).query.getStatus().request()
+        ).to.equal(Status.SYNCED);
+        expect(h.peers[2].eventSpies.onAbort?.called ?? false).to.equal(false);
+    });
+
     it("shouldJoin on an already-open target preserves supplied amount and data", async function () {
         const h = TestSession.getHarness();
         await h.setup(3, { autoConnect: false });
@@ -774,6 +812,34 @@ describe("connectToChannel signer contract", function () {
         expect(await connect).to.equal(false);
     });
 
+    it("a leave of a targeted connect's derived topic reports false and does not cancel the targeted attempt", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const signer = h.peers[0].p2pInstance.p2pSigner;
+        const channelId = ethers.id("target-topic-leave");
+        const connect = signer.connectToChannel(channelId, {
+            autoOpen: true
+        });
+        await waitFor(async () => {
+            const availability = await h
+                .control(h.peers[0])
+                .query.getLobbyAvailability()
+                .request();
+            return availability.matching;
+        });
+
+        // no ordinary join is on the derived topic, so the leave changes nothing
+        expect(
+            await signer.leaveLobby(channelIdToTargetedJoinTopic(channelId))
+        ).to.equal(false);
+        expect(
+            (await h.control(h.peers[0]).query.getLobbyAvailability().request())
+                .matching
+        ).to.equal(true);
+        expect(await signer.cancelConnectToChannel(channelId)).to.equal(true);
+        expect(await connect).to.equal(false);
+    });
+
     it("manifest-loaded custom RPC filter rejects an authenticated peer before matching", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, {
@@ -805,6 +871,46 @@ describe("connectToChannel signer contract", function () {
 });
 
 describe("discovery runtime port", function () {
+    it("reports the open connections and their changes to the client across the runtime port", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("runtime-port-open-connections");
+        await Promise.all(
+            h.peers.map((peer) =>
+                h.control(peer).network.joinSelectedKey(topic).request()
+            )
+        );
+        await h.network.waitForP2PConnections();
+        const signer = h.peers[0].p2pInstance.p2pSigner;
+        await waitFor(
+            async () => (await signer.getOpenConnections()).length === 1
+        );
+        expect(await signer.getOpenConnections()).to.deep.equal([
+            {
+                peerAddress: ethers.getAddress(h.peers[1].address),
+                transportType: TransportType.HOLEPUNCH
+            }
+        ]);
+
+        const changes: OpenConnection[][] = [];
+        const unsubscribe = h.peers[0].p2pInstance.events.on(
+            "p2pEventHooks",
+            "onConnectionsChanged",
+            (connections) => {
+                changes.push(connections);
+            }
+        );
+        try {
+            // an expected close, which onDisconnection does not report
+            signer.disconnectFromPeers();
+            await waitFor(async () =>
+                changes.some((connections) => connections.length === 0)
+            );
+        } finally {
+            unsubscribe();
+        }
+    });
+
     it("internal leave route completes without disposing the host runtime", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });
@@ -816,7 +922,7 @@ describe("discovery runtime port", function () {
             )
         ).to.equal(false);
 
-        await peer.p2pInstance.p2pSigner.leaveChannel();
+        await h.event.leaveChannelWait(peer.index);
 
         expect(await peer.p2pInstance.p2pSigner.getChannelStatus()).to.equal(
             Status.NOT_OPENED
@@ -840,12 +946,11 @@ describe("discovery runtime port", function () {
             await h.control(peer).query.getLeaveChannelWatchdogMs().request()
         ).to.equal(60_000);
 
-        await peer.p2pInstance.leaveChannel();
+        peer.p2pInstance.leaveChannel();
+        await h.event.waitUntilLeftChannel(peer.index);
 
         expect(leaveTurnCount).to.equal(0);
-        await expect(
-            peer.p2pInstance.p2pSigner.getChannelStatus()
-        ).to.be.rejectedWith("disposed");
+        await h.event.waitUntilDisposed(peer.index);
     });
 
     it("public leave immediately disposes a synced observer runtime", async function () {
@@ -867,11 +972,10 @@ describe("discovery runtime port", function () {
             Status.SYNCED
         );
 
-        await observer.p2pInstance.leaveChannel();
+        observer.p2pInstance.leaveChannel();
+        await h.event.waitUntilLeftChannel(observer.index);
 
-        await expect(
-            observer.p2pInstance.p2pSigner.getChannelStatus()
-        ).to.be.rejectedWith("disposed");
+        await h.event.waitUntilDisposed(observer.index);
     });
 
     it("participating public leave emits leave turn, settles removal, and disposes once", async function () {
@@ -893,17 +997,13 @@ describe("discovery runtime port", function () {
             otherPeerTurnCount += 1;
         });
 
-        const firstLeave = leaver.p2pInstance.leaveChannel();
-        const secondLeave = leaver.p2pInstance.leaveChannel();
-        expect(firstLeave === secondLeave).to.equal(true);
-        await h.event.waitUntilLeavePhase(leaver.index, "awaiting-exit");
+        // a repeated call changes nothing
+        leaver.p2pInstance.leaveChannel();
+        leaver.p2pInstance.leaveChannel();
+        await h.event.waitUntilLeaveState(leaver.index, "isLeaveRequested");
         expect(await h.control(leaver).query.getForceExit().request()).to.equal(
             true
         );
-        expect(
-            (await h.control(leaver).query.getLeaveChannelState().request())
-                ?.participantCount
-        ).to.equal(3);
         await expect(
             leaver.p2pInstance.p2pSigner.connectToChannel(h.channelId)
         ).to.be.rejectedWith("terminal channel leave is pending");
@@ -911,9 +1011,10 @@ describe("discovery runtime port", function () {
         await h.transition.advanceState();
         await h.event.waitForPeers("onLeaveTurn", [leaver.index], 1);
         await exitPromise;
-        await firstLeave;
+        await h.event.waitUntilLeftChannel(leaver.index);
 
         expect(leaveTurnCount).to.equal(1);
+        expect(leaver.eventSpies.onLeftChannel?.callCount).to.equal(1);
         expect(leaverNormalTurnCount).to.equal(0);
         expect(otherPeerTurnCount > 0).to.equal(true);
         expect(
@@ -921,12 +1022,10 @@ describe("discovery runtime port", function () {
                 leaver.address
             )
         ).to.equal(false);
-        await expect(
-            leaver.p2pInstance.p2pSigner.getChannelStatus()
-        ).to.be.rejectedWith("disposed");
+        await h.event.waitUntilDisposed(leaver.index);
     });
 
-    it("outer disposal failure rejects leave after the settled runtime becomes terminal", async function () {
+    it("outer disposal failure after the settled leave is a detached error", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0);
         const leaver = h.peers[1];
@@ -942,45 +1041,60 @@ describe("discovery runtime port", function () {
             throw new Error("injected outer disposal failure");
         };
 
-        const leave = leaver.p2pInstance.leaveChannel();
+        leaver.p2pInstance.leaveChannel();
         await h.transition.advanceState();
         await h.event.waitForPeers("onLeaveTurn", [leaver.index], 1);
         await exitPromise;
-        await expect(leave).to.be.rejectedWith(
-            "injected outer disposal failure"
-        );
+        await h.event.waitUntilLeftChannel(leaver.index);
+        await h.event.waitUntilDisposed(leaver.index);
+        // the leaver's disposal adopts the outer disposal as in-flight work,
+        // so its failure arrives later, only as an unhandled rejection
+        await TestSession.expectFirstDetachedError({
+            includes: "injected outer disposal failure",
+            timeoutMs: h.event.protocolEventTimeoutMs()
+        });
+        await TestSession.settleDetached({
+            expectedErrorIncludes: "injected outer disposal failure"
+        });
         expect(
             (await h.channelManager.getParticipants(h.channelId)).includes(
                 leaver.address
             )
         ).to.equal(false);
-        await expect(
-            leaver.p2pInstance.p2pSigner.getChannelStatus()
-        ).to.be.rejectedWith("disposed");
     });
 
     it("a reduction that drops the leaver keeps its status until the chain records the removal", async function () {
         const h = TestSession.getHarness();
-        // Same staging as the settled self-removal case above: the failed
-        // post's fallback dispute is the one that reduces.
+        // Same staging as the settled self-removal case below: the leave
+        // watchdog's fallback dispute is the one that reduces.
         await h.lifecycle.start(3, 0, {
-            timeConfig: { evidenceTime: 20 }
+            timeConfig: { evidenceTime: 20 },
+            // the production default
+            configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 15_000 }
         });
         const leaver = h.peers[1];
-        await h.control(leaver).stub.failPostStateSnapshotWait().request();
+        await h.control(leaver).stub.failStateSnapshotPost().request();
         let exitPromise: Promise<unknown> | undefined;
         leaver.p2pInstance.events.on("p2pEventHooks", "onLeaveTurn", () => {
             exitPromise = leaver.p2pInstance.p2pContractInstance.leaveChannel();
         });
-        const leave = leaver.p2pInstance.leaveChannel();
+        leaver.p2pInstance.leaveChannel();
         await h.transition.advanceState();
         await h.event.waitForPeers("onLeaveTurn", [leaver.index], 1);
         await exitPromise;
+        await h.transition.keepAuthoringUntil({
+            until: async () =>
+                (await h.query.getDisputeHashes({ peerIndices: [0] })).length >
+                0,
+            waitForPeers: [0, 2],
+            excludePeerIndices: [leaver.index],
+            maximumBlocks: 6
+        });
         await h.assert.dispute.committedWait({
             peersIndices: [0, 2],
             expectedCount: 1
         });
-        await h.control(leaver).stub.restorePostStateSnapshotWait().request();
+        await h.control(leaver).stub.restoreStateSnapshotPost().request();
         // Every reducer parks before its chain write: the reduced fork that
         // drops the leaver is installed locally on every peer while the chain
         // still lists the leaver.
@@ -992,9 +1106,11 @@ describe("discovery runtime port", function () {
         try {
             // The leaver installs its own reduced genesis at the kill period's
             // end and parks before the chain write.
-            await waitFor(
-                async () => (await holds[leaver.index].entered()) === 1,
-                h.event.evidencePeriodWaitMs(2)
+            await waitUntilScheduledReductionEntered(
+                h,
+                leaver.index,
+                h.activeForkId!,
+                holds[leaver.index].entered
             );
             expect(
                 await h.control(leaver).query.getStatus().request()
@@ -1004,26 +1120,25 @@ describe("discovery runtime port", function () {
                     leaver.address
                 )
             ).to.equal(true);
-            // Observe that leave remains pending while the chain submission is held.
-            const leaveOutcome = await Promise.race([
-                leave.then(() => ({ kind: "resolved" as const })),
-                sleep(2_000).then(() => ({ kind: "pending" as const }))
-            ]);
-            expect(leaveOutcome).to.deep.equal({ kind: "pending" });
+            // the leave stays pending while the chain submission is held
+            await sleep(2_000);
+            expect(leaver.eventSpies.onLeftChannel?.called).to.equal(false);
         } finally {
             for (const hold of holds) await hold.release();
         }
         // The reducers' transactions land, the chain's snapshot drops the
         // leaver, and only then the status and the leave follow. The settled
         // leave disposes the runtime, so the transition is read from the
-        // status hook.
-        await leave;
-        expect(
-            leaver.eventSpies.onStatusChanged?.calledWith(
-                Status.PARTICIPATING,
-                Status.SYNCED
-            )
-        ).to.equal(true);
+        // status hook; onLeftChannel can reach the client before that hook.
+        await h.event.waitUntilLeftChannel(leaver.index);
+        await waitFor(
+            async () =>
+                leaver.eventSpies.onStatusChanged?.calledWith(
+                    Status.PARTICIPATING,
+                    Status.SYNCED
+                ) ?? false,
+            h.event.protocolEventTimeoutMs()
+        );
         expect(
             (await h.channelManager.getParticipants(h.channelId)).includes(
                 leaver.address
@@ -1031,52 +1146,49 @@ describe("discovery runtime port", function () {
         ).to.equal(false);
     });
 
-    it("authored leave fast fallback rejects on missing-marker", async function () {
-        await assertAuthoredLeaveFallback(false, "missing-marker");
+    it("authored leave watchdog fallback is fatal on unrecognized-upload-failure", async function () {
+        await assertAuthoredLeaveFallback("unrecognized-upload-failure");
     });
-    it("authored leave fast fallback on evidence-expired awaits settlement and resolves on the reduced fork", async function () {
-        await assertAuthoredLeaveFallback(false, "evidence-expired");
-    });
-    it("authored leave slow fallback rejects on missing-marker", async function () {
-        await assertAuthoredLeaveFallback(true, "missing-marker");
-    });
-    it("authored leave slow fallback on evidence-expired awaits settlement instead of rejecting", async function () {
-        await assertAuthoredLeaveFallback(true, "evidence-expired");
-    });
-    it("authored leave slow fallback settles through one dispute", async function () {
-        await assertAuthoredLeaveFallback(true, "success");
-    });
-    it("exit fallback failure ignores absent and awaiting-exit operations", async function () {
-        await assertExitFallbackFailureGuards();
+    it("authored leave watchdog fallback on evidence-expired waits for the reduction and emits onLeftChannel", async function () {
+        await assertAuthoredLeaveFallback("evidence-expired");
     });
     it("failed fast snapshot post falls back to a settled self-removal dispute", async function () {
         const h = TestSession.getHarness();
-        // The failed post's fallback is the leaver's own self-removal dispute,
-        // raised one agreement window after the exit block. Nothing authors
-        // while it settles: the window it opens predates the next writer's
-        // participant timeout, so no honest peer is timed out meanwhile.
-        // Settlement runs through the full kill period.
+        // Every post of the leaver fails, so the leave watchdog raises its own
+        // self-removal dispute; the remaining participants keep authoring
+        // until then, so no honest peer is timed out meanwhile. Settlement
+        // runs through the full kill period.
         await h.lifecycle.start(3, 0, {
-            timeConfig: { evidenceTime: 20 }
+            timeConfig: { evidenceTime: 20 },
+            // the production default
+            configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 15_000 }
         });
         const leaver = h.peers[1];
         const originalForkId = h.activeForkId!;
-        await h.control(leaver).stub.failPostStateSnapshotWait().request();
+        await h.control(leaver).stub.failStateSnapshotPost().request();
         let exitPromise: Promise<unknown> | undefined;
         leaver.p2pInstance.events.on("p2pEventHooks", "onLeaveTurn", () => {
             exitPromise = leaver.p2pInstance.p2pContractInstance.leaveChannel();
         });
 
         const leaveStartedAt = Date.now();
-        const leave = leaver.p2pInstance.leaveChannel();
+        leaver.p2pInstance.leaveChannel();
         await h.transition.advanceState();
         await h.event.waitForPeers("onLeaveTurn", [leaver.index], 1);
         await exitPromise;
+        await h.transition.keepAuthoringUntil({
+            until: async () =>
+                (await h.query.getDisputeHashes({ peerIndices: [0] })).length >
+                0,
+            waitForPeers: [0, 2],
+            excludePeerIndices: [leaver.index],
+            maximumBlocks: 6
+        });
         await h.assert.dispute.committedWait({
             peersIndices: [0, 2],
             expectedCount: 1
         });
-        await h.control(leaver).stub.restorePostStateSnapshotWait().request();
+        await h.control(leaver).stub.restoreStateSnapshotPost().request();
         const [disputeHash] = await h.query.getDisputeHashes({
             peerIndices: [0]
         });
@@ -1090,11 +1202,7 @@ describe("discovery runtime port", function () {
             honestPeerIndices: [0, 2],
             assertMaliciousRemoved: false
         });
-        const leaveOutcome = await Promise.race([
-            leave.then(() => ({ kind: "resolved" as const })),
-            sleep(45_000).then(() => ({ kind: "pending" as const }))
-        ]);
-        expect(leaveOutcome).to.deep.equal({ kind: "resolved" });
+        await h.event.waitUntilLeftChannel(leaver.index);
         // settled through the dispute's kill period, never before it
         expect(Date.now() - leaveStartedAt).to.be.greaterThan(20_000);
 
@@ -1103,9 +1211,7 @@ describe("discovery runtime port", function () {
                 leaver.address
             )
         ).to.equal(false);
-        await expect(
-            leaver.p2pInstance.p2pSigner.getChannelStatus()
-        ).to.be.rejectedWith("disposed");
+        await h.event.waitUntilDisposed(leaver.index);
     });
 
     it("leave watchdog starts a dispute carrying self-removal with no new blocks", async function () {
@@ -1115,8 +1221,7 @@ describe("discovery runtime port", function () {
         });
         const leaver = h.peers[1];
         const recorder = await h.rpcStub.recordDisputeSubmissions(leaver.index);
-        const pendingLeave = leaver.p2pInstance.p2pSigner.leaveChannel();
-        void pendingLeave.catch(() => undefined);
+        await leaver.p2pInstance.p2pSigner.leaveChannel();
 
         await waitFor(async () => (await recorder.submissions()).length === 1);
 
@@ -1126,15 +1231,10 @@ describe("discovery runtime port", function () {
             Codec.decode(submissions[0].encodedDispute, Type.Dispute).input
                 .selfRemoval
         ).to.equal(true);
-        expect(
-            (await h.control(leaver).query.getLeaveChannelState().request())
-                ?.ingestedBlockCount
-        ).to.equal(0);
         await leaver.p2pInstance.dispose();
-        await expect(pendingLeave).to.be.rejectedWith("disposed");
     });
 
-    it("authored exit cancels the recorded watchdog and enters exit-authored", async function () {
+    it("an authored exit keeps the one leave watchdog armed until the exit settles", async function () {
         const h = TestSession.getHarness();
         await h.setup(3, {
             configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 50 }
@@ -1148,43 +1248,48 @@ describe("discovery runtime port", function () {
             exit = leaver.p2pInstance.p2pContractInstance.leaveChannel();
         });
         await h.lifecycle.openChannel();
-        const leave = leaver.p2pInstance.p2pSigner.leaveChannel();
+        await leaver.p2pInstance.p2pSigner.leaveChannel();
         try {
-            await h.event.waitUntilLeavePhase(leaver.index, "awaiting-exit");
             await h.transition.advanceState();
             await h.event.waitForPeers("onLeaveTurn", [leaver.index], 1);
             await exit;
+            await h.event.waitUntilLeaveState(
+                leaver.index,
+                "isExitBlockCommitted"
+            );
             expect(
-                (await h.control(leaver).query.getLeaveChannelState().request())
-                    ?.phase
-            ).to.equal("exit-authored");
+                await h
+                    .control(leaver)
+                    .stub.getLeaveWatchdogObservation()
+                    .request()
+            ).to.deep.equal({ delayMs: 50, scheduled: 1, cancelled: 0 });
+            expect(await recorder.submissions()).to.have.length(0);
+            await post.release();
+            await h.event.waitUntilLeftChannel(leaver.index);
+            // the settled exit cancelled the one watchdog
             expect(
                 await h
                     .control(leaver)
                     .stub.getLeaveWatchdogObservation()
                     .request()
             ).to.deep.equal({ delayMs: 50, scheduled: 1, cancelled: 1 });
-            expect(await recorder.submissions()).to.have.length(0);
         } finally {
             await post.release();
             await h.control(leaver).stub.restoreLeaveWatchdog().request();
         }
-        await leave;
     });
 
     it("pending leave with the signer still local makes no chain membership read", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0);
         const leaver = h.getPeer(1);
-        const leave = leaver.p2pInstance.p2pSigner.leaveChannel();
-        void leave.catch(() => undefined);
+        await leaver.p2pInstance.p2pSigner.leaveChannel();
         try {
-            await h.event.waitUntilLeavePhase(leaver.index, "awaiting-exit");
             await h.control(leaver).stub.recordChainMembershipReads().request();
             let reads: number;
             try {
                 await h.execOnHost(leaver, async (sm) => {
-                    await sm.leaveChannelService.onSettledStateObserved();
+                    await sm.leaveChannelService["checkLeft"]();
                 });
                 reads = await h
                     .control(leaver)
@@ -1200,7 +1305,6 @@ describe("discovery runtime port", function () {
         } finally {
             await leaver.p2pInstance.dispose();
         }
-        await expect(leave).to.be.rejectedWith("disposed");
     });
 
     it("pending terminal leave rejects joinLobby", async function () {
@@ -1222,7 +1326,7 @@ describe("discovery runtime port", function () {
         );
     });
 
-    it("disposal rejects leave while a watchdog upload is held and its late completion cannot resettle leave", async function () {
+    it("disposal during a held watchdog upload stops the runtime and the late completion reports nothing", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0, {
             configOverrides: {
@@ -1236,21 +1340,11 @@ describe("discovery runtime port", function () {
             { hold: true }
         );
         const endpoint = runtimeEndpointFor(leaver.p2pInstance);
-        let settlements = 0;
-        const leave = leaver.p2pInstance.p2pSigner.leaveChannel().then(
-            () => {
-                settlements += 1;
-                return "resolved";
-            },
-            (error: Error) => {
-                settlements += 1;
-                return error.message;
-            }
-        );
+        await leaver.p2pInstance.p2pSigner.leaveChannel();
         await recorder.waitUntilHeld();
         try {
+            // local shutdown does not wait for the held upload
             await endpoint.sm.dispose();
-            expect(await leave).to.include("disposed");
             expect(
                 endpoint.stub.getRecordedDisputeSubmissions().submissions[0]
                     .waited
@@ -1261,49 +1355,14 @@ describe("discovery runtime port", function () {
                     endpoint.stub.getRecordedDisputeSubmissions().submissions[0]
                         .waited
             );
-            expect(settlements).to.equal(1);
-            expect(await leave).to.include("disposed");
+            expect(leaver.eventSpies.onLeftChannel?.called).to.equal(false);
         } finally {
             endpoint.stub.restoreDisputeSubmissions();
         }
         await TestSession.settleDetached();
     });
 
-    it("leave watchdog rejects without a dispute marker", async function () {
-        const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 0, {
-            configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 50 }
-        });
-        const leaver = h.peers[1];
-        const recorder = await h.rpcStub.recordDisputeSubmissions(
-            leaver.index,
-            {
-                failWith: {
-                    customError: "ErrorCantParticipateInDispute",
-                    customErrorArgs: [
-                        ethers.hexlify(h.channelId),
-                        leaver.address
-                    ],
-                    at: "send"
-                }
-            }
-        );
-        await expect(
-            leaver.p2pInstance.p2pSigner.leaveChannel()
-        ).to.be.rejectedWith(
-            "Terminal channel leave failed to start a dispute"
-        );
-        expect(await recorder.submissions()).to.have.length(1);
-        expect(
-            await h.control(leaver).query.didIDispute(h.activeForkId!).request()
-        ).to.equal(false);
-        await TestSession.settleDetached({
-            expectedErrorIncludes:
-                "Terminal channel leave failed to start a dispute"
-        });
-    });
-
-    it("leave watchdog rejects after the evidence period expires", async function () {
+    it("leave watchdog dispute that loses the evidence race keeps the leave waiting with no error", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0, {
             configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 50 }
@@ -1322,39 +1381,80 @@ describe("discovery runtime port", function () {
                 }
             }
         );
-        await expect(
-            leaver.p2pInstance.p2pSigner.leaveChannel()
-        ).to.be.rejectedWith("RaceConditionDisputeEvidencePeriodExpired");
-        expect(await recorder.submissions()).to.have.length(1);
+        await leaver.p2pInstance.p2pSigner.leaveChannel();
+        await waitFor(async () => (await recorder.submissions()).length === 1);
+        // the refused upload rolls its marker back; the leave waits for the
+        // window's reduction (staged with a real dispute in the authored
+        // evidence-expired case)
+        await waitFor(
+            async () =>
+                !(await h
+                    .control(leaver)
+                    .query.didIDispute(h.activeForkId!)
+                    .request())
+        );
+        await TestSession.settleDetached();
         expect(
-            await h.control(leaver).query.didIDispute(h.activeForkId!).request()
-        ).to.equal(false);
-        await TestSession.settleDetached({
-            expectedErrorIncludes: "RaceConditionDisputeEvidencePeriodExpired"
-        });
+            await h.control(leaver).query.getLeaveChannelState().request()
+        ).to.deep.include({ isLeaveRequested: true });
+        expect(leaver.eventSpies.onLeftChannel?.called).to.equal(false);
     });
 
-    it("fixed N plus one block bound starts the same self-removal dispute", async function () {
+    it("more than N plus one blocks before the leaver's exit start no self-removal dispute and the exit settles the leave", async function () {
         const h = TestSession.getHarness();
         await h.setup(3);
         const leaver = h.peers[1];
+        const remaining = [0, 2];
         const recorder = await h.rpcStub.recordDisputeSubmissions(leaver.index);
         await h.lifecycle.openChannel();
-        const pendingLeave = leaver.p2pInstance.p2pSigner.leaveChannel();
-        void pendingLeave.catch(() => undefined);
-        await h.event.waitUntilLeavePhase(leaver.index, "awaiting-exit");
+        const forkId = h.activeForkId!;
+        await leaver.p2pInstance.p2pSigner.leaveChannel();
 
-        await h.transition.advanceState({ count: 4 });
-        await waitFor(async () => (await recorder.submissions()).length === 1);
-
-        const submissions = await recorder.submissions();
-        expect(submissions).to.have.length(1);
+        // N + 2 committed blocks, one more than the removed N + 1 bound. The
+        // math machine rotates the writer, so the leaver writes some of them:
+        // it defers its exit past its leave turn, as an application does
+        // when its exit point is still blocks away.
+        await h.transition.advanceState({ count: 5 });
         expect(
-            Codec.decode(submissions[0].encodedDispute, Type.Dispute).input
-                .selfRemoval
-        ).to.equal(true);
-        await leaver.p2pInstance.dispose();
-        await expect(pendingLeave).to.be.rejectedWith("disposed");
+            await h.control(leaver).query.getLeaveChannelState().request()
+        ).to.deep.include({
+            isLeaveRequested: true,
+            isLeaveTurnTaken: true,
+            isExitBlockCommitted: false
+        });
+        expect(await recorder.submissions()).to.have.length(0);
+
+        while ((await h.query.getNextPeerToWrite()).index !== leaver.index)
+            await h.transition.advanceState();
+        await h.transition.submit(
+            leaver,
+            (contract) => contract.leaveChannel(),
+            {
+                waitForTurn: true,
+                waitForSync: false
+            }
+        );
+        // The exit block is authored: the leaver never writes again, and the
+        // others keep the slot alive while the exit snapshot lands.
+        h.contextApi.markAfkPeer({ afkPeerIndex: leaver.index });
+        await h.transition.keepAuthoringUntil({
+            until: () => leaver.eventSpies.onLeftChannel?.called === true,
+            waitForPeers: remaining,
+            excludePeerIndices: [leaver.index],
+            maximumBlocks: 20
+        });
+        await h.event.waitUntilLeftChannel(leaver.index);
+
+        // The chain shows the exit snapshot removed the leaver with no
+        // dispute on the fork.
+        expect(
+            await h.channelManager.isForkDisputed(h.channelId, forkId)
+        ).to.equal(false);
+        expect(
+            (await h.channelManager.getParticipants(h.channelId)).includes(
+                leaver.address
+            )
+        ).to.equal(false);
     });
 
     it("pending participant keeps one leave operation through promotion and exit", async function () {
@@ -1373,12 +1473,8 @@ describe("discovery runtime port", function () {
             exitPromise = joiner.p2pInstance.p2pContractInstance.leaveChannel();
         });
 
-        const leave = joiner.p2pInstance.leaveChannel();
-        await h.event.waitUntilLeavePhase(joiner.index, "awaiting-exit");
-        expect(
-            (await h.control(joiner).query.getLeaveChannelState().request())
-                ?.participantCount
-        ).to.equal(3);
+        joiner.p2pInstance.leaveChannel();
+        await h.event.waitUntilLeaveState(joiner.index, "isLeaveRequested");
 
         // The join lands as an inbound block that the next writer includes
         // once its event delivery caught up; keep authoring until the joiner
@@ -1404,17 +1500,13 @@ describe("discovery runtime port", function () {
         });
         await exitPromise;
         h.contextApi.markAfkPeer({ afkPeerIndex: joiner.index });
-        let leaveSettled = false;
-        const settledLeave = leave.then(() => {
-            leaveSettled = true;
-        });
         await h.transition.keepAuthoringUntil({
-            until: () => leaveSettled,
+            until: () => joiner.eventSpies.onLeftChannel?.called === true,
             waitForPeers: [0, 1, 2],
             excludePeerIndices: [joiner.index],
             maximumBlocks: 20
         });
-        await settledLeave;
+        await h.event.waitUntilLeftChannel(joiner.index);
 
         expect(
             (await h.channelManager.getParticipants(h.channelId)).includes(
@@ -1584,7 +1676,7 @@ describe("discovery runtime port", function () {
         expect(await indefiniteJoin).to.equal(undefined);
     });
 
-    it("does not let leaveLobby cancel negotiation after matching handoff", async function () {
+    it("a leave during the matching handoff waits for the negotiation and reports false when it opens a channel", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });
         const topic = ethers.id("runtime-port-handoff-boundary");
@@ -1607,9 +1699,11 @@ describe("discovery runtime port", function () {
                 );
                 return counts.every((count) => count === 1);
             });
-            expect(
-                await h.peers[0].p2pInstance.p2pSigner.leaveLobby(topic)
-            ).to.equal(false);
+            const leave = h.peers[0].p2pInstance.p2pSigner.leaveLobby(topic);
+            // the leave settles with the join; this only keeps an early
+            // rejection handled until it is awaited
+            leave.catch(() => undefined);
+            await h.network.waitForLeftLobbyJoins([0], topic);
             await expect(
                 h.peers[0].p2pInstance.p2pSigner.joinLobby(
                     ethers.id("runtime-port-handoff-replacement")
@@ -1620,9 +1714,73 @@ describe("discovery runtime port", function () {
             const [first, second] = await Promise.all(joins);
             expect(first?.channelId).to.equal(second?.channelId);
             expect(first?.channelId).not.to.equal(ethers.ZeroHash);
+            // the negotiation opened a channel first, so the leave changed nothing
+            expect(await leave).to.equal(false);
         } finally {
             await Promise.all(releases.map((release) => release()));
         }
+    });
+
+    it("ends a lobby join left during the handoff when its negotiation then fails", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("runtime-port-handoff-leave");
+        await expectLeftHandoffEndsJoins(h, topic, (signer) =>
+            signer.leaveLobby(topic)
+        );
+    });
+
+    it("keeps a handoff leave when a second join on the same signer is rejected", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("runtime-port-handoff-leave-rejected-join");
+        await expectLeftHandoffEndsJoins(
+            h,
+            topic,
+            (signer) => signer.leaveLobby(topic),
+            async (signer) => {
+                await expect(
+                    signer.joinLobby(ethers.id("runtime-port-handoff-other"))
+                ).to.be.rejectedWith("already handed off");
+            }
+        );
+    });
+
+    it("matches a handoff leave across topic letter case and keeps it after a leave of another topic", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("runtime-port-handoff-leave-case");
+        await expectLeftHandoffEndsJoins(
+            h,
+            topic,
+            (signer) => signer.leaveLobby(`0x${topic.slice(2).toUpperCase()}`),
+            async (signer) => {
+                // no join is on the other topic, so that leave changes nothing
+                expect(
+                    await signer.leaveLobby(
+                        ethers.id("runtime-port-handoff-other")
+                    )
+                ).to.equal(false);
+            }
+        );
+    });
+
+    it("ends a lobby join left before its matching started", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("runtime-port-leave-before-matching");
+        const signer = h.peers[0].p2pInstance.p2pSigner;
+        const join = signer.joinLobby(topic);
+        // the join ends before its matching starts, with no channel
+        expect(await signer.leaveLobby(topic)).to.equal(true);
+        expect(await join).to.equal(undefined);
+        const peer = h.control(h.peers[0]);
+        expect(await peer.query.getStatus().request()).to.equal(
+            Status.NOT_OPENED
+        );
+        expect(
+            (await peer.query.getLobbyAvailability().request()).topic
+        ).to.equal(undefined);
     });
 
     it("joinLobby starts ordinary negotiation from the returned match", async function () {

@@ -6,7 +6,6 @@ import type { RemoteRoot } from "@/rpc/internal/RemoteRoot";
 import { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
 import { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot";
 import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
-import { config } from "@/utils/config";
 import { rootWorkerUrl } from "@platform/rootWorkerRuntime";
 import { RootCreationControl } from "@test/fixtures/runtimeRpc/RootCreationControl";
 import { expect } from "chai";
@@ -35,7 +34,7 @@ export async function assertRootCreation(mode: "inline" | "worker") {
                     workerUrl: rootWorkerUrl(
                         "../../../../test/fixtures/node/ThreadNameRootEntry.js"
                     ),
-                    args: { config, customPrecompiles: [] }
+                    args: { customPrecompiles: [] }
                 }),
             (root) => {
                 if (!(root instanceof ContractExecutorRoot)) return;
@@ -122,19 +121,19 @@ async function assertCreatedRootTypes(
         ContractExecutorRoot,
         {
             mode: "worker",
-            args: { config, customPrecompiles: [] }
+            args: { customPrecompiles: [] }
         }
     );
     // @ts-expect-error - a parentless worker handle is remote, not the local root.
     parentless.executor;
     await createRoot(ContractExecutorRoot, {
         mode: "inline",
-        args: { config, customPrecompiles: [] }
+        args: { customPrecompiles: [] }
     });
     const child = await createRoot(ContractExecutorRoot, {
         parent,
         mode: "inline",
-        args: { config, customPrecompiles: [] }
+        args: { customPrecompiles: [] }
     });
     const disposed: Promise<void | null> = child.rpc.lifecycle
         .dispose()
@@ -209,7 +208,7 @@ export async function assertMissingRootWorkerUrl(): Promise<void> {
             await createRoot(ContractExecutorRoot, {
                 parent,
                 mode: "worker",
-                args: { config, customPrecompiles: [] }
+                args: { customPrecompiles: [] }
             });
         } catch (error) {
             failure = error;
@@ -235,7 +234,7 @@ export async function assertDisposingParentRejectsChild(
                 workerUrl: rootWorkerUrl(
                     "../worker/ContractExecutorRootEntry.js"
                 ),
-                args: { config, customPrecompiles: [] }
+                args: { customPrecompiles: [] }
             }).then(
                 () => "created",
                 (error: Error) => error.message
@@ -276,7 +275,7 @@ export async function assertParentCloseDuringRootStartup(
                 createRoot(ContractExecutorRoot, {
                     parent,
                     mode: "inline",
-                    args: { config, customPrecompiles: [] }
+                    args: { customPrecompiles: [] }
                 }),
             (root) => {
                 if (!(root instanceof ContractExecutorRoot)) return;

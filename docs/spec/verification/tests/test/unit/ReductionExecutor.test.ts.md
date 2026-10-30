@@ -1,12 +1,7 @@
-# test/unit/ReductionExecutor.test.ts — Test Report
+# ReductionExecutor.test.ts
 
-> **Test file:** [test/unit/ReductionExecutor.test.ts](../../../../../../test/unit/ReductionExecutor.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [ReductionExecutor.ts](../../../../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/unit/ReductionExecutor.test.ts](../../../../../../test/unit/ReductionExecutor.test.ts)
+Exercises: [ReductionExecutor.ts](../../../../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md)
 
 ## Overview
 
@@ -17,7 +12,7 @@ land on-chain before the observer's `onDisputeCommitted` handler stores the stru
 incoming dispute-committed events, stages a genuine invalid-transition dispute from the other
 peers, waits out the kill period, and then calls `reductionManager.tryReduce` by hand via
 `execOnHost`. The oracles assert the staged gap is real (at least one on-chain window commitment
-missing locally), that `tryReduce` recovers via `EventSyncService.ensureDisputesProcessed` instead
+missing locally), that `tryReduce` recovers via `EventSyncService.loadSynchronizedWindowCommitments` instead
 of throwing, that every commitment is stored afterwards, and — the substantive check — that
 `getSyncedForkDisputes` hands reduction the complete on-chain window, not just the subset whose
 events arrived; the released peers then complete the reduction for real. The other planned
@@ -27,21 +22,40 @@ The `no reduce data` reschedule case stages the lagging peer as peer 1: the stag
 next writer (peer 2), which the reduction slashes, so the lagging peer must be a different participant. Before
 plan 30 the case passed with peer 2 as the lagging peer only because its aborted runtime kept reducing after
 disposal.
+The case where someone else's reduction meets an unavailable run stages the lagging peer as a synced
+spectator: a participant's audit of the window throws on the unavailable run, so only a spectator reaches
+the reduction check with it missing. It is not challenged, while a participant that holds the run
+challenges the same claim.
 
-## Tests and covered test IDs
+Adoption-retry cases suppress unrelated writer timeout checks before releasing the reduction. The successor stays idle while adoption is deliberately failed and retried; no second timeout dispute changes the expected target fork. The exact chain fork and two-attempt assertions remain.
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
+The failed re-dispatch case makes every re-dispatched dispute log fail in its handler and checks that
+the attempt rejects with that handler failure and leaves the fork unchanged. It retains its event and
+reduction-timer holds until harness disposal, so late on-chain events cannot restart a reduction during
+teardown.
 
-| Test declaration                                                                                                                                                                                                                                          | Covers                                                                                                                                                                        |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`Unit: ReductionExecutor > fork adoption after the reduce > the reduce lands alone and a failed adopt-only post is retried once → the chain adopts the reduced fork`](../../../../../../test/unit/ReductionExecutor.test.ts#L320) (line 320)             | [`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P17`](../../../../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37.p17) |
-| [`Unit: ReductionExecutor > fork adoption after the reduce > the adopt-only post and its one retry both fail → no third attempt, the failure surfaces, the reduce stays recorded`](../../../../../../test/unit/ReductionExecutor.test.ts#L364) (line 364) | [`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P18`](../../../../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37.p18) |
-| [`Unit: ReductionExecutor > getSyncedForkDisputes > committed dispute missing locally → recovers via event replay, then reduces`](../../../../../../test/unit/ReductionExecutor.test.ts#L370) (line 370)                                                  | [`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P2`](../../../../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37.p2)   |
-| [`Unit: ReductionExecutor > reduce data unavailable > no reduce data → the attempt reschedules, the peer keeps participating, a later attempt completes`](../../../../../../test/unit/ReductionExecutor.test.ts#L13) (line 13)                            | —                                                                                                                                                                             |
-| [`Unit: ReductionExecutor > reduce data unavailable > someone else's reduction while the run is unavailable → not challenged, no throw`](../../../../../../test/unit/ReductionExecutor.test.ts#L100) (line 100)                                           | —                                                                                                                                                                             |
-| [`Unit: ReductionExecutor > dispute window unavailable > unreadable dispute window → the attempt defers instead of aborting`](../../../../../../test/unit/ReductionExecutor.test.ts#L186) (line 186)                                                      | —                                                                                                                                                                             |
-| [`Unit: ReductionExecutor > dispute window unavailable > a re-dispatched dispute log that fails again → failed attempt, not a fatal`](../../../../../../test/unit/ReductionExecutor.test.ts#L248) (line 248)                                              | —                                                                                                                                                                             |
-| [`Unit: ReductionExecutor > dispute window unavailable > unreadable dispute window → the reduction is not challenged`](../../../../../../test/unit/ReductionExecutor.test.ts#L287) (line 287)                                                             | —                                                                                                                                                                             |
+The out-of-gas resend case stages a reducible disputed fork, suppresses timeout checks, and
+installs `underfundFirstReducePost` on the reducer: its first reduce multicall is sent with gas
+for its calldata and little else, so it is mined and reverts out of gas, and later sends run for
+real. After the reduction tasks are released, the test waits until the chain snapshot leaves the
+source fork, asserts that the chain fork equals the reduced fork the chain records for the source
+fork, and settles detached work, which fails the test on any rejected detached promise. It also reads
+the recorded reduce receipts: their statuses are `[0, 1]`, so the first send was mined with a failure
+and the resend was mined successfully. The adoption on the chain is the oracle that the executor
+treated the mined resend as mined.
+
+The settled-adoption cases stage a reducible disputed fork that only peer 0 reduces, with every timeout check suppressed. Peer 0's multicalls are recorded and its adopt-only post is parked at its send after it was prepared against the successor fork; peer 0's reduction timers are held again so it never reduces the successor. A successor participant other than peer 0 and the next writer broadcasts an invalid block, and the honest participants open the successor's dispute window. The disputed-fork case releases the post at once. The not-latest-fork case first lets another honest participant reduce the successor and waits until that reduction's challenge period expired, so the parked post targets an older fork the chain reaches on its way to the later one. Each case asserts the real revert name from the released send, settles detached work with no error, finds no `adoptReducedFork-*` retry scheduled and exactly one adopt-only post recorded, and reads the chain snapshot still on the source fork.
+
+## Tests
+
+- `no reduce data → the attempt reschedules, the peer keeps participating, a later attempt completes`: none
+- `someone else's reduction while the run is unavailable → not challenged, no throw`: none
+- `unreadable dispute window → the attempt defers instead of aborting`: none
+- `a re-dispatched dispute log that fails → the attempt rejects with that failure`: none
+- `unreadable dispute window → the reduction is not challenged`: none
+- `the reduce lands alone and a failed adopt-only post is retried once → the chain adopts the reduced fork`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P17
+- `the reduce is mined out of gas and its resend lands → the reduced fork is adopted and nothing is reported as failed`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P19
+- `the adopt-only post and its one retry both fail → no third attempt, the failure surfaces, the reduce stays recorded`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P18
+- `a held adoption of the successor refused because a later reduction is final → settled, not retried`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P21
+- `a held adoption of the successor refused because the successor is disputed → settled, not retried`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P22
+- `committed dispute missing locally → recovers via event replay, then reduces`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P2

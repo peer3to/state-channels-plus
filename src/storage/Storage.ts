@@ -9,12 +9,12 @@ import { ForceJoinStorage } from "./ForceJoinStorage";
 import { FraudProofStorage } from "./FraudProofStorage";
 import { MessageBlockStorage } from "./MessageBlockStorage";
 import { ParticipantSetChangeStorage } from "./ParticipantSetChangeStorage";
-import { QueueStorage } from "./QueueStorage";
+import { type BlockPredecessor, QueueStorage } from "./QueueStorage";
 import { StateMachineStateStorage } from "./StateMachineStateStorage";
 import { StateSnapshotStorage } from "./StateSnapshotStorage";
 
 import { TimeoutStorage } from "./TimeoutStorage";
-import { BlockCoordinates, StateSnapshot } from "@/models";
+import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 import { ForkId, Bytes, BlockOrSnapshot, Hash } from "@/types/types";
 import { Address } from "@/types/types";
 import { deepCopyProxy, getChecksumAddress } from "@/utils";
@@ -106,6 +106,43 @@ export class Storage {
             forkId: coordinates.forkId,
             height: coordinates.height - 1
         });
+    }
+
+    /** The block below `coordinates` (none at height 0) and the snapshot it results in (the fork genesis at height 0). */
+    getPreviousBlockAndSnapshot(coordinates: BlockCoordinates): {
+        block?: Block;
+        snapshot?: StateSnapshot;
+    } {
+        const { forkId, height } = coordinates;
+        return {
+            block:
+                height > 0
+                    ? this.blocks.getBlock(forkId, height - 1)
+                    : undefined,
+            snapshot: this.getPreviousStateSnapshot(coordinates)
+        };
+    }
+
+    /**
+     * `block` (none: the fork genesis) as a replay predecessor: with the
+     * snapshot it results in and that snapshot's state, when both are held.
+     */
+    getPredecessor(
+        forkId: ForkId,
+        block?: Block
+    ): BlockPredecessor | undefined {
+        const snapshot = block
+            ? this.stateSnapshots.getStateSnapshotByHash(
+                  block.stateSnapshotHash
+              )
+            : this.stateSnapshots.getGenesisSnapshotByForkId(forkId);
+        const state =
+            snapshot &&
+            this.stateMachineStates.getStateMachineState(
+                snapshot.stateMachineStateHash
+            );
+        if (!snapshot || state === undefined) return undefined;
+        return { block, snapshot, state };
     }
 
     getParticipantsUnion(

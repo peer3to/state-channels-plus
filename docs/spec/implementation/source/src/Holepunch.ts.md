@@ -1,92 +1,71 @@
-# Holepunch.ts — Source Report
+# Holepunch.ts
 
-> **Source:** [src/Holepunch.ts](../../../../../src/Holepunch.ts) > **Status:** Authored — engineer verification pending.
-> **Design views:** [architecture/sdk/rpc/README.md](../../views/architecture/sdk/rpc/README.md)
+> **Source:** [src/Holepunch.ts](../../../../../src/Holepunch.ts)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../specification/runtime/execution.md#req-runtime-3-vqxw59)
+- [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
+- [`REQ-UPG-6-BC60XD` (Discovery topic leave is byte-exact and durable)](../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd)
+    - Partial: `leave` — a relayed leave stays announced, so [`REQ-UPG-6-BC60XD.T1.P8`](../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd.t1.p8) stays open ([`FIND-UPG-RELAY-2-0TVHJ4`](../../../audit/open-findings.md#find-upg-relay-2-0tvhj4)).
+- [`REQ-UPG-7-61PHDB` (Discovery converges for every join order)](../../../specification/peer-communication/transport-upgrade.md#req-upg-7-61phdb)
+- [`REQ-UPG-8-06HTCM` (Fallback is re-established within one agreement window)](../../../specification/peer-communication/transport-upgrade.md#req-upg-8-06htcm)
 
-## Responsibility and observable boundary
+## UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J
 
-Holepunch discovery/NAT-traversal wiring produces bootstrap transports and owns the ordered set of
-joined discovery topics. The caller's lobby topic is the Hyperswarm rendezvous itself; it is not copied
-onto each transport. Every resulting connection still requires identity proof, and the lobby session
-checks the topic carried by each lobby RPC.
+Discovery topic lifecycle
 
-## Key design decisions
+- Setup: Drive the real public join/leave surface with a typed swarm recorder, equal-byte buffers, duplicates, absent topics, and restart
+- Oracle: Calls and retained topic order match the byte-exact contract; removed topics are not announced again
 
-Join and rejoin share the synchronous announcement body. Topic order and duplicates stay intact; worker detection comes from the platform-neutral WebRTC provider helper. See [Holepunch.ts](../../../../../src/Holepunch.ts#L82).
+- [x] `UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P1` — join and options
+- [x] `UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P2` — separate equal buffer
+- [x] `UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P3` — duplicate first match
+- [x] `UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P4` — absent leave
+- [x] `UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P5` — pre-creation leave
+- [x] `UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P6` — no reannouncement after restart
 
-1. **Discovery metadata proves nothing** — every produced transport still runs the handshake.
-2. **Topics stay byte values.** Join stores every supplied `Buffer`; leave removes the first
-   byte-equal entry before forwarding the leave, so removed topics do not return on restart.
-3. **Topic membership is rendezvous only.** It forms connections but does not authenticate the peer
-   or replace the active-session topic check on lobby messages.
+## UNIT-TEST-HOLEPUNCH-32-72PXTG
 
-## Inputs, outputs, state, and side effects
+Discovery reannouncement
 
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
+- Setup: Record swarm join calls through the real rejoin path; retained duplicate topics appear in insertion order.
+- Oracle: Each variation below states its observable result; preserve all unrelated stored state and lifecycle policy.
 
-## Linked requirements
+- [x] `UNIT-TEST-HOLEPUNCH-32-72PXTG.P1` — reannounces duplicate topics in their insertion order
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
+## UNIT-TEST-HOLEPUNCH-LOOKUP-1-CS5RF8
 
-| Source file                                     | Specification IDs                                                                                                                                                                                 |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Holepunch.ts](../../../../../src/Holepunch.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../specification/runtime/execution.md#req-runtime-4-b0n70y), [`REQ-UPG-6-BC60XD`](../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd) |
+Topic lookup after an announce and after a ban release
 
-## Assumptions, dependencies, trust boundaries, and limits
+- Setup: Drive the real join/leave surface and the peer info Holepunch hands to a new connection's transport over a recording swarm whose announces (`flushed`) the test completes or fails and whose topic lookups (`status(topic).refresh()`) it records.
+- Oracle: A completed announce of a still-joined topic starts one lookup; a topic left first, or a destroyed swarm, starts none; `ban(false)` looks each joined topic up once and `ban(true)` looks nothing up; a failed announce or lookup is one debug message and reaches no warning or error; a completed announce and lookup are each one debug message with the time since the topic was joined.
 
-- Operates inside the participant runtime; untrusted input arrives only through the documented ingress paths.
+- [x] `UNIT-TEST-HOLEPUNCH-LOOKUP-1-CS5RF8.P1` — one lookup after the announce completes, none before
+- [x] `UNIT-TEST-HOLEPUNCH-LOOKUP-1-CS5RF8.P2` — no lookup of a topic left before its announce completes
+- [x] `UNIT-TEST-HOLEPUNCH-LOOKUP-1-CS5RF8.P3` — no lookup after the swarm is destroyed
+- [x] `UNIT-TEST-HOLEPUNCH-LOOKUP-1-CS5RF8.P4` — `ban(false)` looks each joined topic up exactly once
+- [x] `UNIT-TEST-HOLEPUNCH-LOOKUP-1-CS5RF8.P5` — `ban(true)` looks nothing up
+- [x] `UNIT-TEST-HOLEPUNCH-LOOKUP-1-CS5RF8.P6` — a failed announce is logged at debug level and starts no lookup
+- [x] `UNIT-TEST-HOLEPUNCH-LOOKUP-1-CS5RF8.P7` — a failed lookup is logged at debug level
+- [x] `UNIT-TEST-HOLEPUNCH-LOOKUP-1-CS5RF8.P8` — a completed announce and its lookup are each logged once at debug level with a numeric time since the join
+- [x] `UNIT-TEST-HOLEPUNCH-LOOKUP-1-CS5RF8.P9` — a topic joined twice and left once keeps its join time for both logs
 
-## Specification adherence
+## UNIT-TEST-HOLEPUNCH-ATTEMPT-1-H6QZVK
 
-- Role-consistent with the owning views; no divergence observed at this file's boundary.
+Outbound connection attempt log on a shared swarm
 
-## Specification contradictions
+- Setup: Inject a recording swarm that already has another owner's `update` listener, join a topic so Holepunch sets the swarm up, start dials and emit updates without a dial, then dispose Holepunch.
+- Oracle: Each dial is one debug message and an update without a dial is none; the other owner's listener receives every update, and dispose removes only Holepunch's listener.
 
-None demonstrated.
+- [x] `UNIT-TEST-HOLEPUNCH-ATTEMPT-1-H6QZVK.P1` — one attempt message per dial, none for an update without a dial
+- [x] `UNIT-TEST-HOLEPUNCH-ATTEMPT-1-H6QZVK.P2` — another owner's `update` listener survives setup and dispose; dispose removes Holepunch's own
 
-## Missing behavior
+## UNIT-TEST-HOLEPUNCH-DISPOSE-1-EXNRFP
 
-None demonstrated.
+Disposal on a browser relay that has not answered the first listen
 
-## Conformance traceability
+- Setup: Build a browser-mode Holepunch whose relay socket is a recording WebSocket, so the real Hyperswarm and relay client run against a relayer that never answers; open the socket, join a topic, then dispose.
+- Oracle: The disposal resolves: on the relay path the swarm's teardown is started, not awaited, because the closed relay socket is its only link and the first listen's reply can never arrive.
 
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                               | Implementation status | Evidence                                                                                                                             | Gap / divergence |
-| ----------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
-| [`REQ-UPG-6-BC60XD`](../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd) | Covered               | **Here:** public join/leave retain ordered `Buffer` topics, compare by bytes, remove before leave, and replay only retained entries. | None.            |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                        | Obligation                | Public entry and setup                                                                                                           | Oracle and forbidden effects                                                                                 | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ----------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-holepunch-topic-1-syjt8j"></a>`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J` | Discovery topic lifecycle | Drive the real public join/leave surface with a typed swarm recorder, equal-byte buffers, duplicates, absent topics, and restart | Calls and retained topic order match the byte-exact contract; removed topics are not announced again         | <a id="unit-test-holepunch-topic-1-syjt8j.p1"></a>`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P1` — join and options; <a id="unit-test-holepunch-topic-1-syjt8j.p2"></a>`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P2` — separate equal buffer; <a id="unit-test-holepunch-topic-1-syjt8j.p3"></a>`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P3` — duplicate first match; <a id="unit-test-holepunch-topic-1-syjt8j.p4"></a>`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P4` — absent leave; <a id="unit-test-holepunch-topic-1-syjt8j.p5"></a>`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P5` — pre-creation leave; <a id="unit-test-holepunch-topic-1-syjt8j.p6"></a>`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P6` — no reannouncement after restart. |
-| <a id="unit-test-holepunch-32-72pxtg"></a>`UNIT-TEST-HOLEPUNCH-32-72PXTG`           | Discovery reannouncement  | Record swarm join calls through the real rejoin path; retained duplicate topics appear in insertion order.                       | Each variation below states its observable result; preserve all unrelated stored state and lifecycle policy. | <a id="unit-test-holepunch-32-72pxtg.p1"></a>`UNIT-TEST-HOLEPUNCH-32-72PXTG.P1` — reannounces duplicate topics in their insertion order                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-
-## Related source reports
-
-- [transport/HolepunchTransport](./transport/HolepunchTransport.ts.md).
+- [x] `UNIT-TEST-HOLEPUNCH-DISPOSE-1-EXNRFP.P1` — a disposal while the first topic announce still waits on the relayer's listening reply resolves

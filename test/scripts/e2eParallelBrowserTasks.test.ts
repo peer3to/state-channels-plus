@@ -132,6 +132,7 @@ const { chromiumLaunchOptions, launchChromium } =
         chromiumLaunchOptions: (env: NodeJS.ProcessEnv) => {
             headless: boolean;
             args?: string[];
+            env?: NodeJS.ProcessEnv;
         };
         launchChromium: (
             chromium: {
@@ -246,6 +247,8 @@ describe("parallel browser task discovery", function () {
         const { tasks } = discoverBrowserTasks(REPO_TEST_DIR);
         expect(tasks.map((task) => task.fullTitle)).to.deep.equal([
             "run-p2p-webrtc-e2e",
+            "run-transport-holepunch-e2e",
+            "run-transport-local-e2e",
             "run-worker-contract-executor"
         ]);
     });
@@ -350,6 +353,8 @@ describe("parallel browser task discovery", function () {
         });
         expect(tasks.map((task) => task.fullTitle)).to.deep.equal([
             "run-p2p-webrtc-e2e",
+            "run-transport-holepunch-e2e",
+            "run-transport-local-e2e",
             "run-worker-contract-executor"
         ]);
     });
@@ -484,14 +489,15 @@ describe("browser warm-up selection", function () {
         expect(resolveWarmUps([MOCHA_TASK])).to.deep.equal([]);
     });
 
-    it("warms only the browser typecheck in distributed mode when a gate is scheduled", function () {
-        // Workers build forge in their prepare script and carry Chromium in
-        // their image; the typecheck runs once here instead of in every prepare.
+    it("warms the Foundry build and the browser typecheck in distributed mode", function () {
+        // The orchestrator builds forge and ships it with the workspace;
+        // workers carry Chromium in their image.
         expect(
             resolveWarmUps([MOCHA_TASK, FORGE_TASK, BROWSER_TASK], true).map(
                 (warmUp) => warmUp.message
             )
         ).to.deep.equal([
+            "Warming the Foundry build before the forge tier...",
             "Typechecking the browser sources before the browser tier..."
         ]);
     });
@@ -500,8 +506,10 @@ describe("browser warm-up selection", function () {
         expect(resolveWarmUps([MOCHA_TASK], true)).to.deep.equal([]);
     });
 
-    it("skips the browser typecheck in distributed mode for a forge-only run", function () {
-        expect(resolveWarmUps([FORGE_TASK], true)).to.deep.equal([]);
+    it("warms only the Foundry build in distributed mode for a forge-only run", function () {
+        expect(
+            resolveWarmUps([FORGE_TASK], true).map((warmUp) => warmUp.runner)
+        ).to.deep.equal([TASK_RUNNERS.FORGE]);
     });
 });
 
@@ -597,6 +605,8 @@ describe("browser tier admission", function () {
                 infraPids: () => [],
                 tickMs: 1,
                 resourceGate: STUB_RESOURCE_GATE,
+                projectRoot: logDir,
+                costCachePath: path.join(logDir, "test-costs.json"),
                 runTaskImpl: async (
                     _cmd: string,
                     _args: string[],
@@ -656,12 +666,24 @@ describe("browser task wire protocol", function () {
 });
 
 describe("browser tier selection", function () {
-    it("discovers the Mocha, forge and browser tiers by default", function () {
+    it("omits the browser tier by default", function () {
         expect(resolveDiscoverySelection(parseCliArgs(argv()))).to.deep.equal({
+            includeMocha: true,
+            includeForge: true,
+            includeBrowser: false
+        });
+    });
+
+    it("includes optional tiers through the explicit CI flags", function () {
+        const cli = parseCliArgs(
+            argv("--test-browser", "--test-parallel-script")
+        );
+        expect(resolveDiscoverySelection(cli)).to.deep.equal({
             includeMocha: true,
             includeForge: true,
             includeBrowser: true
         });
+        expect(cli).to.have.property("testParallelScript", true);
     });
 
     it("drops every other tier for --browser-only", function () {
@@ -750,7 +772,9 @@ describe("browser tier selection", function () {
                 EMPTY_TIER,
                 EMPTY_TIER
             )
-        ).to.contain("--browser-test-pattern");
+        )
+            .to.contain("--browser-test-pattern")
+            .and.contain("--test-browser=false");
     });
 
     it("reports a browser pattern that selects no runnable gate", function () {
@@ -968,12 +992,26 @@ describe("browser tier environment", function () {
         expect(chromiumLaunchOptions({})).to.deep.equal({ headless: true });
     });
 
-    it("moves Chromium's shared memory off /dev/shm where the image declares a contained environment", function () {
-        expect(
+    it("refuses a contained environment without HOME, so Chromium never falls back to the shared /tmp", function () {
+        expect(() =>
             chromiumLaunchOptions({ SCP_BROWSER_CONTAINED: "1" })
+        ).to.throw("A contained browser environment needs HOME");
+    });
+
+    it("moves Chromium's shared memory off /dev/shm and the shared /tmp where the image declares a contained environment", function () {
+        expect(
+            chromiumLaunchOptions({
+                SCP_BROWSER_CONTAINED: "1",
+                HOME: "/environment/home"
+            })
         ).to.deep.equal({
             headless: true,
-            args: ["--disable-dev-shm-usage"]
+            args: ["--disable-dev-shm-usage"],
+            env: {
+                SCP_BROWSER_CONTAINED: "1",
+                HOME: "/environment/home",
+                TMPDIR: "/environment/home"
+            }
         });
     });
 });

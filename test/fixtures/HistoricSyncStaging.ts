@@ -1,11 +1,15 @@
 // @spec-test-coverage-ignore: anchored sync staging exercised by explicit SpectateService declarations
 import { StateSnapshot } from "@/models";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { SyncPayload } from "@/types";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
+import { chainSnapshot } from "@test/fixtures/MilestoneSyncStaging";
+import { suppressTimeoutChecks } from "@test/fixtures/OlderDisputeStaging";
 import type { TestPeer } from "@test/harness/core/types";
+import { waitFor } from "@test/utils/waitFor";
 import type { MathStateMachine } from "@typechain-types";
 import { expect } from "chai";
 import { id } from "ethers";
@@ -29,7 +33,10 @@ export async function stageAnchoredSyncPayload(h: MathPeerTestHarness) {
  */
 export async function postAnchorAndServePayload(
     h: MathPeerTestHarness,
-    responder: TestPeer<HarnessControlRpc, MathStateMachine>,
+    responder: TestPeer<
+        P2pRuntimeHostRoot<HarnessControlRpc>,
+        MathStateMachine
+    >,
     waitForPeers?: number[]
 ) {
     const forkId = h.activeForkId!;
@@ -99,8 +106,14 @@ export async function applyAnchoredSyncPayload(
 /** `requester` applies `payload` as `responder`'s answer to a pinned request; returns the verdict and recorded rejection reasons. */
 export async function applyPinnedSyncPayload(
     h: MathPeerTestHarness,
-    requester: TestPeer<HarnessControlRpc, MathStateMachine>,
-    responder: TestPeer<HarnessControlRpc, MathStateMachine>,
+    requester: TestPeer<
+        P2pRuntimeHostRoot<HarnessControlRpc>,
+        MathStateMachine
+    >,
+    responder: TestPeer<
+        P2pRuntimeHostRoot<HarnessControlRpc>,
+        MathStateMachine
+    >,
     forkId: ForkId,
     blockHeight: number,
     payload: SyncPayload
@@ -139,5 +152,60 @@ export function forgedOutboundBlock(
         messages: [],
         totalBalance: latest.snapshotData.totalWithdrawals,
         timestamp: 1n
+    };
+}
+
+/**
+ * Four participants, blocks 0..1 final. The next writer leaves: its exit is
+ * the fork's first outbound block and its exit snapshot lands as the chain
+ * anchor. The next writer after it leaves with its exit post held: its exit
+ * is the second outbound block, above the anchor. Then `finalBlocks` more
+ * final blocks by the two remaining peers. `heldPost` releases the held post.
+ */
+export async function stageOutboundAroundAnchor(
+    h: MathPeerTestHarness,
+    options: { finalBlocks: number }
+) {
+    // Each exit waits agreementTime and then its snapshot post and chain
+    // event before the next writer authors; under load that idles longer
+    // than p2pTime + agreementTime, and the late block fails the time check.
+    await h.lifecycle.start(4, 2, { timeConfig: { p2pTime: 15 } });
+    await suppressTimeoutChecks(h, [0, 1, 2, 3]);
+    let remaining = [0, 1, 2, 3];
+    const anchoredLeaver = await h.query.getNextPeerToWrite();
+    await h.transition.participantLeaveStateTransition({
+        leaverIndex: anchoredLeaver.index,
+        waitForPeers: remaining
+    });
+    remaining = remaining.filter((index) => index !== anchoredLeaver.index);
+    await waitFor(
+        async () =>
+            (await chainSnapshot(h)).latestOutboundMessageBlockHeight === 1,
+        h.event.protocolEventTimeoutMs()
+    );
+    const anchor = await chainSnapshot(h);
+    const heldLeaver = await h.query.getNextPeerToWrite();
+    const heldPost = await h.rpcStub.holdSnapshotPostSend(heldLeaver.index);
+    await h.transition.participantLeaveStateTransition({
+        leaverIndex: heldLeaver.index,
+        waitForPeers: remaining
+    });
+    remaining = remaining.filter((index) => index !== heldLeaver.index);
+    await h.transition.advanceState({
+        count: options.finalBlocks,
+        waitForPeers: remaining,
+        waitForFinalization: true
+    });
+    await h.assert.sync.peersInSyncWait({ peerIndices: remaining });
+    expect(
+        (await chainSnapshot(h)).hash,
+        "the first exit snapshot stays the chain anchor"
+    ).to.equal(anchor.hash);
+    return {
+        forkId: h.activeForkId!,
+        anchor,
+        remaining,
+        heldLeaver: heldLeaver.index,
+        heldPost
     };
 }

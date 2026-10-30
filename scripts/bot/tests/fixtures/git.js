@@ -1,6 +1,6 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
-const os = require("node:os");
+const { realTmpdir } = require("./temp");
 const { execFileSync, spawn } = require("node:child_process");
 const { once } = require("node:events");
 const { Worktrees } = require("../../worktrees");
@@ -23,7 +23,7 @@ function command(root, args) {
     ).trim();
 }
 async function gitFixture(body, { holdFetch = false } = {}) {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "review-git-"));
+    const root = await fs.mkdtemp(path.join(realTmpdir(), "review-git-"));
     let child;
     try {
         const source = path.join(root, "source"),

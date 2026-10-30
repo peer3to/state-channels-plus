@@ -5,7 +5,6 @@ import { Block } from "@/models";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import {
     BlockOrigin,
-    getSourcePeersAndAuthor,
     getSourcePeers,
     getSignatureSuppliers,
     type QueueBlockOptions,
@@ -21,7 +20,7 @@ import {
     Signature,
     Timestamp
 } from "@/types/types";
-import { DetachedPromises, Logger } from "@/utils";
+import { Logger } from "@/utils";
 import { channelKey } from "@/utils/channelKey";
 import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -53,6 +52,9 @@ export default class BlockQueueManager {
     private readonly recoveryScheduledForFork: Set<ForkId> = new Set();
     private readonly recoverySuppressedUntil: Map<ForkId, Timestamp> =
         new Map();
+    // Source probes and fork recoveries in flight. This manager owns them:
+    // `dispose` waits for them, so none outlives the stop of its StateManager.
+    private readonly inFlight: Set<Promise<void>> = new Set();
 
     constructor(
         private readonly stateManager: StateManager,
@@ -124,13 +126,17 @@ export default class BlockQueueManager {
                     );
                 if (eligibility !== SourceEligibility.ELIGIBLE) {
                     if (eligibility === SourceEligibility.ABSENT) {
-                        await this.stateManager.p2pManager.localRpc.spectateService.sync(
-                            options.senderAddress,
-                            block.channelId,
-                            block.forkId,
-                            block.height
-                        );
+                        // a failed sync already rejected bad data or counted
+                        // the failed request -> no verdict here
+                        const synced =
+                            await this.stateManager.p2pManager.localRpc.spectateService.syncBlockSource(
+                                options.senderAddress,
+                                block.channelId,
+                                block.forkId,
+                                block.height
+                            );
                         if (
+                            synced &&
                             this.stateManager.membershipService.getCachedSourceEligibility(
                                 options.senderAddress
                             ) !== SourceEligibility.ELIGIBLE
@@ -151,12 +157,14 @@ export default class BlockQueueManager {
                           senderAddress: options.senderAddress
                       }
                     : { origin: options.origin };
-            if (this.isBlockStored(block)) {
-                const entry = this.stateManager.storage.queues.createEntry(
-                    block,
-                    queueOptions
+            if (this.isPastBlock(block, strategy)) {
+                this.settlePastBlock(
+                    this.stateManager.storage.queues.createEntry(
+                        block,
+                        queueOptions
+                    ),
+                    strategy
                 );
-                this.scheduleStoredBlockConfirmationMerge(entry, strategy);
                 return true;
             }
 
@@ -203,8 +211,15 @@ export default class BlockQueueManager {
 
             return true;
         } catch (error) {
+            // A throw here is a local fault (e.g. an unavailable chain
+            // provider or a failed local-diamond read), not a verdict on
+            // the sender: `false` would blacklist an honest gossiper for
+            // our own infrastructure failure, and rethrowing would make
+            // the RPC layer drop its session. Log it, drop the copy and
+            // keep the connection; gossip redundancy redelivers. Only
+            // the explicit verdicts above reject the sender.
             this.logger.error(`Error ingesting block confirmation:`, { error });
-            return false;
+            return true;
         }
     }
 
@@ -307,14 +322,59 @@ export default class BlockQueueManager {
             `BlockQueueManager.handleStoredBlockConfirmationMerge - fork ${entry.block.forkId} - block ${entry.block.height}`
         );
     }
+
+    /**
+     * Is this peer already past the block? Either the block is stored, or
+     * its height is at or below the local height on its fork with no block
+     * stored there: a sync moved this peer ahead and it never had that
+     * block. Dispute replay judges blocks out of live order, so only a
+     * stored block is past for it.
+     */
+    public isPastBlock(block: Block, strategy: AValidationStrategy): boolean {
+        return (
+            this.isBlockStored(block) ||
+            (strategy.enforcesLiveForkAndOrderingGates &&
+                this.isFreeHeightBelowInstalledHistory(block))
+        );
+    }
+
+    /**
+     * Settles a past block (see `isPastBlock`): a stored block merges its
+     * confirmation; any other one is dropped with no execution, merge,
+     * probe or fraud proof.
+     */
+    public settlePastBlock(
+        entry: QueuedBlockEntry,
+        strategy: AValidationStrategy
+    ): void {
+        if (this.isBlockStored(entry.block)) {
+            this.scheduleStoredBlockConfirmationMerge(entry, strategy);
+            return;
+        }
+        this.logger.verbose(
+            "Dropping an unstored block at or below the local height",
+            {
+                block: LoggerUtils.getBlockMetadata(
+                    entry.block,
+                    this.stateManager.storage
+                )
+            }
+        );
+        P2pEventHooksUtils.notifyBlockConfirmationProcessed({
+            blockHash: entry.block.hash,
+            keepConnection: true,
+            p2pEventHooks: this.stateManager.p2pEventHooks
+        });
+    }
+
     /**
      * The ONLY sanctioned way to put a dequeued entry back. Strategy hooks reach
      * this while `onBlockConfirmation` holds the StateManager mutex, so all work
      * here is either synchronous storage mutation or a scheduled task - never an
      * inline timeout (that would re-enter validation on the wrong stack).
      *
-     * - If the block became stored while it was out of the queue, merge the
-     *   stored confirmation instead of waiting out the timeout, under the
+     * - If the block became past while it was out of the queue, settle it
+     *   (`settlePastBlock`) instead of waiting out the timeout, under the
      *   caller's `strategy` (falling back to the active one).
      * - Otherwise restore + (re)arm the remaining-window timeout; if the window
      *   already elapsed, run the timeout logic as an immediate task.
@@ -323,12 +383,11 @@ export default class BlockQueueManager {
         entry: QueuedBlockEntry,
         strategy?: AValidationStrategy
     ): void {
-        if (this.isBlockStored(entry.block)) {
-            this.scheduleStoredBlockConfirmationMerge(
-                entry,
-                strategy ??
-                    this.stateManager.getActiveValidationStrategy(entry.block)
-            );
+        const restoreStrategy =
+            strategy ??
+            this.stateManager.getActiveValidationStrategy(entry.block);
+        if (this.isPastBlock(entry.block, restoreStrategy)) {
+            this.settlePastBlock(entry, restoreStrategy);
             return;
         }
 
@@ -373,6 +432,7 @@ export default class BlockQueueManager {
     }
 
     private scheduleForkRecovery(forkId: ForkId): void {
+        if (this.stateManager.isDisposed) return;
         if (this.recoveryScheduledForFork.has(forkId)) return; // coalesce
         const suppressedUntil = this.recoverySuppressedUntil.get(forkId);
         if (
@@ -383,9 +443,7 @@ export default class BlockQueueManager {
         }
         this.recoveryScheduledForFork.add(forkId);
         this.timeoutManager.scheduleTask(
-            () => {
-                DetachedPromises.collect(this.runForkRecovery(forkId));
-            },
+            () => this.track(() => this.runForkRecovery(forkId)),
             0,
             `BlockQueueManager.runForkRecovery - fork ${forkId}`
         );
@@ -428,6 +486,7 @@ export default class BlockQueueManager {
 
     private async queueTimeout(blockHash: Hash): Promise<void> {
         this.timeoutHandles.delete(blockHash);
+        if (this.stateManager.isDisposed) return;
         // Dequeue first: the timeout owns the entry it sees - no race with
         // other tasks. Copies arriving from here on pool into a fresh entry
         // that converges on its own.
@@ -444,11 +503,11 @@ export default class BlockQueueManager {
             return;
         }
 
-        if (this.isBlockStored(entry.block)) {
-            this.scheduleStoredBlockConfirmationMerge(
-                entry,
-                this.stateManager.getActiveValidationStrategy(entry.block)
-            );
+        const strategy = this.stateManager.getActiveValidationStrategy(
+            entry.block
+        );
+        if (this.isPastBlock(entry.block, strategy)) {
+            this.settlePastBlock(entry, strategy);
             return;
         }
 
@@ -474,8 +533,10 @@ export default class BlockQueueManager {
                 return;
             }
             // Unknown fork (not disputed, no local genesis for it): ask the
-            // suppliers to prove it once; a failed sync punishes them, and so
-            // does a proven lineage that does not carry the block. This is
+            // senders to prove it once; a sync rejected for invalid evidence
+            // punishes them (one that meets a dispute window the chain has not
+            // reduced waits for that reduction first), and so does a proven
+            // lineage that does not carry the block. This is
             // separate expiry recovery after source admission at ingress.
             this.logger.verbose(
                 "queueTimeout - unknown fork, requesting sync from suppliers",
@@ -587,41 +648,75 @@ export default class BlockQueueManager {
     }
 
     private async executeQueuedEntry(entry: QueuedBlockEntry): Promise<void> {
-        if (this.isBlockStored(entry.block)) {
-            await this.handleStoredBlockConfirmationMerge(
-                entry,
-                this.stateManager.getActiveValidationStrategy(entry.block)
-            );
-            return;
-        }
+        try {
+            if (this.isBlockStored(entry.block)) {
+                await this.handleStoredBlockConfirmationMerge(
+                    entry,
+                    this.stateManager.getActiveValidationStrategy(entry.block)
+                );
+                return;
+            }
 
-        // The pipeline handles a fork that moved out from under this entry (as a
-        // side effect: it restores the entry for a timeout sync, or drops it if
-        // we've moved past it) - see `onBlockConfirmation`. A `false` here is a
-        // genuine validation failure on the current fork.
-        const shouldKeepConnection =
-            await this.stateManager.blockIngestService.onBlockConfirmation(
-                entry
-            );
+            // The pipeline handles a fork that moved out from under this entry (as a
+            // side effect: it restores the entry for a timeout sync, or drops it if
+            // we've moved past it) - see `onBlockConfirmation`. A `false` here is a
+            // genuine validation failure on the current fork.
+            const shouldKeepConnection =
+                await this.stateManager.blockIngestService.onBlockConfirmation(
+                    entry
+                );
 
-        if (!shouldKeepConnection) {
-            this.logger.warn(
-                "tryExecuteFromQueue - queued block failed canonical validation",
-                {
-                    block: LoggerUtils.getBlockMetadata(
-                        entry.block,
-                        this.stateManager.storage
-                    ),
-                    sourcePeers: Array.from(getSourcePeers(entry))
-                }
-            );
+            if (!shouldKeepConnection) {
+                this.logger.warn(
+                    "tryExecuteFromQueue - queued block failed canonical validation",
+                    {
+                        block: LoggerUtils.getBlockMetadata(
+                            entry.block,
+                            this.stateManager.storage
+                        ),
+                        sourcePeers: Array.from(getSourcePeers(entry))
+                    }
+                );
+            }
+        } finally {
+            // a drain takes one height: whatever this entry did, the next
+            // queued height drains now, not at its queue timeout
+            this.scheduleQueueExecution(entry.block.forkId);
         }
     }
 
-    public dispose(): void {
+    /**
+     * The StateManager is already disposed, so no producer here starts new
+     * work. Cancel the queue timers, then wait for the probes and recoveries
+     * in flight: they still use p2p, the timeout manager and the executor,
+     * so the caller keeps those alive until this returns. Every job settles
+     * before the queues clear, even when one fails; the first failure then
+     * rejects this call, so it is not hidden.
+     */
+    public async dispose(): Promise<void> {
         for (const hash of this.timeoutHandles.keys())
             this.cancelQueueTimeout(hash);
+        const results = await Promise.allSettled(this.inFlight);
         this.stateManager.storage.queues.clear();
+        this.recoveryScheduledForFork.clear();
+        this.recoverySuppressedUntil.clear();
+        const failure = results.find(
+            (result): result is PromiseRejectedResult =>
+                result.status === "rejected"
+        );
+        if (failure) throw failure.reason;
+    }
+
+    /**
+     * Start work this manager owns. Nothing starts after disposal. A failure
+     * outside `dispose` stays an unhandled rejection, as for detached work.
+     */
+    private track(work: () => Promise<void>): void {
+        if (this.stateManager.isDisposed) return;
+        const promise: Promise<void> = work().finally(() =>
+            this.inFlight.delete(promise)
+        );
+        this.inFlight.add(promise);
     }
 
     private cancelQueueTimeout(blockHash: Hash): void {
@@ -633,15 +728,22 @@ export default class BlockQueueManager {
     }
 
     /**
-     * Ask every attributed source and the author to prove the block's
-     * lineage, once each. A failed probe excludes the peer inside `sync`. A
+     * Ask every attributed source to prove the block's lineage, once each,
+     * and not an author that did not send it: a peer stores a block before
+     * it sends it, so an honest source can always prove it, while an old
+     * block replayed to us would make its honest author cut us for asking.
+     * A probe whose payload fails validation excludes the peer inside
+     * `syncBlockSource`; a failed request, or a source still in its own
+     * initial sync, is the sync's counted close; one that meets a dispute
+     * window the chain has not reduced waits inside `syncBlockSource` for
+     * that reduction and is judged after it. A
      * probe that succeeds without that lineage carrying the block proves the
-     * peer supplied junk: it is excluded here. Probes are observed detached
-     * work; nothing after the sync awaits, so a probe cannot reject.
+     * peer supplied junk: it is excluded here. Probes are owned work that
+     * `dispose` waits for.
      */
     private probeSources(entry: QueuedBlockEntry): void {
-        for (const peer of getSourcePeersAndAuthor(entry)) {
-            DetachedPromises.collect(this.probeSource(peer, entry));
+        for (const peer of getSourcePeers(entry)) {
+            this.track(() => this.probeSource(peer, entry));
         }
     }
 
@@ -651,9 +753,11 @@ export default class BlockQueueManager {
     ): Promise<void> {
         const block = entry.block;
         // Sync waits for an in-flight request and proves this target before
-        // returning success; a failed proof excludes the peer.
+        // returning success; an invalid proof excludes the peer, a failed
+        // request is a counted close, an unreduced dispute window is waited
+        // out first.
         const synced =
-            await this.stateManager.p2pManager.localRpc.spectateService.sync(
+            await this.stateManager.p2pManager.localRpc.spectateService.syncBlockSource(
                 peer,
                 block.channelId,
                 block.forkId,
@@ -677,9 +781,10 @@ export default class BlockQueueManager {
     /**
      * A successful probe lands on the responder's latest fork, the only one
      * it proves, and replays that lineage's unfinalized blocks through the
-     * ingest, whose execution is deferred. A block the lineage carries is
-     * therefore stored or queued for execution by the replay; a block that is
-     * neither is junk. A block on any other fork is inconclusive and its
+     * ingest, whose execution is deferred. A block the lineage carries above
+     * the installed history is therefore stored or queued for execution by
+     * the replay; one that is neither is junk. A block on any other fork, or
+     * at a free height below the installed history, is inconclusive and its
      * source is kept.
      */
     private isBlockUnbackedByLineage(block: Block): boolean {
@@ -687,7 +792,18 @@ export default class BlockQueueManager {
         if (this.stateManager.storage.queues.getQueuedEntry(block.hash)) {
             return false;
         }
+        // a free height below the installed history: a compact proof does
+        // not store the blocks under its final point, so it is inconclusive
+        if (this.isFreeHeightBelowInstalledHistory(block)) return false;
         return block.forkId === this.stateManager.forkId;
+    }
+
+    private isFreeHeightBelowInstalledHistory(block: Block): boolean {
+        const blocks = this.stateManager.storage.blocks;
+        return (
+            block.height < blocks.getNextBlockHeight(block.forkId) &&
+            !blocks.getBlock(block.forkId, block.height)
+        );
     }
 
     private isBlockForThisChannel(block: Block): boolean {

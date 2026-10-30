@@ -178,10 +178,7 @@ export class NodeLogger extends Logger {
         }
 
         // thread role -> a merged replay shows where a line came from
-        const threadName = logEntry.sharedContext.threadName;
-        if ((threadName ?? "main") !== "main") {
-            prefix += `${Colors.COMPONENT}[${threadName}]${Colors.RESET}`;
-        }
+        prefix += `${Colors.COMPONENT}[${logEntry.sharedContext.threadName ?? "main"}]${Colors.RESET}`;
 
         // Component
         if (logEntry.context.component)
@@ -233,7 +230,10 @@ export class NodeLogger extends Logger {
         // threads may exit before the next sample. Enabled whenever the event-loop
         // monitor threshold is configured (tests only), so production is
         // unaffected.
-        const emitTiming = config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0;
+        // Scripted samples exercise the watchdog, not machine performance.
+        const emitTiming =
+            !options.sampleSource &&
+            config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0;
         const elThread = options.threadLabel ?? "main";
         let peakMs = 0;
 

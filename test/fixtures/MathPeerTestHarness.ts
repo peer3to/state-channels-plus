@@ -1,5 +1,7 @@
+// @spec-test-coverage-ignore: shared test harness exercised by owning mapped test declarations
 import type { HarnessControlRpc } from "./customRpc/harnessControl/HarnessControlRpc";
 import PeerTestHarness from "./PeerTestHarness";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { MathByzantineActions } from "@test/harness/actions/math/MathByzantineActions";
 import { MathDisputeOrchestrator } from "@test/harness/actions/math/MathDisputeOrchestrator";
 import { MathJoinActions } from "@test/harness/actions/math/MathJoinActions";
@@ -10,7 +12,7 @@ import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathH
 import { MathStateMachine } from "@typechain-types";
 
 export class MathPeerTestHarness extends PeerTestHarness<
-    HarnessControlRpc,
+    P2pRuntimeHostRoot<HarnessControlRpc>,
     MathStateMachine
 > {
     declare public transition: MathTransitionActions;

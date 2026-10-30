@@ -1,12 +1,16 @@
+// @spec-test-coverage-ignore: shared lobby query actions exercised by owning mapped E2E declarations
 import Clock from "@/Clock";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { ForkId, Address } from "@/types/types";
 import { Logger } from "@/utils";
 import { hash as fakeHash } from "@test/factory";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
 import { ethers } from "ethers";
-// @spec-test-coverage-ignore: shared lobby query actions exercised by owning mapped E2E declarations
 
 /**
  * Actions for RPC service testing.
@@ -22,10 +26,11 @@ import { ethers } from "ethers";
  * throw at runtime behind the port — they are pending the rpcStub/e2e milestone.
  */
 export class RPCActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
     constructor(
-        private harness: PeerTestHarness<TCustomRpc>,
+        private harness: PeerTestHarness<THost>,
         private logger: Logger
     ) {}
 
@@ -122,7 +127,7 @@ export class RPCActions<
     async sendFakeDisputeRequest(options: {
         fromPeer: number;
         toPeer: number;
-    }): Promise<void> {
+    }): Promise<ForkId> {
         const { fromPeer, toPeer } = options;
         const fakeForkId = fakeHash() as ForkId;
         const fromAddress = this.harness.getPeer(fromPeer).address;
@@ -136,6 +141,7 @@ export class RPCActions<
                 fakeForkId
             )
             .request();
+        return fakeForkId;
     }
 
     async simulateBuildOnDisputedFork(options: {

@@ -3,6 +3,7 @@ import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
 } from "@/types/sol-enums";
+import { Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -31,7 +32,6 @@ describe("E2E: dispute validation / DisputeInvalidStateProof genesis linkage", f
 
         expect(
             dispute.input.stateProof.milestones.length === 0 &&
-                dispute.input.stateProof.signedBlocks.length === 0 &&
                 dispute.postedAuditingData === false,
             "expected a non-posted genesis dispute (empty stateProof)"
         ).to.equal(true);
@@ -40,13 +40,10 @@ describe("E2E: dispute validation / DisputeInvalidStateProof genesis linkage", f
         // corrupt the genesis so keccak256(genesisStateSnapshotData) != forkId -> unlinked
         const { encodedAuditingData } = await h
             .control(h.getPeer(byzantineIndex))
-            .dispute.getAuditingData(
-                h.activeForkId!,
-                Codec.encode(
-                    dispute.input.stateProof,
-                    Type.StateProof
-                ) as string
-            )
+            .dispute.buildOwnAuditingData(h.activeForkId!, -1, {
+                disputeLatestInboundMessageBlockHash: dispute.input
+                    .latestInboundMessageBlockHash as Hash
+            })
             .request();
         const auditingData = Codec.decode(
             encodedAuditingData,
@@ -64,7 +61,14 @@ describe("E2E: dispute validation / DisputeInvalidStateProof genesis linkage", f
             participant: dispute.input.disputer,
             dispute,
             encodedProof: Codec.encode(
-                { auditingData },
+                {
+                    milestoneIndex: 0,
+                    hasBlockIndex: false,
+                    blockIndex: 0,
+                    auditingData,
+                    previousStateSnapshot: auditingData.latestStateSnapshot,
+                    resultingStateSnapshot: auditingData.latestStateSnapshot
+                },
                 DisputeFraudProofType.DisputeInvalidStateProof
             )
         };

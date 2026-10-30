@@ -12,6 +12,38 @@ const refused = {
 };
 
 describe("Unit: TimeoutStorage", function () {
+    it("a store at a higher height → replaces the stale lower timeout", function () {
+        const storage = new TimeoutStorage();
+        const fresh = { ...refused, blockHeight: 3n };
+        storage.storeTimeout(forkId, { ...refused });
+
+        storage.storeTimeout(forkId, fresh);
+
+        expect(storage.getTimeout(forkId)).to.deep.equal(fresh);
+    });
+
+    it("a store at the same height → refreshes the stored timeout", function () {
+        const storage = new TimeoutStorage();
+        const refreshed = { ...refused, minTimeStamp: 7n };
+        storage.storeTimeout(forkId, { ...refused });
+
+        storage.storeTimeout(forkId, refreshed);
+
+        expect(storage.getTimeout(forkId)).to.deep.equal(refreshed);
+    });
+
+    it("a store on another fork → leaves this fork's timeout", function () {
+        const storage = new TimeoutStorage();
+        const otherForkId = dispute().input.forkId as ForkId;
+        const other = { ...refused, blockHeight: 3n };
+        storage.storeTimeout(forkId, { ...refused });
+
+        storage.storeTimeout(otherForkId, other);
+
+        expect(storage.getTimeout(forkId)).to.deep.equal(refused);
+        expect(storage.getTimeout(otherForkId)).to.deep.equal(other);
+    });
+
     it("deleteTimeout with the stored plain timeout → removed", function () {
         const storage = new TimeoutStorage();
         storage.storeTimeout(forkId, { ...refused });

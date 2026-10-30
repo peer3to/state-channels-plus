@@ -4,6 +4,7 @@ import {
     assertCommitCachePreserved,
     assertSpectatorCommit
 } from "@test/fixtures/CommitEligibilityFixture";
+import { readTrackedJoin } from "@test/fixtures/ForceJoinCountingStaging";
 import { assertLeaverRelaysNothingAfterItsLeave } from "@test/fixtures/LeaverRelayFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
@@ -241,17 +242,15 @@ describe("Unit: BlockCommitService", function () {
 
             // mid-point: joinChannel recorded the force-join height and the
             // peer is pending - this is what promotion must clear
-            const pending = await h.execOnHost(
-                h.getPeer(joiner.index),
-                async (sm) => ({
-                    status: sm.status,
-                    forceJoinHeight:
-                        sm.storage.forceJoin.getJoinSubmissionBlockHeight() ??
-                        null
-                })
-            );
-            expect(pending.status).to.equal(Status.PENDING_PARTICIPANT);
-            expect(pending.forceJoinHeight).to.not.equal(null);
+            expect(
+                await h
+                    .control(h.getPeer(joiner.index))
+                    .query.getStatus()
+                    .request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
+            expect(
+                await readTrackedJoin(h, h.getPeer(joiner.index))
+            ).to.not.equal(null);
 
             // the block including the join commits -> promotion; author until
             // it lands rather than assuming which block carries the join
@@ -265,17 +264,15 @@ describe("Unit: BlockCommitService", function () {
                 maximumBlocks: 20
             });
 
-            const promoted = await h.execOnHost(
-                h.getPeer(joiner.index),
-                async (sm) => ({
-                    status: sm.status,
-                    forceJoinHeight:
-                        sm.storage.forceJoin.getJoinSubmissionBlockHeight() ??
-                        null
-                })
+            expect(
+                await h
+                    .control(h.getPeer(joiner.index))
+                    .query.getStatus()
+                    .request()
+            ).to.equal(Status.PARTICIPATING);
+            expect(await readTrackedJoin(h, h.getPeer(joiner.index))).to.equal(
+                null
             );
-            expect(promoted.status).to.equal(Status.PARTICIPATING);
-            expect(promoted.forceJoinHeight).to.equal(null);
         });
     });
 });

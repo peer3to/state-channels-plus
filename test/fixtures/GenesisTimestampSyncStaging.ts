@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: genesis-timestamp sync staging exercised by explicit SpectateService and E2E-Spectate declarations
 import { StateSnapshot } from "@/models";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { SyncPayload } from "@/types";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
@@ -265,8 +266,11 @@ export async function applyForgedGenesisPastChainGenesis(
  */
 async function serveForgedGenesisAndSettle(
     h: MathPeerTestHarness,
-    victim: TestPeer<HarnessControlRpc, MathStateMachine>,
-    responder: TestPeer<HarnessControlRpc, MathStateMachine>,
+    victim: TestPeer<P2pRuntimeHostRoot<HarnessControlRpc>, MathStateMachine>,
+    responder: TestPeer<
+        P2pRuntimeHostRoot<HarnessControlRpc>,
+        MathStateMachine
+    >,
     payload: SyncPayload,
     syncForkId: ForkId
 ) {

@@ -5,15 +5,20 @@ import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
 import { createRoot } from "@/rpc/internal/createRoot";
 import { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
 import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
-import { config } from "@/utils/config";
 import { createRuntimeChannel } from "@platform/p2pRuntimeChannel";
 
-/** Add an actual second port between SDK roots to exercise cyclic gossip. */
-export function connectLoggerCycle(sdk: LoggerSdkFixture): () => void {
+/** The inline SDK fixture's host root. */
+export function inlineHostOf(sdk: LoggerSdkFixture): P2pRuntimeHostRoot {
     const host = [...sdk.roots].find(
         (root): root is P2pRuntimeHostRoot => root instanceof P2pRuntimeHostRoot
     );
     if (!host) throw new Error("Expected actual inline SDK host");
+    return host;
+}
+
+/** Add an actual second port between SDK roots to exercise cyclic gossip. */
+export function connectLoggerCycle(sdk: LoggerSdkFixture): () => void {
+    const host = inlineHostOf(sdk);
     const channel = createRuntimeChannel();
     const receiving = host.connect<AInternalRpcRoot>(channel.port1, {
         sameRealm: true,
@@ -31,17 +36,14 @@ export function connectLoggerCycle(sdk: LoggerSdkFixture): () => void {
 
 /** Create another real executor after its parent has already gossiped uploads. */
 export async function createLateLoggerChild(sdk: LoggerSdkFixture) {
-    const host = [...sdk.roots].find(
-        (root): root is P2pRuntimeHostRoot => root instanceof P2pRuntimeHostRoot
-    );
-    if (!host) throw new Error("Expected actual inline SDK host");
+    const host = inlineHostOf(sdk);
     let created: ContractExecutorRoot | undefined;
     const remote = await RootCreationControl.observe(
         () =>
             createRoot(ContractExecutorRoot, {
                 parent: host,
                 mode: "inline",
-                args: { config, customPrecompiles: [] }
+                args: { customPrecompiles: [] }
             }),
         (root) => {
             if (root instanceof ContractExecutorRoot) created = root;
@@ -68,5 +70,18 @@ export function connectLoggerPeers(
     return () => {
         child["transport"].close(true);
         parent["transport"].close(true);
+    };
+}
+
+/**
+ * Makes the inline SDK host's flush handler (its answer to a neighbour's flush) fail with
+ * `error`, since a real flush never fails; returns the restore.
+ */
+export function failHostFlush(sdk: LoggerSdkFixture, error: Error): () => void {
+    const service = inlineHostOf(sdk).logger;
+    const original = service.flush.bind(service);
+    service.flush = () => Promise.reject(error);
+    return () => {
+        service.flush = original;
     };
 }

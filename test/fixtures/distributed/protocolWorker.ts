@@ -57,6 +57,8 @@ export type ProtocolWorkerRecord = {
     offeredManifest: Record<string, unknown> | null;
     runners: string[];
     labels: string[];
+    // The cost each assignment carried on the wire, absent under fifo.
+    costs: unknown[];
     workspaceOffers: number;
 };
 
@@ -87,7 +89,7 @@ export type ProtocolWorkerLeaseStep =
  * orchestrator to schedule on it: every assigned task passes at once. It
  * records the protocol its workspace offer declared and every task it ran.
  */
-export async function startProtocolWorker(options: {
+async function startProtocolWorker(options: {
     name: string;
     distributedProtocol: number;
     keys: PoolKeys;
@@ -102,6 +104,12 @@ export async function startProtocolWorker(options: {
     joinAfter?: { worker: string; labels: number };
     // The records of every host in the run, for holdFirstResultUntil and joinAfter.
     records?: () => ProtocolWorkerRecord[];
+    // Fields merged into every attempt result, e.g. measurements.
+    attemptResult?: Record<string, unknown>;
+    // Statistics reported after the run completes, before the lease is clean.
+    workerStats?: Record<string, unknown>;
+    // Called when the orchestrator announces the run is complete.
+    afterRunComplete?: () => void;
 }) {
     const record: ProtocolWorkerRecord = {
         name: options.name,
@@ -109,6 +117,7 @@ export async function startProtocolWorker(options: {
         offeredManifest: null,
         runners: [],
         labels: [],
+        costs: [],
         workspaceOffers: 0
     };
     let closed = false;
@@ -202,6 +211,7 @@ export async function startProtocolWorker(options: {
                 const { assignment } = reply.header;
                 record.runners.push(assignment.task.runner);
                 record.labels.push(assignment.task.label);
+                record.costs.push(assignment.task.cost);
                 if (step === "leave-on-first-task") {
                     // Gone mid-attempt, and not coming back to redial.
                     peer.close("fixture host leaves mid-attempt");
@@ -233,7 +243,8 @@ export async function startProtocolWorker(options: {
                     result: {
                         code: 0,
                         label: assignment.task.label,
-                        durationMs: 1
+                        durationMs: 1,
+                        ...options.attemptResult
                     },
                     logTransferred: false
                 });
@@ -243,6 +254,9 @@ export async function startProtocolWorker(options: {
                 }
             }
             await waitForMessage(peer, "RUN_COMPLETE", 60_000);
+            options.afterRunComplete?.();
+            if (options.workerStats)
+                await peer.send("WORKER_STATS", { stats: options.workerStats });
             await peer.send("LEASE_CLEAN");
         } catch {
             // The orchestrator closing the stream ends this worker's part.
@@ -319,10 +333,17 @@ export async function runAgainstProtocolWorkers(
         leaseSteps?: ProtocolWorkerLeaseStep[];
         holdFirstResultUntil?: HoldFirstResultUntil;
         joinAfter?: { worker: string; labels: number };
+        attemptResult?: Record<string, unknown>;
+        workerStats?: Record<string, unknown>;
+        afterRunComplete?: () => void;
     }>,
     options: {
         discoveryTimeoutMs?: number;
         tasks?: Array<Record<string, unknown>>;
+        // Extra runDistributed options, e.g. schedule or costCachePath.
+        run?: Record<string, unknown>;
+        // Files to place in the project root before the run, by relative path.
+        files?: Record<string, string>;
     } = {}
 ) {
     const { createLocalDhtNetwork } = require("./testTransport");
@@ -333,6 +354,8 @@ export async function runAgainstProtocolWorkers(
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "distributed-mixed-"));
     const summaryPath = path.join(root, "step-summary.md");
     fs.writeFileSync(summaryPath, "");
+    for (const [file, content] of Object.entries(options.files ?? {}))
+        fs.writeFileSync(path.join(root, file), content);
     const poolSecret = `mixed-${process.pid}-${Date.now()}`;
     const keys = derivePoolKeys(poolSecret);
     const warnings: string[] = [];
@@ -390,15 +413,21 @@ export async function runAgainstProtocolWorkers(
                 discoveryTimeoutMs: options.discoveryTimeoutMs ?? 10_000,
                 discoveryRefreshMs: 25,
                 baseEnv: {},
-                dht: network.createNode()
+                dht: network.createNode(),
+                ...options.run
             });
         } catch (error) {
             failure = error as Error;
         }
+        const metricsPath = path.join(root, "run-metrics.json");
         return {
             root: root as string,
             result,
             failure,
+            // What the run wrote to run-metrics.json, or null.
+            metrics: fs.existsSync(metricsPath)
+                ? JSON.parse(fs.readFileSync(metricsPath, "utf8"))
+                : null,
             warnings,
             summary: fs.readFileSync(summaryPath, "utf8") as string,
             workers: started.map((worker) => worker.record)

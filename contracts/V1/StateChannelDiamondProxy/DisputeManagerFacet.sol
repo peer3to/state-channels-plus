@@ -109,6 +109,11 @@ contract DisputeManagerFacet is StateChannelCommon {
             disputeWindow.evidence.lastEvidenceSubmissionTimestamp = block.timestamp; // kill period recalculated from here
         }
 
+        // after the race checks, before the commitment is recorded: a
+        // non-canonical dispute encoding is refused, and the refusal
+        // reverts every write this upload already made in this call
+        bytes32 commitment = _disputeCommitmentHash(dispute);
+        require(commitment == keccak256(disputeConfirmation.signedDispute.encodedDispute), ErrorNonCanonicalEncoding());
         if (isThresholdFinal) {
             //finalize the dispute window by making the evidence and kill period expire -> which sets the genesisTimestamp to the current block.timestamp
             disputeWindow.evidence.creationTimestamp = block.timestamp - _getEvidenceTime();
@@ -123,10 +128,7 @@ contract DisputeManagerFacet is StateChannelCommon {
                 block.timestamp - _getEvidenceTime()
             );
         }
-        {
-            bytes32 c = _disputeCommitmentHash(dispute);
-            disputeWindow.evidence.disputeCommitments.push(c);
-        }
+        disputeWindow.evidence.disputeCommitments.push(commitment);
         disputeWindow.evidence.hasPosted.push(dispute.input.disputer); //disputer has posted the dispute
 
         if (!dispute.postedAuditingData) {
@@ -202,12 +204,10 @@ contract DisputeManagerFacet is StateChannelCommon {
         if (disputeConfirmation.signatures.length + 1 < thresholdSet.length) {
             return false;
         }
-        bytes[] memory signatures = UtilityFacet(utilityFacetAddress).insertBytesInByteArray(
-            disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures
-        );
-        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
-            thresholdSet, disputeConfirmation.signedDispute.encodedDispute, signatures
-        );
+        bytes[] memory signatures = UtilityFacet(utilityFacetAddress)
+            .insertBytesInByteArray(disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures);
+        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress)
+            .verifyThresholdSigned(thresholdSet, disputeConfirmation.signedDispute.encodedDispute, signatures);
         return isThresholdFinal;
     }
 }

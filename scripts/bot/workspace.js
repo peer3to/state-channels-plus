@@ -62,17 +62,31 @@ function resolveExecutable(name) {
     }
     return null;
 }
-// Paths holding the worker's secrets or logins that sandboxes must never expose.
+// Paths holding the worker's secrets or logins that sandboxes must never expose,
+// each as given and resolved: the executable read roots they are checked
+// against are resolved, and a deny list must cover both spellings, so a home
+// reached through a symlink still contains a tool installed under it.
 function secretRoots(stateRoot) {
     return [
-        ...new Set([
-            os.homedir(),
-            path.resolve(__dirname, "../.."),
-            path.dirname(stateRoot),
-            process.env.CODEX_HOME || path.join(os.homedir(), ".codex"),
-            process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude")
-        ])
+        ...new Set(
+            [
+                os.homedir(),
+                path.resolve(__dirname, "../.."),
+                path.dirname(stateRoot),
+                process.env.CODEX_HOME || path.join(os.homedir(), ".codex"),
+                process.env.CLAUDE_CONFIG_DIR ||
+                    path.join(os.homedir(), ".claude")
+            ].flatMap((name) => [path.resolve(name), resolveExisting(name)])
+        )
     ];
+}
+/** The real path of `name`, or `name` itself while it does not exist yet. */
+function resolveExisting(name) {
+    try {
+        return fs.realpathSync(name);
+    } catch {
+        return path.resolve(name);
+    }
 }
 // A sandbox read root may sit inside a secret path (e.g. ~/.nvm/...) but must
 // never equal or contain one: node at ~/bin/node would otherwise expose ~.

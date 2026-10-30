@@ -93,6 +93,12 @@ async function createPool(options) {
     const activeStreams = new Set();
     const events = new EventEmitter();
     let listening = false;
+    // A listener given at creation serves connections that arrive while the
+    // announcement still flushes, instead of buffering them unread.
+    if (options.onConnection) {
+        listening = true;
+        events.on("connection", options.onConnection);
+    }
     swarm.on("connection", (stream, info) => {
         guardConnectionErrors(stream);
         activeStreams.add(stream);

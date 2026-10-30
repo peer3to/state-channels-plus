@@ -36,6 +36,15 @@ describe("distributed execution profile", function () {
         expect(resolved.memoryBytes).to.equal(4 * 1024 ** 3);
     });
 
+    it("accepts CPU and concurrency requests above worker ceilings unchanged", function () {
+        const resolved = resolveExecutionProfile(defaults, defaults, {
+            workers: 1000,
+            cpu: 1000
+        });
+        expect(resolved.workers).to.equal(1000);
+        expect(resolved.cpu).to.equal(1000);
+    });
+
     it("rejects an oversized request without clamping it", function () {
         expect(() =>
             resolveExecutionProfile(defaults, defaults, {
@@ -68,7 +77,7 @@ describe("distributed execution profile", function () {
         ).to.throw("Invalid execution profile value");
     });
 
-    it("rejects an oversized lease before environment creation and accepts a later smaller request", async function () {
+    it("rejects an oversized memory lease and then accepts CPU and workers above server defaults", async function () {
         const pool = await LeasePoolHarness.create();
         const backend = new TestIsolatedRuntimeBackend();
         try {
@@ -76,7 +85,7 @@ describe("distributed execution profile", function () {
                 environmentBackend: backend
             });
             const orchestrator = await pool.startOrchestrator("oversized", {
-                executionProfile: { cpu: 1_000_000 }
+                executionProfile: { memoryBytes: Number.MAX_SAFE_INTEGER }
             });
             await orchestrator.waitFor(
                 worker.name,
@@ -88,7 +97,7 @@ describe("distributed execution profile", function () {
             const checkpoint = orchestrator.checkpoint();
             await orchestrator.send(worker.name, "LEASE_REQUEST", {
                 sessionId: "smaller",
-                executionProfile: { cpu: 0.25 }
+                executionProfile: { cpu: 1000, workers: 1000 }
             });
             await orchestrator.waitFor(worker.name, "LEASE_GRANTED", {
                 after: checkpoint

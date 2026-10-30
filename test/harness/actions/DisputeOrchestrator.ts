@@ -1,15 +1,16 @@
 // @spec-test-coverage-ignore: shared dispute staging and resolution helper exercised by owning mapped test declarations
 import type { FinalDisputeResolution } from "./DisputeTamperingActions";
 import { CreateAndResolveDisputeResult } from "../core/types";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { Status } from "@/types";
 import { FraudProofType } from "@/types/sol-enums";
 import { ForkId } from "@/types/types";
 import { Codec, Logger, Type } from "@/utils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type {
-    DisputeValidationRun,
-    PersistDisputeDataProjection
-} from "@test/fixtures/customRpc/harnessControl/services/dispute/DisputeService";
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type { DisputeValidationRun } from "@test/fixtures/customRpc/harnessControl/services/dispute/DisputeService";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type {
     DisputeAuditingDataStruct,
@@ -38,10 +39,11 @@ export type DisputeResolutionExpectation = {
  * DisputeOrchestrator - High-level dispute resolution workflows
  */
 export class DisputeOrchestrator<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
     constructor(
-        protected harness: PeerTestHarness<TCustomRpc>,
+        protected harness: PeerTestHarness<THost>,
         protected logger: Logger
     ) {}
 
@@ -113,36 +115,6 @@ export class DisputeOrchestrator<
                         }) * 3
                 })
         );
-    }
-
-    /** Run the real persistDisputeDataWithoutAudit on `peerIndex`. */
-    async persistDisputeData(
-        peerIndex: number,
-        dispute: DisputeStruct,
-        options: {
-            auditingData?: DisputeAuditingDataStruct;
-            includeUnfinalizedBlocks: boolean;
-            /** Applied host-side after decode; "" is not ABI-encodable. */
-            latestFinalizedStateStateMachineStateOverride?: string;
-        }
-    ): Promise<PersistDisputeDataProjection> {
-        return this.harness
-            .control(this.harness.getPeer(peerIndex))
-            .dispute.persistDisputeDataWithoutAudit(
-                Codec.encode(dispute, Type.Dispute) as string,
-                {
-                    encodedAuditingData: options.auditingData
-                        ? (Codec.encode(
-                              options.auditingData,
-                              Type.DisputeAuditingData
-                          ) as string)
-                        : undefined,
-                    includeUnfinalizedBlocks: options.includeUnfinalizedBlocks,
-                    latestFinalizedStateStateMachineStateOverride:
-                        options.latestFinalizedStateStateMachineStateOverride
-                }
-            )
-            .request();
     }
 
     async submitFinalDispute(options: {
@@ -277,12 +249,26 @@ export class DisputeOrchestrator<
             honestPeerIndices?: number[];
             syntheticOnChainParticipants?: number;
             expectedDisputesCommittedPerPeer?: number;
+            /**
+             * Peers that leave during the resolution (e.g. a leaver whose exit
+             * turn comes first on the reduced fork): never read or restored,
+             * and still counted as participants of the reduced fork.
+             */
+            departingPeerIndices?: number[];
         }
-    ): Promise<CreateAndResolveDisputeResult<TCustomRpc>> {
+    ): Promise<CreateAndResolveDisputeResult<THost>> {
+        const departing = options?.departingPeerIndices ?? [];
         try {
             return await this.resolveDisputeWait({
                 forkId: submitted.forkId,
-                honestPeerIndices: options?.honestPeerIndices,
+                honestPeerIndices:
+                    options?.honestPeerIndices ??
+                    (departing.length > 0
+                        ? this.harness
+                              .getActiveHonestPeers()
+                              .map((peer) => peer.index)
+                              .filter((index) => !departing.includes(index))
+                        : undefined),
                 expectedDisputesCommittedPerPeer:
                     options?.expectedDisputesCommittedPerPeer ?? 1,
                 disputesCommittedMode: "atLeast",
@@ -294,7 +280,8 @@ export class DisputeOrchestrator<
                     withFirstBlockGrace: true
                 }),
                 syntheticOnChainParticipants:
-                    options?.syntheticOnChainParticipants,
+                    (options?.syntheticOnChainParticipants ?? 0) +
+                    departing.length,
                 expectedResolution: {
                     kind: "final-dispute",
                     forkId: submitted.finalResolution.forkId,
@@ -304,8 +291,11 @@ export class DisputeOrchestrator<
                 }
             });
         } finally {
+            // a departing peer may already be disposed
             await this.restoreDisputeInitiation(
-                submitted.suppressedPeerIndices
+                submitted.suppressedPeerIndices.filter(
+                    (index) => !departing.includes(index)
+                )
             );
         }
     }
@@ -325,7 +315,7 @@ export class DisputeOrchestrator<
         assertMaliciousRemoved?: boolean;
         syntheticOnChainParticipants?: number;
         expectedResolution?: DisputeResolutionExpectation;
-    }): Promise<CreateAndResolveDisputeResult<TCustomRpc>> {
+    }): Promise<CreateAndResolveDisputeResult<THost>> {
         if (!options.forkId) {
             throw new Error(
                 "resolveDisputeWait requires the forkId captured before the dispute"
@@ -514,6 +504,11 @@ export class DisputeOrchestrator<
             const settledPeers = candidatePeers.filter(
                 (_, idx) => candidateForkIds[idx] === newForkId
             );
+            if (settledPeers.length === 0) {
+                throw new Error(
+                    `No honest peer is on the resolved fork ${newForkId} after resolving ${originalForkId}`
+                );
+            }
 
             for (const peer of settledPeers) {
                 const participants = await this.harness

@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: shared join test setup exercised by owning mapped test declarations
 import Clock from "@/Clock";
 import StateSnapshot from "@/models/StateSnapshot";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { PreparedJoinChannelConfirmation } from "@/rpc/network/services";
 import { Status } from "@/types";
 import {
@@ -9,7 +10,10 @@ import {
     SignatureUtils,
     sleep
 } from "@/utils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
@@ -27,7 +31,8 @@ export type AddPeerOptions = {
 };
 
 export type AddSpectatorAuthoringOptions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > = AddPeerOptions & {
     /** Participants that author while the spectator spawns and syncs. */
     authoringPeerIndices: number[];
@@ -36,7 +41,7 @@ export type AddSpectatorAuthoringOptions<
     /** Hard bound on blocks authored; reaching it fails with diagnostics. */
     maximumBlocks: number;
     /** Runs on the created, still disconnected peer; host stubs go here. */
-    beforeConnect?: (peer: TestPeer<TCustomRpc>) => Promise<void>;
+    beforeConnect?: (peer: TestPeer<THost>) => Promise<void>;
     /** Keep authoring until the spectator is SYNCED (default), or stop once the connection dispatch settled. */
     waitForSynced?: boolean;
     waitForFinalization?: boolean;
@@ -45,9 +50,10 @@ export type AddSpectatorAuthoringOptions<
 };
 
 export type AddSpectatorAuthoringResult<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > = {
-    peer: TestPeer<TCustomRpc>;
+    peer: TestPeer<THost>;
     blocksAuthored: number;
     /** Latest block height on the first authoring peer when the helper returned. */
     height: number;
@@ -60,9 +66,10 @@ export type BuildJoinChannelConfirmationParams = {
 };
 
 export class JoinActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
-    constructor(protected harness: PeerTestHarness<TCustomRpc>) {}
+    constructor(protected harness: PeerTestHarness<THost>) {}
 
     protected thresholdSignerForAddress(address: string): Signer | undefined {
         return this.harness.peers.find((candidate) =>
@@ -91,7 +98,7 @@ export class JoinActions<
      */
     async createSpectatorPeer(
         options?: AddPeerOptions
-    ): Promise<TestPeer<TCustomRpc>> {
+    ): Promise<TestPeer<THost>> {
         if (!this.harness.canAddPeer) {
             throw new Error("Harness not initialized; call setup() first");
         }
@@ -118,7 +125,7 @@ export class JoinActions<
      * RPC acknowledges the detached dispatch; it does not wait for sync. The
      * single owner of connection dispatch for every spectator entry point.
      */
-    async connectSpectator(peer: TestPeer<TCustomRpc>): Promise<void> {
+    async connectSpectator(peer: TestPeer<THost>): Promise<void> {
         if (!this.harness.channelId) return;
         await this.harness
             .control(peer)
@@ -129,9 +136,7 @@ export class JoinActions<
     /** Add a spectator without waiting for sync (lets a test install host-side
      * stubs before sync starts). Prefer {@link addSpectatorDetached} when the
      * channel will keep authoring. */
-    async addSpectator(
-        options?: AddPeerOptions
-    ): Promise<TestPeer<TCustomRpc>> {
+    async addSpectator(options?: AddPeerOptions): Promise<TestPeer<THost>> {
         const peer = await this.createSpectatorPeer(options);
         await this.connectSpectator(peer);
         return peer;
@@ -147,10 +152,10 @@ export class JoinActions<
      * `authorBlock` authors one block with `authoringPeerIndices`.
      */
     async addSpectatorAuthoring(
-        options: AddSpectatorAuthoringOptions<TCustomRpc> & {
+        options: AddSpectatorAuthoringOptions<THost> & {
             authorBlock: () => Promise<void>;
         }
-    ): Promise<AddSpectatorAuthoringResult<TCustomRpc>> {
+    ): Promise<AddSpectatorAuthoringResult<THost>> {
         const {
             minimumBlocks,
             maximumBlocks,
@@ -173,7 +178,7 @@ export class JoinActions<
         const state: {
             // Monotonic stages of the spawn; `done` ends the authoring loop.
             phase: "creating" | "staging" | "dispatching" | "syncing" | "done";
-            peer?: TestPeer<TCustomRpc>;
+            peer?: TestPeer<THost>;
             failure?: { error: unknown };
         } = { phase: "creating" };
         // One chain, handlers attached synchronously: the promise is never
@@ -274,9 +279,7 @@ export class JoinActions<
         return lines.join("; ");
     }
 
-    async addSpectatorWait(
-        options?: AddPeerOptions
-    ): Promise<TestPeer<TCustomRpc>> {
+    async addSpectatorWait(options?: AddPeerOptions): Promise<TestPeer<THost>> {
         const peer = await this.addSpectator(options);
         if (this.harness.channelId) {
             await this.harness.event.waitUntilPeerStatus(
@@ -297,7 +300,7 @@ export class JoinActions<
 
     async addSpectatorDetached(
         options?: AddPeerOptions
-    ): Promise<TestPeer<TCustomRpc>> {
+    ): Promise<TestPeer<THost>> {
         const peer = await this.addSpectator(options);
         if (this.harness.channelId) {
             const promise = this.harness.event.waitUntilPeerStatus(
@@ -318,7 +321,7 @@ export class JoinActions<
     }
 
     async joinChannelWait(params: {
-        joiner: TestPeer<TCustomRpc>;
+        joiner: TestPeer<THost>;
         channelId?: JoinChannelStruct["channelId"];
         jcOverrides?: Partial<JoinChannelStruct>;
     }): Promise<JoinChannelConfirmationStruct> {

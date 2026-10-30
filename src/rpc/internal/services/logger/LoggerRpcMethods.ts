@@ -6,6 +6,9 @@ export class LoggerRpcMethods extends AInternalRpcMethods<LoggerService> {
     public upload(index: number, reason: string): void {
         this.service.upload(index, reason, this.sender);
     }
+    public flush(flushId: string, deadlineMs: number): Promise<void> {
+        return this.service.flush(flushId, deadlineMs, this.sender);
+    }
     public contextUpdate(context: SharedLoggerContext, index: number): void {
         this.service.contextUpdate(context, index, this.sender);
     }

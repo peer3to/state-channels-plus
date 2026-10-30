@@ -1,81 +1,122 @@
-import type { Config } from "@/utils/config";
-import { Provider, Signer, Wallet, WebSocketProvider } from "ethers";
+import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
+import RpcNodeProvider, {
+    type ExpectedChain
+} from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
+import { assertLogQueryMaxBlocks, type Config } from "@/utils/config";
+import { LoggerUtils } from "@/utils/LoggerUtils";
+import type { Logger } from "@/utils/logging/Logger";
+import { Signer, Wallet } from "ethers";
 
 export interface RuntimeChainContext {
-    provider: Provider;
+    provider: MultiRpcProvider;
     signer: Signer;
 }
 
 export function resolveWebSocketProviderUrl(providerUrl: string): string {
-    if (/^wss?:\/\//i.test(providerUrl)) return providerUrl;
-    if (/^https?:\/\//i.test(providerUrl)) {
-        return providerUrl.replace(/^http(s?):\/\//i, "ws$1://");
-    }
-    throw new Error(
-        "P2P runtime requires a ws:// or wss:// WebSocket provider URL"
-    );
-}
-
-function getSocketConnectionError(event: unknown): Error {
-    if (event instanceof Error) return event;
-    if (
-        typeof event === "object" &&
-        event !== null &&
-        "error" in event &&
-        event.error instanceof Error
-    ) {
-        return event.error;
-    }
-    return new Error("WebSocket connection failed");
-}
-
-async function waitForProviderNetwork(
-    provider: WebSocketProvider
-): Promise<void> {
-    const websocket = provider.websocket;
-    const previousOnError = websocket.onerror;
-    let stopWatchingSocket!: () => void;
-    let rejectSocketConnection!: (reason?: unknown) => void;
-    const socketConnectionError = new Promise<void>((resolve, reject) => {
-        stopWatchingSocket = resolve;
-        rejectSocketConnection = reject;
-    });
-    const handleSocketConnectionError = (event: unknown) => {
-        rejectSocketConnection(getSocketConnectionError(event));
-    };
-    websocket.onerror = handleSocketConnectionError;
-
-    try {
-        await Promise.race([provider.getNetwork(), socketConnectionError]);
-    } finally {
-        if (websocket.onerror === handleSocketConnectionError) {
-            websocket.onerror = previousOnError;
-        }
-        stopWatchingSocket();
-    }
-}
-
-/** Build and verify the real-chain provider and wallet owned by one runtime host. */
-export async function createRuntimeChainContext(
-    config: Config,
-    signerSecret: string
-): Promise<RuntimeChainContext> {
-    const wsUrl = resolveWebSocketProviderUrl(config.PROVIDER_URL);
-    const provider = new WebSocketProvider(wsUrl);
-    // ethers does not install an `onerror` handler on its underlying socket.
-    // In Node, `ws` therefore promotes a failed initial connection to an
-    // uncaught Error instead of rejecting the provider readiness request.
-    try {
-        await waitForProviderNetwork(provider);
-    } catch (error) {
-        await provider.destroy();
+    let webSocketUrl: string;
+    if (/^wss?:\/\//i.test(providerUrl)) webSocketUrl = providerUrl;
+    else if (/^https?:\/\//i.test(providerUrl))
+        webSocketUrl = providerUrl.replace(/^http(s?):\/\//i, "ws$1://");
+    else
         throw new Error(
-            `P2P runtime requires a reachable WebSocket provider at ${wsUrl}: ${String(error)}`
+            "P2P runtime requires a ws:// or wss:// WebSocket provider URL"
+        );
+    assertOpenableWebSocketUrl(webSocketUrl);
+    return webSocketUrl;
+}
+
+/**
+ * Rejects a URL a WebSocket cannot open: unparseable, an out-of-range port,
+ * or a fragment. The error names the endpoint by scheme and host only.
+ */
+function assertOpenableWebSocketUrl(webSocketUrl: string): void {
+    let parsed: URL | undefined;
+    try {
+        parsed = new URL(webSocketUrl);
+    } catch {
+        parsed = undefined;
+    }
+    if (!parsed || parsed.hash)
+        throw new Error(
+            `P2P runtime cannot open the WebSocket provider URL ${LoggerUtils.getRpcNodeMetadata(webSocketUrl).rpcNode}`
+        );
+}
+
+/**
+ * The WebSocket URLs of the runtime's RPC nodes in priority order:
+ * PROVIDER_URLS, or the single PROVIDER_URL when that list is unset or empty.
+ */
+export function resolveProviderUrls(
+    config: Pick<Config, "PROVIDER_URL" | "PROVIDER_URLS">
+): string[] {
+    const urls = config.PROVIDER_URLS?.length
+        ? config.PROVIDER_URLS
+        : [config.PROVIDER_URL];
+    return urls.map(resolveWebSocketProviderUrl);
+}
+
+/**
+ * Settles `true` as soon as one node's first attempt connected, or `false`
+ * once every first attempt failed.
+ */
+function anyNodeConnected(nodes: readonly RpcNodeProvider[]): Promise<boolean> {
+    return new Promise((resolve) => {
+        let failedCount = 0;
+        for (const node of nodes) {
+            void node.firstAttempt.then((failure) => {
+                if (!failure) resolve(true);
+                else if (++failedCount === nodes.length) resolve(false);
+            });
+        }
+    });
+}
+
+/**
+ * Build the multi-endpoint provider over the configured RPC nodes. Returns
+ * once one node connected; the others keep connecting in the background.
+ * Throws once every node's first attempt failed.
+ */
+export async function createRpcNodesProvider(
+    config: Pick<Config, "PROVIDER_URL" | "PROVIDER_URLS">,
+    logger: Logger
+): Promise<MultiRpcProvider> {
+    const expectedChain: ExpectedChain = {};
+    const nodes = resolveProviderUrls(config).map(
+        (url) => new RpcNodeProvider(url, logger, expectedChain)
+    );
+    if (!(await anyNodeConnected(nodes))) {
+        const failures = await Promise.all(
+            nodes.map((node) => node.firstAttempt)
+        );
+        for (const node of nodes) node.destroy();
+        // endpoint URLs can carry credentials in their path or query
+        const reasons = nodes.map(
+            (node, index) =>
+                `${LoggerUtils.getRpcNodeMetadata(node.url).rpcNode}: ${String(failures[index])}`
+        );
+        throw new Error(
+            `Chain access requires a reachable WebSocket provider at ${reasons.join("; ")}`
         );
     }
+    return new MultiRpcProvider(nodes, logger);
+}
+
+/**
+ * Build and verify the real-chain provider and wallet owned by one runtime
+ * host.
+ */
+export async function createRuntimeChainContext(
+    config: Config,
+    signerSecret: string,
+    logger: Logger
+): Promise<RuntimeChainContext> {
+    // a bad window size would only surface at the first catch-up
+    assertLogQueryMaxBlocks(config.LOG_QUERY_MAX_BLOCKS);
     const secret = signerSecret.trim();
-    const signer = /^0x[0-9a-fA-F]{64}$/.test(secret)
-        ? new Wallet(secret, provider)
-        : Wallet.fromPhrase(secret).connect(provider);
-    return { provider, signer };
+    // derived before any node opens, so a bad secret leaves nothing behind
+    const wallet = /^0x[0-9a-fA-F]{64}$/.test(secret)
+        ? new Wallet(secret)
+        : Wallet.fromPhrase(secret);
+    const provider = await createRpcNodesProvider(config, logger);
+    return { provider, signer: wallet.connect(provider) };
 }

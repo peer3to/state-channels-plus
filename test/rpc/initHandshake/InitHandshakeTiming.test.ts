@@ -16,7 +16,9 @@ describe("InitHandshakeService timing filters", function () {
 
     beforeEach(async function () {
         fixture = new P2PManagerFixture();
-        await fixture.setup();
+        // the probes pin the process-wide clock; isolated peers keep the pin
+        // out of the co-located peer
+        await fixture.setup({ isolatedPeers: true });
         agreementTime = await fixture
             .control()
             .handshake.getAgreementTime()

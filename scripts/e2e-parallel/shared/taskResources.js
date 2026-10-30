@@ -14,6 +14,13 @@ class TaskResourcePool {
         this.slotSequence = 0;
     }
 
+    canAcquire(task) {
+        return (
+            (task && !requiresChainSlot(task)) ||
+            this.accountPartitions.available.length > 0
+        );
+    }
+
     acquire(task) {
         const needsChain = requiresChainSlot(task);
         if (!needsChain) {

@@ -24,11 +24,28 @@ const QUESTION_RE = new RegExp(`^${QUESTION_PATTERN}$`);
 const FINDING_RE = new RegExp(`^${FINDING_PATTERN}$`);
 const AUDITABLE_ID_RE = new RegExp(AUDITABLE_ID_PATTERN, "g");
 
+// A linked ID reference, with or without its tool-written label:
+// [`ID` (label)](target) or [`ID`](target).
+const EXACT_ID_LINK_RE = new RegExp(
+    `(?:\\x60)?\\[+\\x60*(${AUDITABLE_ID_PATTERN})\\x60*(?:[ \\t]*\\([^)\\]]*\\))?\\]\\([^)]+\\)(?:\\x60)?`,
+    "g"
+);
+
+// Drops what the tools write (case checkboxes, reference links and labels) so
+// review and approval hashes cover only authored content.
+function withoutToolWritten(markdown) {
+    return markdown
+        .replace(/^(\s*-\s+)\[[ x]\]\s+/gm, "$1")
+        .replace(EXACT_ID_LINK_RE, (_, id) => `\x60${id}\x60`);
+}
+
 function anchorForId(id) {
     return id.toLowerCase();
 }
 
 module.exports = {
+    EXACT_ID_LINK_RE,
+    withoutToolWritten,
     AUDITABLE_ID_PATTERN,
     AUDITABLE_ID_RE,
     FINDING_PATTERN,

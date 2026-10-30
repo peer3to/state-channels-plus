@@ -19,6 +19,16 @@ const UNSUPPORTED = "Operation not supported by deployment bridge signer";
  */
 class DeploymentBridgeSigner implements Signer {
     provider: Provider | null = null;
+    private sentTransactions = 0;
+    private sentRoundTripMs = 0;
+
+    /** Transactions sent and their round trips to the runtime, for setup timings. */
+    get sent(): { transactions: number; roundTripMs: number } {
+        return {
+            transactions: this.sentTransactions,
+            roundTripMs: this.sentRoundTripMs
+        };
+    }
 
     constructor(
         private readonly requester: RuntimeConnection<P2pRuntimeHostRoot>,
@@ -67,12 +77,14 @@ class DeploymentBridgeSigner implements Signer {
     async sendTransaction(
         tx: TransactionRequest
     ): Promise<TransactionResponse> {
+        const serialized = await serializeTransactionRequest(tx, this.provider);
+        const sentAtMs = Date.now();
         return this.requester.deploySigner
-            .sendTransaction(
-                await serializeTransactionRequest(tx, this.provider)
-            )
+            .sendTransaction(serialized)
             .request()
             .then((result) => {
+                this.sentTransactions += 1;
+                this.sentRoundTripMs += Date.now() - sentAtMs;
                 const response = {
                     hash: result.hash,
                     to: result.to,

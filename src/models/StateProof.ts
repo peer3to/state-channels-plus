@@ -3,14 +3,9 @@ import { StateProofStruct } from "@typechain-types/contracts/V1/types/DisputeTyp
 
 export default class StateProof {
     readonly milestones: { blocks: Block[] }[];
-    readonly signedBlocks: Block[];
 
-    private constructor(
-        milestones: { blocks: Block[] }[],
-        signedBlocks: Block[]
-    ) {
+    private constructor(milestones: { blocks: Block[] }[]) {
         this.milestones = milestones;
-        this.signedBlocks = signedBlocks;
     }
 
     static tryFrom(stateProof: StateProofStruct): StateProof | null {
@@ -24,12 +19,6 @@ export default class StateProof {
             }
             milestones.push({ blocks });
         }
-        const signedBlocks: Block[] = [];
-        for (const sb of stateProof.signedBlocks) {
-            const block = Block.tryFromSignedBlock(sb);
-            if (!block) return null;
-            signedBlocks.push(block);
-        }
-        return new StateProof(milestones, signedBlocks);
+        return new StateProof(milestones);
     }
 }

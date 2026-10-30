@@ -1,7 +1,7 @@
 import type JoinChannelService from "./JoinChannelService";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import type NetworkTransport from "@/transport/NetworkTransport";
-import type { ForkId, Hash, Signature } from "@/types/types";
+import type { Signature } from "@/types/types";
 
 export default class JoinChannelRpcMethods extends ANetworkRpcMethods<JoinChannelService> {
     constructor(transport: NetworkTransport, service: JoinChannelService) {
@@ -9,15 +9,11 @@ export default class JoinChannelRpcMethods extends ANetworkRpcMethods<JoinChanne
     }
 
     public async requestJoinSignature(
-        encodedSignedJoinChannel: string,
-        expectedSnapshotHash: Hash,
-        expectedForkId: ForkId
+        encodedSignedJoinChannel: string
     ): Promise<{ signature: Signature }> {
         return this.service.signJoinRequest(
             this.senderTransport,
-            encodedSignedJoinChannel,
-            expectedSnapshotHash,
-            expectedForkId
+            encodedSignedJoinChannel
         );
     }
 }

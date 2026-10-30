@@ -1,7 +1,14 @@
 import { coordinateKey, CoordinateKey } from "./keys";
 import Clock from "@/Clock";
-import { Block } from "@/models";
-import { Address, BlockHeight, ForkId, Hash, Signature } from "@/types/types";
+import { Block, StateSnapshot } from "@/models";
+import {
+    Address,
+    BlockHeight,
+    Bytes,
+    ForkId,
+    Hash,
+    Signature
+} from "@/types/types";
 
 import { getChecksumAddress } from "@/utils/address";
 
@@ -15,11 +22,23 @@ export type QueueBlockOptions =
     | { origin: BlockOrigin.NETWORK; senderAddress: Address }
     | { origin: BlockOrigin.CALLDATA | BlockOrigin.PROOF };
 
+/**
+ * What a replayed block is judged from: the block it extends (none for the
+ * fork genesis), that block's resulting snapshot and its state.
+ */
+export type BlockPredecessor = {
+    block?: Block;
+    snapshot: StateSnapshot;
+    state: Bytes;
+};
+
 export type QueuedBlockEntry = {
     block: Block;
     firstSeenAt: number;
     origin: QueueBlockOptions["origin"];
     sourcesToSignatures: Map<Address, Set<Signature>>;
+    /** set only by dispute replay: judge the block from this, not storage */
+    predecessor?: BlockPredecessor;
 };
 
 export function getSourcePeers(entry: QueuedBlockEntry): Set<Address> {

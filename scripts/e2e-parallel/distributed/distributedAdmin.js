@@ -5,7 +5,8 @@ const path = require("path");
 const {
     DISCOVERY_AUTH_TIMEOUT_MS,
     authenticateClient,
-    derivePoolKeys
+    derivePoolKeys,
+    isDiscoveryAuthenticationFailure
 } = require("./authentication");
 const { createPool, DISCOVERY_REFRESH_MS } = require("./poolTransport");
 const { ProtocolPeer, waitForMessage } = require("./protocol");
@@ -38,7 +39,12 @@ Options:
   --require-public-key on|off      Policy value for authorization-policy-set
   --state-dir PATH                 Persistent orchestrator identity directory
   --discovery-timeout MS           Discovery deadline (default: 30000)
-  -h, --help                       Show this help`;
+  -h, --help                       Show this help
+
+Without --worker, an authorization command runs on every worker discovered
+before the discovery timeout. A worker whose stream drops before
+authentication is retried over its next connection; if it does not reconnect
+in time, it is reported as not accepted and the command exits non-zero.`;
 }
 
 function parseAdminArgs(argv) {
@@ -174,13 +180,7 @@ async function runAdmin(options, dependencies = {}) {
         options.keyPair || loadOrchestratorKeyPair(options.stateDir);
     const poolSecret = options.poolSecret || process.env.SCP_TEST_POOL_SECRET;
     const keys = derivePoolKeys(poolSecret);
-    const pool = await createPool({
-        announceTopics: [keys.orchestratorTopic],
-        lookupTopics: [keys.workerTopic],
-        dht: dependencies.dht,
-        keyPair,
-        refreshIntervalMs: DISCOVERY_REFRESH_MS
-    });
+    let pool;
     const workers = new Map();
     const outcomes = new Map();
     let discoveryEnded = false;
@@ -236,9 +236,13 @@ async function runAdmin(options, dependencies = {}) {
         );
     }, options.discoveryTimeoutMs);
 
-    pool.onConnection(async (stream, info) => {
+    // served from the pool's creation on: a worker that connects while the
+    // pool still flushes its announcement must get its hello before the
+    // worker's authentication timeout
+    const onConnection = async (stream, info) => {
         const workerId = info?.publicKey?.toString("hex");
         const peer = new ProtocolPeer(stream);
+        let authenticated = false;
         if (discoveryEnded) {
             peer.close("distributed admin discovery window ended");
             return;
@@ -258,7 +262,7 @@ async function runAdmin(options, dependencies = {}) {
             await authenticateClient(
                 peer,
                 keys.authKey,
-                { local: pool.publicKey, remote: info.publicKey },
+                { local: keyPair.publicKey, remote: info.publicKey },
                 DISCOVERY_AUTH_TIMEOUT_MS
             );
             const ready = await waitForMessage(
@@ -274,6 +278,7 @@ async function runAdmin(options, dependencies = {}) {
                 capabilities: ready.header.capabilities
             };
             workers.set(workerId, worker);
+            authenticated = true;
             peer.on("message", (message) => {
                 if (message.kind === "HEARTBEAT") {
                     peer.send("HEARTBEAT").catch(() => {});
@@ -334,12 +339,41 @@ async function runAdmin(options, dependencies = {}) {
             if (options.worker) finish(null, outcome);
             else peer.close("distributed admin operation completed");
         } catch (error) {
+            // this stream's own state: a duplicate stream that dies after
+            // another stream authenticated the worker is still churn
+            const isUnauthenticated = !authenticated;
+            const droppedBeforeAuthentication =
+                isUnauthenticated && isDiscoveryAuthenticationFailure(error);
+            // A bulk command reports a worker that never reconnects as not
+            // accepted; a later outcome for it overwrites this one.
+            if (
+                bulkAuthorization &&
+                droppedBeforeAuthentication &&
+                !outcomes.has(workerId)
+            ) {
+                outcomes.set(workerId, {
+                    worker: { publicKey: workerId },
+                    accepted: false,
+                    message: `Stream dropped before authentication and the worker did not reconnect before the discovery timeout: ${error.message}`,
+                    entries: []
+                });
+            }
             const retryingReverseDial =
-                !workers.has(workerId) &&
+                isUnauthenticated &&
+                pool !== undefined &&
                 (await pool.yieldFailedOutgoingDial(stream, info, error));
             if (retryingReverseDial) {
                 peer.close(
                     `distributed admin is waiting for a reverse dial after: ${error.message}`
+                );
+                return;
+            }
+            // A stream dropped before authentication, in either direction,
+            // is routine discovery churn, as for the orchestrator: the next
+            // connection retries until the discovery timeout.
+            if (droppedBeforeAuthentication) {
+                peer.close(
+                    `distributed admin is waiting for another connection after: ${error.message}`
                 );
                 return;
             }
@@ -362,13 +396,21 @@ async function runAdmin(options, dependencies = {}) {
                 finishBulkAuthorization();
             }
         }
-    });
+    };
 
     try {
+        pool = await createPool({
+            announceTopics: [keys.orchestratorTopic],
+            lookupTopics: [keys.workerTopic],
+            dht: dependencies.dht,
+            keyPair,
+            refreshIntervalMs: DISCOVERY_REFRESH_MS,
+            onConnection
+        });
         return await result;
     } finally {
         clearTimeout(timer);
-        await pool.close();
+        await pool?.close();
     }
 }
 

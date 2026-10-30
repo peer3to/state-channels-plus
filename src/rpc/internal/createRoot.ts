@@ -1,3 +1,5 @@
+// First: it counts every WebAssembly instance this thread creates after it.
+import "@/utils/threadResources";
 import "./rootWorkerGlobals";
 import "./threadName";
 import { AInternalRpcRoot } from "./AInternalRpcRoot";
@@ -6,8 +8,12 @@ import { RemoteRoot, childDisposedError } from "./RemoteRoot";
 import type { HostHandlerExecutionContext } from "@/evm/p2pRuntime/HostHandlerExecutionContext";
 import type { WorkerBootstrapMessage } from "@/evm/p2pRuntime/types";
 import type { RuntimePort } from "@/transport/RuntimePort";
+import { config } from "@/utils/config";
+import { valueText } from "@/utils/errorMessage";
 import type { Logger, SharedLoggerContext } from "@/utils/logging/Logger";
+import { LogUploader } from "@/utils/logging/LogUploader";
 import { runCleanup } from "@/utils/runCleanup";
+import { getThreadResources, trackWorker } from "@/utils/threadResources";
 import { createTransferableChannel } from "@platform/p2pRuntimeChannel";
 import {
     onUnhandledWorkerError,
@@ -19,11 +25,19 @@ import {
 
 export type { RemoteRoot } from "./RemoteRoot";
 
+/** How a failure escaped every handler in its worker. */
+export type UncaughtFailureKind = "unhandled rejection" | "uncaught exception";
+
 export interface RootWorker {
     postMessage(value: unknown, transfer?: unknown[]): void;
     /** Mark owner-initiated closure before the worker can observe its closed port. */
     expectShutdown(): void;
     shutdown: () => Promise<void>;
+    /**
+     * Wait, bounded, for a worker its owner stops from outside to end its own
+     * cleanup (its log uploads included) before `shutdown` stops it.
+     */
+    drain?(): Promise<void>;
     /** Worker exit supplies the failure cause before connection settlement. */
     readonly ownsConnectionClose?: boolean;
 }
@@ -262,7 +276,12 @@ async function createChildRoot<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
         return remoteRoot;
     }
     const { localPort, transferablePort } = createTransferableChannel();
+    const creatingAtMs = Date.now();
     let worker: RootWorker | undefined;
+    // When the worker was asked for, and how long `new Worker` blocked the caller.
+    let spawn: { spawnedAt: number; spawnCallMs: number } | undefined;
+    // A child that is not ready gets no disposal reply: draining it would wait the whole bound.
+    let isChildReady = false;
     let localRoot: AInternalRpcRoot | undefined;
     let starting: Promise<void> | undefined;
     let finishing: Promise<void> | undefined;
@@ -305,6 +324,11 @@ async function createChildRoot<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
                     },
                     // Final closure has settled, so both inline endpoints can close.
                     () => localRoot?.closeConnections(),
+                    // A ready child may still settle its log uploads and
+                    // close itself; drain, bounded, before closing the port.
+                    // A ready child that closed its port without disposing
+                    // waits the whole bound and warns.
+                    () => (isChildReady ? worker?.drain?.() : undefined),
                     () => childRemoteRoot.closeWithReason(childDisposedError()),
                     () => worker?.shutdown(),
                     () => afterCleanup?.()
@@ -315,11 +339,22 @@ async function createChildRoot<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
         if (options.mode === "worker") {
             if (!options.workerUrl)
                 throw new Error("Worker roots require an explicit workerUrl");
-            worker = createRootWorker(options.workerUrl, failed, entry.name);
+            // The parent's logger receives the worker's failure and drain-timeout reports.
+            const spawnedAt = Date.now();
+            worker = trackWorker(
+                createRootWorker(
+                    options.workerUrl,
+                    failed,
+                    parent.rootLogger,
+                    entry.name
+                )
+            );
+            spawn = { spawnedAt, spawnCallMs: Date.now() - spawnedAt };
             worker.postMessage(
                 {
                     type: "connect",
                     payload: options.args,
+                    config,
                     port: transferablePort
                 } satisfies WorkerBootstrapMessage<TArgs>,
                 [transferablePort]
@@ -349,6 +384,26 @@ async function createChildRoot<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
                 .catch(failed);
         }
         await childRemoteRoot.awaitReady();
+        isChildReady = true;
+        // A setup that runs past its bound lists which roots became ready, and when.
+        const entryFile = String(options.workerUrl ?? "")
+            .split("/")
+            .pop()
+            ?.split("?")[0];
+        parent.rootLogger.debug("Child root ready", {
+            root: entry.name,
+            mode: options.mode,
+            readyMs: Date.now() - creatingAtMs,
+            // This thread's workers and WebAssembly once the child is up.
+            resources: getThreadResources(),
+            // The worker's "Root worker started" names its own start (timeOrigin): the gap
+            // from spawnedAt to it is the browser starting the thread.
+            ...spawn,
+            // A worker's own entry script is fetched in its parent's timeline.
+            entryFetch: entryFile
+                ? fetchedFiles().filter(({ file }) => file === entryFile)
+                : []
+        });
     } catch (error) {
         childRemoteRoot.closeWithReason(
             error instanceof Error ? error : new Error(String(error))
@@ -381,7 +436,7 @@ export function rootStartContext(
         handlerExecutionContext,
         attached,
         sameRealm = mode === "inline",
-        close = mode === "worker" ? closeRootWorker : () => {}
+        close = mode === "worker" ? closeWorkerThread : () => {}
     }: {
         logger?: Logger;
         handlerExecutionContext?: HostHandlerExecutionContext;
@@ -428,17 +483,40 @@ export function rootStartContext(
     };
 }
 
-/** Worker entries explicitly select the root to initialize. */
+/**
+ * Worker entries explicitly select the root to initialize. `resolveRoot`
+ * picks a subclass of `entry` from the bootstrap payload instead.
+ */
 export function startRootWorker<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
-    entry: RootConstructor<TRoot, TArgs, TLocal>
+    entry: RootConstructor<TRoot, TArgs, TLocal>,
+    options?: {
+        threadName?: string;
+        resolveRoot?: (
+            payload: TArgs
+        ) => Promise<RootConstructor<TRoot, TArgs, TLocal>>;
+    }
 ): void {
+    // every log line of this worker names it; unnamed it logs as "main"
+    if (options?.threadName) globalThis.threadName = options.threadName;
+    // A worker's clock starts at its creation: this is its bundle's download and evaluation.
+    const loadedMs = globalThis.performance.now();
     onRootBootstrap<TArgs>(async (message) => {
+        const bootstrapMs = globalThis.performance.now();
         const port = adaptTransferredPort(message.port);
         let receivingRoot: AInternalRpcRoot | undefined;
         // Same policy as the sdk worker: an error outside a request is reported to
         // the host and the worker keeps serving. The funnel is registered as soon as
         // the port and the host reporter exist, before request handling begins.
-        onUnhandledWorkerError((error) => {
+        onUnhandledWorkerError((failure, kind) => {
+            const error =
+                failure instanceof Error
+                    ? failure
+                    : Object.assign(
+                          new Error(
+                              `${kind} in the ${globalThis.threadName} worker with a non-Error value: ${valueText(failure)}`
+                          ),
+                          { cause: failure }
+                      );
             if (receivingRoot) receivingRoot.reportError(error);
             else
                 port.post({
@@ -449,15 +527,44 @@ export function startRootWorker<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
         });
         try {
             const context = rootStartContext(port, "worker");
-            const root = new entry(message.payload, undefined, context);
+            const rootClass =
+                (await options?.resolveRoot?.(message.payload)) ?? entry;
+            const root = new rootClass(message.payload, undefined, context);
+            const constructedMs = globalThis.performance.now();
             receivingRoot = root;
             await context.initialize(root);
+            // Where a slow worker startup goes: its bundle, its parent's bootstrap, its own start,
+            // and each file it fetched (from the worker's creation; 0 bytes = from cache).
+            root.logger.attachedLogger.debug("Root worker started", {
+                root: entry.name,
+                // Epoch ms of this thread's start; its parent logs when it asked for it.
+                timeOrigin: Math.round(globalThis.performance.timeOrigin),
+                loadedMs: Math.round(loadedMs),
+                bootstrapMs: Math.round(bootstrapMs),
+                constructedMs: Math.round(constructedMs),
+                startedMs: Math.round(globalThis.performance.now()),
+                fetched: fetchedFiles(),
+                resources: getThreadResources()
+            });
         } catch (error) {
+            const serialized = serializeError(error);
+            // At error level this worker uploads its own log lines. Its parent
+            // terminates a worker that never became ready without a drain, so
+            // the upload settles, within the flush bound, before the report. A
+            // root that never got a logger has none to upload.
+            const logger = receivingRoot?.logger.attachedLogger;
+            if (logger && !logger.isDisposed) {
+                logger.error("Root worker startup failed", {
+                    error,
+                    wasm: serialized.wasmDiagnostics
+                });
+                await LogUploader.settleRealmUploads(config.CRASH_LOG_FLUSH_MS);
+            }
             try {
                 port.post({
                     service: "errors",
                     method: "startupFailed",
-                    params: [serializeError(error)]
+                    params: [serialized]
                 });
             } catch {
                 /* Keep the startup error if its parent is already gone. */
@@ -472,8 +579,52 @@ export function startRootWorker<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
             } finally {
                 receivingRoot?.closeConnections();
                 port.close();
-                await closeRootWorker();
+                await closeWorkerThread();
             }
         }
     });
+}
+
+/**
+ * The scripts and WebAssembly this thread fetched, with their times from its
+ * creation: `requestMs` is when the request was sent and `responseMs` when its
+ * first byte came back (a gap from `startMs` to `requestMs` is queueing or a
+ * connection, from `requestMs` to `responseMs` the server, and from there to
+ * `endMs` the transfer; 0 when the server sends no timing header for another
+ * origin). `protocol` is the connection's (`h2`, `http/1.1`); `kB` 0 means a
+ * cache hit, or another origin that sends no timing header (`protocol` is
+ * then empty).
+ */
+function fetchedFiles(): {
+    file: string;
+    startMs: number;
+    requestMs: number;
+    responseMs: number;
+    endMs: number;
+    kB: number;
+    protocol: string;
+}[] {
+    const entries = (globalThis.performance?.getEntriesByType?.("resource") ??
+        []) as PerformanceResourceTiming[];
+    return entries
+        .filter((entry) => /\.(m?js|wasm)(\?|$)/.test(entry.name))
+        .map((entry) => ({
+            file: entry.name.split("/").pop()?.split("?")[0] ?? entry.name,
+            startMs: Math.round(entry.startTime),
+            requestMs: Math.round(entry.requestStart),
+            responseMs: Math.round(entry.responseStart),
+            endMs: Math.round(entry.responseEnd),
+            kB: Math.round(entry.transferSize / 1024),
+            protocol: entry.nextHopProtocol
+        }));
+}
+
+/**
+ * The worker thread ends: it lets its uploads still running finish within the flush bound,
+ * cancels the rest, then closes its handles.
+ */
+async function closeWorkerThread(): Promise<void> {
+    await LogUploader.settleRealmUploads(config.CRASH_LOG_FLUSH_MS);
+    LogUploader.cancelRealmUploads();
+    await closeRootWorker();
 }

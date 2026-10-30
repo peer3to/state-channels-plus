@@ -7,7 +7,6 @@ import type { SetupPayload } from "@/evm/p2pRuntime/types";
 import { rootStartContext } from "@/rpc/internal/createRoot";
 import { serializeError } from "@/rpc/internal/errorWire";
 import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
-import { createConfig } from "@/utils/config";
 import {
     onRootBootstrap,
     adaptTransferredPort,
@@ -26,7 +25,6 @@ const data = workerData as WatchdogWorkerData;
 
 onRootBootstrap<SetupPayload>(async (message) => {
     const { payload, port } = message;
-    createConfig(payload.config);
     const runtimePort = adaptTransferredPort(port);
     onUnhandledWorkerError((error) => {
         runtimePort.post({

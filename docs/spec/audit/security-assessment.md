@@ -14,8 +14,10 @@ The shared frame decoder keeps the size gate before parsing and response-first c
 ## Current Codex Security findings
 
 The [finding reassessment](./codex-security-triage.md) checks the 7 protocol findings of the
-supplied scan against current `dispute` source. Six remain confirmed by static evidence and the
-all-skipped milestone replacement is fixed. The scan's 5 developer-tooling findings are tracked in
+supplied scan against current `dispute` source. Two remain confirmed by static evidence: `pruned-inbound`
+and `sync-genesis-time`. The all-skipped milestone replacement was already fixed; the zero-target
+dispute kill, the unlinked previous-snapshot slash, the expired opening signatures and the sync
+inbound data findings are fixed since. The scan's 5 developer-tooling findings are tracked in
 the tooling's own documentation. The [open finding entries](./open-findings.md#codex-security-reassessment)
 link the affected paths, counterevidence and proposed regression work. This does not complete the
 formal security review, establish runtime reproduction, or record engineer risk acceptance.
@@ -71,23 +73,23 @@ the root [README](../README.md) says so.
 objective claims the protocol makes, the proofs and validations that police them, and the failure
 and recovery behavior.
 
-| Surface                                        | Primary references                                                                                                                                                                                     |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Block production                               | [../protocol/finality.md](../specification/protocol-model/finality.md), [../sdk/block-confirmation-pipeline.md](../implementation/views/architecture/sdk/block-confirmation-pipeline.md)               |
-| Signatures and equivocation                    | [../protocol/fraud-proofs.md](../specification/disputes/fraud-proofs.md)                                                                                                                               |
-| Virtual voting                                 | [../protocol/finality.md](../specification/protocol-model/finality.md)                                                                                                                                 |
-| State proofs and milestone hops                | [../protocol/state-proofs.md](../specification/disputes/state-proofs.md)                                                                                                                               |
-| Membership changes (join, removal, thresholds) | [../protocol/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md), [../protocol/state-proofs.md](../specification/disputes/state-proofs.md)                                   |
-| Inbound and outbound streams                   | [../protocol/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md)                                                                                                             |
-| Snapshot updates                               | [../protocol/lifecycle.md](../specification/settlement/lifecycle.md)                                                                                                                                   |
-| Fraud-proof and dispute-proof submission       | [../protocol/fraud-proofs.md](../specification/disputes/fraud-proofs.md), [../sdk/dispute-pipeline.md](../implementation/views/architecture/sdk/dispute-pipeline.md)                                   |
-| Slash-set handling                             | [../protocol/fraud-proofs.md](../specification/disputes/fraud-proofs.md)                                                                                                                               |
-| Reduction                                      | [../protocol/disputes.md](../specification/disputes/disputes.md)                                                                                                                                       |
-| Timing                                         | [../protocol/time.md](../specification/protocol-model/time.md)                                                                                                                                         |
-| Data availability                              | [data-availability.md](../specification/security/data-availability.md)                                                                                                                                 |
-| RPC trust                                      | [trust-model.md](../specification/security/trust-model.md) §5                                                                                                                                          |
-| Leader election                                | [../protocol/finality.md](../specification/protocol-model/finality.md)                                                                                                                                 |
-| Cross-layer interactions                       | [../protocol/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md), [../contracts/manager-and-facets.md](../implementation/views/architecture/contracts/manager-and-facets.md) |
+| Surface                                        | Primary references                                                                                                                                                      |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Block production                               | [../protocol/finality.md](../specification/protocol-model/finality.md), [block-progression/block-processing.md](../specification/block-progression/block-processing.md) |
+| Signatures and equivocation                    | [../protocol/fraud-proofs.md](../specification/disputes/fraud-proofs.md)                                                                                                |
+| Virtual voting                                 | [../protocol/finality.md](../specification/protocol-model/finality.md)                                                                                                  |
+| State proofs and milestone hops                | [../protocol/state-proofs.md](../specification/disputes/state-proofs.md)                                                                                                |
+| Membership changes (join, removal, thresholds) | [../protocol/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md), [../protocol/state-proofs.md](../specification/disputes/state-proofs.md)    |
+| Inbound and outbound streams                   | [../protocol/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md)                                                                              |
+| Snapshot updates                               | [../protocol/lifecycle.md](../specification/settlement/lifecycle.md)                                                                                                    |
+| Fraud-proof and dispute-proof submission       | [../protocol/fraud-proofs.md](../specification/disputes/fraud-proofs.md), [disputes/dispute-processing.md](../specification/disputes/dispute-processing.md)             |
+| Slash-set handling                             | [../protocol/fraud-proofs.md](../specification/disputes/fraud-proofs.md)                                                                                                |
+| Reduction                                      | [../protocol/disputes.md](../specification/disputes/disputes.md)                                                                                                        |
+| Timing                                         | [../protocol/time.md](../specification/protocol-model/time.md)                                                                                                          |
+| Data availability                              | [data-availability.md](../specification/security/data-availability.md)                                                                                                  |
+| RPC trust                                      | [trust-model.md](../specification/security/trust-model.md) §5                                                                                                           |
+| Leader election                                | [../protocol/finality.md](../specification/protocol-model/finality.md)                                                                                                  |
+| Cross-layer interactions                       | [../protocol/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md), [enforcement/contracts.md](../specification/enforcement/contracts.md)       |
 
 **<a id="req-sec-3-nppjn5"></a>`REQ-SEC-3-NPPJN5`.** The review MUST separate **objective slashable violations** (provable misbehavior)
 from **non-Byzantine failures** (disconnection, data loss, crash). The former are candidates for
@@ -180,16 +182,17 @@ Per [`REQ-SEC-4-VF81QD`](security-assessment.md#req-sec-4-vf81qd) each finding c
 The separate _proposed remediation_ column says what should change; a remediation may move the
 finding to a different class once accepted, which is a decision, not a present state.
 
-| Finding                                                                                                                                                                                                        | Trust boundary                                                                                                                       | Attack                                                                                                                                                                                                                                | Current protection                                                                                                                                                                                                                              | Current class ([`REQ-SEC-4-VF81QD`](security-assessment.md#req-sec-4-vf81qd))                                               | Proposed remediation                                                                                                                                            | Required test                                                          | Status                |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------- |
-| Handshake has no channel/identity binding ([`OQ-35-E5RRDF`](../implementation/open-questions.md#oq-35-e5rrdf))                                                                                                 | Peer authentication                                                                                                                  | On-path relay of a victim's handshake signature → impersonation                                                                                                                                                                       | None; only the `agreementTime` skew window limits it                                                                                                                                                                                            | explicit trust assumption (A9, [trust-model.md](../specification/security/trust-model.md#4-consolidated-trust-assumptions)) | Validation rule: sign a session- and identity-bound payload; removes A9                                                                                         | relay/reflection MITM e2e                                              | Open, production gate |
-| No signature domain separation ([`OQ-29-EFY4NF`](../specification/open-questions.md#oq-29-efy4nf))                                                                                                             | Signed protocol artifacts: blocks, transactions, joins, opens, disputes (the handshake already carries an object/version domain tag) | Replay a signature across manager deployments / chains (`channelId` is caller-chosen)                                                                                                                                                 | None                                                                                                                                                                                                                                            | validation rule                                                                                                             | EIP-712 or domain-tagged struct binding version, chain, deployment, object type                                                                                 | cross-deployment replay                                                | Open, production gate |
-| Cross-channel dispute-ack pollution ([`OQ-36-WEN9T1`](../implementation/open-questions.md#oq-36-wen9t1))                                                                                                       | `IsForkDisputedService`                                                                                                              | Throwaway disputed channel makes victims record foreign forks; free chain-read oracle                                                                                                                                                 | None; `channelId` unchecked                                                                                                                                                                                                                     | validation rule                                                                                                             | Bind `channelId` to the local channel; key ack records by channel                                                                                               | foreign-channel ack rejection                                          | Open                  |
-| Reorg / event-ordering uncertainty ([`OQ-30-2G0Q5M`](../implementation/open-questions.md#oq-30-2g0q5m))                                                                                                        | SDK chain observation                                                                                                                | Same-height reorg undetected; out-of-order log application at join/dispute/withdrawal                                                                                                                                                 | Bare block-number cursor; no rollback                                                                                                                                                                                                           | recovery path                                                                                                               | Canonical `(blockNumber, blockHash, txIndex, logIndex)` cursor + rollback journal                                                                               | reorg replay at each decision site                                     | Open                  |
-| Prototype-inherited RPC names reachable ([`DEF-7-PK564B`](open-findings.md#def-7-pk564b))                                                                                                                      | RPC dispatch                                                                                                                         | Call `toString`/`constructor` etc. remotely                                                                                                                                                                                           | Descriptor-based endpoint resolution stops before the RPC/language bases, never evaluates accessors, and captures the accepted function once                                                                                                    | validation rule                                                                                                             | Implemented in [`ANetworkRpcService`](../implementation/source/src/rpc/network/ANetworkRpcService.ts.md)                                                        | component boundary matrix + authenticated-peer rejection/isolation E2E | Resolved 2026-08-17   |
-| Honest peers blacklisted for availability / local faults ([`DEF-5-E8TP9N`](open-findings.md#def-5-e8tp9n), [`DEF-9-724SXP`](open-findings.md#def-9-724sxp), [`DEF-10-199C7F`](open-findings.md#def-10-199c7f)) | Peer classification                                                                                                                  | Griefer weaponizes unavailability, or our own chain-provider failure, into mutual blacklisting                                                                                                                                        | None; failure classes conflated                                                                                                                                                                                                                 | validation rule                                                                                                             | Separate unavailable/local-fault from Byzantine before penalizing                                                                                               | unavailability-not-blacklisted                                         | Open                  |
-| Attacker-controlled ICE targets ([`DEF-11-JN8N6H`](open-findings.md#def-11-jn8n6h))                                                                                                                            | WebRTC setup                                                                                                                         | Induce STUN/connectivity traffic toward arbitrary hosts (reflection)                                                                                                                                                                  | None; candidates unfiltered                                                                                                                                                                                                                     | validation rule                                                                                                             | Filter candidate targets, or reclassify as accepted limitation under the [`OQ-6-4JPNE5`](../specification/open-questions.md#oq-6-4jpne5) limiter with rationale | ICE target filtering                                                   | Open                  |
-| Unguarded harness-control root is network-reachable and ships in the package ([`OQ-37-0Y7YWS`](../implementation/open-questions.md#oq-37-0y7yws))                                                              | RPC dispatch / peer boundary                                                                                                         | Any connected peer calls `scenario.exec` (arbitrary code via `new Function` in the host realm), `handshake.signMessage` (signing oracle), or `signer` (key import) on a peer built with the test harness — 207 endpoints, zero guards | None: no harness service sets `guards`, dispatch is structural over any transport, and `dist/test/...` + `exports["./test-harness"]` publish the root. Blast radius limited only by production `p2pSetup` registering the bare `MainRpcService` | validation rule                                                                                                             | Restrict harness services to the trusted loopback transport **and** exclude them from the published artifact                                                    | network-peer cannot reach a harness service                            | Open, production gate |
+| Finding                                                                                                                                                                  | Trust boundary                                                                                                                       | Attack                                                                                                                                                                                                                                | Current protection                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Current class ([`REQ-SEC-4-VF81QD`](security-assessment.md#req-sec-4-vf81qd))                                               | Proposed remediation                                                                                                                                            | Required test                                                          | Status                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------- |
+| Handshake has no channel/identity binding ([`OQ-35-E5RRDF`](../implementation/open-questions.md#oq-35-e5rrdf))                                                           | Peer authentication                                                                                                                  | On-path relay of a victim's handshake signature → impersonation                                                                                                                                                                       | None; only the `agreementTime` skew window limits it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | explicit trust assumption (A9, [trust-model.md](../specification/security/trust-model.md#4-consolidated-trust-assumptions)) | Validation rule: sign a session- and identity-bound payload; removes A9                                                                                         | relay/reflection MITM e2e                                              | Open, production gate                                 |
+| No signature domain separation ([`OQ-29-EFY4NF`](../specification/open-questions.md#oq-29-efy4nf))                                                                       | Signed protocol artifacts: blocks, transactions, joins, opens, disputes (the handshake already carries an object/version domain tag) | Replay a signature across manager deployments / chains (`channelId` is caller-chosen)                                                                                                                                                 | None                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | validation rule                                                                                                             | EIP-712 or domain-tagged struct binding version, chain, deployment, object type                                                                                 | cross-deployment replay                                                | Open, production gate                                 |
+| Cross-channel dispute-ack pollution ([`OQ-36-WEN9T1`](../implementation/open-questions.md#oq-36-wen9t1))                                                                 | `IsForkDisputedService`                                                                                                              | Throwaway disputed channel makes victims record foreign forks; free chain-read oracle                                                                                                                                                 | None; `channelId` unchecked                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | validation rule                                                                                                             | Bind `channelId` to the local channel; key ack records by channel                                                                                               | foreign-channel ack rejection                                          | Open                                                  |
+| Chain reorganization ([`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm), reorg half of [`OQ-30-2G0Q5M`](../implementation/open-questions.md#oq-30-2g0q5m)) | SDK chain observation                                                                                                                | A reorganization reverts a log, receipt or read the node already acted on                                                                                                                                                             | None; chain data is treated as final at first inclusion                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | explicit trust assumption (A1, [trust-model.md](../specification/security/trust-model.md#4-consolidated-trust-assumptions)) | Lift the assumption: finalized-only data, or a block-hash marker plus rollback                                                                                  | reorg replay at each decision site                                     | Pending on the chain-finality assumption (2026-10-21) |
+| Out-of-order event application (ordering half of [`OQ-30-2G0Q5M`](../implementation/open-questions.md#oq-30-2g0q5m))                                                     | SDK chain observation                                                                                                                | Out-of-order log application at join/dispute/withdrawal                                                                                                                                                                               | Logs dispatch concurrently with no cross-log ordering                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | recovery path                                                                                                               | One ordered application per channel                                                                                                                             | out-of-order log delivery at join, dispute and withdrawal              | Open                                                  |
+| Prototype-inherited RPC names reachable ([`DEF-7-PK564B`](open-findings.md#def-7-pk564b))                                                                                | RPC dispatch                                                                                                                         | Call `toString`/`constructor` etc. remotely                                                                                                                                                                                           | Descriptor-based endpoint resolution stops before the RPC/language bases, never evaluates accessors, and captures the accepted function once                                                                                                                                                                                                                                                                                                                                                                                                                         | validation rule                                                                                                             | Implemented in [`ANetworkRpcService`](../implementation/source/src/rpc/network/ANetworkRpcService.ts.md)                                                        | component boundary matrix + authenticated-peer rejection/isolation E2E | Resolved 2026-08-17                                   |
+| Honest peers blacklisted for availability / local faults ([`DEF-5-E8TP9N`](open-findings.md#def-5-e8tp9n), [`DEF-9-724SXP`](open-findings.md#def-9-724sxp))              | Peer classification                                                                                                                  | Griefer weaponizes unavailability, or our own chain-provider failure, into mutual blacklisting                                                                                                                                        | Block intake: local intake failures are tolerated with no verdict (loose-policy decision, [`REQ-GOSSIP-2-9PMMNH`](../specification/peer-communication/block-gossip.md#req-gossip-2-9pmmnh)); invalid inputs keep explicit exclusion; a failed intake-gate sync, a dispute acknowledgment refused on the responder's own chain view, and a sync responder's own lag take a counted close, not a verdict ([`FIND-BQM-3-182X91`](open-findings.md#find-bqm-3-182x91), [`FIND-DACK-1-7C03S9`](open-findings.md#find-dack-1-7c03s9)); the other findings' paths unchanged | validation rule                                                                                                             | Separate unavailable/local-fault from Byzantine before penalizing                                                                                               | unavailability-not-blacklisted                                         | Open                                                  |
+| Attacker-controlled ICE targets ([`DEF-11-JN8N6H`](open-findings.md#def-11-jn8n6h))                                                                                      | WebRTC setup                                                                                                                         | Induce STUN/connectivity traffic toward arbitrary hosts (reflection)                                                                                                                                                                  | None; candidates unfiltered                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | validation rule                                                                                                             | Filter candidate targets, or reclassify as accepted limitation under the [`OQ-6-4JPNE5`](../specification/open-questions.md#oq-6-4jpne5) limiter with rationale | ICE target filtering                                                   | Open                                                  |
+| Unguarded harness-control root is network-reachable and ships in the package ([`OQ-37-0Y7YWS`](../implementation/open-questions.md#oq-37-0y7yws))                        | RPC dispatch / peer boundary                                                                                                         | Any connected peer calls `scenario.exec` (arbitrary code via `new Function` in the host realm), `handshake.signMessage` (signing oracle), or `signer` (key import) on a peer built with the test harness — 207 endpoints, zero guards | None: no harness service sets `guards`, dispatch is structural over any transport, and `dist/test/...` + `exports["./test-harness"]` publish the root. Blast radius limited only by production `p2pSetup` registering the bare `MainRpcService`                                                                                                                                                                                                                                                                                                                      | validation rule                                                                                                             | Restrict harness services to the trusted loopback transport **and** exclude them from the published artifact                                                    | network-peer cannot reach a harness service                            | Open, production gate                                 |
 
 New findings from either source append to the appropriate subsection.
 
@@ -202,7 +205,7 @@ Items already known to be missing, ahead of the full review.
 **Open question:** the P2P layer has no gossip rate-limiting policy. It is not yet designed, and
 it is required for availability, resource control, and griefing resistance.
 
-**Current:** [NetworkRpcRouter](../../../src/rpc/router/NetworkRpcRouter.ts#L43) broadcasts RPCs to all connected
+**Current:** [NetworkRpcRouter](../../../src/rpc/router/NetworkRpcRouter.ts#L18) broadcasts RPCs to all connected
 peers (full mesh), disconnects a peer that sends an oversized RPC frame, and supports
 disconnect-and-blacklist of misbehaving peers. There is no rate limiting, throttling, queueing
 policy, or backpressure — **gap**.
@@ -259,7 +262,7 @@ _Non-normative._
   stream commitments) and map each to its policing proof or validation, so coverage gaps surface
   mechanically instead of by inspection.
 - Reputation-independent peer scoring for rate-limit tuning (must stay outside enforcement per
-  [trust-model.md](../specification/security/trust-model.md) [`REQ-TRUST-1-K5PS99`](../specification/security/trust-model.md#req-trust-1-k5ps99)).
+  [trust-model.md](../specification/security/trust-model.md) [`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable…)](../specification/security/trust-model.md#req-trust-1-k5ps99)).
 
 ## Traceability
 
@@ -285,7 +288,7 @@ on failure.
 The accepted residual is the unverified normal-Hyperswarm deduplication assumption. No new peer-supplied
 clock, target, matching policy, or post-match cancellation authority is introduced.
 
-LocalDiscovery replacement uses authenticated identity only after the normal handshake; untrusted registry
+LocalDiscovery retains replacement endpoints within the owning topic even during a previous dial; retries consult the latest advertisement. This does not make registry metadata identity proof or bypass blacklist, topic leave, cleanup, or handshake admission. LocalDiscovery replacement uses authenticated identity only after the normal handshake; untrusted registry
 metadata cannot promote a connection. One canonical active dial and capped backoff prevent a tight retry loop,
 and the existing blacklist prevents a rejected peer from being recreated. Pre-submission pending status closes
 the disposal window around potentially funded join work. Force-join escalation requires authoritative on-chain
@@ -315,12 +318,23 @@ reader bytecode. These maintained assessments remain pending engineer review; no
 
 ### Early timeout submission recovery
 
-[`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar) preserves chain admission while retrying a specific early-timestamp refusal through the existing timeout owner. Retries must revalidate current evidence, stop after fork replacement or disposal, and keep an older-window refusal ineligible. Repeated attempts may incur transaction cost while chain time lags; this does not relax the deadline or unrelated error policy. The calldata-posted refusal on the same path is no longer a recheck case and no longer strands the timeout ([`FIND-TIMEOUT-1-3KH429`](open-findings.md#find-timeout-1-3kh429), resolved): it drops the refused candidate by identity and hands the withheld posted block back to the block pipeline once ([`REQ-DISPUTE-PIPE-11-HRGJ43` (Release a timeout refused for posted calldata)](../specification/disputes/dispute-processing.md#req-dispute-pipe-11-hrgj43)), and a forced timeout is submitted only where the pipeline rejected that posted block, at the target's own turn ([`REQ-DISPUTE-PIPE-12-F85KF2` (Force a timeout only over a rejected posted block)](../specification/disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2)). That narrows forcing compared with the previous behavior, which forced over any unaccepted commitment including valid calldata still in validation. Two residual risks remain and are tracked: the on-chain forced-timeout proof still does not verify the posted block's author signature, so a crafted writer can kill a justified forced timeout and slash the honest forcer (its linkage to the dispute's latest state is now required; see the timeout refutation section below) ([`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts)); and the sibling previous-producer refusal still has no handler ([`FIND-TIMEOUT-3-H1RTAH`](open-findings.md#find-timeout-3-h1rtah)). A moot candidate that is never refused still blocks later timeouts on its fork ([`FIND-TOSTORE-1-3BQ7EE`](open-findings.md#find-tostore-1-3bq7ee)).
+[`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar) preserves chain admission while retrying a refused timeout submission — an early-timestamp refusal or either previous-producer posting-state mismatch — through the existing timeout owner. Retries must revalidate current evidence, stop after fork replacement or disposal, and keep an older-window refusal ineligible. Repeated attempts may incur transaction cost while chain time lags; this does not relax the deadline or unrelated error policy. The calldata-posted refusal on the same path is no longer a recheck case and no longer strands the timeout ([`FIND-TIMEOUT-1-3KH429`](open-findings.md#find-timeout-1-3kh429), resolved): it drops the refused candidate by identity and hands the withheld posted block back to the block pipeline once ([`REQ-DISPUTE-PIPE-11-HRGJ43` (Release a timeout refused for posted calldata)](../specification/disputes/dispute-processing.md#req-dispute-pipe-11-hrgj43)), and a forced timeout is submitted only where the pipeline rejected that posted block, at the target's own turn ([`REQ-DISPUTE-PIPE-12-F85KF2` (Force a timeout only over a rejected posted block)](../specification/disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2)). That narrows forcing compared with the previous behavior, which forced over any unaccepted commitment including valid calldata still in validation. The sibling previous-producer refusal is now handled instead — either direction re-arms a fixed one-second recheck through the existing timeout owner ([`FIND-TIMEOUT-3-H1RTAH`](open-findings.md#find-timeout-3-h1rtah), resolved) — and the residual risk from that group is closed: since 2026-10-12 the on-chain forced-timeout proof verifies the posted block's author signature, and its linkage to the dispute's latest state is required, so a crafted writer can no longer kill a justified forced timeout and slash the honest forcer ([`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts), resolved; see the timeout refutation section below). A non-canonical encoding of the posted block remains tracked in [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v). A separate store issue is resolved: the timeout store keeps the newest candidate, so a candidate for a height the node already passed no longer blocks the next timeout on its fork, and the chain still applies the lowest timed-out height across committed disputes ([`FIND-TOSTORE-1-3BQ7EE`](open-findings.md#find-tostore-1-3bq7ee)).
+
+[`REQ-DISPUTE-PIPE-13-R2QJZN` (Time out only the next height)](../specification/disputes/dispute-processing.md#req-dispute-pipe-13-r2qjzn) closes a self-slashing path: a node whose synchronization installed a later state still held the skipped height's predecessor, so a check armed earlier could submit a timeout below the latest proved state, which the chain kills as not linked and slashes the honest disputer. [ParticipantTimeoutService](../implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md) now stands down unless the height is the next unfilled height, read under the state mutex at check entry and again atomically with storing the claim. Residual risk: a node whose local state lags the chain's latest proved state still holds an older next height; this guard does not cover that case.
+
+### Slash eligibility per fork
+
+[`REQ-DIS-11-WQK8P2` (A dispute MUST list on-chain slashes only of participants of its latest state…)](../specification/disputes/disputes.md#req-dis-11-wqk8p2) closes a liveness hole: an ancestor fork's slash, still in the channel-wide on-chain slash set, was folded into every later reduction and suppressed each later timeout, so a stalled participant could never be timed out after any slash. A dispute that lists such a slash is now killed through `InvalidDisputeReason` and its disputer slashed, and a reduction neither applies it nor lets it suppress a timeout ([`INV-DIS-7-9GGZSD` (In a fork whose reduction applies an on-chain slash of a participant of the…)](../specification/disputes/disputes.md#inv-dis-7-9ggzsd)). Eligibility comes from the reduced latest state, not the channel's current snapshot, so late reducers still agree with the reduction on chain. The rule depends on the integrator's state machine: `_slashParticipant` must refuse an absent participant and must return true for every current participant, as `AStateMachine` documents. Two residual risks follow, one per direction: a machine that reports success for an absent target suppresses the timeout again, and a machine whose `_slashParticipant` returns false for a present participant also removes the timeout target, which inverts [`INV-DIS-7-9GGZSD` (In a fork whose reduction applies an on-chain slash of a participant of the…)](../specification/disputes/disputes.md#inv-dis-7-9ggzsd) for that machine. This assessment remains pending engineer review.
+
+### Lost evidence race after a kill
+
+[`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m) now states that an auditor's kill-and-dispute, more-evidence or replacement upload refused because the evidence period expired lost a first-wins race, and that this refusal is a no-op. [DisputeManager](../implementation/source/src/disputeManager/DisputeManager.ts.md) owns that classification, so every caller stays live without a wrapper. Since PR #541 (2026-10-11) the terminal-leave watchdog fallback does too: a lost race leaves the leave waiting for the window's reduction ([`FIND-LEAVE-4-WDH0XC`](open-findings.md#find-leave-4-wdh0xc), resolved). Whether the node should do more after a lost race stays under [`OQ-SPEC-EVIDENCE-RACE-1-TKNWBJ` (Interpreting a lost evidence race)](../specification/open-questions.md#oq-spec-evidence-race-1-tknwbj). A kill or fraud proofs go out in front of the upload through the proxy's best-effort `multicallBestEffortLast` ([StateChannelManagerProxy](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)): the kill lands even when the upload is refused, and it is not sent a second time. Forge cases in `StateChannelManagerProxyMulticall.t.sol` also cover the empty call list, a sole call that succeeds and a sole call that reverts. A kill-and-dispute refused as a whole still sends its kill alone, and a failed late kill remains fatal ([`OQ-SPEC-SP-LATE-1-T4J935` (Recovery after a late challenge fails)](../specification/open-questions.md#oq-spec-sp-late-1-t4j935) stays open). Every other refusal, read from the receipt or thrown, keeps its existing policy. Residual risk: a refused upload leaves the node's own evidence out of the window, and the no-op does not check that the committed evidence covers it ([`OQ-SPEC-EVIDENCE-RACE-1-TKNWBJ` (Interpreting a lost evidence race)](../specification/open-questions.md#oq-spec-evidence-race-1-tknwbj)). A refusal inside the best-effort multicall is reported in the receipt's `MulticallLastCallFailed` event, not reverted; the one decoder of that event ([evmErrorHandler](../implementation/source/src/utils/evmErrorHandler.ts.md) `multicallLastCallRevertData`) reads only logs of the manager address with that event's topic. A refusal that names no reason (bare `0x`, or the proxy's `Delegatecall failed` for a facet that reverted without data) means the last call ran out of the gas the best-effort estimate left it; it is classified by the decoded refusal of the failed all-or-nothing estimate, so a lost evidence race stays a no-op, and with no decoded estimate refusal it is fatal. The `DisputeKillAndDispute` unit suite covers the least-gas estimate, both reasonless forms, an unhandled custom refusal, and a bare `0x` after an estimate that succeeded. These assessments remain pending engineer review.
 
 ## Accepted PR 472 fixes after the SDK refactor
 
-The terminal-leave watchdog now routes a failed dispute start to the pending leave promise. Both the
-missing-marker and expired-evidence outcomes have explicit runtime-port declarations. The configured
+A failed self-removal dispute start from the terminal-leave watchdog is fatal for the runtime, and a watchdog dispute
+that loses the evidence race waits for the window's reduction (engineer decision 2026-10-10). Both outcomes have
+explicit runtime-port declarations. The configured
 production bound remains 15 seconds: it may pre-empt an otherwise healthy turn and incur a dispute.
 This is the recorded owner policy under [terminal channel leave](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
 
@@ -352,13 +366,13 @@ not resolve the assessment's five review-body findings that were explicitly left
 
 Explicit runtime disposal is local shutdown and does not await a pending dispute upload. Graceful leave is the supported route when the caller needs completed removal; the terminal-leave requirement records this distinction.
 
-Dispute upload, reduction admission, and fraud-proof target eligibility share the bounded current snapshot/inbound set. Once a participant leaves that chain set, an old join does not keep it slashable. If the chain snapshot still lists a locally departed participant, a valid fraud proof still writes the chain slash record. Later slash/removal application to a state without that participant is an idempotent no-op under [`REQ-SM-10-JD8TSF`](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf). The stale-snapshot workflow checks repeated application and unchanged withdrawal totals.
+Dispute upload, reduction admission, and fraud-proof target eligibility share the bounded current snapshot/inbound set. Once a participant leaves that chain set, an old join does not keep it slashable. If the chain snapshot still lists a locally departed participant, a valid fraud proof still writes the chain slash record. Later slash/removal application to a state without that participant is an idempotent no-op under [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf). The stale-snapshot workflow checks repeated application and unchanged withdrawal totals.
 
 Queue-expiry probes may accept a successor only through verified reduction lineage containing the requested fork, as specified by [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../specification/peer-communication/synchronization.md#req-sync-1-t2589h). Ordinary pinned sync follows the same verified-successor rule; the pinned height applies only on the pinned fork. Blacklist and profile lifecycle logs now identify the path through existing call stacks; they do not change the accepted-lease policy. Non-reproduction of the earlier four-peer failure still does not establish its cause.
 
 Synchronization replay always uses the spectating context. Uncommitted observers abort on provable participant fraud without requesting a dispute. Pending and participating peers retain their on-chain stake and delegate these faults to live fraud-proof and dispute handling. Pending participants also use live handling for arrivals, while the commit guard still excludes them from counter-signing. The exact declarations are mapped in the [validation report](../verification/tests/test/unit/ValidationService.test.ts.md).
 
-Absent-target handling is specified separately by [`REQ-SM-10-JD8TSF`](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf). Successful slash and removal now both record their returned exit under [`REQ-SM-8-8CHSQ8`](../specification/protocol-model/state-machines.md#req-sm-8-8chsq8); [`OQ-18-2NK97T` (Exit-recording asymmetry between slash and remove)](../specification/open-questions.md#oq-18-2nk97t) is implemented. Wrapper tests cover absent, present and repeated targets separately; the dispute consumer checks one exit and a matching withdrawal delta.
+Absent-target handling is specified separately by [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf). Successful slash and removal now both record their returned exit under [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../specification/protocol-model/state-machines.md#req-sm-8-8chsq8); [`OQ-18-2NK97T` (Exit-recording asymmetry between slash and remove)](../specification/open-questions.md#oq-18-2nk97t) is implemented. Wrapper tests cover absent, present and repeated targets separately; the dispute consumer checks one exit and a matching withdrawal delta.
 
 Sync timeout and transport-failure liability is retained by the owner: honest peers are assumed to observe the same reality within agreementTime. No universal provider or execution bound is proved by this implementation. Local successor installation is not required to serve its already computed proof; requested same-fork heights are minimums.
 
@@ -407,6 +421,8 @@ The user superseded review 4's application-heavy client root. Application setup 
 ## Logger gossip follow-up
 
 The engineer replaced acknowledged global flushes with best-effort generation gossip. [LoggerService](../implementation/source/src/rpc/internal/services/logger/LoggerService.ts.md) owns its attached store map and one scalar index; [Logger](../implementation/source/src/utils/logging/Logger.ts.md) owns local uploading and one optional service reference in sharedResources. Common roots create logging before startup. Equal/older generations are suppressed even after the window; invalid indexes are rejected. Remote delivery is not claimed by a local promise. Late entries can wait for another generation under the accepted timing assumption. Existing HTTP retries and secret-field encoding remain with the uploader.
+
+Since 2026-10-20 one bounded, acknowledged flush exists again, on the abort path only: an aborting runtime asks every reachable thread to upload now and then disposes as in any other abort; the disposal stops the producers and then waits for all of the uploads, until one deadline shared by every thread in the flush (the abort time plus the configured bound), before it ends any thread ([`REQ-LOG-11-F5TJQC` (An aborting runtime uploads its logs before it disposes)](../specification/runtime/log-collection.md#req-log-11-f5tjqc)). The engineer chose this because disposal ends the worker threads and lost every worker log of a real dispute. At the deadline each thread only stops waiting. A worker thread that ends cancels every upload of its realm still running, whoever started it, before its loop drains, so an open request or its retry cannot keep the worker alive past its end. Logger disposal cancels nothing, so the main thread and inline realms keep their uploads running after disposal. Ordinary gossip still never waits for acknowledgments. A receiver that never answers can delay only disposal, by at most that bound, because the producers stop while it waits; a busy thread that cannot answer also holds it only until the deadline. The flush skips a neighbour whose connection closes, reports a neighbour's flush failure that is not a closure through the error channel of the realm that sees it, at once (a thread's own upload failure stays a network outcome its uploader reports), while the flush itself never fails and keeps waiting for the other uploads, and ends cycles by a per-flush ID.
 
 The obsolete folded-summary finding no longer describes the current contract. Source and test changes require engineer re-verification; no approval register was changed.
 
@@ -509,8 +525,7 @@ cost at most about one more budget, so twice the requirement keeps a local trans
 refused where a funded chain replay runs it, within the chain's block gas limit. The rest of a
 dispute call (proof checks, restoring the machine's state) is funded on chain through the sender's
 estimate, and the local call gets no such addition. A local predicate whose work does not fit the
-granted gas fails locally; the local-revert fallback then asks the chain ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)), so the consequence is cost,
-not a wrong verdict. A local state transition has no chain answer to fall back to. Until
+granted gas fails locally; the error propagates without a chain fallback ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)), so the consequence is failed local audit work, not a false verdict. A local state transition has no chain answer to fall back to. Until
 2026-09-27 every failed local `stateTransition` was read as an invalid transition, so a node whose
 local call was under-funded, whose call frame ran out of gas outside the transition, or whose
 executor failed would build a fraud proof against an honest author, and could start a dispute on
@@ -537,17 +552,28 @@ Residual: correctness now depends on the parity itself; it is covered differenti
 contract (the signer-recovery and ECDSA acceptance cases in the verification layer) and must be
 re-checked whenever the OpenZeppelin ECDSA dependency changes.
 
-Block decoding is not at parity (engineer decision 2026-09-27: not in this change). The client
-decodes with `Codec` and the contracts with Solidity `abi.decode`; neither applies a canonical-encoding
-rule, and the contracts accept, for example, a trailing zero word, while `postBlockCalldata` stores
-any bytes. A Byzantine participant can therefore post, sign or relay an encoding that the chain
-accepts and peers decode differently or refuse. The sharpest known use: an author posts such bytes
-as calldata for its own slot and refutes an honest timeout dispute with `TimeoutCalldataPosted`,
-which can slash the honest forcer, although honest peers never accepted the block. This exposure is
-open, recorded as [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v); the planned resolution is identical encoding and decoding
-in the contracts and TypeScript, so both accept and reject the same inputs. The
-ecrecover precompile memo in the local EVM and the signer-recovery memo are pure caches of these
-functions and change no answer.
+Block decoding is at parity since 2026-10-12 (partial resolution of
+[`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v)). The client decodes `Type.Block`
+with `Codec`'s canonical round-trip rule and the contracts decode through
+`UtilityFacet.decodeBlock` with the identical rule (`ErrorNonCanonicalEncoding`);
+`postBlockCalldata` routes through it, so the posted noncanonical bypass is fixed and a trailing
+zero word is rejected on both sides. Since 2026-10-14 the client rule is universal:
+`Codec.decode` enforces the canonical round trip for every type it serves. Since 2026-10-15 the
+canonical-encoding scope is narrowed by engineer decision: enforcement is required where bytes
+become an identity, commitment, stored or emitted chain data, posted calldata, or data decoded
+by clients from chain data. Both dispute uploads enforce it by requiring the recorded commitment
+to equal the hash of the submitted dispute bytes, checked after the race checks and before the
+commitment is recorded. Signature-bound open and join inputs are exempt because their exact bytes
+are signature-verified and only their decoded fields are used afterward; the chain writes inbound
+JOIN message data as the canonical encoding of each admitted join. Transient fraud-proof payloads
+are exempt because they are never hashed, committed, or stored and their verdicts use decoded
+fields alone; nested signed blocks remain governed by the block boundary where their bytes are
+identity-bearing. Execution-internal decodes of contract-produced bytes, delegatecall results,
+and `Codec.decodeEvmResult` over trusted local contract results are likewise outside the defect
+scope. [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v) is closed on this boundary; a future change that hashes, stores,
+emits, or has clients decode an exempt input must restore a canonical check at that boundary.
+The ecrecover precompile memo in the local EVM and the signer-recovery memo are pure caches of
+these functions and change no answer.
 
 ## Timeout refutation linkage — 2026-09-27
 
@@ -560,16 +586,58 @@ and kill an honest timeout dispute; the kill slashes the honest disputer. The fa
 before the replay, that the snapshot is the one the latest proved block commits to (or the fork's
 genesis), that the machine state hashes to that snapshot's state hash, and that the posted block's
 `previousBlockHash` is the latest proved block (or the genesis snapshot)
-([DisputeFraudProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md) decision 6,
-[`REQ-DIS-10-SAHJBN`](../specification/disputes/disputes.md#req-dis-10-sahjbn)). A refutation that fails a link is a failed
+([DisputeFraudProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md) decision 7,
+[`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../specification/disputes/disputes.md#req-dis-10-sahjbn)). A refutation that fails a link is a failed
 refutation and slashes its submitter; an honest refutation still kills the dispute. The auditor's
 preflight runs the same predicate, so an honest node never submits an unlinked refutation.
-Residual: the posted block's author signature is still not verified
-([`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts)), and a non-canonical encoding of the
-posted block remains the decoding exposure of [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v).
+Fixed (2026-10-12): the posted block's author signature is verified before the replay
+([`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts)), and a non-canonical encoding of
+the posted block is now rejected at posting by the canonical round-trip rule; the remaining
+decode classes are disposed under the narrowed canonical-encoding boundary that closed
+[`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v) on 2026-10-15.
 The refutation's replay follows the same upfront stipend rule as every other replay: an under-funded
 refutation reverts with no verdict, and one funded with its cost plus the manager's replay
 requirement is judged ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)).
+
+## Dispute outbound run — 2026-10-08
+
+A dispute's posted auditing data carries the outbound run above the chain anchor, and auditors
+persist it for later withdrawals. Until 2026-10-08 nothing verified it: the chain bound only the data
+hash, and auditors stored every posted block. A disputer could make honest auditors store forged
+exit blocks, or omit real ones a later snapshot advance needs. Now the auditor cuts the run at the
+chain's current anchor and verifies the rest up to the dispute's latest state; it persists only that
+verified part. A run that does not verify makes the dispute killable by `DisputeInvalidOutboundRun`,
+which the chain judges against its own stored anchor
+([StateProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md),
+[`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../specification/disputes/disputes.md#req-dis-12-axy60r)). The anchor only moves forward and every
+on-chain snapshot is itself outbound-verified, so a run that links one anchor also links every later
+anchor on its stream: a later anchor move cannot frame an honest disputer. The auditor's retry when
+the chain refuses its counter is reachable: the anchor advances while the audit runs (for example a
+snapshot post or a reduction lands before a slow auditor's counter check), and the auditor then
+judges the run again from the new anchor
+([DisputeValidationService.ts](../../../src/stateManager/dispute/DisputeValidationService.ts#L595-L600)).
+A refusal from an unchanged anchor throws. Both paths have unit cases in
+`DisputeValidationServiceOutboundRun`, so
+[`REQ-DIS-12-AXY60R.T1.P18`](../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p18) is a kept,
+tested permutation (engineer decision 2026-10-08).
+The verifier checks the hash chain, the end height and the end hash before it sums balances, and
+the sum is total: each `addBalance` call is in a `try`/`catch`
+([StateChannelCommon.sol](../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol)).
+A balance that cannot be added makes the run invalid instead of a revert on every path (audit,
+on-chain counter, snapshot post, sync), also when the latest state's outbound head points to the
+overflowing block. Before the replay that head is backed only by the author of the proof's last
+block, so a single Byzantine author could otherwise make every honest audit throw. An out-of-gas in
+the sum reverts `ErrorOutboundBalanceSumOutOfGas` and gives no verdict; this assumes `addBalance`
+fails within bounded gas on a balance it cannot add. The auditor also judges the run only after its
+replay proved the latest state, so a forged latest state is killed as an invalid state proof first.
+Forge cases in `DisputeInvalidOutboundRun.t.sol` (extra block above the latest head, overflowing
+balance kills, overflowing balance is invalid and not a revert, a latest head at an overflowing
+block is invalid and kills, a snapshot post with that head rejects the run, out-of-gas is no
+verdict) and the E2E cases in `test/e2e/disputeValidation/outboundRun.test.ts` (`MaxUint256`
+balance; forged latest state whose head is that block) cover this. Residual: omitted auditing data
+posts no run, so an auditor of an omitted-data dispute relies on its own history or tail replay for
+those blocks. `DisputeFraudProofFacet` is 24,289 bytes deployed in the "hardhat paris" build
+profile, 287 bytes of headroom under the EIP-170 limit of 24,576.
 
 ## One signature per signer per message — 2026-09-27
 
@@ -604,34 +672,23 @@ change.
 
 ## Host-only guard, local owners, parentless workers, and executor drain — 2026-09-29
 
-[`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) now specifies host-only admission, implemented by the public SDK [LocalOnlyGuard](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md). Loopback
-self-delivery stays the only guard bypass; every remote call that reaches the guard is refused before
-execution, never deferred or replayed, and handed to the canonical disconnect owner with the blacklist
-policy. Punishment follows the proven identity: a registered profile with a proven address is
-blacklisted with a recorded verdict and all its live transports close; a registered profile still
-negotiating, with no proven address, is marked excluded in memory and gets no recorded verdict; a proven
-address without a profile gets a recorded verdict; a transport with neither only closes, with no verdict
-or ban. The disconnect owner marks nothing for it, not even the transport
-handle, because the profile registry blacklists a transport only through a profile attached to it. Residual risk: an unidentified sender can reconnect under a fresh
-transport key and probe again; each probe still reaches no endpoint. The guard suppresses the
-guard-failure response only for requests it rejected, so an earlier guard's declared rejection is
-unchanged and a remote probe learns only that its session closed. A benign misconfigured remote caller
-sees a disconnect, not a diagnostic.
+The host-only guard this entry introduced was removed; the
+[Application host root](#application-host-root--2026-10-16) entry assesses the structure that replaces it.
 
 [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59) now gives custom RPC constructors and executor precompile factories an exact local owner
 reference. The reference stays in its realm and is never serialized, so one inline runtime's extension
 cannot create children under, or dispose, another runtime in the same realm; the multi-peer isolation
 case exercises this. Consumers can create parentless workers; each gets its own hidden parent that is
 never exposed, shared, or reused, and failure or disposal of one leaves the others usable. The main
-entry now exports the generic root bases and creation functions but no concrete SDK root, so a consumer
-of that entry cannot construct or look up an SDK host or executor to gain a parent. The published
-`./test-harness` subpath is the exception: for tests it exports `P2pRuntimeHostRoot` and
-`RootCreationControl`, whose observation hook sees every root created while it is active. A consumer
+entry exports the generic root bases and creation functions, and since the application host root also
+`P2pRuntimeHostRoot` for applications to extend; it exports no executor root and no lookup of a live
+SDK host. The published `./test-harness` subpath additionally exports `RootCreationControl`, whose
+observation hook sees every root created while it is active. A consumer
 that imports it runs in the same process as the SDK, so the residual risk is local only: that code
 could reach an SDK host it could already affect in-process, but no remote peer gains anything.
 
 Executor disposal now closes admission and waits for admitted work before children close. By engineer
-decision [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#oq-impl-executor-drain-1-5d71ym) the wait is bounded by the same five-second limit as the in-flight reply drain, so a precompile
+decision [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/open-questions.md#oq-impl-executor-drain-1-5d71ym) the wait is bounded by the same five-second limit as the in-flight reply drain, so a precompile
 call that never returns delays that executor's disposal only that long. Work still admitted at the limit is
 abandoned without a host error. By the engineer's later decision (option a after the second
 implementation review), every caller still waiting at the limit receives the disposal rejection, and the
@@ -640,3 +697,101 @@ neither result reaches the caller or the host, so a caller never sees a result p
 declared it abandoned. The residual risk is local: only local executor calls are admitted, and an application whose
 executor work regularly exceeds the limit loses those results at shutdown. Engineer approval and risk
 acceptance remain pending.
+
+## Application host root — 2026-10-16
+
+[`REQ-RPC-9-8FFE6S` (Application host root)](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s) replaces host-only admission. Local authority is served by internal services of
+the application's host root extension, which the network dispatcher cannot name: it resolves services
+only on the network service root, so a peer's request for an internal service takes the existing
+unknown-service consequence and never reaches it. The defense is structural rather than a guard, so it no
+longer depends on loopback being the only guard bypass or on the sender's proven identity. Residual risks:
+an application that also exposes the same operation as a network service reopens it to peers, and the
+SDK does not detect that; the extension runs with the full authority of the runtime host, so its module
+is trusted code like the custom RPC module. The manifest crosses the runtime port as a module reference;
+it carries no live object. The main entry now exports `P2pRuntimeHostRoot` so applications can extend
+it; a consumer that constructs one directly gains only a root it owns, never a reference to a running
+SDK host.
+
+A host root extension loaded from a bundle separate from the SDK worker carries its own copy of the SDK
+classes. The worker bootstrap applies the configuration only to the entry's copy, so an isolated root
+now applies its own peer's configuration to its own copy before it builds its logger; with one shared
+copy this reapplies the same values. The other worker-level state the bootstrap sets (thread name, error funnel, Node globals) is
+process-global, and the root's own copy owns its logger, detached-work registry and clock consistently.
+Applications emit their declared events through a typed accessor on the network root, so they need no
+cast that could hide a wrong event shape.
+
+## Multiple RPC endpoints — chain observation
+
+The runtime now reaches the chain through an ordered endpoint list
+([`REQ-CHAINOBS-1-5JTHY8` (Ordered endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-1-5jthy8)). Each request uses
+the first connected endpoint and fails over when it drops; a transaction is never sent to two
+endpoints at once ([`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)). Every endpoint streams
+the manager's events, reconnects with a bounded backoff, and is re-read from the completed-block
+watermark after a reconnect ([`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)). One event is processed once
+across streams; removed events are ignored and lagging deliveries below the watermark are dropped
+([`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)). A catch-up holds the watermark at its first block until it has read up to the
+head or is abandoned, so no other query can move it past unread blocks, and every log query reads windows of at
+most `LOG_QUERY_MAX_BLOCKS` blocks. The catch-up is abandoned, and the hold released at once, when its
+socket ends (also while a read waits for that node to reconnect), when the subscription is cleared or
+replaced, or on disposal. After a failed window the remaining windows are read through the first
+connected endpoint, so a reopened endpoint that drops for good or keeps failing `eth_getLogs` (a lower
+range limit, a rate limit, a pruned or hostile node) no longer holds the watermark. Those reads still
+reach the reopened endpoint's head: while the first connected endpoint's head is behind it, nothing
+is read and the read is retried, so a lagging endpoint cannot end the catch-up below blocks the
+reopened endpoint's subscription never delivered. When the reopened endpoint answers its head request
+with an error, the request is retried on it with the backoff and nothing is read meanwhile; the
+catch-up never falls back to the first connected endpoint's own head. Endpoint URLs are
+logged by scheme and host only. Residual risks: while the first connected endpoint itself keeps failing
+the catch-up's windows (for example a `LOG_QUERY_MAX_BLOCKS` above its range limit), or stays behind
+the reopened endpoint's head, or the reopened endpoint keeps failing its head request, and the reopened
+socket stays open, the catch-up retries without end; the watermark stays held, so dedup entries and
+block states are not pruned, every recovery query reads from the held block, and the reopened socket's
+live events stay buffered; with a single endpoint this is that endpoint ([`FIND-RPC-1-E5ZHAR`](open-findings.md#find-rpc-1-e5zhar)); answers are not cross-checked between endpoints; a removed event's effects stay
+applied; a socket drop in the middle of one block's events can leave part of a block below the
+watermark unread until a recovery query reads it; the first endpoint to connect pins the chain id,
+and nothing checks that chain id against the deployed manager. Evidence is mapped in the unit and E2E test reports; engineer approval pending.
+
+The application chain access the SDK exports (`createRpcNodesProvider`,
+[`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)) uses the same trusted
+endpoints, liveness check and failover, so it adds no trust boundary. Its contract-log subscriptions
+deduplicate by block hash and log index over every node socket. Residual risks: a log emitted during a
+full outage, or missed by a node while it was down and delivered by no other node, is never delivered
+([`FIND-RPC-4-7H2R11`](open-findings.md#find-rpc-4-7h2r11)); a reorganization removal is not reported
+([`FIND-RPC-6-CZ4GCV`](open-findings.md#find-rpc-6-cz4gcv)); a node's error answer to `eth_subscribe` on a live socket
+is an unhandled rejection, which a host that treats unhandled rejections as fatal turns into a crash
+([`FIND-RPC-5-G4WNX5`](open-findings.md#find-rpc-5-g4wnx5)); and while every endpoint is down requests wait and nothing
+throws ([`FIND-RPC-3-FY8YV3`](open-findings.md#find-rpc-3-fy8yv3)).
+
+A join-signature responder now answers from local reads
+([`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v)): the deadline against its own protocol
+time, and its threshold membership from its local view, with a chain read only when that view does not
+list it. A probe no longer costs the responder chain reads while its view lists it. A responder whose
+protocol time is behind chain time can sign a join whose deadline chain time already passed;
+enforcement refuses that join at submission, so this costs the joiner one failed submission and grants
+no authority.
+
+A frame that arrives on a transport the participant already closed is now dropped before parsing
+([`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)), so a late frame cannot reach a disposed
+runtime's services or logs.
+
+## Milestone-only proof update — current assessment
+
+The proof format now contains milestones only. Same-fork anchor clipping and explicit genesis
+semantics replace the old separate signed-tail model. Historical membership hops include all
+consumed JOINs and never subtract later slashes. Shared verification/replay tiers distinguish false
+proof results from fatal execution or RPC failures. Per-step invalidity, below-anchor,
+timeout-superseded and same-height final-conflict counters use the common predicates.
+
+Sync retains verified reconstruction data and the latest proved final full state. An older anchor
+state is not separately required once newer finality is established. Audit replay persists evidence
+without signing or advancing the active view. Inbound-head races reload, rebuild and retry on real
+progress; stopped progress or failed loading is fatal. Initial responders are selected from chain
+eligibility, and founder discovery and join observation/expiry handling have corresponding tests.
+
+Residual questions remain explicit in [specification questions](../specification/open-questions.md):
+loss of the sole higher commitment after admission closes, late-challenge recovery, stale or
+adoption-racing honest sync blacklists, admission gas/length caps and whole-data challenge cost.
+Per-step checking does not prove constant total gas. Other existing findings remain unchanged
+unless separately revalidated. Documentation and mappings remain pending engineer review; this
+assessment grants no human approval and does not claim the repository's baseline coverage queues
+are empty.

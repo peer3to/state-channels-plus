@@ -1,11 +1,6 @@
-# test/e2e/E2E-ParticipantLifecycle.test.ts — Test Report
+# E2E-ParticipantLifecycle.test.ts
 
-> **Test file:** [test/e2e/E2E-ParticipantLifecycle.test.ts](../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/E2E-ParticipantLifecycle.test.ts](../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts)
 
 ## Overview
 
@@ -31,20 +26,51 @@ and pending-join-rejection scenarios each map to a single test here. The remaini
 (forfeit rule, blacklisted author, forced-join arming) belong to other suites.
 Spectator spawns in this suite go through the shared `addSpectatorAuthoring` helper (`test/harness/JoinActions.test.ts.md`): the spawn runs unawaited while the named participants keep authoring, bounded by literal minimum and maximum block counts, so no spawn or promotion sits inside an idle authoring window.
 The public terminal-leave case marks the leaver AFK once its exit block is authored and keeps the writer slot
-alive through the shared `keepAuthoringUntil` helper until the leave settles, because the exit snapshot lands
+alive through the shared `keepAuthoringUntil` helper until the leaver's `onLeftChannel`, because the exit snapshot lands
 seconds after the exit block on a loaded farm and an idle slot would draw a timeout dispute.
+The slashed-participant case runs the four-peer invalid-transition dispute and reduction with no leave call and
+waits for the slashed peer's `onLeftChannel`; the oracles are the chain's participant set, one `onLeftChannel`,
+no `onAbort` and the slashed runtime's `SYNCED` status.
+The closed-channel exit-post case stages a member that joined (through spectator sync and a landed join) after an
+earlier founder's exit landed on chain, and checks first that this member does not store that exit's outbound
+block. A record-only probe parks the member's exit posts before they prepare anything. The member exits first,
+then both founders exit and their posts close the channel. Only after the close is the parked post released. The
+oracles are the recorded post outcomes (all `no-op`), `onLeftChannel` for every member, the member's
+`NOT_OPENED` status and no host error on its runtime.
+The two in-flight exit-post cases start three founders. The next writer exits first. Its exit post is prepared
+against the open fork and then parked by the stub action `holdSnapshotPostSend`: at the contract send, before
+the gas estimate, or with `at: "broadcast"` in the signer after the estimate passed. Both other founders then
+exit and their posts close the channel (the chain snapshot's fork ID is zero). Only then is the parked post
+released. At the send, the estimate rejects with `RaceConditionSnapshotForkMismatch` and the leaver's chain
+nonce does not move. At the broadcast, the transaction is mined and reverts (the nonce moves by one, and the
+raw receipt error names no custom error). The post's rejection still decodes to
+`RaceConditionSnapshotForkMismatch`, so the revert data was read back from a replay. Both cases check the
+recorded post outcomes, one "The chain refused the exit snapshot post" log entry with that refusal,
+`onLeftChannel` for every member (once for the leaver), the leaver's `NOT_OPENED` status, no host error and
+no detached error.
+The lone-leaver case starts two founders. Founder 0 exits on its leave turn and its posted exit leaves founder 1
+alone; founder 1 then leaves without sending its exit, so its held leave watchdog starts the self-removal dispute,
+which is final at upload and whose reduced state has no participant. The oracles are the closed channel (no open
+flag, chain snapshot fork ID zero, no participants), the leaver reaching `NOT_OPENED`, then one `onLeftChannel`,
+no `onAbort` and no host error. The status is awaited, not read once: the leave check reports
+`onLeftChannel` when the membership drops, before the channel-close handler sets `NOT_OPENED`, and the
+specification does not order the two.
 
-## Tests and covered test IDs
+## Tests
 
-| Test                                                                                                                                                                                                                          | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`E2E: Participant Lifecycle > Exit path > slash and removal are idempotent after local leave while the chain snapshot still lists the leaver`](../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L28) (line 28)    | [`REQ-SM-10-JD8TSF.T1.P3`](../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf.t1.p3)                                                                                                                                                                                                                                                                                                                                                   |
-| [`E2E: Participant Lifecycle > Exit path > removes a normally closed channel from registry pages and the event-derived live set`](../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L140) (line 140)                | [`INTEGRATION-TEST-OPEN-CHANNEL-REGISTRY-1-A8M2KP.P1`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md#integration-test-open-channel-registry-1-a8m2kp.p1)                                                                                                                                                                                                                                                    |
-| [`E2E: Participant Lifecycle > Exit path > should demote exiting participant to SYNCED when state snapshot is updated on-chain`](../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L210) (line 210)                 | [`UNIT-TEST-STATE-MANAGER-2-WSMPYS.P9`](../../../../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-2-wsmpys.p9)                                                                                                                                                                                                                                                                                                              |
-| [`E2E: Participant Lifecycle > Exit path > exiting participant does not sign blocks authored after its leave`](../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L230) (line 230)                                   | [`UNIT-TEST-STATE-MANAGER-2-WSMPYS.P7`](../../../../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-2-wsmpys.p7), [`REQ-BLOCK-PIPE-10-PHAKE2.T1.P3`](../../../../specification/block-progression/block-processing.md#req-block-pipe-10-phake2.t1.p3)                                                                                                                                                                          |
-| [`E2E: Participant Lifecycle > Exit path > public terminal leave settles before disposal and excludes the former signer`](../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L287) (line 287)                        | [`REQ-LIF-10-QR8NQ9.T1.P5`](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p5)                                                                                                                                                                                                                                                                                                                                                          |
-| [`E2E: Participant Lifecycle > Join path > should set PENDING_PARTICIPANT on join broadcast, then PARTICIPATING once joiner appears in a block`](../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L359) (line 359) | [`UNIT-TEST-STATE-MANAGER-2-WSMPYS.P4`](../../../../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-2-wsmpys.p4)                                                                                                                                                                                                                                                                                                              |
-| [`E2E: Participant Lifecycle > Join path > pending join fault survives until a failed receipt restores SYNCED`](../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L430) (line 430)                                  | [`INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P1`](../../../../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75.t1.p1), [`INV-TJOIN-2-H7JSQM.T1.P1`](../../../../specification/peer-communication/targeted-channel-join.md#inv-tjoin-2-h7jsqm.t1.p1), [`UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P8`](../../../../implementation/source/src/stateManager/membership/MembershipService.ts.md#unit-test-membership-service-1-edfkzf.p8) |
-| [`E2E: Participant Lifecycle > Join path > pending join fault preserves the successful on-chain join and inbound message`](../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L496) (line 496)                       | [`INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P2`](../../../../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75.t1.p2), [`INV-TJOIN-2-H7JSQM.T1.P2`](../../../../specification/peer-communication/targeted-channel-join.md#inv-tjoin-2-h7jsqm.t1.p2), [`UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P9`](../../../../implementation/source/src/stateManager/membership/MembershipService.ts.md#unit-test-membership-service-1-edfkzf.p9) |
-| [`E2E: Participant Lifecycle > Join path > preserves a landed pending join when the same confirmation is retried`](../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L559) (line 559)                               | [`REQ-ENFADM-2-K6K9SP.T1.P4`](../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp.t1.p4), [`UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P17`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#unit-test-join-channel-facet-1-vbjy1a.p17)                                                                                                                                                 |
-| [`E2E: Participant Lifecycle > Exit path > remaining peers do not blacklist the leaver after its exit and it can be force-joined back`](../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L283) (line 283)          | [`REQ-GOSSIP-3-HQZNQX.T1.P10`](../../../../specification/peer-communication/block-gossip.md#req-gossip-3-hqznqx.t1.p10)                                                                                                                                                                                                                                                                                                                                         |
+- `slash and removal are idempotent after local leave while the chain snapshot still lists the leaver`: REQ-SM-10-JD8TSF.T1.P3
+- `removes a normally closed channel from registry pages and the event-derived live set`: INTEGRATION-TEST-OPEN-CHANNEL-REGISTRY-1-A8M2KP.P1
+- `should demote exiting participant to SYNCED when state snapshot is updated on-chain`: UNIT-TEST-STATE-MANAGER-2-WSMPYS.P9
+- `a participant slashed by a dispute, with no leave call, gets onLeftChannel and does not abort`: REQ-LIF-10-QR8NQ9.T1.P20
+- `exiting participant does not sign blocks authored after its leave`: UNIT-TEST-STATE-MANAGER-2-WSMPYS.P7, REQ-BLOCK-PIPE-10-PHAKE2.T1.P3
+- `remaining peers do not blacklist the leaver after its exit and it can be force-joined back`: REQ-GOSSIP-3-HQZNQX.T1.P10
+- `a late joiner's exit post that runs after its co-leavers' exits closed the channel posts nothing and does not fail, and its runtime stays alive and leaves`: REQ-LIF-10-QR8NQ9.T1.P26
+- `an exit post prepared against the open fork and still unsent when its co-leavers' exits close the channel is rejected at its estimate with RaceConditionSnapshotForkMismatch, logged as a chain refusal, and the leaver's runtime stays alive and leaves`: REQ-LIF-10-QR8NQ9.T1.P27
+- `an exit post whose estimate passed before its co-leavers' exits closed the channel and that is mined after the close reverts in its block, its replay recovers RaceConditionSnapshotForkMismatch, it is logged as a chain refusal, and the leaver's runtime stays alive and leaves`: REQ-LIF-10-QR8NQ9.T1.P28
+- `public terminal leave settles before disposal and excludes the former signer`: REQ-LIF-10-QR8NQ9.T1.P5
+- `a lone participant's leave that falls back to its self-removal dispute posts the reduced fork that has no participant: the channel closes and the leaver gets onLeftChannel once`: REQ-LIF-10-QR8NQ9.T1.P29
+- `every participant leaves and a JOIN lands before any exit snapshot is posted: the refused exit posts fall back to the leave watchdogs' self-removal disputes, whose reduction seats the joiner as the only participant and keeps the channel open; each leaver gets onLeftChannel once with no abort, the exits and the deposit are counted once, and the joiner authors the next block`: REQ-LIF-10-QR8NQ9.T1.P35
+- `should set PENDING_PARTICIPANT on join broadcast, then PARTICIPATING once joiner appears in a block`: UNIT-TEST-STATE-MANAGER-2-WSMPYS.P4
+- `pending join fault survives until a failed receipt restores SYNCED`: INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P1, INV-TJOIN-2-H7JSQM.T1.P1, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P8
+- `pending join fault preserves the successful on-chain join and inbound message`: INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P2, INV-TJOIN-2-H7JSQM.T1.P2, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P9
+- `preserves a landed pending join when the same confirmation is retried`: REQ-ENFADM-2-K6K9SP.T1.P4, UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P17

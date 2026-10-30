@@ -63,7 +63,10 @@ describe("E2E: final dispute resolution", function () {
         expect(validationCalls).to.equal(0);
 
         await h.assert.sync.onlyHonestPeersInSync();
-        await h.transition.fromHonestPeersOnly((contract) => contract.add(1));
+        // the post below proves this tip: it must be final in every view
+        await h.transition.fromHonestPeersOnly((contract) => contract.add(1), {
+            waitForFinalization: true
+        });
         const expectedSnapshot = await h.transition.postSnapshot({
             peerIndex: honestPeerIndices[0],
             forkId: String(staged.finalResolution.forkId)
@@ -88,22 +91,27 @@ describe("E2E: final dispute resolution", function () {
         leaver.p2pInstance.events.on("p2pEventHooks", "onLeaveTurn", () => {
             exitPromise = leaver.p2pInstance.p2pContractInstance.leaveChannel();
         });
-        const leave = leaver.p2pInstance.leaveChannel();
+        leaver.p2pInstance.leaveChannel();
 
         const staged = await h.dispute.submitFinalDispute({
             maliciousPeerIndex
         });
-        await h.dispute.resolveFinalDispute(staged);
-
-        // Author only once every honest peer installed the reduced fork and
-        // the honest mesh is back in sync; on a loaded farm the reconnect
-        // after reduction takes longer than the first write's sync wait.
+        // The leaver can be the reduced fork's first writer: it exits and
+        // disposes as soon as it installs that fork, so the resolution reads
+        // only the peers that stay; the leaver is checked through its events.
         const honest = h.getActiveHonestPeers().map((peer) => peer.index);
         const remaining = honest.filter((index) => index !== leaver.index);
+        await h.dispute.resolveFinalDispute(staged, {
+            departingPeerIndices: [leaver.index]
+        });
+
+        // Author only once every remaining peer installed the reduced fork
+        // and the mesh is back in sync; on a loaded farm the reconnect after
+        // reduction takes longer than the first write's sync wait.
         await h.assert.dispute.reductionCompletedWait({
             sourceForkId: staged.forkId,
             reducedForkId: staged.finalResolution.forkId,
-            peerIndices: honest
+            peerIndices: remaining
         });
         // The leaver may take its exit turn the moment the reduced fork is
         // installed, so the sync check covers the peers that keep authoring.
@@ -160,7 +168,7 @@ describe("E2E: final dispute resolution", function () {
                 }
                 await h.transition.peerWrite({
                     peer: next.index,
-                    waitForPeers: honest
+                    waitForPeers: remaining
                 });
                 return exitPromise !== undefined;
             },
@@ -174,17 +182,13 @@ describe("E2E: final dispute resolution", function () {
 
         // The leave settles only after the exit snapshot lands on-chain; the
         // remaining honest peers keep the writer slot alive meanwhile.
-        let leaveSettled = false;
-        const settledLeave = leave.then(() => {
-            leaveSettled = true;
-        });
         await h.transition.keepAuthoringUntil({
-            until: () => leaveSettled,
+            until: () => leaver.eventSpies.onLeftChannel?.called === true,
             waitForPeers: remaining,
             excludePeerIndices: [leaver.index],
             maximumBlocks: 20
         });
-        await settledLeave;
+        await h.event.waitUntilLeftChannel(leaver.index);
 
         expect(
             (await h.channelManager.getParticipants(h.channelId)).includes(

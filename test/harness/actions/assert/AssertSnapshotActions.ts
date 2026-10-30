@@ -1,14 +1,19 @@
+// @spec-test-coverage-ignore: shared snapshot assertions exercised by the mapped test declarations that call them
 import { StateSnapshot } from "@/models";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { ForkId } from "@/types";
 import { Codec, DetachedPromises, Type } from "@/utils";
-import { LoggerUtils } from "@/utils/LoggerUtils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 
 export class AssertSnapshotActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
-    constructor(private readonly harness: PeerTestHarness<TCustomRpc>) {}
+    constructor(private readonly harness: PeerTestHarness<THost>) {}
 
     async onChainSnapshotOnFork(options?: {
         expectedForkId?: string;
@@ -47,9 +52,13 @@ export class AssertSnapshotActions<
         } = options || {};
 
         let honestPeers;
+        let peerIndices: number[] = [];
         let localSnapshots: StateSnapshot[] = [];
+        const describe = (snapshot: StateSnapshot) =>
+            `h=${snapshot.blockHeight} fork=${snapshot.forkID} ${snapshot.hash}`;
         const condition = async () => {
             honestPeers = this.harness.getActiveHonestPeers();
+            peerIndices = honestPeers.map((peer) => peer.index);
             localSnapshots = await Promise.all(
                 honestPeers.map((peer) =>
                     this.harness.query.getLocalStateSnapshot(peer)
@@ -77,16 +86,18 @@ export class AssertSnapshotActions<
         const promise = this.harness.eventCountsBarrier.waitFor(condition, {
             timeoutMs: timeoutMs,
             timeoutMessage: `Honest peers' local snapshots did not change within ${timeoutMs}ms`,
-            timeoutMeta: {
+            // read at the deadline: the last values the condition saw
+            timeoutMetaFn: () => ({
                 expectedForkId,
                 previousForkId,
                 expectedSnapshot: expectedSnapshot
-                    ? LoggerUtils.getSnapshotMetadata(expectedSnapshot)
+                    ? describe(expectedSnapshot)
                     : undefined,
-                localSnapshots: localSnapshots.map((s) =>
-                    LoggerUtils.getSnapshotMetadata(s)
+                localSnapshots: localSnapshots.map(
+                    (snapshot, i) =>
+                        `peer ${peerIndices[i]}: ${describe(snapshot)}`
                 )
-            }
+            })
         });
         return promise;
     }

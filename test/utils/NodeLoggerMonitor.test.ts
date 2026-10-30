@@ -11,6 +11,7 @@ import {
 import { quietSample } from "@test/fixtures/PerformanceReportingStaging";
 import { expect } from "chai";
 import { existsSync } from "node:fs";
+import { setTimeout as nativeSetTimeout } from "node:timers";
 import sinon from "sinon";
 
 /**
@@ -20,6 +21,9 @@ import sinon from "sinon";
  * so each case zeroes the global threshold for its duration and drives the
  * synthetic threshold through the internal options only.
  */
+// Capture before Sinon installs fake timers, including its timers/promises replacement.
+const realSetTimeout = nativeSetTimeout;
+
 describe("NodeLogger performance monitor", function () {
     let clock: sinon.SinonFakeTimers;
     let previousConfig: typeof config;
@@ -177,7 +181,7 @@ describe("NodeLogger performance monitor", function () {
         logger.dispose();
     });
 
-    it("emits timing markers only when the running peak increases", async function () {
+    it("omits scripted samples from timing markers even when reporting is enabled", async function () {
         createConfig({
             ...config,
             EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 1
@@ -185,16 +189,50 @@ describe("NodeLogger performance monitor", function () {
         const logger = await startMonitor([
             { ...quietSample, dMax: 2 },
             { ...quietSample, dMax: 1 },
-            { ...quietSample, dMax: 3 }
+            { ...quietSample, dMax: 1000 }
         ]);
         try {
-            const markers = captureTimingMarkers(() =>
-                clock.tick(INTERVAL_MS * 3)
+            const markers = captureTimingMarkers(() => {
+                expect(() => clock.tick(INTERVAL_MS * 3)).to.throw(
+                    "Event loop delay 1000ms exceeded configured threshold 100ms"
+                );
+            });
+            expect(markers).to.deep.equal([]);
+        } finally {
+            logger.dispose();
+        }
+    });
+
+    it("emits real histogram timing markers only when the running peak increases", async function () {
+        createConfig({
+            ...config,
+            EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 1
+        });
+        const logger = createLogger(
+            {},
+            {},
+            { skipWriting: true, attachErrorListener: false }
+        );
+        try {
+            await new Promise<void>((resolve) => {
+                logger.startPerformanceMonitoring({
+                    intervalMs: INTERVAL_MS,
+                    sampleIntervalMs: 1,
+                    delayErrorThresholdMs: 0,
+                    onStarted: resolve
+                });
+            });
+            // Native time lets the real histogram collect; only monitor ticks are scripted.
+            await new Promise<void>((resolve) => realSetTimeout(resolve, 30));
+            const markers = captureTimingMarkers(() => clock.tick(INTERVAL_MS));
+            expect(markers).to.have.length(1);
+            const timing = JSON.parse(
+                markers[0].slice("##E2E_TIMING## ".length)
             );
-            expect(markers).to.deep.equal([
-                '##E2E_TIMING## {"maxEventLoopDelayMs":2,"elThread":"test"}\n',
-                '##E2E_TIMING## {"maxEventLoopDelayMs":3,"elThread":"test"}\n'
-            ]);
+            expect(timing.maxEventLoopDelayMs).to.be.greaterThan(0);
+            expect(
+                captureTimingMarkers(() => clock.tick(INTERVAL_MS))
+            ).to.deep.equal([]);
         } finally {
             logger.dispose();
         }

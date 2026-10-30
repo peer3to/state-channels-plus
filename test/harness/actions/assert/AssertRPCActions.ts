@@ -1,22 +1,27 @@
 // @spec-test-coverage-ignore: shared harness assertions exercised by owning mapped test declarations
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { Status } from "@/types";
 import type { ForkId } from "@/types/types";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 export class AssertRPCActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
-    constructor(private readonly harness: PeerTestHarness<TCustomRpc>) {}
+    constructor(private readonly harness: PeerTestHarness<THost>) {}
 
     // The observer blacklists and disconnects the target (a byzantine sender it
     // rejected) without going offline
     async peerBlacklistedAndDisconnected(options: {
-        observer: TestPeer<TCustomRpc>;
-        target: TestPeer<TCustomRpc>;
+        observer: TestPeer<THost>;
+        target: TestPeer<THost>;
         expectedStatus: Status;
         timeoutMs?: number;
     }): Promise<void> {
@@ -26,8 +31,8 @@ export class AssertRPCActions<
     // The observer suspends and disconnects the target (a peer it could not
     // agree a clock with) without blacklisting it or going offline
     async peerSuspendedAndDisconnected(options: {
-        observer: TestPeer<TCustomRpc>;
-        target: TestPeer<TCustomRpc>;
+        observer: TestPeer<THost>;
+        target: TestPeer<THost>;
         expectedStatus: Status;
         timeoutMs?: number;
     }): Promise<void> {
@@ -45,8 +50,8 @@ export class AssertRPCActions<
     // The observer closed the target without recording anything against it:
     // neither the persisted verdict nor the session bar is set.
     async peerNotExcluded(options: {
-        observer: TestPeer<TCustomRpc>;
-        target: TestPeer<TCustomRpc>;
+        observer: TestPeer<THost>;
+        target: TestPeer<THost>;
     }): Promise<void> {
         const { observer, target } = options;
         const query = this.harness.control(observer).query;
@@ -65,11 +70,13 @@ export class AssertRPCActions<
     }
 
     // The observer closed the target with the bounded tier: it recorded
-    // `expectedStrikes` against the target and no verdict.
+    // `expectedStrikes` against the target and no verdict. With
+    // `expectedStatus` it also checks the drop left the observer running.
     async peerStruckWithoutBlacklist(options: {
-        observer: TestPeer<TCustomRpc>;
-        target: TestPeer<TCustomRpc>;
+        observer: TestPeer<THost>;
+        target: TestPeer<THost>;
         expectedStrikes?: number;
+        expectedStatus?: Status;
         timeoutMs?: number;
         pollMs?: number;
     }): Promise<void> {
@@ -92,14 +99,20 @@ export class AssertRPCActions<
             await query.isBlacklisted(target.address).request(),
             `peer ${observer.index} blacklisted peer ${target.index} instead of striking it`
         ).to.equal(false);
+        if (options.expectedStatus !== undefined)
+            await this.peerDroppedWithoutStatusChange({
+                observer,
+                target,
+                expectedStatus: options.expectedStatus
+            });
     }
 
     // Shared driver of the two exclusion assertions: wait for the exclusion
     // the observer records against the target, then check the drop.
     private async peerExcludedAndDisconnected(
         options: {
-            observer: TestPeer<TCustomRpc>;
-            target: TestPeer<TCustomRpc>;
+            observer: TestPeer<THost>;
+            target: TestPeer<THost>;
             expectedStatus: Status;
             timeoutMs?: number;
         },
@@ -128,8 +141,8 @@ export class AssertRPCActions<
     // Shared tail of both exclusion assertions: the target is gone and the
     // observer itself kept running.
     private async peerDroppedWithoutStatusChange(options: {
-        observer: TestPeer<TCustomRpc>;
-        target: TestPeer<TCustomRpc>;
+        observer: TestPeer<THost>;
+        target: TestPeer<THost>;
         expectedStatus: Status;
     }): Promise<void> {
         const { observer, target, expectedStatus } = options;

@@ -30,10 +30,12 @@ export class RuntimeRpcControl {
     }> = [];
     private holdMethod?: string;
     private holdIncomingMethod?: string;
+    private holdOutgoingMethod?: string;
     private failMethod?: string;
     private corruptParamsMethod?: string;
     private heldRequestId?: string;
     private received?: () => void;
+    private posted?: () => void;
 
     private constructor(private readonly transport: InternalTransport) {
         const send = transport.send.bind(transport);
@@ -60,6 +62,16 @@ export class RuntimeRpcControl {
                 this.heldRequestId === undefined
             )
                 this.heldRequestId = rpc.requestId;
+            if (rpc.method === this.holdOutgoingMethod) {
+                // Held before the port; close disposes it unposted and the router rejects the call.
+                this.holdOutgoingMethod = undefined;
+                this.held.push({
+                    frame: rpc,
+                    deliver: () => send(rpc, transfer)
+                });
+                this.posted?.();
+                return;
+            }
             if (rpc.method === this.failMethod) {
                 this.failMethod = undefined;
                 send(rpc, [{}]);
@@ -136,6 +148,14 @@ export class RuntimeRpcControl {
         });
     }
 
+    /** Holds the next outgoing `method` request before it reaches the port; resolves once held. */
+    public holdNextPost(method: string): Promise<void> {
+        this.holdOutgoingMethod = method;
+        return new Promise((resolve) => {
+            this.posted = resolve;
+        });
+    }
+
     public releaseAt(index: number): void {
         const [entry] = this.held.splice(index, 1);
         if (!entry) throw new Error("No held delivery at the requested index");
@@ -188,6 +208,7 @@ export class RuntimeRpcControl {
 
     public release(): void {
         this.holdIncomingMethod = undefined;
+        this.holdOutgoingMethod = undefined;
         this.holdMethod = undefined;
         this.heldRequestId = undefined;
         for (const { deliver } of this.held.splice(0)) deliver();

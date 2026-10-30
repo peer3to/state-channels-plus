@@ -178,12 +178,12 @@ describe("E2E: Double signature", function () {
             await sendJoinSignatureRequest(
                 relayers[0],
                 node.address,
-                await encodeJoinRequest(join, String(signature))
+                encodeJoinRequest(join, String(signature))
             ),
             await sendJoinSignatureRequest(
                 relayers[1],
                 node.address,
-                await encodeJoinRequest(
+                encodeJoinRequest(
                     join,
                     signBlockVariant(throwaway, ethers.keccak256(encoded), 0)
                 )

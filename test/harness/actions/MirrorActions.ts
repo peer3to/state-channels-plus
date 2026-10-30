@@ -1,13 +1,30 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type {
     MirrorChainEvent,
     ObservableRead,
     MirrorReadFault,
     MirrorReadObservation,
+    MirrorReleaseOrder,
     MirrorUpdate
 } from "@test/fixtures/customRpc/harnessControl/services/mirror/MirrorService";
 import type { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+
+/** A held local diamond update; see {@link MirrorActions.holdUpdates}. */
+export type MirrorUpdateHold = {
+    heldCount: () => Promise<number>;
+    /**
+     * Apply the held calls to the local diamond, in recorded order or the
+     * last held call first ("reverse").
+     */
+    release: (order?: MirrorReleaseOrder) => Promise<number>;
+    /** Drop the held calls: the local diamond missed those logs for good. */
+    discard: () => Promise<number>;
+};
 
 /**
  * Local mirror versus chain staging for the local-first reads (see
@@ -15,9 +32,10 @@ import type { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
  * real contract.
  */
 export class MirrorActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
-    constructor(private harness: PeerTestHarness<TCustomRpc>) {}
+    constructor(private harness: PeerTestHarness<THost>) {}
 
     private mirror(peerIndex: number) {
         return this.harness.control(this.harness.getPeer(peerIndex)).mirror;
@@ -74,6 +92,14 @@ export class MirrorActions<
             .request();
     }
 
+    /** The peer's next local diamond `update` reverts in the local EVM. */
+    async failNextUpdate(
+        peerIndex: number,
+        update: MirrorUpdate
+    ): Promise<void> {
+        await this.mirror(peerIndex).failNextUpdate(update).request();
+    }
+
     /**
      * The peer's local diamond stops applying `update` logs from now on; its
      * event handler, storage and block ingest keep running.
@@ -81,17 +107,15 @@ export class MirrorActions<
     async holdUpdates(
         peerIndex: number,
         update: MirrorUpdate
-    ): Promise<{
-        heldCount: () => Promise<number>;
-        /** Apply the held logs to the local diamond, in order. */
-        release: () => Promise<number>;
-    }> {
+    ): Promise<MirrorUpdateHold> {
         const mirror = () => this.mirror(peerIndex);
         await mirror().holdUpdates(update).request();
         return {
             heldCount: async () =>
                 await mirror().getHeldUpdateCount(update).request(),
-            release: async () => await mirror().releaseUpdates(update).request()
+            release: async (order = "recorded") =>
+                await mirror().releaseUpdates(update, order).request(),
+            discard: async () => await mirror().discardUpdates(update).request()
         };
     }
 }

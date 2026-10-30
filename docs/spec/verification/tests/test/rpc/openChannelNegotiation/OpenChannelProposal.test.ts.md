@@ -1,12 +1,7 @@
-# test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts — Test Report
+# OpenChannelProposal.test.ts
 
-> **Test file:** [test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts](../../../../../../../test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [OpenChannelNegotiationHelpers.ts](../../../../../implementation/source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts](../../../../../../../test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts)
+Exercises: [OpenChannelNegotiationHelpers.ts](../../../../../implementation/source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md)
 
 ## Overview
 
@@ -14,34 +9,31 @@ The suite unit-tests the pure comparator `getOpenChannelProposalMismatch` with h
 `OpenChannelStruct` fixtures — no service, signatures, or transport. An exactly matching proposal
 returns `null`; then each security-sensitive field is varied one test at a time — a tampered
 balance amount, tampered balance data, a substituted participant, a different `channelId`, a
-non-atomic open, non-empty opening `data`, a deadline in the past, and a deadline beyond the
-allowed window — and each test asserts the specific mismatch reason string. A final test shows
+non-atomic open, non-empty opening `data`, a deadline in the past, deadlines one and 29 seconds
+ahead (below the 30-second minimum), a deadline exactly 30 seconds ahead (accepted), and a deadline
+beyond the allowed window — and each test asserts the specific mismatch reason string. A final test shows
 participant/address comparison is checksum-canonical (casing-insensitive). What the negotiation
 service does with the mismatch result (co-sign vs disconnect + blacklist + reset), lower-signature
 recovery, and slot/state handling are out of scope. The
-[`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF`](../../../../../implementation/source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md#unit-test-open-negotiation-helpers-1-rwqazf) permutations are now one field variation each, and the
+`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF` permutations are now one field variation each, and the
 per-field tests below are assigned to them. Still unassigned: the length variations (P4
 participants, P6 balances) have no test; P2 (deadline at the expired edge) is probed one second
-past the edge (`now - 1`, while the comparator rejects at `<= now`), so the exact boundary is not
-demonstrated; and P3 (sort/alignment canonicalization) is not what the casing test shows.
+past the edge (`now - 1`), and the comparator now rejects everything below the 30-second minimum,
+so the expired edge is not a boundary any more; and P3 (sort/alignment canonicalization) is not what the casing test shows.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                         | Covers                                                                                                                                                                                                                        |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`getOpenChannelProposalMismatch > accepts a proposal that matches the negotiated terms`](../../../../../../../test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts#L44) (line 44)                | —                                                                                                                                                                                                                             |
-| [`getOpenChannelProposalMismatch > rejects a tampered balance amount (no fund redirection)`](../../../../../../../test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts#L54) (line 54)             | [`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P7`](../../../../../implementation/source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md#unit-test-open-negotiation-helpers-1-rwqazf.p7)   |
-| [`getOpenChannelProposalMismatch > rejects tampered balance data`](../../../../../../../test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts#L62) (line 62)                                       | [`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P8`](../../../../../implementation/source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md#unit-test-open-negotiation-helpers-1-rwqazf.p8)   |
-| [`getOpenChannelProposalMismatch > rejects a different participant set`](../../../../../../../test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts#L70) (line 70)                                 | [`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P5`](../../../../../implementation/source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md#unit-test-open-negotiation-helpers-1-rwqazf.p5)   |
-| [`getOpenChannelProposalMismatch > rejects a different channelId`](../../../../../../../test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts#L78) (line 78)                                       | [`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P1`](../../../../../implementation/source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md#unit-test-open-negotiation-helpers-1-rwqazf.p1)   |
-| [`getOpenChannelProposalMismatch > rejects non-atomic opens`](../../../../../../../test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts#L86) (line 86)                                            | [`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P9`](../../../../../implementation/source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md#unit-test-open-negotiation-helpers-1-rwqazf.p9)   |
-| [`getOpenChannelProposalMismatch > rejects opening data that differs from the locally derived data`](../../../../../../../test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts#L94) (line 94)     | [`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P10`](../../../../../implementation/source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md#unit-test-open-negotiation-helpers-1-rwqazf.p10) |
-| [`getOpenChannelProposalMismatch > rejects a deadline in the past`](../../../../../../../test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts#L102) (line 102)                                    | —                                                                                                                                                                                                                             |
-| [`getOpenChannelProposalMismatch > rejects a deadline beyond the allowed window`](../../../../../../../test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts#L110) (line 110)                      | [`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P11`](../../../../../implementation/source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md#unit-test-open-negotiation-helpers-1-rwqazf.p11) |
-| [`getOpenChannelProposalMismatch > matches participants and channelId irrespective of address casing`](../../../../../../../test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts#L118) (line 118) | —                                                                                                                                                                                                                             |
-| [`getOpenChannelProposalMismatch > accepts the locally derived application opening data`](../../../../../../../test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts#L126) (line 126)              | [`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P12`](../../../../../implementation/source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md#unit-test-open-negotiation-helpers-1-rwqazf.p12) |
+- `accepts a proposal that matches the negotiated terms`: none
+- `rejects a tampered balance amount (no fund redirection)`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P7
+- `rejects tampered balance data`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P8
+- `rejects a different participant set`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P5
+- `rejects a different channelId`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P1
+- `rejects non-atomic opens`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P9
+- `rejects opening data that differs from the locally derived data`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P10
+- `rejects a deadline in the past`: none
+- `rejects a deadline one second ahead as too close`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P13
+- `rejects a deadline 29 seconds ahead as too close`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P14
+- `accepts a deadline exactly 30 seconds ahead`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P15
+- `rejects a deadline beyond the allowed window`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P11
+- `matches participants and channelId irrespective of address casing`: none
+- `accepts the locally derived application opening data`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P12

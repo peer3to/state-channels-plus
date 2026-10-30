@@ -164,8 +164,9 @@ contract StateSnapshotFacetSameForkTest is DiamondHarness {
     /// withdrawals-cap guard cannot fire before the index under test.
     // every milestone starts below the chain height and none sits at it, so nothing is proven above the
     // chain snapshot; a forged newer snapshot behind such a proof must not be adopted by anyone
-    function test_updateStateSnapshotSameFork_everyMilestoneBelowChainHeight_forgedNewerSnapshot_revertsInvalidStateProof(
-    ) public {
+    function test_updateStateSnapshotSameFork_everyMilestoneBelowChainHeight_forgedNewerSnapshot_revertsInvalidStateProof()
+        public
+    {
         StateSnapshot memory current = _advanceOnce();
         (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots) = _allSkippedProof(current);
         StateSnapshot memory forged = snapshots[0];
@@ -182,13 +183,24 @@ contract StateSnapshotFacetSameForkTest is DiamondHarness {
         assertEq(keccak256(abi.encode(diamond.getStateSnapshot(CHANNEL_ID))), keccak256(abi.encode(current)));
     }
 
-    // the same all-skipped proof still confirms the threshold snapshot itself, and nothing else
+    // the same all-skipped proof is valid from the chain snapshot (nothing is left to check) and finalizes only that
+    // snapshot; the entry of a skipped milestone is never read, so it cannot advance past it
     function test_verifyMilestones_everyMilestoneBelowThreshold_confirmsOnlyTheThresholdSnapshot() public {
         StateSnapshot memory current = _advanceOnce();
         (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots) = _allSkippedProof(current);
-        assertTrue(diamond.verifyMilestones(current.forkId, proofs, snapshots, current), "confirms the threshold");
+        ProofWalkResult memory result = diamond.verifyMilestones(
+            ProofWalkInput(CHANNEL_ID, current.forkId, StateProof(proofs), current.snapshotData, snapshots)
+        );
+        assertTrue(result.valid, "nothing left to check");
+        assertEq(keccak256(abi.encode(result.finalizedSnapshot)), keccak256(abi.encode(current)), "the threshold");
         snapshots[0].blockHeight = current.blockHeight + 1;
-        assertFalse(diamond.verifyMilestones(current.forkId, proofs, snapshots, current), "advances past it");
+        result = diamond.verifyMilestones(
+            ProofWalkInput(CHANNEL_ID, current.forkId, StateProof(proofs), current.snapshotData, snapshots)
+        );
+        assertTrue(result.valid, "the skipped entry is not read");
+        assertEq(
+            keccak256(abi.encode(result.finalizedSnapshot)), keccak256(abi.encode(current)), "advances nothing past it"
+        );
     }
 
     /// one legitimate same-fork advance, so the chain height is above 0 and a lower milestone can be skipped

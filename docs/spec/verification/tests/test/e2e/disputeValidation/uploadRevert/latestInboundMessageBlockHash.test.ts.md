@@ -1,11 +1,6 @@
-# test/e2e/disputeValidation/uploadRevert/latestInboundMessageBlockHash.test.ts — Test Report
+# latestInboundMessageBlockHash.test.ts
 
-> **Test file:** [test/e2e/disputeValidation/uploadRevert/latestInboundMessageBlockHash.test.ts](../../../../../../../../test/e2e/disputeValidation/uploadRevert/latestInboundMessageBlockHash.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/disputeValidation/uploadRevert/latestInboundMessageBlockHash.test.ts](../../../../../../../../test/e2e/disputeValidation/uploadRevert/latestInboundMessageBlockHash.test.ts)
 
 ## Overview
 
@@ -19,13 +14,6 @@ suite; this case covers the refusal through the deployed manager for a dispute t
 (a random hash, or the genesis hash with height > 0) meet the same gate, so the fraud-proof cases in
 `disputeValidation/inboundHash.test.ts` are skipped.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                                                                                                | Covers                                                                                                    |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| [`E2E: dispute validation / uploadRevert / latestInboundMessageBlockHash > dispute.input.latestInboundMessageBlockHash below the chain inbound head → RaceConditionDisputeInboundNotLatest`](../../../../../../../../test/e2e/disputeValidation/uploadRevert/latestInboundMessageBlockHash.test.ts#L6) (line 6) | [`REQ-DIS-2-PKVZ7E.T1.P30`](../../../../../../specification/disputes/disputes.md#req-dis-2-pkvz7e.t1.p30) |
+- `dispute.input.latestInboundMessageBlockHash below the chain inbound head → RaceConditionDisputeInboundNotLatest`: REQ-DIS-2-PKVZ7E.T1.P30

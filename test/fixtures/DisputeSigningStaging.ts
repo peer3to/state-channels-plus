@@ -96,7 +96,8 @@ export async function assertBlockWorkAfterDisputeRollback(
         }
         return "no error";
     });
-    expect(result).to.contain("RaceConditionDisputeEvidencePeriodExpired");
+    // a lost evidence race is a no-op that rolls the marker back
+    expect(result).to.equal("no error");
     await failure.restore();
     await h.transition.submit(h.getPeer(authoring ? 0 : 1), (contract) =>
         contract.add(1)

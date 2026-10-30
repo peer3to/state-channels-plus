@@ -1,4 +1,3 @@
-import { sleep } from "..";
 import {
     getAxiosFailureSummary,
     getAxiosRetrySummary,
@@ -13,7 +12,8 @@ import {
 } from "./Logger";
 import { LogStore } from "./logStore";
 import { config as globalConfig } from "../config";
-import { retry } from "../retry";
+import { abortableSleep, retry } from "../retry";
+import { settleBy } from "../settleBy";
 import axios from "axios";
 import { ethers } from "ethers";
 
@@ -35,7 +35,16 @@ export type LogUploaderConfig = {
     jitterMaxMs?: number;
 };
 
+const BUSY_UPLOADERS_KEY: unique symbol = Symbol.for("peer3.busyLogUploaders");
+
 export abstract class LogUploader {
+    /** This realm's uploaders with an upload running or queued; one set for every copy of this module. */
+    private static readonly busyUploaders: Set<LogUploader> = ((
+        globalThis as { [BUSY_UPLOADERS_KEY]?: Set<LogUploader> }
+    )[BUSY_UPLOADERS_KEY] ??= new Set());
+
+    /** Aborted once its thread ended: every upload of this uploader, a queued one too, ends at once. */
+    private readonly cancel = new AbortController();
     protected logger?: Logger;
     private destroyed = false;
     /** highest seq a 2xx acknowledged; -1 = nothing yet */
@@ -46,6 +55,13 @@ export abstract class LogUploader {
     /** the running POST, and at most one queued behind it */
     private activeUpload?: Promise<LogUploadOutcome>;
     private queuedUpload?: Promise<LogUploadOutcome>;
+    /**
+     * How long an ending thread waits for the running and the queued upload: the latest deadline
+     * of the abort flushes that asked for it or that it overlaps, endless (up to the thread's own
+     * bound) once a request outside any running flush did.
+     */
+    private activeDeadlineMs = Infinity;
+    private queuedDeadlineMs = Infinity;
 
     constructor(
         protected readonly logStore: LogStore,
@@ -59,29 +75,37 @@ export abstract class LogUploader {
         }
     }
 
+    /**
+     * Cancels every upload of this realm still running or queued; those uploaders start no
+     * further upload. A worker thread calls it as it ends: an open upload, its retry
+     * delay or its jitter wait keeps the loop alive after disposal, past an abort's flush
+     * bound. A realm whose thread lives on keeps its uploads running after disposal.
+     */
+    public static cancelRealmUploads(): void {
+        for (const uploader of LogUploader.busyUploaders) {
+            uploader.cancel.abort();
+        }
+    }
+
+    /**
+     * Waits for every upload of this realm still running or queued, at most `timeoutMs`, and
+     * never past the deadline of the abort flush an upload is part of (that flush already
+     * waited for it). A thread that ends right after an error (a dispose) would otherwise
+     * cancel the upload that error started, during its jitter wait.
+     */
+    public static async settleRealmUploads(timeoutMs: number): Promise<void> {
+        await Promise.all(
+            [...LogUploader.busyUploaders].map((uploader) =>
+                uploader.settle(timeoutMs)
+            )
+        );
+    }
+
     setLogger(logger: Logger) {
         this.logger = logger;
     }
-    protected abstract attachListeners(): void;
-    protected abstract detachListeners(): void;
-
     public isEnabled(): boolean {
         return Boolean(this.config.uploadEndpoint);
-    }
-
-    protected getAxiosOptions(): Record<string, unknown> {
-        return {};
-    }
-
-    protected getSyncNetworkSnapshot(
-        _endpoint: string,
-        _uploadError?: unknown
-    ): unknown {
-        return undefined;
-    }
-
-    protected getDnsLookupSnapshot(_endpoint: string): Promise<unknown> {
-        return Promise.resolve(undefined);
     }
 
     // Single owner of unhandled-error capture for both platforms (browser window
@@ -98,14 +122,71 @@ export abstract class LogUploader {
         });
     }
 
-    // A non-Error rejection reason can have a throwing toString; the global crash
-    // handler must not itself throw and lose the rejection.
-    private static safeStringify(reason: unknown): string {
-        try {
-            return String(reason);
-        } catch {
-            return "[unstringifiable rejection reason]";
+    /**
+     * One active upload and at most one follow-up; callers await only local work.
+     * `flushDeadlineMs`: the abort flush this upload is part of, if any.
+     */
+    public uploadLogs(flushDeadlineMs?: number): Promise<LogUploadOutcome> {
+        // A request while an abort flush's upload is pending is bounded by that flush: the
+        // abort's disposal ends the threads at its deadline.
+        const pendingDeadlineMs = this.queuedUpload
+            ? this.queuedDeadlineMs
+            : this.activeUpload
+              ? this.activeDeadlineMs
+              : Infinity;
+        const deadlineMs =
+            flushDeadlineMs ??
+            (pendingDeadlineMs > Date.now() ? pendingDeadlineMs : Infinity);
+        if (this.queuedUpload) {
+            this.queuedDeadlineMs = Math.max(this.queuedDeadlineMs, deadlineMs);
+            return this.queuedUpload;
         }
+        LogUploader.busyUploaders.add(this);
+        if (!this.activeUpload) {
+            this.activeDeadlineMs = deadlineMs;
+            return this.startUpload();
+        }
+
+        this.queuedDeadlineMs = deadlineMs;
+        const queued = this.activeUpload
+            .catch(() => undefined)
+            .then(() => {
+                this.queuedUpload = undefined;
+                this.activeDeadlineMs = this.queuedDeadlineMs;
+                return this.startUpload();
+            });
+        this.queuedUpload = queued;
+        return queued;
+    }
+
+    public destroy(): void {
+        if (this.destroyed) {
+            return;
+        }
+
+        // console.trace("Destroying LogUploader");
+
+        this.destroyed = true;
+        this.detachListeners();
+        this.logger = undefined;
+    }
+
+    protected abstract attachListeners(): void;
+    protected abstract detachListeners(): void;
+
+    protected getAxiosOptions(): Record<string, unknown> {
+        return {};
+    }
+
+    protected getSyncNetworkSnapshot(
+        _endpoint: string,
+        _uploadError?: unknown
+    ): unknown {
+        return undefined;
+    }
+
+    protected getDnsLookupSnapshot(_endpoint: string): Promise<unknown> {
+        return Promise.resolve(undefined);
     }
 
     // spreads the upload bursts of many realms apart
@@ -116,24 +197,32 @@ export abstract class LogUploader {
         return Math.floor(Math.random() * maxMs);
     }
 
-    /** One active upload and at most one follow-up; callers await only local work. */
-    public uploadLogs(): Promise<LogUploadOutcome> {
-        if (this.queuedUpload) return this.queuedUpload;
-        if (!this.activeUpload) return this.startUpload();
+    private async settle(timeoutMs: number): Promise<void> {
+        const [upload, deadlineMs] = this.queuedUpload
+            ? [this.queuedUpload, this.queuedDeadlineMs]
+            : [this.activeUpload, this.activeDeadlineMs];
+        if (!upload) return;
+        await settleBy(
+            upload.catch(() => undefined),
+            Math.min(Date.now() + timeoutMs, deadlineMs)
+        );
+    }
 
-        const queued = this.activeUpload
-            .catch(() => undefined)
-            .then(() => {
-                this.queuedUpload = undefined;
-                return this.startUpload();
-            });
-        this.queuedUpload = queued;
-        return queued;
+    // A non-Error rejection reason can have a throwing toString; the global crash
+    // handler must not itself throw and lose the rejection.
+    private static safeStringify(reason: unknown): string {
+        try {
+            return String(reason);
+        } catch {
+            return "[unstringifiable rejection reason]";
+        }
     }
 
     private startUpload(): Promise<LogUploadOutcome> {
         const running = this.postDelta().finally(() => {
             if (this.activeUpload === running) this.activeUpload = undefined;
+            if (!this.activeUpload && !this.queuedUpload)
+                LogUploader.busyUploaders.delete(this);
         });
         this.activeUpload = running;
         return running;
@@ -162,6 +251,7 @@ export abstract class LogUploader {
     }
 
     private async postDelta(): Promise<LogUploadOutcome> {
+        const { signal } = this.cancel;
         let rawLogsSize;
         let compressedLogsSize;
         const uploadStartedAt = Date.now();
@@ -179,7 +269,8 @@ export abstract class LogUploader {
                 return { ok: true, entries: 0 };
             }
 
-            await sleep(this.getJitterMs());
+            await abortableSleep(this.getJitterMs(), signal);
+            if (signal.aborted) return { ok: false, entries: 0 };
 
             // identity and delta are read together, after the sleep: a channel
             // or peer set during it files this batch, instead of the batch
@@ -210,7 +301,7 @@ export abstract class LogUploader {
                 `Log uploading started. uploadId=${uploadId} channelId=${channelId} peerAddress=${peerAddress} Raw size: ${rawLogsSize / 1e6}MB, Compressed size: ${compressedLogsSize / 1e6}MB.`
             );
             const response = await retry(
-                async () =>
+                () =>
                     axios.post(
                         this.config.uploadEndpoint,
                         {
@@ -225,12 +316,15 @@ export abstract class LogUploader {
                         {
                             headers,
                             timeout: 10_000,
+                            signal,
                             ...this.getAxiosOptions()
                         }
                     ),
                 {
                     maxRetries: 1,
                     delayMs: 1000,
+                    // A canceled upload is not retried.
+                    signal,
                     onRetry: (attempt, error) => {
                         const { code, status } = getAxiosRetrySummary(error);
                         const networkSnapshot = this.getSyncNetworkSnapshot(
@@ -255,6 +349,8 @@ export abstract class LogUploader {
             this.lastUploadedKey = uploadKey;
             return { ok: true, entries: entries.length };
         } catch (uploadError) {
+            // Canceled as its thread ends: no diagnostics, which would start new network work.
+            if (signal.aborted) return { ok: false, entries: 0 };
             sanitizeAxiosErrorForLogging(uploadError);
 
             const {
@@ -290,17 +386,5 @@ export abstract class LogUploader {
             // console, not the logger -> logging an upload failure would recurse.
             return { ok: false, entries: 0 };
         }
-    }
-
-    public destroy(): void {
-        if (this.destroyed) {
-            return;
-        }
-
-        // console.trace("Destroying LogUploader");
-
-        this.destroyed = true;
-        this.detachListeners();
-        this.logger = undefined;
     }
 }

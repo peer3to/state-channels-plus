@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: typed interface of the shared node infrastructure; executable evidence belongs to the calling runner and session tests
 // Typed interface for ./nodeInfra.js so TypeScript consumers (e.g. the test
 // harness) import cleanly without `require`-casting the .js implementation.
 import type { ChildProcess } from "node:child_process";
@@ -52,6 +53,16 @@ export interface GasPeak {
 }
 
 export function getFreePort(): Promise<number>;
+
+export interface DhtBootstrapper {
+    address(): { host: string; port: number };
+    destroy(options: { force: boolean }): Promise<void>;
+}
+
+export function startDhtBootstrapper(
+    host: string,
+    options?: { port?: number; attempts?: number }
+): Promise<DhtBootstrapper>;
 export function startHardhatNode(opts?: StartInfraOptions): Promise<NodeHandle>;
 export function waitForHardhatNode(
     url: string,

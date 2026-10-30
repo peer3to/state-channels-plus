@@ -1,81 +1,32 @@
-# SnapshotAssemblyService.ts — Source Report
+# SnapshotAssemblyService.ts
 
-> **Source:** [src/stateManager/block/SnapshotAssemblyService.ts](../../../../../../../src/stateManager/block/SnapshotAssemblyService.ts) > **Status:** Authored — engineer verification pending.
-> **Design views:** [architecture/sdk/components.md](../../../../views/architecture/sdk/components.md)
+> **Source:** [src/stateManager/block/SnapshotAssemblyService.ts](../../../../../../../src/stateManager/block/SnapshotAssemblyService.ts)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`INV-BLOCK-PIPE-1-1AB2ME` (Atomic ordered commit)](../../../../../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me)
+- [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
+- [`REQ-SM-12-J6QD9B` (Every chain-accepted inbound message MUST be processed successfully)](../../../../../specification/protocol-model/state-machines.md#req-sm-12-j6qd9b)
+  Missing: `assembleFromTransaction` throws on any inbound failure and does not tell an out-of-gas failure apart from a refusal; tracked by [`FIND-INBOUND-GAS-1-2BZ8DE`](../../../../../audit/open-findings.md#find-inbound-gas-1-2bz8de).
 
-## Responsibility and observable boundary
+## UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7
 
-Assembles the next state snapshot for a transaction: carries the previous snapshot forward, binds consumed inbound blocks (hash, height, deposits), builds the outbound block for a leave (height, withdrawals, `participantChanges`), and reports the writer-turn and state-machine refusals as `success: false` or a throw.
+Snapshot assembly
 
-## Key design decisions
+- Setup: Drive `createStateSnapshot`, `getPreviousStateSnapshotOrThrow`, and `assembleFromTransaction` host-side on live channels with real storage and state machine; drive `restoreState` through its authoring and ingest callers, with the runtime stopping or with a one-shot local state write fault
+- Oracle: Decoded snapshot fields, heights, hashes, and participant changes match the consumed blocks; refusals are reported, never hidden; a restore puts the VM back, a stopping runtime restores nothing, and a failed restore logs once and aborts the runtime while the caller's own outcome stands
 
-1. **One assembly owner.** Block production and snapshot posting build every snapshot here; the writer-turn rule and state-machine refusal are reported, never patched around.
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
-
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                                                                          | Specification IDs |
-| ---------------------------------------------------------------------------------------------------- | ----------------- |
-| [SnapshotAssemblyService.ts](../../../../../../../src/stateManager/block/SnapshotAssemblyService.ts) |                   |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Utility semantics must hold identically on both supported hosts.
-
-## Specification adherence
-
-- Role-consistent with the owning views.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                            | Obligation        | Public entry and setup                                                                                                                                       | Oracle and forbidden effects                                                                                                     | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| --------------------------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-snapshot-assembly-1-4g64j7"></a>`UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7` | Snapshot assembly | Drive `createStateSnapshot`, `getPreviousStateSnapshotOrThrow`, and `assembleFromTransaction` host-side on live channels with real storage and state machine | Decoded snapshot fields, heights, hashes, and participant changes match the consumed blocks; refusals are reported, never hidden | <a id="unit-test-snapshot-assembly-1-4g64j7.p1"></a>`UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P1` — carry-forward with no inbound or outbound block; <a id="unit-test-snapshot-assembly-1-4g64j7.p2"></a>`UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P2` — a real leave advances the outbound height and total withdrawals; <a id="unit-test-snapshot-assembly-1-4g64j7.p3"></a>`UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P3` — a real join binds the consumed inbound hash, height, and total deposits; <a id="unit-test-snapshot-assembly-1-4g64j7.p4"></a>`UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P4` — an unknown fork throws instead of assembling; <a id="unit-test-snapshot-assembly-1-4g64j7.p5"></a>`UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P5` — the writer's real transaction yields the next-height snapshot binding the post-inbound state with no participant changes; <a id="unit-test-snapshot-assembly-1-4g64j7.p6"></a>`UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P6` — own turn succeeds with a new state hash and another peer's header returns `success: false`; <a id="unit-test-snapshot-assembly-1-4g64j7.p7"></a>`UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P7` — a transaction the state machine refuses returns `success: false` with nothing else computed; <a id="unit-test-snapshot-assembly-1-4g64j7.p8"></a>`UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P8` — supplied pending inbound blocks are bound by head and deposits; <a id="unit-test-snapshot-assembly-1-4g64j7.p9"></a>`UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P9` — a leave names the leaver in `participantChanges.left` and builds an outbound block; <a id="unit-test-snapshot-assembly-1-4g64j7.p10"></a>`UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P10` — an inbound block the state machine cannot process makes the assembly throw |
-
-## Related source reports
-
-- Consumers per the views.
+- [x] `UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P1` — carry-forward with no inbound or outbound block
+- [x] `UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P2` — a real leave advances the outbound height and total withdrawals
+- [x] `UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P3` — a real join binds the consumed inbound hash, height, and total deposits
+- [x] `UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P4` — an unknown fork throws instead of assembling
+- [x] `UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P5` — the writer's real transaction yields the next-height snapshot binding the post-inbound state with no participant changes
+- [x] `UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P6` — own turn succeeds with a new state hash and another peer's header returns `success: false`
+- [x] `UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P7` — a transaction the state machine refuses returns `success: false` with nothing else computed
+- [x] `UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P8` — supplied pending inbound blocks are bound by head and deposits
+- [x] `UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P9` — a leave names the leaver in `participantChanges.left` and builds an outbound block
+- [x] `UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P10` — an inbound block the state machine cannot process makes the assembly throw
+- [x] `UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P11` — `restoreState` after a failed authoring assembly puts the VM state and next writer back
+- [x] `UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P12` — `restoreState` while the runtime is stopping writes no local state and logs no restore error
+- [x] `UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P13` — `restoreState` whose local state write fails after a failed authoring assembly logs one restore error and aborts the runtime; the candidate rejects with the assembly's own error and the mutex is released
+- [x] `UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P14` — `restoreState` whose local state write fails after an ingest rejects a block logs one restore error and aborts the runtime; the invalid-transition verdict stands and nothing throws

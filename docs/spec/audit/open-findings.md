@@ -7,20 +7,678 @@
 Known defects belong here rather than in an open-question register. A finding links its owning
 specification, implementation mirror, and verification plan as those owners are populated.
 
+## Bootstrap transport in browsers
+
+<a id="find-upg-relay-1-vsa12h"></a>
+
+### FIND-UPG-RELAY-1-VSA12H
+
+**Current defect:** _Resolved (2026-10-12)._ The `@hyperswarm/dht-relay` relay server threw an
+uncaught `uint must be positive` whenever a relayed peer's inbound (server-side) stream errored:
+`lib/server-proxy.js` `onServerConnection` sent `destroy` without `paired: true`. The fix
+(holepunchto/hyperswarm-dht-relay#27) is merged upstream but not released on npm. The SDK depends on
+the peer3 fork commit `d9f00e9` (`peer3to/hyperswarm-dht-relay`): upstream commit `5036c4b`, the
+newest upstream commit (its library code equals the #27 merge plus a lint fix), plus one commit with
+the client stream fixes of [`FIND-UPG-GLARE-1-98VA3A`](open-findings.md#find-upg-glare-1-98va3a).
+The browser Holepunch gate serves its local relays from that same dependency.
+
+**Disposition:** Resolved by the engineer's decision to depend on the fork commit. Exit: return to
+upstream when holepunchto/hyperswarm-dht-relay#29 (from
+`peer3to:fix/stream-keepalive-and-pending-destroy`) merges, then to npm when a release after 0.4.3
+exists.
+
+<a id="find-upg-glare-1-98va3a"></a>
+
+### FIND-UPG-GLARE-1-98VA3A
+
+**Current defect:** _Resolved (2026-10-13)._ Crossing dials between one pair must leave one working
+connection. Hyperswarm 4.17.2 keeps one of two crossing connections by a key tie-break; both peers
+look up their topics again when a fallback ban is released. Relayed (dht-relay) streams broke it in
+two ways. (1) They lacked `sendKeepAlive()`, `rawBytesRead` and `rawBytesWritten`: when the
+tie-break kept the existing connection, `Hyperswarm._handleServerConnection` threw
+`TypeError: existing.sendKeepAlive is not a function`. (2) Destroying a relayed client stream before
+it opened sent nothing to the relay, so the remote kept a connection whose local end was gone and
+refused every new dial as a duplicate. The SDK now depends on the peer3 dht-relay fork commit
+`d9f00e9`: upstream `5036c4b` plus public `sendKeepAlive()`, both byte counters, and a pending
+connect cancelled on destroy. The browser gates pass with the fork. Crossing-dial evidence is
+tracked by the crossing-dial permutation of the transport-upgrade discovery test plan, not by this
+finding.
+
+**Disposition:** Resolved by fork commit `d9f00e9`. Residual risk: the SDK depends on a fork until
+holepunchto/hyperswarm-dht-relay#29 merges.
+
+<a id="find-upg-relay-2-0tvhj4"></a>
+
+### FIND-UPG-RELAY-2-0TVHJ4
+
+**Current defect:** A relayed (browser) peer that leaves a topic stays announced. Hyperswarm 4.17
+unannounces on leave only through the closest nodes of its last query, and a dht-relay query has no
+`closestNodes`, so the unannounce is skipped (Hyperswarm 4.3.5 always unannounced). A smoke on a
+local testnet finds the relayed peer by lookup after its leave; a plain peer is gone. Other peers
+keep finding and dialing the left peer until the announcement expires on the DHT. Relates to
+[`REQ-UPG-6-BC60XD` (Discovery topic leave is byte-exact and durable)](../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd);
+its relayed case
+[`REQ-UPG-6-BC60XD.T1.P8`](../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd.t1.p8)
+stays untested until this is fixed.
+
+**Disposition:** Open; medium. Needs a dht-relay change (relay query exposes the closest nodes, or
+the relay node unannounces without them) or a Hyperswarm change; engineer decision.
+
+<a id="find-sync-observer-1-yf6cja"></a>
+
+### FIND-SYNC-OBSERVER-1-YF6CJA
+
+**Current defect:** _Resolved (2026-10-12; fix replaced 2026-10-26)._ An observer whose first completed handshake on a
+channel topic is a participant that is still syncing itself aborts:
+`P2PManager.onHandshakeCompleted` starts the initial sync with the first peer that the chain lists
+as a participant, that peer's `SpectateService` answers "No genesis snapshot found for fork", and
+`syncConnectedParticipant` aborts the runtime. Seen in the local-relay browser gate with three peers
+connecting at once. Relates to
+[`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed).
+Fix: a responder whose own initial sync is in flight answers at once that it is not synced yet, and
+the requester does not count that as a failed sync (block intake excepted since 2026-10-29: a block's source that
+answers so takes one counted close per answer, see the implementation assessment): it syncs from another participant instead, asks
+the syncing one again, and aborts only when no participant serves before its initial-sync deadline. A
+real sync failure still aborts at once
+([`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1),
+[`REQ-AUTH-5-BQG9AG` (Post-authentication engagement follows the local lifecycle)](../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag));
+tested by
+[`REQ-SPC-3-AZBKR1.T1.P4`](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1.t1.p4),
+[`REQ-SPC-3-AZBKR1.T1.P5`](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1.t1.p5),
+[`REQ-SPC-3-AZBKR1.T1.P6`](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1.t1.p6),
+[`REQ-AUTH-5-BQG9AG.T3.P5`](../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag.t3.p5)
+and
+[`REQ-AUTH-5-BQG9AG.T3.P6`](../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag.t3.p6).
+
+**Disposition:** Resolved by the engineer's decision (2026-10-26, option a): a peer still in its own
+initial sync answers a sync request at once with "not synced yet" and does not wait; the requester
+syncs from another table member. This replaces the 2026-10-12 decision that a responder delays its
+answer until it is synced itself: a requester that asked such a responder timed out and aborted.
+
+## WebRTC link loss after upgrade
+
+<a id="find-upg-drop-1-ety2ps"></a>
+
+### FIND-UPG-DROP-1-ETY2PS
+
+**Current defect:** After a Holepunch → WebRTC upgrade, the SDK retires the Holepunch transport once
+the upgrade grace period ends (one agreement window, 4 s in that deployment) and keeps no fallback. A
+WebRTC link that drops later (its UDP path is lost) is detected by ICE consent checks only after several
+seconds. During that time the data channel's `readyState` stays `open` and sends are lost, so the link
+swallows requests and replies until ICE reports `disconnected`. Seen between a Mac and an Android phone
+on one LAN: every new link dropped 2–10 s after it opened. Two threshold members' join-signature replies
+were lost this way, and the join failed (the join outcome is now an abort, not a fatal error; see the
+"First-join collection failure aborts instead of escaping" entry in
+[implementation.md](implementation.md)). The Holepunch fallback is banned while the WebRTC
+transport is current and comes back only after it closes
+([`REQ-UPG-4-M2XDBA` (Fallback ban and explicit exclusion)](../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba),
+[`REQ-UPG-8-06HTCM` (Fallback is re-established within one agreement window)](../specification/peer-communication/transport-upgrade.md#req-upg-8-06htcm)), so
+a silent link has no fallback until ICE reports it; requests sent meanwhile settle only by timeout
+([`REQ-RPC-2-SZDTTM` (Request lifecycle)](../specification/peer-communication/rpc.md#req-rpc-2-szdttm)). The root cause of
+the drops is not proven; it needs a `chrome://webrtc-internals` capture of a dropping link.
+
+**Status:** Open. Engineer decision (Luka, 2026-10-26): record it. Directions, none chosen: (1) keep
+Holepunch longer after the upgrade; (2) fall back to Holepunch when a WebRTC link drops; (3) a keepalive
+that detects a silent link sooner than ICE consent.
+
+**Update (2026-10-27):** A WebRTC transport now stays open while its path is down and closes only if
+the path is still down after a 5 s grace
+([`REQ-UPG-9-60XCXK` (A direct connection survives a short path loss)](../specification/peer-communication/transport-upgrade.md#req-upg-9-60xcxk)),
+so a short drop no longer costs a reconnect. Each state change is logged with the selected path's
+statistics (round-trip time, connectivity checks sent and answered, time since the last packet each
+way), so the logs of a dropped link show where the drop comes from.
+
+<a id="find-upg-stale-report-1-phpj5h"></a>
+
+### FIND-UPG-STALE-REPORT-1-PHPJ5H
+
+**Current defect:** In the browser, the SDK runs in a worker and the `RTCPeerConnection` lives on the
+page's main thread. The main-thread factory drops every state report of a connection that is closed or
+replaced, but a report it sent just before can still be in flight to the worker. The worker routes
+state reports by peer address only (`WorkerBridgeWebRTCConnectionFactory.state`), to the callbacks
+registered last. So when the peer's next connection registers its callbacks in that window, the old
+connection's report reaches the new connection: a stale `failed` or `closed` closes the new transport
+at once, and a stale `disconnected` starts a grace that closes it if the new connection does not report
+`connected` within 5 s. This breaks the rule that a closed or replaced connection reports no more state
+changes ([`REQ-UPG-9-60XCXK` (A direct connection survives a short path loss)](../specification/peer-communication/transport-upgrade.md#req-upg-9-60xcxk)).
+The window is a few milliseconds, only during a replacement while the old connection is still active.
+Since `WebRTCSetupService.handleConnectionStateChange` closes a connection that reports `failed` or
+`closed` before it has a transport, a stale `failed` also closes the new connection while it is still
+being set up; the cost is one extra reconnect.
+
+**Status:** Open. Engineer decision (Luka, 2026-10-27, confirmed 2026-10-28): record it, no fix now
+(deferred). Proposed direction: tag each connection with a number set on the main thread when the
+connection is created, return it with the offer or answer, send it with every state report, and drop
+reports whose number is not the peer's current one in the worker.
+
+## Runtime host worker teardown
+
+<a id="find-worker-drain-1-ekyjqv"></a>
+
+### FIND-WORKER-DRAIN-1-EKYJQV
+
+**Current defect:** A disposed Node.js runtime-host worker acknowledged its disposal but never
+exited, and the parent waited for its exit forever. The 2026-10-14 bot recurrence (no drain warning,
+one referenced `Timeout`, no listed handle) shows the worker stopped before the drain bound was
+armed. Cause found: `closeRootWorker` closed the listed handles in one `forEach`; a UDP socket its
+owner was already closing (werift's WebRTC ICE sockets in Node) throws on a second `close()`, the
+throw rejected `closeRootWorker` before the remaining closes and the deadline, and the disposing
+host root swallowed the report. `closeHandle` now absorbs that refusal, and the drain bound of
+[`REQ-RUNTIME-7-A2VAR0` (Bounded isolated-context teardown)](../specification/runtime/execution.md#req-runtime-7-a2var0)
+is now armed before any handle closes, with an unconditional exit. The bots' WebRTC use at the bust
+is inferred, not confirmed; the leaked referenced timer that then held the loop (likely werift's) is
+not removed and now ends at the drain bound with a warning.
+
+**Status:** _Resolved (2026-10-27)._ The hang is fixed and covered by
+[`REQ-RUNTIME-7-A2VAR0.T1.P1`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p1)
+to [`.P4`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p4) and
+[`.P7`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p7) to
+[`.P10`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p10). A disposal now ends
+within the drain bound even when a timer leaks. Residual: the leaked timer (likely werift's) is
+not identified, so each affected disposal waits out the drain bound and logs the warning that names
+it; the bot recheck was dropped.
+
+## Browser WebAssembly failures
+
+<a id="find-runtime-3-nwsn74"></a>
+
+### FIND-RUNTIME-3-NWSN74
+
+**Defect:** _Open (2026-10-26)._ Observed on a phone: a poker page stopped fatally with
+`RuntimeError: unreachable` in the prover's WebAssembly `__wbindgen_malloc`: an allocation in the
+prover's memory failed and the Rust code trapped. The root cause is not proven. The likely cause is
+WebAssembly address space or memory of the browser process: a 64-bit browser reserves about 10 GiB
+of address space for each 32-bit WebAssembly memory, from one pool for the whole renderer process,
+and a 32-bit browser must move a memory to grow it. Real memory pressure on the device and a defect
+in the prover are not ruled out.
+
+The SDK now records what it can
+([threadResources.ts](../implementation/source/src/utils/threadResources.ts.md)): a WebAssembly
+failure carries `wasmDiagnostics` (the thread's live and created instance and memory counts, its
+workers, its JavaScript heap, a one-time memory probe, and the device from client hints), taken in
+the thread that failed and kept across worker hops. These facts have limits: the counts are the
+failing thread's only, never the process total, and other threads and other tabs in the same
+renderer process share the pool unseen; the probe runs once per thread, after the failed
+allocation, and does not repeat that allocation, so a working probe does not rule out an
+out-of-memory failure. Relates to [`REQ-RUN-14-YAHYR4` (Mid-range mobile browser envelope)](../specification/runtime/execution.md#req-run-14-yahyr4)
+and [`OQ-38-EY27T5` (Runtime budgets, scheduling determinism, and test isolation)](../specification/open-questions.md#oq-38-ey27t5).
+
+**Disposition:** Open. Luka decided on 2026-10-26: add these diagnostics only; no change to the slot
+count, self-matching, or the number of instances. Exit: read the diagnostics of the next
+recurrence across all threads in its uploaded logs, then decide the fix.
+
+## Distributed test runner pool
+
+<a id="find-runner-pool-1-yk1ep9"></a>
+
+### FIND-RUNNER-POOL-1-YK1EP9
+
+**Current defect:** Intermittent: `test/scripts/e2eParallelMixedProtocolPool.test.ts` "waits out the
+discovery window for a 14 host that connects after the 13 host has finished its tasks" failed once
+in two full gates after the Hyperswarm 4.3.5 → 4.17.2 / hyperdht 6.34.1 upgrade of the runner
+transport (`scripts/e2e-parallel/distributed/poolTransport.js`). The late protocol-14 test worker
+opened a connection to the orchestrator twice, and on neither did it answer with `AUTH_CHALLENGE`,
+so it got no tasks. Not reproduced in about 140 stressed local runs; a slow announcement flush
+before the worker serves its connections was ruled out by timing (`createPool` resolves in about 5
+ms). That failure predates the worker rollout: the remote distributed workers then still ran their
+own runner checkout on Hyperswarm 4.3.5, while the orchestrator side ran 4.17.2. After the workers
+were updated to Hyperswarm 4.17 / hyperdht, one full gate passed all 3739 tests, this test included.
+Why the worker did not answer stays unexplained.
+
+**Status:** Open; low, for the unexplained missing `AUTH_CHALLENGE` only. Engineer decision (Luka,
+2026-10-12): left for now; recheck if it recurs on same-version workers.
+
+## Test harness controls
+
+<a id="find-harness-hold-1-9b480c"></a>
+
+### FIND-HARNESS-HOLD-1-9B480C
+
+**Current defect:** The join-signature hold control (`holdJoinSignatureResponses` in the stub
+harness service) is not released when the harness disposes. A test that holds a responder's answers
+and fails before its own release leaves that responder's join-signature handler wrapped and its held
+requests pending. The tests that use it release it in `finally`.
+
+**Status:** Open; low, test harness only. Direction: release every held join-signature answer and
+restore the real handler on harness disposal.
+
+## Turn notifications during synchronization
+
+<a id="find-sync-turn-1-770m18"></a>
+
+### FIND-SYNC-TURN-1-770M18
+
+**Current defect:** `onTurn` can fire for heights replayed during a sync: the installed base and
+each replayed tail block go through the commit path, which notifies the turn. With in-memory storage
+a resync replays history, so a runtime can be told of a turn it already played or that the replay
+fills; its submission then gets a stale coordinate and is dropped quietly. Relates to
+[`REQ-SYNC-3-1P5ZHT` (Suffix through the standard pipeline)](../specification/peer-communication/synchronization.md#req-sync-3-1p5zht).
+Engineer decision (Luka, 2026-10-12): left as is. With persisted storage a resync finishes early,
+and a turn notification means this runtime is next and has not produced that block yet; revisit when
+persistence is implemented.
+
+**Status:** Open; low.
+
+## Logical join retry lifetime
+
+<a id="find-join-retry-lifetime-1-447rde"></a>
+
+### FIND-JOIN-RETRY-LIFETIME-1-447RDE
+
+**Current defect:** _Implemented (2026-10-11)._ `ChannelJoinService.runJoin` marks the refused
+submission's record retrying before it reads whether a retry applies and keeps it so while the fresh
+collection runs (its timer is cancelled), and, after the collection, submits nothing when the
+runtime is disposed or the record is no longer current. Every join check re-reads that its record is
+current and not retrying after each awaited read, before it drops the membership, records an
+observation or arms a timer, so a check already past its entry guard also retires (review 8 RO1).
+Before, the refused attempt's deadline could end the join and emit `onLeftChannel` before a new
+funded submission. See
+[the owner report](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md)
+and
+[`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v).
+
+**Disposition:** Luka resolved XO1 on 2026-10-11 (one logical join). The mapped cases
+[`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P74`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md#unit-test-channel-join-service-1-bjkheb)–`.P77`
+and
+[`REQ-JOINSIG-1-8X1A4V.T1.P8`](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v.t1.p8)–`.P11`
+passed in the recorded full SDK gate. The RO1 retirement of already-running checks is implemented;
+its interleaving case is added in this pass, and its verification is pending the next gate. Review
+six FR1 is implemented separately (`checkJoinDropped`).
+
+## Membership-read ownership consolidation
+
+<a id="find-membership-read-owner-1-8826as"></a>
+
+### FIND-MEMBERSHIP-READ-OWNER-1-8826AS
+
+**Current gap:** _Resolved for implementation (2026-10-11)._ The accepted consolidation under
+[`REQ-SDK-ARCH-1-7H14H6` (Explicit ownership)](../specification/runtime/sdk.md#req-sdk-arch-1-7h14h6)
+is implemented:
+[MembershipService](../implementation/source/src/stateManager/membership/MembershipService.ts.md)
+owns `isSignerPendingInMirror` (local-only pending observation for the force-join counters),
+`isSignerPendingOnChain` (local-first pending lookup with chain confirmation on absence) and
+`isSignerOnChain` (direct-chain seated-plus-pending lookup).
+[ChannelJoinService](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md)
+and [EventHandler](../implementation/source/src/eventHandlers/EventHandler.ts.md) call them; the
+three policies stay distinct.
+
+**Disposition:** Luka accepted CY1 on 2026-10-11. No policy collapse, new caching or outage
+fallback. The callers' existing join, leave and event-handler cases passed in the recorded full SDK
+gate. The caller-boundary cases
+[`UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P70`](../implementation/source/src/stateManager/membership/MembershipService.ts.md#unit-test-membership-service-1-edfkzf)–`.P77`
+had no assigned evidence in that gate (review 7 TY1, review 8 DY1/TY7): `.P71`–`.P73` and `.P77` are
+now mapped to existing tests and `.P70`, `.P74`–`.P76` have new `MembershipService` cases;
+verification is pending the next gate.
+
+## Exit-post error classification
+
+<a id="find-exit-post-1-aqzzvf"></a>
+
+### FIND-EXIT-POST-1-AQZZVF
+
+**Current defect:** _Implemented (2026-10-11)._ `LeaveChannelService.postExitSnapshot` now splits
+exit-post errors: a chain refusal listed in `EXIT_POST_REFUSALS` is logged through the internal
+logger and the next finalized block posts again; any other error is rethrown as an unhandled
+rejection and is fatal for the runtime. The post stays tracked by its scheduled task, so disposal
+bounds its wait. Before, every error reached `TimeoutManager`, which used `console.error` and
+swallowed it, contrary to
+[`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9);
+see the
+[file report](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md).
+
+**Disposition:** Luka accepted review 5 FO1 on 2026-10-11. Verified:
+[`REQ-LIF-10-QR8NQ9.T1.P24`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p24) and
+[`REQ-LIF-10-QR8NQ9.T1.P25`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p25) are
+mapped to the refused and fatal exit-post cases, which passed in the recorded full SDK gate.
+
+## Sync reduction gas and failure attribution
+
+<a id="find-sync-reduction-gas-1-aje985"></a>
+
+### FIND-SYNC-REDUCTION-GAS-1-AJE985
+
+**Current defect:** A local sync reduction out-of-gas is classified as invalid served evidence and
+can blacklist its responder; end-to-end reduction gas sufficiency is not established by that
+classification.
+
+**Disposition:** Open; high. Luka explicitly deferred all remediation and related coverage outside
+PR #520 on 2026-10-07.
+
+**Confirmed by code inspection.** [SpectateService’s reduction catch](../../../src/rpc/network/services/spectate/SpectateService.ts#L363-L368)
+calls `rejectSync` for errors recognized by [isLocalEvmExecutionFailure](../../../src/utils/evmErrorHandler.ts#L90).
+That classifier accepts the same prefix which [ContractExecutor](../../../src/evm/contractExecutor/ContractExecutor.ts#L192)
+uses for EVM out-of-gas. The consequence is a peer accusation for a local execution failure.
+The [local gas grant](../../../src/evm/contractExecutor/ContractExecutor.ts#L43) is finite and funds each whole call;
+its transition replay requirement does not establish a bound on all reduction work, proof checks and state restoration.
+A local failure on a window the chain has not reduced is no verdict since
+[`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa); the verdict on a reduced window
+and the gas bound stay open.
+The local-mirror failure rule ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)) forbids turning local resource failures into verdicts.
+The sync failure rule ([`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)) separates invalid evidence from internal failures.
+
+**Evidence limit.** No valid served reduction was reproduced exhausting its local grant in this assessment,
+and no valid reduction was demonstrated to exceed an on-chain block gas limit. Local out-of-gas does not
+prove on-chain impossibility: the chain transaction can receive a different gas grant. Conversely, increasing
+the local grant or rethrowing the exception is not proof of successful on-chain replay. Existing
+[local EVM gas tests](../verification/tests/test/evm/InvalidStateTransitionError.test.ts.md) concern transition/call-frame
+failures, not a complete reduction admission-to-settlement guarantee.
+
+**Engineer disposition (Luka, 2026-10-07).** Address this later, not in PR #520. A valid reduction must be
+able to replay successfully on-chain; the follow-up must investigate the complete gas/liveness boundary,
+not merely change the blacklist catch. This is a scope deferral, not a claim that the risk is fixed or safe.
+No production behavior or gas configuration is changed for this finding in this PR.
+
+**Follow-up obligations.** Establish supported reduction/input bounds and measure the real reduction path
+against local execution grants and chain block/transaction limits. Reproduce local exhaustion with valid
+served evidence; verify failure without blaming an honest responder and recovery with sufficient gas.
+Demonstrate successful submission and settlement on-chain for the supported worst-case reduction, including
+proof verification and state restoration. If supported inputs cannot fit, have the engineer decide the
+protocol/admission remedy. Keep genuine invalid-evidence and executor/transport failure oracles distinct.
+The [SpectateService report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
+remains subject to this finding; the gas/liveness evidence is outstanding.
+
+## Retained proof evidence and installed history
+
+<a id="find-proof-persistence-1-hyc9ds"></a>
+
+### FIND-PROOF-PERSISTENCE-1-HYC9DS
+
+**Current defect:** Unexecuted retained support can contaminate installed history and produce
+unsupported replay accusations.
+
+**Disposition:** Open; high. Deferred by Luka to a follow-up PR; details and missing regressions
+below.
+
+**Open; high, with a potential honest-auditor slash. Engineer disposition (2026-10-06): defer the
+implementation and regression tests to a follow-up PR.** Luka requested that PR #519's SR1
+finding and its TO1/TO2 coverage gaps remain recorded here. This deferral does not resolve the
+finding, select a remedy, approve the remaining risk, or establish that the slash was executed.
+
+**Scope decision: all SR1 work is outside PR #519.** This includes the proposed replay-conflict
+guard, block-counter preflight, installed-head bound, evidence storage, proof rejection rules,
+and every related unit/E2E regression. Atomic sync persistence is resolved separately under
+[`FIND-STATE-1-0K7XMY`](open-findings.md#find-state-1-0k7xmy). Suggestions described as independent
+corrections are also deferred. The acceptance-rule decision belongs to the follow-up PR; it is
+not a pending question for this PR. See the [renewed SR1 review](https://github.com/peer3to/state-channels-plus/pull/519#discussion_r4192952809).
+
+Sources: [SR1](https://github.com/peer3to/state-channels-plus/pull/519#discussion_r4192733246),
+[audit coverage TO1](https://github.com/peer3to/state-channels-plus/pull/519#issuecomment-6011676218),
+and [sync coverage TO2](https://github.com/peer3to/state-channels-plus/pull/519#discussion_r4192733261).
+Static inspection of commit `fd35d7b983af52874c751bdd39079a67ea0b4ebd` supports the storage and
+counter path below. The complete adversarial audit, slash and responder-blacklist workflows
+have not been executed for this finding.
+
+**Mechanism.** A milestone's supporting blocks are checked for decoding, channel/fork, linkage,
+height and signatures; they are not executed by that walk. Only its first point is proven final,
+and only the last milestone's tail is replayed. Milestone first heights are ordered, but the
+runs do not have a cross-milestone identity check. An earlier anchored run can contain honest
+blocks 60–70 plus author-signed 71′, while a later milestone begins at the real final block 71.
+Both identities can therefore occur in a proof accepted by the current walk.
+
+[AgreementManager persistence](../../../src/agreementManager/AgreementManager.ts#L422) puts
+retained support into the coordinate block store. It compares candidates with existing storage,
+not with each other. Tail exclusion is by hash, so it covers identical repeated blocks only.
+[BlockStorage](../../../src/storage/BlockStorage.ts#L59) keeps the first different block at a
+coordinate and refuses the second. This can preserve 71′ while losing the real final 71.
+
+**Audit path.** Auditor A's view ends at v. Dispute X carries an earlier retained run with
+v+1′, signed by participant E rather than submitter D, and a later final point at or below v.
+X must otherwise satisfy admission and auditing checks, for example by contributing to an
+existing window. After X persists, honest Y replays the real v+1 by a different author W.
+[Conflict validation](../../../src/stateManager/ingest/ValidationService.ts#L449) can treat the
+stored, unexecuted v+1′ as proof that W's linked block is an invalid transition.
+[DisputeValidationStrategy](../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L95)
+then stores a wrapped block counter without preflighting its validity on chain.
+[The apply handler](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L33-L34)
+can slash the eligible sender when that counter fails. Reproduce all prerequisites and the
+actual chain verdict before claiming a demonstrated slash.
+
+**Sync path.** [Sync persistence precedes tail replay](../../../src/rpc/network/services/spectate/SpectateService.ts#L556).
+Retained support may advance the installed view, including when an earlier run extends beyond
+the last run. A later rejection does not roll back prior persistence. A subsequent honest
+response can collide with the stored support, producing `payload persistence aborted` and
+blacklisting its responder. The pending-participant path also reaches live conflict handling.
+
+**Owning requirements and implementation.** This affects
+[`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../specification/disputes/state-proofs.md#req-sp-10-jmvhtb),
+[AgreementManager](../implementation/source/src/agreementManager/AgreementManager.ts.md),
+[dispute validation](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md),
+and [spectating](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md).
+Retaining reconstruction evidence must not by itself establish executed history or an invalid
+transition. The current reports and passing suite do not certify that separation.
+
+**Follow-up direction, not an accepted design.** Keep retained evidence separate from executed
+history, preserve signatures needed for reconstruction, bound the installed head by the proven
+endpoint, and verify block counters before an auditor can submit them. Decide whether a
+contract-valid proof with different signed identities at one height is rejected by sync or
+accepted with separate evidence storage; the current plan does not select that extra rejection
+rule. Sync now detects proof conflicts before any write and stores its history in the same synchronous
+step as its install ([`FIND-STATE-1-0K7XMY`](open-findings.md#find-state-1-0k7xmy)); a later tail-replay failure
+still keeps that history, so all-or-nothing persistence across replay stays a proposal. Evaluate it
+against incremental replay and existing evidence retention before choosing the implementation. No contract validity change or rollback policy is selected here.
+
+**Required follow-up regressions (not implemented or credited):**
+
+- Through `validateDispute`, audit X then honest Y at the chain tier with a view ending at v.
+  Require Y to remain valid, no unsupported counter for Y, and no unexecuted conflicting block
+  occupying Y's executed-history coordinate. Include both audit persistence orders where relevant.
+- In one real dispute window with a lagging auditor, require no false kill against Y and no
+  auditor slash. Verify actual submitted counters and chain outcomes.
+- Supply one walk-valid proof containing different, validly signed blocks at one height.
+  Apply the chosen acceptance rule without first-wins history poisoning; if rejecting, write neither.
+- Sync an earlier support run extending beyond the last run; the installed head must equal the
+  proven endpoint. Retained evidence must still allow required reconstruction.
+- Apply a poisoned sync response, then an honest response from a different responder. The
+  honest response must succeed without blacklisting that responder because of poisoned storage.
+- Keep controls for identical overlapping blocks with complementary signatures, virtual finality,
+  membership-change reconstruction, genuine invalid transitions and existing finalized conflicts.
+
+[U63](../../../test/unit/DisputeReplayPersistence.test.ts#L323) repeats an identical failing tail;
+[U123](../../../test/unit/SyncReconstruction.test.ts#L573) tampers bytes under the same author's
+signature; [FR1](../../../test/unit/DisputeAuditTiers.test.ts#L47) tests conflicting final points.
+These do not cover the distinct authenticated, unexecuted-support cases above. Closing this
+finding requires the source fix, exact unit/E2E evidence, and updated specification and mappings.
+
+## Atomic state updates across the VM and storage
+
+<a id="find-state-2-4bh3y1"></a>
+
+### FIND-STATE-2-4BH3Y1
+
+**Current defect:** A state update is not atomic across the local VM and storage. Tasks outside the
+state mutex can read the new VM state together with the old fork.
+
+**Disposition:** Open (2026-10-08). Luka deferred the design; no remedy is selected.
+
+**Confirmed by code inspection.** [StateApplicationService.prepare](../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L128)
+writes the new state into the VM ([L132](../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L132)) and then awaits
+VM reads and two chain reads ([L134](../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L134),
+[L136](../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L136)). Storage, `forkId` and status change only later, in the
+synchronous [commit](../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L151). The state mutex orders the writers,
+and the synchronous commit makes storage, fork and status change together. Neither covers the VM. In that window, readers that do not hold
+the mutex check the old fork and then read the new VM state:
+[ParticipantTimeoutService](../../../src/stateManager/chainFallback/ParticipantTimeoutService.ts#L61-L66),
+[EventHandler.onChainSlashed](../../../src/eventHandlers/EventHandler.ts#L678-L690),
+[LeaveChannelService.startCommittedLeave](../../../src/stateManager/membership/LeaveChannelService.ts#L232) and
+[MembershipService.armForceJoinDeadline](../../../src/stateManager/membership/MembershipService.ts#L435-L436).
+When `persistHistory` refuses the install, the VM is restored, but those readers may already have acted on a state that was never installed.
+Block commit has the same order: the VM holds the block's result before
+[BlockCommitService](../../../src/stateManager/block/BlockCommitService.ts#L49-L87) stores its snapshot and block.
+The [doc comment of unsafeSetLatestState](../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L40-L50) now says
+that the VM already holds the new state during prepare, while storage, fork and status do not change yet.
+
+**Relation to [`FIND-STATE-1-0K7XMY`](open-findings.md#find-state-1-0k7xmy).** Its resolved sync part makes storage, fork and status
+change together. It does not make the VM change together with them.
+
+**Async storage.** The current atomicity of storage, fork and status depends on synchronous storage: `persistHistory()` and `commit()` run
+with no await between them. Once storage becomes async, that step can interleave with other tasks, and a crash can leave part of the
+writes persisted.
+
+**Engineer disposition (Luka, 2026-10-08).** Record the defect and defer the design. Concurrency must be kept: making the readers
+take the state mutex is rejected.
+
+**Follow-up obligations.** Define one way to update state atomically across the VM and storage. It must support async storage, and it must
+keep reads concurrent. A task that meets an update in progress must wait until the update resolves, then see either the whole old state or
+the whole new state. A refused or failed update must not be observable. Persisted writes of one update must be atomic on crash. Cover state
+install, reduction genesis and block commit. Prove each with a regression in which a reader runs during the update and during its rollback.
+
 ## Codex Security reassessment
 
-The [current Codex Security reassessment](./codex-security-triage.md) checks the 7 protocol findings of the supplied scan against `dispute` at `9dc243769`: **6 confirmed, 1 fixed**. This is static evidence, not runtime validation or engineer approval. The report includes exact paths, preconditions, counterevidence and proposed fix/test handoffs. The scan's 5 developer-tooling findings are tracked in the tooling's own documentation, as the report lists.
+The [current Codex Security reassessment](./codex-security-triage.md) checks the 7 protocol findings of the supplied scan against `dispute` at `9dc243769`: **6 confirmed, 1 fixed**. Four of the confirmed findings have since been fixed: [`FIND-SECURITY-1-6SAJ4E`](open-findings.md#find-security-1-6saj4e), [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v), [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz) and [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx); [`FIND-SECURITY-3-REDPJW`](open-findings.md#find-security-3-redpjw) and [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) remain confirmed. This is static evidence, not runtime validation or engineer approval. The report includes exact paths, preconditions, counterevidence and proposed fix/test handoffs. The scan's 5 developer-tooling findings are tracked in the tooling's own documentation, as the report lists.
 
 **Engineer decision (2026-09-30):** publish this assessment now, with no fixes in the change that adds it. Each finding below stays open until its fix and regression test land.
 
-| ID                                                          | Current defect                                                                                            | Proposed direction and handoff                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <a id="find-security-1-6saj4e"></a>`FIND-SECURITY-1-6SAJ4E` | **Open; high.** A zero proof target lets outsiders kill honest disputes.                                  | [Evidence and proposed fix](./codex-security-triage.md#zero-verdict). Engineer review pending; preserve the report's prerequisites and proof gaps. Owed regression: [`REQ-DIS-3-C4KYSF.T1.P22`](../specification/disputes/disputes.md#req-dis-3-c4kysf.t1.p22).                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| <a id="find-security-2-j3j60v"></a>`FIND-SECURITY-2-J3J60V` | **Open; high.** Unlinked previous-state input can falsely slash an honest signer.                         | [Evidence and proposed fix](./codex-security-triage.md#unbound-snapshot). Engineer review pending; preserve the report's prerequisites and proof gaps. Owed regression: [`INV-ENFFP-1-BGVZN4.T1.P12`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p12), [`INV-ENFFP-1-BGVZN4.T1.P13`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p13), [`INV-ENFFP-1-BGVZN4.T1.P15`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p15).                                                                                                                                                                                                                                   |
-| <a id="find-security-3-redpjw"></a>`FIND-SECURITY-3-REDPJW` | **Open; high.** Pruned genuine inbound history can falsely slash honest authors.                          | [Evidence and proposed fix](./codex-security-triage.md#pruned-inbound). Engineer review pending; preserve the report's prerequisites and proof gaps. Owed regression: [`INV-ENFFP-1-BGVZN4.T1.P14`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p14).                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| <a id="find-security-4-02dywz"></a>`FIND-SECURITY-4-02DYWZ` | **Open; medium.** Expired opening signatures still authorize channel creation.                            | [Evidence and proposed fix](./codex-security-triage.md#open-deadline). Engineer review pending; preserve the report's prerequisites and proof gaps. No requirement owns the rule yet, so no regression permutation is planned: [`OQ-SPEC-OPEN-1-12RH7A`](../specification/open-questions.md#oq-spec-open-1-12rh7a).                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| <a id="find-security-5-1kp5yx"></a>`FIND-SECURITY-5-1KP5YX` | **Open; high.** Peer sync can make an honest node sign fabricated inbound data.                           | [Evidence and proposed fix](./codex-security-triage.md#sync-inbound). Engineer review pending; preserve the report's prerequisites and proof gaps. Owed regression: [`INV-SYNC-1-XCQZ28.T1.P11`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p11).                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| <a id="find-security-6-884taj"></a>`FIND-SECURITY-6-884TAJ` | **Resolved (2026-10-03); high.** Peer sync could replace genesis time and induce a slashable first block. | [Evidence and fix](./codex-security-triage.md#sync-genesis-time). Done: `applySyncResponse` binds the genesis timestamp before persistence, to the step-1 chain genesis on the same fork and to the origin window's chain-expired kill-period end for a successor fork; a mismatch rejects as "genesis timestamp mismatch". Past genesis on chain no value authenticates it: sync keeps a held genesis, the rest is [`FIND-FRAUD-1-TRWDPS`](open-findings.md#find-fraud-1-trwdps). Mapped regressions: [`INV-SYNC-1-XCQZ28.T1.P12`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p12), [`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13). |
+<a id="find-security-1-6saj4e"></a>
+
+### FIND-SECURITY-1-6SAJ4E
+
+**Current defect:** **Resolved (2026-10-02); high.** A zero proof target let outsiders kill honest
+disputes.
+
+**Proposed direction and handoff:** [Evidence and fix](./codex-security-triage.md#zero-verdict).
+Done: `applyDisputeFraudProofs` kills only on a nonzero verdict equal to the declared participant
+([DisputeFraudProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md)
+decision 3); a zero-target failing proof leaves the dispute committed and slashes an eligible
+submitter. Regressions:
+[`REQ-DIS-3-C4KYSF.T1.P22`](../specification/disputes/disputes.md#req-dis-3-c4kysf.t1.p22) (Forge),
+[`REQ-DIS-3-C4KYSF.T1.P19`](../specification/disputes/disputes.md#req-dis-3-c4kysf.t1.p19) (E2E).
+
+<a id="find-security-2-j3j60v"></a>
+
+### FIND-SECURITY-2-J3J60V
+
+**Current defect:** **Resolved (2026-10-02); high.** Unlinked previous-state input could falsely
+slash an honest signer. `_handleBlockInvalidStateTransition` now binds the previous snapshot to the
+signed block before it judges the snapshot's fork
+([FraudProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol.md)
+decision 4); an unlinked snapshot is an invalid proof that slashes only an eligible submitter, and a
+linked snapshot on another fork still slashes the signer. The replay also rebuilds the snapshot as
+clients do (parent `originForkId`, first block at height 0, decision 5), so genuine predecessor data
+never slashes an honest signer either. Regression:
+[`INV-ENFFP-1-BGVZN4.T1.P12`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p12),
+[`INV-ENFFP-1-BGVZN4.T1.P13`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p13),
+[`INV-ENFFP-1-BGVZN4.T1.P15`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p15),
+[`INV-ENFFP-1-BGVZN4.T1.P16`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p16).
+
+**Proposed direction and handoff:** [Evidence and fix](./codex-security-triage.md#unbound-snapshot).
+
+<a id="find-security-3-redpjw"></a>
+
+### FIND-SECURITY-3-REDPJW
+
+**Current defect:** **Open; high.** Pruned genuine inbound history can falsely slash honest authors.
+
+**Proposed direction and handoff:**
+[Evidence and proposed fix](./codex-security-triage.md#pruned-inbound). Engineer review pending;
+preserve the report's prerequisites and proof gaps. Owed regression:
+[`INV-ENFFP-1-BGVZN4.T1.P14`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p14).
+
+<a id="find-security-4-02dywz"></a>
+
+### FIND-SECURITY-4-02DYWZ
+
+**Current defect:** **Resolved (2026-10-05); medium.** Expired opening signatures could still
+authorize channel creation.
+
+**Proposed direction and handoff:** [Evidence and fix](./codex-security-triage.md#open-deadline).
+Done: `open` rejects terms past their deadline (valid up to and including it, the join boundary)
+with `RaceConditionOpenChannelExpired`, before any deposit or state change, per the engineer
+decision on
+[`OQ-SPEC-OPEN-1-12RH7A` (On-chain enforcement of the opening deadline)](../specification/open-questions.md#oq-spec-open-1-12rh7a)
+and requirement
+[`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f).
+Regressions:
+[`REQ-ENFADM-4-2NN96F.T1.P1`](../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p1)–[`REQ-ENFADM-4-2NN96F.T1.P3`](../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p3)
+direct open,
+[`REQ-ENFADM-4-2NN96F.T1.P4`](../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p4)
+retained signatures after SDK expiry. Engineer review pending.
+
+<a id="find-security-5-1kp5yx"></a>
+
+### FIND-SECURITY-5-1KP5YX
+
+**Current defect:** **Resolved (2026-10-05); high.** Peer sync could make an honest node sign
+fabricated inbound data.
+
+**Proposed direction and handoff:** [Evidence and fix](./codex-security-triage.md#sync-inbound).
+Done: `applySyncResponse` persists a dispute window's inbound blocks only when that sync's own local
+`reduceAndFinalize` call executed the reduction. No other window persists the list: one final on
+chain at the finality read persists none of its reduction inputs, and one reduced on chain between
+that read and the window fetch, or one a concurrent sync already reduced locally, persists an empty
+list. The genuine blocks arrive through chain events and chain-log recovery. The same change rejects
+a window whose disputes name another fork or channel, which let the local reduce return early and
+the sync adopt an unchecked successor fork
+([`INV-SYNC-1-XCQZ28.T1.P15`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p15)).
+The other reduction inputs followed under [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf). Engineer review
+pending. Mapped regressions:
+[`INV-SYNC-1-XCQZ28.T1.P11`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p11),
+[`INV-SYNC-1-XCQZ28.T1.P14`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p14).
+
+<a id="find-security-6-884taj"></a>
+
+### FIND-SECURITY-6-884TAJ
+
+**Current defect:** **Partially resolved (2026-10-03); high.** `applySyncResponse` binds the
+genesis timestamp before persistence, to the step-1 chain genesis on the same fork and to the
+origin window's chain-expired kill-period end for a successor fork; a mismatch rejects as "genesis
+timestamp mismatch". Past genesis on chain no value authenticates it: sync keeps a held genesis, the
+rest is [`FIND-FRAUD-1-TRWDPS`](open-findings.md#find-fraud-1-trwdps). Still open: the same unverified timestamp can also arrive as
+the `latestStateSnapshot` of a genesis-case window (its disputes carry no block) that the sync
+reduces itself: that reduction pins only the snapshot data, so the stored snapshot can overwrite
+`genesisSnapshotByForkId` (handed over from
+[`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf); code-traced, not executed).
+
+**Proposed direction and handoff:**
+[Evidence and fix](./codex-security-triage.md#sync-genesis-time). Engineer review pending for the
+genesis-case window path; preserve the report's prerequisites and proof gaps. Mapped regressions:
+[`INV-SYNC-1-XCQZ28.T1.P12`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p12),
+[`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13).
+
+## No relayer or RPC node available
+
+<a id="find-no-endpoint-1-jfsvs6"></a>
+
+### FIND-NO-ENDPOINT-1-JFSVS6
+
+**Defect:** _Open (2026-10-28, engineer decision recorded; not implemented)._ When no endpoint of a
+kind is available, the SDK only logs and waits. Relay: when every Holepunch relayer failed since the
+last success, `RelayerPool.scheduleRetryAfterExhaustion`
+([RelayerPool.ts](../implementation/source/src/transport/relay/RelayerPool.ts.md)) warns "All
+holepunch relayers failed, retrying pool after backoff", clears the exclusions and retries after a
+jittered exponential backoff (1 s base, 30 s cap) without end; with no relayer configured,
+`HolepunchRelay.connectToRelayer` warns once and stays idle. RPC: when every node lost its socket,
+`MultiRpcProvider.onNodeLost`
+([MultiRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md))
+warns once per outage, and every request waits in `waitForConnectedNode` for the first node to
+reconnect; `forward` throws ("no RPC node is connected and none reconnects") only after
+`stopReconnecting` or `destroy`. Relates to
+[`REQ-UPG-5-YQV7MJ` (Relay retries converge without stale work)](../specification/peer-communication/transport-upgrade.md#req-upg-5-yqv7mj)
+and [`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3).
+
+**Engineer decision (Luka, 2026-10-28):** when no Holepunch relayer is available (the pool is
+exhausted, every relayer failed) and when no RPC node is available in `MultiRpcProvider` (every node
+down), the SDK throws a fatal error instead of only logging and retrying or waiting.
+
+**Open design point:** a transient outage of every endpoint, for example right after a mobile
+resume while the sockets reopen, would then be fatal. The exact trigger is not decided: an empty
+configuration only, an endpoint set that never reconnects, a time bound on the outage, or at once on
+exhaustion. The specification requirements above change with the chosen trigger.
+
+**Logging until then:** the components should log every relevant fact (URL, reason, attempt count,
+backoff). Gaps seen in the code:
+
+1. `RelayerPool.onFailure` logs the URL, the reason and the excluded count, but not the retry delay
+   it schedules (failover jitter) or the current backoff attempt.
+2. `RelayerPool.scheduleRetryAfterExhaustion` logs the delay, the capped backoff and the URLs, but
+   not the backoff attempt number and not the failure reason of each relayer in the round.
+3. `MultiRpcProvider.onNodeLost` logs only the node hosts: not the last failure reason of each
+   node, the number of requests that wait, or when the outage started. Nothing logs the outage
+   end or its duration at the provider level (each node logs only its own reconnect).
+4. `RpcNodeProvider.logFailedAttempt` logs the host, the attempt count and the error, but not the
+   delay of the next attempt that `scheduleReconnect` picks; later attempts are logged at most once a
+   minute at warn level, the rest at debug level.
+
+**Disposition:** Open; engineer decision on the trigger needed before implementation.
 
 ## Implementation defects with a proposed direction
 
@@ -28,79 +686,1996 @@ Distinct from open questions: for these, the finding is verified in code and a r
 direction exists, but the direction still needs engineer confirmation before implementation.
 Each should become a normal fix + test once confirmed.
 
-| ID                                                                    | Defect                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Proposed direction                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="find-fraud-1-trwdps"></a>`FIND-FRAUD-1-TRWDPS`                 | _Open (2026-10-03)._ An honest peer files a WrongGenesis proof that cannot succeed, and is slashed for it, when a block 0 is judged on a fork whose on-chain snapshot is already past genesis. `_handleWrongGenesis` returns invalid for that fork (contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:295-297) and `applyFraudProofs` slashes the submitter of an invalid proof (FraudProofFacet.sol:19-25). A block 0 still reaches validation after a sync that persisted only history above the anchor: the queue lets stored heights through for double-sign detection, and `isLinked` then compares it with the stored genesis (src/stateManager/ingest/ValidationService.ts:412-418). Triggers: a genuinely wrong late block 0, or an honest block 0 judged against a genesis whose timestamp a sync responder altered while the chain was past genesis (the residual of [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj)). Also unverified: a forged genesis timestamp as the block-timestamp floor in `BlockProductionService.adjustTimestampIfNeeded` when that fork has no stored block. Code-traced, not executed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Stop judging WrongGenesis for a block 0 once the chain snapshot on its fork is past genesis. Engineer choices: WrongGenesis only or any stale block; a guard in `wrongGenesisDetected` or a new strategy deviation on all strategies; dispute or disconnect at all; the lag of the event-fed local view (preflight through the local diamond); keying stored fraud proofs by fork.                                                                                                                                                                                                                                                                                                                                            |
-| <a id="find-root-disposal-1-1zdqaw"></a>`FIND-ROOT-DISPOSAL-1-1ZDQAW` | _Open (2026-09-29, engineer: deferred)._ Root disposal, the cascade to child roots, and the races around them are handled piecemeal in each component instead of in one place, so every component that owns or uses child roots has to reason about lifecycle ordering itself. Current instances: [`AInternalRpcRoot.disposeRoot`](../implementation/source/src/rpc/internal/AInternalRpcRoot.ts.md) orders an optional `prepare` step, child disposal, local cleanup and a bounded in-flight reply drain (`IN_FLIGHT_REPLY_DRAIN_MS`). [`ContractExecutorService`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md) adds its own admission gate, a per-caller settle-once latch and a second bounded drain (the same constant), plugged in through `prepare`, because its in-flight EVM work can call into its own children (custom precompile roots). [`createRoot`](../implementation/source/src/rpc/internal/createRoot.ts.md) chains hidden-parent cleanup after child cleanup for parentless workers. `StateManager.stop` orders custom-RPC disposal, the timeout-manager drain and queue disposal by hand, and [`InitHandshakeService`](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md) settles its own waits at shutdown. Consumers repeat the same pattern: poker's `PokerAutomation`, `PokerProofService` and `HardhatVerifierOwner` each memoize a disposal promise, await an in-flight child creation, catch its failure and dispose the handle. Each piece is correct and tested, but the rules (stop new work, drain what uses children, bound the wait, dispose children, share one completion, tolerate a creation still in flight) are spread across components and re-implemented per owner. | Centralize root lifecycle in the root infrastructure so components do not coordinate it themselves. A root or service declares which work may use its children, and the infrastructure alone owns: admission closing, draining admitted work before child disposal with one bound, rejecting callers still waiting at the bound, creations still in flight during disposal, the cascade and its error propagation, and shared repeated-disposal completion. Remove the per-component copies (the executor admission latch, the consumer creation and disposal promises) once the central mechanism covers them. Needs its own plan; no behavior change is intended, so the existing lifecycle tests are the regression suite. |
+<a id="find-fraud-1-trwdps"></a>
 
-| ID                                                            | Defect                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Proposed direction                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="def-1-92ntag"></a>DEF-1-92NTAG                         | `open()` does not check `participants.length == balances.length` (out-of-bounds or silently ignored extras) and accepts `address(0)` participants.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Add explicit length and nonzero-address requires.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| <a id="def-2-shqr0a"></a>DEF-2-SHQR0A                         | `OutboundMessagesProcessed` is emitted by [`StateSnapshotFacet`](../implementation/views/architecture/contracts/manager-and-facets.md) but absent from the SDK's dispatched-event set — local withdrawal accounting can go stale.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Dispatch it idempotently, or document that `WithdrawalsUpdated` fully substitutes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| <a id="def-3-1xwq30"></a>DEF-3-1XWQ30                         | `LocalDiamond.onChannelOpened` builds the genesis inbound message block in memory and never persists it — the local mirror diverges from the production `open` path.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Persist it (or delete the dead code deliberately).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| <a id="def-4-qb3kqm"></a>DEF-4-QB3KQM                         | _Withdrawn (2026-08-10)._ The original claim — that the deploy helper's `?? 0` produces zero-length dispute windows — was false: the proxy constructor ([`StateChannelManagerProxy.sol`](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol) L54–58) maps every `0` argument to a nonzero default (15/5/30/30 s), so `0` is a deliberate "use default" sentinel ([`manager-and-facets.md` §3](../implementation/views/architecture/contracts/manager-and-facets.md)). The real residual concern is tracked in [`OQ-8-PEYAAQ`](../specification/open-questions.md#oq-8-peyaaq): those defaults are unvalidated development values still needing target-chain analysis before production. No deploy-time change is warranted.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| <a id="def-5-e8tp9n"></a>DEF-5-E8TP9N                         | _Accepted disposition (2026-08-31)._ Initial observer sync is now an explicit one-selected-peer channel-cooperation precondition. Silence, disconnect, timeout, invalid data, or protocol-breaking data blacklists that selected peer locally, aborts and disposes the uncommitted runtime, and never probes a fallback. One valid response is enough to establish enforceable local state; probing another peer cannot prove later threshold cooperation. Pending and participating runtimes instead preserve channel attachment and punish only the offending peer. _Scope note (2026-09-02):_ the lobby accepted-lease exclusion approved under [`REQ-SEC-3-NPPJN5`](security-assessment.md#req-sec-3-nppjn5) is outside this finding; other availability or local-fault blacklist paths stay open except sync timeout and transport-failure liability, retained by the owner on 2026-09-07 under the assumption that honest peers observe the same reality within agreementTime. This is a protocol assumption, not a measured universal execution bound. _Scope note (2026-09-16):_ the explicit disconnect-policy pass narrowed this family on the negotiation side — a burned opening window, a match into an already open channel, and a failed opening receipt no longer exclude the peer. _Scope note (2026-09-18):_ the owner moved the two retained timeout sites (sync request failure and dispute-acknowledgement silence or refusal) onto the counted close of the disconnect ladder: one strike per failure against one per-peer bound, suspension for the session at the bound, and never a recorded verdict. The handshake exchange still excludes an anonymous transport on malformed input, an invalid signature, or a duplicate acknowledgement, and the suspension reached at the bound still conflates a persistently unavailable honest peer with a refusing one, so that part of the finding stays open.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | No further implementation change in this scope. Keep the accepted availability classification and possible asymmetric or mutual local blacklisting explicit in synchronization and targeted-join evidence.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| <a id="def-6-b4zn7s"></a>DEF-6-B4ZN7S                         | _Resolved (2026-08-31)._ `MembershipService.joinChannel` now waits for a successful transaction receipt before setting `PENDING_PARTICIPANT`; a reverted uncommitted receipt aborts and disposes rather than leaving false pending state. Later block inclusion promotes pending to participating but does not gate the completed connect result.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | No further action for the pre-transaction promotion defect. Reorg, forced-inclusion, and later exit policy remain under their existing settlement owners.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| <a id="def-7-pk564b"></a>DEF-7-PK564B                         | _Resolved (2026-08-17)._ RPC dispatch previously accepted every callable prototype-inherited name. [`ANetworkRpcService`](../implementation/source/src/rpc/network/ANetworkRpcService.ts.md) now resolves function-valued own data properties only before `ANetworkRpcMethods.prototype` or `Object.prototype`, preserving application endpoint inheritance while rejecting RPC-base/Object-base names, accessors, non-functions, and `constructor`; authorization captures the function before invocation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | No further action. The component and authenticated-peer E2E suites cover valid inherited application endpoints, rejected base names with and without the local RPC base, accessor non-execution, capture-once behavior, disconnect, and bystander isolation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| <a id="def-8-hwj10n"></a>DEF-8-HWJ10N                         | _Resolved (2026-08-17)._ `ANetworkRpcService` now separates handler evaluation from response delivery. Handler and guard responses make one guarded send attempt; a send failure is logged and disconnects the transport without a second send or unhandled rejection ([sdk/rpc/README.md](../implementation/views/architecture/sdk/rpc/README.md) §6.4).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | No further action. Exact component cases cover handler-response and guard-rejection send failure, including one attempt, one disconnect, and no unhandled rejection.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| <a id="def-9-724sxp"></a>DEF-9-724SXP                         | Block ingest wraps everything in try/catch → `false` → disconnect+blacklist the sender, so a _local_ chain-provider failure (kill-period read in `maybeScheduleForkRecovery`) blacklists an honest gossiper for our own infrastructure fault ([sdk/rpc/state-transition.md](../implementation/views/architecture/sdk/rpc/state-transition.md) §4.1). _Scope note (2026-09-02):_ the lobby accepted-lease exclusion approved under [`REQ-SEC-3-NPPJN5`](security-assessment.md#req-sec-3-nppjn5) is outside this finding; other availability or local-fault blacklist paths stay open except sync timeout and transport-failure liability, retained by the owner on 2026-09-07 under the assumption that honest peers observe the same reality within agreementTime. This is a protocol assumption, not a measured universal execution bound. _Scope note (2026-09-16):_ one instance closed: an ordinary opening receipt that fails on this node's own chain provider no longer blacklists the counterparty; it closes with reconnect allowed and no strike. _Scope note (2026-09-18):_ a sync request that fails and a dispute acknowledgement that never arrives now take a counted close rather than a verdict, so a local outage during those requests costs the peer one retry, not its identity. Block ingest is unchanged, so the finding stays open.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Partition input faults from local faults; never penalize a peer for a local error.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| <a id="def-10-199c7f"></a>DEF-10-199C7F                       | _Partially resolved (2026-08-31)._ An `OPENED` responder that has not applied genesis/state now retains one initial-load request per authenticated address behind `DeferredAdmissionGuard`, waits up to two local agreement windows for `onSetState`, and then uses the ordinary payload path. A duplicate from that address is rejected without replacing the first. Exact block/fork recovery remains a separate one-window already-synced request and an unprovable target keeps the existing punishment rule. _Scope note (2026-09-02):_ the lobby accepted-lease exclusion approved under [`REQ-SEC-3-NPPJN5`](security-assessment.md#req-sec-3-nppjn5) is outside this finding; other availability or local-fault blacklist paths stay open except sync timeout and transport-failure liability, retained by the owner on 2026-09-07 under the assumption that honest peers observe the same reality within agreementTime. This is a protocol assumption, not a measured universal execution bound.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | The weaponizable initial-readiness case is closed. The remaining exact-recovery classification is accepted by the current protocol and must stay visible in security review.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| <a id="def-11-jn8n6h"></a>DEF-11-JN8N6H                       | `WebRTCSetupService` passes attacker-supplied ICE candidates to the stack unfiltered, letting an authenticated peer induce STUN/connectivity traffic toward arbitrary third-party hosts (reflection primitive) ([sdk/rpc/webrtc-setup.md](../implementation/views/architecture/sdk/rpc/webrtc-setup.md) §4.2).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Filter candidate targets, or accept as residual under the central rate limiter ([`OQ-6-4JPNE5`](../specification/open-questions.md#oq-6-4jpne5)) with rationale.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| <a id="def-12-mwvy26"></a>DEF-12-MWVY26                       | _Resolved (2026-08-29)._ Open-channel term exchange now accepts only a non-negative safe integer amount. Invalid numeric values fail before proposal construction, blacklist the committed peer as a protocol violation, clear the derived channel ID, and restore discovery.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | No further action. The worker-hosted component case covers a non-finite value through the public service boundary and checks the full cleanup result.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| <a id="find-state-1-0k7xmy"></a>`FIND-STATE-1-0K7XMY`         | Partially addressed. [StateApplicationService](../implementation/source/src/stateManager/snapshotUpdate/StateApplicationService.ts.md) now performs derived reads before publishing general snapshot storage/fork/eligibility and restores the prior VM state on inspection failure. Reduction preparation retains its existing abort/cancellation policy. [EvmDiamondStateMachine.peekNextToWrite](../implementation/source/src/evm/EvmDiamondStateMachine.ts.md) still lacks a finally-based restoration boundary; ordinary sync also has separately persisted history.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Keep the remaining peek and broader atomicity questions open. The same-fork failure and staged-cache tests prove only the repaired application boundary. They do not establish transaction-wide sync rollback or retract views served during temporary VM preparation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| <a id="find-leave-3-xzbajq"></a>FIND-LEAVE-3-XZBAJQ           | _Resolved (2026-09-15)._ In the gap between a dispute window's evidence-period end and its kill-period end (a late contribution moves the kill period past the evidence period), an exit post is refused by the disputed-fork refusal ([`REQ-ENFSNAP-4-ESP98F`](../specification/enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f)), and the self-removal fallback that [`MembershipService.startMaybeExitOnChain`](../implementation/source/src/stateManager/membership/MembershipService.ts.md) starts is refused with `RaceConditionDisputeEvidencePeriodExpired`, which the chain raises only for a window that already holds commitments. [`LeaveChannelService.onExitFallbackFailed`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md) now moves the leave to `awaiting-settlement` on that refusal, as [`REQ-LIF-10-QR8NQ9.T1.P8`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p8) and [`REQ-LIF-10-QR8NQ9.T1.P10`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p10) specify: the window's reduction resolves the leave when the reduced state drops the leaver, or re-arms it on the successor fork when an unsigned exit left the leaver in place. Other fallback errors still reject, and the watchdog fallback is unchanged. Before, the leave rejected while the window still reduced: the runtime kept the rejected operation, was never disposed, and join, top-up and lobby work stayed blocked.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | None — fixed with runtime-port cases that inject the refusal at the fallback send: the signed exit settles through a committed self-removal and resolves with the leaver dropped from the reduced state; the unsigned exit stays awaiting settlement. No test stages the exact gap on a live chain.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| <a id="find-leave-4-wdh0xc"></a>FIND-LEAVE-4-WDH0XC           | _Open (2026-09-15)._ The terminal-leave watchdog fallback still rejects the leave on `RaceConditionDisputeEvidencePeriodExpired`. `LeaveChannelService.armWatchdog` (src/stateManager/membership/LeaveChannelService.ts:236-247) starts the self-removal dispute directly after `LEAVE_CHANNEL_WATCHDOG_MS`; when the chain refuses it because the window already holds commitments and its evidence period ended, `fail` rejects the operation, as [`REQ-TJOIN-7-NNGTAY.T1.P10`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p10) and [`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P14`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9.p14) specify. The window still reduces, so the same settlement argument that resolved [`FIND-LEAVE-3-XZBAJQ`](open-findings.md#find-leave-3-xzbajq) applies; this path predates the disputed-fork refusal and was left out of that change. Code-traced, not executed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Follow-up: treat the watchdog fallback's evidence-expired refusal as awaiting settlement, like the authored exit fallback, and rewrite [`REQ-TJOIN-7-NNGTAY.T1.P10`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p10) and `CX6QH9.P14` with it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| <a id="find-leave-2-yvr0tt"></a>FIND-LEAVE-2-YVR0TT           | _Resolved (2026-09-05)._ The slash came from a signature the leaver added after its dispute started; [`REQ-DISPUTE-PIPE-8-BVR8XV`](../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv) orders admitted signing and storage before setting the single dispute marker, then closes new signing, so the fallback dispute stays the leaver's latest state and is accepted (the self-removal suite covers both a later block and an already-pending incoming signature). Original finding: An honest leaver can be slashed by its own exit fallback. [`MembershipService.startMaybeExitOnChain`](../implementation/source/src/stateManager/membership/MembershipService.ts.md) posts the leave block's snapshot one agreement window after the leave. When an inbound block lands on chain between the leave block and that post, the chain refuses the post with `RaceConditionPendingInboundNotConsumed` (the leave block's snapshot cannot consume an inbound block that did not exist yet), and the fallback raises a self-removal dispute built on the leave block's state. The remaining participants have consumed that inbound block by then, so they audit the dispute as not the latest state, kill it, and the honest leaver is slashed. Seen on the farm when a forced re-join of the leaver landed before its exit post; the case now orders the two, but the race is open to any inbound block, not only a re-join.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Decide the fallback for a refused exit post: refresh to the fork's latest state before disputing, or wait for the remaining participants' next snapshot post, which removes the leaver without a dispute. Add a unit permutation that lands an inbound block between the leave block and the exit post and asserts the leaver is not slashed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| <a id="find-leave-1-bzhksq"></a>FIND-LEAVE-1-BZHKSQ           | _Resolved (2026-09-03)._ The honest peers did reduce to the same view; the divergence was in block authoring. [`LocalP2pSigner.sendTransaction`](../implementation/source/src/evm/signer/LocalP2pSigner.ts.md) stamps the candidate's fork and height from storage before [`BlockProductionService.playTransaction`](../implementation/source/src/stateManager/block/BlockProductionService.ts.md) takes the state mutex. In the observed failure the leaver's exit block at height 0 was validated and applied on the remaining peer between those two steps: the writer check then ran against the post-exit state (that peer was next) while the transaction still claimed height 0, so the peer signed a second block at height 0. Every honest peer proved it fraudulent (`BlockInvalidStateTransition`), the chain slashed the author, and the follow-up reduction carried the slash. `playTransaction` now drops a candidate whose fork or height no longer matches the current fork and next stored height (a slot has one author, so such a candidate was never this peer's; the caller reassesses) ([`INV-BLOCK-PIPE-1-1AB2ME`](../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me)); the unit permutation [`INV-BLOCK-PIPE-1-1AB2ME.T1.P10`](../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me.t1.p10) parks another writer's block at the follower's execution boundary and proves no block by the follower.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | None — fixed with test; the E2E case's host-agreement loop stays as harness hygiene.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| <a id="find-dispute-1-ecdwqy"></a>FIND-DISPUTE-1-ECDWQY       | _Withdrawn (2026-09-03)._ Not a production defect and the proposed one-read-under-mutex fix does not apply: the two reads were consistent. In the observed run the killed dispute was the one [`EventHandler.canConstructMoreEvidence`](../implementation/source/src/eventHandlers/EventHandler.ts.md) built on the tampering peer in answer to the other auditor's committed timeout dispute, before that peer's own participant timeout was recorded. [`DisputeManager.constructDispute`](../implementation/source/src/disputeManager/DisputeManager.ts.md) therefore carried the empty timeout struct (height 0, zero participant), and the case's tamper hook wrote a participant into it, turning a non-timeout dispute into a timeout claim that fails linkage first (`TimeoutNotLinkedToLatestState`) instead of the intended `TimeoutParticipantNotNext`. The case now tampers only a dispute that carries a recorded timeout.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | None — test staging corrected.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| <a id="find-bqm-1-frmb60"></a>FIND-BQM-1-FRMB60               | _Resolved (2026-09-03)._ The staging gap masked a policy gap: at entry-lifetime expiry a still-future block on the active fork was dropped and its sources probed, but a source whose probe succeeded without its proven lineage carrying the block was never excluded, so junk cost its supplier nothing whenever the probe could answer. [`BlockQueueManager`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md) now excludes such a source after the probe ([`REQ-BLOCK-PIPE-4-CF52J6`](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6)); a source that cannot prove the height is excluded by the sync failure as before, and a source whose lineage carries the block stays. The E2E cases keep the blind peer fully connected (network-delivered confirmations dropped by a harness stub, control-port ingest kept) so the probe runs over a live transport instead of racing discovery.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | None — fixed with tests.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| <a id="find-sync-1-nchbp5"></a>FIND-SYNC-1-NCHBP5             | _Resolved (2026-09-05)._ The executor now stamps every call with the runtime Clock's estimated chain time ([`REQ-TIME-5-S9NQXK`](../specification/protocol-model/time.md#req-time-5-s9nqxk), [`REQ-RUNTIME-6-6F4SSM`](../specification/runtime/execution.md#req-runtime-6-6f4ssm)); an isolated executor receives the Clock adjustment at initialization. Original finding: The local mirror evaluates `block.timestamp` as 0: [`ContractExecutor`](../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md) passes no block to the EVM's `runCall`, so every mirror view runs at time zero. [`SpectateService.applySyncResponse`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md) checks each carried dispute window with the mirror's `isKillPeriodExpired`, which therefore never reports an expired kill period: a sync whose payload carries a dispute window (any sync across a reduction not yet covered by an on-chain snapshot) is always rejected with `kill period not expired` and the honest responder is cut. Measured on 2026-09-03 with a probe against a reducible disputed fork: mirror `{isExpired: false, killPeriodEnd: 1788459448, blockTimestamp: 0}` versus chain `{isExpired: true, killPeriodEnd: 1788459448, blockTimestamp: 1788459450}`. The repaired clock is now exercised by successful synchronization to a locally reduced, unposted fork while an ordinary attempt is held at its dispute read or candidate computation; the attempt resumes without obsolete writes or scheduling.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Give mirror views a real block time (stamp `runCall` with the protocol clock, or read the kill period from the chain contract as the executor and event handler already do) and add a unit permutation that syncs across an unposted reduction; then stage the held-attempt fork transition through a sync.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| <a id="find-lobby-1-5c7z8a"></a>FIND-LOBBY-1-5C7Z8A           | _Resolved (2026-09-01)._ LocalDiscovery previously remembered an authenticated peer endpoint permanently and suppressed retry after a completed handshake. A closed eligible transport therefore could not be recreated while its lobby topic remained observed, unlike the production Hyperswarm topic lifecycle. Topic sessions now own one canonical active dial and capped-backoff retry chain, cancel that work before leave, and reject blacklisted endpoints.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | No further action. Real loopback component cases prove eligible replacement, post-leave stop, and blacklist suppression. Three-peer lobby cases prove post-commit replacement is rejected without promotion or punishment until both `completeLobby` and `releaseNegotiationHandoff` leave the topic.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| <a id="find-upg-1-fxm7r1"></a>FIND-UPG-1-FXM7R1               | _Resolved (2026-09-01)._ `ProfileManager.unblacklistPeer` previously inspected only the preferred transport before releasing the Holepunch ban. During upgrade grace, selected Holepunch plus a non-preferred live WebRTC transport could therefore reopen duplicate discovery. Policy release now clears the explicit exclusion but keeps Holepunch banned while any live WebRTC transport remains.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | No further action. Direct ProfileManager cases cover selected WebRTC, selected Holepunch with non-preferred live WebRTC, and selected Holepunch after the final WebRTC transport closes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| <a id="find-storage-2-nk2xbf"></a>FIND-STORAGE-2-NK2XBF       | `MessageBlockStorage` still diverges from [`REQ-MSGSTORE-1-6ME9D7`](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7): direct stores repoint the tip on bare height comparison (`>=`), so an equal-height or higher unlinked block can move the tip off provable history ([MessageBlockStorage.ts.md](../implementation/source/src/storage/MessageBlockStorage.ts.md)). The range-read part is resolved: tolerant reads now return the linked suffix with `missingBlockHash`, including when zero is reached before a requested nonzero lower boundary, and strict reads reject every incomplete range.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Decided (engineer review): the spec is the intent. Replace direct height-based tip movement with exact extension of the current tip; range behavior needs no further action.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| <a id="find-join-1-m289v4"></a>FIND-JOIN-1-M289V4             | _Resolved (2026-08-19)._ `JoinChannelFacet._processJoinChannel` keeps membership checks on the full snapshot ∪ pending union, rejects an on-chain-slashed member from the top-up branch, and verifies countersignatures against `getOnChainThresholdSet`; `MembershipService.getOnChainThresholdSet` delegates to that same contract helper, and both collector and responder consume it ([JoinChannelFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md), [JoinChannelService.ts.md](../implementation/source/src/rpc/network/services/joinChannel/JoinChannelService.ts.md)).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | No further action. Direct facet tests prove a later join succeeds with only the unslashed participant's countersignature and a slashed participant's top-up reverts before deposit; the live SDK collector test proves the collected signer set excludes that participant.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| <a id="find-storage-3-gyr34m"></a>FIND-STORAGE-3-GYR34M       | `Storage.getPreviousBlockOrSnapshot`/`getPreviousRelevantTimestamp` use non-null assertions, so an absent predecessor produces an unclassified throw instead of the explicit absence [`REQ-SNAPSTORE-2-Q7E6TQ`](../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq) requires ([Storage.ts.md](../implementation/source/src/storage/Storage.ts.md)).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Decided (engineer review): documented precondition — the contiguity invariants (participants commit contiguously; sync persists state-proof anchor blocks before replay) make an absent predecessor unreachable through any designed flow, and the throw stands as the invariant tripwire. Spec-noted in [`REQ-SNAPSTORE-2-Q7E6TQ`](../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| <a id="find-storage-4-mfd7rz"></a>FIND-STORAGE-4-MFD7RZ       | `FraudProofStorage` violates the first-write-wins clause of [`REQ-DSTORE-3-ZNXSTM`](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm): `storeFraudProof` overwrites unconditionally (src/storage/FraudProofStorage.ts:22) and appends to the participant index (:25-28), so re-storing the same `encodedProof` with a different `participant` field (the key hashes `encodedProof` only, :19) both replaces the stored proof and strands a stale index entry. `DisputeFraudProofStorage` complies (:26-29). No live impact today — current producers derive `participant` from the proof content — so this is a spec-letter violation and a latent producer-bug trap, not an active defect.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Decided (engineer review): the spec is the intent — make `FraudProofStorage` first-write-wins and keep the participant index exactly consistent with the stored set. Closes when that lands.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| <a id="find-storage-5-t301z1"></a>FIND-STORAGE-5-T301Z1       | `StateSnapshotStorage` never refuses a conflicting genesis registration, violating [`REQ-SNAPSTORE-1-AJW0HJ`](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj): `storeStateSnapshot` sets the genesis-by-fork index unconditionally (src/storage/StateSnapshotStorage.ts:30-34). The audited persistence path is safe — snapshots that pass `verifyStateProof` are pinned by signed-block full-struct hashes, outer fields included. The live vector is the expired-dispute persistence path (EventHandler.ts:508 -> `persistDisputeDataWithoutAudit`), which stores a byzantine dispute's posted auditing data unverified: a genesis-shaped snapshot (real `snapshotData`, so `forkId == hash(snapshotData)` holds, with attacker-chosen `timestamp`/`blockHeight` — outer fields sit outside `snapshotData`, DataTypes.sol:133-140) silently replaces the stored genesis. Impact is local-only (the chain re-pins via the first-block full-snapshot hash, FraudProofFacet.sol:231-237) but poisons local timing verdicts: `getPreviousRelevantTimestamp`, timeout scheduling, and local `InvalidTimestamp` judgments.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Decided (engineer review): the spec is the intent — refuse a registration for an existing fork id whose outer fields differ (compare-and-refuse). Closes when that lands.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| <a id="find-storage-6-mt9z2d"></a>FIND-STORAGE-6-MT9Z2D       | Sequential store reads hand out live references, violating [`REQ-STOR-6-SKP0KM`](../specification/storage/durability.md#req-stor-6-skp0km). `deepCopyProxy` deep-copies every argument and every result, but returns generator results unwrapped by design (src/utils/DeepCopyProxy.ts:19-25), so `BlockStorage.getIterator` (src/storage/BlockStorage.ts:234-268) and `MessageBlockStorage.getIterator` (src/storage/MessageBlockStorage.ts:61-79) yield the store's own objects. Confirmed by probe: a block yielded by `blocks.getIterator` and mutated in the caller is read back mutated through `blocks.getBlock`, while the same mutation applied to a `getBlock` result or to a stored argument does not reach the store. The array-returning wrappers are unaffected — `getMessageBlocksInRange` crosses the proxy as a normal result and is copied — and `getLatestBlock` (BlockStorage.ts:272-276) is likewise copied even though it reads through the iterator internally, because it returns across the proxy as an ordinary result — so the leak is exactly the generator path, reached only by a caller that consumes `getIterator` itself. Every such consumer is one accidental field write away from mutating storage without an explicit store operation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Wrap generator results in the proxy so each yielded value is copied as it is produced, keeping laziness; then cover it with [`REQ-STOR-6-SKP0KM.T1.P4`](../specification/storage/durability.md#req-stor-6-skp0km.t1.p4). Any consumer that relies on mutating a yielded entry in place must be repointed at an explicit store operation first.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| <a id="find-runtime-1-gapy72"></a>FIND-RUNTIME-1-GAPY72       | `p2pSetup` deploys the two local state machines _outside_ the `try` that owns runtime teardown (the two `deployStateMachine` calls in `src/evm/EvmDiamondStateMachine.ts`). A rejection there leaves whatever `startP2pRuntimeHost` had already built running for the life of the process. Narrow by construction: every failure raised _inside_ that `try` is already covered, because `startP2pRuntimeHost` runs `disposeRuntime()` before rethrowing and a readiness failure disposes through the `deployComplete` handler. Not introduced by the cross-thread log work.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Move the two deploys inside the `try`, or wrap them so a rejection tears the partly built runtime down before it propagates. Then add an E2E that forces a deploy failure and asserts a later crash-log round reaches the same number of stores as before the attempt.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| <a id="find-gas-1-m26tmb"></a>`FIND-GAS-1-M26TMB`             | Accepted known limit (2026-09-24). A mined transaction can be left out of the gas usage report, which violates [`REQ-SDK-ARCH-6-8DE4ER`](../specification/runtime/sdk.md#req-sdk-arch-6-8de4er). The recorder's receipt wait makes its first receipt and block-number reads at once, and `resolveReceipt` treats any error other than `CALL_EXCEPTION` as "not mined", so a transient RPC error at that moment drops the observation for good ([GasUsageRecorder.ts](../implementation/source/src/evm/gasUsage/GasUsageRecorder.ts.md)). Known trigger: a broadcast whose own block-number read failed while the node accepted the transaction; the provider's request cache returns that failure for up to 250 ms, and the observation starts inside that window. Only the report is affected; the send's result and nonce are not.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Retry the receipt wait on a transient error until the transaction mines, is replaced, or the recorder is disposed; treat only `CALL_EXCEPTION`, `TRANSACTION_REPLACED`, and a destroyed provider as final. Then add a test where a real proxy fails the first receipt read and the mined transaction is still counted.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| <a id="find-discovery-1-dmy46s"></a>`FIND-DISCOVERY-1-DMY46S` | **Resolved (2026-09-05).** Repeated same-topic local discovery joins created another listener and replaced the active session, cancelling ownership of in-flight peer dials.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Concurrent starts share one pending join and completed starts reuse one session. Leave waits for an in-flight listener startup before removing it. [Source report](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md), [`REQ-LOBBY-9-N894C0.T1.P17`](../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p17).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| <a id="find-reduction-1-7fe1yw"></a>FIND-REDUCTION-1-7FE1YW   | **Resolved (2026-09-05).** Verified synchronization used to leave the previous fork's pending reduction operation registered, so later chain events could await it indefinitely.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | The sync installation now settles all pending callers with `undefined`, cancels the old timer, and removes the pending operation; completed results remain intact. Held reads cannot recreate it. Regression coverage: [`REQ-DISPUTE-PIPE-4-3YVDSA.T1.P10`](../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa.t1.p10), [`.P11`](../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa.t1.p11), [`.P12`](../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa.t1.p12).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| <a id="find-settle-1-g2cpv6"></a>`FIND-SETTLE-1-G2CPV6`       | Open. Generic consumer-returned genesis, snapshot adoption and historical proof unions still do not universally enforce the configured maximum. The [reference math insertion](../implementation/source/contracts/V1/examples/MathStateMachine/MathStateMachine.sol.md) now bounds its own roster growth, but `_setState` and other consumers remain separate producers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Enforce and test every authoritative adoption boundary. Queue N-source/N-value limits now hold independently of eligible-set cardinality; they do not promise space for every identity in an oversized or changing set. Do not mark this aggregate finding closed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| <a id="find-qstore-3-1hf4v6"></a>`FIND-QSTORE-3-1HF4V6`       | Resolved in the current implementation: [QueueStorage](../implementation/source/src/storage/QueueStorage.ts.md) charges at most N distinct values per admitted source in a queued entry. One sender's alternate valid signatures cannot occupy another source's allowance. The union is bounded by N² even when membership is oversized.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Exact quota and real-network alternate-signature cases are mapped under [`REQ-QSTORE-2-VYWJAQ`](../specification/storage/queue.md#req-qstore-2-vywjaq) and [`INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H`](../implementation/source/src/stateManager/ingest/README.md#integration-test-ingest-admission-1-ea0c8h). This resolves shared-slot monopolization, not total hashes, connections, later lifetimes or source churn. Engineer verification remains pending.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| <a id="find-qstore-2-evm8t9"></a>FIND-QSTORE-2-EVM8T9         | _Resolved (2026-09-16)._ The participant maximum is no longer a constant restated in two languages. It is channel configuration: `StateChannelManagerProxy` takes it as a constructor argument, stores it, and exposes it through `UtilityFacet.getMaxChannelParticipants`; both enforcement sites read that value, and the client reads it from the contract at startup and injects `maxChannelParticipants` into the production queue for its N-source/N-value quotas. Standalone queue construction retains an explicit default.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | No further action for the drift defect. A facet exercised outside a constructed proxy sees the storage slot unset and rejects every union, so harnesses that stand in for a proxy must seed it; no production path reaches a facet without the constructor having run.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| <a id="find-timeout-1-3kh429"></a>`FIND-TIMEOUT-1-3KH429`     | _Resolved (2026-09-17)._ A timeout dispute that loses the calldata race is no longer abandoned. The upload handler set now classifies `RaceConditionDisputeTimeoutCalldataPosted`: it drops the stored candidate by identity and, once the signing marker is released, hands the posted block for that slot back to the block pipeline exactly once ([`REQ-DISPUTE-PIPE-11-HRGJ43`](../specification/disputes/dispute-processing.md#req-dispute-pipe-11-hrgj43), [DisputeManager](../implementation/source/src/disputeManager/DisputeManager.ts.md), [TimeoutStorage](../implementation/source/src/storage/TimeoutStorage.ts.md)). The response to junk no longer depends on re-arming a check: the chain-committed validation context asks for one forced check when it rejects the posted block for a fault it cannot prove on chain, and a plain check that meets a posted commitment hands the calldata back instead of forcing ([`REQ-DISPUTE-PIPE-12-F85KF2`](../specification/disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2), [ParticipantTimeoutService](../implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md), [CalldataCommittedStrategy](../implementation/source/src/stateManager/validationStrategy/CalldataCommittedStrategy.ts.md)). A chain-committed copy keeps that context through queue merges and restores ([`REQ-BLOCK-PIPE-3-WW2SB7`](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)), so the unlinked-junk case reaches the same response, and provable junk needs no timeout at all: its fraud-proof dispute lands once the stale candidate is gone. The stale entry no longer poisons later disputes on the fork ([`REQ-TOSTORE-2-WX7VMH`](../specification/storage/calldata-and-timeouts.md#req-tostore-2-wx7vmh)). Evidence: end-to-end junk, unlinked, future-turn and valid-calldata races in [E2E-Timeouts](../verification/tests/test/e2e/E2E-Timeouts.test.ts.md), plus the component cases in [DisputeManager](../verification/tests/test/unit/DisputeManager.test.ts.md), [ParticipantTimeoutService](../verification/tests/test/unit/ParticipantTimeoutService.test.ts.md), [BlockQueueManager](../verification/tests/test/unit/BlockQueueManager.test.ts.md) and [TimeoutStorage](../verification/tests/test/unit/TimeoutStorage.test.ts.md). The remaining on-chain exposure of a forced timeout is tracked separately in [`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts), and the sibling previous-producer refusal in [`FIND-TIMEOUT-3-H1RTAH`](open-findings.md#find-timeout-3-h1rtah).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | None — resolved; the residual items have their own findings.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| <a id="find-timeout-2-j7s0ts"></a>`FIND-TIMEOUT-2-J7S0TS`     | _Partially resolved (2026-09-27); the author-signature part stays open._ **Linkage fixed:** `_validateTimeoutCalldataPostedProof` ([DisputeFraudProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md) decision 6, [L652-L664](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L652-L664)) now requires, before the replay, that the proof's latest state snapshot is linked to the dispute's latest proved block (or the fork's genesis) through `_isSnapshotLinkedToLatestBlock`, that the snapshot's `stateMachineStateHash` equals the hash of the presented machine state, and that the posted block's `previousBlockHash` is the hash of the latest proved block (or of the genesis snapshot). Before this, the blamed author could post a block built on a made-up pre-state, name that pre-state in the proof, replay it successfully and refute an honest timeout dispute, which slashed the honest disputer ([`REQ-DIS-10-SAHJBN`](../specification/disputes/disputes.md#req-dis-10-sahjbn) §6.3 existence links; regression: [`REQ-DIS-10-SAHJBN.T1.P17`](../specification/disputes/disputes.md#req-dis-10-sahjbn.t1.p17)–P19). **Still open:** A forced timeout is killable by the participant it names when it posts a block with a bad author signature. The proof checks channel, fork, height, header author, the commitment preimage, timeliness, the links above and state-transition success, but it does not verify the posted block's author signature. A writer that posts in-time, linked, state-transition-consistent calldata therefore proves the timeout wrong on chain even when the block it posted carries a bad signature, and the honest forcer is slashed by `killDispute`. This is exactly the calldata the off-chain side may only answer with a forced timeout ([`REQ-DISPUTE-PIPE-12-F85KF2`](../specification/disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2)), and [`disputes.md` §6.3](../specification/disputes/disputes.md#63-timeout-validity-conditions) already requires the posted calldata to be _valid_ for the existence check to defeat a timeout. Pre-existing and unchanged by the detection fix: the previous behavior forced over any unaccepted commitment, a strict superset of what is forced now.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Done for linkage (2026-09-27): the latest state and the posted block's `previousBlockHash` are linked to the dispute input as proposed. Remaining: require, in the on-chain proof, the posted block authentic with its signer equal to `timeout.participant`, or add a dedicated fraud proof for 'posted calldata with an invalid author signature'. Engineer decision on direction and on whether it lands with the contract batch.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| <a id="find-timeout-3-h1rtah"></a>`FIND-TIMEOUT-3-H1RTAH`     | _Open (2026-09-17)._ `RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch` still has no handler in the dispute upload path ([DisputeManager](../implementation/source/src/disputeManager/DisputeManager.ts.md)). The refusal means the deadline moved, because the previous producer's posting state differs from the claim the node submitted — the same class as the not-min-timestamp refusal that [`REQ-DISPUTE-PIPE-10-BT8YAR`](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar) re-arms. Today the upload logs at error level, the marker rolls back and nothing re-arms, so this peer stops escalating that slot until a new block or snapshot arrives.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Either re-arm through `ParticipantTimeoutService.scheduleCheck` as the not-min-timestamp refusal does, or have the previous block's calldata event reschedule the next writer's check. Requirement text and permutations follow the engineer's choice of owner.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| <a id="find-tostore-1-3bq7ee"></a>`FIND-TOSTORE-1-3BQ7EE`     | _Open (2026-09-17)._ A stored timeout candidate that is never refused still blocks every later timeout on its fork. `storeTimeout` keeps the lowest height and ignores any higher one ([`REQ-TOSTORE-1-JQPXBC`](../specification/storage/calldata-and-timeouts.md#req-tostore-1-jqpxbc), [TimeoutStorage](../implementation/source/src/storage/TimeoutStorage.ts.md)), and the identity-matched drop ([`REQ-TOSTORE-2-WX7VMH`](../specification/storage/calldata-and-timeouts.md#req-tostore-2-wx7vmh)) only runs on the posted-calldata refusal. If construction throws before submission, or the block for that slot later arrives over gossip with no commitment, the moot candidate stays: a genuine timeout at a later height is then built with no timeout at all and the silent writer is never disputed. Pre-existing; the drop narrows the window but does not close it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Let `storeTimeout` replace a retained candidate whose height is already below `storage.blocks.getNextBlockHeight(forkId)` — one condition in the same owner, keeping the lowest-height precedence for candidates that are still live. Needs an engineer decision because it relaxes a precedence rule the spec states unconditionally.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| <a id="find-dispute-2-1nnndd"></a>`FIND-DISPUTE-2-1NNNDD`     | _Resolved (2026-09-15, reworked 2026-09-26)._ The milestone-finality read judges a committed dispute against the chain's snapshot participants plus the joiners at or below the dispute's committed inbound anchor, minus the slashes it lists ([`REQ-FIN-7-RTZWQZ`](../specification/protocol-model/finality.md#req-fin-7-rtzwqz)). It uses only data the chain holds: a set taken from the dispute's own latest state was withdrawn because a disputer could forge it (PR #503 review SR1/SR2). The chain set cannot move while a proof can land: a successor-fork update may only target the latest undisputed fork, a disputed fork advances only by reduction, and joins and top-ups are refused on a disputed fork. Upload admits only a dispute anchored exactly at the chain's inbound head, hash and height ([`REQ-DIS-2-PKVZ7E`](../specification/disputes/disputes.md#req-dis-2-pkvz7e)); a dispute anchored behind it is refused and not retried. Both adoption rules are [`REQ-ENFSNAP-4-ESP98F`](../specification/enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f). The disputer commits the slash list, over-listing is provable as `DisputeOnChainSlashesNotSubset`, and an unlisted slash only makes the threshold stricter. Original finding: `_isLastMilestoneFinalByEveryone` ([DisputeFraudProofFacet.sol L814-L830](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L814-L830)) evaluates a dispute's last-milestone finality against the chain's live snapshot participant set at call time, contradicting [`REQ-FIN-7-RTZWQZ`](../specification/protocol-model/finality.md#req-fin-7-rtzwqz), which bounds the milestone expected set by the two snapshots and their committed inbound interval, not the live set. A JOIN above the disputer's inbound anchor, consumed by `updateStateSnapshotSameFork` ([StateSnapshotFacet.sol L62-L102](../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L62-L102), which then had no dispute-window guard) inside the kill period, adds a member the milestone signers could not have included and flips the read from final to not final. The disputer set `postedAuditingData = false` from the same predicate at construction ([DisputeManager.ts L588-L599](../../../src/disputeManager/DisputeManager.ts#L588-L599)), so `_handleDisputeLastMilestoneNotFinalAndNoAuditingData` ([DisputeFraudProofFacet.sol L226-L237](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L226-L237)) slashes an honest disputer, and honest validators build that proof on their own ([DisputeValidationService.ts L244-L252](../../../src/stateManager/dispute/DisputeValidationService.ts#L244-L252)). Foundry probes drive the real `applyDisputeFraudProofs` entry and show the slash; a slash landing after construction only shrinks the set and cannot flip it. The full snapshot-post ordering is asserted from code, not yet executed end to end.                                                                                                                                          | None — fixed with tests: the Foundry predicate cases (joins above the anchor, committed slashes, a forged self-signed milestone with a self-serving or withheld latest state still kills the disputer), the Foundry successor-fork adoption cases, the Foundry and E2E below-head upload refusals, the E2E disputed-fork top-up refusal, and the self-removal E2E cases. A leave that meets the disputed-fork refusal after the evidence period ends is tracked separately as [`FIND-LEAVE-3-XZBAJQ`](open-findings.md#find-leave-3-xzbajq).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| <a id="find-dispute-3-vk3xgv"></a>`FIND-DISPUTE-3-VK3XGV`     | _Resolved (2026-09-25, reworked 2026-09-26)._ `updateStateSnapshotFork` checked only the target fork's own dispute window, not the kill periods of forks the target was later reduced into. With the chain on E, E reduced to F, F reduced to G and G's kill period open, adopting the expired F changed the live participant set the finality read used, and an honest challenger's `DisputeLastMilestoneNotFinalAndNoAuditingData` proof slashed the challenger (PR #493 review R4XO1, reproduced through real reductions). A successor-fork update may only target the latest undisputed fork, so the intermediate F is refused outright and the chain set the finality read uses ([`REQ-FIN-7-RTZWQZ`](../specification/protocol-model/finality.md#req-fin-7-rtzwqz)) cannot change under G's dispute ([`REQ-ENFSNAP-4-ESP98F`](../specification/enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f)).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Done: the latest-undisputed-fork adoption rule ([StateSnapshotFacet](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md)); the seeded E→F→G diamond case asserts the adoption of F is refused and the challenger is not slashed ([`REQ-ENFSNAP-4-ESP98F.T1.P19`](../specification/enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f.t1.p19)); the real-flow E2E asserts the reduce lands alone and the latest undisputed fork is adopted once the disputed fork reduces ([`REQ-ENFSNAP-4-ESP98F.T1.P20`](../specification/enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f.t1.p20)).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| <a id="find-milestone-1-dagax5"></a>`FIND-MILESTONE-1-DAGAX5` | _Resolved (2026-09-26)._ `_verifyMilestones` skips every milestone whose first block is below the threshold snapshot's height and, when all are skipped, only link-checked the last one before returning true, without reading the claimed snapshots ([StateProofFacet](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md)). Anyone could call `updateStateSnapshotSameFork` with one unsigned block below the chain height and a forged newer snapshot, and the chain adopted it: executed on the routed diamond, an outsider replaced a two-party channel's snapshot with one listing only itself. Pre-existing on `dispute`; PR #503's anchored sync verification also reached the branch, and a fresh spectator stored the forged snapshot (PR #503 review SR3). An all-skipped proof now confirms only the threshold snapshot itself.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Done: the all-skipped branch requires the last claimed snapshot to equal the threshold; Foundry cases on the routed diamond and on `verifyMilestones`, and the sync unit case.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| <a id="find-sync-2-vv16k8"></a>FIND-SYNC-2-VV16K8             | A spectating sync cuts an honest responder when a dispute lands on the tip fork mid-sync. `generateSyncPayload` stops its walk at a fork `isForkDisputed` reports undisputed (src/rpc/network/services/spectate/SpectateService.ts:684-688). The requester later re-reads the dispute window for the payload's final fork in step 2.8.1 (:384-393) and rejects with "latest fork is disputed" when one now exists; `rejectSync` (:1160-1166) disconnects and blacklists the responder. A dispute committed between the two reads is a chain change the responder did not cause, yet the [failure outcomes](../specification/peer-communication/synchronization.md#failure-outcomes) table treats every verification failure as Byzantine evidence against the responder. Same class as [`DEF-9-724SXP`](open-findings.md#def-9-724sxp); it also bears on the agreementTime assumption the owner retained under [`DEF-5-E8TP9N`](open-findings.md#def-5-e8tp9n). Code-traced, not executed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Classify a dispute window that appears on the final fork after the payload was served as a retryable race: fail the sync without penalizing the responder and re-request.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| <a id="find-sync-3-hpyce2"></a>FIND-SYNC-3-HPYCE2             | A responder whose tip fork has an open kill period serves a payload every honest requester rejects. `generateSyncPayload` walks and locally reduces every disputed fork without checking kill-period expiry (src/rpc/network/services/spectate/SpectateService.ts:610-690). Step 2.2 of `applySyncResponse` (:255-266) requires each served window to be expired in the requester's local diamond, and otherwise rejects with "kill period not expired" and blacklists the responder through `rejectSync` (:1160-1166). This is not a timing race: it holds for the whole kill period. The local-diamond read also reports `windowExists = false` when the requester has not yet processed the dispute event, which is a local condition. Same class as [`DEF-9-724SXP`](open-findings.md#def-9-724sxp). Code-traced, not executed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Align the responder's walk with the requester's expiry check: never serve a window whose kill period is open, and never blacklist a responder for an unexpired or locally unknown window.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| <a id="find-stipend-1-9ysnwb"></a>FIND-STIPEND-1-9YSNWB       | **Resolved in tree (2026-09-08), engineer review pending.** An under-funded fraud-proof replay handed the transition less than its `gasLimit` stipend (EIP-150 forwards 63/64 silently), the transition ran out of gas, and both fraud-proof facets read the failed call as an invalid transition: the gas attached to a transaction could decide a verdict ([`REQ-ENFSM-1-DKJCY2`](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)). The local mirror ran calls with the ethereumjs default of about 16.7M gas, at the dispute-execution budget.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Done, revised 2026-09-26 (engineer decision: fraud-proof replay is funded upfront): [AStateMachine.sol](../implementation/source/contracts/V1/AStateMachine.sol.md) refuses with `ErrorInsufficientGasForStateTransition` before the transition runs unless it can grant the full `gasLimit` ([L180-L183](../../../contracts/V1/AStateMachine.sol#L180-L183)), because a transition can catch an inner out-of-gas and still succeed or fail with its own error; `getStateTransitionGasRequirement` publishes the gas the machine frame needs. [UtilityFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md) `getStateTransitionReplayGas` adds the 1/64 kept at each of four enclosing calls; [StateChannelManagerProxy.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md) routes it, re-raises the refusal and rejects empty-returndata machine frames; [DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md) sends the fraud-proof multicall and `applyDisputeFraudProofs` with the signer estimate (with its headroom) plus that requirement (engineer decision 2026-09-27: an estimator that reports gas spent misses the unused budget that must be free when the replay starts and the work before the replay, which exceeded a fixed 30% margin on a poker dispute; with a searching estimator the sum declares more than needed, at least about 2.5 × the requirement, which changes no verdict but must still fit a block; open as [`FIND-GASEST-2-94YFZ6`](open-findings.md#find-gasest-2-94yfz6)); [ContractExecutor.ts](../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md) funds each local EVM call with the larger of the EVM default, the dispute-execution budget and the replay requirement (1e9 removed). The machine copies the call input and reads the budget before its gas check and then CALLs with only fixed opcodes in between, so a large input cannot shrink the stipend after the check; it deletes the previous transition's outbound messages before the input copy and the check, so the caller pays for the deletion outside the budget and the transition writes into empty slots (review 6, FO3, engineer decision). Regression coverage: [`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF`](../implementation/source/contracts/V1/AStateMachine.sol.md#unit-test-astate-machine-2-z2xxmf), [`UNIT-TEST-MANAGER-PROXY-3-C3NY4X`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-3-c3ny4x), [`REQ-ENFSM-1-DKJCY2`](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2) P5–P10. Assessment: [implementation.md](./implementation.md#dispute-gas-estimation-and-the-transition-stipend--2026-09-08). |
-| <a id="find-gasest-1-28j88d"></a>FIND-GASEST-1-28J88D         | _Resolved (2026-09-09), node side._ [DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md) sends `applyDisputeFraudProofs` and the batched dispute multicall without a gas limit, so the node estimates gas. On the runner's hardhat that costs about 11.5 replays of the disputed transition per send (bisection after a failed exact-gas probe; the chain time of the re-mined pending block advances meanwhile), which exceeded the 5 s kill period in the poker consumer's fixtures and surfaced as `RaceConditionDisputeKillPeriodExpired` from `eth_estimateGas` ([`REQ-FP-7-4DD0D7`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)). `uploadDispute` already pins a gas limit and took under a second on the same node.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Chosen resolution: the runner's node was fixed, not the send path. The peer3 hardhat fork (release `precompile-v2`) now tries Geth's `(spent + refund) * 64/63` probe before bisecting, which only converges because the post-hoc stipend rule keeps the gas a replay needs close to what it uses; measured 2.7 executions per estimate instead of 11.5, and dispute sends on the poker farm dropped from 13–15 s to about 1 s. Production nodes (geth, anvil) already estimate this way. Metering in the local mirror was rejected because the mirror has no guarantee of matching chain state, and a fixed high gas limit was rejected because blocks are packed by declared limit. `eth_estimateGas` stays the send path. Follow-up (2026-09-09): the batched dispute `multicall` still failed the one-boundary probe (its extra delegatecall frames retain more than 1/64) and fell into a nine-round bisection, 5 to 11 s per estimate on the farm while holding the node's single request mutex. The fork now runs the transaction once and returns the gas it needed before refunds plus 30%, capped at the block gas limit; every estimate is one execution. Since 2026-09-26 the transition stipend is funded upfront ([`FIND-STIPEND-1-9YSNWB`](open-findings.md#find-stipend-1-9ysnwb)): the estimate still runs once, and the two replay sends use it plus the manager's `getStateTransitionReplayGas` (engineer decision 2026-09-27), so the fork's estimator never searches for the stipend.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| <a id="find-auth-1-c1zhbj"></a>FIND-AUTH-1-C1ZHBJ             | _Resolved (2026-09-26), engineer decision._ Block author authenticity at intake ([BlockQueueManager.ts](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md), [BlockIngestService.ts](../implementation/source/src/stateManager/ingest/BlockIngestService.ts.md)) moved from `LocalDiamond.isBlockAuthentic` to TypeScript (`Block.isAuthentic`) without a specification decision, against the letter of [`INV-MIRROR-1-VAF778`](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) and block-processing stage 1. Review then showed a real acceptance difference beyond ABI decoding: ethers recovery accepted 64-byte compact signatures and normalized `v` values 0/1 and EIP-155 values that OpenZeppelin `ECDSA.tryRecover(bytes32, bytes)` rejects, so a Byzantine author could re-encode its own signature and have a block accepted locally that every on-chain proof check refuses. Motivation for the TypeScript path: the EVM path recovered the author twice per received block on the contract-executor thread, the busiest thread in the six-player poker profile.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Decision (Luka, 2026-09-26): keep TypeScript and caching, with exact parity to the contracts' acceptance rule; author and confirmation signatures are the same signatures and follow one rule. Specification: [`INV-MIRROR-1-VAF778`](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) gains the pure-check carve-out and block-processing stage 1 names the contracts' acceptance rule. Code: [SignerRecoveryCache.ts](../implementation/source/src/cache/SignerRecoveryCache.ts.md) `isContractAcceptedSignature` ([L120](../../../src/cache/SignerRecoveryCache.ts#L120)) refuses every encoding the bytes overload rejects (not exactly 65 bytes, `v` not 27/28, `r` outside `(0, n)`, `s` outside `(0, n/2]`) before any recovery, and every protocol recovery goes through `recoverSigner` ([L135](../../../src/cache/SignerRecoveryCache.ts#L135)); [BlockQueueManager.ts](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md) decodes each confirmation once with `Block.tryFromBlockConfirmation` and checks `Block.isAuthentic` ([L78-L87](../../../src/stateManager/ingest/BlockQueueManager.ts#L78-L87)); the public `UtilityFacet.isBlockAuthentic` route and interface declaration were removed as dead surface. The carve-out covers signatures only: block decoding stays `Codec`, and decoding parity with the contracts is the separate open finding [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v) (engineer decision 2026-09-27; the contract-decode path of 2026-09-26 was removed). Evidence: [`INV-MIRROR-1-VAF778.T1`](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778.t1) P7, P9 and P10, mapped in the signer-recovery, validation-service and queue-manager verification reports.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| <a id="find-decode-1-fd1v6v"></a>`FIND-DECODE-1-FD1V6V`       | _Open (2026-09-27), engineer decision recorded._ The client and the contracts decode a signed block with different decoders: the client with `Codec` (ethers ABI decoding, [Block.ts](../implementation/source/src/models/Block.ts.md)), the contracts with Solidity `abi.decode` in `UtilityFacet.tryDecodeBlock` ([UtilityFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md)). Neither applies a canonical-encoding rule, and they are not proven to accept and reject the same byte strings. Known difference class: an encoding that is not the canonical encoding of its fields, for example the canonical bytes plus a trailing zero word, which the contracts decode to the same block; `postBlockCalldata` stores any bytes and has no canonical check. Consequences: (1) a Byzantine participant can post, sign or relay an encoding the chain accepts that peers decode differently or refuse, so local history and on-chain proof checks can disagree about one block; (2) in particular, an author can post such bytes as calldata for its own slot and use the posting to refute an honest timeout dispute (`TimeoutCalldataPosted`), while honest peers never accepted the block; (3) the signed bytes, not their fields, are the block identity, so two encodings of one block are two blocks to the client. Signature parity is not affected: it is exact and tested differentially ([`INV-MIRROR-1-VAF778`](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) signature carve-out). Specification (neutral, no defect text since review 6 DY5): [`INV-MIRROR-1-VAF778`](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) excludes decoding from the signature carve-out and requires one encoding rule on both sides, and block-processing stage 1 ([`REQ-BLOCK-PIPE-2-PCXNT6`](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)) requires the client decode to accept and reject what the contracts' decoder does; the current code contradicts both, which this finding and the Block, Codec and UtilityFacet reports record. Both decoders also fall short of [`REQ-DATA-1-1KNRQS`](../specification/protocol-model/data-types.md#req-data-1-1knrqs), which requires decoders to reject trailing and non-canonical encodings.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Decision (Luka, 2026-09-27): decoding parity is not done in this change; `Codec` stays the only client decoder and `ValidationService` has no decoding logic. Planned resolution: make the contract and TypeScript encoding and decoding identical, so both accept and reject exactly the same inputs; deferred to a later PR. Until then the exposure above is open.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| <a id="find-gasest-2-94yfz6"></a>`FIND-GASEST-2-94YFZ6`       | _Open (2026-09-27), engineer decision recorded; revisit gas and estimation as one topic._ Fraud-proof replay sends ([DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md) `replayGasLimit`, [L360-L373](../../../src/disputeManager/DisputeManager.ts#L360-L373)) declare `gasLimit` = the signer estimate with its 50% headroom ([gas.ts](../implementation/source/src/utils/gas.ts.md)) plus the manager's replay requirement `getStateTransitionReplayGas` ([`REQ-ENFSM-1-DKJCY2`](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)). The rule is correct for both estimator models but exact for only one. (1) **Spent-based estimator** (the peer3 hardhat fork used by the poker consumer: one run, gas needed before refunds plus 30%, capped at the block gas limit; [`FIND-GASEST-1-28J88D`](open-findings.md#find-gasest-1-28j88d)): the estimate counts the gas the transition used, never the unused part of the stipend that must be free when the replay starts, and the variable work before the replay (proof checks, setting the machine's state, deleting the previous transition's outbound messages) can exceed any fixed margin; a poker dispute needed about 9.5M (about 3.9M before the replay, requirement 5.64M) while `max(estimate, requirement × 1.3)` gave 8.89M and failed the poker gate. The sum is needed there. (2) **Searching estimator** (geth, anvil, stock hardhat, and the SDK's in-process EDR test node, measured to search): the upfront refusal makes every lower gas fail, so the estimate already contains the requirement; the headroom applies to it and the requirement is added again, so the declared limit is at least about 2.5 × the requirement. The excess changes no verdict, but blocks are packed by declared limit, so it reserves block space and must fit the block gas limit. (3) **Block fit depends on the consumer's dispute budget.** With poker's 6.5M transition budget (engineer decision 2026-09-27, review 5 MO1) the requirement is about 7.3M and the declared limit about 24M, inside a 30M block; with the earlier 16M budget it was not, and any consumer whose transition budget exceeds roughly 9M has fraud proofs that a searching node refuses at submission, so that fraud stays unproven on-chain. (4) **Nothing caps the declared limit at the provider's block gas limit.** (5) **No send test** exercises a fraud-proof transaction with this rule against a searching node with a 30M block: block fit is shown by arithmetic, and the poker replay fixture only runs `eth_call`. History: review 3 (FR1 🔴, TO1) and review 4 (FR1 🔴, TO2) flagged the double count on searching estimators and proposed a branch (`estimate ≥ requirement ? headroom : estimate + requirement`, capped at the block limit) or estimation handled at the provider boundary; the branch was not tried and has a hole on the fork (an estimate just above the requirement with a large outer cost gets only headroom). Review 5 (FO1, TY3) proposed a config switch `GAS_ESTIMATOR_MODEL: "spent" | "search"`and a`search`-path send test on the EDR node with a 6.5M/10M budget; neither was built. Review 6 (XO5, TO25) aligned the documents with the sum and asked for a real 30M-block poker send; TO25 is deferred to this finding.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Decision (Luka, 2026-09-27, review 5 FO1): keep `estimate + replay requirement` for this change. Revisit gas and estimation together: choose between an estimator-model switch (`GAS_ESTIMATOR_MODEL`) and a rule that is exact on both models, cap the declared limit at the block gas limit, and add a fraud-proof send against a searching node with a 30M block and the consumer's budgets (review 6 TO25), asserting inclusion, the correct verdict and the declared limit. Until then the residual above is accepted: cost and block fit, never a wrong verdict. |
-| <a id="find-events-1-3jf8fm"></a>FIND-EVENTS-1-3JF8FM         | **Open (2026-09-09), design question.** [EventSyncService.ts](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md) applies chain logs delivered by the provider subscription as canonical: a `ChannelOpened` log installs the genesis, and no path re-checks that the log's block is still on the chain or handles a `removed` log. A node that delivers logs for a block it later drops (hardhat's pending-block simulation did this on the shared test node until the peer3 fork muted it; a real chain does it on a reorg) leaves the node on a genesis fork the chain never stored, which breaks spectator synchronisation and every dispute audit that follows.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Decide the specification: either require the event path to confirm canonicality before acting (compare the log's block hash with `eth_getBlockByNumber`, or handle `removed`), or record the assumption that the node's log feed is canonical as an explicit trust boundary. The observed instance was a node defect and is fixed there.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| <a id="find-mirror-1-yecyeq"></a>`FIND-MIRROR-1-YECYEQ`       | _Resolved (2026-09-26)._ [DisputeValidationService.ts](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md) `tryVerifyStateProof` ([L272-L282](../../../src/stateManager/dispute/DisputeValidationService.ts#L272-L282)) now returns `false` only for a chain revert (`ethers.isError(error, "CALL_EXCEPTION")`) and rethrows every other error; a local revert already falls back to the chain inside `preferLocal`. A transport failure, a disposed runtime, or a non-revert local failure is no verdict and never becomes a `DisputeInvalidStateProof`, as [`REQ-MIRROR-4-H9C4YS`](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys) requires. Original finding: the catch around the local-first `verifyStateProof` read returned `false` for every error, so a local executor failure (and, before the local-first change, a chain transport failure) became an invalid-state-proof verdict with no chain confirmation, and submitting the resulting kill would have been an invalid, self-slashing act.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Resolved in code. Regression: [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P24`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-4-e7pe6x.p24) (chain transport failure: the audit throws, no proof) and `.P23` (chain `CALL_EXCEPTION`: proof stored), mapped in the `DisputeValidationServiceLocalFirst` verification report.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+### FIND-FRAUD-1-TRWDPS
+
+**Defect:** _Open (2026-10-03)._ An honest peer files a WrongGenesis proof that cannot succeed, and is slashed for it, when a block 0 is judged on a fork whose on-chain snapshot is already past genesis. `_handleWrongGenesis` returns invalid for that fork (contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:295-297) and `applyFraudProofs` slashes the submitter of an invalid proof (FraudProofFacet.sol:19-25). A block 0 still reaches validation after a sync that persisted only history above the anchor: the queue lets stored heights through for double-sign detection, and `isLinked` then compares it with the stored genesis (src/stateManager/ingest/ValidationService.ts:412-418). Triggers: a genuinely wrong late block 0, or an honest block 0 judged against a genesis whose timestamp a sync responder altered while the chain was past genesis (the residual of [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj)). Also unverified: a forged genesis timestamp as the block-timestamp floor in `BlockProductionService.adjustTimestampIfNeeded` when that fork has no stored block. Code-traced, not executed.
+
+**Proposed direction:** Stop judging WrongGenesis for a block 0 once the chain snapshot on its fork is past genesis. Engineer choices: WrongGenesis only or any stale block; a guard in `wrongGenesisDetected` or a new strategy deviation on all strategies; dispute or disconnect at all; the lag of the event-fed local view (preflight through the local diamond); keying stored fraud proofs by fork.
+
+<a id="find-contract-devlog-1-s97s2h"></a>
+
+### FIND-CONTRACT-DEVLOG-1-S97S2H
+
+**Defect:** `DisputeVerificationFacet` (eight calls in `verifyBalanceInvariantCheckSnapshot`) and
+the `MathStateMachine` example (`leaveChannel`) import the development console library and keep live
+logging calls, so a production build carries a precompile interaction the equivalence rules forbid
+and dead bytecode against the module size limit
+([`REQ-CONTRACT-SIZE-1-881Q6E` (Deployment size enforcement)](../specification/enforcement/contracts.md#req-contract-size-1-881q6e)).
+`LocalDiamond` is local-only and exempt; `DoubleLinkedList` has its import and call commented out.
+
+**Proposed direction:** Remove the imports and calls; have the production build reject the
+development console import.
+
+<a id="find-root-disposal-1-1zdqaw"></a>
+
+### FIND-ROOT-DISPOSAL-1-1ZDQAW
+
+**Defect:** _Open (2026-09-29, engineer: deferred)._ Root disposal, the cascade to child roots, and
+the races around them are handled piecemeal in each component instead of in one place, so every
+component that owns or uses child roots has to reason about lifecycle ordering itself. Current
+instances:
+[`AInternalRpcRoot.disposeRoot`](../implementation/source/src/rpc/internal/AInternalRpcRoot.ts.md)
+orders an optional `prepare` step, child disposal, local cleanup and a bounded in-flight reply drain
+(`IN_FLIGHT_REPLY_DRAIN_MS`).
+[`ContractExecutorService`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md)
+adds its own admission gate, a per-caller settle-once latch and a second bounded drain (the same
+constant), plugged in through `prepare`, because its in-flight EVM work can call into its own
+children (custom precompile roots).
+[`createRoot`](../implementation/source/src/rpc/internal/createRoot.ts.md) chains hidden-parent
+cleanup after child cleanup for parentless workers. `StateManager.stop` orders custom-RPC disposal,
+the event-listener stop, the block-queue drain and the timeout-manager drain by hand
+([StateManager.ts](../../../src/stateManager/StateManager.ts#L362-L378)); the sync timeout bounds
+only a probe's request.
+[`BlockQueueManager.dispose`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md)
+drains its own work
+([BlockQueueManager.ts](../../../src/stateManager/ingest/BlockQueueManager.ts#L632-L644)): it waits
+for every in-flight probe and recovery with `Promise.allSettled`, clears the queues and the recovery
+state only after all settle, and rethrows the first rejection, so a probe failure rejects `stop()`;
+a fork recovery scheduled after stop never runs.
+[`SpectateService`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
+returns early once disposed: `applySyncResponse` returns false
+([L173](../../../src/rpc/network/services/spectate/SpectateService.ts#L173)), a persistence abort
+while disposed returns false without `rejectSync`
+([L576](../../../src/rpc/network/services/spectate/SpectateService.ts#L576)), `persistSyncPayload`
+aborts at mutex entry
+([L1042](../../../src/rpc/network/services/spectate/SpectateService.ts#L1042)), and the
+`persistHistory` commit callback returns false so the VM is restored
+([L1056](../../../src/rpc/network/services/spectate/SpectateService.ts#L1056)). `ReductionExecutor`
+checks disposal once before the reduce send and only skips the adoption after it; a reduce send
+released after a full host teardown never settles (the destroyed ethers `WebSocketProvider` hangs at
+populate or estimate), so its detached promise stays pending until
+`DetachedPromises.awaitAllAndClear` times out (open, no code change). Also,
+[`InitHandshakeService`](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md)
+settles its own waits at shutdown. Consumers repeat the same pattern: poker's `PokerAutomation`,
+`PokerProofService` and `HardhatVerifierOwner` each memoize a disposal promise, await an in-flight
+child creation, catch its failure and dispose the handle. Each piece is correct and tested, but the
+rules (stop new work, drain what uses children, bound the wait, dispose children, share one
+completion, tolerate a creation still in flight) are spread across components and re-implemented per
+owner.
+
+**Proposed direction:** Centralize root lifecycle in the root infrastructure so components do not
+coordinate it themselves. A root or service declares which work may use its children, and the
+infrastructure alone owns: admission closing, draining admitted work before child disposal with one
+bound, rejecting callers still waiting at the bound, creations still in flight during disposal, the
+cascade and its error propagation, and shared repeated-disposal completion. Remove the per-component
+copies (the executor admission latch, the consumer creation and disposal promises) once the central
+mechanism covers them. Needs its own plan; no behavior change is intended, so the existing lifecycle
+tests are the regression suite.
+
+<a id="find-join-2-ek5dww"></a>
+
+### FIND-JOIN-2-EK5DWW
+
+**Defect:** _Open (2026-10-15, engineer: deferred)._ Concurrent first joins (and top-ups) to one channel are not coordinated: each joiner collects and submits on its own, so every join that lands first refuses the others' in-flight submissions (`ErrorJoinChannelConfirmationNotThresholdSigned`), and each refused joiner collects again and pays gas for another submission. [`ChannelJoinService.runJoin`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md) and `runTopUp` mitigate it with the recursive retry, capped at the channel's maximum participant count ([`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v)), so the joins still land within the retry cap (snapshot-move refusals share it), but with N concurrent joiners the last one can need up to N collections and N funded submissions, most of them refused.
+
+**Proposed direction:** Coordinate concurrent join attempts in `JoinChannelService` (for example, joiners learn of each other's in-flight joins through the countersignature requests and sequence or combine their collections), so fewer joins race on chain and fewer refused submissions burn gas. Deferred by Luka on 2026-10-15; the recursive retry stays the current mitigation.
+
+<a id="find-bqm-2-4b5b7q"></a>
+
+### FIND-BQM-2-4B5B7Q
+
+**Defect:** _Open (2026-10-15, engineer: deferred)._ A confirmation of a block the node already stored can still get its honest sender blacklisted. [`BlockQueueManager.ingestBlockConfirmation`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md) runs the network-source eligibility gate (`resolveSourceEligibility`; on `ABSENT`, `spectateService.sync` from the sender, then `disconnectAndBlacklistPeerByEvmAddress` when the cached eligibility is still not `ELIGIBLE`) before the stored-block check (`isPastBlock` / `isBlockStored`), and it judges eligibility by current membership, not by the block's own participant set. [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df) requires this order ("Apply this gate to stored duplicates too"), so the code conforms and the gap is in the requirement. Scenario: Alice leaves with block N; Bob gets N from Charlie and commits it, so the off-chain eligibility published after N ([`BlockCommitService`](../implementation/source/src/stateManager/block/BlockCommitService.ts.md), `publishOffChainEligibility`) excludes Alice; Alice posts the exit snapshot and Bob observes it, so the on-chain eligibility excludes her too; Alice's own late copy of N then reaches Bob, resolves `ABSENT`, and Bob syncs from Alice and blacklists her, although N is already stored and her signature on it was valid. Luka judges it highly theoretical: posting the snapshot and observing it both take time, so N is normally gossiped from Alice first.
+
+**Proposed direction:** Settle a confirmation of an already-stored block before the eligibility gate (a cheap hash lookup), or judge eligibility against the block's own participant set; either way amend [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df) first. Deferred by Luka on 2026-10-15.
+
+<a id="find-runtime-2-4b0d0q"></a>
+
+### FIND-RUNTIME-2-4B0D0Q
+
+**Defect:** _Open (2026-10-15, engineer: deferred — design first)._ Runtime disposal is not a clean cut-off, and block ingest blames the sender for a local failure. Observed 2026-10-15 on a live poker bot: bot Bob busted and posted his exit snapshot. The chain's `ChannelStorageCleared` made [`EventHandler.onChannelStorageCleared`](../implementation/source/src/eventHandlers/EventHandler.ts.md) reset Bob's eligibility cache. Alice's block confirmation arrived in that gap, so [`BlockQueueManager.ingestBlockConfirmation`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md) started the eligibility refresh (chain reads and local EVM calls through [`MembershipService.resolveSourceEligibility`](../implementation/source/src/stateManager/membership/MembershipService.ts.md) → `refreshOnChainEligibility` → [`EventSyncService.synchronizeChainMembership`](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)). Bob's leave completed and the poker client disposed the runtime. [`StateManager.stop`](../implementation/source/src/stateManager/StateManager.ts.md) → `BlockQueueManager.dispose` drains only `inFlight` (filled by `track`), and `ingestBlockConfirmation` is not tracked, so the root ([`AInternalRpcRoot.disposeRoot`](../implementation/source/src/rpc/internal/AInternalRpcRoot.ts.md), [`P2pRuntimeHostRoot`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md)) disposed the VM child under the running refresh → "Local contract transaction failed: Runtime child disposed". (2) The catch-all in `ingestBlockConfirmation` (`catch (error) { logger.error(...); return false; }`) turned that local failure into a sender verdict, and [`StateTransitionRpcMethods`](../implementation/source/src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts.md) blacklisted the honest Alice. The same catch-all blames the sender for any local failure (chain read, local EVM), contrary to [`REQ-GOSSIP-4-J5Z4DF.T1.P40`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p40) (a local mirror failure during the refresh is fatal) and the rule that internal failures are fatal; see also [`DEF-9-724SXP`](open-findings.md#def-9-724sxp) and [`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw). Impact today: low. The blacklist lives only in memory and is not persisted, so Bob's next session starts with nobody blacklisted.
+
+**Proposed direction:** Design disposal as a hard cut-off of the process: first make sure persisted storage cannot be corrupted during disposal, then cut the network and RPC/chain connections, then shut the runtime down. After the cut-off nothing has lasting consequences, so internal components may fail as they stop; the part to design carefully is that unhandled and detached work (`DetachedPromises`, timeout tasks, in-flight ingest) cannot crash the top-level host process. Removing the ingest catch-all (local failures fatal, peer verdicts only from validation results, [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)) is part of the same design and is deferred with it. Deferred by Luka on 2026-10-15.
+
+**Update (2026-10-16, PR #556):** Part (2) — blaming the sender — is fixed: the ingest catch now
+logs the local failure and returns the accepting verdict, so no local failure blacklists, suspends
+or strikes the sender ([`DEF-9-724SXP`](open-findings.md#def-9-724sxp)). **Engineer decision
+(2026-10-16): the loose policy is adopted for block intake** — every ingest failure is tolerated
+(logged, copy dropped, session kept) rather than surfaced as fatal, because an unaccounted honest
+failure must never blacklist an honest node; the general rate limit (planned) is the spam bound,
+and invalid inputs keep their explicit blacklisting verdicts. The ingest half of the
+surface-vs-tolerate question is therefore closed; the disposal design above remains deferred on
+its own. The swallow remains a recorded divergence from
+[`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)'s
+refresh-is-fatal rule, recorded on the
+[`BlockQueueManager` report](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md).
+
+**Side-effect audit of tolerating more (2026-10-16).** (1) No partial queue state: ingest's
+mutations before a throw point are the pre-mutation block clone, one synchronous queue set/merge
+(a mid-merge throw would leave only valid merged signatures), and the disputed fork's queue clear,
+which the success path performs identically; the post-queue scheduling calls return a dummy handle
+after disposal instead of throwing. (2) No liveness loss for the non-network callers (all ignore
+the return value, as they did with `false`): calldata is stored before ingest is attempted, the
+participant-timeout check ingests recovered calldata itself on each re-armed check, and later
+validation reads the stored calldata — a fault-dropped validation is delayed, not lost. (3) Log
+cost is one error line per swallowed network fault (two on the sync-application loop), bounded by
+the accepted frame rate until the general rate limit lands; no state grows. The one attacker-shaped
+cost remains the absent-sender sync-application loop, bounded by per-peer in-flight sync coalescing
+until rate limiting; a crafted payload that throws there is not demonstrated.
+
+<a id="find-inbound-gas-1-2bz8de"></a>
+
+### FIND-INBOUND-GAS-1-2BZ8DE
+
+**Defect:** _Open (2026-10-16, engineer: requirement decided, implementation deferred)._ [`REQ-SM-12-J6QD9B` (Every chain-accepted inbound message MUST be processed successfully)](../specification/protocol-model/state-machines.md#req-sm-12-j6qd9b) allows inbound consumption in a transition to fail only by running out of gas, and then the transition must carry fewer pending inbound blocks and be retried. Nothing implements that retry. [`BlockProductionService.playTransaction`](../implementation/source/src/stateManager/block/BlockProductionService.ts.md) carries the whole pending run (`getPendingInboundMessageBlocks`) with no size bound. [`SnapshotAssemblyService.assembleFromTransaction`](../implementation/source/src/stateManager/block/SnapshotAssemblyService.ts.md) applies every message of that run and throws `Failed to process inbound message` on any refusal; it does not tell an out-of-gas failure apart from a refusal. On chain, `_applyInboundMessages` reverts with `ErrorDisputeStateMachineInboundProcessingFailed`. So a pending run whose consumption exceeds the gas budget fails every transition that carries it. The author's transition throws on each turn (the VM is restored, so the author keeps its turn) until a participant timeout ends the turn. A refusal of a chain-accepted message is non-conforming state-machine behavior under the same requirement; it was observed on a live poker table (2026-10-16), where the state machine rejected a JOIN.
+
+**Proposed direction:** When inbound consumption runs out of gas, retry the transition with a shorter prefix of the pending run, and leave the rest pending for a later transition. Validators already accept any prefix that chains from the previous snapshot tip ([`REQ-MSG-3-YY569F` (Packaged inbound blocks MUST chain from the previous snapshot tip and exist…)](../specification/settlement/cross-layer-messages.md#req-msg-3-yy569f)). Define the gas budget for inbound consumption and how an out-of-gas failure is told apart from a refusal; a refusal stays a non-conforming state machine. Cover it with [`REQ-SM-12-J6QD9B.T1.P5`](../specification/protocol-model/state-machines.md#req-sm-12-j6qd9b.t1.p5) and [`REQ-SM-12-J6QD9B.T1.P6`](../specification/protocol-model/state-machines.md#req-sm-12-j6qd9b.t1.p6). Deferred by Luka on 2026-10-16.
+
+<a id="def-1-92ntag"></a>
+
+### DEF-1-92NTAG
+
+**Defect:** _Withdrawn (2026-10-26)._ Not a defect: `open()` still takes parallel `participants` and
+`balances` arrays without a length or zero-address check
+([`StateChannelManagerProxy.sol`](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol)),
+but no input harms anyone beyond the submitter's gas. Fewer balances than participants reads out of
+bounds and reverts the whole open. Extra balances are never read, and every listed participant signs
+the same `encodedOpenChannel` (unanimous `verifyThresholdSigned`), so each join uses the balance its
+participant signed. An `address(0)` participant can never sign: OpenZeppelin `ECDSA.recover` reverts
+rather than return `address(0)`, so the unanimous check fails. Was: the missing checks were read as
+out-of-bounds or silently ignored extras and an accepted `address(0)` participant.
+
+**Proposed direction:** No change.
+
+<a id="def-2-shqr0a"></a>
+
+### DEF-2-SHQR0A
+
+**Defect:** _Resolved (2026-10-26)._ Not a defect for the SDK: `WithdrawalsUpdated` carries the
+final total in the same transaction, emitted by
+[`StateSnapshotFacet`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md)
+even with no outbound blocks, and the SDK dispatches it; the unused `OutboundMessagesProcessed`
+event was removed. Engineer decision (Luke, 2026-10-26).
+
+**Proposed direction:** No further action.
+
+<a id="def-3-1xwq30"></a>
+
+### DEF-3-1XWQ30
+
+**Defect:** _Resolved (2026-08-23, PR #451)._ `LocalDiamond.onChannelOpened` once built the genesis
+inbound message block in memory and never persisted it. Now the production `open` stores that block
+through `_appendInboundMessages` → `_persistInboundMessageBlock`, which emits
+`InboundMessagesProcessed`; the SDK dispatches it and `LocalDiamond.onInboundMessagesProcessed`
+persists the same block. `onChannelOpened` records the genesis snapshot and its balance fields but
+stores no inbound block.
+
+**Proposed direction:** None — fixed; covered by
+`test_openReplay_eitherOrder_storesTheGenesisInboundBlockOnlyThroughTheInboundEvent`
+([`UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P3`](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md#unit-test-local-diamond-1-pje47m)).
+
+<a id="def-4-qb3kqm"></a>
+
+### DEF-4-QB3KQM
+
+**Defect:** _Withdrawn (2026-08-10)._ The original claim — that the deploy helper's `?? 0` produces
+zero-length dispute windows — was false: the proxy constructor
+([`StateChannelManagerProxy.sol`](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol)
+L54–58) maps every `0` argument to a nonzero default (15/5/30/30 s), so `0` is a deliberate "use
+default" sentinel ([enforcement/contracts.md](../specification/enforcement/contracts.md)). The real
+residual concern is tracked in
+[`OQ-8-PEYAAQ` (Clock-skew and bias values)](../specification/open-questions.md#oq-8-peyaaq): those
+defaults are unvalidated development values still needing target-chain analysis before production.
+No deploy-time change is warranted.
+
+<a id="def-5-e8tp9n"></a>
+
+### DEF-5-E8TP9N
+
+**Defect:** _Accepted disposition (2026-08-31)._ Initial observer sync is now an explicit
+one-selected-peer channel-cooperation precondition. Silence, disconnect, timeout, invalid data, or
+protocol-breaking data blacklists that selected peer locally, aborts and disposes the uncommitted
+runtime, and never probes a fallback. One valid response is enough to establish enforceable local
+state; probing another peer cannot prove later threshold cooperation. Pending and participating
+runtimes instead preserve channel attachment and punish only the offending peer. _Scope note
+(2026-09-02):_ the lobby accepted-lease exclusion approved under
+[`REQ-SEC-3-NPPJN5` (The review MUST separate objective slashable violations from non-Byzantine…)](security-assessment.md#req-sec-3-nppjn5)
+is outside this finding; other availability or local-fault blacklist paths stay open except sync
+timeout and transport-failure liability, retained by the owner on 2026-09-07 under the assumption
+that honest peers observe the same reality within agreementTime. This is a protocol assumption, not
+a measured universal execution bound. _Scope note (2026-09-16):_ the explicit disconnect-policy pass
+narrowed this family on the negotiation side — a burned opening window, a match into an already open
+channel, and a failed opening receipt no longer exclude the peer. _Scope note (2026-09-18):_ the
+owner moved the two retained timeout sites (sync request failure and dispute-acknowledgement silence
+or refusal) onto the counted close of the disconnect ladder: one strike per failure against one
+per-peer bound, suspension for the session at the bound, and never a recorded verdict. The handshake
+exchange still excludes an anonymous transport on malformed input, an invalid signature, or a
+duplicate acknowledgement, and the suspension reached at the bound still conflates a persistently
+unavailable honest peer with a refusing one, so that part of the finding stays open.
+
+**Proposed direction:** No further implementation change in this scope. Keep the accepted
+availability classification and possible asymmetric or mutual local blacklisting explicit in
+synchronization and targeted-join evidence.
+
+<a id="def-6-b4zn7s"></a>
+
+### DEF-6-B4ZN7S
+
+**Defect:** _Resolved (2026-08-31)._ `MembershipService.joinChannel` now waits for a successful
+transaction receipt before setting `PENDING_PARTICIPANT`; a reverted uncommitted receipt aborts and
+disposes rather than leaving false pending state. Later block inclusion promotes pending to
+participating but does not gate the completed connect result.
+
+**Proposed direction:** No further action for the pre-transaction promotion defect. Reorg is
+pending on the chain-finality assumption
+([`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm)); forced-inclusion and later exit
+policy remain under their existing settlement owners.
+
+<a id="def-7-pk564b"></a>
+
+### DEF-7-PK564B
+
+**Defect:** _Resolved (2026-08-17)._ RPC dispatch previously accepted every callable
+prototype-inherited name.
+[`ANetworkRpcService`](../implementation/source/src/rpc/network/ANetworkRpcService.ts.md) now
+resolves function-valued own data properties only before `ANetworkRpcMethods.prototype` or
+`Object.prototype`, preserving application endpoint inheritance while rejecting RPC-base/Object-base
+names, accessors, non-functions, and `constructor`; authorization captures the function before
+invocation.
+
+**Proposed direction:** No further action. The component and authenticated-peer E2E suites cover
+valid inherited application endpoints, rejected base names with and without the local RPC base,
+accessor non-execution, capture-once behavior, disconnect, and bystander isolation.
+
+<a id="def-8-hwj10n"></a>
+
+### DEF-8-HWJ10N
+
+**Defect:** _Resolved (2026-08-17)._ `ANetworkRpcService` now separates handler evaluation from
+response delivery. Handler and guard responses make one guarded send attempt; a send failure is
+logged and disconnects the transport without a second send or unhandled rejection
+([peer-communication/rpc.md](../specification/peer-communication/rpc.md)).
+
+**Proposed direction:** No further action. Exact component cases cover handler-response and
+guard-rejection send failure, including one attempt, one disconnect, and no unhandled rejection.
+
+<a id="def-9-724sxp"></a>
+
+### DEF-9-724SXP
+
+**Defect:** _Resolved (2026-10-16) for block ingest._ Block ingest wrapped everything in try/catch →
+`false` → disconnect+blacklist the sender, so a _local_ chain-provider failure (kill-period read in
+`maybeScheduleForkRecovery`) blacklisted an honest gossiper for our own infrastructure fault
+([peer-communication/block-gossip.md](../specification/peer-communication/block-gossip.md)). _Scope
+note (2026-09-02):_ the lobby accepted-lease exclusion approved under
+[`REQ-SEC-3-NPPJN5` (The review MUST separate objective slashable violations from non-Byzantine…)](security-assessment.md#req-sec-3-nppjn5)
+is outside this finding; other availability or local-fault blacklist paths stay open except sync
+timeout and transport-failure liability, retained by the owner on 2026-09-07 under the assumption
+that honest peers observe the same reality within agreementTime. This is a protocol assumption, not
+a measured universal execution bound. _Scope note (2026-09-16):_ one instance closed: an ordinary
+opening receipt that fails on this node's own chain provider no longer blacklists the counterparty;
+it closes with reconnect allowed and no strike. _Scope note (2026-09-18):_ a sync request that fails
+and a dispute acknowledgement that never arrives now take a counted close rather than a verdict, so
+a local outage during those requests costs the peer one retry, not its identity.
+
+**Resolution:** `BlockQueueManager.ingestBlockConfirmation` now logs an ingest exception and
+returns the accepting verdict instead of the rejecting one, so a local fault drops the copy and
+keeps the sender's session; only its explicit verdicts reject the sender (failed authentication
+through the validation strategy, a wrong-channel network copy, and a sender still absent after an
+eligibility sync that succeeded — a failed sync ends intake without that verdict, see
+[`FIND-BQM-3-182X91`](open-findings.md#find-bqm-3-182x91)). Rethrowing was rejected: on the fire-and-forget gossip path it would
+make the RPC layer drop the sender's session for our own failure. Regression:
+`a local disputed-fork check failure during ingest does not blacklist the honest sender`
+([`REQ-GOSSIP-2-9PMMNH.T2.P1`](../specification/peer-communication/block-gossip.md#req-gossip-2-9pmmnh.t2.p1)).
+
+<a id="def-10-199c7f"></a>
+
+### DEF-10-199C7F
+
+**Defect:** _Resolved (2026-10-27); partially resolved 2026-08-31._ An `OPENED` responder that has not applied
+genesis/state now retains one initial-load request per authenticated address behind
+`DeferredAdmissionGuard`, waits up to two local agreement windows for `onSetState`, and then uses
+the ordinary payload path. A duplicate from that address is rejected without replacing the first.
+Exact block/fork recovery remains a separate already-synced request with the same two-window default and an unprovable
+target keeps the existing punishment rule. _Scope note (2026-09-02):_ the lobby accepted-lease
+exclusion approved under
+[`REQ-SEC-3-NPPJN5` (The review MUST separate objective slashable violations from non-Byzantine…)](security-assessment.md#req-sec-3-nppjn5)
+is outside this finding; other availability or local-fault blacklist paths stay open except sync
+timeout and transport-failure liability, retained by the owner on 2026-09-07 under the assumption
+that honest peers observe the same reality within agreementTime. This is a protocol assumption, not
+a measured universal execution bound.
+
+_Scope note (2026-10-23):_ narrowed. A responder whose own view lags a disputed window (the window's
+disputes, or the inbound run its reduce consumed, not yet locally readable) now fails the request
+with an error reply instead of returning no payload, so it no longer blacklists the requester; the
+requester takes its ordinary counted close. **Engineer decision (Luke, 2026-10-23):** a blacklist
+needs a failed check on the peer's own data; the responder's own lag is not one. A target the
+responder cannot prove for another reason (a requested fork other than the derived latest, an
+above-latest height) keeps the existing punishment rule.
+
+_Resolution (2026-10-27):_ the remaining refusals that still blacklist the requester are a target
+above the responder's latest height and a fork other than its derived latest fork. No honest request
+reaches either. A pinned request goes only to the peers that sent that block, and a peer
+stores a block before it gossips or relays it, so the target height is always held. A request for a
+non-current fork came from the queue's expiry probe, which also asked a block's author about an
+unknown fork; a later snapshot clears an old fork's dispute record on chain, so a participant could
+replay a genuine old block to a node that synced afterwards and have its honest author blacklist that
+node. The probe now asks only the peers that sent the block, not an author that did not send it. A sender stored the
+block before sending it, so an honest one can prove it; a replayer cannot, and takes a counted close
+([`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6),
+[`BlockQueueManager`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md),
+[`REQ-BLOCK-PIPE-4-CF52J6.T1.P11`](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6.t1.p11)).
+Engineer decision (Luke, 2026-10-27).
+
+**Proposed direction:** None.
+
+<a id="find-bqm-3-182x91"></a>
+
+### FIND-BQM-3-182X91
+
+**Defect:** _Resolved (2026-10-23)._ A failed eligibility sync blacklisted an honest joiner.
+[`BlockQueueManager.ingestBlockConfirmation`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md)
+ignored what the intake-gate `sync` returned and blacklisted an absent sender whenever its cached
+eligibility was still not `ELIGIBLE`. A new joiner whose gossip reached a peer that had not yet
+applied its insertion, and which answered the admission sync slower than the sync timeout, took the
+sync's counted close and then a permanent blacklist for the same timeout.
+
+**Resolution:** Intake keeps the sync result and blacklists only when the sync succeeded and the
+sender is still not eligible. A failed sync carries its own consequence: an invalid payload already
+excluded the sender, and a failed request already took a counted close. **Engineer decision (Luke,
+2026-10-23):** a blacklist needs a failed check on the peer's own data; our own failure drops the
+copy and keeps the peer, and the counted close bounds a really silent peer
+([`REQ-GOSSIP-4-J5Z4DF.T1.P29`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p29),
+[`REQ-GOSSIP-4-J5Z4DF.T1.P47`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p47)).
+
+<a id="find-dack-1-7c03s9"></a>
+
+### FIND-DACK-1-7C03S9
+
+**Defect:** _Resolved (2026-10-23)._ A dispute acknowledgment on a lagging chain view blacklisted an
+honest disputer.
+[`IsForkDisputedRpcMethods.onDisputeAcknowledgmentRequest`](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts.md)
+judged the requester by the responder's own chain view (local diamond, then its provider). The
+requester asks only after it has seen the dispute event, so a responder whose provider lags
+blacklisted an honest disputer; at a two-player table that cut the pair off.
+
+**Resolution:** A request for a fork the responder does not see as disputed now takes a counted close
+of the requester, the same bound the requester side already applies to a refusing responder. A
+duplicate request stays a protocol violation and still blacklists. **Engineer decision (Luke,
+2026-10-23)**, as in [`FIND-BQM-3-182X91`](open-findings.md#find-bqm-3-182x91)
+([`REQ-IFD-2-13862Z` (Acknowledge only verified disputes)](../specification/peer-communication/dispute-acknowledgment.md#req-ifd-2-13862z)).
+
+<a id="def-11-jn8n6h"></a>
+
+### DEF-11-JN8N6H
+
+**Defect:** `WebRTCSetupService` passes attacker-supplied ICE candidates to the stack unfiltered,
+letting an authenticated peer induce STUN/connectivity traffic toward arbitrary third-party hosts
+(reflection primitive)
+([peer-communication/transport-upgrade.md](../specification/peer-communication/transport-upgrade.md)).
+
+**Proposed direction:** Filter candidate targets, or accept as residual under the central rate
+limiter ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../specification/open-questions.md#oq-6-4jpne5))
+with rationale.
+
+<a id="def-12-mwvy26"></a>
+
+### DEF-12-MWVY26
+
+**Defect:** _Resolved (2026-08-29)._ Open-channel term exchange now accepts only a non-negative safe
+integer amount. Invalid numeric values fail before proposal construction, blacklist the committed
+peer as a protocol violation, clear the derived channel ID, and restore discovery.
+
+**Proposed direction:** No further action. The worker-hosted component case covers a non-finite
+value through the public service boundary and checks the full cleanup result.
+
+<a id="find-state-1-0k7xmy"></a>
+
+### FIND-STATE-1-0K7XMY
+
+**Defect:** _Resolved (2026-10-08)._ **Sync part resolved:**
+[StateApplicationService](../implementation/source/src/stateManager/snapshotUpdate/StateApplicationService.ts.md)
+installs in one staged path: prepare (VM write and derived reads, restored on failure) then a commit
+with no await.
+[SpectateService](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
+checks proof conflicts before the VM write and stores all its verified history inside that commit,
+so a queue timeout can no longer see the new fork's history under the old fork and drop its block as
+known stale. Reduction preparation retains its abort/cancellation policy. **Peek part resolved:**
+[EvmDiamondStateMachine.peekNextToWrite](../implementation/source/src/evm/EvmDiamondStateMachine.ts.md)
+is now one simulated call of
+[`AStateMachine.getNextToWriteOf`](../implementation/source/contracts/V1/AStateMachine.sol.md): the
+executor runs it alone and reverts its state change, so the live state is never replaced and there
+is nothing to restore. Before, the peek swapped the shared live state (get, set, read, restore) in
+four calls: another audit's replay could write its predecessor state between the peek's install and
+read, so an honest auditor stored `TimeoutParticipantNotNext` against a valid timeout dispute,
+killed it, and was slashed on chain for the invalid fraud proof; a failed read also left the
+supplied state installed. The timeout audit needs no lock and runs concurrently with replays.
+
+**Proposed direction:**
+[`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P129`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-3-ay91rs)
+(a replay holds the state mutex with the predecessor state installed while the timeout audit peeks)
+fails on the four-call peek (`TimeoutParticipantNotNext` stored) and passes with the simulated call,
+which settles while the hold is active.
+[`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P102`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct)
+(a failed install read stores nothing) and
+[`.P103`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p103)
+(a queue timeout inside a held install probes instead of dropping) fail on the previous code and
+pass now. They do not establish rollback of tail replay or retract views served during temporary VM
+preparation.
+
+<a id="find-leave-3-xzbajq"></a>
+
+### FIND-LEAVE-3-XZBAJQ
+
+**Defect:** _Resolved (2026-09-15)._ In the gap between a dispute window's evidence-period end and
+its kill-period end (a late contribution moves the kill period past the evidence period), an exit
+post is refused by the disputed-fork refusal
+([`REQ-ENFSNAP-4-ESP98F` (Disputed-fork advance rule)](../specification/enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f)),
+and the self-removal dispute that the leave watchdog in
+[`LeaveChannelService`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md)
+starts is refused with `RaceConditionDisputeEvidencePeriodExpired`, which the chain raises only for
+a window that already holds commitments. `DisputeManager` now logs that refusal as a lost evidence
+race and the exit stays open for that window's reduction, as
+[`REQ-LIF-10-QR8NQ9.T1.P8`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p8) and
+the former unsigned-exit evidence-expired case (retired 2026-10-10: every exit now takes the one
+watchdog path,
+[`REQ-LIF-10-QR8NQ9.T1.P8`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p8))
+specify: the window's reduction resolves the leave when the reduced state drops the leaver (the
+status listener emits `onLeftChannel`), or restarts the exit on the successor fork as a requested
+leave when the reduced state keeps the leaver. Other dispute errors are fatal for the runtime.
+Before, the leave rejected while the window still reduced: the runtime kept the rejected operation,
+was never disposed, and join, top-up and lobby work stayed blocked.
+
+**Proposed direction:** None — fixed with runtime-port cases that inject the refusal at the fallback
+send: the signed exit settles through a committed self-removal and resolves with the leaver dropped
+from the reduced state; the unsigned exit stays awaiting settlement. No test stages the exact gap on
+a live chain.
+
+<a id="find-leave-4-wdh0xc"></a>
+
+### FIND-LEAVE-4-WDH0XC
+
+**Defect:** _Resolved (2026-10-11)._ PR #541 removed the leave operation and its `fail` path:
+`LeaveChannelService.onWatchdog` awaits `DisputeManager.dispute`, which logs
+`RaceConditionDisputeEvidencePeriodExpired` as a lost evidence race, rolls its marker back and
+returns the refusal instead of throwing, so the exit stays open for that window's reduction, as the
+rewritten
+[`REQ-TJOIN-7-NNGTAY.T1.P10`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p10),
+[`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P14`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9)
+and
+[`REQ-LIF-10-QR8NQ9.T1.P8`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p8)
+specify. Original finding: the
+terminal-leave watchdog's self-removal dispute, refused on chain because the window already held
+commitments and its evidence period ended, rejected the leave although the window still reduced.
+
+**Proposed direction:** None — fixed. The runtime-port cases inject the refusal at the watchdog's
+dispute send: one keeps the leave pending with no error, the other settles it through the window's
+reduction and `onLeftChannel`. No test stages the refusal on a live chain for the leave path.
+
+<a id="find-leave-5-a1xaa4"></a>
+
+### FIND-LEAVE-5-A1XAA4
+
+**Defect:** _Open (2026-10-26), low priority (Luka's decision: record only)._ The leave watchdog can
+start a self-removal dispute after the exit already landed. When the remaining participants post
+the exit snapshot (it drops the leaver) at about the time the watchdog fires,
+`LeaveChannelService.onWatchdog` (src/stateManager/membership/LeaveChannelService.ts) starts the
+dispute before the membership check queued by that snapshot finished. The dispute builds a proof at
+the leaver's tip, which is now below the local diamond anchor the snapshot moved, so
+`AgreementManager.buildStateProof` throws "Cannot build a state proof … below its anchor". The
+watchdog's detached promise makes that a fatal error, although the leave then settles normally
+("Left the channel"). Seen twice in the unit test "U72: a leaver whose exit the remaining
+participants post while it sees no further block settles the leave, and the leave watchdog starts
+no self-removal dispute" (2026-10-10 and 2026-10-26; it passed in the other recorded runs). That
+test also measures the 15 s watchdog budget from after its staging, while the watchdog is armed
+inside staging at `leaveChannel()`.
+
+**Proposed direction:** `onWatchdog` first waits for the pending membership checks and re-reads the
+exit; a landed exit returns with no dispute. Fix the test budget to start at `leaveChannel()`, or
+hold the watchdog and assert it does nothing once the leave settled. Until then the test runs with a 30 s watchdog (Luka's decision, 2026-10-27), so it does not fire as the exit lands.
+
+<a id="find-leave-2-yvr0tt"></a>
+
+### FIND-LEAVE-2-YVR0TT
+
+**Defect:** _Resolved (2026-09-05)._ The slash came from a signature the leaver added after its
+dispute started;
+[`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)
+orders admitted signing and storage before setting the single dispute marker, then closes new
+signing, so the fallback dispute stays the leaver's latest state and is accepted (the self-removal
+suite covers both a later block and an already-pending incoming signature). The exit is now owned by
+[`LeaveChannelService`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md):
+it posts the latest snapshot on each finalized block after the exit block, so a refused post is
+retried by the next block, and only the leave watchdog starts the self-removal dispute. Original
+finding: An honest leaver can be slashed by its own exit fallback. The removed exit fallback posted
+the leave block's snapshot one agreement window after the leave. When an inbound block lands on
+chain between the leave block and that post, the chain refuses the post with
+`RaceConditionPendingInboundNotConsumed` (the leave block's snapshot cannot consume an inbound block
+that did not exist yet), and the fallback raises a self-removal dispute built on the leave block's
+state. The remaining participants have consumed that inbound block by then, so they audit the
+dispute as not the latest state, kill it, and the honest leaver is slashed. Seen on the farm when a
+forced re-join of the leaver landed before its exit post; the case now orders the two, but the race
+is open to any inbound block, not only a re-join.
+
+**Proposed direction:** Decide the fallback for a refused exit post: refresh to the fork's latest
+state before disputing, or wait for the remaining participants' next snapshot post, which removes
+the leaver without a dispute. Add a unit permutation that lands an inbound block between the leave
+block and the exit post and asserts the leaver is not slashed.
+
+<a id="find-leave-1-bzhksq"></a>
+
+### FIND-LEAVE-1-BZHKSQ
+
+**Defect:** _Resolved (2026-09-03)._ The honest peers did reduce to the same view; the divergence
+was in block authoring.
+[`LocalP2pSigner.sendTransaction`](../implementation/source/src/evm/signer/LocalP2pSigner.ts.md)
+stamps the candidate's fork and height from storage before
+[`BlockProductionService.playTransaction`](../implementation/source/src/stateManager/block/BlockProductionService.ts.md)
+takes the state mutex. In the observed failure the leaver's exit block at height 0 was validated and
+applied on the remaining peer between those two steps: the writer check then ran against the
+post-exit state (that peer was next) while the transaction still claimed height 0, so the peer
+signed a second block at height 0. Every honest peer proved it fraudulent
+(`BlockInvalidStateTransition`), the chain slashed the author, and the follow-up reduction carried
+the slash. `playTransaction` now drops a candidate whose fork or height no longer matches the
+current fork and next stored height (a slot has one author, so such a candidate was never this
+peer's; the caller reassesses)
+([`INV-BLOCK-PIPE-1-1AB2ME` (Atomic ordered commit)](../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me));
+the unit permutation
+[`INV-BLOCK-PIPE-1-1AB2ME.T1.P10`](../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me.t1.p10)
+parks another writer's block at the follower's execution boundary and proves no block by the
+follower.
+
+**Proposed direction:** None — fixed with test; the E2E case's host-agreement loop stays as harness
+hygiene.
+
+<a id="find-dispute-1-ecdwqy"></a>
+
+### FIND-DISPUTE-1-ECDWQY
+
+**Defect:** _Withdrawn (2026-09-03)._ Not a production defect and the proposed one-read-under-mutex
+fix does not apply: the two reads were consistent. In the observed run the killed dispute was the
+one
+[`EventHandler.canConstructMoreEvidence`](../implementation/source/src/eventHandlers/EventHandler.ts.md)
+built on the tampering peer in answer to the other auditor's committed timeout dispute, before that
+peer's own participant timeout was recorded.
+[`DisputeManager.constructDispute`](../implementation/source/src/disputeManager/DisputeManager.ts.md)
+therefore carried the empty timeout struct (height 0, zero participant), and the case's tamper hook
+wrote a participant into it, turning a non-timeout dispute into a timeout claim that fails linkage
+first (`TimeoutNotLinkedToLatestState`) instead of the intended `TimeoutParticipantNotNext`. The
+case now tampers only a dispute that carries a recorded timeout.
+
+**Proposed direction:** None — test staging corrected.
+
+<a id="find-bqm-1-frmb60"></a>
+
+### FIND-BQM-1-FRMB60
+
+**Defect:** _Resolved (2026-09-03)._ The staging gap masked a policy gap: at entry-lifetime expiry a
+still-future block on the active fork was dropped and its sources probed, but a source whose probe
+succeeded without its proven lineage carrying the block was never excluded, so junk cost its
+supplier nothing whenever the probe could answer.
+[`BlockQueueManager`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md) now
+excludes such a source after the probe
+([`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6));
+a source that cannot prove the height is excluded by the sync failure as before, and a source whose
+lineage carries the block stays. The E2E cases keep the blind peer fully connected
+(network-delivered confirmations dropped by a harness stub, control-port ingest kept) so the probe
+runs over a live transport instead of racing discovery.
+
+**Proposed direction:** None — fixed with tests.
+
+<a id="find-sync-1-nchbp5"></a>
+
+### FIND-SYNC-1-NCHBP5
+
+**Defect:** _Resolved (2026-09-05)._ The executor now stamps every call with the runtime Clock's
+estimated chain time
+([`REQ-TIME-5-S9NQXK` (Every local contract execution observes the runtime's current estimated chain…)](../specification/protocol-model/time.md#req-time-5-s9nqxk),
+[`REQ-RUNTIME-6-6F4SSM` (Cross-context clock equivalence)](../specification/runtime/execution.md#req-runtime-6-6f4ssm));
+an isolated executor receives the Clock adjustment at initialization. Original finding: The local
+mirror evaluates `block.timestamp` as 0:
+[`ContractExecutor`](../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md)
+passes no block to the EVM's `runCall`, so every mirror view runs at time zero.
+[`SpectateService.applySyncResponse`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
+checks each carried dispute window with the mirror's `isKillPeriodExpired`, which therefore never
+reports an expired kill period: a sync whose payload carries a dispute window (any sync across a
+reduction not yet covered by an on-chain snapshot) is always rejected with `kill period not expired`
+and the honest responder is cut. Measured on 2026-09-03 with a probe against a reducible disputed
+fork: mirror `{isExpired: false, killPeriodEnd: 1788459448, blockTimestamp: 0}` versus chain
+`{isExpired: true, killPeriodEnd: 1788459448, blockTimestamp: 1788459450}`. The repaired clock is
+now exercised by successful synchronization to a locally reduced, unposted fork while an ordinary
+attempt is held at its dispute read or candidate computation; the attempt resumes without obsolete
+writes or scheduling.
+
+**Proposed direction:** Give mirror views a real block time (stamp `runCall` with the protocol
+clock, or read the kill period from the chain contract as the executor and event handler already do)
+and add a unit permutation that syncs across an unposted reduction; then stage the held-attempt fork
+transition through a sync.
+
+<a id="find-lobby-1-5c7z8a"></a>
+
+### FIND-LOBBY-1-5C7Z8A
+
+**Defect:** _Resolved (2026-09-01)._ LocalDiscovery previously remembered an authenticated peer
+endpoint permanently and suppressed retry after a completed handshake. A closed eligible transport
+therefore could not be recreated while its lobby topic remained observed, unlike the production
+Hyperswarm topic lifecycle. Topic sessions now own one canonical active dial and capped-backoff
+retry chain, cancel that work before leave, and reject blacklisted endpoints.
+
+**Proposed direction:** No further action. Real loopback component cases prove eligible replacement,
+post-leave stop, and blacklist suppression. Three-peer lobby cases prove post-commit replacement is
+rejected without promotion or punishment until both `completeLobby` and `releaseNegotiationHandoff`
+leave the topic.
+
+<a id="find-upg-1-fxm7r1"></a>
+
+### FIND-UPG-1-FXM7R1
+
+**Defect:** _Resolved (2026-09-01)._ `ProfileManager.unblacklistPeer` previously inspected only the
+preferred transport before releasing the Holepunch ban. During upgrade grace, selected Holepunch
+plus a non-preferred live WebRTC transport could therefore reopen duplicate discovery. Policy
+release now clears the explicit exclusion but keeps Holepunch banned while any live WebRTC transport
+remains.
+
+**Proposed direction:** No further action. Direct ProfileManager cases cover selected WebRTC,
+selected Holepunch with non-preferred live WebRTC, and selected Holepunch after the final WebRTC
+transport closes.
+
+<a id="find-storage-2-nk2xbf"></a>
+
+### FIND-STORAGE-2-NK2XBF
+
+**Defect:** _Resolved (2026-10-13): specification corrected._ `MessageBlockStorage.store` moves the
+tip on height (`>=`), so the tip can sit above a gap and an equal-height block replaces it;
+`storeVerifiedRun` moves it only when the run extends the current head exactly. That is now what
+[`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
+requires
+([MessageBlockStorage.ts.md](../implementation/source/src/storage/MessageBlockStorage.ts.md)). The
+range-read part was resolved earlier: tolerant reads return the linked suffix with
+`missingBlockHash`, including when zero is reached before a requested nonzero lower boundary, and
+strict reads reject every incomplete range.
+
+**Proposed direction:** Decided (engineer review, 2026-10-13): the spec was wrong; amend it to the
+gap-tolerant tip the code is built on, with no production change to tip behavior. This reverses the
+earlier decision "the spec is the intent" (replace height-based tip movement with exact extension).
+Reasons: exact extension broke two designed flows that rely on a tip above a gap. (1) Block
+production: `BlockProductionService` carries no inbound blocks while its head sits above an inbound
+log it never received and starts no recovery; the missing log arrives live or is recovered by the
+next path that needs the run. (2) Dispute construction
+([DisputeAuditOlderDispute report](../verification/tests/test/unit/DisputeAuditOlderDispute.test.ts.md),
+U113/U114): a late auditor misses a pending JOIN, its first live block links to that missed block,
+so a strict tip is never seeded; `DisputeBuilder` would name the snapshot head and the chain rejects
+it with `RaceConditionDisputeInboundNotLatest`. With the height tip, the tip is the chain's latest
+inbound head and `loadSynchronizedInboundRun` recovers the gap. Safety holds at the read layer:
+range reads check linkage and report the first missing block (`tryGetMessageBlocksInRange` →
+`missingBlockHash`,
+[`REQ-MSGSTORE-2-8RDXPZ` (Linked backward range reads)](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz)),
+and consumers recover the run first, skip it, or fail; `MembershipService.publishOnChainSnapshot`
+uses the linked part only for additive JOIN eligibility, whose missing part
+`refreshOnChainEligibility` recovers on demand. Inbound blocks reach a tip-moving store from three
+sources: the chain event feed (including logs `EventSyncService.recoverInboundRun` re-reads after a
+missed delivery; they take the same tip-moving `StateManager.onInboundMessage` path), stored without
+a check because the base-layer feed is a trust boundary (a wrong block there means a reorg or forged
+log: [`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm),
+[`FIND-RPC-1-E5ZHAR`](open-findings.md#find-rpc-1-e5zhar)), a chain-verified run carried by a
+committed block (`BlockIngestService` → `storeVerifiedRun`), and the inbound list of a window this
+node reduced itself during sync (`SpectateService`) — the last two are checked before they are
+stored; no `src/` code reads the outbound tip. The equal-height (`>=`) case matters only on a reorg
+and is pending on the chain-finality assumption under
+[`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm). Rejected: strict
+exact extension with forward catch-up and a snapshot-anchor seed (broke U113/U114); `DisputeBuilder`
+reading the chain head; a non-extending store triggering `recoverInboundRun`; another
+late-subscriber seed. Each rebuilds what the height tip already provides and adds machinery to
+dispute and event-sync code. Evidence:
+[JoinChannelBlockStorage report](../verification/tests/test/storage/JoinChannelBlockStorage.test.ts.md),
+[ExitChannelBlockStorage report](../verification/tests/test/storage/ExitChannelBlockStorage.test.ts.md),
+[BlockIngestService report](../verification/tests/test/unit/BlockIngestService.test.ts.md).
+
+<a id="find-join-1-m289v4"></a>
+
+### FIND-JOIN-1-M289V4
+
+**Defect:** _Resolved (2026-08-19)._ `JoinChannelFacet._processJoinChannel` keeps membership checks
+on the full snapshot ∪ pending union, rejects an on-chain-slashed member from the top-up branch, and
+verifies countersignatures against `getOnChainThresholdSet`;
+`MembershipService.getOnChainThresholdSet` delegates to that same contract helper, and both
+collector and responder consume it
+([JoinChannelFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md),
+[JoinChannelService.ts.md](../implementation/source/src/rpc/network/services/joinChannel/JoinChannelService.ts.md)).
+
+**Proposed direction:** No further action. Direct facet tests prove a later join succeeds with only
+the unslashed participant's countersignature and a slashed participant's top-up reverts before
+deposit; the live SDK collector test proves the collected signer set excludes that participant.
+
+<a id="find-storage-3-gyr34m"></a>
+
+### FIND-STORAGE-3-GYR34M
+
+**Defect:** _Resolved (2026-10-27)._ `Storage.getPreviousBlockOrSnapshot` returns explicit absence:
+its non-null assertions are compile-time only, so an absent predecessor comes back with neither
+`block` nor `stateSnapshot` set, and its timeout and dispute-audit callers check for that
+([`ParticipantTimeoutService`](../implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md),
+[`DisputeValidationService`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md)).
+`getPreviousRelevantTimestamp` and
+[`BlockProductionService.createBlock`](../implementation/source/src/stateManager/block/BlockProductionService.ts.md)
+presume the predecessor exists, as
+[`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq)
+allows for a read whose join links the pipeline maintains: the timestamp read's one caller,
+[`CalldataPostingService`](../implementation/source/src/stateManager/chainFallback/CalldataPostingService.ts.md),
+reads it for a stored block, the producer builds on its own stored head, and participants commit
+history contiguously. Was: both reads were
+taken to throw an unclassified error on an absent predecessor
+([Storage.ts.md](../implementation/source/src/storage/Storage.ts.md)).
+
+**Proposed direction:** No change.
+
+<a id="find-storage-4-mfd7rz"></a>
+
+### FIND-STORAGE-4-MFD7RZ
+
+**Defect:** _Resolved (2026-09-02)._ `FraudProofStorage.storeFraudProof` now returns the existing
+hash when the `encodedProof` hash is already stored, before writing the proof or the participant
+index (src/storage/FraudProofStorage.ts, ca92f7f18), so it is first-write-wins and the participant
+index holds exactly the stored proofs, satisfying
+[`REQ-DSTORE-3-ZNXSTM` (Content-addressed proofs with stable indexes)](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm).
+Was: a re-store of the same `encodedProof` with a different `participant` replaced the stored proof
+and left a stale participant index entry.
+
+**Proposed direction:** Covered by
+[`REQ-DSTORE-3-ZNXSTM.T1.P3`](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm.t1.p3).
+
+<a id="find-storage-5-t301z1"></a>
+
+### FIND-STORAGE-5-T301Z1
+
+**Defect:** `StateSnapshotStorage` never refuses a conflicting genesis registration, violating
+[`REQ-SNAPSTORE-1-AJW0HJ` (Genesis index consistency)](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj):
+`storeStateSnapshot` sets the genesis-by-fork index unconditionally
+(src/storage/StateSnapshotStorage.ts:30-34). The audited persistence path is safe — snapshots that
+pass `verifyStateProof` are pinned by signed-block full-struct hashes, outer fields included. The
+live vector is the expired-dispute persistence path (EventHandler.ts:508 ->
+`persistDisputeDataWithoutAudit`), which stores a byzantine dispute's posted auditing data
+unverified: a genesis-shaped snapshot (real `snapshotData`, so `forkId == hash(snapshotData)` holds,
+with attacker-chosen `timestamp`/`blockHeight` — outer fields sit outside `snapshotData`,
+DataTypes.sol:133-140) silently replaces the stored genesis. Impact is local-only (the chain re-pins
+via the first-block full-snapshot hash, FraudProofFacet.sol:231-237) but poisons local timing
+verdicts: `getPreviousRelevantTimestamp`, timeout scheduling, and local `InvalidTimestamp`
+judgments.
+
+**Proposed direction:** Decided (engineer review): the spec is the intent — refuse a registration
+for an existing fork id whose outer fields differ (compare-and-refuse). Closes when that lands.
+
+<a id="find-storage-6-mt9z2d"></a>
+
+### FIND-STORAGE-6-MT9Z2D
+
+**Defect:** _Resolved (2026-10-14)._ `deepCopyProxy` now wraps a generator result in a generator
+that deep-copies each value as it is yielded (src/utils/DeepCopyProxy.ts, `copyYieldedValues`), so
+`BlockStorage.getIterator` behind the `Storage` facade hands out copies, stays lazy, and closes the
+wrapped generator when the caller stops early, satisfying
+[`REQ-STOR-6-SKP0KM` (Value semantics at the store boundary)](../specification/storage/durability.md#req-stor-6-skp0km).
+`MessageBlockStorage` no longer has a generator read; `BlockStorage.getIterator` was the only
+generator behind the proxy. No consumer mutated a yielded block or compared it by identity with
+stored state (`AgreementManager.getLatestSignedBlockByParticipant` and test fixtures only read it),
+so no consumer needed repointing. Was: the proxy returned generator results unwrapped, so a caller
+that mutated a block yielded by `blocks.getIterator` changed what `blocks.getBlock` read back.
+
+**Proposed direction:** Covered by
+[`REQ-STOR-6-SKP0KM.T1.P4`](../specification/storage/durability.md#req-stor-6-skp0km.t1.p4),
+[`UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P5`](../implementation/source/src/utils/DeepCopyProxy.ts.md#unit-test-deep-copy-proxy-1-wwx3nz),
+[`UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P6`](../implementation/source/src/utils/DeepCopyProxy.ts.md#unit-test-deep-copy-proxy-1-wwx3nz),
+[`UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P7`](../implementation/source/src/utils/DeepCopyProxy.ts.md#unit-test-deep-copy-proxy-1-wwx3nz)
+and
+[`UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P8`](../implementation/source/src/utils/DeepCopyProxy.ts.md#unit-test-deep-copy-proxy-1-wwx3nz).
+
+<a id="find-storage-7-gk913e"></a>
+
+### FIND-STORAGE-7-GK913E
+
+**Defect:** _Resolved (2026-10-14): method removed._ `MessageBlockStorage.getLatestMessageBlocks`
+walked back from the tip and returned only the linked blocks it reached: at a gap it stopped and
+dropped the missing hash, so a caller received a truncated run as if it were complete. That violated
+the explicit incomplete result of
+[`REQ-MSGSTORE-2-8RDXPZ` (Linked backward range reads)](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz)
+([MessageBlockStorage.ts.md](../implementation/source/src/storage/MessageBlockStorage.ts.md)). No
+`src/` code called it; only tests did. Because the tip may sit above a gap
+([`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)),
+a future production caller would have read a silently truncated run.
+
+**Proposed direction:** Decided (Ljuba, 2026-10-14): remove the method. `getLatestMessageBlocks` is
+deleted; its only test caller that observed a stored run now reads `tryGetMessageBlocksInRange`,
+which reports `missingBlockHash`, and the tests of the method itself are deleted. Rejected: changing
+it to return a `MessageBlockRun`, which would keep a second walk-from-tip read with no production
+caller.
+
+<a id="find-runtime-1-gapy72"></a>
+
+### FIND-RUNTIME-1-GAPY72
+
+**Defect:** _Resolved (2026-09-13)._ `setupP2pRuntime` (src/evm/p2pRuntime/setupP2pRuntime.ts, the
+construction behind `p2pSetup`) now runs both `deployStateMachine` calls and `deployComplete` inside
+the `try` that owns runtime teardown; its `catch` disposes the instance, or the client root when no
+instance exists yet, before rethrowing (906316b0f). Was: the two deploys ran outside that `try`, so
+a deploy rejection left the partly built runtime running for the life of the process.
+
+**Proposed direction:** No further change. Regression: [RootCreation report](../verification/tests/test/rpc/RootCreation.test.ts.md), first- and second-deployment failure cases.
+
+<a id="find-gas-1-m26tmb"></a>
+
+### FIND-GAS-1-M26TMB
+
+**Defect:** Accepted known limit (2026-09-24). A mined transaction can be left out of the gas usage
+report, which violates
+[`REQ-SDK-ARCH-6-8DE4ER` (Chain spending is observable)](../specification/runtime/sdk.md#req-sdk-arch-6-8de4er).
+The recorder's receipt wait makes its first receipt and block-number reads at once, and
+`resolveReceipt` treats any error other than `CALL_EXCEPTION` as "not mined", so a transient RPC
+error at that moment drops the observation for good
+([GasUsageRecorder.ts](../implementation/source/src/evm/gasUsage/GasUsageRecorder.ts.md)). Known
+trigger: a broadcast whose own block-number read failed while the node accepted the transaction; the
+provider's request cache returns that failure for up to 250 ms, and the observation starts inside
+that window. Only the report is affected; the send's result and nonce are not.
+
+**Proposed direction:** Retry the receipt wait on a transient error until the transaction mines, is
+replaced, or the recorder is disposed; treat only `CALL_EXCEPTION`, `TRANSACTION_REPLACED`, and a
+destroyed provider as final. Then add a test where a real proxy fails the first receipt read and the
+mined transaction is still counted.
+
+<a id="find-discovery-1-dmy46s"></a>
+
+### FIND-DISCOVERY-1-DMY46S
+
+**Defect:** **Resolved (2026-09-05).** Repeated same-topic local discovery joins created another
+listener and replaced the active session, cancelling ownership of in-flight peer dials.
+
+**Proposed direction:** Concurrent starts share one pending join and completed starts reuse one
+session. Leave waits for an in-flight listener startup before removing it.
+[Source report](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md),
+[`REQ-LOBBY-9-N894C0.T1.P17`](../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p17).
+
+<a id="find-discovery-2-0fp84c"></a>
+
+### FIND-DISCOVERY-2-0FP84C
+
+**Defect:** **Resolved (2026-10-10).** LocalDiscovery kept its pending-dial marks per runtime and
+cleared a mark only on the dial socket's `close` event. A leave, transport close and immediate
+rejoin (a lobby rematch) could receive the rejoined topic's announcement before the left dial's
+socket finished closing; the stale mark skipped the dial without a log and nothing redialed, so the
+rematch never connected (U130 CI timeout).
+
+**Proposed direction:** Pending-dial marks belong to the topic session, so a leave drops them with
+the session and a late close only touches its own session's marks. Cross-topic deduplication spans
+the currently joined sessions.
+[Source report](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md),
+[`UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P17`](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md#unit-test-local-discovery-server-1-1w1gy5).
+
+<a id="find-reduction-1-7fe1yw"></a>
+
+### FIND-REDUCTION-1-7FE1YW
+
+**Defect:** **Resolved (2026-09-05).** Verified synchronization used to leave the previous fork's
+pending reduction operation registered, so later chain events could await it indefinitely.
+
+**Proposed direction:** The sync installation now settles all pending callers with `undefined`,
+cancels the old timer, and removes the pending operation; completed results remain intact. Held
+reads cannot recreate it. Regression coverage:
+[`REQ-DISPUTE-PIPE-4-3YVDSA.T1.P10`](../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa.t1.p10),
+[`.P11`](../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa.t1.p11),
+[`.P12`](../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa.t1.p12).
+
+<a id="find-settle-1-g2cpv6"></a>
+
+### FIND-SETTLE-1-G2CPV6
+
+**Defect:** Open. Generic consumer-returned genesis, snapshot adoption and historical proof unions
+still do not universally enforce the configured maximum. The
+[reference math insertion](../implementation/source/contracts/V1/examples/MathStateMachine/MathStateMachine.sol.md)
+now bounds its own roster growth, but `_setState` and other consumers remain separate producers.
+
+**Proposed direction:** Enforce and test every authoritative adoption boundary. Queue
+N-source/N-value limits now hold independently of eligible-set cardinality; they do not promise
+space for every identity in an oversized or changing set. Do not mark this aggregate finding closed.
+
+<a id="find-qstore-3-1hf4v6"></a>
+
+### FIND-QSTORE-3-1HF4V6
+
+**Defect:** Resolved in the current implementation:
+[QueueStorage](../implementation/source/src/storage/QueueStorage.ts.md) charges at most N distinct
+values per admitted source in a queued entry. One sender's alternate valid signatures cannot occupy
+another source's allowance. The union is bounded by N² even when membership is oversized.
+
+**Proposed direction:** Exact quota and real-network alternate-signature cases are mapped under
+[`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../specification/storage/queue.md#req-qstore-2-vywjaq)
+and [block-progression/block-processing.md](../specification/block-progression/block-processing.md).
+This resolves shared-slot monopolization, not total hashes, connections, later lifetimes or source
+churn. Engineer verification remains pending.
+
+<a id="find-qstore-2-evm8t9"></a>
+
+### FIND-QSTORE-2-EVM8T9
+
+**Defect:** _Resolved (2026-09-16)._ The participant maximum is no longer a constant restated in two
+languages. It is channel configuration: `StateChannelManagerProxy` takes it as a constructor
+argument, stores it, and exposes it through `UtilityFacet.getMaxChannelParticipants`; both
+enforcement sites read that value, and the client reads it from the contract at startup and injects
+`maxChannelParticipants` into the production queue for its N-source/N-value quotas. Standalone queue
+construction retains an explicit default.
+
+**Proposed direction:** No further action for the drift defect. A facet exercised outside a
+constructed proxy sees the storage slot unset and rejects every union, so harnesses that stand in
+for a proxy must seed it; no production path reaches a facet without the constructor having run.
+
+<a id="find-timeout-1-3kh429"></a>
+
+### FIND-TIMEOUT-1-3KH429
+
+**Defect:** _Resolved (2026-09-17)._ A timeout dispute that loses the calldata race is no longer
+abandoned. The upload handler set now classifies `RaceConditionDisputeTimeoutCalldataPosted`: it
+drops the stored candidate by identity and, once the signing marker is released, hands the posted
+block for that slot back to the block pipeline exactly once
+([`REQ-DISPUTE-PIPE-11-HRGJ43` (Release a timeout refused for posted calldata)](../specification/disputes/dispute-processing.md#req-dispute-pipe-11-hrgj43),
+[DisputeManager](../implementation/source/src/disputeManager/DisputeManager.ts.md),
+[TimeoutStorage](../implementation/source/src/storage/TimeoutStorage.ts.md)). The response to junk
+no longer depends on re-arming a check: the chain-committed validation context asks for one forced
+check when it rejects the posted block for a fault it cannot prove on chain, and a plain check that
+meets a posted commitment hands the calldata back instead of forcing
+([`REQ-DISPUTE-PIPE-12-F85KF2` (Force a timeout only over a rejected posted block)](../specification/disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2),
+[ParticipantTimeoutService](../implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md),
+[CalldataCommittedStrategy](../implementation/source/src/stateManager/validationStrategy/CalldataCommittedStrategy.ts.md)).
+A chain-committed copy keeps that context through queue merges and restores
+([`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)),
+so the unlinked-junk case reaches the same response, and provable junk needs no timeout at all: its
+fraud-proof dispute lands once the stale candidate is gone. The stale entry no longer poisons later
+disputes on the fork
+([`REQ-TOSTORE-2-WX7VMH` (Drop a refused candidate by identity)](../specification/storage/calldata-and-timeouts.md#req-tostore-2-wx7vmh)).
+Evidence: end-to-end junk, unlinked, future-turn and valid-calldata races in
+[E2E-Timeouts](../verification/tests/test/e2e/E2E-Timeouts.test.ts.md), plus the component cases in
+[DisputeManager](../verification/tests/test/unit/DisputeManager.test.ts.md),
+[ParticipantTimeoutService](../verification/tests/test/unit/ParticipantTimeoutService.test.ts.md),
+[BlockQueueManager](../verification/tests/test/unit/BlockQueueManager.test.ts.md) and
+[TimeoutStorage](../verification/tests/test/unit/TimeoutStorage.test.ts.md). The on-chain exposure
+of a forced timeout, a writer refuting it with its own unauthenticated calldata, is resolved in
+[`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts); a non-canonical encoding of the
+posted block was tracked in [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v) and is
+resolved there, and the sibling previous-producer refusal, resolved in
+[`FIND-TIMEOUT-3-H1RTAH`](open-findings.md#find-timeout-3-h1rtah).
+
+**Proposed direction:** None — resolved; the residual items have their own findings.
+
+<a id="find-timeout-2-j7s0ts"></a>
+
+### FIND-TIMEOUT-2-J7S0TS
+
+**Defect:** _Resolved (2026-10-12)._ **Linkage fixed:** `_validateTimeoutCalldataPostedProof`
+([DisputeFraudProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md)
+decision 6,
+[L652-L660](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L652-L660))
+now requires, before the replay, that the proof's latest state snapshot is linked to the dispute's
+latest proved block (or the fork's genesis) through `_isSnapshotLinkedToLatestBlock`, that the
+snapshot's `stateMachineStateHash` equals the hash of the presented machine state, and that the
+posted block's `previousBlockHash` is the hash of the latest proved block (or of the genesis
+snapshot). Before this, the blamed author could post a block built on a made-up pre-state, name that
+pre-state in the proof, replay it successfully and refute an honest timeout dispute, which slashed
+the honest disputer
+([`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../specification/disputes/disputes.md#req-dis-10-sahjbn)
+§6.3 existence links; regression:
+[`REQ-DIS-10-SAHJBN.T1.P17`](../specification/disputes/disputes.md#req-dis-10-sahjbn.t1.p17)–P19). **Author
+signature fixed (2026-10-12):** `_validateTimeoutCalldataPostedProof` now rejects a posted block
+unless `retrieveSignerAddress` recovers a valid signature over the posted signed bytes from the
+block's author, which the proof already requires to be the timeout target. A writer that posts
+in-time, linked, state-transition-consistent calldata with a bad signature no longer refutes an
+honest forced timeout: the failed refutation slashes its submitter and the committed timeout
+survives
+([DisputeFraudProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md)).
+Evidence: wrong-key, unrecoverable-signature and missing-signature Forge refutations and the
+authentic funded refutation
+([AStateMachineStipend.t.sol](../verification/tests/test/V1/AStateMachineStipend.t.sol.md)), and the
+bad-signature forced-timeout flow end to end
+([timeout.test.ts](../verification/tests/test/e2e/disputeValidation/disputeInputFields/timeout.test.ts.md)).
+This is exactly the calldata the off-chain side may only answer with a forced timeout
+([`REQ-DISPUTE-PIPE-12-F85KF2` (Force a timeout only over a rejected posted block)](../specification/disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2)),
+and [`disputes.md` §6.3](../specification/disputes/disputes.md#63-timeout-validity-conditions)
+already requires the posted calldata to be _valid_ for the existence check to defeat a timeout.
+Pre-existing and unchanged by the detection fix: the previous behavior forced over any unaccepted
+commitment, a strict superset of what is forced now.
+
+**Proposed direction:** Done for linkage (2026-09-27): the latest state and the posted block's
+`previousBlockHash` are linked to the dispute input as proposed. Done for the author signature
+(2026-10-12): the on-chain proof requires the posted block authentic with its signer equal to
+`timeout.participant`; no dedicated fraud proof was needed.
+
+<a id="find-timeout-3-h1rtah"></a>
+
+### FIND-TIMEOUT-3-H1RTAH
+
+**Defect:** _Resolved (2026-10-06)._
+`RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch` now has a handler in the
+dispute upload path
+([DisputeManager](../implementation/source/src/disputeManager/DisputeManager.ts.md)): the selected
+existing timeout owner re-arms through `ParticipantTimeoutService.scheduleCheck` as the
+not-min-timestamp refusal does. Either boolean direction drops the refused claim from timeout
+storage while the mutex is held (so no later dispute on the fork carries it), sets the shared fixed
+one-second delay under its distinct reason, rolls back the marker, releases the mutex and schedules
+once after rollback; a submission with no nonzero timeout participant schedules nothing. The rebuilt
+claim reads the previous producer's posting state from the chain, so a local view that disagrees
+with the chain cannot make the recheck rebuild a refused claim
+([`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar),
+[ParticipantTimeoutService](../implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md)).
+Evidence: the send, local-only posted state, receipt, consecutive, disposal, block-before (with the
+refused claim gone) and validation-retry delay cases in
+[ParticipantTimeoutService](../verification/tests/test/unit/ParticipantTimeoutService.test.ts.md),
+the ZeroAddress no-rearm case in
+[DisputeManager](../verification/tests/test/unit/DisputeManager.test.ts.md), and real races in
+[E2E-Timeouts](../verification/tests/test/e2e/E2E-Timeouts.test.ts.md): a predecessor post refusing
+the first upload, a post that moves the writer's deadline, a post landing during timeout
+construction, and a dispute window opened before the moved deadline.
+
+**Proposed direction:** None — resolved; the residual items have their own findings.
+
+<a id="find-timeout-4-5ynpt3"></a>
+
+### FIND-TIMEOUT-4-5YNPT3
+
+**Defect:** _Resolved (2026-10-16)._ The `TimeoutCalldataPosted` replay in
+`_validateTimeoutCalldataPostedProof`
+([DisputeFraudProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md))
+kept its own copy of the snapshot rebuild, and that copy drifted from clients: it numbered a first
+block's snapshot `latestStateSnapshot.blockHeight + 1` where clients use 0, and it never applied the
+block's inbound `messageBlocks`, so the inbound head, `totalDeposits`, state hash and participants
+stayed at the previous values. An honest posted block in either case failed the hash compare, so
+any participant could time out an honest author whose block it had withheld acks for, and the
+author could not refute it. The auditor's local-mirror preflight dropped the refutation silently.
+The invalid-transition replay had been fixed for the same drift
+([`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v)); the Forge staging that
+recomputed the expected snapshot copied the contract's rule, so its tests confirmed the drift.
+
+**Fix:** one replay. `FraudProofFacet.isBlockReplayValid` rebuilds the snapshot as clients do and
+is used by `_handleBlockInvalidStateTransition` and, by delegatecall, by the timeout refutation.
+Regressions run client-built blocks:
+[`REQ-DIS-10-SAHJBN.T1.P20`](../specification/disputes/disputes.md#req-dis-10-sahjbn.t1.p20) (first
+block) and
+[`REQ-DIS-10-SAHJBN.T1.P27`](../specification/disputes/disputes.md#req-dis-10-sahjbn.t1.p27)
+(inbound message blocks).
+
+<a id="find-tostore-1-3bq7ee"></a>
+
+### FIND-TOSTORE-1-3BQ7EE
+
+**Defect:** _Resolved (2026-10-07)._ A stored timeout candidate for a passed height no longer blocks
+the next timeout on its fork. The node stores a candidate only at the next unfilled height of its
+latest local state, under the state mutex
+([`REQ-DISPUTE-PIPE-13-R2QJZN` (Time out only the next height)](../specification/disputes/dispute-processing.md#req-dispute-pipe-13-r2qjzn),
+[ParticipantTimeoutService](../implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md)),
+so a retained lower candidate names a height the node already passed. `storeTimeout` now always
+adopts the incoming candidate
+([`REQ-TOSTORE-3-H0MH84` (Newest timeout candidate)](../specification/storage/calldata-and-timeouts.md#req-tostore-3-h0mh84),
+[TimeoutStorage](../implementation/source/src/storage/TimeoutStorage.ts.md)); the identity-matched
+drop of a refused candidate is unchanged
+([`REQ-TOSTORE-2-WX7VMH` (Drop a refused candidate by identity)](../specification/storage/calldata-and-timeouts.md#req-tostore-2-wx7vmh)).
+The on-chain lowest-timed-out-height precedence
+([`INV-DIS-8-1GY6Q5` (A fork applies at most one timeout, targeting the participant at the lowest…)](../specification/disputes/disputes.md#inv-dis-8-1gy6q5))
+still holds: the chain applies it across committed disputes, and the node attaches a claim only at
+its proof's latest height + 1, the lowest height its own state has not filled. Evidence: the
+newest-store cases in [TimeoutStorage](../verification/tests/test/unit/TimeoutStorage.test.ts.md),
+and the end-to-end case in
+[ParticipantTimeoutService](../verification/tests/test/unit/ParticipantTimeoutService.test.ts.md): a
+candidate for a passed height is left stored, the next height times out, and the recorded dispute
+carries the next-height claim; with the old lowest-height store the same dispute carried the stale
+lower claim.
+
+**Proposed direction:** None — resolved.
+
+<a id="find-dispute-2-1nnndd"></a>
+
+### FIND-DISPUTE-2-1NNNDD
+
+**Defect:** _Resolved (2026-09-15, reworked 2026-09-26)._ The required-everyone auditing-data
+omission read judges a committed dispute against the chain's snapshot participants plus the joiners
+at or below the dispute's committed inbound anchor, minus the slashes it lists
+([`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../specification/protocol-model/finality.md#req-fin-7-rtzwqz)).
+It uses only data the chain holds: a set taken from the dispute's own latest state was withdrawn
+because a disputer could forge it (PR #503 review SR1/SR2). The chain set cannot move while a proof
+can land: a successor-fork update may only target the latest undisputed fork, a disputed fork
+advances only by reduction, and joins and top-ups are refused on a disputed fork. Upload admits only
+a dispute anchored exactly at the chain's inbound head, hash and height
+([`REQ-DIS-2-PKVZ7E` (Upload is limited to eligible disputers)](../specification/disputes/disputes.md#req-dis-2-pkvz7e));
+a dispute anchored behind it is refused by the contract. The SDK loads an advanced head, rebuilds
+and retries without a fixed cap; missing load, repeated head or head equal to its own anchor is
+fatal. Both adoption rules are
+[`REQ-ENFSNAP-4-ESP98F` (Disputed-fork advance rule)](../specification/enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f).
+The disputer commits the slash list, over-listing is provable as `DisputeOnChainSlashesNotSubset`,
+and an unlisted slash only makes the threshold stricter. Original finding: the omission read
+evaluated a dispute's last-milestone finality against the chain's live snapshot participant set at
+call time (the omission read is now `_isAuditingDataOmissionAllowed`,
+[DisputeFraudProofFacet.sol L845-L857](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L850-L862)),
+contradicting
+[`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../specification/protocol-model/finality.md#req-fin-7-rtzwqz),
+which bounds the milestone expected set by the two snapshots and their committed inbound interval,
+not the live set. A JOIN above the disputer's inbound anchor, consumed by
+`updateStateSnapshotSameFork`
+([StateSnapshotFacet.sol L54-L91](../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L54-L91),
+which then had no dispute-window guard) inside the kill period, adds a member the milestone signers
+could not have included and flips the read from final to not final. The disputer set
+`postedAuditingData = false` from the same predicate at construction
+([DisputeManager.ts L904-L915](../../../src/disputeManager/DisputeManager.ts#L904-L915)), so
+`_handleDisputeLastMilestoneNotFinalAndNoAuditingData`
+([DisputeFraudProofFacet.sol L234-L244](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L234-L244))
+slashes an honest disputer, and honest validators build that proof on their own
+([DisputeValidationService.ts L88-L92](../../../src/stateManager/dispute/DisputeValidationService.ts#L88-L92)).
+Foundry probes drive the real `applyDisputeFraudProofs` entry and show the slash; a slash landing
+after construction only shrinks the set and cannot flip it. The full snapshot-post ordering is
+asserted from code, not yet executed end to end.
+
+**Proposed direction:** None — fixed with tests: the Foundry predicate cases (joins above the
+anchor, committed slashes, a forged self-signed milestone with a self-serving or withheld latest
+state still kills the disputer), the Foundry successor-fork adoption cases, the Foundry and E2E
+below-head upload refusals, the E2E disputed-fork top-up refusal, and the self-removal E2E cases. A
+leave that meets the disputed-fork refusal after the evidence period ends is tracked separately as
+[`FIND-LEAVE-3-XZBAJQ`](open-findings.md#find-leave-3-xzbajq).
+
+<a id="find-dispute-3-vk3xgv"></a>
+
+### FIND-DISPUTE-3-VK3XGV
+
+**Defect:** _Resolved (2026-09-25, reworked 2026-09-26)._ `updateStateSnapshotFork` checked only the
+target fork's own dispute window, not the kill periods of forks the target was later reduced into.
+With the chain on E, E reduced to F, F reduced to G and G's kill period open, adopting the expired F
+changed the live participant set the finality read used, and an honest challenger's
+`DisputeLastMilestoneNotFinalAndNoAuditingData` proof slashed the challenger (PR #493 review R4XO1,
+reproduced through real reductions). A successor-fork update may only target the latest undisputed
+fork, so the intermediate F is refused outright and the chain set the finality read uses
+([`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../specification/protocol-model/finality.md#req-fin-7-rtzwqz))
+cannot change under G's dispute
+([`REQ-ENFSNAP-4-ESP98F` (Disputed-fork advance rule)](../specification/enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f)).
+
+**Proposed direction:** Done: the latest-undisputed-fork adoption rule
+([StateSnapshotFacet](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md));
+the seeded E→F→G diamond case asserts the adoption of F is refused and the challenger is not slashed
+([`REQ-ENFSNAP-4-ESP98F.T1.P19`](../specification/enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f.t1.p19));
+the real-flow E2E asserts the reduce lands alone and the latest undisputed fork is adopted once the
+disputed fork reduces
+([`REQ-ENFSNAP-4-ESP98F.T1.P20`](../specification/enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f.t1.p20)).
+
+<a id="find-milestone-1-dagax5"></a>
+
+### FIND-MILESTONE-1-DAGAX5
+
+**Defect:** Resolved with separate walk and target binding. The original all-skipped path permitted
+a forged newer adoption without authenticating its claimed snapshot. The current walk may succeed
+when the anchor is beyond every supplied block, but returns the trusted final start. Adoption must
+equal the walk's finalized snapshot and be strictly newer; a stale dispute is separately countered
+by the below-anchor predicate. Empty proof still claims genesis only.
+
+**Proposed direction:** Snapshot target cases are mapped under
+[`INV-ENFSNAP-1-9VZ2HE.T2`](../specification/enforcement/snapshot-adoption.md#inv-enfsnap-1-9vz2he.t2).
+All-skipped walk success alone is not evidence of a valid newer adoption.
+
+<a id="find-sync-2-vv16k8"></a>
+
+### FIND-SYNC-2-VV16K8
+
+**Defect:** _Resolved (2026-10-16)._ A spectating sync cut an honest responder when a dispute
+landed on the tip fork mid-sync: `generateSyncPayload` stopped its walk at a fork the chain then
+reported undisputed, the requester re-read the final fork's window in step 2.8.1 of
+`applySyncResponse` and rejected with "latest fork is disputed", and `rejectSync` blacklisted the
+responder for a chain change it did not cause.
+
+**Fix:** step 2.8.1 reads the final fork's window from the chain. A window the chain has not reduced
+fails the sync with no verdict, and the sync waits for the reduction and asks the same peer again;
+served, it would fail step 2.2 the same way, so omitting it gains a responder nothing. A reduced
+window missing from the payload stays a verification failure ([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
+That verdict does not separate omission from staleness: an honest payload served before the dispute
+and verified after the reduction is still blacklisted, the stale-response case left open in
+[`OQ-SPEC-SYNC-STALE-1-CJTJ6S` (Too-old sync and fork-adoption blacklist policy)](../specification/open-questions.md#oq-spec-sync-stale-1-cjtj6s).
+Regressions: [`REQ-SYNC-4-AWHFPA.T1.P3`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p3),
+[`REQ-SYNC-4-AWHFPA.T1.P4`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p4), [`REQ-SYNC-4-AWHFPA.T1.P17`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p17).
+
+<a id="find-sync-3-hpyce2"></a>
+
+### FIND-SYNC-3-HPYCE2
+
+**Defect:** _Resolved (2026-10-16)._ For the whole kill period of a dispute, every honest requester
+cut an honest responder: `generateSyncPayload` walks every disputed fork without a kill-period
+check, and step 2.2 of `applySyncResponse` rejected an unexpired window with "kill period not
+expired" and blacklisted the responder through `rejectSync`. Reproduced end to end with a
+participant's source probe inside an open kill period.
+
+**Fix:** step 2.2 splits the two cases. A window the chain has not reduced that the requester
+cannot recompute locally fails the sync with no verdict and no close. A served window the requester's own chain view does not hold stays a
+verification failure, now "dispute window not on chain": the requester fetches the served windows
+from its chain view into its local diamond before the check, so only a lagging provider can make an
+honest window absent, which is [`FIND-SYNC-5-7W9TWW`](open-findings.md#find-sync-5-7w9tww)'s
+tracked class. The responder keeps serving open windows: a refusal makes `onSpectateRequest`
+blacklist the requester instead
+([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
+`SpectateService.sync` then waits for the chain to record the window's reduction and asks the same
+peer again, so the initial load does not abort and a queue probe still judges a junk supplier that
+answers through the unreduced window; the runtime's stop ends the wait. Regressions:
+[`REQ-SYNC-4-AWHFPA.T1.P1`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p1),
+[`REQ-SYNC-4-AWHFPA.T1.P2`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p2),
+[`REQ-SYNC-4-AWHFPA.T1.P6`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p6),
+[`REQ-SYNC-4-AWHFPA.T1.P5`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p5),
+[`REQ-SYNC-4-AWHFPA.T1.P7`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p7),
+[`REQ-SYNC-4-AWHFPA.T1.P8`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p8), [`REQ-SYNC-4-AWHFPA.T1.P10`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p10), [`REQ-SYNC-4-AWHFPA.T1.P11`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p11), [`REQ-SYNC-4-AWHFPA.T1.P12`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p12), [`REQ-SYNC-4-AWHFPA.T1.P13`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p13), [`REQ-SYNC-4-AWHFPA.T1.P14`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p14), [`REQ-SYNC-4-AWHFPA.T1.P18`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p18), [`REQ-SYNC-4-AWHFPA.T1.P19`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p19), [`REQ-SYNC-4-AWHFPA.T1.P20`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p20), [`REQ-SYNC-4-AWHFPA.T1.P21`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p21), [`REQ-SYNC-4-AWHFPA.T1.P22`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p22).
+
+<a id="find-sync-6-89ratm"></a>
+
+### FIND-SYNC-6-89RATM
+
+**Defect:** _Resolved (2026-10-16)._ A fresh joiner blacklisted an honest responder and aborted when
+it synced across a dispute window whose kill period was over but which the chain had not reduced
+yet. The local diamond seeds the channel's inbound head only from the live `ChannelOpened` and
+`InboundMessagesProcessed` logs, so a runtime that subscribed later holds a zero inbound head. Its
+local recomputation of the served window then derived a zero inbound head, the served inbound list
+failed `ErrorDisputeInboundMessageBlocksInvalid`, and `applySyncResponse` rejected the payload as
+"served reduction reverts". The chain's own reduction usually lands within seconds of the kill
+period's end, which hid it; the PR's earlier retry at that moment reproduced it in most runs.
+Seeding the local channel balance from the chain was not chosen: the late-subscriber seed family
+was rejected before ([`FIND-STORAGE-2-NK2XBF`](open-findings.md#find-storage-2-nk2xbf)).
+
+**Fix:** a local recomputation that reverts on a window the chain has not reduced is no verdict; the
+sync waits for the chain's reduction, after which the recomputation returns the chain's result and
+nothing depends on the local inbound head ([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)). Regressions: [`REQ-SYNC-4-AWHFPA.T1.P9`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p9), [`REQ-SYNC-4-AWHFPA.T1.P15`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p15), [`REQ-SYNC-4-AWHFPA.T1.P16`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p16).
+
+<a id="find-sync-4-kgp4kf"></a>
+
+### FIND-SYNC-4-KGP4KF
+
+**Defect:** _Resolved (2026-10-20)._ A sync window whose reduction the requester did not execute
+itself persisted the responder's unchecked `disputeConfirmations`, and in some cases its
+`latestStateSnapshot`. A window chain-final at the finality read skipped `reduceAndFinalize` but
+still stored its confirmations; a window reduced on chain after that read, or already reduced in
+the local EVM, made `reduceAndFinalize` return early before it checked either input, and both were
+stored. A dispute's commitment pins only its encoded dispute, so a responder could add signatures
+to a genuine confirmation, store a confirmation of a dispute the chain never committed, or replace
+the window snapshot (a genesis-shaped one would land in `genesisSnapshotByForkId` with an
+unverified timestamp). The requester treated a stored confirmation as present and never recovered
+the genuine one from the chain, and it served the forged signatures to its own sync requesters. No
+signature or penalty consequence was shown.
+
+**Fix:** `persistSyncPayload` never stores a window's dispute confirmations, since no reduction
+checks their signatures, and stores a window's latest snapshot, state and inbound blocks only for a
+window this sync reduced itself. Disputes are recovered from the chain's dispute logs when a reader
+needs them (`loadSynchronizedWindowCommitments`); the recovery stores the chain's copy of any
+dispute its handler left unstored (a fork the node already left, or a dispute its audit rejected), so
+a stored confirmation no longer always means an accepted audit. Inbound blocks arrive through chain events.
+Residual: until the chain adopts a window reduced on chain after the finality read, the requester
+lacks that window's reduction input and refuses to serve it, as it already did for a chain-final
+window. A genesis-shaped snapshot of a self-reduced window is not checked against its timestamp;
+that case belongs to [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj).
+Regressions:
+[`INV-SYNC-1-XCQZ28.T1.P18`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p18),
+[`INV-SYNC-1-XCQZ28.T1.P19`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p19),
+[`INV-SYNC-1-XCQZ28.T1.P20`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p20).
+
+<a id="find-sync-5-7w9tww"></a>
+
+### FIND-SYNC-5-7W9TWW
+
+**Defect:** _Open (2026-10-09), engineer decision: tracked, not fixed in PR #526._ The sync server
+cuts the latest-fork outbound run at its own local-diamond anchor (`generateSyncPayload` in
+[SpectateService.ts](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
+serves only the outbound blocks above `currentOnChainSnapshot`), while the requester verifies the
+run from the anchor it read from its own provider (`applySyncResponse`). A requester whose provider
+lags the server's (for example one block behind just after a snapshot post) holds an older anchor
+head; no served block links to it, so the run does not verify, the requester calls `rejectSync`
+("latest-fork outbound blocks invalid") and blacklists an honest peer. A retry succeeds once its
+provider catches up. The same lag hits served dispute windows: a requester whose provider has not
+yet seen the responder's dispute commit cannot fetch the served window into its local diamond, so
+step 2.2 rejects with "dispute window not on chain" and blacklists the honest responder. The code assumes the requester's anchor is not behind the server's; nothing
+enforces it and no test covers a lagging requester. Related:
+[`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe),
+[`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed).
+Provider lag is a general concern for the fast local checks, so this needs an overall protocol
+decision. Code-traced, not executed.
+
+**Proposed direction:** Decide the provider-lag rule for fast local checks first. Candidate fixes:
+the requester sends its anchor in `SyncRequest` and the server cuts there; the server serves the run
+from the fork genesis; or the requester re-reads its chain anchor once and rechecks before it
+rejects the peer. Confirm with a unit case where the requester's `getStateSnapshot` returns the
+previous anchor while the server's local diamond holds the newer one: the sync is accepted or
+retried, not rejected. Likewise for a window: the requester's provider lags the responder's dispute
+commit, and the sync is retried or accepted, not rejected.
+
+<a id="find-sync-7-sht5k7"></a>
+
+### FIND-SYNC-7-SHT5K7
+
+**Defect:** Open (2026-10-26), revisit later (Luka). The sync requester can blacklist an honest
+responder whose proof met the requested height when it was served. `applySyncResponse` in
+[SpectateService.ts](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
+rejects a valid proof that ends below the requester's own finalized point ("proof ends below the
+finalized state", step 2.9) and blacklists the responder through `rejectSync`. That point is read when
+the answer is verified, not when the request was sent. When the requester's own finalized point moves
+past the proof while the answer travels and is verified, the honest responder is cut. The check runs
+before `persistSyncPayload` reaches the path that keeps the local state with no verdict because the
+local state already holds the installed point or a later one. The two-agreement-window default of
+`SpectateService.sync` gives a late answer more time to arrive, so this case is reached more often.
+Same class as the stale-response case of
+[`OQ-SPEC-SYNC-STALE-1-CJTJ6S` (Too-old sync and fork-adoption blacklist policy)](../specification/open-questions.md#oq-spec-sync-stale-1-cjtj6s);
+related: [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed).
+Code-traced, not executed.
+
+**Disposition:** Recorded as an open finding; not addressed now. No fix is selected.
+
+<a id="find-sync-8-e9k3yp"></a>
+
+### FIND-SYNC-8-E9K3YP
+
+**Defect:** Open (2026-10-28). A spectator can blacklist an honest sync sender when the chain moves
+during verification. `applySyncResponse` in
+[SpectateService.ts](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
+reads the on-chain snapshot in step 1 (`fetchAndPersistOnChainSnapshot`), and its later chain reads
+(window finality, dispute windows, the chain proof tier, and the balance invariant check
+`verifyBalanceInvariantCheckSnapshot` in step 2.11) read at `latest`. A block can land between these
+reads. When it closes the channel (`StateSnapshotFacet._updateStateSnapshot` deletes the snapshot
+and the inbound blocks once no participant is left) or posts a newer exit snapshot, an honest
+payload fails "balance invariant failed", or "proof ends below the finalized state" through the
+local-mirror tiers, and `rejectSync` blacklists the sender. Seen in poker bot E2E runs when
+background spectators sync while the seated members' exit posts close the channel. Block intake adds
+to this: `queueBlock` in
+[BlockQueueManager.ts](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md)
+blacklists an `ABSENT` sender after any sync that does not make it eligible, whatever the sync's
+outcome. Related:
+[`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed),
+[`FIND-SYNC-7-SHT5K7`](open-findings.md#find-sync-7-sht5k7), open question
+[`OQ-SPEC-SYNC-STALE-1-CJTJ6S` (Too-old sync and fork-adoption blacklist policy)](../specification/open-questions.md#oq-spec-sync-stale-1-cjtj6s).
+
+**Candidate directions (not chosen; the fix must stay simple):**
+
+1. Read the whole verification at one chain block. Tried and reverted (2026-10-28): it threaded a
+   block parameter through many layers and needed a multi-provider rule for nodes that lag the
+   pinned block.
+2. Re-read the on-chain snapshot before a verdict, and end the sync with no verdict when it changed
+   or the channel closed.
+
+**Disposition:** Recorded as an open finding; not addressed now. No fix is selected.
+
+<a id="find-sync-9-364jc0"></a>
+
+### FIND-SYNC-9-364JC0
+
+**Defect:** Open (2026-10-28). A stale `SYNCED` spectator has no resync path, and its failed reduction
+can still end its runtime fatally. Seen on the testnet: a phone browser spectated a lobby table, the
+tab was suspended for about 43 minutes, and in that time a participant timed out and the fork was
+disputed and reduced. On wake, the chain catch-up delivered the dispute, the reduction-final event
+and the new fork's snapshots in one burst. The spectator had none of the blocks it missed. The local
+reduction needs the dispute's latest state snapshot, and `AgreementManager.getReduceData`
+([AgreementManager.ts](../implementation/source/src/agreementManager/AgreementManager.ts.md)) threw
+an untyped `Missing latestStateSnapshot for reducedOutput in storage for syncing`.
+`ReductionManager.failCompletion`
+([ReductionManager.ts](../implementation/source/src/stateManager/reduction/ReductionManager.ts.md))
+aborted the runtime, which the poker client reported as a planned table abort. But the same error
+also reached the reduction's awaiters: the reduction-final branch of `EventHandler`
+([EventHandler.ts](../implementation/source/src/eventHandlers/EventHandler.ts.md)) awaits
+`reductionManager.tryReduce` without the non-participant catch-and-abort that the dispute-genesis and
+reduction-validation branches have. The rejection failed the contract event pipeline, surfaced as an
+unhandled rejection, and the poker client failed fatally.
+
+An unknown on-chain snapshot is not a staleness signal. A stopgap that aborted a `SYNCED` runtime
+on an unknown snapshot in `processStateSnapshotUpdated` (the TODO there) was tried and reverted
+(2026-10-28): healthy spectators that are up to date receive such snapshots, and six gate tests
+aborted a healthy spectator or sync-only observer (E2E-Spectate, E2E-MilestoneSyncReconstruction
+E09, E2E-JoinChannelRaceConditions U115, E2E-DisputeConflictsWithFinalState control,
+SpectateService same-fork target, SpectateSyncProofStart U28). The handler still only logs a
+warning, so the observed failure is unchanged.
+
+**Proposed direction:**
+
+1. A spectator whose reduction or validation lacks local inputs (state snapshot, state machine state,
+   inbound blocks) is stale, not broken. Report this with a typed error that the reduction owner
+   turns into a planned abort for a non-participant, and keep it fatal for a participant.
+2. Give the reduction-final branch of `EventHandler` the same non-participant rule as its two
+   sibling branches, so no rejection reaches the event pipeline after a planned abort.
+3. Replace the planned abort of point 1 with a resync: a stale `SYNCED` spectator drops its runtime state and syncs
+   again from a responder (initial-sync rules apply: a failed resync aborts, see
+   [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)).
+   Staleness is decided where the inputs are missing (point 1), not from an unknown snapshot.
+4. Verification: an e2e case that suspends a spectator's chain events and transport across a
+   dispute and its reduction, then resumes them in both event orders. The spectator ends with a
+   planned abort (or a resync, after 3) and never with a fatal runtime error.
+
+**Disposition:** Open; not started. No stopgap in tree.
+
+<a id="find-stipend-1-9ysnwb"></a>
+
+### FIND-STIPEND-1-9YSNWB
+
+**Defect:** **Resolved in tree (2026-09-08), engineer review pending.** An under-funded fraud-proof
+replay handed the transition less than its `gasLimit` stipend (EIP-150 forwards 63/64 silently), the
+transition ran out of gas, and both fraud-proof facets read the failed call as an invalid
+transition: the gas attached to a transaction could decide a verdict
+([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)).
+The local mirror ran calls with the ethereumjs default of about 16.7M gas, at the dispute-execution
+budget.
+
+**Proposed direction:** Done, revised 2026-09-26 (engineer decision: fraud-proof replay is funded
+upfront): [AStateMachine.sol](../implementation/source/contracts/V1/AStateMachine.sol.md) refuses
+with `ErrorInsufficientGasForStateTransition` before the transition runs unless it can grant the
+full `gasLimit` ([L189-L193](../../../contracts/V1/AStateMachine.sol#L189-L193)), because a
+transition can catch an inner out-of-gas and still succeed or fail with its own error;
+`getStateTransitionGasRequirement` publishes the gas the machine frame needs.
+[UtilityFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md)
+`getStateTransitionReplayGas` adds the 1/64 kept at each of five enclosing calls (multicall, facet delegatecall, `FraudProofFacet` delegatecall, `executeStateTransition`, state machine);
+[StateChannelManagerProxy.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)
+routes it, re-raises the refusal and rejects empty-returndata machine frames;
+[DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md) sends the
+fraud-proof multicall and `applyDisputeFraudProofs` with the signer estimate (with its headroom)
+plus that requirement (engineer decision 2026-09-27: an estimator that reports gas spent misses the
+unused budget that must be free when the replay starts and the work before the replay, which
+exceeded a fixed 30% margin on a poker dispute; with a searching estimator the sum declares more
+than needed, at least about 2.5 × the requirement, which changes no verdict but must still fit a
+block; open as [`FIND-GASEST-2-94YFZ6`](open-findings.md#find-gasest-2-94yfz6));
+[ContractExecutor.ts](../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md)
+funds each local EVM call with the larger of the EVM default, the dispute-execution budget and the
+replay requirement (1e9 removed). The machine copies the call input and reads the budget before its
+gas check and then CALLs with only fixed opcodes in between, so a large input cannot shrink the
+stipend after the check; it deletes the previous transition's outbound messages before the input
+copy and the check, so the caller pays for the deletion outside the budget and the transition writes
+into empty slots (review 6, FO3, engineer decision). Regression coverage:
+[`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF`](../implementation/source/contracts/V1/AStateMachine.sol.md#unit-test-astate-machine-2-z2xxmf),
+[`UNIT-TEST-MANAGER-PROXY-3-C3NY4X`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-3-c3ny4x),
+[`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
+P5–P10. Assessment:
+[implementation.md](./implementation.md#dispute-gas-estimation-and-the-transition-stipend--2026-09-08).
+
+<a id="find-gasest-1-28j88d"></a>
+
+### FIND-GASEST-1-28J88D
+
+**Defect:** _Resolved (2026-09-09), node side._
+[DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md) sends
+`applyDisputeFraudProofs` and the batched dispute multicall without a gas limit, so the node
+estimates gas. On the runner's hardhat that costs about 11.5 replays of the disputed transition per
+send (bisection after a failed exact-gas probe; the chain time of the re-mined pending block
+advances meanwhile), which exceeded the 5 s kill period in the poker consumer's fixtures and
+surfaced as `RaceConditionDisputeKillPeriodExpired` from `eth_estimateGas`
+([`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)).
+`uploadDispute` already pins a gas limit and took under a second on the same node.
+
+**Proposed direction:** Chosen resolution: the runner's node was fixed, not the send path. The peer3
+hardhat fork (release `precompile-v2`) now tries Geth's `(spent + refund) * 64/63` probe before
+bisecting, which only converges because the post-hoc stipend rule keeps the gas a replay needs close
+to what it uses; measured 2.7 executions per estimate instead of 11.5, and dispute sends on the
+poker farm dropped from 13–15 s to about 1 s. Production nodes (geth, anvil) already estimate this
+way. Metering in the local mirror was rejected because the mirror has no guarantee of matching chain
+state, and a fixed high gas limit was rejected because blocks are packed by declared limit.
+`eth_estimateGas` stays the send path. Follow-up (2026-09-09): the batched dispute `multicall` still
+failed the one-boundary probe (its extra delegatecall frames retain more than 1/64) and fell into a
+nine-round bisection, 5 to 11 s per estimate on the farm while holding the node's single request
+mutex. The fork now runs the transaction once and returns the gas it needed before refunds plus 30%,
+capped at the block gas limit; every estimate is one execution. Since 2026-09-26 the transition
+stipend is funded upfront ([`FIND-STIPEND-1-9YSNWB`](open-findings.md#find-stipend-1-9ysnwb)): the
+estimate still runs once, and the two replay sends use it plus the manager's
+`getStateTransitionReplayGas` (engineer decision 2026-09-27), so the fork's estimator never searches
+for the stipend.
+
+<a id="find-auth-1-c1zhbj"></a>
+
+### FIND-AUTH-1-C1ZHBJ
+
+**Defect:** _Resolved (2026-09-26), engineer decision._ Block author authenticity at intake
+([BlockQueueManager.ts](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md),
+[BlockIngestService.ts](../implementation/source/src/stateManager/ingest/BlockIngestService.ts.md))
+moved from `LocalDiamond.isBlockAuthentic` to TypeScript (`Block.isAuthentic`) without a
+specification decision, against the letter of
+[`INV-MIRROR-1-VAF778` (Single implementation)](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
+and block-processing stage 1. Review then showed a real acceptance difference beyond ABI decoding:
+ethers recovery accepted 64-byte compact signatures and normalized `v` values 0/1 and EIP-155 values
+that OpenZeppelin `ECDSA.tryRecover(bytes32, bytes)` rejects, so a Byzantine author could re-encode
+its own signature and have a block accepted locally that every on-chain proof check refuses.
+Motivation for the TypeScript path: the EVM path recovered the author twice per received block on
+the contract-executor thread, the busiest thread in the six-player poker profile.
+
+**Proposed direction:** Decision (Luka, 2026-09-26): keep TypeScript and caching, with exact parity
+to the contracts' acceptance rule; author and confirmation signatures are the same signatures and
+follow one rule. Specification:
+[`INV-MIRROR-1-VAF778` (Single implementation)](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
+gains the pure-check carve-out and block-processing stage 1 names the contracts' acceptance rule.
+Code: [SignerRecoveryCache.ts](../implementation/source/src/cache/SignerRecoveryCache.ts.md)
+`isContractAcceptedSignature` ([L120](../../../src/cache/SignerRecoveryCache.ts#L120)) refuses every
+encoding the bytes overload rejects (not exactly 65 bytes, `v` not 27/28, `r` outside `(0, n)`, `s`
+outside `(0, n/2]`) before any recovery, and every protocol recovery goes through `recoverSigner`
+([L135](../../../src/cache/SignerRecoveryCache.ts#L135));
+[BlockQueueManager.ts](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md)
+decodes each confirmation once with `Block.tryFromBlockConfirmation` and checks `Block.isAuthentic`
+([L81-L90](../../../src/stateManager/ingest/BlockQueueManager.ts#L81-L90)); the public
+`UtilityFacet.isBlockAuthentic` route and interface declaration were removed as dead surface. The
+carve-out covers signatures only: block decoding stays `Codec`, and decoding parity with the
+contracts is the separate finding
+[`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v) (engineer decision 2026-09-27; the
+contract-decode path of 2026-09-26 was removed; resolved 2026-10-15 on the narrowed boundary). Evidence:
+[`INV-MIRROR-1-VAF778.T1`](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778.t1) P7,
+P9 and P10, mapped in the signer-recovery, validation-service and queue-manager verification
+reports.
+
+<a id="find-decode-1-fd1v6v"></a>
+
+### FIND-DECODE-1-FD1V6V
+
+**Defect:** _Resolved (2026-10-15)._ Client and contract decoders once accepted different byte
+strings for the same logical values, including a signed block encoding with trailing or otherwise
+non-canonical bytes. A Byzantine author could post such a block encoding as calldata and use it to
+refute an honest timeout while peers had never accepted that block; signed bytes, not merely
+decoded fields, also form block identity. The block boundary was resolved on 2026-10-12:
+`UtilityFacet.decodeBlock` and `Codec.decode` for `Type.Block` enforce the canonical round trip
+with `ErrorNonCanonicalEncoding`, and `postBlockCalldata` decodes through `decodeBlock`. On
+2026-10-14 `Codec.decode` became universal for every client type, and both dispute uploads began
+requiring the recorded commitment to equal the hash of the submitted dispute bytes after the race
+checks and before the commitment is recorded. Evidence:
+[UtilityFacet.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol.md),
+[StateChannelManagerProxyRegistration.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyRegistration.t.sol.md),
+[Codec.test.ts](../verification/tests/test/utils/Codec.test.ts.md),
+[DisputeWindowAdmission.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeWindowAdmission.t.sol.md), and
+[E2E-FraudProofsBlockConfirmation.test.ts](../verification/tests/test/e2e/E2E-FraudProofsBlockConfirmation.test.ts.md).
+On 2026-10-15 the engineer narrowed the remaining scope: canonicality is required where bytes
+become an identity, commitment, stored or emitted chain data, posted calldata, or data decoded by
+clients from chain data. Signature-bound open and join inputs are exempt because their exact bytes
+are signature-verified and only their decoded fields are used afterward; transient fraud-proof
+payloads are exempt because they are never hashed, committed, or stored and their verdicts use
+decoded fields alone, while nested signed blocks remain governed by the block boundary where their
+bytes are identity-bearing; inbound JOIN message data is produced by the chain as the canonical
+encoding of each admitted join; execution-internal decodes of contract-produced bytes,
+delegatecall results, and `Codec.decodeEvmResult` over trusted local contract results are likewise
+outside the defect scope. A future change that hashes, stores, emits, or has clients decode an
+exempt input must restore a canonical check at that boundary.
+
+**Proposed direction:** Decision (Luka, 2026-09-27): `Codec` stays the only client decoder and
+`ValidationService` has no decoding logic; the original planned resolution was identical contract
+and TypeScript acceptance for every input. Engineer decision (2026-10-15): that parity rule is
+narrowed to the identity, commitment, storage, emission, posted-calldata, and
+client-decoded-chain-data boundary recorded in
+[`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../specification/protocol-model/data-types.md#req-data-1-1knrqs).
+Signature-bound and transient proof inputs are exempt for the reasons in the finding. On that
+boundary the 2026-10-12 and 2026-10-14 resolutions close this finding; reopen it if an exempt
+input crosses the boundary. The same pass amended the decoding clause of
+[`INV-MIRROR-1-VAF778` (Single implementation)](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) to this
+boundary, so no normative statement requires identical acceptance of exempt envelopes.
+
+<a id="find-gasest-2-94yfz6"></a>
+
+### FIND-GASEST-2-94YFZ6
+
+**Defect:** _Open (2026-09-27), engineer decision recorded; revisit gas and estimation as one
+topic._ Fraud-proof replay sends
+([DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md)
+`replayGasLimit`) declare `gasLimit` =
+the signer estimate with its 50% headroom ([gas.ts](../implementation/source/src/utils/gas.ts.md))
+plus the manager's replay requirement `getStateTransitionReplayGas`
+([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)).
+The rule is correct for both estimator models but exact for only one. (1) **Spent-based estimator**
+(the peer3 hardhat fork used by the poker consumer: one run, gas needed before refunds plus 30%,
+capped at the block gas limit; [`FIND-GASEST-1-28J88D`](open-findings.md#find-gasest-1-28j88d)): the
+estimate counts the gas the transition used, never the unused part of the stipend that must be free
+when the replay starts, and the variable work before the replay (proof checks, setting the machine's
+state, deleting the previous transition's outbound messages) can exceed any fixed margin; a poker
+dispute needed about 9.5M (about 3.9M before the replay, requirement 5.64M) while
+`max(estimate, requirement × 1.3)` gave 8.89M and failed the poker gate. The sum is needed there.
+(2) **Searching estimator** (geth, anvil, stock hardhat, and the SDK's in-process EDR test node,
+measured to search): the upfront refusal makes every lower gas fail, so the estimate already
+contains the requirement; the headroom applies to it and the requirement is added again, so the
+declared limit is at least about 2.5 × the requirement. The excess changes no verdict, but blocks
+are packed by declared limit, so it reserves block space and must fit the block gas limit. (3) **Block
+fit depends on the consumer's dispute budget.** With poker's 6.5M transition budget (engineer
+decision 2026-09-27, review 5 MO1) the requirement is about 7.3M and the declared limit about 24M,
+inside a 30M block; with the earlier 16M budget it was not, and any consumer whose transition budget
+exceeds roughly 9M has fraud proofs that a searching node refuses at submission, so that fraud stays
+unproven on-chain. (4) **Resolved (2026-10-15):** `DisputeManager.replayGasLimit` caps the declared limit at the latest
+block's gas limit; a failed block read leaves it uncapped. (5) **No
+send test** exercises a fraud-proof transaction with this rule against a searching node with a 30M
+block: block fit is shown by arithmetic, and the poker replay fixture only runs `eth_call`. History:
+review 3 (FR1 🔴, TO1) and review 4 (FR1 🔴, TO2) flagged the double count on searching estimators and
+proposed a branch (`estimate ≥ requirement ? headroom : estimate + requirement`, capped at the block
+limit) or estimation handled at the provider boundary; the branch was not tried and has a hole on
+the fork (an estimate just above the requirement with a large outer cost gets only headroom). Review
+5 (FO1, TY3) proposed a config switch `GAS_ESTIMATOR_MODEL: "spent" | "search"` and a `search`-path
+send test on the EDR node with a 6.5M/10M budget; neither was built. Review 6 (XO5, TO25) aligned
+the documents with the sum and asked for a real 30M-block poker send; TO25 is deferred to this
+finding.
+
+**Proposed direction:** Decision (Luka, 2026-09-27, review 5 FO1): keep
+`estimate + replay requirement` for this change. Revisit gas and estimation together: choose between
+an estimator-model switch (`GAS_ESTIMATOR_MODEL`) and a rule that is exact on both models, cap the
+declared limit at the block gas limit, and add a fraud-proof send against a searching node with a
+30M block and the consumer's budgets (review 6 TO25), asserting inclusion, the correct verdict and
+the declared limit. Until then the residual above is accepted: cost and block fit, never a wrong
+verdict. (Cap: done 2026-10-15, see item 4.)
+
+<a id="find-dispute-5-mzpttc"></a>
+
+### FIND-DISPUTE-5-MZPTTC
+
+**Defect:** _Open (2026-10-08); mitigated 2026-10-15, budget unconfirmed._ Under load, the honest audit-and-kill pipeline takes longer than
+`evidenceTime`, so an honest kill can miss the kill period and an invalid dispute can survive. **Measurement**
+(poker six-player gate on one shared Hardhat node, 1 s block interval, test time configuration
+`evidenceTime` 10 s and `agreementTime` 3 s): the window opened and all 6 runtimes received
+`DisputeCommitted` with no event lag. (1) **Audit**
+([Stage 4](../specification/disputes/dispute-processing.md#stage-4--audit-auditor-role);
+[`EventHandler.handleDisputeCommitted`](../implementation/source/src/eventHandlers/EventHandler.ts.md) →
+[`DisputeValidationService.validateDispute`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md)
+[L68](../../../src/stateManager/dispute/DisputeValidationService.ts#L68)) took about 4 s. It is
+CPU-bound in each runtime's local EVM: the
+[ContractExecutorRoot](../implementation/source/src/rpc/internal/roots/ContractExecutorRoot.ts.md)
+workers ran at 0.6–0.85 utilization and event-loop delay reached about 490 ms; each audit also made
+about 5 chain `eth_call`s. (2) **Dispute construction**
+([Stage 2](../specification/disputes/dispute-processing.md#stage-2--construction-and-submission-disputer-role))
+took 1–3 s. (3) **Gas estimation** of the kill-and-dispute multicall
+([DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md)
+`replayGasLimit` around `multicall.estimateGas`,
+[L224-L227](../../../src/disputeManager/DisputeManager.ts#L224-L227); 2.4–3.1M gas each) took 2–4 s,
+because the single Hardhat node ran the five estimates one after another. (4) **Block inclusion**
+took 1–3 s; the node mined 7 blocks in 12 s at a 1 s interval (chain time behind wall time, see
+[`OQ-SPEC-CLOCK-1-Z8TBFE` (Keeping runtime clocks in agreement over a session)](../specification/open-questions.md#oq-spec-clock-1-z8tbfe)).
+Total: about 12 s, more than the 10 s evidence time. All 5 honest kill-and-dispute multicalls landed
+after the evidence end. The invalid dispute was killed only because its own disputer killed it.
+Without that, the honest kills would have reverted with `RaceConditionDisputeKillPeriodExpired` and
+the invalid dispute would have survived: a safety risk under load. **Already in place:** the
+kill-and-dispute upload is best effort, so the kill lands even when the upload is refused; a lost
+evidence race is a no-op inside `DisputeManager.dispute`
+([DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md) decision 14;
+[`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m);
+[`OQ-SPEC-EVIDENCE-RACE-1-TKNWBJ` (Interpreting a lost evidence race)](../specification/open-questions.md#oq-spec-evidence-race-1-tknwbj));
+the audit logs the time left in the evidence and kill periods at its start and with its verdict. **Decision
+(Luka, 2026-10-08):** the kill stays atomic with the honest node's own dispute in one multicall; the
+node does not send its kill alone first to gain time.
+
+**Mitigation (2026-10-15):** the auditor builds its own state proof while the audit runs
+(`EventHandler.handleDisputeCommitted`) and the kill-and-dispute or the evidence comparison reuses it
+at an unchanged height; both multicall estimates start together; the declared gas limit is capped at
+the block gas limit. `time.md` §3 gives non-normative sizing guidance for `evidenceTime`.
+**Residual:** nothing enforces that sizing, the pipeline budget has not been measured after this
+change, inclusion delay is unbounded, and the poker gate (`evidenceTime` 10 seconds on 1 second
+blocks) leaves little margin for poker's costlier audit; the SDK harness defaults were raised by 4
+seconds (Luka, 2026-10-15). **Decision (daiagi, 2026-10-15, PR #551 OO1, revised):** no normative
+`evidenceTime` floor or deploy-time check; this finding stays Open until a measurement after this
+change sizes the budget.
+
+**Proposed direction:** Remaining, no direction selected (sizing guidance for (d) now exists in
+`time.md` §3): (a) **Audit cost.** Measure what
+dominates the 4 s (state-transition replay, proof verification, repeated `setState`/`getState` in
+the local EVM); cache repeated work; run the cheap invalidity checks first so an invalid dispute
+reaches its kill sooner. (b) **Estimation cost.** Estimate the multicall locally on the local
+diamond, or declare a precomputed gas bound, instead of a node `estimateGas` (relates to
+[`FIND-GASEST-2-94YFZ6`](open-findings.md#find-gasest-2-94yfz6)). (c) **Deadline budget.** Abort or
+shorten the pipeline when the remaining kill period is too short for the measured latency. (d) **`evidenceTime`
+sizing.** Give guidance that sizes `evidenceTime` against the measured audit, construction,
+estimation and inclusion latency under the expected load.
+
+<a id="find-dispute-6-e2yj9x"></a>
+
+### FIND-DISPUTE-6-E2YJ9X
+
+**Defect:** _Open (2026-10-20)._ A competing history can bypass a later joiner, and no kill removes it.
+The chain anchor is 50 with participants A to E. A later joiner L posts a JOIN on chain. The honest
+history X consumes that JOIN in the join hop at 60, signed by A to E and L, and reaches the
+threshold-final point F = 100, where L has won 30 from A. A to E build a side chain Y from the
+anchor: one hop to 1000', signed by A to E alone, whose inbound head stays below L's JOIN. Y's walk
+counts only the joiners inside its own inbound interval, so L's signature is never required
+([`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../specification/protocol-model/finality.md#req-fin-7-rtzwqz)).
+L disputes with X and A disputes with Y in one window. Y's proof walks valid from the anchor, and Y
+holds no block at F's height, so `DisputeConflictsWithFinalState` cannot be built against it
+([`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)). `reduce` then picks Y by
+longest chain and rolls back L's final outcomes on X. L's deposit is carried, because the reduction
+consumes the pending JOIN.
+
+**Proposed direction:** A `DisputeFinalPointRegression` kill, proposed in the review of
+[PR #560](https://github.com/peer3to/state-channels-plus/pull/560). F = 100 is final with inbound
+height 2, while Y's final point G = 1000' is above F with inbound height 1, so Y's final point
+regresses the inbound height of a proved final point. The kill does not exist in the contracts yet.
+Its proof carries three fields, and it kills dispute D when all of these hold:
+
+- `finalProof` walks F from the chain's start and proves it threshold-final, as
+  `DisputeConflictsWithFinalState` does. F may be the on-chain anchor.
+- `milestoneIndex` selects one of D's milestones whose first block G lies strictly above the
+  on-chain anchor, so G is final in a valid walk. A milestone that holds the anchor, a block below
+  the anchor and a tail block are never accepted.
+- `gSnapshot` is the preimage of G's `stateSnapshotHash`, checked by `keccak256`.
+- `F.blockHeight < G.transactionCnt`, and the stored inbound height of F is greater than that of G.
+  Each height is read from `inboundMessageBlockMap` for the snapshot's
+  `latestInboundMessageBlockHash`, never from the snapshot's own height field: a colluding side can
+  sign a real hash next to a false, larger height.
+
+On one history the inbound height never goes down, so the kill never fires there.
+
+**Evidence:** `test_K1_sideChainBypassingALaterJoinerLosesTheReductionToTheJoinersFinalHistory` in
+[DisputeFinalPointRegression.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeFinalPointRegression.t.sol.md)
+builds the case with a proposed proof struct and fails on its last assertion today. It is skipped
+(`vm.skip(true)`) until the kill lands.
+
+**Exit:** Implement the `DisputeFinalPointRegression` kill, replace the test's proposed struct and
+proof-type slot with the real ones, remove the skip, and the test passes. Then add its requirement
+and test mapping in the specification and verification layers.
+
+<a id="find-events-1-3jf8fm"></a>
+
+### FIND-EVENTS-1-3JF8FM
+
+**Defect:** **Pending on the chain-finality assumption (2026-10-21, engineer decision).** Not
+fixed and not closed: the whole code base treats chain data as final
+([chain finality](../specification/runtime/chain-observation.md#assumptions-and-constraints)), so this defect cannot occur under that assumption. The
+assumption is known to be wrong on any chain that can reorganize and must be lifted at some point;
+this entry is the single place that lists what lifting it must revisit (below).
+[EventSyncService.ts](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)
+applies chain logs delivered by the provider subscription as canonical: a `ChannelOpened` log
+installs the genesis, and no path re-checks that the log's block is still on the chain; a later
+`removed` delivery is logged and ignored (`EventSyncService.scheduleLog`), so the installed genesis
+stays. A node that delivers logs for a block it later drops (hardhat's pending-block
+simulation did this on the shared test node until the peer3 fork muted it; a real chain does it on a
+reorg) leaves the node on a genesis fork the chain never stored, which breaks spectator
+synchronisation and every dispute audit that follows.
+
+The observed instance was a node defect (hardhat) and is fixed there.
+
+**Engineer decision (Luke, 2026-10-21).** Finality is assumed throughout the code base, so a fix
+for this one log would not make the node reorg-safe; lifting the assumption is a larger rewrite
+than this finding. Record the assumption, acknowledge it is wrong, and park every reorg-dependent
+item on it instead of closing or deleting them.
+
+**Lifting the assumption must revisit:**
+
+- this finding: a removed `ChannelOpened` log leaves the installed genesis in place;
+- the reorg half of [`OQ-30-2G0Q5M` (Chain-reorg handling and canonical event ordering)](../implementation/open-questions.md#oq-30-2g0q5m): the
+  progress marker is a bare block number, with no block hash and no rollback of a removed event's
+  effects (local diamond, storage, marker, decisions taken from them);
+- the equal-height inbound tip case of
+  [`FIND-STORAGE-2-NK2XBF`](open-findings.md#find-storage-2-nk2xbf), which only matters on a reorg;
+- [`DEF-6-B4ZN7S`](open-findings.md#def-6-b4zn7s): a pending participant is set from a single
+  receipt;
+- every transaction wait acts on first inclusion (default one confirmation), and chain reads use
+  `latest`, never `safe` or `finalized` (clock, pinned membership read, nonce handling, catch-up
+  head);
+- the event key carries the block hash, the only reorg-aware piece: a log mined again in another
+  block is handled as a new log;
+- the runtime clock is synced once per session and never corrects for a reorganization
+  ([`OQ-SPEC-CLOCK-1-Z8TBFE` (Keeping runtime clocks in agreement over a session)](../specification/open-questions.md#oq-spec-clock-1-z8tbfe));
+- the join candidate rule "promote on the canonical event, roll back on reorg" in
+  [`OQ-10-04YNC4` (Spectate/join failure-point details)](../specification/open-questions.md#oq-10-04ync4) has no rollback to call.
+
+<a id="find-mirror-1-yecyeq"></a>
+
+### FIND-MIRROR-1-YECYEQ
+
+**Defect:** Resolved in the current proof tiers. The original defect converted execution/read
+failures into invalid-proof verdicts and risked an unsupported self-slashing counter. Local reverts,
+executor errors and chain RPC failures now propagate; only completed false results fall through.
+Malformed checked peer bytes remain invalid evidence.
+
+**Proposed direction:** Current evidence is mapped under
+[`REQ-SP-9-RNXP56.T1`](../specification/disputes/state-proofs.md#req-sp-9-rnxp56.t1), including
+executor failure and local revert with no chain walk or stored counter. The removed
+tryVerifyStateProof/CALL_EXCEPTION policy is not the current rule.
+
+<a id="find-rpc-1-e5zhar"></a>
+
+### FIND-RPC-1-E5ZHAR
+
+**Defect:** Known limit (2026-10-07), PR #511. Every endpoint listed in `PROVIDER_URLS` is trusted.
+A malicious endpoint can forge logs; the participant processes them and moves its completed-block
+watermark forward, so real events below it are no longer streamed
+([`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp),
+[`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1),
+[EventSyncService.ts](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)).
+Cross-checking logs between endpoints is out of scope; the limit is documented in the
+[trust model](../specification/security/trust-model.md) (A6) and the
+[security assessment](security-assessment.md). A trusted endpoint can also stall the watermark: a
+reopened endpoint's catch-up holds it until the read finishes. An endpoint that drops during its
+catch-up releases the hold, and a reopened endpoint that fails a window hands the rest to the first
+connected endpoint (engineer decision, 2026-10-07). The first connected endpoint (with one endpoint,
+that endpoint) can still hold the watermark without end by failing every `eth_getLogs` of the
+catch-up, or by staying behind the reopened endpoint's head, while the reopened socket stays open;
+the reopened endpoint can hold it the same way by failing every head request on its open socket,
+since the catch-up retries that request with the backoff and never falls back to the first connected
+endpoint's head (engineer decision, 2026-10-07); as can an honest one that rate-limits or has a
+range limit below `LOG_QUERY_MAX_BLOCKS`; meanwhile dedup entries and block states are not pruned
+and recovery queries read from the held block.
+
+**Proposed direction:** Keep out of scope for this change. Cross-check logs between endpoints only
+if the trust model drops the honest-endpoint assumption.
+
+<a id="find-rpc-2-arncrn"></a>
+
+### FIND-RPC-2-ARNCRN
+
+**Defect:** Known limit (2026-10-07), PR #511. A transaction sent just before its endpoint drops and
+then retried on another endpoint can leave a nonce gap: the first endpoint may have taken the nonce
+without propagating the transaction, and later transactions through the next endpoint queue behind
+it
+([`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3),
+[MultiRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md)).
+
+**Proposed direction:** Fixing it needs a change to
+[HostNonceManager](../implementation/source/src/evm/signer/HostNonceManager.ts.md), for example
+reconciling the local nonce with the chain after a failover.
+
+<a id="find-rpc-3-fy8yv3"></a>
+
+### FIND-RPC-3-FY8YV3
+
+**Defect:** Known limit (2026-10-07), PR #511. While no endpoint is connected, requests wait without
+a time limit, as a dropped single socket did before this change. Shutdown releases them: it rejects
+every waiting request
+([`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3),
+[MultiRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md)).
+
+This also holds for the application chain access the SDK now exports (`createRpcNodesProvider`,
+[`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)): after its
+start it never throws because every endpoint is down; a request waits. Luka's rule (shared poker client
+manager plan, 2026-10-26): every component uses the SDK's provider; the provider decides when to throw,
+and no caller handles provider failures at its call sites; once the provider throws, the failure is
+fatal for the caller. So a full outage is not reported to the application while it lasts.
+
+**Proposed direction:** None for now; revisit later. A time limit on waiting requests, after which the
+provider throws, is a separate design decision.
+
+<a id="find-rpc-4-7h2r11"></a>
+
+### FIND-RPC-4-7H2R11
+
+**Defect:** Known limit (2026-10-26). A contract-log subscription on the application chain access
+([`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8),
+[MultiRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md)) relays only what the node sockets deliver live. `RpcNodesLogSubscriber`
+subscribes again on a reopened socket but does not read the logs that node missed while it was
+disconnected. A log emitted while every node was disconnected is never delivered. The runtime's own
+event pipeline has the re-read ([`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)); this subscription
+does not.
+
+**Disposition:** Recorded, not addressed now; revisit later (Luka, 2026-10-26).
+
+<a id="find-rpc-5-g4wnx5"></a>
+
+### FIND-RPC-5-G4WNX5
+
+**Defect:** Open (2026-10-26). A node that answers `eth_subscribe` with an error on a live socket
+leaves an unhandled rejection: ethers does not handle that answer, and `NodeSocket.send`
+([RpcNodeProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md)) settles only an `eth_subscribe` answer that the socket's destroy
+cancelled (that one never settles). No test answers `eth_subscribe` with an error on a live socket.
+Relates to [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8).
+
+**Disposition:** Recorded, not addressed now; revisit later.
+
+<a id="find-rpc-6-cz4gcv"></a>
+
+### FIND-RPC-6-CZ4GCV
+
+**Defect:** Known limit (2026-10-26). `on(filter)` on the application chain access never delivers a
+reorganization removal: `RpcNodesLogSubscriber` relays every socket log as a new log, keyed by block
+hash and log index, and a removed log is not reported as removed. An application that applies logs
+keeps the effect of a log the chain removed. The runtime's own pipeline logs and ignores removals
+([`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)).
+Relates to [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8).
+
+**Disposition:** Recorded, not addressed now; revisit later.
+
+<a id="find-rpc-7-8jdkbk"></a>
+
+### FIND-RPC-7-8JDKBK
+
+**Defect:** _Resolved (2026-10-26)._ When a peer retired its old transport after a transport upgrade,
+the remote side saw the socket close as unexpected: `NetworkTransport.afterClose` fired
+`onDisconnection` (`isExpected=false`) for the peer address
+([NetworkTransport.ts](../implementation/source/src/transport/NetworkTransport.ts.md)), although the
+peer was still connected over the new transport of the same identity. An application hook that
+treated `onDisconnection` as the peer leaving acted on a peer that did not leave. Now `afterClose`
+fires `onDisconnection` for an unexpected close only when the peer has no other live transport
+(`isPeerStillConnected`); the unexpected close of the last live transport still reports one. Relates
+to [`REQ-UPG-2-WH7BC7` (Re-authentication before cutover)](../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7).
+
+**Disposition:** Resolved by Luka's decision to fix it now (2026-10-26). Test: `reports no
+disconnection when the remote retires the original transport while the replacement stays live, and
+one when the last transport closes`
+([`UNIT-TEST-ATRANSPORT-1-7DGX9R.P13`](../implementation/source/src/transport/NetworkTransport.ts.md#unit-test-atransport-1-7dgx9r),
+[`REQ-UPG-2-WH7BC7.T1.P6`](../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7.t1.p6)).
+
+<a id="find-integrator-1-5mf8n9"></a>
+
+### FIND-INTEGRATOR-1-5MF8N9
+
+**Defect:** Open (2026-10-08). The state-machine obligations an integrator implements through the
+[`AStateMachine`](../implementation/source/contracts/V1/AStateMachine.sol.md) hooks (no ambient
+context, canonical serialization and round-trip, complete mapping enumeration, deterministic
+transitions, balance algebra, admission and top-up, and routing `getNextToWriteOf(bytes)` through a
+state-machine diamond, without which every timeout audit throws) have no generic conformance check.
+The protocol trusts every application contract to meet them.
+
+**Proposed direction:** Ship a reusable conformance suite an integrator runs against its own state
+machine, or record these as documented integrator obligations with review guidance.
+
+<a id="find-deploy-1-t2xfrk"></a>
+
+### FIND-DEPLOY-1-T2XFRK
+
+**Defect:** Open (2026-10-08). The
+[`StateChannelManagerProxy`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)
+constructor rejects a codeless route target (`_registerRoute`) but accepts any code-bearing address
+as a module, so an incompatible module is not rejected as
+[`REQ-CONTRACT-ARCH-4-FZ3CJE` (Upgrade and deployment integrity)](../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje)
+requires.
+
+**Proposed direction:** Check each module's identity at construction, or record module compatibility
+as a trusted-deployer assumption in the specification.
+
+<a id="find-config-1-wzm0w0"></a>
+
+### FIND-CONFIG-1-WZM0W0
+
+**Defect:** Open (2026-10-08). `createConfig`
+([config.ts](../implementation/source/src/utils/config.ts.md)) merges configuration without range
+checks, apart from `LOG_QUERY_MAX_BLOCKS` (`assertLogQueryMaxBlocks`), and `coerceEnvValue` silently
+drops an unparseable environment value, contrary to
+[`REQ-CONFIG-3-J4H12F` (Safe bounds)](../specification/runtime/configuration.md#req-config-3-j4h12f).
+
+**Proposed direction:** Validate every timing, memory, concurrency, payload and retry value in
+`createConfig` and reject an unparseable or out-of-range value.
+
+<a id="find-timeout-1-r8ewz5"></a>
+
+### FIND-TIMEOUT-1-R8EWZ5
+
+**Defect:** Open (2026-10-28). `TimeoutManager.scheduleTask`
+([TimeoutManager.ts](../implementation/source/src/utils/TimeoutManager.ts.md)) runs every scheduled
+task inside a try/catch that only writes the error with `console.error`. An internal failure in a
+scheduled task is therefore swallowed: it is not fatal, it does not reach the runtime error funnel,
+and its owner never sees it. This includes the WebRTC grace close
+(`WebRTCSetupService`), the lobby match timeout and every other timer task. This is contrary to the
+rule that internal failures are fatal and are owned by the component that causes them.
+
+**Engineer decision (Luka, 2026-10-28):** remove the try/catch from `scheduleTask`; every caller defines
+how it handles its own task's errors.
+
+**Status:** Open, deferred: the change touches every `scheduleTask` caller, so the surface is too big for
+now.
+
+<a id="find-lif-1-b36vst"></a>
+
+### FIND-LIF-1-B36VST
+
+**Defect:** _Withdrawn (2026-10-27)._ Luke decided to keep `onDisputeStarted(3 × evidenceTime)`
+in `EventHandler.handleDisputeCommitted`
+([EventHandler.ts](../implementation/source/src/eventHandlers/EventHandler.ts.md)): the surfaced
+value is a conservative ceiling that also covers the reduction transaction landing after the kill
+period (measured pipeline latency in [`FIND-DISPUTE-5-MZPTTC`](open-findings.md#find-dispute-5-mzpttc)), while
+about `2 × evidenceTime` stays the protocol-side pause. [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm) now states the
+ceiling, so the code no longer departs from it.
 
 ## Evidence backlog retained after traceability repair
 
 <a id="find-verify-1-gferdm"></a>
 
-### FIND-VERIFY-1-GFERDM — Four specified behavior families lack exact evidence
+### FIND-VERIFY-1-GFERDM — The host-environment matrix lacks exact evidence
 
-Status: open verification gap. The implementation links exist, but no declaration currently owns a complete permutation for these families. Adding an implementation link does not close this gap.
+Status: open verification gap, narrowed (2026-10-27) to the host matrix.
+[`INV-ENFDIS-1-1K65DT` (Commitment-exact reduction)](../specification/enforcement/dispute-window.md#inv-enfdis-1-1k65dt) and [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
+now have exact evidence for every permutation. [`INV-DISPUTE-PIPE-1-BN0K81` (Equivalent audit)](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81) has it
+for the valid, invalid, calldata and no-calldata cases. Luke decided the two other audit cases
+(2026-10-27):
 
-- [`REQ-RUNTIME-5-WJ1XKK` (Required host environments: browser and Node)](../specification/runtime/execution.md#req-runtime-5-wj1xkk): the browser, Node, mixed-host and worker-less capability matrix remains unverified as a whole. The runtime setup report identifies its platform boundary; its code contribution does not supply the missing test evidence.
-- [`INV-ENFDIS-1-1K65DT` (Commitment-exact reduction)](../specification/enforcement/dispute-window.md#inv-enfdis-1-1k65dt): no exact declaration currently proves its planned dispute-window invariants in full.
-- [`INV-DISPUTE-PIPE-1-BN0K81` (Equivalent audit)](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81): no exact declaration currently owns its complete planned audit invariant.
-- [`REQ-LIF-7-0XZBDM`](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm): the required pause, queued-work, unrelated-fork, resume, notification and duplicate-event observations have no assigned specification evidence.
+- The delivery-order permutation is removed. Auditors learn disputes only from chain events, which
+  arrive in one canonical (block, log index) order, and a lagging auditor receives the same order
+  in a burst, so delivery order is not a variable the system can produce.
+- [`INV-DISPUTE-PIPE-1-BN0K81.T1.P4`](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81.t1.p4) (restart) is deferred until persistence exists
+  ([`OQ-23-SDBGYB` (SDK restart and recovery semantics)](../implementation/open-questions.md#oq-23-sdbgyb)). Storage is in memory only and a
+  restarted peer comes back as a fresh spectator and resyncs, so resuming an audit after a restart
+  does not exist yet.
 
-Keep their generated evidence cells as `none — gap`. Close a permutation only after a test asserts its full oracle. This is the explicit-gap disposition allowed by the accepted traceability fix; the current source changes do not claim to implement this broader test matrix.
+What remains is [`REQ-RUNTIME-5-WJ1XKK` (Required host environments: browser and Node)](../specification/runtime/execution.md#req-runtime-5-wj1xkk): the browser, Node, mixed-host and
+worker-less capability matrix is unverified as a whole. The browser gates run transport, executor,
+clock and logging scenarios, not the protocol capabilities in a browser host, a mixed
+browser/Node channel or browser lifecycle suspension. The runtime setup report identifies the
+platform boundary; its code contribution does not supply the missing test evidence.
+
+Keep its generated evidence cells as `none — gap`. Close a permutation only after a test asserts
+its full oracle. This is the explicit-gap disposition allowed by the accepted traceability fix.
 
 <a id="find-sync-1-jwy1c8"></a>
 
@@ -112,8 +2687,9 @@ Required evidence: [`REQ-SYNC-1-T2589H.T1.P16`](../specification/peer-communicat
 
 <a id="find-log-1-659qd2"></a>
 
-## FIND-LOG-1-659QD2 — Folded collection summary has unsupported coverage credit
+### FIND-LOG-1-659QD2 — Folded collection summary has unsupported coverage credit
 
-**Status:** Resolved by the engineer's replacement of distributed flush summaries with local outcomes and best-effort gossip.
+**Status:** Resolved by the engineer's replacement of distributed flush summaries with local
+outcomes and best-effort gossip.
 
 The old queued-exclusion implementation and its unsupported whole-tree coverage credit have been removed. The current [service contract](../implementation/source/src/rpc/internal/services/logger/LoggerService.ts.md) has no per-origin summary. Its [exact tests](../verification/tests/test/utils/logging/LoggerService.test.ts.md) observe local outcomes, generation behavior and receiver arrivals. This disposition does not claim that the former algorithm was correct.

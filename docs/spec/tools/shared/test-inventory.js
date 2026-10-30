@@ -7,14 +7,17 @@ const {
     IMPLEMENTATION_PERMUTATION_PATTERN,
     SPECIFICATION_PERMUTATION_PATTERN
 } = require("./id-utils");
+const { REPO_ROOT, SPEC_ROOT } = require("./traceability-utils");
 
 const TEST_FILE_RE = /(?:\.(?:test|spec)\.[cm]?[jt]sx?|\.t\.sol)$/;
 const TEST_ENTRYPOINT_RE =
     /(?:^|[\s"'=])((?:\.\/)?test\/[\w./-]+\.[cm]?[jt]sx?)/g;
-// A "Tests and covered test IDs" table row in a verification test report:
-// | [`selector`](<rel test path>#L<line>) (line <line>) | <covers cell> |
-const COVERS_ROW_RE =
-    /^\|\s*\[.+?\]\(([^)#]+)#L(\d+)\)\s*\(line (\d+)\)\s*\|\s*(.*?)\s*\|\s*$/;
+// A test bullet under `## Tests` in a verification test report, whose path
+// mirrors the test file (verification/tests/<test path>.md):
+// - `<test name>`: <covered test IDs, or none>
+const TEST_BULLET_RE = /^- `(.+)`: (.*)$/;
+const LIST_ITEM_RE = /^\s*(?:[-*+]|\d+\.)\s/;
+const REPORTS_ROOT = path.join(SPEC_ROOT, "verification", "tests");
 // Only whole permutation IDs are assignable as covered test IDs.
 const COVERS_ID_RE = new RegExp(
     `${SPECIFICATION_PERMUTATION_PATTERN}|${IMPLEMENTATION_PERMUTATION_PATTERN}`,
@@ -83,6 +86,17 @@ function callRootName(expression) {
     return null;
 }
 
+// it.skip(...) / describe.skip(...) anywhere in the call chain
+function isSkipCall(expression) {
+    if (ts.isPropertyAccessExpression(expression))
+        return (
+            expression.name.text === "skip" || isSkipCall(expression.expression)
+        );
+    if (ts.isCallExpression(expression))
+        return isSkipCall(expression.expression);
+    return false;
+}
+
 function literalTitle(node) {
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))
         return node.text;
@@ -119,9 +133,10 @@ function extractJavaScriptTests(target) {
     );
     const cases = [];
 
-    function visit(node, suites) {
+    function visit(node, suites, skipped = false) {
         if (ts.isCallExpression(node)) {
             const root = callRootName(node.expression);
+            const skip = skipped || isSkipCall(node.expression);
             if (SUITE_CALLS.has(root) && node.arguments.length) {
                 const part = titlePart(node.arguments[0], sourceFile);
                 const callback = node.arguments.find(
@@ -130,7 +145,7 @@ function extractJavaScriptTests(target) {
                         ts.isFunctionExpression(argument)
                 );
                 if (callback) {
-                    visit(callback.body, [...suites, part]);
+                    visit(callback.body, [...suites, part], skip);
                     return;
                 }
             }
@@ -144,13 +159,15 @@ function extractJavaScriptTests(target) {
                         sourceFile.getLineAndCharacterOfPosition(start).line +
                         1,
                     selector: hierarchy.map(({ title }) => title).join(" > "),
+                    title: part.title,
                     dynamic: hierarchy.some(({ dynamic }) => dynamic),
+                    skipped: skip,
                     source: node.getText(sourceFile)
                 });
                 return;
             }
         }
-        ts.forEachChild(node, (child) => visit(child, suites));
+        ts.forEachChild(node, (child) => visit(child, suites, skipped));
     }
 
     visit(sourceFile, []);
@@ -165,6 +182,7 @@ function extractSolidityTests(target) {
         target,
         line: source.slice(0, match.index).split(/\r?\n/).length,
         selector: match[1],
+        title: match[1],
         dynamic:
             match[1].startsWith("testFuzz") || match[1].startsWith("invariant"),
         source: match[0].trim()
@@ -189,6 +207,7 @@ function extractTestCases(files, entrypoints = new Map()) {
                     target,
                     line: 1,
                     selector: `package script ${name}`,
+                    title: `package script ${name}`,
                     dynamic: false,
                     source: name
                 });
@@ -237,63 +256,125 @@ function ignoreDisposition(target, content = fs.readFileSync(target, "utf8")) {
     return { ignored: true, reason: match[1].trim(), issue: null };
 }
 
+// A bullet names a test by its own title, or by its full `a > b > c` selector
+// when that title repeats in the file.
+const bulletName = (fileCases, testCase) =>
+    fileCases.filter((item) => item.title === testCase.title).length === 1
+        ? testCase.title
+        : testCase.selector;
+
+// The test a bullet names: an exact selector wins, else a title unique in the file.
+function namedTest(fileCases, name) {
+    const exact = fileCases.filter((item) => item.selector === name);
+    if (exact.length > 1)
+        return {
+            reason: `${exact.length} declarations share selector \`${name}\`; rename one so each test has a unique selector`
+        };
+    const titled = fileCases.filter((item) => item.title === name);
+    const matches = exact.length ? exact : titled;
+    if (matches.length !== 1)
+        return {
+            reason: titled.length
+                ? `test name \`${name}\` is ambiguous; use its full selector`
+                : `no test declaration named \`${name}\``
+        };
+    const canonical = bulletName(fileCases, matches[0]);
+    return {
+        testCase: matches[0],
+        reason:
+            name === canonical
+                ? null
+                : `name test \`${name}\` as \`${canonical}\``
+    };
+}
+
+// The test file a report mirrors, or null outside verification/tests/.
+function reportedTestPath(document) {
+    const relative = path.relative(REPORTS_ROOT, document);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) return null;
+    return path.join(REPO_ROOT, relative.replace(/\.md$/, ""));
+}
+
 function scanTestMappings(documents, cases) {
-    const byLocation = new Map(
-        cases.map((item) => [`${item.target}\0${item.line}`, item])
-    );
+    const byTarget = new Map();
+    for (const item of cases) {
+        if (!byTarget.has(item.target)) byTarget.set(item.target, []);
+        byTarget.get(item.target).push(item);
+    }
     const mappings = new Map();
     const invalid = [];
     for (const document of documents) {
-        const markdown = fs.readFileSync(document, "utf8");
-        for (const row of markdown.split(/\r?\n/)) {
-            const match = row.match(COVERS_ROW_RE);
-            if (!match) continue;
-            const target = path.resolve(
-                path.dirname(document),
-                decodeURIComponent(match[1])
+        const target = reportedTestPath(document);
+        if (!target) continue;
+        const issue = (line, owner, reason) =>
+            invalid.push({ document, target, line, owner, reason });
+        if (!fs.existsSync(target)) {
+            issue(
+                null,
+                null,
+                "mirrored test file does not exist; move or delete this report"
             );
-            const line = Number(match[2]);
-            const statedLine = Number(match[3]);
-            const covers = match[4].trim();
+            continue;
+        }
+        const fileCases = byTarget.get(target) || [];
+        // declaration key -> the bullet name that listed it
+        const listed = new Map();
+        let inTests = false;
+        for (const row of fs.readFileSync(document, "utf8").split(/\r?\n/)) {
+            if (/^## /.test(row)) {
+                inTests = row.trim() === "## Tests";
+                continue;
+            }
+            if (!inTests || !LIST_ITEM_RE.test(row)) continue;
+            const match = row.match(TEST_BULLET_RE);
+            if (!match) {
+                issue(null, null, `malformed test bullet: ${row.trim()}`);
+                continue;
+            }
+            const covers = match[2].trim();
             const owners = covers.match(COVERS_ID_RE) || [];
-            if (line !== statedLine) {
-                invalid.push({
-                    document,
-                    target,
-                    line,
-                    owner: owners[0] || null,
-                    reason: `link anchor #L${line} disagrees with (line ${statedLine})`
-                });
-                continue;
-            }
-            const testCase = byLocation.get(`${target}\0${line}`);
+            const { testCase, reason } = namedTest(fileCases, match[1]);
             if (!testCase) {
-                invalid.push({
-                    document,
-                    target,
-                    line,
-                    owner: owners[0] || null,
-                    reason: "no test declaration at anchor"
-                });
+                issue(null, owners[0] || null, reason);
                 continue;
             }
-            if (!owners.length) {
-                // Unassigned row (`—`) — legal; anything else unparseable is not.
-                if (covers && covers !== "—" && covers !== "-")
-                    invalid.push({
-                        document,
-                        target,
-                        line,
-                        owner: null,
-                        reason: "Covers cell has no recognizable test ID"
-                    });
-                continue;
-            }
+            const line = testCase.line;
+            if (reason) issue(line, owners[0] || null, reason);
             const key = `${target}\0${line}`;
+            if (listed.has(key)) {
+                issue(
+                    line,
+                    owners[0] || null,
+                    `test \`${match[1]}\` is already listed as \`${listed.get(key)}\``
+                );
+                continue;
+            }
+            listed.set(key, match[1]);
+            if (!owners.length) {
+                // Unassigned test (`none`) — legal; anything else unparseable is not.
+                if (covers !== "none")
+                    issue(
+                        line,
+                        null,
+                        "test bullet has no recognizable test ID"
+                    );
+                continue;
+            }
+            if (testCase.skipped) {
+                issue(line, owners[0], "test bullet maps a skipped test");
+                continue;
+            }
             if (!mappings.has(key)) mappings.set(key, []);
             for (const owner of owners)
                 mappings.get(key).push({ document, owner });
         }
+        for (const item of fileCases)
+            if (!item.skipped && !listed.has(`${target}\0${item.line}`))
+                issue(
+                    item.line,
+                    null,
+                    `test \`${bulletName(fileCases, item)}\` has no bullet`
+                );
     }
     return { mappings, invalid };
 }
@@ -301,7 +382,6 @@ function scanTestMappings(documents, cases) {
 module.exports = {
     IGNORE_MARKER,
     TEST_FILE_RE,
-    COVERS_ROW_RE,
     COVERS_ID_RE,
     discoverTestFiles,
     extractJavaScriptTests,

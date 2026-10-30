@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
-const os = require("node:os");
 const path = require("node:path");
+const { realTmpdir } = require("../fixtures/temp");
 const { fetchAssessment } = require("../../fetch-assessment");
 const { Publisher } = require("../../publish");
 const { publicationStore } = require("../fixtures/publication");
@@ -1601,7 +1601,7 @@ describe("assessment GitHub lifecycle", function () {
     });
     it("writes each fetch to the next numbered assessment and leaves existing files untouched", async function () {
         const root = await fs.mkdtemp(
-            path.join(os.tmpdir(), "assessment-import-")
+            path.join(realTmpdir(), "assessment-import-")
         );
         try {
             const wire = wireFixture();
@@ -1650,7 +1650,7 @@ describe("assessment GitHub lifecycle", function () {
     });
     it("regenerates from current reads into a new file and keeps an edited earlier assessment as it was", async function () {
         const root = await fs.mkdtemp(
-            path.join(os.tmpdir(), "assessment-fetch-")
+            path.join(realTmpdir(), "assessment-fetch-")
         );
         try {
             const wire = wireFixture();

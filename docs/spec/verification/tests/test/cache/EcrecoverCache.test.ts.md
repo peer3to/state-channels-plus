@@ -1,12 +1,7 @@
-# test/cache/EcrecoverCache.test.ts — Test Report
+# EcrecoverCache.test.ts
 
-> **Test file:** [test/cache/EcrecoverCache.test.ts](../../../../../../test/cache/EcrecoverCache.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [EcrecoverCache.ts](../../../../implementation/source/src/cache/EcrecoverCache.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/cache/EcrecoverCache.test.ts](../../../../../../test/cache/EcrecoverCache.test.ts)
+Exercises: [EcrecoverCache.ts](../../../../implementation/source/src/cache/EcrecoverCache.ts.md)
 
 ## Overview
 
@@ -27,21 +22,16 @@ eviction by the recorded recoveries and that an evicted input recovers the plain
 last case zeroes the key returned by a miss and by a hit and checks that a later hit still returns
 the real key.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full**. Each test ID may be assigned to at most one
-test across the whole tree.
-
-| Test declaration | Covers |
-| --- | --- |
-| [`EcrecoverCache > recovers the same signer as an EVM without the memo`](../../../../../../test/cache/EcrecoverCache.test.ts#L23) (line 23) | [`UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P1`](../../../../implementation/source/src/cache/EcrecoverCache.ts.md#unit-test-ecrecover-cache-1-s0eeq5.p1) |
-| [`EcrecoverCache > memoizes by (digest, signature) — repeats add no entries and return the same signer`](../../../../../../test/cache/EcrecoverCache.test.ts#L35) (line 35) | [`UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P2`](../../../../implementation/source/src/cache/EcrecoverCache.ts.md#unit-test-ecrecover-cache-1-s0eeq5.p2) |
-| [`EcrecoverCache > repeated calls after a cache fill match the plain EVM in output and gas, with one real recovery`](../../../../../../test/cache/EcrecoverCache.test.ts#L48) (line 48) | [`UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P6`](../../../../implementation/source/src/cache/EcrecoverCache.ts.md#unit-test-ecrecover-cache-1-s0eeq5.p6) |
-| [`EcrecoverCache > keys on the digest — one signature under two digests matches the plain EVM for each in a filled cache`](../../../../../../test/cache/EcrecoverCache.test.ts#L60) (line 60) | [`UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P10`](../../../../implementation/source/src/cache/EcrecoverCache.ts.md#unit-test-ecrecover-cache-1-s0eeq5.p10) |
-| [`EcrecoverCache > keys on the signature — two signatures under one digest match the plain EVM for each in a filled cache`](../../../../../../test/cache/EcrecoverCache.test.ts#L90) (line 90) | [`UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P11`](../../../../implementation/source/src/cache/EcrecoverCache.ts.md#unit-test-ecrecover-cache-1-s0eeq5.p11) |
-| [`EcrecoverCache > a high-s signature matches the plain EVM in output and gas`](../../../../../../test/cache/EcrecoverCache.test.ts#L123) (line 123) | [`UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P7`](../../../../implementation/source/src/cache/EcrecoverCache.ts.md#unit-test-ecrecover-cache-1-s0eeq5.p7) |
-| [`EcrecoverCache > an invalid v matches the plain EVM in output and gas, and keeps no entry`](../../../../../../test/cache/EcrecoverCache.test.ts#L144) (line 144) | [`UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P8`](../../../../implementation/source/src/cache/EcrecoverCache.ts.md#unit-test-ecrecover-cache-1-s0eeq5.p8) |
-| [`EcrecoverCache > a signature that recovers no key matches the plain EVM in output and gas, and keeps no entry`](../../../../../../test/cache/EcrecoverCache.test.ts#L157) (line 157) | [`UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P3`](../../../../implementation/source/src/cache/EcrecoverCache.ts.md#unit-test-ecrecover-cache-1-s0eeq5.p3) |
-| [`EcrecoverCache > insufficient precompile gas matches the plain EVM on both sides of the precompile cost`](../../../../../../test/cache/EcrecoverCache.test.ts#L173) (line 173) | [`UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P9`](../../../../implementation/source/src/cache/EcrecoverCache.ts.md#unit-test-ecrecover-cache-1-s0eeq5.p9) |
-| [`EcrecoverCache > evicts the oldest entry first at SIGNER_RECOVERY_CACHE_MAX and recomputes it correctly`](../../../../../../test/cache/EcrecoverCache.test.ts#L206) (line 206) | [`UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P5`](../../../../implementation/source/src/cache/EcrecoverCache.ts.md#unit-test-ecrecover-cache-1-s0eeq5.p5) |
-| [`EcrecoverCache > mutating a returned public key does not change a later recovery`](../../../../../../test/cache/EcrecoverCache.test.ts#L238) (line 238) | [`UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P4`](../../../../implementation/source/src/cache/EcrecoverCache.ts.md#unit-test-ecrecover-cache-1-s0eeq5.p4) |
+- `recovers the same signer as an EVM without the memo`: UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P1
+- `memoizes by (digest, signature) — repeats add no entries and return the same signer`: UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P2
+- `repeated calls after a cache fill match the plain EVM in output and gas, with one real recovery`: UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P6
+- `keys on the digest — one signature under two digests matches the plain EVM for each in a filled cache`: UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P10
+- `keys on the signature — two signatures under one digest match the plain EVM for each in a filled cache`: UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P11
+- `a high-s signature matches the plain EVM in output and gas`: UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P7
+- `an invalid v matches the plain EVM in output and gas, and keeps no entry`: UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P8
+- `a signature that recovers no key matches the plain EVM in output and gas, and keeps no entry`: UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P3
+- `insufficient precompile gas matches the plain EVM on both sides of the precompile cost`: UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P9
+- `evicts the oldest entry first at SIGNER_RECOVERY_CACHE_MAX and recomputes it correctly`: UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P5
+- `mutating a returned public key does not change a later recovery`: UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P4

@@ -1,12 +1,7 @@
-# test/unit/EventBarrier.test.ts — Test Report
+# EventBarrier.test.ts
 
-> **Test file:** [test/unit/EventBarrier.test.ts](../../../../../../test/unit/EventBarrier.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [EventBarrier.ts](../../../../implementation/source/src/utils/EventBarrier.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/unit/EventBarrier.test.ts](../../../../../../test/unit/EventBarrier.test.ts)
+Exercises: [EventBarrier.ts](../../../../implementation/source/src/utils/EventBarrier.ts.md)
 
 ## Overview
 
@@ -25,22 +20,15 @@ resolution/rejection, error-message content, elapsed-time bounds, and recorded l
 component's implementation report defines no test obligations and no specification permutation
 targets this utility, so no test IDs are assignable to this suite.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                         | Covers |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`EventBarrier (component) > resolves on signal when the condition turns true`](../../../../../../test/unit/EventBarrier.test.ts#L8) (line 8)                                                            | —      |
-| [`EventBarrier (component) > resolves promptly when the signal lands while the initial check is still in flight`](../../../../../../test/unit/EventBarrier.test.ts#L17) (line 17)                        | —      |
-| [`EventBarrier (component) > rejects at the deadline when the condition hangs from the first check`](../../../../../../test/unit/EventBarrier.test.ts#L31) (line 31)                                     | —      |
-| [`EventBarrier (component) > settles once with no late timeout log when the initial check resolves while the deadline check is pending`](../../../../../../test/unit/EventBarrier.test.ts#L49) (line 49) | —      |
-| [`EventBarrier (component) > rejects with the original timeout when the timeout message diagnostic hangs`](../../../../../../test/unit/EventBarrier.test.ts#L79) (line 79)                               | —      |
-| [`EventBarrier (component) > rejects with the original timeout when the timeout meta diagnostic throws`](../../../../../../test/unit/EventBarrier.test.ts#L95) (line 95)                                 | —      |
-| [`EventBarrier (component) > rejects at the deadline when the condition returns false once and then hangs`](../../../../../../test/unit/EventBarrier.test.ts#L112) (line 112)                            | —      |
-| [`EventBarrier (component) > resolves at the deadline when the condition turned true but no signal ever woke it`](../../../../../../test/unit/EventBarrier.test.ts#L133) (line 133)                      | —      |
-| [`EventBarrier (component) > times out with the given message when the condition never turns true`](../../../../../../test/unit/EventBarrier.test.ts#L147) (line 147)                                    | —      |
-| [`EventBarrier (component) > rejects the waiter when the condition throws (from signal or interval)`](../../../../../../test/unit/EventBarrier.test.ts#L168) (line 168)                                  | —      |
+- `resolves on signal when the condition turns true`: none
+- `resolves promptly when the signal lands while the initial check is still in flight`: none
+- `rejects at the deadline when the condition hangs from the first check`: none
+- `settles once with no late timeout log when the initial check resolves while the deadline check is pending`: none
+- `rejects with the original timeout when the timeout message diagnostic hangs`: none
+- `rejects with the original timeout when the timeout meta diagnostic throws`: none
+- `rejects at the deadline when the condition returns false once and then hangs`: none
+- `resolves at the deadline when the condition turned true but no signal ever woke it`: none
+- `times out with the given message when the condition never turns true`: none
+- `rejects the waiter when the condition throws (from signal or interval)`: none

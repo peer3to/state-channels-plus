@@ -1,60 +1,38 @@
-# RootWorkerRuntime.ts — Source Report
+# RootWorkerRuntime.ts
 
-> **Source:** [RootWorkerRuntime.ts](../../../../../../../../src/rpc/internal/node/RootWorkerRuntime.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [RootWorkerRuntime.ts](../../../../../../../../src/rpc/internal/node/RootWorkerRuntime.ts)
 
-## Responsibility and observable boundary
+## Requirements
 
-Node worker launch, transferred-port bootstrap, resource profiles, error observation and graceful shutdown.
+- [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)
+- [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
+- [`REQ-RUNTIME-7-A2VAR0` (Bounded isolated-context teardown)](../../../../../../specification/runtime/execution.md#req-runtime-7-a2var0)
+- [`REQ-CONFIG-4-WW7BRX` (Isolated contexts start with their creator's configuration)](../../../../../../specification/runtime/configuration.md#req-config-4-ww7brx)
+- [`REQ-RUNTIME-9-P5VPT5` (An uncaught non-error failure is reported as one error)](../../../../../../specification/runtime/execution.md#req-runtime-9-p5vpt5)
 
-## Key design decisions
+## UNIT-TEST-CONTRACT-EXECUTOR-WORKER-RUNTIME-1-2ZBBHR
 
-`expectShutdown()` synchronously sets the expected-exit state. `shutdown()` uses the same operation before waiting for natural exit. A port owner can mark closure before the child sees parent loss, without prematurely starting or skipping resource cleanup. Unrequested exits remain fatal; worker error events still retain their original cause.
+Fatal worker boundary
 
-The bootstrap handler consumes WorkerBootstrapMessage with the root argument type. Node worker data is not a runtime creation option.
+- Setup: Spawn a scripted entry through `createRootWorker` and observe `onError`
+- Oracle: Every load-time error and every unrequested exit is reported, in order; the first error is the executor's cause
 
-Worker globals are initialized by the common createRoot import. Worker detection only controls platform globals. Explicit worker entry modules call the common bootstrap; importing a root does not start it.
+- [x] `UNIT-TEST-CONTRACT-EXECUTOR-WORKER-RUNTIME-1-2ZBBHR.P1` — a load-time throw is reported as `error` and the exit that follows it as `exited with 1`, in that order
+- [x] `UNIT-TEST-CONTRACT-EXECUTOR-WORKER-RUNTIME-1-2ZBBHR.P2` — a ready SDK worker exits unexpectedly, pending requests reject and the client receives one notification carrying the exit cause
+- [x] `UNIT-TEST-CONTRACT-EXECUTOR-WORKER-RUNTIME-1-2ZBBHR.P3` — Closing the real SDK parent port while client disposal is held marks shutdown synchronously; the worker exits with no fatal adapter callback before the held parent cleanup resumes
 
-One generic `createRootWorker` accepts an entry URL for every root. No concrete root names, paths or per-root factory functions live in this platform owner. The entry, like the package root modules, is mapped to its existing `.ts`/`.js` twin ([resolveRuntimeModulePath.ts](../../../utils/moduleLoader/node/resolveRuntimeModulePath.ts.md)); a compiled entry starts with no loader hook, a source entry with the transpile-only ts-node register.
+## UNIT-TEST-ROOT-WORKER-DRAIN-1-JWKQ0P
 
-Compiled and ts-node entries use the same bootstrap. All roots use the shared memory limit and full worker cleanup. The bootstrap installs the supplied global threadName before domain initialization. Every unexpected root-worker exit, including zero, is fatal for all roots. The common launcher owns connection-close failure ordering. An earlier worker error is delivered first. Failed initial transfer closes a worker still waiting for bootstrap.
+Bounded worker drain after disposal
 
-A `.ts` worker entry preloads `ts-node/register/transpile-only` and `tsconfig-paths/register` by absolute paths resolved from the SDK package with `require.resolve` ([#L39-L49](../../../../../../../../src/rpc/internal/node/RootWorkerRuntime.ts#L39-L49)), not by bare names resolved from the process working directory. A consumer package whose working directory lacks `tsconfig-paths` (such as poker's own source prover and verifier entries) can therefore start its own `.ts` root entries through the SDK. The inherited `--cpu-prof` flags are kept. Compiled `.js` entries take no preloads. Within this repository every `.ts` worker test entry starts through these resolved preloads; a start from a consumer working directory is exercised only by consumer suites.
+- Setup: Create a parentless executor worker through `createRoot` with a real caller logger, substitute a scripted entry (a root that arms a referenced `setInterval` during disposal; a root whose `process.report.getReport` throws; a root that exits with `ROOT_WORKER_DRAIN_TIMEOUT_EXIT_CODE` while serving a call; a root that keeps a bound native udx socket open, run with the parent in a child process) or the production executor entry, observe the real `Worker` exit code, and dispose the handle; for the SDK host, set up a worker SDK from a scripted host entry (a UDP socket closed just before the worker closes its handles, ahead of an open one; a leaked referenced timer) and dispose the `P2pInstance`
+- Oracle: The disposal time against `ROOT_WORKER_DRAIN_TIMEOUT_MS`, the exit code, the parent process's exit signal, the `warn` entry with its bound and diagnostics, and the failure entries in the caller's or client root's store
 
-## Inputs, outputs, state, and side effects
-
-The public entry signatures define the startup values and platform handles. Domain roots own services; the common router owns pending requests. Startup and cleanup may allocate or release ports and workers. No separate readiness registry is introduced here.
-
-## Linked requirements
-
-| Source file                                                                                | Specification IDs                                                                                                                                                                                        |
-| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [RootWorkerRuntime.ts](../../../../../../../../src/rpc/internal/node/RootWorkerRuntime.ts) | [`REQ-RUNTIME-3-VQXW59`](../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59), [`REQ-RUNTIME-4-B0N70Y`](../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-Startup data must be cloneable. Local dependencies stay in the receiving realm. Browser launch URLs are literal and visible to the bundler; arbitrary runtime class names do not identify worker bundles.
-
-## Specification adherence
-
-Creation preserves the existing domain readiness points and explicit parent ownership. Platform bootstrap shares the transferred-port boundary.
-
-## Specification contradictions
-
-None identified for this construction change.
-
-## Missing behavior
-
-This file contributes only the behavior described above; domain execution and lifecycle policy remain with their owners.
-
-## Conformance traceability
-
-| Requirement / invariant                                                                             | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                | Gap / divergence                                         |
-| --------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| [`REQ-RUNTIME-3-VQXW59`](../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59) | Covered               | **Here:** [RootWorkerRuntime.ts](../../../../../../../../src/rpc/internal/node/RootWorkerRuntime.ts) supplies the construction/platform boundary. **Other files:** [RuntimeLifecycleService](../../../../../../../../src/rpc/internal/services/lifecycle/RuntimeLifecycleService.ts) owns readiness and quiescence; [createRoot](../../../../../../../../src/rpc/internal/createRoot.ts) connects the parent and child. | None identified; the cited owners compose this boundary. |
-| [`REQ-RUNTIME-4-B0N70Y`](../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) | Covered               | **Here:** [RootWorkerRuntime.ts](../../../../../../../../src/rpc/internal/node/RootWorkerRuntime.ts) supplies the construction/platform boundary. **Other files:** [RuntimeLifecycleService](../../../../../../../../src/rpc/internal/services/lifecycle/RuntimeLifecycleService.ts) owns readiness and quiescence; [createRoot](../../../../../../../../src/rpc/internal/createRoot.ts) connects the parent and child. | None identified; the cited owners compose this boundary. |
-
-## Component test obligations
-
-| Unit test ID                                                                                                          | Obligation            | Public entry and setup                                                  | Oracle and forbidden effects                                                                                    | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| --------------------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-contract-executor-worker-runtime-1-2zbbhr"></a>`UNIT-TEST-CONTRACT-EXECUTOR-WORKER-RUNTIME-1-2ZBBHR` | Fatal worker boundary | Spawn a scripted entry through `createRootWorker` and observe `onError` | Every load-time error and every unrequested exit is reported, in order; the first error is the executor's cause | <a id="unit-test-contract-executor-worker-runtime-1-2zbbhr.p1"></a>`UNIT-TEST-CONTRACT-EXECUTOR-WORKER-RUNTIME-1-2ZBBHR.P1` — a load-time throw is reported as `error` and the exit that follows it as `exited with 1`, in that order; <a id="unit-test-contract-executor-worker-runtime-1-2zbbhr.p2"></a>`UNIT-TEST-CONTRACT-EXECUTOR-WORKER-RUNTIME-1-2ZBBHR.P2` — a ready SDK worker exits unexpectedly, pending requests reject and the client receives one notification carrying the exit cause.; <a id="unit-test-contract-executor-worker-runtime-1-2zbbhr.p3"></a>`UNIT-TEST-CONTRACT-EXECUTOR-WORKER-RUNTIME-1-2ZBBHR.P3` — Closing the real SDK parent port while client disposal is held marks shutdown synchronously; the worker exits with no fatal adapter callback before the held parent cleanup resumes. |
+- [x] `UNIT-TEST-ROOT-WORKER-DRAIN-1-JWKQ0P.P1` — a leaked referenced timer: the drain deadline that `closeRootWorker` arms before it closes any handle ends the worker with `ROOT_WORKER_DRAIN_TIMEOUT_EXIT_CODE` no earlier than `ROOT_WORKER_DRAIN_TIMEOUT_MS`; `createRootWorker` treats that exit as an expected shutdown, logs one warning and reports no failure
+- [x] `UNIT-TEST-ROOT-WORKER-DRAIN-1-JWKQ0P.P2` — the diagnostics posted over the bootstrap port arrive before `exit`; the warning names the worker's thread, the bound, a `timer` libuv handle and a `Timeout` resource
+- [x] `UNIT-TEST-ROOT-WORKER-DRAIN-1-JWKQ0P.P3` — the production executor entry drains before the bound and exits with code 0, with no warning and no failure
+- [x] `UNIT-TEST-ROOT-WORKER-DRAIN-1-JWKQ0P.P4` — an exit with `ROOT_WORKER_DRAIN_TIMEOUT_EXIT_CODE` the owner did not request: the pending call rejects with `Root worker exited with 86`, the hidden parent logs that failure and no drain warning is recorded
+- [x] `UNIT-TEST-ROOT-WORKER-DRAIN-1-JWKQ0P.P7` — `process.report.getReport` throws: `exitAfterDrainTimeout` posts no diagnostics message and still exits with `ROOT_WORKER_DRAIN_TIMEOUT_EXIT_CODE`; the warning is still logged with `diagnostics` undefined
+- [x] `UNIT-TEST-ROOT-WORKER-DRAIN-1-JWKQ0P.P8` — a bound native udx socket `_getActiveHandles` does not list: the child-process parent exits with code 0 and no signal, the worker exits with `ROOT_WORKER_DRAIN_TIMEOUT_EXIT_CODE` and the warning names a `udp` handle
+- [x] `UNIT-TEST-ROOT-WORKER-DRAIN-1-JWKQ0P.P9` — a worker SDK whose UDP socket is already closing when `closeRootWorker` runs (a second close throws `ERR_SOCKET_DGRAM_NOT_RUNNING`): `closeHandle` absorbs the refusal, the open socket listed after it still closes, the worker exits with code 0, `P2pInstance` disposal completes, no warning and no host error
+- [x] `UNIT-TEST-ROOT-WORKER-DRAIN-1-JWKQ0P.P10` — a worker SDK whose host leaks a referenced timer: `P2pInstance` disposal completes no earlier than `ROOT_WORKER_DRAIN_TIMEOUT_MS`, the client root logs one warning naming `P2pRuntimeHostRoot` and the bound, and no host error is raised

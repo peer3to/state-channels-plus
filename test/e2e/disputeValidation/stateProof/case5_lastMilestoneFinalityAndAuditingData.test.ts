@@ -37,7 +37,11 @@ describe("E2E: dispute validation / stateProof / last-milestone finality and aud
             // Once the bad claim is killed, submit the honest evidence through the
             // normal owner so a surviving dispute can drive the reduction.
             await h.rpcStub.restoreDisputeInitiationAndDispute(0, forkId);
-            await h.dispute.resolveDisputeWait({ forkId });
+            await h.dispute.resolveDisputeWait({
+                forkId,
+                // preDisputeSetupCalldataPath force-joins one non-harness wallet.
+                syntheticOnChainParticipants: 1
+            });
         });
     });
 });

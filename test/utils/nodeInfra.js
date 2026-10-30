@@ -51,6 +51,33 @@ function getFreePort() {
     });
 }
 
+/**
+ * Start a local HyperDHT bootstrapper. Its DHT id derives from the port it
+ * was created with, so it binds exactly that port: on a fallback port peers
+ * reject its id and no announce is stored. The probed port is free for TCP
+ * only; another process can hold it as UDP, so a taken port is retried on a
+ * fresh one, up to `attempts` binds.
+ */
+async function startDhtBootstrapper(host, { port, attempts = 20 } = {}) {
+    const DHT = require("hyperdht");
+    let bindPort = port ?? (await getFreePort());
+    for (let attempt = 1; ; attempt++) {
+        const bootstrapper = DHT.bootstrapper(bindPort, host, {
+            host,
+            anyPort: false
+        });
+        try {
+            await bootstrapper.ready();
+            return bootstrapper;
+        } catch (error) {
+            // destroy() rethrows the bind error of the failed ready()
+            await bootstrapper.destroy({ force: true }).catch(() => {});
+            if (error.code !== "EADDRINUSE" || attempt >= attempts) throw error;
+            bindPort = await getFreePort();
+        }
+    }
+}
+
 /** Poll a node's RPC endpoint until it responds or the timeout expires. */
 async function waitForHardhatNode(url, timeoutMs = 30000) {
     const start = Date.now();
@@ -447,6 +474,7 @@ function startGasMonitor(slots, onNewPeak, intervalMs = 1000) {
 
 module.exports = {
     getFreePort,
+    startDhtBootstrapper,
     waitForHardhatNode,
     startHardhatNode,
     startDiscoveryRegistry,

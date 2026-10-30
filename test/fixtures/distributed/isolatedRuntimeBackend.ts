@@ -29,6 +29,7 @@ export class TestIsolatedRuntimeBackend {
     readonly firstStartStarted: Promise<void>;
     readonly firstWorkspaceOfferReceived: Promise<void>;
     preparationDelayMs = 0;
+    preparationGate?: Promise<void>;
     preparationFailureDelayMs = 0;
     preparationStatusIntervalMs = 0;
     stopDelayMs = 0;
@@ -42,6 +43,8 @@ export class TestIsolatedRuntimeBackend {
     } | null = null;
     readonly preparedFiles = new Map<string, Set<string>>();
     respondToWorkspaceOffer = true;
+    // Delays the write callback for WORKSPACE_OFFER, like a slow control pipe.
+    workspaceOfferWriteDelayMs = 0;
     startDelayMs = 0;
     guestDistributedProtocol = DISTRIBUTED_PROTOCOL_VERSION;
     // Containers the backend reports as created from another runner image.
@@ -104,7 +107,20 @@ export class TestIsolatedRuntimeBackend {
             this.startFailuresRemaining -= 1;
             throw new Error("test isolated runtime start failed");
         }
-        const stdin = new PassThrough();
+        let delayCurrentWrite = false;
+        const stdin = new PassThrough({
+            transform: (chunk, _encoding, callback) => {
+                delayCurrentWrite = false;
+                parser.consume(chunk);
+                if (delayCurrentWrite) {
+                    setTimeout(
+                        () => callback(null, chunk),
+                        this.workspaceOfferWriteDelayMs
+                    );
+                } else callback(null, chunk);
+            }
+        });
+        stdin.resume();
         const stdout = new PassThrough();
         const stderr = new PassThrough();
         const processHandle = Object.assign(new EventEmitter(), {
@@ -141,6 +157,7 @@ export class TestIsolatedRuntimeBackend {
                 this.calls.push({ operation: "frame", value: frame });
                 if (frame.kind === "WORKSPACE_OFFER") {
                     this.resolveFirstWorkspaceOfferReceived();
+                    delayCurrentWrite = this.workspaceOfferWriteDelayMs > 0;
                     if (!this.respondToWorkspaceOffer) return;
                     const manifest = frame.payload.manifest;
                     if (!manifest)
@@ -181,7 +198,9 @@ export class TestIsolatedRuntimeBackend {
                             );
                             stdout.write(encodeEnvironmentFrame("PREPARED"));
                         };
-                        if (this.preparationDelayMs > 0) {
+                        if (this.preparationGate) {
+                            void this.preparationGate.then(complete);
+                        } else if (this.preparationDelayMs > 0) {
                             const activity = this.preparationStatusIntervalMs
                                 ? setInterval(
                                       () =>
@@ -298,7 +317,6 @@ export class TestIsolatedRuntimeBackend {
                 }
             }
         );
-        stdin.on("data", (chunk) => parser.consume(chunk));
         this.controls.push({ stdin, stdout, stderr, process: processHandle });
         queueMicrotask(() =>
             stdout.write(

@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { writeFileIfChanged } = require("./write-if-changed");
 
 const artifactsPath = path.join(
     __dirname,
@@ -61,5 +62,5 @@ ${facets.map((facet) => `export const ${facet}Artifact: Artifact = artifacts.fin
 ${stateMachineContracts.map((contract) => `export const ${contract}Artifact: Artifact = artifacts.find(a => a.contractName === "${contract}")!;`).join("\n")}
 `;
 
-fs.writeFileSync(outputPath, generatedCode);
+writeFileIfChanged(outputPath, generatedCode);
 console.log(`Generated artifacts module at ${outputPath}`);

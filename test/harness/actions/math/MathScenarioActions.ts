@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: shared math scenario setup exercised by owning mapped test declarations
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { Status, TimeConfig } from "@/types";
 import { ForkId, Hash } from "@/types/types";
 import { Logger, sleep } from "@/utils";
@@ -14,67 +15,19 @@ import type { MathStateMachine } from "@typechain-types";
 import { expect } from "chai";
 import { MathPeerTestHarness } from "test-harness";
 
-type MathTestPeer = TestPeer<HarnessControlRpc, MathStateMachine>;
+type MathTestPeer = TestPeer<
+    P2pRuntimeHostRoot<HarnessControlRpc>,
+    MathStateMachine
+>;
 
 /** Kill period for the shared invalid-dispute staging, in seconds. */
-const DEFAULT_INVALID_DISPUTE_EVIDENCE_TIME = 8;
+const DEFAULT_INVALID_DISPUTE_EVIDENCE_TIME = 12;
 
 export class MathScenarioActions extends ScenarioActions {
     declare public harness: MathPeerTestHarness;
 
     constructor(harness: MathPeerTestHarness, logger: Logger) {
         super(harness, logger);
-    }
-
-    /**
-     * A committed settled-path dispute whose reduce moves the inbound head
-     * past `laggingIndex`'s store. Its handler is held, so nothing - the
-     * on-demand recovery included - can close the gap until release.
-     */
-
-    async stageDisputeOverHeldInboundGap({
-        laggingIndex
-    }: {
-        laggingIndex: number;
-    }) {
-        await this.harness.setup(3, {
-            timeConfig: INBOUND_GAP_TIME_CONFIG
-        });
-        await this.harness.lifecycle.openChannel();
-        const forkId = this.harness.activeForkId!;
-        await this.harness.transition.advanceState({
-            count: 2,
-            waitForFinalization: true
-        });
-        await this.harness.assert.sync.peersInSyncWait();
-
-        const held =
-            await this.harness.rpcStub.holdInboundMessageEvents(laggingIndex);
-        const observers = this.harness.peers
-            .map((peer) => peer.index)
-            .filter((index) => index !== laggingIndex);
-        // a top-up of an existing participant keeps the head
-        // final-by-everyone -> the settled path posts no auditing data, so
-        // nothing back-fills the block this peer never received
-        await this.topUpAndObserve(observers);
-
-        this.harness.event.resetEventSpies();
-        this.harness.contextApi.captureOriginalFork();
-
-        const offenderIndex = (await this.harness.query.getNextPeerToWrite())
-            .index;
-        const disputerIndex = observers.find(
-            (index) => index !== offenderIndex
-        )!;
-        await this.harness.byzantine.submitInvalidStateTransitionBlock(
-            offenderIndex
-        );
-        await this.harness.assert.dispute.initiatedAndCommitedWait({
-            peersIndices: [disputerIndex],
-            expectedCount: 1,
-            initiatedWithAuditingData: false
-        });
-        return { forkId, held, disputerIndex };
     }
 
     /**
@@ -107,6 +60,46 @@ export class MathScenarioActions extends ScenarioActions {
             initiatedWithAuditingData: false
         });
         return { forkId: this.harness.activeForkId!, disputerIndex };
+    }
+
+    /**
+     * The committed settled-path dispute over an inbound gap, seen by a synced
+     * spectator whose InboundMessagesProcessed handler is held. Spectators do
+     * not audit, so the spectator persists the window and schedules its
+     * reduction while the inbound run that reduction applies stays
+     * unavailable until release. A participant cannot stage this: its audit
+     * of the same window throws on the unavailable run.
+     */
+    async stageSpectatedDisputeOverHeldInboundGap() {
+        await this.harness.setup(3, {
+            timeConfig: INBOUND_GAP_TIME_CONFIG
+        });
+        await this.harness.lifecycle.openChannel();
+        await this.harness.transition.advanceState({
+            count: 2,
+            waitForFinalization: true
+        });
+        await this.harness.assert.sync.peersInSyncWait();
+        // no transition is scheduled while the spectator syncs
+        const spectatorIndex = (await this.harness.join.addSpectatorWait())
+            .index;
+        const held =
+            await this.harness.rpcStub.holdInboundMessageEvents(spectatorIndex);
+        // the invalid block below would reach the spectator by gossip, and a
+        // spectator drops the feed on it (abort) -> it would never see the
+        // dispute. it follows the dispute from chain events only
+        await this.harness.network.blacklistAndDisconnectPeer(spectatorIndex);
+        const { forkId, disputerIndex } =
+            await this.stageCommittedDisputeOverInboundGap({
+                laggingIndex: spectatorIndex
+            });
+        // the spectator persisted the window (the hook fires after its
+        // handler completed)
+        await this.harness.assert.dispute.committedWait({
+            peersIndices: [spectatorIndex],
+            expectedCount: 1
+        });
+        return { forkId, held, spectatorIndex, disputerIndex };
     }
 
     /**
@@ -336,12 +329,14 @@ export class MathScenarioActions extends ScenarioActions {
      * A disputed fork whose kill period has expired, with every peer's
      * `reduction-*` timer held so nothing reduces until a test says so:
      * preDisputeSetup, hold the timers, one invalid state transition by the
-     * malicious peer, the committed dispute, then the evidence period
+     * malicious peer, the committed dispute, `afterDispute` while the
+     * evidence period is still open, then the evidence and kill periods
      * (skipped with `skipEvidenceWait`).
      */
     async stageReducibleDisputedFork(options?: {
         configOverrides?: HarnessOptions["configOverrides"];
         beforeDispute?: () => Promise<void>;
+        afterDispute?: () => Promise<void>;
         disputingPeerIndices?: number[];
         peerCount?: number;
         maliciousPeerIndex?: number;
@@ -370,8 +365,38 @@ export class MathScenarioActions extends ScenarioActions {
             peersIndices: options?.disputingPeerIndices,
             expectedCount: 1
         });
-        if (!options?.skipEvidenceWait)
-            await sleep(this.harness.event.evidencePeriodWaitMs(2));
+        await options?.afterDispute?.();
+        if (!options?.skipEvidenceWait) {
+            // The evidence period counts from the dispute window's creation, not
+            // from when every peer observed the dispute. Wait it out so no more
+            // evidence can land.
+            const windowCreatedAt = Number(
+                await this.harness.channelManager.getDisputeWindowCreationTimestamp(
+                    this.harness.channelId,
+                    sourceForkId
+                )
+            );
+            const settlementMarginSeconds = 2;
+            await this.harness.event.waitUntilTimestamp(
+                windowCreatedAt +
+                    this.harness.event.evidencePeriodWaitMs(
+                        settlementMarginSeconds
+                    ) /
+                        1000
+            );
+            // A peer outside `disputingPeerIndices` can commit late in the
+            // evidence period and move the kill period end. The reduction genesis
+            // carries that end, and the successor's first writer must still be
+            // inside its window once a test releases the reductions.
+            const { killPeriodEnd } =
+                await this.harness.channelManager.isKillPeriodExpired(
+                    this.harness.channelId,
+                    sourceForkId
+                );
+            await this.harness.event.waitUntilTimestamp(
+                Number(killPeriodEnd) + settlementMarginSeconds
+            );
+        }
         return { sourceForkId };
     }
 
@@ -426,7 +451,7 @@ export class MathScenarioActions extends ScenarioActions {
         forkId: ForkId;
         spammer: MathTestPeer;
         killer: MathTestPeer;
-        spectator: TestPeer<HarnessControlRpc> | undefined;
+        spectator: TestPeer<P2pRuntimeHostRoot<HarnessControlRpc>> | undefined;
     }> {
         const killerIndex = options?.killerIndex ?? 0;
         const spammerIndex = options?.spammerIndex ?? 1;
@@ -495,6 +520,12 @@ export class MathScenarioActions extends ScenarioActions {
          * peers alone wait on the join.
          */
         laggingInboundPeerIndex?: number;
+        /**
+         * Drop the lagging peer's join log instead of holding its handler: an
+         * explicit query still applies the log, so on-demand recovery heals
+         * the gap.
+         */
+        recoverableLaggingInbound?: boolean;
     }): Promise<{ releaseLaggingInbound?: () => Promise<void> }> {
         const timeConfig = {
             evidenceTime: 12,
@@ -507,10 +538,17 @@ export class MathScenarioActions extends ScenarioActions {
             timeConfig
         });
         const laggingIndex = options?.laggingInboundPeerIndex;
+        const recoverable = options?.recoverableLaggingInbound ?? false;
         const held =
-            laggingIndex === undefined
+            laggingIndex === undefined || recoverable
                 ? undefined
                 : await this.harness.rpcStub.holdInboundMessageEvents(
+                      laggingIndex
+                  );
+        const dropped =
+            laggingIndex === undefined || !recoverable
+                ? undefined
+                : await this.harness.rpcStub.dropInboundMessageLogs(
                       laggingIndex
                   );
         const forceJoin = await this.harness.join.prepareForceInboundJoinWait();
@@ -523,13 +561,14 @@ export class MathScenarioActions extends ScenarioActions {
                           .map((peer) => peer.index)
                           .filter((index) => index !== laggingIndex)
         });
+        await dropped?.waitUntilDropped();
 
         this.harness.contextApi.captureOriginalFork();
         this.harness.event.resetEventSpies();
         return {
             releaseLaggingInbound: held
                 ? () => held.release({ replay: true })
-                : undefined
+                : dropped?.release
         };
     }
 
@@ -647,15 +686,29 @@ export class MathScenarioActions extends ScenarioActions {
         await this.harness.transition.advanceState({ waitForSync: false });
     }
 
-    async syncSpectatorAndPrepareJoin(initialTransitions: number = 4) {
+    /**
+     * Three participants author at least `initialTransitions` blocks while a
+     * fourth peer syncs as a spectator; returns that synced spectator.
+     */
+    async syncSpectator(
+        initialTransitions: number = 4,
+        options?: {
+            configOverrides?: HarnessOptions["configOverrides"];
+            timeConfig?: HarnessOptions["timeConfig"];
+            maxChannelParticipants?: HarnessOptions["maxChannelParticipants"];
+        }
+    ): Promise<TestPeer> {
         const h = this.harness;
         await h.lifecycle.start(3, 0, {
             timeConfig: {
                 p2pTime: 5,
                 agreementTime: 4,
                 chainFallbackTime: 2,
-                evidenceTime: 4
-            }
+                evidenceTime: 4,
+                ...options?.timeConfig
+            },
+            configOverrides: options?.configOverrides,
+            maxChannelParticipants: options?.maxChannelParticipants
         });
 
         const { peer: joiner } = await h.join.addSpectatorAuthoring({
@@ -664,6 +717,18 @@ export class MathScenarioActions extends ScenarioActions {
             maximumBlocks: initialTransitions + 16
         });
         await h.assert.sync.peersInSyncWait();
+        return joiner;
+    }
+
+    async syncSpectatorAndPrepareJoin(
+        initialTransitions: number = 4,
+        options?: {
+            configOverrides?: HarnessOptions["configOverrides"];
+            timeConfig?: HarnessOptions["timeConfig"];
+        }
+    ) {
+        const h = this.harness;
+        const joiner = await this.syncSpectator(initialTransitions, options);
 
         const stateSnapshot = await h.channelManager.getStateSnapshot(
             h.channelId
@@ -695,14 +760,13 @@ export class MathScenarioActions extends ScenarioActions {
             timeConfig
         });
 
-        // Spectating is asynchronous to the channel: participants author on
-        // their own cadence and never wait for a joiner's spawn/sync. The
-        // bounded spawn keeps them authoring through the spawn and sync, so
-        // only the join RPCs and one automined transaction sit inside the
-        // final window before the promotion block. A blocking spawn between
-        // blocks would idle past p2pTime + agreementTime and get the
-        // promotion block rejected (its timestamp is capped at
-        // prev + p2pTime), disputing the fork.
+        // Spectating and joining are asynchronous to the channel:
+        // participants author on their own cadence and never wait for a
+        // joiner's spawn, sync or join. The harness keeps them authoring
+        // through all three. The join RPCs and the on-chain join take
+        // seconds on a loaded farm; an idle writer slot across them would
+        // pass p2pTime + agreementTime and get the next block rejected (its
+        // timestamp is capped at prev + p2pTime), disputing the fork.
         const { peer: joiner } = await this.harness.join.addSpectatorAuthoring({
             authoringPeerIndices: Array.from(
                 { length: initialPeers },
@@ -713,28 +777,42 @@ export class MathScenarioActions extends ScenarioActions {
         });
         await this.harness.assert.sync.peersInSyncWait();
 
-        await this.harness.join.joinChannelWait({
-            joiner
-        });
-        const joinerStatus = await this.harness
-            .control(this.harness.getPeer(joiner.index))
-            .query.getStatus()
-            .request();
-        if (joinerStatus !== Status.PENDING_PARTICIPANT) {
-            throw new Error(
-                `JOIN_RPC: expected joiner to be PENDING_PARTICIPANT after joinChannel, got ${joinerStatus}`
-            );
-        }
-
+        // Handlers attached at once: the join promise is never unobserved.
+        const join: { isSettled: boolean; failure?: { error: unknown } } = {
+            isSettled: false
+        };
+        const joining = this.harness.join.joinChannelWait({ joiner }).then(
+            () => {
+                join.isSettled = true;
+            },
+            (error: unknown) => {
+                join.failure = { error };
+                join.isSettled = true;
+            }
+        );
         // The block that carries the join is the first one whose author has
         // already received the join's inbound event; author until the joiner
         // is promoted instead of assuming a fixed block count.
-        await this.harness.transition.keepAuthoringUntilPeersStatus({
-            peerIndices: [joiner.index],
-            status: Status.PARTICIPATING,
+        await this.harness.transition.keepAuthoringUntil({
+            until: async () => {
+                if (join.failure) throw join.failure.error;
+                if (!join.isSettled) return false;
+                const joinerStatus = await this.harness
+                    .control(this.harness.getPeer(joiner.index))
+                    .query.getStatus()
+                    .request();
+                if (joinerStatus === Status.PARTICIPATING) return true;
+                if (joinerStatus !== Status.PENDING_PARTICIPANT) {
+                    throw new Error(
+                        `JOIN_RPC: expected joiner to be PENDING_PARTICIPANT after joinChannel, got ${joinerStatus}`
+                    );
+                }
+                return false;
+            },
             waitForPeers: Array.from({ length: initialPeers }, (_, i) => i),
             maximumBlocks: 20
         });
+        await joining;
 
         if (postPromotionTransitions > 0) {
             await this.harness.transition.advanceState({
@@ -844,6 +922,20 @@ export class MathScenarioActions extends ScenarioActions {
     async previousBlockUnsignedByNextWriter(options: {
         timeConfig: TimeConfig;
     }) {
+        const { observer, author, previous, forkId, postParent } =
+            await this.unpostedParentUnsignedByNextWriter(options);
+        const parentPostTimestamp = await postParent();
+        return { observer, author, previous, forkId, parentPostTimestamp };
+    }
+
+    /**
+     * The staging of `previousBlockUnsignedByNextWriter` without the parent's
+     * on-chain post: `postParent` performs it when the caller is ready, e.g.
+     * after the observer has built a timeout against the unposted parent.
+     */
+    async unpostedParentUnsignedByNextWriter(options: {
+        timeConfig: TimeConfig;
+    }) {
         const h = this.harness;
         await h.lifecycle.start(3, 1, { timeConfig: options.timeConfig });
         const forkId = h.activeForkId!;
@@ -937,24 +1029,28 @@ export class MathScenarioActions extends ScenarioActions {
             parentAuthor.index
         );
 
-        // leave the parent's p2p window before posting, so its real post time
-        // is strictly later than its own timestamp
-        await sleep((options.timeConfig.p2pTime + 2) * 1000);
-        const { onChainTimestamp: parentPostTimestamp } = await h
-            .control(parentAuthor)
-            .validation.postBlockCalldataOnChain(previous.encodedSignedBlock)
-            .request();
-        if (parentPostTimestamp <= previous.timestamp) {
-            throw new Error(
-                `Parent posted at ${parentPostTimestamp}, not after its own ${previous.timestamp}`
-            );
-        }
-        await h
-            .control(observer)
-            .stub.waitForHeldCalldataPostedEvent()
-            .request();
+        const postParent = async () => {
+            // leave the parent's p2p window before posting, so its real post time
+            // is strictly later than its own timestamp
+            await sleep((options.timeConfig.p2pTime + 2) * 1000);
+            const { onChainTimestamp: parentPostTimestamp } =
+                await h.transition.postBlockCalldataOnChainWait(
+                    parentAuthor,
+                    previous.encodedSignedBlock
+                );
+            if (parentPostTimestamp <= previous.timestamp) {
+                throw new Error(
+                    `Parent posted at ${parentPostTimestamp}, not after its own ${previous.timestamp}`
+                );
+            }
+            await h
+                .control(observer)
+                .stub.waitForHeldCalldataPostedEvent()
+                .request();
+            return parentPostTimestamp;
+        };
 
-        return { observer, author, previous, forkId, parentPostTimestamp };
+        return { observer, author, parentAuthor, previous, forkId, postParent };
     }
 
     /**
@@ -970,16 +1066,19 @@ export class MathScenarioActions extends ScenarioActions {
         peerCount?: number;
         initialBlocks?: number;
         passFirst?: boolean;
+        /** Harness options of the session, e.g. RPC node proxies. */
+        harnessOptions?: HarnessOptions;
     }) {
         const {
             observerIndex,
             maliciousPeerIndex,
             peerCount = 4,
             initialBlocks = 2,
-            passFirst = false
+            passFirst = false,
+            harnessOptions
         } = options;
         const h = this.harness;
-        await h.lifecycle.start(peerCount, initialBlocks);
+        await h.lifecycle.start(peerCount, initialBlocks, harnessOptions);
         const forkId = h.activeForkId!;
 
         const race = await h.rpcStub.holdReductionRace(observerIndex);
@@ -1007,6 +1106,39 @@ export class MathScenarioActions extends ScenarioActions {
         });
 
         return { forkId, race, restoreEvents };
+    }
+
+    /**
+     * A final dispute whose DisputeCommitted log reached the observer, with
+     * its handling held in flight until the observer's next dispute log
+     * query has answered: the window's one commitment is missing from the
+     * observer's storage while its log's handling is scheduled. The
+     * observer's reduction entry points stay held until disposal: the final
+     * dispute's DisputeReducedResultCommitted log would otherwise start a
+     * reduction whose window recovery releases the hold first.
+     */
+    async finalDisputeWithInFlightCommit(options: {
+        observerIndex: number;
+        maliciousPeerIndex: number;
+    }) {
+        const { observerIndex, maliciousPeerIndex } = options;
+        const h = this.harness;
+        await this.preDisputeSetup({ peerCount: 4 });
+        await h.rpcStub.holdReductionRace(observerIndex);
+        const held =
+            await h.rpcStub.holdDisputeCommittedHandlingUntilLogQuery(
+                observerIndex
+            );
+        try {
+            const { forkId } = await h.dispute.submitFinalDispute({
+                maliciousPeerIndex
+            });
+            await held.waitUntilHeld();
+            return { forkId, held };
+        } catch (error) {
+            await held.release();
+            throw error;
+        }
     }
 
     async activeChannelWithDispute(options: {

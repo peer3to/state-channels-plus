@@ -1,5 +1,5 @@
 import type StateManager from "../StateManager";
-import { BlockCoordinates, StateSnapshot } from "@/models";
+import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 
 import { Address, Bytes, Hash, Timestamp } from "@/types/types";
 import { Codec, Type, difference, hash, Logger } from "@/utils";
@@ -90,6 +90,7 @@ export default class SnapshotAssemblyService {
             await this.createStateSnapshot(
                 hash(stateAfterInbound),
                 coordinates,
+                previousStateSnapshot,
                 timestamp,
                 outboundMessages,
                 inboundMessageBlocks,
@@ -116,6 +117,53 @@ export default class SnapshotAssemblyService {
                 "createStateSnapshot for block - previousStateSnapshot undefined"
             );
         return previousStateSnapshot;
+    }
+
+    /**
+     * Rolls the state machine back to the state captured before an assembly.
+     * The assembly advances the VM; every caller exit that does not commit the
+     * block (failed validation, failed authoring, thrown error) restores it.
+     * A failed restore is fatal: the runtime aborts instead of serving on
+     * the dirty VM. It does not throw, so the caller's own outcome stands
+     * and the caller still releases the mutex.
+     */
+    public async restoreState(
+        encodedState: Bytes,
+        reason: string,
+        block?: Block
+    ): Promise<void> {
+        // a stopping runtime discards its VM; its executor may already be gone
+        if (this.stateManager.isDisposed) return;
+        try {
+            await this.stateManager.diamondStateMachine.setState(encodedState);
+            this.logger.debug(
+                "restored local state after a block that was not committed",
+                {
+                    reason,
+                    block: block
+                        ? LoggerUtils.getBlockMetadata(
+                              block,
+                              this.stateManager.storage
+                          )
+                        : undefined
+                }
+            );
+        } catch (error) {
+            this.logger.error(
+                "failed to restore local state after a block that was not committed; aborting",
+                {
+                    reason,
+                    block: block
+                        ? LoggerUtils.getBlockMetadata(
+                              block,
+                              this.stateManager.storage
+                          )
+                        : undefined,
+                    error
+                }
+            );
+            this.stateManager.abort();
+        }
     }
 
     //Applies a transaction to the state machine and returns the encoded state with a success callback
@@ -147,6 +195,7 @@ export default class SnapshotAssemblyService {
     private async createStateSnapshot(
         stateMachineStateHash: Hash,
         coordinates: BlockCoordinates,
+        previousStateSnapshot: StateSnapshot,
         timestamp: Timestamp,
         outboundMessages: MessageStruct[],
         inboundMessageBlocks: MessageBlockStruct[],
@@ -155,8 +204,6 @@ export default class SnapshotAssemblyService {
         stateSnapshot: StateSnapshot;
         outboundMessageBlock?: MessageBlockStruct;
     }> {
-        const previousStateSnapshot =
-            this.getPreviousStateSnapshotOrThrow(coordinates);
         const previousSnapshotData = previousStateSnapshot.snapshotData;
         let latestInboundMessageBlockHash =
             previousSnapshotData.latestInboundMessageBlockHash;

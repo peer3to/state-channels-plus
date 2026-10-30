@@ -5,10 +5,12 @@ import type {
     BlockProbeOptions,
     BlockValidationProbe,
     BlockValidationProbeOptions,
-    CleanCommittedDivergenceProbe,
+    ChannelSelectionRaceProbe,
     ConcurrentCalldataRecoveryProbe,
     DisputeStrategyResultMatrix,
     DisputeStructIngestProbe,
+    InboundLogRedelivery,
+    StreamedLogDeliveryProbe,
     InboundRunRecoveryProbe,
     IsDisputedForkProbe,
     MissingParticipantSnapshotsProbe,
@@ -53,17 +55,77 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
         return this.service.probeDisputeReductionChallenge(reducedForkId);
     }
 
-    public async probeInboundRunRecovery(
-        upperBlockHash: Hash,
-        options?: { failChainQueries?: boolean }
-    ): Promise<InboundRunRecoveryProbe> {
-        return this.service.probeInboundRunRecovery(upperBlockHash, options);
+    public async drainScheduledEvents(): Promise<boolean> {
+        return this.service.drainScheduledEvents();
     }
 
-    public async probeBlockCalldataRecovery(options?: {
-        failChainQueries?: boolean;
-    }): Promise<BlockCalldataRecoveryProbe> {
-        return this.service.probeBlockCalldataRecovery(options);
+    public async probeInboundLogRedelivery(
+        redelivery: InboundLogRedelivery
+    ): Promise<StreamedLogDeliveryProbe> {
+        return this.service.probeInboundLogRedelivery(redelivery);
+    }
+
+    public async runCatchUpFromFirstNode(): Promise<boolean> {
+        return this.service.runCatchUpFromFirstNode();
+    }
+
+    public async runCatchUpThroughNode(
+        nodeUrl: string,
+        resumeFrom?: number,
+        targetHead?: number
+    ): Promise<number | null> {
+        return this.service.runCatchUpThroughNode(
+            nodeUrl,
+            resumeFrom,
+            targetHead
+        );
+    }
+
+    public async holdEventWatermark(fromBlock?: number): Promise<number> {
+        return this.service.holdEventWatermark(fromBlock);
+    }
+
+    public async releaseEventWatermark(holdId: number): Promise<number | null> {
+        return this.service.releaseEventWatermark(holdId);
+    }
+
+    public async getEventWatermark(): Promise<number | null> {
+        return this.service.getEventWatermark();
+    }
+
+    /** `channelId` defaults to the selected channel. */
+    public async getChannelSubscriptionCounts(
+        channelId?: string
+    ): Promise<(number | null)[]> {
+        return this.service.getChannelSubscriptionCounts(channelId);
+    }
+
+    public async clearChannelListener(): Promise<boolean> {
+        return this.service.clearChannelListener();
+    }
+
+    public async restoreChannelListener(): Promise<boolean> {
+        return this.service.restoreChannelListener();
+    }
+
+    public async probeChannelSelectionRace(
+        first: "select" | "clear"
+    ): Promise<ChannelSelectionRaceProbe> {
+        return this.service.probeChannelSelectionRace(first);
+    }
+
+    public async probeStreamedLogBelowWatermark(): Promise<StreamedLogDeliveryProbe> {
+        return this.service.probeStreamedLogBelowWatermark();
+    }
+
+    public async probeInboundRunRecovery(
+        upperBlockHash: Hash
+    ): Promise<InboundRunRecoveryProbe> {
+        return this.service.probeInboundRunRecovery(upperBlockHash);
+    }
+
+    public async probeBlockCalldataRecovery(): Promise<BlockCalldataRecoveryProbe> {
+        return this.service.probeBlockCalldataRecovery();
     }
 
     public async probeConcurrentCalldataRecovery(): Promise<ConcurrentCalldataRecoveryProbe> {
@@ -72,10 +134,6 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
 
     public async probeDisputeStrategyResultMatrix(): Promise<DisputeStrategyResultMatrix> {
         return this.service.probeDisputeStrategyResultMatrix();
-    }
-
-    public async probeCleanCommittedDivergence(): Promise<CleanCommittedDivergenceProbe> {
-        return this.service.probeCleanCommittedDivergence();
     }
 
     public async probeMissingParticipantSnapshots(): Promise<MissingParticipantSnapshotsProbe> {
@@ -157,10 +215,10 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
         return true;
     }
 
-    /** Post a block's calldata on-chain (chain-fallback path). */
+    /** Broadcast a block's calldata post (chain-fallback path). */
     public async postBlockCalldataOnChain(
         encodedSignedBlock: string
-    ): Promise<{ blockNumber: number; onChainTimestamp: Timestamp }> {
+    ): Promise<{ transactionHash: string }> {
         return this.service.postBlockCalldataOnChain(encodedSignedBlock);
     }
 

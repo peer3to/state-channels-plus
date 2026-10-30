@@ -33,6 +33,60 @@ describe("InternalTransport", () => {
             expect((await pending) === reason).to.equal(true);
         });
     });
+    it("holds the next outgoing request before it reaches the port", async () => {
+        await withRuntimeRpc(async (sdk) => {
+            const held = sdk.control.holdNextPost("echo");
+            let isSettled = false;
+            const pending = sdk.remote.runtimeProbe
+                .echo("held post")
+                .request()
+                .then((value) => {
+                    isSettled = true;
+                    return value;
+                });
+            await held;
+            expect(await sdk.remote.runtimeProbe.sum(2, 3).request()).to.equal(
+                5
+            );
+            expect(isSettled).to.equal(false);
+            expect(sdk.control.heldCount).to.equal(1);
+            expect(sdk.control.heldFrames()[0]).to.include({
+                method: "echo"
+            });
+            sdk.control.release();
+            expect(await pending).to.equal("held post");
+        });
+    });
+    it("posts a released outgoing request and settles it with the real answer", async () => {
+        await withRuntimeRpc(async (sdk) => {
+            const held = sdk.control.holdNextPost("echo");
+            const pending = sdk.remote.runtimeProbe
+                .echo("released post")
+                .request();
+            await held;
+            sdk.control.releaseAt(0);
+            expect(await pending).to.equal("released post");
+            expect(sdk.control.heldCount).to.equal(0);
+            expect(sdk.clientRoot.router.pendingRequestCount).to.equal(0);
+        });
+    });
+    it("drops a held outgoing request on close and rejects its pending call", async () => {
+        await withTwoRuntimeCallers(
+            async (first, second, closeSecond, control) => {
+                const held = control.holdNextPost("hold");
+                const pending = second.runtimeProbe
+                    .hold("closed post", 1)
+                    .request()
+                    .catch((error: Error) => error.message);
+                await held;
+                closeSecond();
+                expect(await pending).to.equal("Runtime connection is closed");
+                expect(control.heldCount).to.equal(0);
+                const { entered } = await first.runtimeProbe.state().request();
+                expect(entered).to.not.include("closed post");
+            }
+        );
+    });
     it("has a neutral transport surface without network identity metadata", async () => {
         await withRuntimeRpc(async (sdk) => {
             expect(isTransport(sdk.parentTransport)).to.equal(true);

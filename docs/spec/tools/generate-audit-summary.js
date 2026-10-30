@@ -4,6 +4,7 @@
 const path = require("node:path");
 const {
     buildDocumentationGraph,
+    isWithdrawnFinding,
     linkedIds,
     requirementPath,
     sorted
@@ -36,15 +37,15 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
         `**${k}/${n}**${n ? ` (${Math.round((k / n) * 100)}%)` : ""}`;
     const requirements = graph.requirements.definitions;
     const activeFindings = [...graph.findings.entries.values()].filter(
-        (item) => !/withdrawn/i.test(item.raw)
+        (item) => !isWithdrawnFinding(item)
     );
     const rows = [];
     let structurallyComplete = 0;
     let approved = 0;
     let securityAccepted = 0;
     let ready = 0;
-    // Implementation state comes from the conformance tables (linked or bare IDs),
-    // aggregated across every claiming file report and design view.
+    // Implementation state comes from the requirement bullets (and their
+    // hand-written status lines) in every file report and design view.
     const conformance = collectConformance(graph);
     function aggregateImplementation(id) {
         const claims = conformance.get(id) || [];
@@ -54,7 +55,7 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
             const claim = pick(wanted);
             if (claim) return { status: wanted, claim };
         }
-        return { status: "Covered", claim: claims[0] };
+        return { status: "Linked", claim: claims[0] };
     }
     // Only unresolved questions block a requirement; resolved decisions stay
     // in the registers as decision references without gating readiness.
@@ -87,11 +88,11 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
             ...specification
         ]).filter(
             (findingId) =>
-                !/withdrawn/i.test(graph.findings.entries.get(findingId).raw)
+                !isWithdrawnFinding(graph.findings.entries.get(findingId))
         );
         const structural =
             specification.length &&
-            implementationStatus === "Covered" &&
+            implementationStatus === "Linked" &&
             requirement.permutations.length > 0 &&
             tracedPermutations.length === requirement.permutations.length
                 ? "Complete"
@@ -166,8 +167,8 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
         "",
         "This is the final joined readiness dashboard. It answers: **for each requirement, is the specification complete, the implementation accounted for, the required tests evidenced, all decisions/findings resolved, security risk accepted, and the final reviewed fingerprint approved?**",
         "",
-        "- **Requirement paths** join the specification plans, the aggregated conformance claim (`Covered`/`Partial`/`Contradicts`/`Missing`/`No claim` across all claiming file reports and views), evidenced-permutation counts, exact-test counts, related questions/findings, structural state, semantic approval, security acceptance, and final readiness.",
-        "- **Structurally complete** means: test plans exist, the aggregated implementation claim is `Covered`, and every planned permutation has exact mapped test evidence. It is not a semantic correctness claim.",
+        "- **Requirement paths** join the specification plans, the aggregated conformance claim (`Linked`/`Partial`/`Contradicts`/`Missing`/`No claim` across all linking file reports and views), evidenced-permutation counts, exact-test counts, related questions/findings, structural state, semantic approval, security acceptance, and final readiness.",
+        "- **Structurally complete** means: test plans exist, at least one file links the requirement with no recorded divergence (`Linked`), and every planned permutation has exact mapped test evidence. It is not a semantic correctness claim.",
         "- **Engineer-approved** means the current dependency fingerprint was explicitly approved and has not become stale after a related edit.",
         "- **Security-accepted** means the current residual-risk assessment was explicitly accepted.",
         "- **Final ready** requires all preceding gates to pass simultaneously.",

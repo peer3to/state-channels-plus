@@ -1,6 +1,6 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
 import { RuntimeRpcControlRpcMethods } from "./RuntimeRpcControlRpcMethods";
-import type { HarnessControlRpc } from "../../HarnessControlRpc";
+import type { HarnessControlRpcShape } from "../../HarnessControlRpc";
 import type P2PManager from "@/P2PManager";
 import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
@@ -12,9 +12,9 @@ export type RuntimeConnectionKey = "parent" | "executor";
 
 export class RuntimeRpcControlService extends ANetworkRpcService<
     RuntimeRpcControlRpcMethods,
-    P2PManager<HarnessControlRpc>
+    P2PManager<HarnessControlRpcShape>
 > {
-    constructor(p2pManager: P2PManager<HarnessControlRpc>) {
+    constructor(p2pManager: P2PManager<HarnessControlRpcShape>) {
         super(
             p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({

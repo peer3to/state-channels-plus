@@ -8,6 +8,7 @@ import type {
     LobbyJoinResult,
     PreparedJoinChannelConfirmation
 } from "@/rpc/network/services";
+import type { OpenConnection } from "@/transport/TransportType";
 import type { Status } from "@/types";
 
 import type { Address, Bytes, ForkId, Hash } from "@/types/types";
@@ -149,6 +150,7 @@ class ClientP2pSigner implements Signer {
         const hasOptions =
             options.autoOpen !== undefined ||
             options.shouldJoin !== undefined ||
+            options.shouldSpectateWhenFull !== undefined ||
             options.balance !== undefined ||
             options.timeoutMs !== undefined;
         return this.client.p2pSigner
@@ -158,6 +160,8 @@ class ClientP2pSigner implements Signer {
                     ? {
                           autoOpen: options.autoOpen,
                           shouldJoin: options.shouldJoin,
+                          shouldSpectateWhenFull:
+                              options.shouldSpectateWhenFull,
                           encodedBalance,
                           timeoutMs: options.timeoutMs
                       }
@@ -182,14 +186,9 @@ class ClientP2pSigner implements Signer {
             .request({ timeoutMs: null });
     }
 
-    /**
-     * Internal route for `P2pInstance.leaveChannel`.
-     * Direct callers wait for settled removal but do not dispose the runtime.
-     */
+    /** Starts the host's leave; `onLeftChannel` reports its end. */
     leaveChannel(): Promise<void> {
-        return this.client.p2pSigner
-            .leaveChannel()
-            .request({ timeoutMs: null });
+        return this.client.p2pSigner.leaveChannel().request();
     }
 
     joinLobby(
@@ -277,6 +276,11 @@ class ClientP2pSigner implements Signer {
         return this.client.p2pSigner.getChannelStatus().request();
     }
 
+    /** This runtime's active peer connections and their transport types. */
+    getOpenConnections(): Promise<OpenConnection[]> {
+        return this.client.p2pSigner.getOpenConnections().request();
+    }
+
     private validateConnectOptions(options: ConnectToChannelOptions): void {
         if (
             options.autoOpen !== undefined &&
@@ -289,6 +293,12 @@ class ClientP2pSigner implements Signer {
             typeof options.shouldJoin !== "boolean"
         ) {
             throw new Error("shouldJoin must be a boolean");
+        }
+        if (
+            options.shouldSpectateWhenFull !== undefined &&
+            typeof options.shouldSpectateWhenFull !== "boolean"
+        ) {
+            throw new Error("shouldSpectateWhenFull must be a boolean");
         }
         if (
             options.timeoutMs !== undefined &&

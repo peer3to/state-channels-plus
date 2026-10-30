@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: Test harness exports and session-hook registration; behavior is exercised by the importing mapped test declarations.
 // Core types and interfaces
 export * from "./core/types";
 export * from "./core/testTimeConfig";
@@ -21,10 +22,6 @@ export {
     DisputeTampering,
     DisputeTamperingActions
 } from "./actions/DisputeTamperingActions";
-export {
-    expectMilestonesOnlyStateProof,
-    expectSignedBlocksOnlyStateProof
-} from "./actions/assert/expectDisputeInput";
 export { AssertActions } from "./actions/assert/AssertActions";
 export { ByzantineActions } from "./actions/ByzantineActions";
 export { RPCActions } from "./actions/RPCActions";

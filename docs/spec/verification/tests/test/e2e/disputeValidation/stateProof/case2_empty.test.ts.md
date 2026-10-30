@@ -1,11 +1,6 @@
-# test/e2e/disputeValidation/stateProof/case2_empty.test.ts — Test Report
+# case2_empty.test.ts
 
-> **Test file:** [test/e2e/disputeValidation/stateProof/case2_empty.test.ts](../../../../../../../../test/e2e/disputeValidation/stateProof/case2_empty.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/disputeValidation/stateProof/case2_empty.test.ts](../../../../../../../../test/e2e/disputeValidation/stateProof/case2_empty.test.ts)
 
 ## Overview
 
@@ -16,12 +11,6 @@ blocks) whose latest state is the fork genesis snapshot — is exercised in
 declaration here is a skipped cross-reference: it never runs and asserts nothing, so no test
 IDs can be assigned in this report.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration | Covers |
-| ---------------- | ------ |
+- `→ see disputeInputFields/latestStateSnapshotHash → '(1) stateProof empty'`: none

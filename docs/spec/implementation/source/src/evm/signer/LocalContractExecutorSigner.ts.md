@@ -1,80 +1,16 @@
-# LocalContractExecutorSigner.ts — Source Report
+# LocalContractExecutorSigner.ts
 
-> **Source:** [src/evm/signer/LocalContractExecutorSigner.ts](../../../../../../../src/evm/signer/LocalContractExecutorSigner.ts) > **Status:** Authored — engineer verification pending.
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../views/architecture/sdk/runtime-and-concurrency.md), [architecture/sdk/architecture.md](../../../../views/architecture/sdk/architecture.md)
+> **Source:** [src/evm/signer/LocalContractExecutorSigner.ts](../../../../../../../src/evm/signer/LocalContractExecutorSigner.ts)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-ID-3-KR0BE3` (Confined signing authority)](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)
 
-## Responsibility and observable boundary
+## UNIT-TEST-LOCAL-CONTRACT-EXECUTOR-SIGNER-1-6BS5C1
 
-Signer used inside the executor context for local-EVM deployments.
+Local transactions without chain reads
 
-## Key design decisions
+- Setup: A real local EVM executor behind a signer whose wallet has no provider; two local deploys
+- Oracle: Both deploys succeed with distinct local addresses from their receipts; the responses carry the local transaction count (0, 1) as nonce, `getNonce` answers that count (2), and no chain request is made
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
-
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                                                                          | Specification IDs                                                                            |
-| ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| [LocalContractExecutorSigner.ts](../../../../../../../src/evm/signer/LocalContractExecutorSigner.ts) | [`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Cross-context values use the canonical transfer-safe encodings; ownership and ordering per the runtime rules.
-
-## Specification adherence
-
-- Signing confinement per the identity rules.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
-
-## Related source reports
-
-- [identity.md](../../../../../specification/protocol-model/identity.md), [P2pRuntimeHost](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md).
+- [x] `UNIT-TEST-LOCAL-CONTRACT-EXECUTOR-SIGNER-1-6BS5C1.P1` — two local deploys with no provider: both deploy, nonces 0 and 1, then `getNonce` 2

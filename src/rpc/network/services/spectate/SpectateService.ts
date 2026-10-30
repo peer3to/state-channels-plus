@@ -1,4 +1,8 @@
 import SpectateServiceRpcMethods from "./SpectateRpcMethods";
+import type {
+    ProofTierWalk,
+    StateProofEvidence
+} from "@/agreementManager/AgreementManager";
 import { DisconnectPolicy } from "@/DisconnectPolicy";
 import { Block, StateSnapshot } from "@/models";
 import type P2PManager from "@/P2PManager";
@@ -10,9 +14,29 @@ import { DisputeWindowVerification, SyncPayload } from "@/types";
 import type { ChecksumAddress } from "@/types/types";
 import { Address, Bytes, ChannelId, Hash, ForkId } from "@/types/types";
 import { Codec, getChecksumAddress, hash, Type } from "@/utils";
+import { channelKey } from "@/utils/channelKey";
 import { errorMessage } from "@/utils/errorMessage";
-import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { isLocalEvmExecutionFailure } from "@/utils/evmErrorHandler";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import { ZeroHash } from "ethers";
+
+/** The state a sync installs and where its last-run replay starts. */
+type SyncReplayBase = {
+    snapshot: StateSnapshot;
+    state: Bytes;
+    fromIndex: number;
+    /** an earlier base block below the walk's start, which the walk never stored */
+    block?: Block;
+};
+
+type VerifiedSync = {
+    walk: ProofTierWalk;
+    evidence: StateProofEvidence;
+    base: SyncReplayBase;
+    /** windows this sync's own reduction verified: only their reduce input is stored */
+    selfReducedForkIds: Set<ForkId>;
+};
 
 export interface SyncRequest {
     channelId: ChannelId;
@@ -20,11 +44,54 @@ export interface SyncRequest {
     blockHeight?: number;
 }
 
+/**
+ * The answer to a sync request: the encoded sync payload, or a note that the
+ * responder is still in its own initial sync and cannot prove a state yet.
+ */
+export type SpectateResponse =
+    | { encodedSyncPayload: Bytes }
+    | { isResponderSyncing: true };
+
+/** A malformed answer is no syncing note: the payload check rejects it. */
+function isResponderSyncingResponse(
+    response: SpectateResponse
+): response is { isResponderSyncing: true } {
+    return (
+        (response as { isResponderSyncing?: unknown } | null)
+            ?.isResponderSyncing === true
+    );
+}
+
+/** A sync request's result for its caller. */
+export enum SyncResult {
+    Synced,
+    Failed,
+    /** the responder is still in its own initial sync: no verdict on it */
+    ResponderSyncing
+}
+
+/**
+ * An applied sync payload's result. `unsettledForkId`: the chain has not
+ * reduced this fork's dispute window yet -> the sync failed with no verdict
+ * and is provable once the chain has.
+ */
+export interface SyncOutcome {
+    synced: boolean;
+    unsettledForkId?: ForkId;
+}
+
 class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     private readonly inFlightByPeerAddress: Map<
         ChecksumAddress,
-        { request: SyncRequest; result: Promise<boolean> }
+        { request: SyncRequest; result: Promise<SyncResult> }
     > = new Map();
+    // per peer: how many `syncBlockSource` callers wait for its answer
+    private readonly blockSourceWaitersByPeerAddress: Map<
+        ChecksumAddress,
+        number
+    > = new Map();
+    // aborted by `dispose`: every wait for a window's chain reduction ends
+    private readonly disposal = new AbortController();
 
     constructor(p2pManager: P2PManager) {
         super(
@@ -42,13 +109,51 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         return new SpectateServiceRpcMethods(transport, this);
     }
 
-    public async sync(
+    /**
+     * `requestSync` of a block's source (intake and its source probes). A
+     * source that answers it is still in its own initial sync has no block
+     * to send: the answer is a failed request and takes a failed request's
+     * counted close, once per answer however many callers share it. An
+     * answer no block-source caller waits for gets no consequence.
+     */
+    public async syncBlockSource(
+        peerAddress: Address,
+        channelId: ChannelId,
+        forkId: ForkId,
+        blockHeight: number
+    ): Promise<boolean> {
+        const normalizedPeerAddress = getChecksumAddress(peerAddress);
+        const waiters = this.blockSourceWaitersByPeerAddress;
+        waiters.set(
+            normalizedPeerAddress,
+            (waiters.get(normalizedPeerAddress) ?? 0) + 1
+        );
+        try {
+            const result = await this.requestSync(
+                peerAddress,
+                channelId,
+                forkId,
+                blockHeight
+            );
+            return result === SyncResult.Synced;
+        } finally {
+            const remaining = waiters.get(normalizedPeerAddress)! - 1;
+            if (remaining === 0) waiters.delete(normalizedPeerAddress);
+            else waiters.set(normalizedPeerAddress, remaining);
+        }
+    }
+
+    public async requestSync(
         peerAddress: Address,
         channelId: ChannelId,
         forkId?: ForkId,
         blockHeight?: number,
-        timeoutMs = this.p2pManager.stateManager.timeConfig.agreementTime * 1000
-    ): Promise<boolean> {
+        // Two agreement windows: a busy honest peer builds its proof in that time, and a
+        // timeout cuts the peer's connection.
+        timeoutMs = this.p2pManager.stateManager.timeConfig.agreementTime *
+            2 *
+            1000
+    ): Promise<SyncResult> {
         const syncRequest: SyncRequest = {
             channelId,
             forkId,
@@ -71,8 +176,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     (request.blockHeight !== undefined &&
                         blockHeight !== undefined &&
                         request.blockHeight >= blockHeight));
-            const synced = await inFlight.result;
-            if (!synced || coversRequest) return synced;
+            const result = await inFlight.result;
+            if (result !== SyncResult.Synced || coversRequest) return result;
             inFlight = this.inFlightByPeerAddress.get(normalizedPeerAddress);
         }
 
@@ -92,12 +197,50 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         }
     }
 
+    /** End every pending wait for a window's chain reduction. */
+    public dispose(): void {
+        this.disposal.abort();
+    }
+
     private async runSync(
-        normalizedPeerAddress: string,
+        normalizedPeerAddress: ChecksumAddress,
         syncRequest: SyncRequest,
         timeoutMs: number
-    ): Promise<boolean> {
-        let response: { encodedSyncPayload: Bytes };
+    ): Promise<SyncResult> {
+        let outcome = await this.requestAndApply(
+            normalizedPeerAddress,
+            syncRequest,
+            timeoutMs
+        );
+        // a window the chain has not reduced -> wait for its reduction, then
+        // ask the same peer again. a pass names only a window the chain had
+        // not reduced, which the next pass finds reduced
+        while (
+            outcome !== SyncResult.ResponderSyncing &&
+            outcome.unsettledForkId !== undefined
+        ) {
+            const reduced = await this.waitForChainReduction(
+                normalizedPeerAddress,
+                syncRequest.channelId,
+                outcome.unsettledForkId
+            );
+            if (!reduced) break;
+            outcome = await this.requestAndApply(
+                normalizedPeerAddress,
+                syncRequest,
+                timeoutMs
+            );
+        }
+        if (outcome === SyncResult.ResponderSyncing) return outcome;
+        return outcome.synced ? SyncResult.Synced : SyncResult.Failed;
+    }
+
+    private async requestAndApply(
+        normalizedPeerAddress: ChecksumAddress,
+        syncRequest: SyncRequest,
+        timeoutMs: number
+    ): Promise<SyncOutcome | SyncResult.ResponderSyncing> {
+        let response: SpectateResponse;
         try {
             response = await this.remoteRpc.spectateService
                 .onSpectateRequest(syncRequest)
@@ -113,7 +256,20 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 normalizedPeerAddress,
                 DisconnectPolicy.allowRetry()
             );
-            return false;
+            return { synced: false };
+        }
+        if (isResponderSyncingResponse(response)) {
+            // not a failure: the peer has no state to prove yet. a block's
+            // source has no block to send either: see `syncBlockSource`
+            this.logger.debug("spectateSync - responder still syncing", {
+                peerAddress: normalizedPeerAddress
+            });
+            if (this.blockSourceWaitersByPeerAddress.has(normalizedPeerAddress))
+                this.p2pManager.disconnectConnection(
+                    normalizedPeerAddress,
+                    DisconnectPolicy.allowRetry()
+                );
+            return SyncResult.ResponderSyncing;
         }
         try {
             return await this.applySyncResponse(
@@ -122,43 +278,101 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 response.encodedSyncPayload
             );
         } catch (error) {
-            // A payload that cannot even be applied is Byzantine evidence.
-            this.logger.debug("spectateSync - failed", {
+            // applySyncResponse rejects the peer's faults itself; a throw is an
+            // internal failure, no verdict on the peer
+            this.logger.error("spectateSync - failed", {
                 peerAddress: normalizedPeerAddress,
                 error: errorMessage(error)
             });
-            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                normalizedPeerAddress,
-                "sync payload failed to apply"
+            throw error;
+        }
+    }
+
+    /**
+     * Resolves true once the chain has recorded the reduction of `forkId`'s
+     * dispute window, false when the runtime stops first. A failed chain
+     * read rejects.
+     */
+    private async waitForChainReduction(
+        peerAddress: string,
+        channelId: ChannelId,
+        forkId: ForkId
+    ): Promise<boolean> {
+        if (this.disposal.signal.aborted) return false;
+        const stateManager = this.p2pManager.stateManager;
+        this.logger.debug(
+            "spectateSync - waiting for the chain to reduce a dispute window",
+            { peerAddress, forkId }
+        );
+        // ended by the wait's own exit or by `dispose`
+        const ended = new AbortController();
+        const endOnDispose = () => ended.abort();
+        this.disposal.signal.addEventListener("abort", endOnDispose);
+        const reducedEvent = stateManager.events
+            .next(
+                "eventHandler",
+                "onDisputeReducedResultCommitted",
+                (reducedChannelId, reducedWindowForkId) =>
+                    channelKey(reducedChannelId) === channelKey(channelId) &&
+                    reducedWindowForkId === forkId,
+                ended.signal
+            )
+            .then((args) => args !== undefined);
+        // a reduction mined between the window read and the subscription
+        // fired an event this listener never saw
+        const reducedBeforeSubscribe = stateManager.stateChannelManagerContract
+            .getReducedResult(channelId, forkId)
+            .then(({ reducedForkId }) =>
+                reducedForkId !== ZeroHash ? true : reducedEvent
             );
-            return false;
+        try {
+            const reduced = await Promise.race([
+                reducedEvent,
+                reducedBeforeSubscribe
+            ]);
+            this.logger.debug("spectateSync - dispute window wait ended", {
+                peerAddress,
+                forkId,
+                reduced
+            });
+            return reduced;
+        } finally {
+            this.disposal.signal.removeEventListener("abort", endOnDispose);
+            ended.abort();
         }
     }
 
     /**
      * Validate and apply a sync payload returned by `onSpectateRequest`. Was the
      * body of the old `onSpectateResponse` endpoint; the request now lives in
-     * `sync`'s closure, so the channel is taken from our own `syncRequest`
+     * `requestSync`'s closure, so the channel is taken from our own `syncRequest`
      * (never the peer's echo) and the previous channel-binding check is moot.
-     * Validation failures reject the peer and return false. The caller owns
-     * the lifecycle consequence of a failed sync.
+     * Validation failures reject the peer and return not synced. The caller
+     * owns the lifecycle consequence of a failed sync. A disposed runtime
+     * returns not synced with no verdict on the peer; so does a served window
+     * the chain has not reduced that this peer cannot reduce locally, or
+     * (latest mode) an unreduced window on the final fork, naming the fork in
+     * `unsettledForkId`.
      */
     public async applySyncResponse(
         peerAddress: string,
         syncRequest: SyncRequest,
         encodedSyncPayload: Bytes
-    ): Promise<boolean> {
+    ): Promise<SyncOutcome> {
+        if (this.p2pManager.stateManager.isDisposed) return { synced: false };
         const channelId = syncRequest.channelId;
 
+        // A malicious/broken peer can return bytes that aren't a valid
+        // Codec.encode(SyncPayload): that is the peer's fault. Any later throw
+        // is an internal failure and propagates; it is no verdict on the peer.
+        let syncPayload: SyncPayload;
         try {
-            // Decode inside the try: a malicious/broken peer can return bytes
-            // that aren't a valid Codec.encode(SyncPayload). A decode throw must
-            // be treated as a failed sync (abort/disconnect), not propagate as an
-            // unhandled rejection from the background sync task.
-            const syncPayload = Codec.decode(
-                encodedSyncPayload,
-                Type.SyncPayload
-            );
+            syncPayload = Codec.decode(encodedSyncPayload, Type.SyncPayload);
+        } catch (e) {
+            this.logger.warn(e);
+            return this.rejectSync(peerAddress, "payload undecodable");
+        }
+        {
             this.logger.debug(`Sync payload received`, { syncPayload });
 
             // What we ultimately want to do here is:
@@ -190,9 +404,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             //      2.7) verify outboundMessageBlocks from onChainSnapshot to final genesisSnapshot | TODO - think do we need to verify joinChannelBlocks
             //      2.8) verify that genesisSnapshot.forkId is not disputed on-chain -> abort otherwise
             //      2.9) verify stateProof proves latest state -> abort otherwise
-            //      2.10) verify outboundMessageBlocks from final genesisSnapshot to latestFinalizedSnapshot
+            //      2.10) verify outboundMessageBlocks from the on-chain snapshot when it is on the proven fork, else from final genesisSnapshot, to latestFinalizedSnapshot
             //      2.11) verify balance invariant of the latestFinalizedState -> abort otherwise
-            //      2.9 and 2.10 start at the on-chain snapshot when it is on the proven fork, so pruned history is never needed
             // 3) no adoption is simulated against the live chain; the checks above are the verification
             // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
             //
@@ -214,7 +427,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // Another sync may have finalized this window only in the shared
             // local EVM. Only chain finality can skip the local reduction.
             // Read finality first: a later window fetch includes any reduction that
-            // lands between reads, while a false decision safely reduces locally.
+            // lands between reads. A false decision then still checks the expected
+            // fork locally, in the window the checked disputes name, but only a
+            // reduction this sync runs checks its inputs.
             // Values indicate chain-final reduction for each requested fork.
             const finalizedByFork = new Map<ForkId, boolean>();
             // a successor fork's genesis timestamp is its origin window's kill period end, final once the chain says expired
@@ -290,6 +505,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 syncPayload.disputeWindows.slice(adoptedWindowCount);
 
             let notReducedCount = 0;
+            // windows whose reduction this sync's own local call committed
+            const reducedByThisSync = new Set<ForkId>();
             for (const dw of linkedDisputeWindows) {
                 // each window must reduce the fork reached so far, starting at the on-chain fork
                 if (dw.forkId !== currentForkId)
@@ -297,34 +514,86 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         peerAddress,
                         "dispute window not linked"
                     );
-                // 2.2) verify that they're expired - if they're not expired abort
-                const { windowExists, isExpired } =
-                    await diamondStateMachine.localDiamondContract.isKillPeriodExpired(
-                        channelId,
-                        dw.forkId
-                    );
-                if (!windowExists || !isExpired)
+                // 2.2) the window must exist on chain; whether the chain has
+                // reduced it decides what a failing local reduction means.
+                // Use this request's chain response; a competing persist may be older.
+                const onChainDw = onChainDisputeWindows.find(
+                    (window) => window.forkId === dw.forkId
+                );
+                if (!onChainDw || onChainDw.evidence.creationTimestamp == 0n)
                     return this.rejectSync(
                         peerAddress,
-                        "kill period not expired"
+                        "dispute window not on chain"
                     );
+                const isReducedOnChain =
+                    onChainDw.reducedResult.forkId !== ZeroHash;
 
                 // 2.3) reduce them if they're not already reduced
                 const isReducedAndFinal = finalizedByFork.get(dw.forkId);
                 if (!isReducedAndFinal) {
-                    await diamondStateMachine.localDiamondContract.reduceAndFinalize(
-                        dw.disputeConfirmations.map((disputeConfirmation) =>
-                            Codec.decode(
-                                disputeConfirmation.signedDispute
-                                    .encodedDispute,
-                                Type.Dispute
-                            )
-                        ),
-                        dw.latestStateSnapshot,
-                        dw.latestEncodedStateMachineState,
-                        dw.inboundMessageBlocksAppliedInReduce,
-                        dw.reducedForkId
-                    );
+                    // the served window's disputes and reduce input are the
+                    // peer's: undecodable bytes or a reverting reduction reject it
+                    let disputes: DisputeStruct[];
+                    try {
+                        disputes = dw.disputeConfirmations.map(
+                            (disputeConfirmation) =>
+                                Codec.decode(
+                                    disputeConfirmation.signedDispute
+                                        .encodedDispute,
+                                    Type.Dispute
+                                )
+                        );
+                    } catch {
+                        return this.rejectSync(
+                            peerAddress,
+                            "dispute undecodable"
+                        );
+                    }
+                    // the local reduce picks its window from the disputes, not from dw
+                    if (
+                        !disputes.every(
+                            (dispute) =>
+                                dispute.input.channelId === channelId &&
+                                dispute.input.forkId === dw.forkId
+                        )
+                    )
+                        return this.rejectSync(
+                            peerAddress,
+                            "dispute window mismatch"
+                        );
+                    try {
+                        const committedReduction =
+                            await diamondStateMachine.reduceAndFinalizeLocally(
+                                disputes,
+                                dw.latestStateSnapshot,
+                                dw.latestEncodedStateMachineState,
+                                dw.inboundMessageBlocksAppliedInReduce,
+                                dw.reducedForkId
+                            );
+                        if (committedReduction)
+                            reducedByThisSync.add(dw.forkId);
+                    } catch (e) {
+                        if (!isLocalEvmExecutionFailure(e)) throw e;
+                        this.logger.debug(
+                            "applySyncResponse - served reduction reverts",
+                            { peerAddress, error: errorMessage(e) }
+                        );
+                        // the local mirror could not recompute an unreduced
+                        // window (open kill period, or state it lacks: a fresh
+                        // mirror has no inbound head) -> no verdict, the chain's
+                        // reduction judges the claim. on a reduced window the
+                        // call only checks the claimed fork against the chain's
+                        // result, so a revert is the responder's
+                        if (!isReducedOnChain)
+                            return {
+                                synced: false,
+                                unsettledForkId: dw.forkId
+                            };
+                        return this.rejectSync(
+                            peerAddress,
+                            "served reduction reverts"
+                        );
+                    }
                     // 2.4) ** If more than 1  has to be reduced -> abort **
                     if (++notReducedCount > 1)
                         return this.rejectSync(
@@ -337,11 +606,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 // Another sync can overwrite that local result before a re-read.
                 if (isReducedAndFinal) {
                     // 2.5) verify that they reduce to the correct forks as given in the SyncPayload
-                    // Use this request's chain response; a competing persist may be older.
-                    const _dw = onChainDisputeWindows.find(
-                        (window) => window.forkId === dw.forkId
-                    )!;
-                    if (_dw.reducedResult.forkId != dw.reducedForkId)
+                    if (onChainDw.reducedResult.forkId != dw.reducedForkId)
                         return this.rejectSync(
                             peerAddress,
                             "reduced fork mismatch"
@@ -409,22 +674,6 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 );
             // chain past genesis on this fork -> no chain value authenticates the timestamp; persistence keeps a held genesis
 
-            const latestFinalizedSnapshot =
-                syncPayload.milestoneSnapshots.length > 0
-                    ? syncPayload.milestoneSnapshots.at(-1)!
-                    : syncPayload.latestForkGenesisSnapshot;
-            // the proof must not move back from the step-1 snapshot every other check here is anchored on
-            if (
-                await this.isSameForkRegression(
-                    onChainSnapshot,
-                    latestFinalizedSnapshot
-                )
-            )
-                return this.rejectSync(
-                    peerAddress,
-                    "proof regresses the on-chain snapshot"
-                );
-
             // 2.7) verify outboundMessageBlocks from onChainSnapshot (lower/older) to final genesisSnapshot (upper/newer)
             // the skipped prefix's blocks are already below the on-chain outbound tip
             const outboundMessageBlocksUpToLatestGenesis =
@@ -461,12 +710,32 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // 2.8.2) (requested) prove the pinned fork or a successor whose verified lineage contains it.
             if (!syncRequest.forkId) {
                 // 2.8.1) (spectating)
-                const _timestamp =
-                    await stateManager.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
+                const [latestWindow] =
+                    await stateManager.stateChannelManagerContract.getDisputeWindows(
                         channelId,
-                        currentForkId
+                        [currentForkId]
                     );
-                if (Number(_timestamp) != 0)
+                const windowExists =
+                    latestWindow !== undefined &&
+                    latestWindow.evidence.creationTimestamp != 0n;
+                // a window the chain has not reduced can have opened after the
+                // payload was served; served, it would be judged no better than
+                // by 2.2, so omitting it gains a responder nothing -> no
+                // verdict, the sync waits for the reduction. a
+                // reduced window stays a verification failure, which also cuts
+                // an honest payload older than the reduction (stale-response
+                // policy, OQ-SPEC-SYNC-STALE-1)
+                if (
+                    windowExists &&
+                    latestWindow.reducedResult.forkId === ZeroHash
+                ) {
+                    this.logger.debug(
+                        "applySyncResponse - latest fork disputed, window not reduced yet, no verdict",
+                        { peerAddress, forkId: currentForkId }
+                    );
+                    return { synced: false, unsettledForkId: currentForkId };
+                }
+                if (windowExists)
                     return this.rejectSync(
                         peerAddress,
                         "latest fork is disputed"
@@ -485,123 +754,124 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     );
             }
 
-            // 2.9) verify stateProof proves latest state -> abort otherwise
-            // history below the on-chain snapshot may be pruned -> on the proven fork verify from it forward
-            const onProvenFork =
-                onChainSnapshot.forkID === genesisSnapshot.forkID;
-            const isValid =
-                await diamondStateMachine.localDiamondContract.verifyMilestones.staticCall(
-                    syncPayload.latestForkGenesisSnapshot.forkId,
-                    syncPayload.stateProof.milestones,
-                    syncPayload.milestoneSnapshots,
-                    onProvenFork
-                        ? onChainSnapshot.toStruct()
-                        : syncPayload.latestForkGenesisSnapshot
-                );
-            if (!isValid)
+            // 2.9) verify stateProof from the latest trusted start: the local
+            // finalized state, the local diamond's anchor, then the chain's
+            const forkId = genesisSnapshot.forkID;
+            const agreementManager = stateManager.agreementManager;
+            const evidence = {
+                genesisStateSnapshotData:
+                    syncPayload.latestForkGenesisSnapshot.snapshotData,
+                milestoneSnapshots: syncPayload.milestoneSnapshots
+            };
+            const walk = await agreementManager.verifyStateProof(
+                forkId,
+                syncPayload.stateProof,
+                evidence
+            );
+            if (!walk.valid)
                 return this.rejectSync(peerAddress, "milestones invalid");
-
-            if (
-                latestFinalizedSnapshot.snapshotData.stateMachineStateHash !=
-                hash(syncPayload.latestFinalizedEncodedState)
-            )
+            const milestones = syncPayload.stateProof.milestones;
+            // blocks below the anchor are unchecked and may not decode
+            const lastRun = (milestones.at(-1)?.blockConfirmations ?? []).map(
+                (bc) => Block.tryFromBlockConfirmation(bc) ?? undefined
+            );
+            // the walk decoded the last block
+            const provenHeight = lastRun.at(-1)?.height ?? -1;
+            // a valid proof ending below this peer's finalized state is too old
+            const localFinalized = walk.localFinalized;
+            const knownFinalHeight = Math.max(
+                localFinalized?.blockHeight ?? -1,
+                walk.start?.blockHeight ?? -1
+            );
+            if (provenHeight < knownFinalHeight)
                 return this.rejectSync(
                     peerAddress,
-                    "finalized state hash mismatch"
+                    "proof ends below the finalized state"
                 );
 
-            // 2.10) verify outboundMessageBlocks from final genesisSnapshot (or the on-chain snapshot on the proven fork) to latestFinalizedSnapshot
-            areValidExitBlocks =
-                await diamondStateMachine.localDiamondContract.verifyOutboundMessageBlocks(
-                    onProvenFork
-                        ? await diamondStateMachine.localDiamondContract.pruneOutboundMessageBlocks(
-                              syncPayload.outboundMessageBlocksOfTheLatestFork,
-                              onChainSnapshot.snapshotData
-                                  .latestOutboundMessageBlockHash
-                          )
-                        : syncPayload.outboundMessageBlocksOfTheLatestFork,
-                    onProvenFork
-                        ? onChainSnapshot.toStruct().snapshotData
-                        : syncPayload.latestForkGenesisSnapshot.snapshotData,
-                    latestFinalizedSnapshot.snapshotData
+            const base = this.getReplayBase(syncPayload, walk, lastRun);
+            if (!base)
+                return this.rejectSync(
+                    peerAddress,
+                    "served state does not reach the final point"
                 );
-            if (!areValidExitBlocks)
+
+            // 2.10) verify outboundMessageBlocks of the latest fork from the on-chain anchor (1) when it is on
+            // this fork, else from the fork genesis (2.6), to the installed state. Only the run above the
+            // anchor is kept: a later snapshot post and a dispute carry nothing below it. An anchor above
+            // the installed state leaves nothing to keep; the replay adds the later blocks.
+            const outboundStart =
+                onChainSnapshot.forkID === forkId
+                    ? onChainSnapshot
+                    : genesisSnapshot;
+            const {
+                isValid: areValidLatestForkExitBlocks,
+                aboveAnchor: outboundMessageBlocksOfTheLatestFork
+            } =
+                await diamondStateMachine.localDiamondContract.verifyOutboundRunAboveAnchor(
+                    syncPayload.outboundMessageBlocksOfTheLatestFork,
+                    outboundStart.snapshotData,
+                    base.snapshot.snapshotData
+                );
+            if (!areValidLatestForkExitBlocks)
                 return this.rejectSync(
                     peerAddress,
                     "latest-fork outbound blocks invalid"
                 );
 
-            // 2.11) verify balance invariant of the latestFinalizedState -> abort otherwise
+            // 2.11) verify balance invariant of the installed state -> abort otherwise
             const isValidBalance =
                 await stateManager.stateChannelManagerContract.verifyBalanceInvariantCheckSnapshot.staticCall(
                     channelId,
-                    latestFinalizedSnapshot.snapshotData,
-                    syncPayload.latestFinalizedEncodedState
+                    base.snapshot.snapshotData,
+                    base.state
                 );
             if (!isValidBalance)
                 return this.rejectSync(peerAddress, "balance invariant failed");
 
-            // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
-            // the skipped prefix was only checked against the chain's links -> not persisted
+            // 4) Persist the verified material; existing data is kept
             const { shouldAbort } = await this.persistSyncPayload(
                 {
                     ...syncPayload,
                     disputeWindows: linkedDisputeWindows,
-                    outboundMessageBlocksUpToLatestGenesis
+                    outboundMessageBlocksUpToLatestGenesis,
+                    outboundMessageBlocksOfTheLatestFork
                 },
-                onProvenFork ? onChainSnapshot.blockHeight : 0
+                {
+                    walk,
+                    evidence,
+                    base,
+                    selfReducedForkIds: reducedByThisSync
+                }
             );
-            if (shouldAbort)
+            if (shouldAbort) {
+                if (stateManager.isDisposed) return { synced: false };
                 return this.rejectSync(
                     peerAddress,
                     "payload persistence aborted"
                 );
+            }
 
-            // 5) Start executing the onBlockConfirmation pipeline with unfinalized blocks
-            const blockConfirmations =
-                await diamondStateMachine.localDiamondContract.getUnfinalizedBlockConfirmationsFromStateProof(
-                    syncPayload.stateProof
-                );
+            // 5) replay the last run from the installed point
+            // from the base on, every block is decoded and linked
+            const tail = lastRun.slice(base.fromIndex) as Block[];
             this.logger.debug(
-                `Spectate sync - next block height before pipeline ${stateManager.storage.blocks.getNextBlockHeight(currentForkId)}`
+                `Spectate sync - BlockConfirmation pipeline for ${tail.length} blocks from height ${base.snapshot.blockHeight + 1}`
             );
-            this.logger.debug(
-                `Spectate sync - BlockConfirmation pipeline for ${blockConfirmations.length} unfinalized block`,
-                // Bytes that do not decode are refused by the pipeline below,
-                // not by this log.
-                blockConfirmations.map((bc) => {
-                    const _block = Block.tryFromBlockConfirmation(bc);
-                    return {
-                        blockHeight: _block?.height,
-                        signerAddress: _block?.author
-                    };
-                })
-            );
-            for (const bc of blockConfirmations) {
-                try {
-                    const isOk =
-                        await stateManager.blockIngestService.onBlockConfirmationStruct(
-                            bc,
-                            {
-                                validationStrategy:
-                                    stateManager.spectatingValidationStrategy
-                            }
-                        );
-                    if (!isOk)
-                        return this.rejectSync(
-                            peerAddress,
-                            "block confirmation rejected"
-                        );
-                } catch (e) {
-                    this.logger.error(
-                        `Error processing block confirmation during spectate sync`,
-                        { error: e }
+            for (const block of tail) {
+                const isOk =
+                    await stateManager.blockIngestService.onBlockConfirmationStruct(
+                        block.blockConfirmationStruct,
+                        {
+                            validationStrategy:
+                                stateManager.spectatingValidationStrategy
+                        }
                     );
+                if (!isOk)
                     return this.rejectSync(
                         peerAddress,
-                        "block confirmation threw"
+                        "block confirmation rejected"
                     );
-                }
             }
             this.logger.debug(
                 `Spectate sync - next block height after pipeline ${stateManager.storage.blocks.getNextBlockHeight(currentForkId)}`
@@ -614,19 +884,12 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     currentForkId !== syncRequest.forkId
                 )
             ) {
-                const [hasBlock, latestBlock] =
-                    await diamondStateMachine.localDiamondContract.getLatestBlockFromStateProof(
-                        syncPayload.stateProof
-                    );
-                if (!hasBlock)
+                if (provenHeight === -1)
                     return this.rejectSync(
                         peerAddress,
                         "state proof has no block"
                     );
-                if (
-                    Number(latestBlock.transaction.header.transactionCnt) <
-                    syncRequest.blockHeight
-                )
+                if (provenHeight < syncRequest.blockHeight)
                     return this.rejectSync(
                         peerAddress,
                         "proved height is below request"
@@ -635,10 +898,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             this.logger.debug(
                 "Spectator successfully synced to latest proven state"
             );
-            return true;
-        } catch (e) {
-            this.logger.warn(e);
-            return this.rejectSync(peerAddress, "verification threw");
+            return { synced: true };
         }
     }
 
@@ -668,9 +928,6 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             });
             return undefined;
         }
-
-        // Get the current fork ID
-        let forkId = _forkId ?? stateManager.forkId;
 
         // -------- Collect what is needed to prove the latestForkGenesisSnapshot starting from the onChainSnapshot --------
         // We'll do all the computation on our local state.
@@ -709,13 +966,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 );
             if (!currentWindowCommitments) {
                 // the window's disputes are on-chain but not locally readable
-                // yet, so we cannot prove the tip -> refuse to serve rather
-                // than serve a proof we could not build
-                this.logger.warn(
-                    "generateSyncPayload - dispute window unavailable",
-                    { channelId, forkId: currentForkId }
+                // yet, so we cannot prove the tip -> fail the request; our lag
+                // is no verdict on the requester
+                throw new Error(
+                    `generateSyncPayload - dispute window unavailable for fork ${currentForkId}`
                 );
-                return undefined;
             }
             const currentWindowDisputeConfirmations =
                 agreementManager.getForkDisputeConfirmations(
@@ -735,13 +990,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 );
             if (!computation) {
                 // we cannot rebuild the run this window's reduce consumed, so we
-                // cannot prove the tip -> refuse to serve rather than serve a
-                // proof we could not build
-                this.logger.warn(
-                    "generateSyncPayload - reduce data unavailable for a disputed window",
-                    { channelId, forkId: currentForkId }
+                // cannot prove the tip -> fail the request; our lag is no
+                // verdict on the requester
+                throw new Error(
+                    `generateSyncPayload - reduce data unavailable for disputed fork ${currentForkId}`
                 );
-                return undefined;
             }
             const { reduceData, reducedForkId } = computation;
             latestComputation = computation;
@@ -777,6 +1030,12 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 );
         }
 
+        // A request without a fork asks for the latest state: the fork derived
+        // above, not this responder's own fork, which can lag it (a computed
+        // reduction not installed yet); the mismatch below would wrongly cut
+        // the requester.
+        let forkId = _forkId ?? currentForkId;
+
         if (
             currentForkId !== forkId &&
             disputeWindows.some((window) => window.forkId === forkId)
@@ -790,10 +1049,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         if (currentForkId != forkId) {
             // The requested fork isn't the tip we derive from our own reductions,
             // so we can't prove it. Return undefined → the caller cuts the
-            // requester and the requester cuts us (mutual). A sync requester only
-            // ever asks peers expected to prove the target - the block's own
-            // suppliers/author for the block's fork, or a participant for the
-            // latest - so a peer that can't prove it failed to cooperate.
+            // requester; the requester counts a close against us. A sync
+            // requester only ever asks peers expected to prove the target - the
+            // peers that sent the block, for the block's fork, or a
+            // participant for the latest - so a peer that can't prove it failed
+            // to cooperate.
             this.logger.debug(
                 `generateSyncPayload - requested fork ${forkId} is not the derived latest fork ${currentForkId}`
             );
@@ -847,7 +1107,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         }
 
         const latestBlockHeight =
-            stateManager.storage.blocks.getNextBlockHeight(forkId) - 1;
+            stateManager.storage.blocks.getLatestBlockHeight(forkId);
 
         // A pinned height is a minimum. Serve the newest proof available, but
         // refuse a target above it rather than silently returning older state.
@@ -855,38 +1115,18 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             return undefined;
         }
         const targetBlockHeight = latestBlockHeight;
-        // A computed, uninstalled successor has no local blocks or milestones.
-        const latestStateProof: StateProofStruct | undefined =
-            hasInstalledGenesis
-                ? await agreementManager.tryGetStateProof(
-                      forkId,
-                      targetBlockHeight
-                  )
-                : { milestones: [], signedBlocks: [] };
-
-        if (!latestStateProof) {
-            this.logger.debug(
-                `No state proof found for fork ${forkId} blockHeight ${targetBlockHeight}`
-            );
-            return undefined;
-        }
-        // Collect concrete milestone snapshots
-        const milestoneSnapshots: StateSnapshot[] =
-            latestStateProof.milestones.map((m) => {
-                const snapshot = agreementManager.getSnapshotFromMilestone(m);
-                if (!snapshot) {
-                    throw new Error(
-                        "Missing milestone snapshot for provided proof"
-                    );
-                }
-                return snapshot;
-            });
-
-        // As for a snapshot update, we prove the latest finalized one and from that one the peer can start performing SMR and validating each ST.
+        // A computed, uninstalled successor has no local blocks or milestones:
+        // its proof is empty and its genesis is the final point.
+        const built = hasInstalledGenesis
+            ? await agreementManager.buildStateProof(forkId, targetBlockHeight)
+            : undefined;
+        const latestStateProof: StateProofStruct = built?.stateProof ?? {
+            milestones: []
+        };
+        const milestoneSnapshots = built?.evidence.milestoneSnapshots ?? [];
+        // From the final point the peer replays and validates each later block.
         const latestFinalizedSnapshot =
-            milestoneSnapshots.length > 0
-                ? milestoneSnapshots.at(-1)!
-                : latestForkGenesisSnapshot;
+            built?.finalizedSnapshot ?? latestForkGenesisSnapshot;
 
         const stateHash =
             latestFinalizedSnapshot.snapshotData.stateMachineStateHash;
@@ -904,20 +1144,32 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             );
         }
 
+        // the run above the local diamond's anchor when it is on this fork:
+        // the requester's chain anchor is not behind it, and nothing below it
+        // is kept. An anchor at or above the final point leaves nothing.
+        const outboundStart =
+            currentOnChainSnapshot.forkID === forkId
+                ? currentOnChainSnapshot
+                : latestForkGenesisSnapshot;
         const outboundMessageBlocksOfTheLatestFork =
-            stateManager.storage.outboundMessages.getMessageBlocksInRange({
-                upperBlockHash:
-                    latestFinalizedSnapshot.latestOutboundMessageBlockHash,
-                lowerBlockHash:
-                    latestForkGenesisSnapshot.latestOutboundMessageBlockHash
-            });
+            outboundStart.latestOutboundMessageBlockHeight >=
+            latestFinalizedSnapshot.latestOutboundMessageBlockHeight
+                ? []
+                : stateManager.storage.outboundMessages.getMessageBlocksInRange(
+                      {
+                          upperBlockHash:
+                              latestFinalizedSnapshot.latestOutboundMessageBlockHash,
+                          lowerBlockHash:
+                              outboundStart.latestOutboundMessageBlockHash
+                      }
+                  );
         // Return payload with all available data
         const syncPayload: SyncPayload = {
             disputeWindows,
             latestForkGenesisSnapshot: latestForkGenesisSnapshot.toStruct(),
             latestForkGenesisEncodedState,
             stateProof: latestStateProof,
-            milestoneSnapshots: milestoneSnapshots.map((ms) => ms.toStruct()),
+            milestoneSnapshots,
             latestFinalizedEncodedState,
             outboundMessageBlocksUpToLatestGenesis,
             outboundMessageBlocksOfTheLatestFork
@@ -970,189 +1222,181 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         return disputeWindows;
     }
 
-    // milestones starting below `anchorHeight` are skipped by verifyMilestones (only link-checked) -> their blocks and snapshots are not persisted
+    /**
+     * The state the sync installs and the last-run index its replay starts
+     * at: the walk's final point with this peer's own state or the served
+     * state, else an earlier point of the last run (or the genesis before
+     * block 0) whose served state the replay carries to the final point. An
+     * earlier point must link by hash to the verified final block, so the
+     * replay can only reach the verified state. A later point would skip
+     * unfinalized blocks: none.
+     */
+    private getReplayBase(
+        syncPayload: SyncPayload,
+        walk: ProofTierWalk,
+        lastRun: (Block | undefined)[]
+    ): SyncReplayBase | undefined {
+        const finalized = walk.finalizedSnapshot;
+        const ownState =
+            this.p2pManager.stateManager.storage.stateMachineStates.getStateMachineState(
+                finalized.stateMachineStateHash
+            );
+        const servedState = syncPayload.latestFinalizedEncodedState as Bytes;
+        const servedHash = hash(servedState);
+        if (
+            ownState !== undefined ||
+            servedHash === finalized.stateMachineStateHash
+        )
+            return {
+                snapshot: finalized,
+                state: ownState ?? servedState,
+                fromIndex: walk.replayBlockIndex
+            };
+        // the verified final block is the one before the walk's tail
+        const finalIndex = walk.replayBlockIndex - 1;
+        const linksToFinal = (from: number) => {
+            for (let i = from; i < finalIndex; i++) {
+                const [lower, upper] = [lastRun[i], lastRun[i + 1]];
+                if (!lower || !upper || upper.previousBlockHash !== lower.hash)
+                    return false;
+            }
+            return true;
+        };
+        const genesis = StateSnapshot.from(
+            syncPayload.latestForkGenesisSnapshot
+        );
+        const first = lastRun[0];
+        if (
+            genesis.stateMachineStateHash === servedHash &&
+            first?.height === 0 &&
+            first.previousBlockHash === genesis.hash &&
+            linksToFinal(0)
+        )
+            return { snapshot: genesis, state: servedState, fromIndex: 0 };
+        for (const struct of syncPayload.milestoneSnapshots) {
+            const snapshot = StateSnapshot.from(struct);
+            if (snapshot.stateMachineStateHash !== servedHash) continue;
+            const index = lastRun.findIndex(
+                (block) => block?.stateSnapshotHash === snapshot.hash
+            );
+            if (index !== -1 && index < finalIndex && linksToFinal(index))
+                return {
+                    snapshot,
+                    state: servedState,
+                    fromIndex: index + 1,
+                    block: lastRun[index]
+                };
+        }
+        return undefined;
+    }
+
+    /**
+     * Persists the verified sync: dispute windows, the genesis, outbound
+     * runs, the proof material the walk verified (final history advances the
+     * view), then installs the replay base unless this peer's height on the
+     * base's fork is already at or above it. Existing data is never
+     * overwritten. The history is stored in the same synchronous step that installs the base,
+     * so no task sees it before the fork swap. A runtime disposed before that
+     * step persists and installs nothing (abort).
+     */
     public async persistSyncPayload(
         syncPayload: SyncPayload,
-        anchorHeight: number = 0
+        verified: VerifiedSync
     ): Promise<{ shouldAbort: boolean }> {
         const stateManager = this.p2pManager.stateManager;
+        const { walk, evidence, base } = verified;
         return await stateManager.withMutex(
             async () => {
+                if (stateManager.isDisposed) return { shouldAbort: true };
                 this.logger.debug(`Persisting sync payload`, syncPayload);
                 const storage = stateManager.storage;
-
-                const latestFinalizedSnapshot =
-                    syncPayload.milestoneSnapshots.length > 0
-                        ? syncPayload.milestoneSnapshots.at(-1)!
-                        : syncPayload.latestForkGenesisSnapshot;
-
-                const finalizedForkId = latestFinalizedSnapshot.forkId;
-                const finalizedHeight = Number(
-                    latestFinalizedSnapshot.blockHeight
-                );
-                const localLatestBlock =
-                    storage.blocks.getLatestBlock(finalizedForkId);
-                const localLatestHeight = localLatestBlock?.height ?? -1;
-
-                if (localLatestHeight >= finalizedHeight) {
-                    this.logger.info(
-                        "Skipping sync payload persistence: local storage is already ahead of latest finalized snapshot",
-                        {
-                            finalizedForkId,
-                            finalizedHeight,
-                            localLatestHeight
+                const forkId = base.snapshot.forkID;
+                // verified history conflicting with what this peer holds: abort
+                const persistProof =
+                    stateManager.agreementManager.stageVerifiedProof(
+                        syncPayload.stateProof,
+                        evidence,
+                        walk,
+                        { replayFromIndex: base.fromIndex, advanceView: true }
+                    );
+                if (!persistProof) return { shouldAbort: true };
+                const persistHistory = () => {
+                    if (stateManager.isDisposed || !persistProof())
+                        return false;
+                    for (const dw of syncPayload.disputeWindows) {
+                        // no reduction checks a confirmation's signatures, so the
+                        // window's disputes come from chain logs only. only this
+                        // sync's own reduction checked the rest of a window's reduce
+                        // input; a chain-final or early-return window ran no check
+                        if (!verified.selfReducedForkIds.has(dw.forkId))
+                            continue;
+                        storage.stateSnapshots.storeStateSnapshot(
+                            StateSnapshot.from(dw.latestStateSnapshot)
+                        );
+                        storage.stateMachineStates.storeStateMachineState(
+                            dw.latestEncodedStateMachineState
+                        );
+                        for (const inboundBlock of dw.inboundMessageBlocksAppliedInReduce) {
+                            storage.inboundMessages.store(inboundBlock);
                         }
+                    }
+                    // a held genesis is trusted; past genesis on chain the payload's timestamp is unchecked
+                    const genesisSnapshot = StateSnapshot.from(
+                        syncPayload.latestForkGenesisSnapshot
+                    );
+                    if (
+                        !storage.stateSnapshots.getGenesisSnapshotByForkId(
+                            genesisSnapshot.forkID
+                        )
+                    )
+                        storage.stateSnapshots.storeStateSnapshot(
+                            genesisSnapshot
+                        );
+                    storage.stateMachineStates.storeStateMachineState(
+                        syncPayload.latestForkGenesisEncodedState,
+                        {
+                            hash: syncPayload.latestForkGenesisSnapshot
+                                .snapshotData.stateMachineStateHash
+                        }
+                    );
+                    for (const omb of syncPayload.outboundMessageBlocksUpToLatestGenesis)
+                        storage.outboundMessages.store(omb);
+                    for (const omb of syncPayload.outboundMessageBlocksOfTheLatestFork)
+                        storage.outboundMessages.store(omb);
+                    if (base.block) storage.blocks.storeBlock(base.block);
+                    return true;
+                };
+
+                // the install is monotonic: on the same fork it never moves
+                // the height the live pipeline executes at down
+                const baseHeight =
+                    base.fromIndex === 0 ? -1 : base.snapshot.blockHeight;
+                const localLatestHeight =
+                    storage.blocks.getLatestBlockHeight(forkId);
+                const holdsBase =
+                    stateManager.forkId === forkId &&
+                    localLatestHeight >= baseHeight;
+                if (holdsBase) {
+                    if (!persistHistory()) return { shouldAbort: true };
+                    this.logger.info(
+                        "Sync keeps the local state: it already holds the installed point or a later one",
+                        { forkId, baseHeight, localLatestHeight }
                     );
                     return { shouldAbort: false };
                 }
-
-                const firstVerifiedMilestone =
-                    this.getFirstVerifiedMilestoneIndex(
-                        syncPayload.stateProof,
-                        anchorHeight
+                // a conflict found after the VM write restores the VM
+                const installed =
+                    await stateManager.stateApplicationService.unsafeSetLatestState(
+                        base.snapshot.toStruct(),
+                        base.state,
+                        undefined,
+                        persistHistory
                     );
-                const finalizedBlocks = this.getFinalizedBlocksFromStateProof(
-                    syncPayload.stateProof,
-                    firstVerifiedMilestone
-                );
-                if (this.hasAnyBlockConflict(finalizedBlocks)) {
-                    return { shouldAbort: true };
-                }
-
-                for (const dw of syncPayload.disputeWindows) {
-                    for (const dispute of dw.disputeConfirmations) {
-                        storage.disputes.storeDisputeConfirmation(dispute);
-                    }
-                    storage.stateSnapshots.storeStateSnapshot(
-                        StateSnapshot.from(dw.latestStateSnapshot)
-                    );
-                    storage.stateMachineStates.storeStateMachineState(
-                        dw.latestEncodedStateMachineState
-                    );
-                    for (const inboundBlock of dw.inboundMessageBlocksAppliedInReduce) {
-                        storage.inboundMessages.store(inboundBlock);
-                    }
-                }
-                // a held genesis is trusted; past genesis on chain the payload's timestamp is unchecked
-                const genesisSnapshot = StateSnapshot.from(
-                    syncPayload.latestForkGenesisSnapshot
-                );
-                if (
-                    !storage.stateSnapshots.getGenesisSnapshotByForkId(
-                        genesisSnapshot.forkID
-                    )
-                )
-                    storage.stateSnapshots.storeStateSnapshot(genesisSnapshot);
-                storage.stateMachineStates.storeStateMachineState(
-                    syncPayload.latestForkGenesisEncodedState,
-                    {
-                        hash: syncPayload.latestForkGenesisSnapshot.snapshotData
-                            .stateMachineStateHash
-                    }
-                );
-                this.persistFinalizedBlocks(finalizedBlocks);
-                for (const snapshot of syncPayload.milestoneSnapshots.slice(
-                    firstVerifiedMilestone
-                ))
-                    storage.stateSnapshots.storeStateSnapshot(
-                        StateSnapshot.from(snapshot)
-                    );
-                for (const omb of syncPayload.outboundMessageBlocksUpToLatestGenesis)
-                    storage.outboundMessages.store(omb);
-                for (const omb of syncPayload.outboundMessageBlocksOfTheLatestFork)
-                    storage.outboundMessages.store(omb);
-
-                await stateManager.stateApplicationService.unsafeSetLatestState(
-                    latestFinalizedSnapshot,
-                    syncPayload.latestFinalizedEncodedState
-                );
                 this.logger.debug(`Finished persisting sync payload`);
-                return { shouldAbort: false };
+                return { shouldAbort: !installed };
             },
             { taskName: "persistSyncPayload" }
         );
-    }
-
-    // mirrors _verifyMilestones: a milestone whose first block is below the anchor height is skipped
-    private getFirstVerifiedMilestoneIndex(
-        stateProof: StateProofStruct,
-        anchorHeight: number
-    ): number {
-        const index = stateProof.milestones.findIndex(
-            (milestone) =>
-                Block.fromBlockConfirmation(milestone.blockConfirmations[0])
-                    .height >= anchorHeight
-        );
-        return index === -1 ? stateProof.milestones.length : index;
-    }
-
-    private getFinalizedBlocksFromStateProof(
-        stateProof: StateProofStruct,
-        fromMilestone: number
-    ): Block[] {
-        const finalizedBlocks: Block[] = [];
-        if (fromMilestone >= stateProof.milestones.length)
-            return finalizedBlocks;
-        // for all verified milestones except the last persist all blocks
-        for (let i = fromMilestone; i < stateProof.milestones.length - 1; i++) {
-            for (const blockConfirmation of stateProof.milestones[i]
-                .blockConfirmations) {
-                const block = Block.fromBlockConfirmation(blockConfirmation);
-                finalizedBlocks.push(block);
-            }
-        }
-        // for the last milestone persist just the first (finalized) block
-        const lastMilestone = stateProof.milestones.at(-1);
-        const finalizedBlockConfirmation = lastMilestone?.blockConfirmations[0];
-        if (finalizedBlockConfirmation) {
-            const block = Block.fromBlockConfirmation(
-                finalizedBlockConfirmation
-            );
-            finalizedBlocks.push(block);
-        }
-        return finalizedBlocks;
-    }
-
-    private hasAnyBlockConflict(blocks: Block[]): boolean {
-        return blocks.some((block) => this.hasBlockConflict(block));
-    }
-
-    private persistFinalizedBlocks(blocks: Block[]): void {
-        const storage = this.p2pManager.stateManager.storage;
-        for (const block of blocks) storage.blocks.storeBlock(block);
-    }
-
-    private hasBlockConflict(block: Block): boolean {
-        const existingBlock =
-            this.p2pManager.stateManager.storage.blocks.getBlock(
-                block.forkId,
-                block.height
-            );
-        if (existingBlock && !existingBlock.equals(block)) {
-            this.logger.warn("Spectate sync storage conflict", {
-                blockHash: block.hash,
-                existingBlockHash: existingBlock.hash,
-                forkId: block.forkId,
-                height: block.height
-            });
-            return true;
-        }
-        return false;
-    }
-
-    // true when `target` is on the on-chain fork but is neither the on-chain snapshot nor newer
-    // (older, or another snapshot at the same height); another fork is linked by the dispute-window loop
-    private async isSameForkRegression(
-        onChainSnapshot: StateSnapshot,
-        target: StateSnapshotStruct
-    ): Promise<boolean> {
-        const targetSnapshot = StateSnapshot.from(target);
-        if (targetSnapshot.forkID !== onChainSnapshot.forkID) return false;
-        if (targetSnapshot.hash === onChainSnapshot.hash) return false;
-        return !(await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.isSnapshotNewer(
-            target,
-            onChainSnapshot.toStruct()
-        ));
     }
 
     public static orderOutboundSnapshots(
@@ -1168,7 +1412,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             : { lowerOutboundSnapshot: b, upperOutboundSnapshot: a };
     }
 
-    private rejectSync(peerAddress: string, reason: string): false {
+    private rejectSync(peerAddress: string, reason: string): SyncOutcome {
         this.logger.debug("applySyncResponse - rejecting sync", {
             peerAddress,
             reason
@@ -1177,7 +1421,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             peerAddress,
             `sync payload rejected: ${reason}`
         );
-        return false;
+        return { synced: false };
     }
 }
 

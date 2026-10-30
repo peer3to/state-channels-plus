@@ -1,11 +1,6 @@
-# test/e2e/disputeValidation/inboundHash.test.ts — Test Report
+# inboundHash.test.ts
 
-> **Test file:** [test/e2e/disputeValidation/inboundHash.test.ts](../../../../../../../test/e2e/disputeValidation/inboundHash.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/disputeValidation/inboundHash.test.ts](../../../../../../../test/e2e/disputeValidation/inboundHash.test.ts)
 
 ## Overview
 
@@ -19,16 +14,9 @@ participant's top-up, advances and finalizes past it, then provokes a double-sig
 peer initiates. The oracles assert that dispute commits and resolves, no peer fires `onDisputeKilled`, and the
 lagging disputer is not slashed.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                                                                 | Covers                                                                                                                           |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| [`E2E: dispute validation / inboundHash > dispute.input.latestInboundMessageBlockHash = random (not on-chain) → DisputeInboundHashNotInChain`](../../../../../../../test/e2e/disputeValidation/inboundHash.test.ts#L14) (line 14)                                                | —                                                                                                                                |
-| [`E2E: dispute validation / inboundHash > dispute.input.latestInboundMessageBlockHash = ZeroHash AND lastInboundMessageBlockHeight > 0 → DisputeInboundHashNotInChain`](../../../../../../../test/e2e/disputeValidation/inboundHash.test.ts#L45) (line 45)                       | —                                                                                                                                |
-| [`E2E: dispute validation / inboundHash > dispute.input.lastInboundMessageBlockHeight below the pinned snapshotData.latestInboundMessageBlockHeight → DisputeInboundAnchorBehindLatestState`](../../../../../../../test/e2e/disputeValidation/inboundHash.test.ts#L77) (line 77) | —                                                                                                                                |
-| [`E2E: dispute validation / inboundHash > honest disputer whose inbound chain event lags → dispute survives, disputer not killed or slashed`](../../../../../../../test/e2e/disputeValidation/inboundHash.test.ts#L154) (line 154)                                               | [`REQ-DISPUTE-PIPE-5-RZZB48.T2.P3`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48.t2.p3) |
+- `dispute.input.latestInboundMessageBlockHash = random (not on-chain) → DisputeInboundHashNotInChain`: none
+- `dispute.input.latestInboundMessageBlockHash = ZeroHash AND lastInboundMessageBlockHeight > 0 → DisputeInboundHashNotInChain`: none
+- `dispute.input.lastInboundMessageBlockHeight below the pinned snapshotData.latestInboundMessageBlockHeight → DisputeInboundAnchorBehindLatestState`: none
+- `honest disputer whose inbound chain event lags → dispute survives, disputer not killed or slashed`: REQ-DISPUTE-PIPE-5-RZZB48.T2.P3

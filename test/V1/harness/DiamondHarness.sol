@@ -2,6 +2,7 @@
 pragma solidity ^0.8.8;
 
 import {Test} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {StateChannelManagerProxy} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import {DisputeManagerFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol";
@@ -33,42 +34,58 @@ abstract contract DiamondHarness is Test {
     /// @dev Returns the diamond typed as its full external surface: the proxy
     /// implements only a few selectors itself and routes the rest to facets.
     function deployDiamond() internal returns (StateChannelManagerInterface diamond) {
-        return deployDiamondWith(new MathStateMachine(SM_GAS_LIMIT, MAX_CHANNEL_PARTICIPANTS));
+        return deployDiamondWith(
+            MathStateMachine(
+                vm.deployCode(
+                    "MathStateMachine.sol:MathStateMachine", abi.encode(SM_GAS_LIMIT, MAX_CHANNEL_PARTICIPANTS)
+                )
+            )
+        );
     }
 
     /// @dev Same deployment behind a caller-supplied machine (a Math variant), for suites that
     /// need transitions the reference machine does not have.
     function deployDiamondWith(MathStateMachine machine) internal returns (StateChannelManagerInterface diamond) {
         stateMachine = machine;
-        DisputeManagerFacet disputeManager = new DisputeManagerFacet();
-        DisputeVerificationFacet disputeVerification = new DisputeVerificationFacet();
-        fraudProofFacet = new FraudProofFacet();
-        DisputeFraudProofFacet disputeFraudProof = new DisputeFraudProofFacet();
-        StateSnapshotFacet stateSnapshot = new StateSnapshotFacet();
-        JoinChannelFacet joinChannel = new JoinChannelFacet();
-        StateProofFacet stateProof = new StateProofFacet();
-        utilityFacet = new UtilityFacet();
-        consumerFacet = new MathConsumerFacet();
+        // deployCode deploys the built contracts/ artifacts; `new` would embed and
+        // re-optimize every facet inside each via_ir test contract
+
+        DisputeManagerFacet disputeManager =
+            DisputeManagerFacet(vm.deployCode("DisputeManagerFacet.sol:DisputeManagerFacet"));
+        DisputeVerificationFacet disputeVerification =
+            DisputeVerificationFacet(vm.deployCode("DisputeVerificationFacet.sol:DisputeVerificationFacet"));
+        fraudProofFacet = FraudProofFacet(vm.deployCode("FraudProofFacet.sol:FraudProofFacet"));
+        DisputeFraudProofFacet disputeFraudProof =
+            DisputeFraudProofFacet(vm.deployCode("DisputeFraudProofFacet.sol:DisputeFraudProofFacet"));
+        StateSnapshotFacet stateSnapshot =
+            StateSnapshotFacet(vm.deployCode("StateSnapshotFacet.sol:StateSnapshotFacet"));
+        JoinChannelFacet joinChannel = JoinChannelFacet(vm.deployCode("JoinChannelFacet.sol:JoinChannelFacet"));
+        StateProofFacet stateProof = StateProofFacet(vm.deployCode("StateProofFacet.sol:StateProofFacet"));
+        utilityFacet = UtilityFacet(vm.deployCode("UtilityFacet.sol:UtilityFacet"));
+        consumerFacet = MathConsumerFacet(vm.deployCode("MathConsumerFacet.sol:MathConsumerFacet"));
 
         diamond = StateChannelManagerInterface(
             address(
-                new StateChannelManagerProxy(
-                    address(stateMachine),
-                    address(disputeManager),
-                    address(disputeVerification),
-                    address(fraudProofFacet),
-                    address(disputeFraudProof),
-                    address(stateSnapshot),
-                    address(joinChannel),
-                    address(stateProof),
-                    address(utilityFacet),
-                    address(consumerFacet),
-                    P2P_TIME,
-                    0, // agreementTime  -> contract default
-                    0, // chainFallbackTime -> default
-                    0, // evidenceTime -> default
-                    0, // disputeExecutionGasLimit -> default
-                    MAX_CHANNEL_PARTICIPANTS
+                vm.deployCode(
+                    "StateChannelManagerProxy.sol:StateChannelManagerProxy",
+                    abi.encode(
+                        address(stateMachine),
+                        address(disputeManager),
+                        address(disputeVerification),
+                        address(fraudProofFacet),
+                        address(disputeFraudProof),
+                        address(stateSnapshot),
+                        address(joinChannel),
+                        address(stateProof),
+                        address(utilityFacet),
+                        address(consumerFacet),
+                        P2P_TIME,
+                        0, // agreementTime  -> contract default
+                        0, // chainFallbackTime -> default
+                        0, // evidenceTime -> default
+                        0, // disputeExecutionGasLimit -> default
+                        MAX_CHANNEL_PARTICIPANTS
+                    )
                 )
             )
         );
@@ -119,11 +136,24 @@ abstract contract DiamondHarness is Test {
         uint256[] memory amounts,
         bool isAtomic
     ) internal view returns (OpenChannelConfirmation memory) {
+        return _openChannelConfirmationWithDeadline(
+            channelId, participantPrivateKeys, amounts, isAtomic, block.timestamp + 1 days
+        );
+    }
+
+    /// The same signed open-channel request with caller-chosen terms deadline.
+    function _openChannelConfirmationWithDeadline(
+        bytes32 channelId,
+        uint256[] memory participantPrivateKeys,
+        uint256[] memory amounts,
+        bool isAtomic,
+        uint256 deadlineTimestamp
+    ) internal pure returns (OpenChannelConfirmation memory) {
         OpenChannel memory openChannel;
         openChannel.channelId = channelId;
         openChannel.participants = new address[](participantPrivateKeys.length);
         openChannel.balances = new Balance[](participantPrivateKeys.length);
-        openChannel.deadlineTimestamp = block.timestamp + 1 days;
+        openChannel.deadlineTimestamp = deadlineTimestamp;
         openChannel.isAtomic = isAtomic;
 
         for (uint256 i = 0; i < participantPrivateKeys.length; i++) {
@@ -204,5 +234,14 @@ abstract contract DiamondHarness is Test {
         for (uint256 i = 1; i < pks.length; i++) {
             confirmation.signatures[i - 1] = _sign(pks[i], encodedBlock);
         }
+    }
+
+    /// The data of the first recorded log of `selector` indexed by `channelId`.
+    function _logData(Vm.Log[] memory logs, bytes32 selector, bytes32 channelId) internal pure returns (bytes memory) {
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics.length < 2 || logs[i].topics[0] != selector || logs[i].topics[1] != channelId) continue;
+            return logs[i].data;
+        }
+        revert("channel log not recorded");
     }
 }

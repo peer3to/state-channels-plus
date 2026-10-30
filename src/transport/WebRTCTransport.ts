@@ -113,6 +113,8 @@ class WebRTCTransport extends NetworkTransport {
 
     // Overrides NetworkTransport.onMessage to handle WebRTC frames.
     public override onMessage(data: unknown): void {
+        // A closed channel can still deliver a frame; its runtime may be disposed.
+        if (this.isClosed) return;
         const serializedRpc =
             data instanceof Uint8Array
                 ? Buffer.from(data).toString()
@@ -151,15 +153,9 @@ class WebRTCTransport extends NetworkTransport {
 
     _close(): void {
         this.p2pManager.logger.debug("Closing WebRTC channel");
-        const profile =
-            this.p2pManager.profileManager.getProfileByTransport(this);
-        const peerAddress =
-            this.peerAddress || profile?.getEvmAddress()?.toString();
-        if (peerAddress) {
-            this.p2pManager.localRpc?.webRTCSetupService?.closeWebRTCConnection(
-                peerAddress
-            );
-        }
+        this.p2pManager.localRpc?.webRTCSetupService?.closeWebRTCConnection(
+            this
+        );
         this.webRTCChannel.close();
     }
 }

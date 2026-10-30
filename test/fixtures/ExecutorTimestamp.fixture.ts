@@ -9,7 +9,6 @@ import type AContractExecutor from "@/evm/contractExecutor/AContractExecutor";
 import { createRoot } from "@/rpc/internal/createRoot";
 import { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
 import { sleep } from "@/utils";
-import { config } from "@/utils/config";
 import { expect } from "chai";
 import type { Provider } from "ethers";
 
@@ -129,12 +128,9 @@ export async function assertExplicitExecutorClock(
     );
     await Clock.init(shifted);
     const root = await createRoot(ContractExecutorRoot, {
-        args: {
-            config,
-            customPrecompiles: [],
-            clockAdjustmentSeconds: adjustment
-        }
+        args: { customPrecompiles: [] }
     });
+    root.executor.configure({ clockAdjustmentSeconds: adjustment });
     try {
         expect(Clock.isInitialized()).to.equal(true);
         expect(
@@ -158,7 +154,7 @@ export async function assertUninitializedExecutorClock(): Promise<void> {
     const previous = Clock["instance"];
     Clock["instance"] = undefined;
     const root = await createRoot(ContractExecutorRoot, {
-        args: { config, customPrecompiles: [] }
+        args: { customPrecompiles: [] }
     });
     try {
         expect(Clock.isInitialized()).to.equal(false);

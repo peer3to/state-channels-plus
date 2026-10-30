@@ -15,10 +15,9 @@ export async function assertPendingLeaveGuard(
     const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);
     const leaver = h.getPeer(1);
     const signer = leaver.p2pInstance.p2pSigner;
-    const leave = signer.leaveChannel();
-    void leave.catch(() => undefined);
     try {
-        await h.event.waitUntilLeavePhase(leaver.index, "awaiting-exit");
+        // delivered: the leave is pending on the host
+        await signer.leaveChannel();
         const attempt =
             operation === "joinLobby"
                 ? signer.joinLobby(ethers.id("pending-leave-lobby"))
@@ -41,5 +40,4 @@ export async function assertPendingLeaveGuard(
     } finally {
         await leaver.p2pInstance.dispose();
     }
-    await expect(leave).to.be.rejectedWith("disposed");
 }

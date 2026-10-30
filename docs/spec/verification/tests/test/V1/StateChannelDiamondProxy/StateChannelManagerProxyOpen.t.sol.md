@@ -1,12 +1,7 @@
-# test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol — Test Report
+# StateChannelManagerProxyOpen.t.sol
 
-> **Test file:** [test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [StateChannelManagerProxy.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol)
+Exercises: [StateChannelManagerProxy.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)
 
 ## Overview
 
@@ -41,22 +36,34 @@ way, but specification test discovery matches `*.t.sol`, so the case produced no
 declaration and its evidence could not be assigned. The rename restores the convention every
 sibling in the directory already follows and makes the case inventoriable; it changes no behaviour.
 
-The duplicate-participant and successful-join-count gates are exercised here. The other `open()`
+Three cases cover the opening deadline. Each submits the same unanimously signed two-party opening
+(balances `300` and `200`) whose terms carry a fixed deadline, after `vm.warp` sets the block time on
+this test's own EVM. One second before the deadline and exactly at it, `open` succeeds: the oracle
+is an open channel whose recorded total deposits are `500`, the sum of the signed balances. One
+second after the deadline, the oracle is the full revert payload
+`RaceConditionOpenChannelExpired(deadline, deadline + 1)`. The revert rolls back every write, so
+no channel state or deposit can remain; the case asserts no state after the reverted call, because
+such an assertion could not fail.
+
+A fourth case pins the order of the two race checks. It opens the channel exactly at its deadline,
+moves block time one second past it, and submits the same confirmation again. The terms are now
+both already used and expired; the oracle is the full revert payload
+`RaceConditionChannelAlreadyOpen(channelId)`, so the already-open check must run before the
+deadline check.
+
+The duplicate-participant, successful-join-count and deadline gates are exercised here. The other `open()`
 gates — zero channel id, threshold shortfall, deposit composition — are covered by the Hardhat suite
-[OpenChannel.test.ts](../DiamondProxy/StateChannelManager/OpenChannel.test.ts.md), and the
-[`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag) length and zero-address gaps
-remain open there.
+[OpenChannel.test.ts](../DiamondProxy/StateChannelManager/OpenChannel.test.ts.md). The
+`DEF-1-92NTAG` short-balances and zero-address reverts are planned but not yet tested.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                 | Covers                                                                                                                                                                                    |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`test_open_duplicateParticipants_reverts`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L28) (line 28)                              | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P12`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p12) |
-| [`test_open_fewerThanTwoSuccessfulJoins_revertsWithSuccessfulJoinCount`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L46) (line 46) | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P13`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p13) |
-| [`test_open_participantsAboveMaximum_reverts`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L79) (line 79)                           | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P16`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p16) |
-| [`test_open_participantsAtMaximum_passesTheBoundCheck`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L95) (line 95)                  | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P17`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p17) |
+- `test_open_duplicateParticipants_reverts`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P12
+- `test_open_inboundJoinMessageDataIsCanonicalJoinEncoding`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P24, REQ-DATA-1-1KNRQS.T1.P15
+- `test_open_fewerThanTwoSuccessfulJoins_revertsWithSuccessfulJoinCount`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P13
+- `test_open_participantsAboveMaximum_reverts`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P16
+- `test_open_participantsAtMaximum_passesTheBoundCheck`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P17
+- `test_open_beforeDeadline_opensChannel`: REQ-ENFADM-4-2NN96F.T1.P1
+- `test_open_atDeadline_opensChannel`: REQ-ENFADM-4-2NN96F.T1.P2, UNIT-TEST-MANAGER-PROXY-1-NTYR71.P18
+- `test_open_afterDeadline_revertsWithOpenChannelExpired`: REQ-ENFADM-4-2NN96F.T1.P3, UNIT-TEST-MANAGER-PROXY-1-NTYR71.P19
+- `test_open_alreadyOpenAfterDeadline_revertsWithChannelAlreadyOpen`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P20

@@ -178,7 +178,7 @@ export default class P2pEventHooksUtils {
             relevantTimestamp
         });
 
-        if (leaveChannelService.takeLeaveTurn(nextToWrite)) {
+        if (leaveChannelService.shouldTakeLeaveTurn(nextToWrite)) {
             p2pEventHooks.onLeaveTurn?.();
             return;
         }

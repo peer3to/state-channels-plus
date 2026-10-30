@@ -1,5 +1,6 @@
 "use strict";
 
+const { prosePlanEntries } = require("./specification-plan-prose");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -24,7 +25,6 @@ const {
     FINDING_RE,
     IMPLEMENTATION_PERMUTATION_PATTERN,
     IMPLEMENTATION_PERMUTATION_RE,
-    IMPLEMENTATION_TEST_PATTERN,
     IMPLEMENTATION_TEST_RE,
     PERMUTATION_RE,
     QUESTION_RE,
@@ -32,7 +32,8 @@ const {
     REQUIREMENT_RE,
     SPECIFICATION_PERMUTATION_PATTERN,
     SPECIFICATION_PLAN_PATTERN,
-    TEST_PLAN_ITEM_RE
+    TEST_PLAN_ITEM_RE,
+    withoutToolWritten
 } = require("./id-utils");
 
 const GENERATED_ROOT = path.join(SPEC_ROOT, "generated");
@@ -156,7 +157,7 @@ function collectPermutations(documents) {
             if (!mentions.has(match[0])) mentions.set(match[0], new Set());
             mentions.get(match[0]).add(document);
         }
-        for (const table of tableRows(document)) {
+        for (const table of specificationPlanRows(document)) {
             const planIndex = table.headers.indexOf("plan item");
             const permutationIndex = table.headers.indexOf(
                 "required permutations"
@@ -192,49 +193,67 @@ function collectPermutations(documents) {
     return { definitions, duplicates, mentions };
 }
 
-function collectImplementationPermutations(documents) {
-    const definitions = new Map();
-    const duplicates = [];
-    const mentions = new Map();
+// A family is a `## <UNIT|INTEGRATION>-TEST-*` heading and a view-local
+// requirement is a heading that starts with its ID. Their cases are the
+// "- `<id>.P<n>` — <case>" (or `.T<n>.P<n>`) bullets below the heading, with
+// an optional checkbox written by `yarn spec:ids:fix`.
+function collectImplementationTests(documents) {
+    const families = { definitions: new Map(), duplicates: [] };
+    const permutations = {
+        definitions: new Map(),
+        duplicates: [],
+        mentions: new Map()
+    };
+    const define = (collection, value) => {
+        if (collection.definitions.has(value.id))
+            collection.duplicates.push([
+                collection.definitions.get(value.id),
+                value
+            ]);
+        else collection.definitions.set(value.id, value);
+    };
     for (const document of documents) {
         const markdown = readText(document);
         for (const match of markdown.matchAll(
             new RegExp(IMPLEMENTATION_PERMUTATION_PATTERN, "g")
         )) {
-            if (!mentions.has(match[0])) mentions.set(match[0], new Set());
-            mentions.get(match[0]).add(document);
+            if (!permutations.mentions.has(match[0]))
+                permutations.mentions.set(match[0], new Set());
+            permutations.mentions.get(match[0]).add(document);
         }
-        for (const table of tableRows(document)) {
-            const testIndex = table.headers.findIndex((header) =>
-                /^(?:unit|integration) test id$/.test(header)
-            );
-            const permutationIndex = table.headers.findIndex((header) =>
-                /^required permutations(?: and oracle)?$/.test(header)
-            );
-            if (testIndex < 0 || permutationIndex < 0) continue;
-            for (const row of table.rows) {
-                const testId = identityFromCell(row.cells[testIndex]);
-                for (const match of row.cells[permutationIndex].matchAll(
-                    new RegExp(IMPLEMENTATION_PERMUTATION_PATTERN, "g")
-                )) {
-                    const id = match[0];
-                    if (!id.startsWith(`${testId}.P`)) continue;
-                    const value = {
-                        id,
-                        document,
-                        line: row.line,
-                        raw: row.raw,
-                        cells: row.cells,
-                        headers: table.headers
-                    };
-                    if (definitions.has(id))
-                        duplicates.push([definitions.get(id), value]);
-                    else definitions.set(id, value);
-                }
+        let owner = null;
+        markdown.split(/\r?\n/).forEach((line, index) => {
+            const heading = line.match(/^(#{1,4})\s+(\S+)/);
+            if (heading) {
+                const level = heading[1].length;
+                if (owner && level <= owner.level) owner = null;
+                const id = heading[2].replaceAll("\x60", "");
+                if (IMPLEMENTATION_TEST_RE.test(id) && level === 2) {
+                    owner = { id, document, line: index + 1, raw: line, level };
+                    define(families, owner);
+                } else if (REQUIREMENT_RE.test(id))
+                    owner = { id, level, raw: line };
+                return;
             }
-        }
+            if (!owner) return;
+            owner.raw += `\n${line}`;
+            const id = line.match(
+                /^\s*-\s+(?:\[[ x]\]\s+)?\x60([^\x60]+)\x60\s+—/
+            )?.[1];
+            if (
+                id?.startsWith(`${owner.id}.`) &&
+                (IMPLEMENTATION_PERMUTATION_RE.test(id) ||
+                    PERMUTATION_RE.test(id))
+            )
+                define(permutations, {
+                    id,
+                    document,
+                    line: index + 1,
+                    raw: line
+                });
+        });
     }
-    return { definitions, duplicates, mentions };
+    return { families, permutations };
 }
 
 function layerMarkdownFiles(layer) {
@@ -284,6 +303,14 @@ function tableRows(document) {
     return tables;
 }
 
+// Present prose test entries through the same fields as existing test tables.
+function specificationPlanRows(document) {
+    return [
+        ...tableRows(document),
+        ...prosePlanEntries(readText(document).split(/\r?\n/), document)
+    ];
+}
+
 function collectDefinitions(documents, pattern) {
     const definitions = new Map();
     const duplicates = [];
@@ -325,7 +352,9 @@ function collectDefinitions(documents, pattern) {
                 }
             }
         }
-        for (const table of tableRows(document)) {
+        for (const table of pattern === REQUIREMENT_RE
+            ? tableRows(document)
+            : specificationPlanRows(document)) {
             const candidateIndexes =
                 pattern === REQUIREMENT_RE
                     ? table.headers.some((header) =>
@@ -479,6 +508,19 @@ function implementationSpecificSpecificationLinks(documents) {
     return issues;
 }
 
+// A finding is withdrawn when its status opens with that word, in any
+// emphasis or case: the first labelled paragraph of a headed entry, else its
+// `Status:` line, else the first cell after its ID in a table row. The word
+// anywhere else in its prose does not count.
+function isWithdrawnFinding(entry) {
+    const status =
+        /^\*\*[^*\n]+:\*\*\s*(.*)$/m.exec(entry.raw)?.[1] ??
+        /^Status:\s*(.*)$/m.exec(entry.raw)?.[1] ??
+        /^\|[^|]*\|\s*(.*)$/m.exec(entry.raw)?.[1] ??
+        "";
+    return /^(?:\*\*|_)?withdrawn\b/i.test(status);
+}
+
 function headingEntries(documents, pattern, kind) {
     const entries = new Map();
     const duplicates = [];
@@ -543,10 +585,13 @@ function hash(value) {
 }
 
 function normalize(value) {
-    return value
-        .replace(/\|\s*(?:Pending|Approved|Stale)\s*\|/gi, "|")
-        .replace(/\s+/g, " ")
-        .trim();
+    return (
+        // Tool-written test status and links are never part of an approval.
+        withoutToolWritten(value)
+            .replace(/\|\s*(?:Pending|Approved|Stale)\s*\|/gi, "|")
+            .replace(/\s+/g, " ")
+            .trim()
+    );
 }
 
 function approvalState(fingerprint, approval) {
@@ -570,43 +615,18 @@ function buildDocumentationGraph() {
         ...auditDocs
     ];
     const requirements = collectDefinitions(specificationDocs, REQUIREMENT_RE);
-    const allRequirements = collectDefinitions(allDocs, REQUIREMENT_RE);
     const specificationPlanItems = collectDefinitions(
         specificationDocs,
         TEST_PLAN_ITEM_RE
     );
-    const implementationPlanItems = combineDefinitions(
-        collectRowsBySchema(
-            implementationDocs,
-            "unit test id",
-            [
-                "specification ids",
-                "specification test ids",
-                "file behavior",
-                "required permutations and oracle"
-            ],
-            IMPLEMENTATION_TEST_RE
-        ),
-        collectRowsBySchema(
-            implementationDocs,
-            "integration test id",
-            [
-                "specification ids",
-                "specification test ids",
-                "setup and stimulus",
-                "expected result",
-                "required permutations"
-            ],
-            IMPLEMENTATION_TEST_RE
-        )
-    );
+    const implementationTests = collectImplementationTests(implementationDocs);
+    const implementationPlanItems = implementationTests.families;
     const verificationPlanItems = collectDefinitions(
         verificationDocs,
         TEST_PLAN_ITEM_RE
     );
     const specificationPermutations = collectPermutations(specificationDocs);
-    const implementationPermutations =
-        collectImplementationPermutations(implementationDocs);
+    const implementationPermutations = implementationTests.permutations;
     const verificationPermutations = collectPermutations(verificationDocs);
     const allPermutations = combineDefinitions(
         collectPermutations(allDocs),
@@ -656,47 +676,21 @@ function buildDocumentationGraph() {
     );
     const sources = sourceFiles();
     const sourceSet = new Set(sources);
+    // A file report owns the source its `**Source:**` header links.
     const sourceOwners = new Map(sources.map((source) => [source, []]));
     for (const document of implementationDocs) {
-        for (const sourceTable of tableRows(document)) {
-            if (!sourceTable.headers.includes("source file")) continue;
-            for (const row of sourceTable.rows) {
-                const linkedSources = localTargets(row.raw, document).filter(
-                    (target) => sourceSet.has(target)
-                );
-                for (const source of linkedSources)
-                    sourceOwners.get(source).push({
-                        document,
-                        line: row.line,
-                        raw: row.raw
-                    });
-            }
-        }
+        const markdown = readText(document);
+        const header = markdown
+            .split(/\r?\n/)
+            .find((line) => /\*\*Source:\*\*/.test(line));
+        if (!header) continue;
+        for (const source of localTargets(header, document))
+            sourceOwners.get(source)?.push({ document, raw: markdown });
     }
     const mirrors = sources.map((source) => ({
         source,
         owners: sourceOwners.get(source),
         exists: sourceOwners.get(source).length > 0
-    }));
-    const subjectRelativePaths = specificationDocs
-        .filter(
-            (document) =>
-                !/(?:^|\/)(?:README|open-questions)\.md$/.test(document)
-        )
-        .map((document) =>
-            path.relative(path.join(SPEC_ROOT, "specification"), document)
-        );
-    const subjects = subjectRelativePaths.map((relative) => ({
-        relative,
-        specification: path.join(SPEC_ROOT, "specification", relative),
-        implementation: path.join(SPEC_ROOT, "implementation", relative),
-        verification: path.join(SPEC_ROOT, "verification", relative),
-        implementationExists: fs.existsSync(
-            path.join(SPEC_ROOT, "implementation", relative)
-        ),
-        verificationExists: fs.existsSync(
-            path.join(SPEC_ROOT, "verification", relative)
-        )
     }));
     const { files: testFiles, entrypoints } = discoverTestFiles(REPO_ROOT);
     const { cases: tests, emptyFiles } = extractTestCases(
@@ -892,7 +886,6 @@ function buildDocumentationGraph() {
             allDocs
         },
         requirements,
-        allRequirements,
         planItems: {
             specification: specificationPlanItems,
             implementation: implementationPlanItems,
@@ -909,9 +902,7 @@ function buildDocumentationGraph() {
         questions,
         findings,
         sources,
-        sourceOwners,
         mirrors,
-        subjects,
         tests: {
             testFiles,
             tests,
@@ -946,11 +937,13 @@ module.exports = {
     permutationPlanId,
     formatMarkdown,
     hash,
+    isWithdrawnFinding,
     linkedIds,
     maintainedMarkdownFiles,
     missingSections,
     normalize,
     requirementPath,
     sorted,
-    tableRows
+    tableRows,
+    specificationPlanRows
 };

@@ -3,15 +3,36 @@ import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
 import {
+    checkForceJoinOnLatestBlock,
+    readTrackedJoin,
+    runForceJoinBlockBound,
+    waitForJoinChecks
+} from "@test/fixtures/ForceJoinCountingStaging";
+import {
+    applyJoinBlockFromLiveAndRefresh,
+    readSignerMembershipLookups,
+    recordPendingJoinerChainCalls,
+    refreshAfterEligibilityReset,
+    refreshAppliedAfterLiveSnapshot,
+    refreshFillsMirrorBelowHead,
+    refreshWithFailedRecoveredInboundBlock,
+    relayAfterEligibilityReset,
+    stageMirroredPendingJoin,
+    stagePendingJoinMirroredByJoiner,
+    stagePendingJoinMissedByJoinerMirror
+} from "@test/fixtures/PendingJoinEligibilityStaging";
+import {
     assertSlashAdmission,
-    assertSlashRefreshFailure
+    assertSlashRefreshFailure,
+    refreshWithFailedRecoveredSlash
 } from "@test/fixtures/QueueSlashFixture";
 import {
     concurrentUnknownEligibility,
     missingInboundEligibility,
     eligibilityAppearsDuringRefresh,
     observeSourceEligibility,
-    observeSlashDuringRefresh
+    observeSlashDuringRefresh,
+    publishChainSnapshotEligibility
 } from "@test/fixtures/SourceEligibilityFixture";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -83,11 +104,15 @@ describe("Unit: MembershipService", function () {
         ]);
     });
 
-    it("an unopened channel refresh has no eligible source and retains no old-channel positives", async () => {
+    it("an unopened channel refresh has no eligible source", async () => {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0);
+        // a runtime owns one channel: a fresh one selects the unopened channel
+        const fresh = h.getPeer(
+            (await new TargetedChannelJoinFixture(h).addFreshPeer()).index
+        );
         const result = await h.execOnHost(
-            h.getPeer(0),
+            fresh,
             async (sm, args) => {
                 await sm.setChannelId(args.channelId);
                 const ready =
@@ -155,8 +180,9 @@ describe("Unit: MembershipService", function () {
         );
         expect(observed.result).to.equal(SourceEligibility.ABSENT);
         expect(observed.reads.chainReads).to.equal(1);
-        // Snapshot event processing checks local participation after updating the mirrors.
-        expect(observed.reads.localMembershipReads).to.equal(1);
+        // The replayed snapshot lists this signer, so its event processing
+        // reads no local participation.
+        expect(observed.reads.localMembershipReads).to.equal(0);
     });
 
     it("concurrent cache misses share one refresh and decide from chain membership", async () => {
@@ -167,29 +193,6 @@ describe("Unit: MembershipService", function () {
         ]);
         expect(observed.beforeRelease.chainReads).to.equal(1);
         expect(observed.afterRelease.chainReads).to.equal(1);
-    });
-
-    it("a failed provider read leaves cached members intact and allows a later retry", async () => {
-        const h = TestSession.getHarness();
-        await h.lifecycle.start(2, 0);
-        const source = ethers.Wallet.createRandom().address;
-        const failed = await observeSourceEligibility(h, source, {
-            refresh: true,
-            failRead: true
-        });
-        expect(failed.result).to.equal(SourceEligibility.ABSENT);
-        const existing = await observeSourceEligibility(
-            h,
-            h.getPeer(1).address,
-            { refresh: true }
-        );
-        expect(existing.result).to.equal(SourceEligibility.ELIGIBLE);
-        expect(existing.reads.chainReads).to.equal(0);
-        const retry = await observeSourceEligibility(h, source, {
-            refresh: true
-        });
-        expect(retry.result).to.equal(SourceEligibility.ABSENT);
-        expect(retry.reads.chainReads).to.equal(1);
     });
 
     it("reset removes both cached sets until a verified chain refresh", async () => {
@@ -203,6 +206,234 @@ describe("Unit: MembershipService", function () {
         expect(observed.before).to.equal(SourceEligibility.ABSENT);
         expect(observed.after).to.equal(SourceEligibility.ELIGIBLE);
         expect(observed.reads.chainReads).to.equal(1);
+    });
+
+    it("a refresh while the local diamond holds a pending JOIN applies its inbound block again as a no-op and applies the snapshot", async () => {
+        const h = TestSession.getHarness();
+        const joiner = await stageMirroredPendingJoin(h);
+        const observed = await refreshAfterEligibilityReset(h, [
+            h.getPeer(1).address,
+            h.getPeer(2).address,
+            joiner.address
+        ]);
+        expect(observed.refreshed).to.equal(true);
+        expect(observed.eligibility).to.deep.equal([
+            SourceEligibility.ELIGIBLE,
+            SourceEligibility.ELIGIBLE,
+            SourceEligibility.ELIGIBLE
+        ]);
+        expect(observed.isMirrorAtChainInboundHead).to.equal(true);
+    });
+
+    it("the live log's application of an inbound block, then the refresh's, stores it once without a revert", async () => {
+        const h = TestSession.getHarness();
+        const observed = await applyJoinBlockFromLiveAndRefresh(h, "recorded");
+        expect(observed.refreshed).to.equal(true);
+        expect(observed.heldCount).to.equal(2);
+        expect(observed.mirror.heldBlocks).to.deep.equal([true]);
+        expect(observed.mirror.isHeadAtChain).to.equal(true);
+        expect(observed.mirror.isTotalDepositsAtChain).to.equal(true);
+    });
+
+    it("the refresh's application of an inbound block, then the live log's, stores it once without a revert", async () => {
+        const h = TestSession.getHarness();
+        const observed = await applyJoinBlockFromLiveAndRefresh(h, "reverse");
+        expect(observed.refreshed).to.equal(true);
+        expect(observed.heldCount).to.equal(2);
+        expect(observed.mirror.heldBlocks).to.deep.equal([true]);
+        expect(observed.mirror.isHeadAtChain).to.equal(true);
+        expect(observed.mirror.isTotalDepositsAtChain).to.equal(true);
+    });
+
+    it("a refresh fills an inbound block the local diamond misses below its head without moving the head back", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0);
+        const observed = await refreshFillsMirrorBelowHead(h);
+        expect(observed.before.heldBlocks).to.deep.equal([false, true]);
+        expect(observed.before.isHeadAtChain).to.equal(true);
+        expect(observed.refreshed).to.equal(true);
+        expect(observed.after.heldBlocks).to.deep.equal([true, true]);
+        expect(observed.after.isHeadAtChain).to.equal(true);
+        expect(observed.after.isTotalDepositsAtChain).to.equal(true);
+    });
+
+    it("a refresh read before a live snapshot update does not overwrite that newer snapshot in the local diamond or in membership", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0);
+        await h.transition.advanceState({
+            count: 2,
+            waitForFinalization: true
+        });
+        const observed = await refreshAppliedAfterLiveSnapshot(h);
+        expect(observed.refreshed).to.equal(true);
+        expect(observed.mirror.isSnapshotAtChain).to.equal(true);
+        expect(observed.membership.isMirroredSnapshotPublished).to.equal(true);
+    });
+
+    it("a pending joiner's refresh makes only its pinned multicall chain call", async () => {
+        const h = TestSession.getHarness();
+        const joiner = h.getPeer((await stageMirroredPendingJoin(h)).index);
+        const observed = await recordPendingJoinerChainCalls(
+            h,
+            joiner,
+            "refresh"
+        );
+        expect(observed.status).to.equal(Status.PENDING_PARTICIPANT);
+        expect(observed.result).to.equal(true);
+        expect(observed.calls).to.deep.equal([
+            "multicall",
+            "multicall:getOnChainSlashedParticipants",
+            "multicall:getStateSnapshot",
+            "multicall:getChannelBalance"
+        ]);
+    });
+
+    it("a pending joiner whose local diamond holds its JOIN applies a snapshot without a pending-set chain read", async () => {
+        const h = TestSession.getHarness();
+        const joiner = await stagePendingJoinMirroredByJoiner(h);
+        // the departure check reaches its pending lookup: the joiner is in
+        // neither the snapshot nor its local state
+        expect(await readSignerMembershipLookups(h, joiner)).to.deep.include({
+            isInLocalState: false,
+            isPendingInMirror: true
+        });
+        const observed = await recordPendingJoinerChainCalls(
+            h,
+            joiner,
+            "onChainSnapshot"
+        );
+        expect(observed.status).to.equal(Status.PENDING_PARTICIPANT);
+        expect(observed.calls).to.deep.equal(["getStateSnapshot"]);
+    });
+
+    it("a pending joiner whose local diamond misses its JOIN reads the pending set from the chain once", async () => {
+        const h = TestSession.getHarness();
+        const staged = await stagePendingJoinMissedByJoinerMirror(h);
+        expect(staged.isOwnJoinMirrored).to.equal(false);
+        expect(
+            await readSignerMembershipLookups(h, staged.joiner)
+        ).to.deep.include({
+            isInLocalState: false,
+            isListedPendingOnChain: true
+        });
+        const observed = await recordPendingJoinerChainCalls(
+            h,
+            staged.joiner,
+            "onChainSnapshot"
+        );
+        expect(observed.status).to.equal(Status.PENDING_PARTICIPANT);
+        expect(observed.calls).to.deep.equal([
+            "getStateSnapshot",
+            "getPendingParticipants"
+        ]);
+    });
+
+    it("a pending JOIN the chain lists but the joiner's local mirror misses is not observed locally and starts no force-join counters", async () => {
+        const h = TestSession.getHarness();
+        const { joiner } = await stagePendingJoinMissedByJoinerMirror(h);
+        // the snapshot application runs the joiner's join check
+        await recordPendingJoinerChainCalls(h, joiner, "onChainSnapshot");
+        await waitForJoinChecks(h, joiner);
+        expect(await readSignerMembershipLookups(h, joiner)).to.deep.include({
+            isListedPendingOnChain: true,
+            isPendingInMirror: false,
+            isPendingOnChain: true
+        });
+        const join = await readTrackedJoin(h, joiner);
+        expect(join).to.not.equal(null);
+        expect(join!.countingStartsAt).to.equal(undefined);
+        expect(await h.control(joiner).query.getStatus().request()).to.equal(
+            Status.PENDING_PARTICIPANT
+        );
+    });
+
+    it("a seated participant absent from the mirror's and the chain's pending sets is not pending on chain", async () => {
+        const h = TestSession.getHarness();
+        await stageMirroredPendingJoin(h);
+        expect(
+            await readSignerMembershipLookups(h, h.getPeer(0))
+        ).to.deep.include({
+            isListedPendingOnChain: false,
+            isPendingInMirror: false,
+            isPendingOnChain: false
+        });
+    });
+
+    it("a participant seated on chain with no pending entry is on chain", async () => {
+        const h = TestSession.getHarness();
+        await stageMirroredPendingJoin(h);
+        expect(
+            await readSignerMembershipLookups(h, h.getPeer(0))
+        ).to.deep.include({
+            isSeatedOnChain: true,
+            isListedPendingOnChain: false,
+            isOnChain: true
+        });
+    });
+
+    it("a joiner pending on chain and missed by its local mirror is on chain", async () => {
+        const h = TestSession.getHarness();
+        const { joiner } = await stagePendingJoinMissedByJoinerMirror(h);
+        expect(await readSignerMembershipLookups(h, joiner)).to.deep.include({
+            isSeatedOnChain: false,
+            isListedPendingOnChain: true,
+            isPendingInMirror: false,
+            isOnChain: true
+        });
+    });
+
+    it("a snapshot participant unknown to the cache while a JOIN is pending is admitted, not blacklisted", async () => {
+        const h = TestSession.getHarness();
+        await stageMirroredPendingJoin(h, 1);
+        expect(await relayAfterEligibilityReset(h)).to.equal(0);
+        const receiver = h.control(h.getPeer(0));
+        expect(
+            await receiver.query.isBlacklisted(h.getPeer(1).address).request()
+        ).to.equal(false);
+        expect(
+            await receiver.query.isConnectedTo(h.getPeer(1).address).request()
+        ).to.equal(true);
+    });
+
+    it("a local diamond failure during a refresh throws instead of reporting the refresh unavailable", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0);
+        await h.mirror.failNextUpdate(0, "onStateSnapshotUpdated");
+        const outcome = await h.execOnHost(h.getPeer(0), async (sm) => {
+            try {
+                return {
+                    refreshed:
+                        await sm.membershipService.refreshOnChainEligibility(),
+                    error: null
+                };
+            } catch (error) {
+                return {
+                    refreshed: null,
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                };
+            }
+        });
+        expect(outcome.refreshed).to.equal(null);
+        expect(outcome.error).to.be.a("string");
+    });
+
+    it("a local diamond failure applying a recovered slash log during a refresh throws instead of reporting the refresh unavailable", async () => {
+        const outcome = await refreshWithFailedRecoveredSlash();
+        expect(outcome.refreshed).to.equal(null);
+        expect(outcome.error).to.match(
+            /^Local contract call failed: Error: Local EVM execution failed: revert/
+        );
+    });
+
+    it("a local diamond failure applying a recovered inbound log during a refresh throws instead of reporting the refresh unavailable", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0);
+        const outcome = await refreshWithFailedRecoveredInboundBlock(h);
+        expect(outcome.refreshed).to.equal(null);
+        expect(outcome.error).to.match(
+            /^Local contract call failed: Error: Local EVM execution failed: revert/
+        );
     });
 
     it("a delivered join event makes a pending-only sender a cache hit", async () => {
@@ -240,6 +471,39 @@ describe("Unit: MembershipService", function () {
         }
     });
 
+    it("a JOIN in the linked part above a missing inbound block is eligible after a pushed snapshot", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const lagging = h.getPeer(2);
+        // exactly one inbound log is lost, so the next one still lands and the
+        // store tip moves above the hole
+        const dropped = await h.rpcStub.dropInboundMessageLogs(lagging.index, {
+            dropCount: 1
+        });
+        await h.join.forceInboundJoinWait({
+            participant: h.getPeer(0).address,
+            observePeerIndices: [0, 1]
+        });
+        await dropped.waitUntilDropped();
+        // a new participant's JOIN lands above the hole
+        const { participant } = await h.join.forceInboundJoinWait();
+
+        const result = await publishChainSnapshotEligibility(
+            h,
+            lagging.index,
+            participant,
+            { reset: true }
+        );
+
+        // premise - the range from the tip down to the snapshot is truncated,
+        // and the snapshot itself does not list the new participant
+        expect(result.missingBlockHash).to.not.equal(null);
+        expect(result.linkedBlockCount).to.equal(1);
+        expect(result.inSnapshot).to.equal(false);
+        expect(result.eligibility).to.equal(SourceEligibility.ELIGIBLE);
+        await dropped.release();
+    });
+
     it("a pushed snapshot preserves unconsumed pending JOINs without a membership read", async () => {
         const h = TestSession.getHarness();
         const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);
@@ -253,21 +517,12 @@ describe("Unit: MembershipService", function () {
         const control = h.control(observer);
         await control.stub.observeAdmission().request();
         try {
-            const result = await h.execOnHost(
-                observer,
-                async (sm, args) => {
-                    const snapshot =
-                        await sm.stateChannelManagerContract.getStateSnapshot(
-                            sm.channelId
-                        );
-                    sm.membershipService.publishOnChainSnapshot(snapshot);
-                    return sm.membershipService.getCachedSourceEligibility(
-                        args.source
-                    );
-                },
-                { source: prepared.joiner.address }
+            const result = await publishChainSnapshotEligibility(
+                h,
+                observer.index,
+                prepared.joiner.address
             );
-            expect(result).to.equal(SourceEligibility.ELIGIBLE);
+            expect(result.eligibility).to.equal(SourceEligibility.ELIGIBLE);
             const reads = await control.stub
                 .getAdmissionObservation()
                 .request();
@@ -513,29 +768,18 @@ describe("Unit: MembershipService", function () {
             }
         });
 
-        it("rejects a duplicate first join while submission is pending", async function () {
+        it("a duplicate first join while submission is pending shares the running submission", async function () {
             const h = TestSession.getHarness();
             const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);
-            const first = prepared.joiner.p2pInstance.p2pSigner.joinChannel(
-                prepared.confirmation,
-                prepared.expectedSnapshotHash,
-                prepared.expectedForkId
-            );
-            let duplicateError = "";
-            try {
-                await prepared.joiner.p2pInstance.p2pSigner.joinChannel(
+            const join = () =>
+                prepared.joiner.p2pInstance.p2pSigner.joinChannel(
                     prepared.confirmation,
                     prepared.expectedSnapshotHash,
                     prepared.expectedForkId
                 );
-            } catch (error) {
-                duplicateError =
-                    error instanceof Error ? error.message : String(error);
-            }
-            expect(duplicateError).to.contain(
-                "joinChannel requires SYNCED status"
-            );
-            expect(await first).to.equal(true);
+            const [first, duplicate] = await Promise.all([join(), join()]);
+            expect(first).to.equal(true);
+            expect(duplicate).to.equal(true);
             expect(
                 await h.control(prepared.joiner).query.getStatus().request()
             ).to.equal(Status.PENDING_PARTICIPANT);
@@ -588,13 +832,8 @@ describe("Unit: MembershipService", function () {
                     await h.control(prepared.joiner).query.getStatus().request()
                 ).to.equal(Status.PENDING_PARTICIPANT);
                 expect(
-                    await h.execOnHost(
-                        h.getPeer(prepared.joiner.index),
-                        async (sm) =>
-                            sm.storage.forceJoin.getJoinSubmissionBlockHeight() !==
-                            undefined
-                    )
-                ).to.equal(true);
+                    await readTrackedJoin(h, h.getPeer(prepared.joiner.index))
+                ).to.not.equal(null);
                 expect(
                     await new TargetedChannelJoinFixture(h).isDisposed(
                         prepared.joiner
@@ -738,11 +977,10 @@ describe("Unit: MembershipService", function () {
         });
     });
 
-    describe("maybeInitiateForceJoinDispute", function () {
+    describe("force join dispute", function () {
         it("no recorded join submission height → nothing disputed", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
-            const forkId = h.activeForkId!;
             const observer = h.getPeer(0);
 
             // any dispute this would raise is recorded instead of submitted
@@ -750,302 +988,109 @@ describe("Unit: MembershipService", function () {
                 observer.index
             );
 
-            await h.execOnHost(
-                observer,
-                async (sm, args) => {
-                    const block = sm.storage.blocks.getLatestBlock(
-                        args.forkId
-                    )!;
-                    const participants =
-                        await sm.diamondStateMachine.getParticipants();
-                    await sm.membershipService.maybeInitiateForceJoinDispute(
-                        block,
-                        participants
-                    );
-                    return true;
-                },
-                { forkId }
-            );
+            expect(
+                await checkForceJoinOnLatestBlock(h, observer)
+            ).to.deep.equal({ disputeStarted: false, markerRetained: false });
 
             expect(await recorder.submissions()).to.deep.equal([]);
             h.assert.dispute.noDisputes();
             await recorder.restore();
         });
 
-        it("defers force join until on-chain membership and a usable dispute window", async function () {
-            const h = TestSession.getHarness();
-            const prepared = await h.scenario.syncSpectatorAndPrepareJoin(1);
-            const joiner = h.getPeer(prepared.joiner.index);
-            const releaseSubmission = await h.rpcStub.holdMembershipSubmission(
-                prepared.joiner.index,
-                "joinChannel"
+        it("force join waits for its JOIN to land and submits only once at the block bound", async function () {
+            const run = await runForceJoinBlockBound(TestSession.getHarness(), {
+                holdJoinSubmission: true
+            });
+            expect(run.beforeLanding).to.deep.equal({
+                disputeStarted: false,
+                markerRetained: true,
+                submissions: 0
+            });
+            expect(run.atBound.latestBlockHeight).to.equal(
+                run.firstCountedHeight + run.bound
             );
-            const recorder = await h.rpcStub.recordDisputeSubmissions(
-                prepared.joiner.index
-            );
-            try {
-                const join = prepared.joiner.p2pInstance.p2pSigner.joinChannel(
-                    prepared.confirmation,
-                    prepared.expectedSnapshotHash,
-                    prepared.expectedForkId
-                );
-                await waitFor(
-                    async () =>
-                        (await h
-                            .control(prepared.joiner)
-                            .stub.getHeldMembershipReceiptCount()
-                            .request()) === 1,
-                    h.event.protocolEventTimeoutMs()
-                );
-
-                const absentResult = await h.execOnHost(joiner, async (sm) => {
-                    const block = sm.storage.blocks.getLatestBlock(sm.forkId)!;
-                    const participants =
-                        await sm.diamondStateMachine.getParticipants();
-                    sm.storage.forceJoin.setJoinSubmissionBlockHeight(
-                        block.height - participants.length - 1
-                    );
-                    await sm.membershipService.maybeInitiateForceJoinDispute(
-                        block,
-                        participants
-                    );
-                    return {
-                        disputeStarted:
-                            sm.storage.forceJoin.hasDisputeStarted(),
-                        markerRetained:
-                            sm.storage.forceJoin.getJoinSubmissionBlockHeight() !==
-                            undefined
-                    };
-                });
-                expect(absentResult).to.deep.equal({
-                    disputeStarted: false,
-                    markerRetained: true
-                });
-                expect(await recorder.submissions()).to.have.length(0);
-
-                await releaseSubmission();
-                expect(await join).to.equal(true);
-                expect(
-                    await h
-                        .control(prepared.joiner)
-                        .query.getOnChainParticipantUnion()
-                        .request({ timeoutMs: h.event.hostExecTimeoutMs() })
-                ).to.include(prepared.joiner.address);
-
-                const latestChainBlock = await h.provider.getBlock("latest");
-                expect(latestChainBlock).to.not.equal(null);
-                const evidenceTime = await h.execOnHost(
-                    joiner,
-                    async (sm) => sm.timeConfig.evidenceTime
-                );
-                const expiredWindowTimestamp = Math.max(
-                    1,
-                    latestChainBlock!.timestamp - evidenceTime
-                );
-                const expiredResult = await h.execOnHost(
-                    joiner,
-                    async (sm, args) => {
-                        const getWindow =
-                            sm.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp.bind(
-                                sm.diamondStateMachine.localDiamondContract
-                            );
-                        Reflect.set(
-                            sm.diamondStateMachine.localDiamondContract,
-                            "getDisputeWindowCreationTimestamp",
-                            async () => BigInt(args.windowTimestamp)
-                        );
-                        try {
-                            const block = sm.storage.blocks.getLatestBlock(
-                                sm.forkId
-                            )!;
-                            const participants =
-                                await sm.diamondStateMachine.getParticipants();
-                            sm.storage.forceJoin.setJoinSubmissionBlockHeight(
-                                block.height - participants.length - 1
-                            );
-                            await sm.membershipService.maybeInitiateForceJoinDispute(
-                                block,
-                                participants
-                            );
-                            return {
-                                disputeStarted:
-                                    sm.storage.forceJoin.hasDisputeStarted(),
-                                markerRetained:
-                                    sm.storage.forceJoin.getJoinSubmissionBlockHeight() !==
-                                    undefined
-                            };
-                        } finally {
-                            Reflect.set(
-                                sm.diamondStateMachine.localDiamondContract,
-                                "getDisputeWindowCreationTimestamp",
-                                getWindow
-                            );
-                        }
-                    },
-                    { windowTimestamp: expiredWindowTimestamp }
-                );
-                expect(expiredResult).to.deep.equal({
-                    disputeStarted: false,
-                    markerRetained: true
-                });
-                expect(await recorder.submissions()).to.have.length(0);
-
-                await h.execOnHost(joiner, async (sm) => {
-                    const getWindow =
-                        sm.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp.bind(
-                            sm.diamondStateMachine.localDiamondContract
-                        );
-                    Reflect.set(
-                        sm.diamondStateMachine.localDiamondContract,
-                        "getDisputeWindowCreationTimestamp",
-                        async () => 0n
-                    );
-                    try {
-                        const block = sm.storage.blocks.getLatestBlock(
-                            sm.forkId
-                        )!;
-                        const participants =
-                            await sm.diamondStateMachine.getParticipants();
-                        await sm.membershipService.maybeInitiateForceJoinDispute(
-                            block,
-                            participants
-                        );
-                        await sm.membershipService.maybeInitiateForceJoinDispute(
-                            block,
-                            participants
-                        );
-                    } finally {
-                        Reflect.set(
-                            sm.diamondStateMachine.localDiamondContract,
-                            "getDisputeWindowCreationTimestamp",
-                            getWindow
-                        );
-                    }
-                    return true;
-                });
-                await waitFor(
-                    async () => (await recorder.submissions()).length === 1,
-                    h.event.protocolEventTimeoutMs()
-                );
-                expect(await recorder.submissions()).to.have.length(1);
-            } finally {
-                await releaseSubmission();
-                await recorder.restore();
-            }
+            expect(run.atBound.disputeStarted).to.equal(true);
+            expect(run.submissionsAtBound).to.equal(1);
+            expect(run.submissionsAfterRecheck).to.equal(1);
         });
 
-        it("fires exactly at joinSubmissionHeight + participants + 1", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2);
-            await h.transition.advanceState({ count: 5 });
+        it("U77: after the agreementTime grace, fires exactly at the first counted block + participants + 1", async function () {
+            // A real joiner observes its own landed join; the founders omit
+            // it and author through the grace, below the bound and at it.
+            const run = await runForceJoinBlockBound(TestSession.getHarness());
 
-            const observer = h.getPeer(0);
-            const recorder = await h.rpcStub.recordDisputeSubmissions(
-                observer.index
+            expect(run.belowBound.countingFromHeight).to.equal(
+                run.firstCountedHeight
             );
-            try {
-                const result = await h.execOnHost(observer, async (sm) => {
-                    const block = sm.storage.blocks.getLatestBlock(sm.forkId)!;
-                    const participants =
-                        await sm.diamondStateMachine.getParticipants();
-                    const triggerOffset = participants.length + 1;
+            expect(run.belowBound.latestBlockHeight).to.equal(
+                run.firstCountedHeight + run.bound - 1
+            );
+            expect(run.belowBound.disputeStarted).to.equal(false);
+            expect(run.submissionsBelowBound).to.equal(0);
 
-                    sm.storage.forceJoin.setJoinSubmissionBlockHeight(
-                        block.height - triggerOffset + 1
-                    );
-                    await sm.membershipService.maybeInitiateForceJoinDispute(
-                        block,
-                        participants
-                    );
-                    const startedOneBlockEarly =
-                        sm.storage.forceJoin.hasDisputeStarted();
-
-                    sm.storage.forceJoin.setJoinSubmissionBlockHeight(
-                        block.height - triggerOffset
-                    );
-                    await sm.membershipService.maybeInitiateForceJoinDispute(
-                        block,
-                        participants
-                    );
-
-                    return {
-                        blockHeight: block.height,
-                        participantCount: participants.length,
-                        startedOneBlockEarly,
-                        startedAtThreshold:
-                            sm.storage.forceJoin.hasDisputeStarted()
-                    };
-                });
-
-                expect(result.startedOneBlockEarly).to.equal(false);
-                expect(result.startedAtThreshold).to.equal(true);
-                expect(result.blockHeight).to.be.greaterThan(
-                    result.participantCount + 1
-                );
-                await waitFor(
-                    async () => (await recorder.submissions()).length === 1,
-                    h.event.protocolEventTimeoutMs()
-                );
-                expect(await recorder.submissions()).to.have.length(1);
-            } finally {
-                await recorder.restore();
-            }
+            expect(run.atBound.latestBlockHeight).to.equal(
+                run.firstCountedHeight + run.bound
+            );
+            expect(run.atBound.disputeStarted).to.equal(true);
+            expect(run.submissionsAtBound).to.equal(1);
         });
     });
 
-    describe("startMaybeExitOnChain", function () {
-        it("a clean leave everyone signed → snapshot path, no force-exit flag", async function () {
+    describe("own exit block", function () {
+        it("a clean leave everyone signed → snapshot path, force-exit flag kept", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1);
 
             const leaverIndex = await h.transition.participantLeaveWait();
             const leaver = h.getPeer(leaverIndex);
 
-            // the leave block carries every signature, so the exit takes the
-            // N/N snapshot path and never marks a self-removal dispute
-            const forcedExit = await h.execOnHost(leaver, async (sm) =>
-                sm.storage.forceExit.getForceExit()
-            );
-
-            expect(forcedExit).to.equal(false);
             expect(
                 await h.control(leaver).query.getStatus().request()
             ).to.equal(Status.SYNCED);
+            // the posted snapshot lands the exit; a started exit is never
+            // retracted
+            expect(
+                await h.control(leaver).query.getForceExit().request()
+            ).to.equal(true);
         });
 
-        it("I did not leave → returns without scheduling an exit", async function () {
+        it("a leaver whose membership ended joins again on the same runtime → the new membership clears the force-exit flag and its dispute carries no self-removal", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2);
-            const forkId = h.activeForkId!;
-            const observer = h.getPeer(0);
+            await h.lifecycle.start(3, 1);
 
-            const recorder = await h.rpcStub.recordDisputeSubmissions(
-                observer.index
+            const leaverIndex = await h.transition.participantLeaveWait();
+            const leaver = h.getPeer(leaverIndex);
+            const remainingPeerIndices = [0, 1, 2].filter(
+                (index) => index !== leaverIndex
+            );
+            await h.event.waitUntilLeftChannel(leaverIndex);
+            expect(
+                await h.control(leaver).query.getForceExit().request()
+            ).to.equal(true);
+
+            // the same runtime joins again: its pending join is already a new membership
+            await h.join.joinChannelWait({ joiner: leaver });
+            expect(
+                await h.control(leaver).query.getForceExit().request()
+            ).to.equal(false);
+            await h.assert.storage.honestPeersObserveInboundMessageWait({
+                peerIndices: remainingPeerIndices
+            });
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: remainingPeerIndices
+            });
+            await h.event.waitUntilPeerStatus(
+                leaverIndex,
+                Status.PARTICIPATING
             );
 
-            const outcome = await h.execOnHost(
-                observer,
-                async (sm, args) => {
-                    const block = sm.storage.blocks.getLatestBlock(
-                        args.forkId
-                    )!;
-                    const snapshot =
-                        sm.storage.stateSnapshots.getStateSnapshotByHash(
-                            block.stateSnapshotHash
-                        )!;
-                    await sm.membershipService.startMaybeExitOnChain(
-                        block,
-                        snapshot,
-                        { left: new Set(), joined: new Set() }
-                    );
-                    return sm.storage.forceExit.getForceExit();
-                },
-                { forkId }
-            );
-
-            expect(outcome).to.equal(false);
-            expect(await recorder.submissions()).to.deep.equal([]);
-            await recorder.restore();
+            expect(
+                await h.control(leaver).query.getForceExit().request()
+            ).to.equal(false);
+            const { dispute } =
+                await h.dispute.fetchConstructedDispute(leaverIndex);
+            expect(dispute.input.selfRemoval).to.equal(false);
         });
     });
 });

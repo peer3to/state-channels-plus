@@ -11,7 +11,7 @@ import "./UtilityFacetInterface.sol";
 /// `StateChannelManagerProxy`'s selector routing and therefore read the proxy's
 /// storage - hence the `StateChannelCommon` base.
 contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
-    uint256 internal constant REPLAY_CALL_DEPTH = 4;
+    uint256 internal constant REPLAY_CALL_DEPTH = 5;
 
     /// EIP-191 - the digest every signature over `encodedData` is actually made
     /// over. Single owner: `verifyThresholdSigned`, `retrieveSignerAddress` and
@@ -103,7 +103,9 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
     }
 
     function decodeBlock(bytes memory encodedBlock) external pure returns (Block memory) {
-        return abi.decode(encodedBlock, (Block));
+        Block memory decodedBlock = abi.decode(encodedBlock, (Block));
+        require(keccak256(abi.encode(decodedBlock)) == keccak256(encodedBlock), ErrorNonCanonicalEncoding());
+        return decodedBlock;
     }
 
     function tryDecodeBlock(bytes memory encodedBlock)
@@ -121,20 +123,6 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
 
     function isAddressInArray(address[] memory array, address adr) public pure override returns (bool) {
         return _isAddressInArray(array, adr);
-    }
-
-    function inParticipantUnion(
-        address participant,
-        address[] memory snapshotParticipants,
-        address[] memory pendingParticipants
-    ) public pure returns (bool) {
-        for (uint256 i = 0; i < snapshotParticipants.length; i++) {
-            if (snapshotParticipants[i] == participant) return true;
-        }
-        for (uint256 i = 0; i < pendingParticipants.length; i++) {
-            if (pendingParticipants[i] == participant) return true;
-        }
-        return false;
     }
 
     function insertBytesInByteArray(bytes memory b, bytes[] memory array) public pure returns (bytes[] memory) {
@@ -310,9 +298,10 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
     }
 
     /// Gas a fraud-proof transaction needs when its replay path starts so that every replayed
-    /// transition is granted its full budget; the work before the replay comes on top. The replay sits REPLAY_CALL_DEPTH calls
-    /// below the transaction (multicall, facet delegatecall, executeStateTransition, the state
-    /// machine), and EIP-150 keeps 1/64 of the gas at each of them.
+    /// transition is granted its full budget; the work before the replay comes on top. The deepest
+    /// replay sits REPLAY_CALL_DEPTH calls below the transaction (multicall, facet delegatecall,
+    /// FraudProofFacet delegatecall, executeStateTransition, the state machine), and EIP-150 keeps
+    /// 1/64 of the gas at each of them.
     function getStateTransitionReplayGas() public view returns (uint256 required) {
         required = stateMachineImplementation.getStateTransitionGasRequirement();
         for (uint256 i = 0; i < REPLAY_CALL_DEPTH; i++) {
@@ -473,6 +462,15 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
         SnapshotData memory upperSnapshot
     ) public view returns (bool) {
         return _verifyOutboundMessageBlocks(outboundMessageBlocks, lowerSnapshot, upperSnapshot);
+    }
+
+    /// See `_outboundRunAboveAnchor`.
+    function verifyOutboundRunAboveAnchor(
+        MessageBlock[] memory run,
+        SnapshotData memory anchorData,
+        SnapshotData memory latestData
+    ) public view returns (bool isValid, MessageBlock[] memory aboveAnchor) {
+        return _outboundRunAboveAnchor(run, anchorData, latestData);
     }
 
     function pruneOutboundMessageBlocks(MessageBlock[] memory outboundMessageBlocks, bytes32 lowerHash)

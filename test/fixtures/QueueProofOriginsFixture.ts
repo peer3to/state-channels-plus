@@ -16,19 +16,25 @@ export async function assertHistoricalProofAfterSlash() {
         await h.control(peer).stub.stubHoldReductionTasks().request();
     try {
         await h.byzantine.submitDoubleSignBlock(1);
+        // no finality while peer 2 is away: the last milestone neither holds
+        // an anchor nor is final by everyone, so auditing data is posted
         await h.assert.dispute.initiatedAndCommitedWait({
             peersIndices: [0, 3],
             expectedCount: 2,
-            initiatedWithAuditingData: false
+            initiatedWithAuditingData: true
         });
         expect(await h.query.onChainSlashedParticipants()).to.include(
             h.getPeer(1).address
         );
         const { dispute, auditingData } =
             await h.dispute.fetchConstructedDispute(3, forkId);
-        expect(dispute.input.stateProof.signedBlocks.length).to.be.greaterThan(
-            0
-        );
+        // no finality: one genesis-linked run from block 0, all of it the
+        // unfinalized tail the audit replays
+        const [run] = dispute.input.stateProof.milestones;
+        expect(dispute.input.stateProof.milestones.length).to.equal(1);
+        expect(
+            Block.fromBlockConfirmation(run.blockConfirmations[0]).height
+        ).to.equal(0);
         const result = await h.execOnHost(
             h.getPeer(0),
             async (sm, args) => {
@@ -99,8 +105,8 @@ export async function assertHistoricalProofAfterSlash() {
         expect([
             ...new Set(result.entries.map((entry) => entry.hash))
         ]).to.have.members(
-            dispute.input.stateProof.signedBlocks.map((signedBlock) =>
-                String(Block.fromSignedBlock(signedBlock).hash)
+            run.blockConfirmations.map((blockConfirmation) =>
+                String(Block.fromBlockConfirmation(blockConfirmation).hash)
             )
         );
         for (const entry of result.entries) {

@@ -2,7 +2,11 @@ import type StateManager from "../StateManager";
 import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import DisputeValidationStrategy from "../validationStrategy/DisputeValidationStrategy";
 import { Block } from "@/models";
-import { BlockOrigin, type QueuedBlockEntry } from "@/storage/QueueStorage";
+import {
+    BlockOrigin,
+    type BlockPredecessor,
+    type QueuedBlockEntry
+} from "@/storage/QueueStorage";
 import { BlockValidationResult } from "@/types";
 import { Address, Bytes } from "@/types/types";
 import { difference, Logger } from "@/utils";
@@ -31,12 +35,14 @@ export default class BlockIngestService {
     /**
      * Struct adapter for callers that replay confirmations outside the queue
      * (dispute stateProof replay, spectate sync): wraps into a sourceless
-     * entry — those pipelines don't punish by transport.
+     * entry — those pipelines don't punish by transport. Dispute replay
+     * passes the `predecessor` the block is judged from.
      */
     public async onBlockConfirmationStruct(
         blockConfirmation: BlockConfirmationStruct,
         options?: {
             validationStrategy?: AValidationStrategy;
+            predecessor?: BlockPredecessor;
         }
     ): Promise<boolean> {
         // Same decoding as network intake: bytes that do not decode are
@@ -57,12 +63,11 @@ export default class BlockIngestService {
                 }
             );
         }
-        return this.onBlockConfirmation(
-            this.stateManager.storage.queues.createEntry(block, {
-                origin: BlockOrigin.PROOF
-            }),
-            options
-        );
+        const entry = this.stateManager.storage.queues.createEntry(block, {
+            origin: BlockOrigin.PROOF
+        });
+        entry.predecessor = options?.predecessor;
+        return this.onBlockConfirmation(entry, options);
     }
 
     // Passes the block confirmation through a verification pipeline.
@@ -88,6 +93,9 @@ export default class BlockIngestService {
 
         try {
             await sm.mutex.lock({ taskName: "onBlockConfirmation" });
+            // a stopped runtime's VM may be dirty (a failed restore aborts);
+            // not a peer fault
+            if (sm.isDisposed) return true;
 
             strategy =
                 options?.validationStrategy ||
@@ -116,11 +124,12 @@ export default class BlockIngestService {
                 return keepConnection;
             }
 
-            if (sm.storage.blocks.getBlock(block.hash)) {
-                sm.blockQueueManager.scheduleStoredBlockConfirmationMerge(
-                    entry,
-                    strategy
-                );
+            // a replayed block is re-judged from its predecessor even when past
+            if (
+                !entry.predecessor &&
+                sm.blockQueueManager.isPastBlock(block, strategy)
+            ) {
+                sm.blockQueueManager.settlePastBlock(entry, strategy);
                 return true;
             }
 
@@ -151,6 +160,11 @@ export default class BlockIngestService {
                     validationResult
                 );
             }
+
+            // replay positions the state machine at the block's predecessor;
+            // live pipelines already hold it (blocks execute in order)
+            if (entry.predecessor)
+                await sm.diamondStateMachine.setState(entry.predecessor.state);
 
             validationResult =
                 await sm.validationService.validateBlockConfirmation(
@@ -185,6 +199,7 @@ export default class BlockIngestService {
 
             const coordinates = block.coordinates;
             const previousStateSnapshot =
+                entry.predecessor?.snapshot ??
                 sm.snapshotAssemblyService.getPreviousStateSnapshotOrThrow(
                     coordinates
                 );
@@ -379,7 +394,7 @@ export default class BlockIngestService {
             // validation aborts and thrown errors alike — must revert it before
             // the mutex frees the next task to run against the dirty state.
             if (stateBeforeTransitionValidation !== undefined) {
-                await this.restoreStateAfterFailedValidation(
+                await sm.snapshotAssemblyService.restoreState(
                     stateBeforeTransitionValidation,
                     restoreReason,
                     block
@@ -418,41 +433,5 @@ export default class BlockIngestService {
             ...meta
         });
         return strategy.interpretFinalValidationResult(validationResult);
-    }
-
-    private async restoreStateAfterFailedValidation(
-        encodedState: Bytes,
-        reason: string,
-        block?: Block
-    ): Promise<void> {
-        try {
-            await this.stateManager.diamondStateMachine.setState(encodedState);
-            this.logger.debug(
-                "onBlockConfirmation - restored local state after failed validation",
-                {
-                    reason,
-                    block: block
-                        ? LoggerUtils.getBlockMetadata(
-                              block,
-                              this.stateManager.storage
-                          )
-                        : undefined
-                }
-            );
-        } catch (error) {
-            this.logger.error(
-                "onBlockConfirmation - failed to restore local state after failed validation",
-                {
-                    reason,
-                    block: block
-                        ? LoggerUtils.getBlockMetadata(
-                              block,
-                              this.stateManager.storage
-                          )
-                        : undefined,
-                    error
-                }
-            );
-        }
     }
 }

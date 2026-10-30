@@ -27,7 +27,7 @@ export class LoggerProbeRpcMethods extends AInternalRpcMethods<LoggerProbeServic
     public clearRealm(): void {
         this.service.clearRealm();
     }
-    public flush(reason: string) {
+    public gossipUpload(reason: string) {
         return this.service.logger.upload(reason);
     }
     public own() {
@@ -48,6 +48,9 @@ export class LoggerProbeRpcMethods extends AInternalRpcMethods<LoggerProbeServic
     public captureUnhandled(message: string): void {
         this.service.captureUnhandled(message);
     }
+    public pinUploadJitter(jitterMs: number): void {
+        this.service.pinUploadJitter(jitterMs);
+    }
     public childWriteAtEndpoint(message: string) {
         return this.service.visitChild((child) =>
             child.loggerProbe.write(message).request()
@@ -58,9 +61,9 @@ export class LoggerProbeRpcMethods extends AInternalRpcMethods<LoggerProbeServic
             child.loggerProbe.clearRealm().request()
         );
     }
-    public childFlush(reason: string) {
+    public childGossipUpload(reason: string) {
         return this.service.visitChild((child) =>
-            child.loggerProbe.flush(reason).request()
+            child.loggerProbe.gossipUpload(reason).request()
         );
     }
     public childOwn() {

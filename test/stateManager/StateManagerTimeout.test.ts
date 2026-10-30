@@ -11,11 +11,13 @@ describe("StateManager timeout", function () {
         });
         h.contextApi.markAfkPeer({ afkPeerIndex: 2 });
 
-        // The opener needs its own reason before a dispute window exists.
-        await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
-        await h.tamper.postTamperedDispute(0, () => {}, {
-            markMalicious: false
-        });
+        // The opener needs its own reason before a dispute window exists. It
+        // uploads through its SDK, so it holds its own dispute marker and does
+        // not dispute again on its own commitment.
+        await h
+            .control(h.getPeer(0))
+            .dispute.startSelfRemovalDispute(h.activeForkId!)
+            .request();
         await h.assert.dispute.committedWait({
             peersIndices: [0],
             expectedCount: 1

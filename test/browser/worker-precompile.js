@@ -9,6 +9,25 @@ export default function createBrowserWorkerAnswerPrecompile(options) {
             throw new Error("browser worker answer precompile async crash");
         };
     }
+    // Each message lets a failure with no Error escape this worker: an
+    // error event that carries no error object, or a thrown string.
+    if (options.nonErrorSignal) {
+        const signal = new BroadcastChannel(options.nonErrorSignal);
+        signal.onmessage = (event) => {
+            if (event.data === "error-event-without-error") {
+                self.dispatchEvent(
+                    new ErrorEvent("error", {
+                        message: "browser worker error event without error",
+                        filename: "worker-precompile.js",
+                        lineno: 3,
+                        colno: 7
+                    })
+                );
+                return;
+            }
+            throw "browser worker thrown string";
+        };
+    }
     return async function browserWorkerAnswerPrecompile(input) {
         const calldata = ethers.hexlify(input.data);
         if (calldata !== options.expectedData) {
