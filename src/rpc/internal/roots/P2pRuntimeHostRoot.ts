@@ -39,6 +39,7 @@ import { DebugProxy } from "@/utils";
 import { LocalDiscoveryServer } from "@/utils";
 import { config, createConfig, isNodeRuntime } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import { runCleanup } from "@/utils/runCleanup";
 
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import { StepTimer } from "@/utils/StepTimer";
@@ -291,38 +292,30 @@ export class P2pRuntimeHostRoot<
         });
     }
 
-    // Overrides AInternalRpcRoot.isDisposed to include domain abort before root cleanup starts.
-    public override get isDisposed(): boolean {
-        return (
-            super.isDisposed ||
-            (this.runtimeHandle?.stateManager.isDisposed ?? false)
-        );
-    }
-
     // Implements root cleanup through the shared recursive disposal contract.
     public override dispose(): Promise<void> {
-        return this.disposeRoot(
-            async () => {
-                const runtimeHandle = this.runtimeHandle;
+        const disposal = this.disposeRoot(
+            () => {
                 const provider = this.chainContext?.provider;
                 const ctx = this.context;
-                // Reported before the provider closes; the settle is bounded
-                // so disposal never hangs on the chain.
-                if (this.managedSigner) {
-                    this.rootLogger.info(
-                        "gas usage",
-                        LoggerUtils.getGasUsageMetadata(
-                            await this.managedSigner.gasUsage.settledSnapshot(
-                                config.GAS_USAGE_SETTLE_MS
+                return runCleanup(
+                    // Reported before the provider closes; the settle is bounded
+                    // so disposal never hangs on the chain.
+                    async () => {
+                        if (!this.managedSigner) return;
+                        this.rootLogger.info(
+                            "gas usage",
+                            LoggerUtils.getGasUsageMetadata(
+                                await this.managedSigner.gasUsage.settledSnapshot(
+                                    config.GAS_USAGE_SETTLE_MS
+                                )
                             )
-                        )
-                    );
-                    // The report is out; end the receipt waits still running
-                    // before the provider that would never end them closes.
-                    this.managedSigner.gasUsage.dispose();
-                }
-                try {
-                    try {
+                        );
+                        // The report is out; end the receipt waits still running
+                        // before the provider that would never end them closes.
+                        this.managedSigner.gasUsage.dispose();
+                    },
+                    async () => {
                         // Destroy first so ethers sends no eth_unsubscribe the destroy
                         // would cancel; node sockets settle any that are sent (NodeSocket).
                         if (provider && !Clock.ownsProvider(provider))
@@ -334,14 +327,12 @@ export class P2pRuntimeHostRoot<
                             provider.stopReconnecting();
                             Clock.releaseProvider(provider);
                         }
-                    } finally {
-                        if (runtimeHandle) {
-                            await runtimeHandle.stateManager.dispose();
-                        }
-                    }
-                } finally {
-                    this.closeChildConnections();
-                    try {
+                    },
+                    // also awaits the network teardown the cut started, so
+                    // a close failure fails the disposal
+                    () => this.runtimeHandle?.stateManager.dispose(),
+                    () => this.closeChildConnections(),
+                    async () => {
                         // TODO: Delegate cleanup through the shared Holepunch/local
                         // discovery lifecycle API once the backend is injected.
                         if (
@@ -352,16 +343,13 @@ export class P2pRuntimeHostRoot<
                         ) {
                             await LocalDiscoveryServer.cleanup();
                         }
-                    } finally {
-                        // Late network callbacks must not use the disposed parent connection.
-                        runtimeHandle?.stateManager.events.setBridgeTap(
-                            undefined
-                        );
                     }
-                }
+                );
             },
             () => this.runtimeHandle?.stateManager.stop()
         );
+        this.cutOff(); // before disposeRoot's first await
+        return disposal;
     }
 
     /**
@@ -377,6 +365,23 @@ export class P2pRuntimeHostRoot<
     private requireManager() {
         if (!this.runtimeHandle) throw new Error("Runtime is not ready");
         return this.runtimeHandle.stateManager.p2pManager;
+    }
+
+    /**
+     * Cut storage, network, chain sends and the parent bus in one step;
+     * nothing the runtime does afterwards leaves it. Parent replies and the
+     * logger channel stay open. Every step is idempotent.
+     */
+    private cutOff(): void {
+        const stateManager = this.runtimeHandle?.stateManager;
+        if (stateManager) stateManager.isDisposed = true;
+        // storage: plan 26's Storage.close goes here
+        // StateManager.dispose awaits the network teardown's outcome
+        stateManager?.p2pManager.dispose().catch(() => undefined);
+        this.managedSigner?.cut();
+        stateManager?.events.setBridgeTap(undefined);
+        this.handlerExecutionContext?.dispose?.();
+        this.rootLogger.updateSharedContext({ disposing: true });
     }
 
     /**

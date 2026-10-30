@@ -189,7 +189,12 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         options: ConnectToChannelOptions | null = {}
     ): Promise<boolean> {
         try {
-            return await this.runConnectToChannel(channelId, options ?? {});
+            // the network cut answers a connect still waiting, for example
+            // on a join send the cut froze
+            return await Promise.race([
+                this.runConnectToChannel(channelId, options ?? {}),
+                this.p2pManager.networkCut.then(() => false)
+            ]);
         } catch (error) {
             // An abort or disposal during the connect is the connect's
             // outcome: the runtime is gone, so the answer is `false`, not the

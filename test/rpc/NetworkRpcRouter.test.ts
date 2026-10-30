@@ -1,5 +1,6 @@
 import { assertUnauthenticatedTransportCleanup } from "@test/fixtures/NetworkRpcRouterFixture";
 import {
+    assertDisposedManagerLateTransport,
     assertInternalClosedAdmission,
     assertNetworkClosedAdmission,
     assertNetworkByteForwarding,
@@ -21,5 +22,8 @@ describe("NetworkRpcRouter", () => {
     });
     it("drops network frames on a closed transport before dispatch or logging", async () => {
         await assertNetworkClosedAdmission();
+    });
+    it("a disposed manager drops a late transport's sends and inbound frames", async () => {
+        await assertDisposedManagerLateTransport();
     });
 });

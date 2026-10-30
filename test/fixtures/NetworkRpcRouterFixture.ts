@@ -372,3 +372,56 @@ export async function assertUnauthenticatedTransportCleanup(): Promise<void> {
         ).to.equal(undefined);
     });
 }
+
+/**
+ * A transport that links after its manager's network cut (a late swarm or
+ * discovery connection) sends no frame and dispatches no inbound frame, so
+ * it can neither handshake nor sync.
+ */
+export async function assertDisposedManagerLateTransport(): Promise<void> {
+    await withRuntimeRpc(async (sdk) => {
+        const host = [...sdk.roots].find(
+            (root): root is P2pRuntimeHostRoot =>
+                root instanceof P2pRuntimeHostRoot
+        );
+        if (!host) throw new Error("Expected the real SDK host");
+        const manager = host.hostRpc.requireManager();
+        await manager.dispose();
+        await withWebSocketPair(async (serverSocket) => {
+            const sent = sinon.spy(serverSocket, "send");
+            const service = manager.localRpc.initHandshakeService;
+            const originalRunRpc = service.runRPC;
+            let dispatched = 0;
+            service.runRPC = function (rpc, sender) {
+                dispatched++;
+                return originalRunRpc.call(this, rpc, sender);
+            };
+            try {
+                const transport = new LocalTransport(
+                    serverSocket,
+                    manager.rpcRouter
+                );
+                const frame = {
+                    service: "initHandshakeService",
+                    method: "onInitHandshakeRequest",
+                    params: [ethers.ZeroHash, 0],
+                    requestId: "late-link-request"
+                };
+                transport.send(frame);
+                transport.sendRpcResponse({
+                    rpcResponse: true,
+                    requestId: "late-link-response",
+                    ok: true,
+                    result: null
+                });
+                await manager.rpcRouter.onRpc(serializeRpc(frame), transport);
+                expect(sent.callCount).to.equal(0);
+                expect(dispatched).to.equal(0);
+                expect(manager.rpcRouter.pendingRequestCount).to.equal(0);
+            } finally {
+                sent.restore();
+                service.runRPC = originalRunRpc;
+            }
+        });
+    });
+}

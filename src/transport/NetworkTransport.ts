@@ -92,6 +92,10 @@ abstract class NetworkTransport extends ATransport {
     }
 
     send(rpc: Rpc): void {
+        // a closed transport, or a wire one after the runtime's network cut,
+        // sends nothing; the in-process loopback still answers its own caller
+        if (this.isClosed || (this.p2pManager.isDisposed && !this.isTrusted))
+            return;
         this.p2pManager.logger.verbose("Sending RPC", {
             transportType: TransportType[this.transportType],
             peerAddress: this.peerAddress,
@@ -102,6 +106,8 @@ abstract class NetworkTransport extends ATransport {
     }
 
     sendRpcResponse(response: RpcResponse): void {
+        if (this.isClosed || (this.p2pManager.isDisposed && !this.isTrusted))
+            return;
         this.p2pManager.logger.verbose("Sending RPC response", {
             transportType: TransportType[this.transportType],
             peerAddress: this.peerAddress,

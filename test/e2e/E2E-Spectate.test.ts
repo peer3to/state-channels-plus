@@ -2065,13 +2065,16 @@ describe("E2E: Spectate Service", function () {
                         .map((call) => String(call.args[0]))
                         .includes(staged.responder.address)
                 ).to.equal(false);
-                // stopping the runtime settles its pending connect false
+                // cutting the runtime's network settles its pending connect false
                 await h.execOnHost(
                     h.getPeer(staged.joiner.index),
                     async (sm) => {
-                        await sm.stop();
+                        await sm.p2pManager.dispose();
                     }
                 );
+                await TestSession.settleDetached({
+                    expectedErrorIncludes: "connectToChannel failed"
+                });
             } finally {
                 unsubscribe();
             }

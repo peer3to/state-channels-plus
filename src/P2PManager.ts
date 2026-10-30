@@ -6,7 +6,7 @@ import RemoteRpcProxy, {
     RemoteRpcProxyType
 } from "./rpc/network/RemoteRpcProxy";
 import { Address, ChecksumAddress, PeerKey } from "./types/types";
-import { runCleanup } from "./utils/runCleanup";
+import { runCleanup, runCleanupSync } from "./utils/runCleanup";
 import { DoubleSignatureReport, onDoubleSignature } from "@/cache";
 import { DisconnectPolicy, DisconnectTier } from "@/DisconnectPolicy";
 import P2pSigner from "@/evm/signer/LocalP2pSigner";
@@ -54,6 +54,13 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     self = config.DEBUG_P2P_MANAGER ? DebugProxy.createProxy(this) : this;
     preferredTransport: TransportType = TransportType.HOLEPUNCH;
 
+    /** Set first by `dispose`: the network is cut, wire sends and frames drop. */
+    public isDisposed = false;
+    private markNetworkCut!: () => void;
+    /** Resolves when `dispose` cuts the network. */
+    public readonly networkCut = new Promise<void>((resolve) => {
+        this.markNetworkCut = resolve;
+    });
     private disposalPromise?: Promise<void>;
     private readonly unsubscribeHandshakeCompleted: () => void;
     // Settle the initial-sync wait when the runtime leaves OPENED for any
@@ -166,26 +173,27 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         );
         return this.self;
     }
-    //Mark resources for garbage collection
+    // Cuts the network: every transport closes in this call, and only the
+    // discovery teardown runs after it.
     public dispose(): Promise<void> {
-        return (this.disposalPromise ??= Promise.resolve().then(async () => {
-            await runCleanup(
-                () => this.unsubscribeHandshakeCompleted(),
-                () => this.unsubscribeStatusChanged(),
-                () => this.unsubscribeAbort(),
-                () => this.unsubscribeDoubleSignature(),
-                () => this.settleInitialSync(false),
-                () => this.profileManager.dispose(),
-                () => {
-                    this.openConnections.length = 0;
-                },
-                () => this.holepunch.dispose()
-            );
-        }));
-    }
-
-    public get isDisposed(): boolean {
-        return this.disposalPromise !== undefined;
+        if (this.disposalPromise) return this.disposalPromise;
+        this.isDisposed = true;
+        this.markNetworkCut();
+        return (this.disposalPromise = runCleanup(
+            () =>
+                runCleanupSync(
+                    () => this.unsubscribeHandshakeCompleted(),
+                    () => this.unsubscribeStatusChanged(),
+                    () => this.unsubscribeAbort(),
+                    () => this.unsubscribeDoubleSignature(),
+                    () => this.settleInitialSync(false),
+                    () => this.profileManager.dispose(),
+                    () => {
+                        this.openConnections.length = 0;
+                    }
+                ),
+            () => this.holepunch.dispose()
+        ));
     }
 
     /**
@@ -197,7 +205,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
      */
     private onDoubleSignature(report: DoubleSignatureReport): void {
         try {
-            if (this.isDisposed) return;
             if (
                 addressesEqual(report.signer, this.stateManager.signerAddress)
             ) {

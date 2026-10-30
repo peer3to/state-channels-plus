@@ -16,3 +16,4 @@ The closed-transport case wraps the real SDK host's router in a real `ws` socket
 - `drops network frames on a closed transport before dispatch or logging`: UNIT-TEST-NETWORK-RPC-ROUTER-1-XKT6DT.P4, REQ-RPC-6-E60S4J.T1.P12
 - `ignores internal messages after close at both receive entry points`: UNIT-TEST-RUNTIME-RPC-ROUTER-1-C1MH7M.P18
 - `closes registered unauthenticated transports when its manager is disposed`: UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P1
+- `a disposed manager drops a late transport's sends and inbound frames`: none

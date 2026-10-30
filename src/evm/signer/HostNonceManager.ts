@@ -21,6 +21,8 @@ class HostNonceManager extends AbstractSigner {
     private readonly mutex: Mutex;
     private nextNonce: number | null = null;
     private nonceStateIndeterminate = false;
+    // Set by the runtime's disposal cut-off: no transaction leaves after it.
+    private isCut = false;
 
     constructor(signer: Signer, logger?: Logger) {
         super(signer.provider);
@@ -31,6 +33,11 @@ class HostNonceManager extends AbstractSigner {
         this.mutex = new Mutex(
             logger?.child({ component: "HostNonceManager" })
         );
+    }
+
+    /** Later sends, and sends still waiting for the nonce, never settle. */
+    cut(): void {
+        this.isCut = true;
     }
 
     connect(provider: Provider | null): HostNonceManager {
@@ -89,6 +96,10 @@ class HostNonceManager extends AbstractSigner {
         await this.mutex.lock({
             taskName: "HostNonceManager.sendTransaction"
         });
+        if (this.isCut) {
+            this.mutex.unlock();
+            return new Promise<never>(() => undefined);
+        }
         try {
             const provider = this.provider;
             assert(

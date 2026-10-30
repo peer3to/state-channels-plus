@@ -270,6 +270,85 @@ describe("HostNonceManager", () => {
         expect(await manager.gasUsage.settledSnapshot()).to.deep.equal([]);
     });
 
+    it("a send after cut takes no nonce and never settles", async () => {
+        const [funder, recipient] = await ethers.getSigners();
+        const sender = ethers.Wallet.createRandom().connect(ethers.provider);
+        await (
+            await funder.sendTransaction({
+                to: sender.address,
+                value: ethers.parseEther("1")
+            })
+        ).wait();
+        const manager = new HostNonceManager(sender);
+        let isSettled = false;
+
+        manager.cut();
+        void manager
+            .sendTransaction({ to: recipient.address, value: 1n })
+            .finally(() => {
+                isSettled = true;
+            });
+        // a later transaction of another signer mines meanwhile
+        await (
+            await funder.sendTransaction({ to: recipient.address, value: 1n })
+        ).wait();
+
+        expect(isSettled).to.equal(false);
+        expect(
+            await ethers.provider.getTransactionCount(sender.address, "pending")
+        ).to.equal(0);
+    });
+
+    it("a send queued on the nonce mutex at cut takes no nonce and never settles, while the one broadcasting keeps its nonce", async () => {
+        const [funder, recipient] = await ethers.getSigners();
+        const sender = ethers.Wallet.createRandom().connect(ethers.provider);
+        await (
+            await funder.sendTransaction({
+                to: sender.address,
+                value: ethers.parseEther("1")
+            })
+        ).wait();
+        const manager = new HostNonceManager(sender);
+        // the first send holds the nonce mutex at its signature
+        const sign = sender.signTransaction.bind(sender);
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        let entered!: () => void;
+        const held = new Promise<void>((resolve) => {
+            entered = resolve;
+        });
+        sender.signTransaction = async (tx) => {
+            entered();
+            await gate;
+            return sign(tx);
+        };
+        let isQueuedSettled = false;
+
+        const first = manager.sendTransaction({
+            to: recipient.address,
+            value: 1n
+        });
+        await held;
+        void manager
+            .sendTransaction({ to: recipient.address, value: 2n })
+            .finally(() => {
+                isQueuedSettled = true;
+            });
+        manager.cut();
+        release();
+        await (await first).wait();
+        await (
+            await funder.sendTransaction({ to: recipient.address, value: 1n })
+        ).wait();
+
+        expect(isQueuedSettled).to.equal(false);
+        expect(
+            await ethers.provider.getTransactionCount(sender.address, "pending")
+        ).to.equal(1);
+    });
+
     it("cannot create another nonce owner by reconnecting", async () => {
         const sender = ethers.Wallet.createRandom().connect(ethers.provider);
         const manager = new HostNonceManager(sender);
