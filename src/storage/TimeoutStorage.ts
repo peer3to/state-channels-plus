@@ -1,3 +1,7 @@
+import {
+    PersistentCollection,
+    type PersistenceController
+} from "./persistence";
 import { ForkId } from "@/types/types";
 
 import { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -6,10 +10,10 @@ export class TimeoutStorage {
     // ====================================
     // STORAGE MAP
     // ====================================
-    private timeouts: Map<ForkId, TimeoutStruct>;
+    private readonly timeouts: PersistentCollection<ForkId, TimeoutStruct>;
 
-    constructor() {
-        this.timeouts = new Map();
+    constructor(controller?: PersistenceController) {
+        this.timeouts = new PersistentCollection("timeout", controller);
     }
 
     // ====================================
@@ -29,15 +33,15 @@ export class TimeoutStorage {
 
     // drops a refused plain timeout; a forced one stored since survives
     deleteTimeout(forkId: ForkId, refused: TimeoutStruct): void {
-        const existingTimeout = this.timeouts.get(forkId);
-        if (
+        this.timeouts.update(forkId, (existingTimeout) =>
             existingTimeout &&
             BigInt(existingTimeout.blockHeight) ===
                 BigInt(refused.blockHeight) &&
             existingTimeout.participant === refused.participant &&
             !existingTimeout.isForced
-        )
-            this.timeouts.delete(forkId);
+                ? undefined
+                : existingTimeout
+        );
     }
 
     // ====================================
