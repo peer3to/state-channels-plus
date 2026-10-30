@@ -20,6 +20,7 @@ import {
     forgedOutboundBlock,
     stageAnchoredSyncPayload
 } from "@test/fixtures/HistoricSyncStaging";
+import { applySyncFromChainAheadResponder } from "@test/fixtures/LaggingChainViewSyncStaging";
 import { shareSyncingAnswerAcrossCallers } from "@test/fixtures/MilestoneSyncStaging";
 import {
     applyDisputedSyncPayload,
@@ -542,6 +543,60 @@ describe("Unit: SpectateService", function () {
             } finally {
                 await stub.restoreRecordedSyncRejections().request();
             }
+        });
+    });
+
+    describe("chain view behind the server's", function () {
+        it("requester's provider behind the responder's after a snapshot post → the sync waits until its chain head reaches the payload's chain block, then verifies from the moved anchor and accepts; responder kept", async function () {
+            const r = await applySyncFromChainAheadResponder(
+                TestSession.getHarness(),
+                { release: "duringWait" }
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.accepted).to.equal(true);
+            expect(r.responderBlacklisted).to.equal(false);
+            expect(r.connected).to.equal(true);
+            expect(r.requesterSnapshotHash).to.equal(r.chainSnapshotHash);
+        });
+
+        it("requester's provider stays behind the payload's chain block for one agreement window → not synced with no verdict: no rejection, responder neither blacklisted nor cut", async function () {
+            const r = await applySyncFromChainAheadResponder(
+                TestSession.getHarness(),
+                { release: "never" }
+            );
+            expect(r.accepted).to.equal(false);
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.responderBlacklisted).to.equal(false);
+            expect(r.connected).to.equal(true);
+            expect(r.requesterSnapshotHash).to.equal(r.anchorHash);
+            // the wait ran out its agreement window, no earlier exit
+            expect(r.elapsedMs).to.be.at.least(r.agreementTimeMs - 250);
+            expect(r.elapsedMs).to.be.lessThan(
+                r.agreementTimeMs +
+                    TestSession.getHarness().event.protocolEventTimeoutMs()
+            );
+        });
+
+        it("responder's own provider lags the logs another node streamed into its local diamond → the payload names the streamed block, the lagging requester waits for it and accepts; responder kept", async function () {
+            const r = await applySyncFromChainAheadResponder(
+                TestSession.getHarness(),
+                { release: "duringWait", responderHeadLags: true }
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.accepted).to.equal(true);
+            expect(r.responderBlacklisted).to.equal(false);
+            expect(r.connected).to.equal(true);
+        });
+
+        it("requester's sync service stops while it waits for its chain head → not synced at once with no verdict, before the agreement window ends", async function () {
+            const r = await applySyncFromChainAheadResponder(
+                TestSession.getHarness(),
+                { release: "dispose" }
+            );
+            expect(r.accepted).to.equal(false);
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.responderBlacklisted).to.equal(false);
+            expect(r.waitEndedMs).to.be.lessThan(r.agreementTimeMs / 2);
         });
     });
 

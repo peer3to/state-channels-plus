@@ -40,6 +40,11 @@ The finalized-window joiner scenario selects surviving honest responders. The re
 
 The kill-period case runs the real `sync` RPC, parks the requester at its window persistence after the proof arrived, commits a dispute on the pinned fork, and releases: the sync resolves `true`, neither peer blacklists the other, the requester stays on the fork, and the dispute still resolves with no host error.
 
+The lagging-provider case pins a participant's provider at the current block, lands a held exit
+snapshot post that the responder observes, and runs the participant's real `sync` RPC to the
+responder; the provider catches up while the sync waits on the payload's chain block and a real
+block is mined, and the sync completes with no rejection and the responder kept.
+
 The two chain-final window cases lose participant 2's InboundMessagesProcessed delivery from before a top-up of peer 0: one holds its handler, the other drops the subscribed log so that only chain-log recovery can deliver it. That recovery can already run while participant 2 audits the dispute, before the sync. Each then lands only the reduction on chain, so the window is chain-final while the chain stays on the source fork. Peer 0 serves a payload whose window inbound list carries an extra fabricated successor of the top-up, and participant 2 accepts it. Releasing the holds replays the reduction events and, in the held case, the held chain event; the chain adopts the reduced fork. Participant 2 then holds the genuine top-up, from the replayed event or, in the dropped case, from chain-log recovery. The dropped case checks only this end state, not that the block arrives after the sync, because the recovery may run before it. The participants then author three blocks; the test decodes every new block on the reduced fork and requires one authored by participant 2 whose signature recovers to it and whose inbound blocks do not include the fabricated successor. All three stay in sync, none of them holds the fabricated block, and every inbound head equals the genuine top-up.
 
 A third chain-final case uses the held-handler staging, which also keeps participant 2 out of the window's dispute logs, so the sync is its only source of the window's confirmations. Peer 0's payload adds a non-participant's signature to every dispute confirmation, a confirmation of a dispute the chain never committed and a latest snapshot with another timestamp. Participant 2 accepts it and stores none of the forged signatures or the uncommitted dispute. After the holds are released, peer 3 requests the window from participant 2: the served window reduces to the chain's reduced fork, carries exactly the window's genuine disputes, recovered from the chain's dispute logs, and none of the forged signatures.
@@ -87,6 +92,7 @@ answered twice, neither peer blacklisted the other and the transport stayed open
 - `skips latest state persistence when local storage is already ahead`: INV-SYNC-3-A7A2ED.T1.P30
 - `aborts spectating when a finalized sync block conflicts with storage`: INV-SYNC-3-A7A2ED.T1.P3
 - `should spectate successfully even when it must traverse forks (dispute -> reduced fork)`: none
+- `participant whose provider lags a snapshot post syncs from a responder that saw it → the sync waits for its provider to catch up and completes; responder kept`: INV-SYNC-2-AT3RXE.T1.P6
 - `responder injects an inbound successor into an unadopted chain-final window → the synced participant never stores or signs it`: INV-SYNC-1-XCQZ28.T1.P11
 - `responder injects an inbound successor and the participant's subscribed inbound log is lost → the participant ends with the genuine block and never stores or signs the successor`: INV-SYNC-1-XCQZ28.T1.P14
 - `responder forges the confirmations and snapshot of an unadopted chain-final window → the synced participant later serves only the window's genuine confirmations, recovered from chain logs`: INV-SYNC-1-XCQZ28.T1.P19
