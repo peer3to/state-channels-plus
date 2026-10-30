@@ -543,11 +543,14 @@ describe("MirrorRpcProvider", function () {
         await withMirrorSession(async (session) => {
             const { storage, address } = await deployMirroredStorage(session);
             await (await storage.setValue(5n)).wait();
+            // the snapshot is held back, so the read has to ask for the field
+            const release = session.service.holdNotifications("scp_snapshot");
             const head = await session.chain.getBlock(
                 await headNumber(session)
             );
 
             const word = await session.provider.getStorage(address, 0);
+            release();
 
             expect(BigInt(word)).to.equal(5n);
             expect(
