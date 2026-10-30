@@ -67,9 +67,9 @@ export function observeDiscoveryLogger() {
             await Promise.all([first, second]);
         },
         assertDisposed() {
-            expect(() => logger.info("after discovery cleanup")).to.throw(
-                "disposed"
-            );
+            expect(logger.isDisposed).to.equal(true);
+            // a released logger still writes to its console, never fails
+            logger.info("after discovery cleanup");
             expect(logger.loggerService).to.equal(undefined);
             if (service)
                 expect(Reflect.get(service, "stores").has(store)).to.equal(

@@ -451,9 +451,10 @@ export async function assertApplicationCleanupOnHostClose(
             expect(loggerDisposals).to.equal(1);
             await instance.dispose();
             expect(loggerDisposals).to.equal(1);
-            expect(() => logger.info("disposed application logger")).to.throw(
-                "has been disposed"
-            );
+            expect(logger.isDisposed).to.equal(true);
+            expect(() =>
+                logger.info("disposed application logger")
+            ).not.to.throw();
             if (suppliedLogger)
                 expect(() =>
                     suppliedLogger.info("caller remains active")

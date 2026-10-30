@@ -21,6 +21,8 @@ export type SharedLoggerContext = {
     peerAddress?: Address;
     channelId?: string;
     threadName?: LogThreadName;
+    /** Set at the runtime's disposal cut-off: the runtime is being torn down. */
+    disposing?: boolean;
 };
 
 export type LogLevel = "debug" | "info" | "warn" | "error" | "verbose";
@@ -85,9 +87,13 @@ export abstract class Logger {
     }
 
     public child(context: ExclusiveLoggerContext): Logger {
-        this.assertActive();
         const child = this.createChild({ ...this.context, ...(context || {}) });
         child.sharedResources = this.sharedResources;
+        // a disposed logger's child is born disposed, outside the family
+        if (this.destroyed) {
+            child.destroyed = true;
+            return child;
+        }
         this.sharedResources.loggers.add(child);
         this.linkChild(child);
         return child;
@@ -180,7 +186,10 @@ export abstract class Logger {
         this.logStore.clearLogs();
     }
 
-    /** True once dispose ran; logging then throws. */
+    /**
+     * True once dispose ran. Logging still writes to the realm's console and
+     * stores while a logger of its family lives; it never uploads.
+     */
     public get isDisposed(): boolean {
         return this.destroyed;
     }
@@ -223,7 +232,6 @@ export abstract class Logger {
     }
 
     private log(level: LogLevel, message: string, meta: any[]): void {
-        this.assertActive();
         if (!this.shouldProcessLevel(level)) return;
         const stack = new Error().stack!;
 
@@ -245,7 +253,7 @@ export abstract class Logger {
             stack
         };
         this.write(logEntry);
-        this.storeLog(logEntry);
+        if (this.sharedResources.loggers.size > 0) this.storeLog(logEntry);
     }
 
     public debug(message: any, ...meta: any[]): void {
@@ -259,14 +267,14 @@ export abstract class Logger {
     }
     public error(message: any, ...meta: any[]): void {
         this.log("error", message, meta);
-        DetachedPromises.collect(this.upload(String(message)));
+        if (!this.destroyed)
+            DetachedPromises.collect(this.upload(String(message)));
     }
     public verbose(message: any, ...meta: any[]): void {
         this.log("verbose", message, meta);
     }
     // Directly log an entry without any processing - useful for replaying logs
     public logEntry(logEntry: LogEntry): void {
-        this.assertActive();
         this.write(logEntry);
     }
 

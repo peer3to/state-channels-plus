@@ -202,7 +202,6 @@ export abstract class AInternalRpcRoot<
      */
     private adoptDetachedWork(): void {
         const origins = DetachedPromises.adoptPending((error, collectedAt) => {
-            if (this.rootLogger.isDisposed) return;
             this.rootLogger.debug("Detached work ended by disposal", {
                 error: errorMessage(error),
                 collectedAt

@@ -20,4 +20,4 @@ still buffered.
 - `keeps one shared store registered after its parent logger is disposed`: UNIT-TEST-LOGGER-1-4MNRMD.P6, UNIT-TEST-LOGGER-1-4MNRMD.P2, REQ-LOG-1-H2VQ8X.T2.P2
 - `releases shared crash listeners only after the last logger is disposed`: UNIT-TEST-LOGGER-1-4MNRMD.P7, REQ-LOG-1-H2VQ8X.T2.P3
 - `cascades through grandchildren reparented by an earlier disposal`: UNIT-TEST-LOGGER-1-4MNRMD.P8
-- `throws on every log level and replay after disposal even when filtered`: UNIT-TEST-LOGGER-1-4MNRMD.P10, REQ-LOG-1-H2VQ8X.T2.P5
+- `logs on every level and replays after disposal without storing, uploading or failing`: UNIT-TEST-LOGGER-1-4MNRMD.P10, REQ-LOG-1-H2VQ8X.T2.P5
