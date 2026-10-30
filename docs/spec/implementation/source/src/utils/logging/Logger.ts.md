@@ -28,3 +28,4 @@ The logger's own boundary: defaults, disposal, and what it lets through.
 - [ ] `UNIT-TEST-LOGGER-1-4MNRMD.P9` — continues collecting an SDK store after its parent logger is disposed while children remain alive
 - [x] `UNIT-TEST-LOGGER-1-4MNRMD.P10` — every log level and direct entry replay after disposal writes to the console without storing, uploading or failing, while repeated disposal is harmless
 - [x] `UNIT-TEST-LOGGER-1-4MNRMD.P11` — a logger without a coordination service refuses to flush
+- [x] `UNIT-TEST-LOGGER-1-4MNRMD.P12` — a disposed child whose parent still lives keeps storing its entries, under its own component, into the family's store

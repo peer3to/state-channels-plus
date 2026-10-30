@@ -1,4 +1,5 @@
 import { createLogger } from "@/utils";
+import { Logger } from "@/utils/logging/Logger";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { expect } from "chai";
 import sinon from "sinon";
@@ -38,6 +39,30 @@ describe("Unit: TimeoutManager", function () {
             // a pending timer would keep a worker thread alive
             expect(clock.countTimers()).to.equal(0);
         } finally {
+            clock.restore();
+        }
+    });
+
+    it("logs a failing task once at error with its name and cause", async function () {
+        const clock = sinon.useFakeTimers();
+        const error = sinon.spy(Logger.prototype, "error");
+        try {
+            const manager = new TimeoutManager(logger);
+            const cause = new Error("task failed");
+            manager.scheduleTask(
+                () => Promise.reject(cause),
+                0,
+                "failing task"
+            );
+            await clock.tickAsync(0);
+
+            expect(error.callCount).to.equal(1);
+            const [message, meta] = error.firstCall.args;
+            expect(message).to.include("failing task");
+            expect(meta).to.deep.equal({ error: cause });
+            manager.dispose();
+        } finally {
+            error.restore();
             clock.restore();
         }
     });

@@ -62,6 +62,15 @@ abstract class NetworkTransport extends ATransport {
         return false;
     }
 
+    /**
+     * A closed transport, or a wire one after the runtime's network cut,
+     * neither sends nor hears; the in-process loopback still answers its
+     * own caller.
+     */
+    get isCut(): boolean {
+        return this.isClosed || (this.p2pManager.isDisposed && !this.isTrusted);
+    }
+
     // Overrides ATransport.beforeClose to retire network identity before closure.
     protected override beforeClose(isExpected: boolean): void {
         LoggerUtils.logTransportDisconnect(this, isExpected);
@@ -92,10 +101,7 @@ abstract class NetworkTransport extends ATransport {
     }
 
     send(rpc: Rpc): void {
-        // a closed transport, or a wire one after the runtime's network cut,
-        // sends nothing; the in-process loopback still answers its own caller
-        if (this.isClosed || (this.p2pManager.isDisposed && !this.isTrusted))
-            return;
+        if (this.isCut) return;
         this.p2pManager.logger.verbose("Sending RPC", {
             transportType: TransportType[this.transportType],
             peerAddress: this.peerAddress,
@@ -106,8 +112,7 @@ abstract class NetworkTransport extends ATransport {
     }
 
     sendRpcResponse(response: RpcResponse): void {
-        if (this.isClosed || (this.p2pManager.isDisposed && !this.isTrusted))
-            return;
+        if (this.isCut) return;
         this.p2pManager.logger.verbose("Sending RPC response", {
             transportType: TransportType[this.transportType],
             peerAddress: this.peerAddress,

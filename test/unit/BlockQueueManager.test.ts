@@ -44,19 +44,23 @@ describe("Unit: BlockQueueManager", () => {
                 const schedule = sm.timeoutManager.scheduleTask.bind(
                     sm.timeoutManager
                 );
-                const cancel = sm.timeoutManager.cancelTask.bind(
-                    sm.timeoutManager
-                );
-                const handles = new Set<ReturnType<typeof setTimeout>>();
+                let armed = 0;
+                let delayMs = 0;
+                let runs = 0;
                 sm.timeoutManager.scheduleTask = (task, delay, name) => {
-                    const handle = schedule(task, delay, name);
-                    if (name?.startsWith("BlockQueueManager.queueTimeout -"))
-                        handles.add(handle);
-                    return handle;
+                    if (!name?.startsWith("BlockQueueManager.queueTimeout -"))
+                        return schedule(task, delay, name);
+                    armed += 1;
+                    delayMs = delay;
+                    return schedule(
+                        () => {
+                            runs += 1;
+                            return task();
+                        },
+                        delay,
+                        name
+                    );
                 };
-                // the timer set the timeout manager still holds
-                const timers = (): Set<ReturnType<typeof setTimeout>> =>
-                    Reflect.get(sm.timeoutManager, "timeouts");
                 try {
                     const block = ethers.AbiCoder.defaultAbiCoder().decode(
                         [args.blockType],
@@ -69,21 +73,14 @@ describe("Unit: BlockQueueManager", () => {
                     const queuedBefore = !!sm.storage.queues.getQueuedEntry(
                         args.hash
                     );
-                    const armed = [...handles];
-                    const armedBefore = armed.filter((handle) =>
-                        timers().has(handle)
-                    ).length;
                     await sm.stop();
-                    return {
-                        queuedBefore,
-                        armedBefore,
-                        armedAfter: armed.filter((handle) =>
-                            timers().has(handle)
-                        ).length
-                    };
+                    // past the armed deadline: a live timer would have fired
+                    await new Promise((resolve) =>
+                        setTimeout(resolve, delayMs + 500)
+                    );
+                    return { queuedBefore, armed, runs };
                 } finally {
                     sm.timeoutManager.scheduleTask = schedule;
-                    sm.timeoutManager.cancelTask = cancel;
                 }
             },
             {
@@ -96,8 +93,8 @@ describe("Unit: BlockQueueManager", () => {
         );
         expect(result).to.deep.equal({
             queuedBefore: true,
-            armedBefore: 1,
-            armedAfter: 0
+            armed: 1,
+            runs: 0
         });
     });
 

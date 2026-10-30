@@ -173,13 +173,9 @@ export class P2pRuntimeHostRoot<
             (error) => {
                 // Parent closure during disposal must not restart the worker error funnel.
                 if (this.isDisposing) {
-                    try {
-                        this.rootLogger.error("SDK error during cleanup", {
-                            error
-                        });
-                    } catch {
-                        // Its logger may already be disposed after the parent closed.
-                    }
+                    this.rootLogger.error("SDK error during cleanup", {
+                        error
+                    });
                     return;
                 }
                 this.rootLogger?.error("Unhandled SDK runtime error", {
@@ -368,14 +364,13 @@ export class P2pRuntimeHostRoot<
     }
 
     /**
-     * Cut storage, network, chain sends and the parent bus in one step;
+     * Cut network, chain sends and the parent bus in one step;
      * nothing the runtime does afterwards leaves it. Parent replies and the
      * logger channel stay open. Every step is idempotent.
      */
     private cutOff(): void {
         const stateManager = this.runtimeHandle?.stateManager;
         if (stateManager) stateManager.isDisposed = true;
-        // storage: plan 26's Storage.close goes here
         // StateManager.dispose awaits the network teardown's outcome
         stateManager?.p2pManager.dispose().catch(() => undefined);
         this.managedSigner?.cut();

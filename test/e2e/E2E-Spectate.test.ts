@@ -30,6 +30,7 @@ import {
     assertBehindObserverAbortsOnIdleDispute,
     assertObserverRecoversFromRemovedResponder
 } from "@test/fixtures/RemovedSyncResponderStaging";
+import { clientRootFor } from "@test/fixtures/RuntimeRootObservation";
 import { servedSyncPayload } from "@test/fixtures/SpectateResponseFixture";
 import {
     assertSpectatorSilence,
@@ -2065,16 +2066,16 @@ describe("E2E: Spectate Service", function () {
                         .map((call) => String(call.args[0]))
                         .includes(staged.responder.address)
                 ).to.equal(false);
-                // cutting the runtime's network settles its pending connect false
-                await h.execOnHost(
-                    h.getPeer(staged.joiner.index),
-                    async (sm) => {
-                        await sm.p2pManager.dispose();
-                    }
+                // aborting the runtime settles its pending connect false; its
+                // disposal adopts that outcome
+                const host = clientRootFor(
+                    staged.joiner.p2pInstance
+                ).p2pRuntimeHostRemoteRoot!;
+                await h.control(staged.joiner).stub.abortDetached().request();
+                await waitFor(
+                    () => host.isClosed,
+                    h.event.protocolEventTimeoutMs()
                 );
-                await TestSession.settleDetached({
-                    expectedErrorIncludes: "connectToChannel failed"
-                });
             } finally {
                 unsubscribe();
             }

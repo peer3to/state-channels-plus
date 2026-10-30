@@ -1,4 +1,8 @@
-import { assertDisposeCutsHeldBlockWork } from "@test/fixtures/DisposeCutOffStaging";
+import {
+    assertDisposeCutsHeldBlockWork,
+    assertDisposeCutsHeldDisputeUpload,
+    assertInlineSiblingFailureAfterCutSurfaces
+} from "@test/fixtures/DisposeCutOffStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 
 describe("E2E: dispose cut-off", function () {
@@ -31,6 +35,26 @@ describe("E2E: dispose cut-off", function () {
             TestSession.getHarness(),
             "commit",
             false
+        );
+    });
+
+    it("dispose during a dispute upload held at the nonce mutex sends no transaction (inline)", async function () {
+        await assertDisposeCutsHeldDisputeUpload(
+            TestSession.getHarness(),
+            true
+        );
+    });
+
+    it("dispose during a dispute upload held at the nonce mutex sends no transaction (worker)", async function () {
+        await assertDisposeCutsHeldDisputeUpload(
+            TestSession.getHarness(),
+            false
+        );
+    });
+
+    it("an inline sibling's failure after a peer's cut still surfaces in the drain", async function () {
+        await assertInlineSiblingFailureAfterCutSurfaces(
+            TestSession.getHarness()
         );
     });
 });

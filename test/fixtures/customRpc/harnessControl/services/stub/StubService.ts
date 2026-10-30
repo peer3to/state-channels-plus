@@ -47,6 +47,7 @@ import {
     Type
 } from "@/utils";
 import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
+import { Mutex } from "@/utils/Mutex";
 import type { TimeoutManager } from "@/utils/TimeoutManager";
 import * as factory from "@test/factory";
 import type { StateChannelManagerInterface } from "@typechain-types";
@@ -816,6 +817,8 @@ export class StubService extends ANetworkRpcService<
     completeWithGenesisOutcome?: DetachedCallOutcome;
     /** State-manager mutex held by the stub until released. */
     stateMutexGate?: StubGate;
+    /** Unlocks the chain-send nonce mutex the stub holds. */
+    private unlockNonceMutex?: () => void;
     /** The runtime disposal that `stubHoldRuntimeDisposal` holds. */
     runtimeDisposalGate?: StubGate;
     /** How many distinct inbound logs may be dropped (undefined = all). */
@@ -935,14 +938,12 @@ export class StubService extends ANetworkRpcService<
         profile: PeerProfile;
         peerInfo: BannablePeerInfo | undefined;
     }[] = [];
-    /** Inbound request frames recorded by the capture stub, oldest first. */
-    private capturedRequestFrames: {
+    /** Inbound frames recorded by the capture stub, oldest first. */
+    public capturedRequestFrames: {
         serializedRpc: string;
         transport: NetworkTransport;
     }[] = [];
     private restoreRequestFrameCapture?: () => void;
-    /** Inbound frames counted from one sender since the count started. */
-    public inboundFrameCount = 0;
 
     /**
      * Shift the clock read that directly follows this peer's next
@@ -3062,23 +3063,37 @@ export class StubService extends ANetworkRpcService<
 
     /**
      * Record-only: keep every inbound request frame for `service` that
-     * reaches the network router, with the connection it arrived on.
+     * reaches the network router, with the connection it arrived on. With
+     * `senderAddress` instead, keep every frame of any kind from that peer.
      */
-    public captureInboundRequestFrames(service: string): void {
+    public captureInboundRequestFrames(
+        filter: { service: string } | { senderAddress: string }
+    ): void {
         this.restoreInboundRequestFrames();
         const router = this.p2pManager.rpcRouter;
         const onRpc = router.onRpc;
         const frames: typeof this.capturedRequestFrames = [];
         this.capturedRequestFrames = frames;
-        router.onRpc = function (serializedRpc, transport) {
+        const isCaptured = (
+            serializedRpc: string,
+            transport: NetworkTransport
+        ): boolean => {
+            if ("senderAddress" in filter)
+                return (
+                    transport.peerAddress !== undefined &&
+                    getChecksumAddress(transport.peerAddress) ===
+                        getChecksumAddress(filter.senderAddress)
+                );
             const frame = deserializeRpcFrame(serializedRpc);
-            if (
+            return (
                 frame?.kind === "request" &&
-                frame.rpc.service === service &&
+                frame.rpc.service === filter.service &&
                 !transport.isTrusted
-            ) {
+            );
+        };
+        router.onRpc = function (serializedRpc, transport) {
+            if (isCaptured(serializedRpc, transport))
                 frames.push({ serializedRpc, transport });
-            }
             return onRpc.call(this, serializedRpc, transport);
         };
         this.restoreRequestFrameCapture = () => {
@@ -3101,27 +3116,6 @@ export class StubService extends ANetworkRpcService<
             frame.transport
         );
         return { transportClosed };
-    }
-
-    /**
-     * Count every inbound frame (request, response or one-way) this peer's
-     * router receives from `peerAddress`, from now on. It stays installed for
-     * the runtime's life.
-     */
-    public countInboundFramesFrom(peerAddress: string): void {
-        const router = this.p2pManager.rpcRouter;
-        const onRpc = router.onRpc;
-        const count = () => (this.inboundFrameCount += 1);
-        this.inboundFrameCount = 0;
-        router.onRpc = function (serializedRpc, transport) {
-            if (
-                transport.peerAddress &&
-                getChecksumAddress(transport.peerAddress) ===
-                    getChecksumAddress(peerAddress)
-            )
-                count();
-            return onRpc.call(this, serializedRpc, transport);
-        };
     }
 
     public restoreInboundRequestFrames(): void {
@@ -3572,6 +3566,7 @@ export class StubService extends ANetworkRpcService<
         this.restoreReductionApplication();
         this.restoreReductionAttempt();
         this.releaseStateMutex();
+        this.releaseNonceMutex();
     }
 
     public restoreReductionApplication(): void {
@@ -3652,6 +3647,35 @@ export class StubService extends ANetworkRpcService<
     public releaseStateMutex(): void {
         this.stateMutexGate?.release();
         this.stateMutexGate = undefined;
+    }
+
+    /** Hold the signer's nonce mutex: every chain send queues behind it. */
+    public holdNonceMutex(): void {
+        this.releaseNonceMutex();
+        const mutex = this.nonceMutex();
+        void mutex.lock({ taskName: "stub.holdNonceMutex" });
+        this.unlockNonceMutex = () => mutex.unlock();
+    }
+
+    public releaseNonceMutex(): void {
+        this.unlockNonceMutex?.();
+        this.unlockNonceMutex = undefined;
+    }
+
+    /** Chain sends parked on the nonce mutex behind its holder. */
+    public getNonceMutexWaiterCount(): number {
+        const queue = Reflect.get(this.nonceMutex(), "queue");
+        if (!Array.isArray(queue))
+            throw new Error("Expected a mutex waiter queue");
+        return queue.length;
+    }
+
+    // the signer's private nonce mutex
+    private nonceMutex(): Mutex {
+        const mutex = Reflect.get(this.sm.signer, "mutex");
+        if (!(mutex instanceof Mutex))
+            throw new Error("Expected the signer's nonce mutex");
+        return mutex;
     }
 
     // the listener's private removal step

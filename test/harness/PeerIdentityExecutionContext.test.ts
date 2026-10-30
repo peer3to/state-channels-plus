@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: harness execution-context contract test; the context is test infrastructure with no specification or implementation IDs
 import { IN_FLIGHT_REPLY_DRAIN_MS } from "@/rpc/internal/AInternalRpcRoot";
 import { DetachedPromises } from "@/utils/DetachedPromises";
 import { PeerIdentityExecutionContext } from "@test/harness/core/peerErrorAttribution";

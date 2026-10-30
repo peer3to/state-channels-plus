@@ -374,9 +374,10 @@ export async function assertUnauthenticatedTransportCleanup(): Promise<void> {
 }
 
 /**
- * A transport that links after its manager's network cut (a late swarm or
- * discovery connection) sends no frame and dispatches no inbound frame, so
- * it can neither handshake nor sync.
+ * Disposing the manager closes its live transports in the same call. A
+ * transport that links after the network cut (a late swarm or discovery
+ * connection) sends no frame and dispatches no inbound frame, so it can
+ * neither handshake nor sync.
  */
 export async function assertDisposedManagerLateTransport(): Promise<void> {
     await withRuntimeRpc(async (sdk) => {
@@ -386,7 +387,14 @@ export async function assertDisposedManagerLateTransport(): Promise<void> {
         );
         if (!host) throw new Error("Expected the real SDK host");
         const manager = host.hostRpc.requireManager();
-        await manager.dispose();
+        await withWebSocketPair(async (liveSocket) => {
+            const live = new LocalTransport(liveSocket, manager.rpcRouter);
+            const disposal = manager.dispose();
+            // the cut is synchronous: nothing waits for a later turn
+            expect(manager.isDisposed).to.equal(true);
+            expect(live.isClosed).to.equal(true);
+            await disposal;
+        });
         await withWebSocketPair(async (serverSocket) => {
             const sent = sinon.spy(serverSocket, "send");
             const service = manager.localRpc.initHandshakeService;

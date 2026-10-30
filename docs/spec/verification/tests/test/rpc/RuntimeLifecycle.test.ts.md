@@ -9,6 +9,10 @@ Uses actual SDK roots and channels to check retained readiness, connection-loss 
 
 The child-failure diagnostics case holds one request to the SDK host root and fails the child twice, each time on a new SDK setup: once with an ordinary `Error`, and once with a real `unreachable` trap that crossed the wire format (`serializeError`, then `deserializeError`), as a WebAssembly failure from a worker arrives. Each logs one `Worker failed with pending requests` line. Its `resources` holds this thread's counts both times; its `wasm` is absent for the ordinary error and equals the diagnostics serialized with the trap otherwise.
 
+The report-during-disposal case raises a host error report while the client disposes the host: it
+is logged at error on the client logger and reaches no `onHostError` listener; a report raised
+before the disposal still reaches the listener.
+
 ## Tests
 
 - `remembers a child readiness signal received before awaiting`: UNIT-TEST-RUNTIME-LIFECYCLE-1-GRZ48T.P1, REQ-RUNTIME-3-VQXW59.T1.P18
@@ -49,4 +53,4 @@ The two root diagnostic cases retain service and method metadata without contrac
 - `completes worker SDK disposal after the drain bound when the host leaks a referenced timer`: REQ-RUNTIME-7-A2VAR0.T1.P10, UNIT-TEST-ROOT-WORKER-DRAIN-1-JWKQ0P.P10
 - `settles detached work that fails after root disposal as the disposal outcome`: UNIT-TEST-ROOT-DISPOSAL-1-NMS66W.P9, REQ-RUNTIME-3-VQXW59.T1.P62
 - `keeps a detached failure before root disposal visible in the drain`: UNIT-TEST-ROOT-DISPOSAL-1-NMS66W.P10, REQ-RUNTIME-3-VQXW59.T1.P63
-- `logs a report raised while its root disposes and raises it to nobody`: none
+- `logs a report raised while its root disposes and raises it to nobody`: REQ-RUNTIME-3-VQXW59.T1.P87

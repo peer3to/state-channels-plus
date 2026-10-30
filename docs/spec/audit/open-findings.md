@@ -766,6 +766,17 @@ copies (the executor admission latch, the consumer creation and disposal promise
 mechanism covers them. Needs its own plan; no behavior change is intended, so the existing lifecycle
 tests are the regression suite.
 
+**Update (2026-10-30, dispose cut-off):** host disposal now starts with one synchronous cut-off in
+[`P2pRuntimeHostRoot`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md):
+the network (`P2PManager.dispose` closes every transport in the call, a later transport neither
+sends nor hears), chain sends ([`HostNonceManager`](../implementation/source/src/evm/signer/HostNonceManager.ts.md)
+`cut()`: a later or queued send never settles) and the parent event bus. `BlockQueueManager.dispose`
+and its drain, the `TimeoutManager` running-task wait and the `StateChannelEventListener` stop drain
+are deleted, so `StateManager.stop` no longer drains the block queue or running timer tasks, and a
+reduce send frozen at the cut no longer holds disposal. Still open: the executor admission latch and
+the consumer creation and disposal promises stay, and the per-component disposal guards remain
+until their pinning tests move onto the root's disposal.
+
 <a id="find-join-2-ek5dww"></a>
 
 ### FIND-JOIN-2-EK5DWW
@@ -802,6 +813,13 @@ its own. The swallow remains a recorded divergence from
 [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)'s
 refresh-is-fatal rule, recorded on the
 [`BlockQueueManager` report](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md).
+
+**Update (2026-10-30, dispose cut-off):** `BlockQueueManager.dispose`, `track` and the `inFlight`
+drain this entry cites are deleted; host disposal begins with a synchronous cut of the network,
+chain sends and the parent bus (see [`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw)),
+so nothing the imploding runtime does after the cut leaves it as a frame or a transaction. The
+VM child is still disposed under a refresh that is still running; that local failure is tolerated
+by the ingest catch since PR #556.
 
 **Side-effect audit of tolerating more (2026-10-16).** (1) No partial queue state: ingest's
 mutations before a throw point are the pre-mutation block clone, one synchronous queue set/merge

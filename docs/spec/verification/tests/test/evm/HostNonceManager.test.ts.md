@@ -83,5 +83,5 @@ through a new `getBlockNumber()` answered from the cache, rejects with "could no
 - `records nothing it observes after its recorder was disposed`: UNIT-TEST-GAS-USAGE-RECORDER-1-F2H4X8.P12
 - `cannot create another nonce owner by reconnecting`: none
 - `recovers an indeterminate nonce lazily on the next send`: none
-- `a send after cut takes no nonce and never settles`: none
-- `a send queued on the nonce mutex at cut takes no nonce and never settles, while the one broadcasting keeps its nonce`: none
+- `a send after cut takes no nonce and never settles`: REQ-SDK-ARCH-2-QBZAT8.T1.P3
+- `a send queued on the nonce mutex at cut takes no nonce and never settles, while the one broadcasting keeps its nonce`: REQ-SDK-ARCH-2-QBZAT8.T1.P3

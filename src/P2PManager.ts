@@ -55,7 +55,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     preferredTransport: TransportType = TransportType.HOLEPUNCH;
 
     /** Set first by `dispose`: the network is cut, wire sends and frames drop. */
-    public isDisposed = false;
+    private isCut = false;
     private markNetworkCut!: () => void;
     /** Resolves when `dispose` cuts the network. */
     public readonly networkCut = new Promise<void>((resolve) => {
@@ -177,7 +177,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     // discovery teardown runs after it.
     public dispose(): Promise<void> {
         if (this.disposalPromise) return this.disposalPromise;
-        this.isDisposed = true;
+        this.isCut = true;
         this.markNetworkCut();
         return (this.disposalPromise = runCleanup(
             () =>
@@ -194,6 +194,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
                 ),
             () => this.holepunch.dispose()
         ));
+    }
+
+    public get isDisposed(): boolean {
+        return this.isCut;
     }
 
     /**

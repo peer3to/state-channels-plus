@@ -78,11 +78,7 @@ export class NetworkRpcRouter<
     public async onRpc(serializedRpc: string, transport: NetworkTransport) {
         // A closed socket can still emit frames, and a wire transport that
         // connects after the network cut is never heard.
-        if (
-            transport.isClosed ||
-            (this.p2pManager.isDisposed && !transport.isTrusted)
-        )
-            return;
+        if (transport.isCut) return;
         try {
             // Reject oversized frames before parsing so a peer can't force
             // unbounded JSON.parse/dispatch work.

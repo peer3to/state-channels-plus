@@ -88,6 +88,9 @@ export class BrowserLogger extends Logger {
 
         const { level, meta } = logEntry;
         const method = level === "verbose" ? "debug" : level;
+        // every console line of a disposing runtime carries the tag (fmt
+        // adds it to the label)
+        const tag = logEntry.sharedContext.disposing ? ["[disposing]"] : [];
 
         if (
             console.groupCollapsed &&
@@ -96,10 +99,10 @@ export class BrowserLogger extends Logger {
         ) {
             console.groupCollapsed(...this.fmt(logEntry));
             if (meta.length > 0) {
-                console[method](...meta);
+                console[method](...tag, ...meta);
             }
 
-            console[method](logEntry.stack);
+            console[method](...tag, logEntry.stack);
 
             console.groupEnd();
             return;
@@ -293,6 +296,8 @@ export class BrowserLogger extends Logger {
 
         // Level
         push(`[${levelUpper}]`, this.levelCss(logEntry.level));
+        if (logEntry.sharedContext.disposing)
+            push("[disposing]", "color: #9ca3af");
 
         // Peer
         const peerId = logEntry.sharedContext.peerId;

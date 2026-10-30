@@ -182,6 +182,21 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    /** Hold the signer's nonce mutex until released. */
+    public holdNonceMutex(): boolean {
+        this.service.holdNonceMutex();
+        return true;
+    }
+
+    public releaseNonceMutex(): boolean {
+        this.service.releaseNonceMutex();
+        return true;
+    }
+
+    public getNonceMutexWaiterCount(): number {
+        return this.service.getNonceMutexWaiterCount();
+    }
+
     public getStateMutexWaiterCount(): number {
         const queue = Reflect.get(this.service.sm.mutex, "queue");
         if (!Array.isArray(queue))
@@ -4034,10 +4049,19 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.restoreUnregisteredProfiles();
     }
 
-    /** Record inbound request frames for `service` with their connection. */
-    public stubCaptureInboundRequestFrames(service: string): boolean {
-        this.service.captureInboundRequestFrames(service);
+    /**
+     * Record inbound request frames for `service`, or every frame from
+     * `senderAddress`, with their connection.
+     */
+    public stubCaptureInboundRequestFrames(
+        filter: { service: string } | { senderAddress: string }
+    ): boolean {
+        this.service.captureInboundRequestFrames(filter);
         return true;
+    }
+
+    public getCapturedFrameCount(): number {
+        return this.service.capturedRequestFrames.length;
     }
 
     /** Deliver a captured frame again on the connection it arrived on. */
@@ -4045,16 +4069,6 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         index: number
     ): Promise<{ transportClosed: boolean }> {
         return this.service.injectCapturedRequestFrame(index);
-    }
-
-    /** Count inbound frames from `peerAddress` from now on. */
-    public countInboundFramesFrom(peerAddress: string): boolean {
-        this.service.countInboundFramesFrom(peerAddress);
-        return true;
-    }
-
-    public getInboundFrameCount(): number {
-        return this.service.inboundFrameCount;
     }
 
     public restoreInboundRequestFrames(): boolean {

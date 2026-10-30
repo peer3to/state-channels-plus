@@ -197,6 +197,24 @@ describe("Logger thread context", function () {
         expect(logStore.getAllLogs()).to.have.length(0);
         leaf.dispose();
     });
+    it("stores a disposed child's entry while its parent lives", function () {
+        const { logger, logStore } = createUploaderFixture({
+            uploadEndpoint: ""
+        });
+        try {
+            const child = logger.child({ component: "disposedChild" });
+            child.dispose();
+            const before = logStore.getAllLogs().length;
+            child.info("disposed child, family alive");
+            const stored = logStore.getAllLogs();
+            expect(stored).to.have.length(before + 1);
+            expect(stored[stored.length - 1].context.component).to.equal(
+                "disposedChild"
+            );
+        } finally {
+            logger.dispose();
+        }
+    });
     it("logs on every level and replays after disposal without storing, uploading or failing", function () {
         const { logger, logStore } = createUploaderFixture({
             uploadEndpoint: ""

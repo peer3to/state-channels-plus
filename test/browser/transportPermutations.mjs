@@ -78,7 +78,12 @@ export async function runTransportPermutations(mode) {
             pages.push(handle);
             const record = (message) => {
                 handle.log.push(`[${message.type()}] ${message.text()}`);
-                if (message.type() === "error")
+                // a disposing runtime's lines carry [disposing]: its
+                // teardown errors are expected
+                if (
+                    message.type() === "error" &&
+                    !message.text().includes("[disposing]")
+                )
                     handle.errors.push(message.text());
             };
             // Includes the console of the page's workers.
