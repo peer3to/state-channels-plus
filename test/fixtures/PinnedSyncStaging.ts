@@ -784,7 +784,7 @@ export async function fetchServedSyncPayload(
         P2pRuntimeHostRoot<HarnessControlRpc>,
         MathStateMachine
     >,
-    forkId: ForkId
+    forkId: ForkId | undefined
 ): Promise<SyncPayload> {
     const response = await h.execOnHost(
         requester,
@@ -800,7 +800,7 @@ export async function fetchServedSyncPayload(
     return Codec.decode(servedSyncPayload(response), Type.SyncPayload);
 }
 
-/** `requester` applies `payload` as `responder`'s answer to that request; returns the verdict and recorded rejection reasons. */
+/** `requester` applies `payload` as `responder`'s answer to that request; returns the verdict, its `unsettledForkId` and recorded rejection reasons. */
 export async function applyServedSyncPayload(
     h: MathPeerTestHarness,
     requester: TestPeer<
@@ -811,22 +811,20 @@ export async function applyServedSyncPayload(
         P2pRuntimeHostRoot<HarnessControlRpc>,
         MathStateMachine
     >,
-    forkId: ForkId,
+    forkId: ForkId | undefined,
     payload: SyncPayload
-): Promise<{ accepted: boolean; rejections: string[] }> {
+) {
     const stub = h.control(requester).stub;
     await stub.recordSyncRejections().request();
     try {
-        const accepted = await h.execOnHost(
+        const { synced: accepted, unsettledForkId } = await h.execOnHost(
             requester,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService
-                    .applySyncResponse(
-                        args.source,
-                        { channelId: sm.channelId, forkId: args.forkId },
-                        args.encodedSyncPayload
-                    )
-                    .then(({ synced }) => synced),
+                sm.p2pManager.localRpc.spectateService.applySyncResponse(
+                    args.source,
+                    { channelId: sm.channelId, forkId: args.forkId },
+                    args.encodedSyncPayload
+                ),
             {
                 source: responder.address,
                 forkId,
@@ -838,6 +836,7 @@ export async function applyServedSyncPayload(
         );
         return {
             accepted,
+            unsettledForkId,
             rejections: await stub.restoreRecordedSyncRejections().request()
         };
     } finally {
@@ -994,54 +993,29 @@ export async function applySyncPayload(
 ) {
     const observer = h.getPeer(2);
     const source = h.getPeer(0);
-    const response = await h.execOnHost(
+    const payload = await fetchServedSyncPayload(
+        h,
         observer,
-        async (sm, args) =>
-            sm.p2pManager.remoteRpc.spectateService
-                .onSpectateRequest({
-                    channelId: sm.channelId,
-                    forkId: args.forkId
-                })
-                .request(args.source),
-        { source: source.address, forkId: options.forkId }
+        source,
+        options.forkId
     );
-    const payload = Codec.decode(servedSyncPayload(response), Type.SyncPayload);
     options.mutate?.(payload);
     await options.afterServe?.();
-
-    const stub = h.control(observer).stub;
-    await stub.recordSyncRejections().request();
-    try {
-        const { synced: accepted, unsettledForkId } = await h.execOnHost(
-            observer,
-            async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.applySyncResponse(
-                    args.source,
-                    { channelId: sm.channelId, forkId: args.forkId },
-                    args.encodedSyncPayload
-                ),
-            {
-                source: source.address,
-                forkId: options.forkId,
-                encodedSyncPayload: Codec.encode(
-                    payload,
-                    Type.SyncPayload
-                ) as string
-            }
-        );
-        return {
-            payload,
-            accepted,
-            unsettledForkId,
-            rejections: await stub.restoreRecordedSyncRejections().request(),
-            responderBlacklisted: await h
-                .control(observer)
-                .query.isBlacklisted(source.address)
-                .request()
-        };
-    } finally {
-        await stub.restoreRecordedSyncRejections().request();
-    }
+    const verdict = await applyServedSyncPayload(
+        h,
+        observer,
+        source,
+        options.forkId,
+        payload
+    );
+    return {
+        payload,
+        ...verdict,
+        responderBlacklisted: await h
+            .control(observer)
+            .query.isBlacklisted(source.address)
+            .request()
+    };
 }
 
 /**

@@ -144,8 +144,9 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P121` — genesis-only payload before block zero, chain snapshot still genesis, only the genesis timestamp changed: rejected as genesis timestamp mismatch, responder blacklisted, the stored genesis stays the on-chain one
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P122` — the same genesis-only payload unaltered: accepted, responder not blacklisted, the stored genesis is the on-chain one
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P123` — successor-fork genesis with only its timestamp changed from the origin window's kill-period end: rejected as genesis timestamp mismatch and the altered genesis is not stored
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P124` — successor-fork genesis applied while the requester's local mirror already sees the origin window expired but the chain does not: rejected as origin kill period not expired on chain and the successor genesis is not stored
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P124` — successor-fork genesis applied while the requester's local mirror already sees the origin window expired but the chain does not: not synced with no verdict, the origin window named unsettled, no rejection, the responder not blacklisted and the successor genesis not stored
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P125` — lagging requester holding the genesis, on-chain snapshot past genesis on the same fork, genesis altered only in its timestamp: accepted with no rejection and the held genesis is kept
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P126` — block 0's snapshot on chain, height 0 but not a genesis, unaltered payload: accepted with no rejection and the responder not blacklisted
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 

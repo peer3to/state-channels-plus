@@ -17,7 +17,8 @@ import {
 } from "@test/fixtures/DisputeWindowInboundSyncStaging";
 import {
     applyForgedGenesisPastChainGenesis,
-    applyGenesisOnlySyncPayload
+    applyGenesisOnlySyncPayload,
+    applySyncPayloadOverBlockZeroSnapshot
 } from "@test/fixtures/GenesisTimestampSyncStaging";
 import {
     applyAnchoredSyncPayload,
@@ -1511,6 +1512,15 @@ describe("Unit: SpectateService", function () {
             );
         });
 
+        it("block 0's snapshot on chain, height 0 but not a genesis, unaltered payload → accepted, no rejection, responder not blacklisted", async function () {
+            const result = await applySyncPayloadOverBlockZeroSnapshot(
+                TestSession.getHarness()
+            );
+            expect(result.rejections).to.deep.equal([]);
+            expect(result.accepted).to.equal(true);
+            expect(result.responderBlacklisted).to.equal(false);
+        });
+
         it("reduced-fork genesis with only the timestamp changed → rejected, genesis timestamp mismatch, altered genesis not stored", async function () {
             const h = TestSession.getHarness();
             let reducedForkId = "";
@@ -1544,7 +1554,7 @@ describe("Unit: SpectateService", function () {
             expect(result.storedGenesisHash).to.equal(result.heldGenesisHash);
         });
 
-        it("successor genesis applied while the chain has not yet expired its origin window → rejected, origin kill period not expired on chain, not stored", async function () {
+        it("successor genesis applied while the chain has not yet expired its origin window → not synced with no verdict, the origin window named unsettled, responder not blacklisted, not stored", async function () {
             const h = TestSession.getHarness();
             // a long evidence time keeps the chain window open while the requester applies;
             // an inline VM reads the clock per call -> the offset below reaches the local mirror;
@@ -1571,22 +1581,22 @@ describe("Unit: SpectateService", function () {
             // requester clock ahead of the chain -> its local mirror already sees the window expired
             const stub = h.control(requester).stub;
             await stub.holdClockOffset(60).request();
-            let result: { accepted: boolean; rejections: string[] };
-            try {
-                result = await applyServedSyncPayload(
-                    h,
-                    requester,
-                    responder,
-                    sourceForkId,
-                    payload
-                );
-            } finally {
-                await stub.releaseClockOffset().request();
-            }
+            const result = await applyServedSyncPayload(
+                h,
+                requester,
+                responder,
+                sourceForkId,
+                payload
+            ).finally(() => stub.releaseClockOffset().request());
             expect(result.accepted).to.equal(false);
-            expect(result.rejections).to.deep.equal([
-                "origin kill period not expired on chain"
-            ]);
+            expect(result.unsettledForkId).to.equal(sourceForkId);
+            expect(result.rejections).to.deep.equal([]);
+            expect(
+                await h
+                    .control(requester)
+                    .query.isBlacklisted(responder.address)
+                    .request()
+            ).to.equal(false);
             expect(
                 await h
                     .control(requester)

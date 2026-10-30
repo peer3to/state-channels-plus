@@ -12,6 +12,7 @@ import {
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import {
     applyServedSyncPayload,
+    applySyncPayload,
     fetchServedSyncPayload
 } from "@test/fixtures/PinnedSyncStaging";
 import type { TestPeer } from "@test/harness/core/types";
@@ -77,6 +78,32 @@ export async function applyGenesisOnlySyncPayload(
             ? StateSnapshot.decode(stored.encodedSnapshot).hash
             : undefined
     };
+}
+
+/**
+ * Block 0's snapshot is on chain: height 0 like the genesis, but not a
+ * genesis. Peer 0 serves peer 2 its unaltered latest-state payload. Returns
+ * the verdict, rejection reasons and whether peer 2 blacklisted peer 0.
+ */
+export async function applySyncPayloadOverBlockZeroSnapshot(
+    h: MathPeerTestHarness
+) {
+    await h.lifecycle.start(3, 0);
+    const forkId = h.activeForkId!;
+    await h.transition.advanceState({ count: 1, waitForFinalization: true });
+    expect(
+        await h.transition.postSnapshotWait({
+            peerIndex: 0,
+            forkId: String(forkId)
+        })
+    ).to.not.equal(undefined);
+    const onChainSnapshot = StateSnapshot.from(
+        await h.channelManager.getStateSnapshot(h.channelId)
+    );
+    expect(onChainSnapshot.forkID).to.equal(forkId);
+    expect(onChainSnapshot.blockHeight).to.equal(0);
+    expect(onChainSnapshot.isGenesis).to.equal(false);
+    return applySyncPayload(h, { forkId });
 }
 
 /**

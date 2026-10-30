@@ -131,7 +131,8 @@ Ordered verification rejects invalid evidence. Thrown internal or chain-read fai
    anchor is the genesis of the target fork, the full genesis, timestamp included, must equal
    that anchor. When the target fork is a reduction successor, the timestamp must equal the end of
    its origin dispute window's kill period, read from the chain together with the chain's own
-   statement that the kill period has expired. When the anchor is already past genesis on the
+   statement that the kill period has expired; until the chain says so the sync fails with no
+   verdict ([`REQ-SYNC-4-AWHFPA`](synchronization.md#req-sync-4-awhfpa)). When the anchor is already past genesis on the
    target fork, no chain value authenticates that genesis's timestamp: the requester keeps a
    genesis it already holds for the fork and otherwise accepts the payload's timestamp unverified.
 6. **Check retained progress.** An earlier supplied start is acceptable when the proof reaches

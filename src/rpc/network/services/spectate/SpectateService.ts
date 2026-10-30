@@ -644,10 +644,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             const isSuccessorFork =
                 genesisSnapshot.forkID !== onChainSnapshot.forkID;
 
-            // chain still at genesis -> the payload genesis must be exactly that snapshot
+            // chain still at genesis -> the payload genesis must be exactly that snapshot.
+            // block 0's posted snapshot also has height 0 but is not a genesis
             const isChainAtGenesis =
                 genesisSnapshot.forkID === onChainSnapshot.forkID &&
-                onChainSnapshot.blockHeight === 0;
+                onChainSnapshot.isGenesis;
             if (
                 isChainAtGenesis &&
                 genesisSnapshot.hash !== onChainSnapshot.hash
@@ -657,12 +658,15 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     "genesis timestamp mismatch"
                 );
 
-            // successor fork -> its timestamp must be the origin kill period end, once the chain says expired
+            // successor fork -> its timestamp must be the origin kill period end, once the chain says expired.
+            // before that the chain has not reduced the origin window -> no verdict, wait for its reduction
             if (isSuccessorFork && !originKillPeriod.isExpired)
-                return this.rejectSync(
-                    peerAddress,
-                    "origin kill period not expired on chain"
-                );
+                return {
+                    synced: false,
+                    unsettledForkId:
+                        syncPayload.latestForkGenesisSnapshot.snapshotData
+                            .originForkId
+                };
             if (
                 isSuccessorFork &&
                 originKillPeriod.killPeriodEnd !==
