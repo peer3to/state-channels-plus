@@ -6,7 +6,7 @@ import {
     parseMinBlock,
     parseFromBlock,
     parseStateRequests,
-    type SubscriptionId
+    type SubscribeResult
 } from "./blockStorageDiff";
 import type {
     StorageDiffCatchUp,
@@ -36,7 +36,7 @@ export class StorageDiffRpcMethods {
     /** Pushes one record per canonical block, filtered to `addresses`. */
     async scp_subscribeContractStorage(
         params: unknown[]
-    ): Promise<SubscriptionId> {
+    ): Promise<SubscribeResult> {
         if (params.length !== 1) throw invalidParams("Expected [addresses]");
         return await this.service.subscribe(
             this.peer,

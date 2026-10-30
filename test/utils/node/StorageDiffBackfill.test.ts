@@ -391,6 +391,66 @@ describe("StorageDiffService persisted cache", function () {
     });
 });
 
+describe("StorageDiffService snapshot status of a subscription", function () {
+    it("says syncing for an account it still has to backfill, and ready once the account is complete", async function () {
+        await withStorageDiffSession(async ({ client, signer }) => {
+            const writer = await deploySlotWriter(signer);
+            await writeSlot(signer, writer, 1, 5n);
+
+            const first = await client.subscribeWithStatus([writer]);
+            await client.nextSnapshot(first.subscription);
+            const second = await client.subscribeWithStatus([writer]);
+
+            expect(first.accounts).to.deep.equal({ [writer]: "syncing" });
+            expect(second.accounts).to.deep.equal({ [writer]: "ready" });
+        });
+    });
+
+    it("says lazy for an account whose backfill found fewer entries than the chain holds", async function () {
+        await withStorageDiffUpstream(async (session) => {
+            const { provider, signer, start } = session;
+            const writer = await deploySlotWriter(signer);
+            await writeSlot(signer, writer, 1, 5n);
+            const block = (await provider.getBlock("latest"))!;
+            await withSubstrateNode(
+                {
+                    address: writer,
+                    changes: [block.number - 1, block.number],
+                    deployed: block.number - 1,
+                    tipNumber: block.number,
+                    tipHash: () => "0xtip",
+                    info: RECORDED_ACCOUNT_INFO,
+                    entries: 2
+                },
+                async (node) => {
+                    const service = await start({
+                        backfillBlocks: new ChildTrieBlockSource(node.url)
+                    });
+                    const client = await StorageDiffClient.connect(service.url);
+                    try {
+                        const first = await client.subscribeWithStatus([
+                            writer
+                        ]);
+                        await client.nextSnapshot(first.subscription);
+                        const later = await client.subscribeWithStatus([
+                            writer
+                        ]);
+
+                        expect(first.accounts).to.deep.equal({
+                            [writer]: "syncing"
+                        });
+                        expect(later.accounts).to.deep.equal({
+                            [writer]: "lazy"
+                        });
+                    } finally {
+                        client.close();
+                    }
+                }
+            );
+        });
+    });
+});
+
 describe("StorageDiffService backfill checked against the chain", function () {
     /** A node of the writer's chain with `entries` child trie entries. */
     async function backfillWith(

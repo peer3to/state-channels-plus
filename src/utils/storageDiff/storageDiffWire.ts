@@ -18,6 +18,21 @@ export type StorageWord = string;
 /** Subscription id handed to a peer by `scp_subscribeContractStorage`. */
 export type SubscriptionId = string;
 
+/**
+ * What the service says of an account's snapshot when a subscription covers
+ * it: `ready`, the account is complete in the service's cache and its
+ * snapshot is sent at once; `syncing`, a backfill is running or queued and the
+ * snapshot follows when it is done; `lazy`, no snapshot will come.
+ */
+export type SnapshotStatus = "ready" | "syncing" | "lazy";
+
+/** The answer to `scp_subscribeContractStorage`. */
+export interface SubscribeResult {
+    subscription: SubscriptionId;
+    /** The snapshot status of each address of the subscription. */
+    accounts: Record<AccountAddress, SnapshotStatus>;
+}
+
 export type StorageSlots = Record<StorageSlot, StorageWord>;
 
 /** One account's balance, nonce, code and storage; absent fields are untouched. */

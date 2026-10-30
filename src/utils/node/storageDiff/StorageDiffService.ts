@@ -30,6 +30,8 @@ import {
     type RpcBlock,
     type StagedBlock,
     type StateRequest,
+    type SnapshotStatus,
+    type SubscribeResult,
     type SubscriptionId
 } from "./blockStorageDiff";
 import {
@@ -380,7 +382,7 @@ export class StorageDiffService {
     async subscribe(
         peer: StorageDiffPeer,
         addresses: AccountAddress[]
-    ): Promise<SubscriptionId> {
+    ): Promise<SubscribeResult> {
         return await this.enqueue(async () => {
             if (!this.peers.has(peer.socket)) throw new Error("Peer closed");
             const id = "0x" + (++peer.nextSubscription).toString(16);
@@ -395,7 +397,21 @@ export class StorageDiffService {
             });
             // the records keep these accounts' values from the next block on
             for (const address of addresses) void this.watch(address);
-            return id;
+            return {
+                subscription: id,
+                accounts: Object.fromEntries(
+                    addresses.map(
+                        (address): [AccountAddress, SnapshotStatus] => [
+                            address,
+                            this.lazyAccounts.has(address)
+                                ? "lazy"
+                                : this.stateCache.isComplete(address)
+                                  ? "ready"
+                                  : "syncing"
+                        ]
+                    )
+                )
+            };
         });
     }
 

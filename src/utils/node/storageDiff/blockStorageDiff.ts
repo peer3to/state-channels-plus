@@ -39,6 +39,8 @@ export type {
     StorageSlot,
     StorageSlots,
     StorageWord,
+    SnapshotStatus,
+    SubscribeResult,
     SubscriptionId
 } from "../../storageDiff/storageDiffWire";
 

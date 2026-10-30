@@ -281,17 +281,21 @@ that nest and re-enter" checks this on nested and re-entered frames against
   the `lazy` notice to its subscribers, which drop it to lazy reads.
 - **Complete accounts.** A backfilled account is complete: a slot it does not
   hold reads zero without asking the upstream.
-- **Snapshot.** After backfill the service pushes `scp_snapshot` with
+- **Subscribe answer and snapshot.** `scp_subscribeContractStorage` answers
+  `{subscription, accounts: {address: status}}`. `ready`: the account is
+  complete in the cache and its snapshot is pushed at once. `syncing`: a
+  backfill is running or queued and the snapshot follows. `lazy`: no snapshot
+  will come. A snapshot is `scp_snapshot` with
   `{subscription, result: {block: {number, hash}, accounts}}` holding the
-  full state at that block, then per-block records. A peer applies the snapshot
-  and the records after it, and reads nothing else from the service on the
-  normal path. A later subscribe pushes snapshots only for addresses not
-  already complete.
+  full state at that block, then per-block records. A peer reads nothing else
+  from the service for a `ready` account. A later subscribe pushes snapshots
+  only for addresses not already complete.
 - **No snapshot coming.** When an account stays lazy (the entry count
   mismatch below, or a failed backfill) the service pushes `scp_snapshot` with
   `lazy: [addresses]` (and `accounts` without them) to the subscriptions that
   follow it, at once and again to each later subscriber, so the subscriber
-  stops waiting for a snapshot and reads the account lazily.
+  stops waiting for a snapshot and reads the account lazily. This also covers
+  an account that flips to lazy after it was `syncing` or `ready`.
 - **Lazy path.** A read of anything not held still goes through `scp_getState`
   (which reads the upstream once); the peer falls back to its node on `-32002`.
 - **Persistence.** With `--cache-dir` the service writes `state.json`

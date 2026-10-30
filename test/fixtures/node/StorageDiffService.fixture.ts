@@ -8,6 +8,7 @@ import type {
     BlockStorageDiff,
     IncludedHeadRecord,
     StorageDiffSnapshot,
+    SubscribeResult,
     SubscriptionId
 } from "@/utils/node/storageDiff/blockStorageDiff";
 import type AIncludedHeadStrategy from "@/utils/node/storageDiff/includedHead/AIncludedHeadStrategy";
@@ -120,12 +121,23 @@ export class StorageDiffClient {
     }
 
     async subscribe(addresses: AccountAddress[]): Promise<SubscriptionId> {
-        const id = await this.request("scp_subscribeContractStorage", [
+        return (await this.subscribeWithStatus(addresses)).subscription;
+    }
+
+    /** Subscribes and returns the snapshot status of each address too. */
+    async subscribeWithStatus(
+        addresses: AccountAddress[]
+    ): Promise<SubscribeResult> {
+        const result = (await this.request("scp_subscribeContractStorage", [
             addresses
-        ]);
-        if (typeof id !== "string") throw new Error("Malformed subscription");
-        this.records.set(id, this.records.get(id) ?? []);
-        return id;
+        ])) as SubscribeResult;
+        if (typeof result?.subscription !== "string")
+            throw new Error("Malformed subscription");
+        this.records.set(
+            result.subscription,
+            this.records.get(result.subscription) ?? []
+        );
+        return result;
     }
 
     async unsubscribe(subscription: SubscriptionId): Promise<boolean> {
