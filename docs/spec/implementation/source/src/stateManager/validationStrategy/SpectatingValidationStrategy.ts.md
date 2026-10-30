@@ -51,3 +51,4 @@ Consequence profile
 - [x] `UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P33` — a synced observer aborts on a forged inbound block without requesting a dispute
 - [x] `UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P34` — a synced observer discards a disputed-fork entry without requeueing, aborting or requesting a dispute
 - [x] `UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P35` — spectating normalization preserves valid confirmations after a malformed first value
+- [x] `UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P36` — a synced observer's wrongGenesisDetected while the chain holds the fork past genesis: no abort, no fraud proof, no dispute; the block is dropped, or its suppliers and author cut against a stored block 0

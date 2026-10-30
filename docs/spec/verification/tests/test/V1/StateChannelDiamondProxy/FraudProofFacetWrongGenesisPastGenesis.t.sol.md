@@ -17,11 +17,17 @@ linked one goes on to the origin window, which an opened channel's genesis has n
 an unlinked block 0 from an eligible submitter and a linked one from an outsider both revert
 `RaceConditionBlockHeightTooOld(1, 0)` with the exact payload, and nobody is slashed. One fuzz case
 spans any previous-block hash with either submitter past genesis: always refused, nobody slashed.
+Adopting block 0's own height-0 snapshot, whose data differs from the genesis data, also counts as
+past genesis: the proof reverts `RaceConditionBlockHeightTooOld(0, 0)`. A block 0 of a second
+channel, applied in this channel's context, is an invalid proof here: its author is not slashed in
+this channel and the eligible prover is.
 
 ## Tests
 
 - `test_applyFraudProofs_unlinkedBlockZeroAtGenesis_slashesAuthor`: UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P33
 - `test_applyFraudProofs_linkedBlockZeroAtGenesis_revertsAndSlashesNobody`: UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P34
 - `test_applyFraudProofs_unlinkedBlockZeroPastGenesis_revertsAndSlashesNobody`: INV-ENFFP-1-BGVZN4.T1.P21, UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P35
-- `test_applyFraudProofs_linkedBlockZeroPastGenesisFromOutsider_revertsAndSlashesNobody`: UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P36
+- `test_applyFraudProofs_linkedBlockZeroPastGenesisFromOutsider_revertsAndSlashesNobody`: INV-ENFFP-1-BGVZN4.T1.P23, UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P36
 - `testFuzz_applyFraudProofs_blockZeroPastGenesisNeverSlashes`: UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P37
+- `test_applyFraudProofs_unlinkedBlockZeroPastGenesisAtHeightZero_revertsAndSlashesNobody`: UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P38
+- `test_applyFraudProofs_blockZeroOfAnotherChannel_neverSlashesItsAuthorInThisChannel`: UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P39

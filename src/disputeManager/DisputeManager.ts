@@ -324,7 +324,7 @@ class DisputeManager {
                         );
                     },
                     // the snapshot passed a stored forged-inbound proof's height, or moved its fork past
-                    // the genesis a WrongGenesis proof needs -> rebuild once without it
+                    // the genesis a WrongGenesis proof needs -> rebuild: construction reads the chain and leaves it out
                     RaceConditionBlockHeightTooOld: () => {
                         this.logger.info(
                             "dispute retry: a fraud proof the chain no longer judges",

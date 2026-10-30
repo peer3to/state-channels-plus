@@ -51,7 +51,7 @@ Specification cases tested: 5/5.
 Specification cases tested: 7/7.
 
 [`INV-ENFFP-1-BGVZN4` (Slash set integrity)](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4)
-Specification cases tested: 12/22. Untested: T1.P1, T1.P2, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11.
+Specification cases tested: 13/23. Untested: T1.P1, T1.P2, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11.
 
 [`INV-ENFPROOF-1-DR1N9B` (Side-effect-free verification)](../specification/enforcement/proof-verification.md#inv-enfproof-1-dr1n9b)
 Specification cases tested: 0/8.

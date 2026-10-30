@@ -38,7 +38,8 @@ Two wrong-genesis cases first author blocks 0 and 1 and post the latest snapshot
 holds the fork past its genesis (`WrongGenesisPastGenesisStaging`). With the observer's block 0
 pruned below the anchor, an unlinked block 0 is dropped with no verdict; against a stored block 0,
 another author's unlinked block 0 disconnects its sources and author. Neither stores a fraud proof
-or raises a dispute.
+or raises a dispute. A synced spectator fed the same kind of block through the spectating hook,
+once the chain is past genesis, does not abort and stores no proof.
 
 ## Tests
 
@@ -58,6 +59,7 @@ or raises a dispute.
 - `pending participant records live double-sign fraud and stays pending`: UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P21, REQ-BLOCK-PIPE-3-WW2SB7.T1.P12
 - `observer live arrivals abort on double-sign fraud without requesting a dispute`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P15
 - `observer wrongGenesisDetected keeps the spectator reaction without submitting a dispute`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P30
+- `observer wrongGenesisDetected while the chain holds the fork past genesis → no abort, no fraud proof, no dispute`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P36
 - `observer invalidStateTransitionDetected keeps the spectator reaction without submitting a dispute`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P31
 - `observer objectiveInvalidTimestampDetected keeps the spectator reaction without submitting a dispute`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P32
 - `observer forgedInboundMessageBlockDetected keeps the spectator reaction without submitting a dispute`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P33

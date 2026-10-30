@@ -25,9 +25,8 @@ export async function stageChainPastGenesis(h: MathPeerTestHarness) {
     const onChain = StateSnapshot.from(
         await h.channelManager.getStateSnapshot(h.channelId)
     );
-    expect(onChain.isPastGenesisOf(forkId), "chain past genesis").to.equal(
-        true
-    );
+    expect(onChain.forkID, "chain on the genesis fork").to.equal(forkId);
+    expect(onChain.isGenesis, "chain past genesis").to.equal(false);
     const blockZero = (await h
         .control(h.getPeer(0))
         .query.getBlockByHeight(forkId, 0)
@@ -84,4 +83,49 @@ export async function storeWrongGenesisProofAndConstruct(
         },
         { forkId }
     );
+}
+
+/**
+ * A synced spectator, then peer 0 posts the latest snapshot so the chain holds
+ * the genesis fork past its genesis; another author than block 0's feeds the
+ * spectator an unlinked block 0 through the spectating `wrongGenesisDetected`
+ * hook. Returns the probe and whether the spectator stores a block 0.
+ */
+export async function runSpectatorWrongGenesisPastGenesis(
+    h: MathPeerTestHarness
+) {
+    const spectator = await h.scenario.syncSpectator(2);
+    const forkId = h.activeForkId!;
+    expect(
+        await h.transition.postSnapshotWait({
+            peerIndex: 0,
+            forkId: String(forkId)
+        })
+    ).to.not.equal(undefined);
+    const onChain = StateSnapshot.from(
+        await h.channelManager.getStateSnapshot(h.channelId)
+    );
+    expect(onChain.forkID, "chain on the genesis fork").to.equal(forkId);
+    expect(onChain.isGenesis, "chain past genesis").to.equal(false);
+    const blockZero = (await h
+        .control(h.getPeer(0))
+        .query.getBlockByHeight(forkId, 0)
+        .request())!;
+    const other = h.peers.find(
+        (p) => p.address !== blockZero.author && p.index !== spectator.index
+    )!;
+    const encoded = await encodeUnlinkedBlockZero(h, other, forkId);
+    const probe = await h
+        .control(spectator)
+        .validation.runBlockValidation(encoded, {
+            strategy: "spectating",
+            hook: "wrongGenesisDetected"
+        })
+        .request();
+    const storesBlockZero =
+        (await h
+            .control(spectator)
+            .query.getBlockByHeight(forkId, 0)
+            .request()) !== null;
+    return { probe, storesBlockZero, other };
 }

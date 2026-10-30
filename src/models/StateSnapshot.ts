@@ -106,8 +106,4 @@ export default class StateSnapshot {
     get isGenesis(): boolean {
         return this.forkID === this.snapshotDataHash;
     }
-
-    isPastGenesisOf(forkId: ForkId): boolean {
-        return this.forkID === forkId && !this.isGenesis;
-    }
 }

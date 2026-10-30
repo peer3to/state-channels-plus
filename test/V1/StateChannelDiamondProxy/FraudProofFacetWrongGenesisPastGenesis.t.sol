@@ -82,6 +82,30 @@ contract FraudProofFacetWrongGenesisPastGenesisTest is DiamondHarness {
         _assertNobodySlashed();
     }
 
+    // block 0's own snapshot is height 0 too, but its data is not the genesis data -> past genesis at height 0
+    function test_applyFraudProofs_unlinkedBlockZeroPastGenesisAtHeightZero_revertsAndSlashesNobody() public {
+        _adoptBlockZeroSnapshot();
+
+        vm.expectRevert(abi.encodeWithSelector(RaceConditionBlockHeightTooOld.selector, 0, 0));
+        _applyWrongGenesis(bob, _blockZero(bytes32(uint256(1))));
+
+        _assertNobodySlashed();
+    }
+
+    // judged in one channel, slashed in the context's -> another channel's block 0 is an invalid proof here
+    function test_applyFraudProofs_blockZeroOfAnotherChannel_neverSlashesItsAuthorInThisChannel() public {
+        bytes32 otherChannel = keccak256("wrong-genesis-other-channel");
+        _openChannel(otherChannel, _pks());
+        StateSnapshot memory otherGenesis = diamond.getStateSnapshot(otherChannel);
+        SignedBlock memory otherBlockZero =
+            _makeSignedGenesisBlock(ALICE_PK, otherChannel, otherGenesis.forkId, block.timestamp, bytes32(uint256(1)));
+
+        _applyWrongGenesis(bob, otherBlockZero);
+
+        assertFalse(diamond.isParticipantSlashedOnChain(CHANNEL, alice), "author slashed for another channel's block");
+        assertTrue(diamond.isParticipantSlashedOnChain(CHANNEL, bob), "invalid prover slashed");
+    }
+
     /// same-fork adoption at height 1 -> the chain snapshot is past the fork's genesis
     function _adoptPastGenesis() internal returns (uint256 snapshotHeight) {
         (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots) =
@@ -91,6 +115,31 @@ contract FraudProofFacetWrongGenesisPastGenesisTest is DiamondHarness {
         assertEq(snapshot.forkId, genesis.forkId, "still on the genesis fork");
         assertTrue(keccak256(abi.encode(snapshot)) != keccak256(abi.encode(genesis)), "snapshot moved past genesis");
         snapshotHeight = snapshot.blockHeight;
+    }
+
+    /// same-fork adoption of block 0's own snapshot: height 0, with state data other than the genesis'
+    function _adoptBlockZeroSnapshot() internal {
+        StateSnapshot memory blockZeroSnapshot = genesis;
+        blockZeroSnapshot.snapshotData.stateMachineStateHash = keccak256("block 0 state");
+        blockZeroSnapshot.timestamp = genesis.timestamp + 1;
+
+        Block memory blockZero;
+        blockZero.transaction.header.channelId = CHANNEL;
+        blockZero.transaction.header.participant = alice;
+        blockZero.transaction.header.forkId = genesis.forkId;
+        blockZero.transaction.header.timestamp = blockZeroSnapshot.timestamp;
+        blockZero.previousBlockHash = keccak256(abi.encode(genesis));
+        blockZero.stateSnapshotHash = keccak256(abi.encode(blockZeroSnapshot));
+
+        MilestoneProof[] memory proofs = new MilestoneProof[](1);
+        proofs[0].blockConfirmations = new BlockConfirmation[](1);
+        proofs[0].blockConfirmations[0] = _blockConfirmation(abi.encode(blockZero), _pks());
+        StateSnapshot[] memory snapshots = new StateSnapshot[](1);
+        snapshots[0] = blockZeroSnapshot;
+        diamond.updateStateSnapshotSameFork(CHANNEL, proofs, snapshots, new MessageBlock[](0));
+        StateSnapshot memory snapshot = diamond.getStateSnapshot(CHANNEL);
+        assertEq(snapshot.blockHeight, 0, "block 0's snapshot adopted");
+        assertTrue(snapshot.forkId != keccak256(abi.encode(snapshot.snapshotData)), "not a genesis");
     }
 
     /// alice's signed block 0 on the genesis fork with `previousBlockHash`

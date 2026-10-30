@@ -206,12 +206,15 @@ predicate establishes, never by who is processing it:
   union, a conflicting-but-unlinked block, an unlinked non-first block, undecodable or
   authentication-failing data, a wrong-channel block, or a genesis conflict the node holds no
   genesis to disprove. The only offenders are the suppliers that carried it (transport
-  attribution, never a channel signature). A block-zero conflict on a fork the chain holds past its
-  genesis is no provable fault either, since the chain no longer judges it: another author's block
-  zero against the stored one cuts its suppliers and its author, and an unlinked block zero with
-  none stored is dropped with no verdict. Special case: stray non-member signatures on an
+  attribution, never a channel signature). Special case: stray non-member signatures on an
   otherwise valid block are junk signatures, not a junk block — they are stripped, exactly their
   suppliers are penalized, and the block continues ([`REQ-BLOCK-PIPE-11-DCHAJ2`](block-processing.md#req-block-pipe-11-dchaj2)).
+- **Past-genesis block zero.** A block zero that does not link to the genesis, on a fork the chain
+  holds past its genesis, proves no fault: the chain no longer judges it. A live participant cuts
+  the suppliers and the author when it stores a block zero, and otherwise drops the block with no
+  verdict (its own genesis may be the wrong one). A spectator handles it the same way and keeps
+  spectating. Dispute replay never meets it, since a block at or below the chain anchor is not
+  challenge-eligible.
 - **Not-yet-ready.** No misbehavior is demonstrated; the node lacks the context to judge: channel
   not yet open or a block beyond the next expected height. The entry is restored to the queue unchanged; its fixed lifetime is not
   extended ([`REQ-BLOCK-PIPE-5-WJ31RG`](block-processing.md#req-block-pipe-5-wj31rg)).

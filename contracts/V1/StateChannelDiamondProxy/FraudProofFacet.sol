@@ -282,11 +282,10 @@ contract FraudProofFacet is StateChannelCommon {
         return _hasInvalidTimestamp(proof);
     }
 
-    function _handleWrongGenesis(FraudProof memory fraudProof, FraudProofVerificationContext memory)
-        internal
-        view
-        returns (address)
-    {
+    function _handleWrongGenesis(
+        FraudProof memory fraudProof,
+        FraudProofVerificationContext memory fraudProofVerificationContext
+    ) internal view returns (address) {
         WrongGenesisProof memory proof = abi.decode(fraudProof.encodedProof, (WrongGenesisProof));
         SignedBlock memory signedBlock = proof.invalidBlock;
         if (!_isBlockAuthentic(signedBlock)) return _invalid();
@@ -294,6 +293,8 @@ contract FraudProofFacet is StateChannelCommon {
         if (_block.transaction.header.transactionCnt != 0) return _invalid();
 
         bytes32 channelId = _block.transaction.header.channelId;
+        // judged in one channel, slashed in the context's: another channel's block proves nothing here
+        if (channelId != fraudProofVerificationContext.channelId) return _invalid();
         bytes32 forkId = _block.transaction.header.forkId;
         address blockAuthor = _block.transaction.header.participant;
         StateSnapshot memory correctGenesisSnapshot = proof.genesisSnapshot;

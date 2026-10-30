@@ -14,6 +14,7 @@ import {
 } from "@test/fixtures/SpectatingFraudStaging";
 import {
     encodeUnlinkedBlockZero,
+    runSpectatorWrongGenesisPastGenesis,
     stageChainPastGenesis
 } from "@test/fixtures/WrongGenesisPastGenesisStaging";
 import {
@@ -207,6 +208,23 @@ describe("Unit: ValidationService", function () {
     it("observer live arrivals abort on double-sign fraud without requesting a dispute", async function () {
         await assertSpectatingFraud("observer", false);
     });
+    // past genesis on chain nobody can prove a block-0 conflict -> a spectator keeps spectating
+    it("observer wrongGenesisDetected while the chain holds the fork past genesis → no abort, no fraud proof, no dispute", async function () {
+        const { probe, storesBlockZero, other } =
+            await runSpectatorWrongGenesisPastGenesis(TestSession.getHarness());
+        expect(probe.firedHooks).to.include("wrongGenesisDetected");
+        expect(probe.abortCalled).to.equal(false);
+        expect(probe.fraudProofType).to.equal(null);
+        expect(probe.disputedForkIds).to.deep.equal([]);
+        if (storesBlockZero) {
+            expect(probe.resultName).to.equal("DISCONNECT");
+            expect(probe.disconnectedAddresses).to.include(other.address);
+        } else {
+            expect(probe.resultName).to.equal("DUPLICATE");
+            expect(probe.disconnectedAddresses).to.deep.equal([]);
+        }
+    });
+
     it("observer wrongGenesisDetected keeps the spectator reaction without submitting a dispute", async function () {
         await assertObserverHook("wrongGenesisDetected");
     });

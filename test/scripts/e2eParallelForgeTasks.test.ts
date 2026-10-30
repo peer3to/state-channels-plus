@@ -473,6 +473,7 @@ describe("parallel forge task discovery", function () {
             "DisputeUtilsTest",
             "FraudProofFacetPrunedInboundTest",
             "FraudProofFacetTest",
+            "FraudProofFacetWrongGenesisPastGenesisTest",
             "InvalidStateProofStepTest",
             "JoinChannelFacetTest",
             "JoinChannelSnapshotGuardTest",

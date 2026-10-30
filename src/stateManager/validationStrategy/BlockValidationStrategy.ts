@@ -5,7 +5,7 @@ import type BlockQueueManager from "../ingest/BlockQueueManager";
 import FraudProofService from "../utils/FraudProofService";
 import Clock from "@/Clock";
 import DisputeManager from "@/disputeManager";
-import { Block, StateSnapshot } from "@/models";
+import { Block } from "@/models";
 import type P2PManager from "@/P2PManager";
 import Storage from "@/storage";
 import {
@@ -208,12 +208,14 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             return BlockValidationResult.DISCONNECT;
         }
         // the chain holds the fork past genesis -> it no longer judges block 0, a proof would revert
+        const stateManager = this.p2pManager.stateManager;
         if (
-            StateSnapshot.from(
-                await this.p2pManager.stateManager.stateChannelManagerContract.getStateSnapshot(
+            await stateManager.diamondStateMachine.isForkPastGenesis(
+                await stateManager.stateChannelManagerContract.getStateSnapshot(
                     block.channelId
-                )
-            ).isPastGenesisOf(block.forkId)
+                ),
+                block.forkId
+            )
         ) {
             // another author's block 0 against the stored one -> cut, nothing to prove
             if (this.storage.blocks.getBlock(block.forkId, 0)) {
@@ -225,7 +227,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             // our own genesis may be the wrong one (a past-genesis sync cannot check its timestamp) -> drop, no verdict
             this.logger.warn(
                 "Unlinked block 0 on a fork the chain holds past genesis - dropped",
-                { blockAuthor: block.author, blockForkId: block.forkId }
+                { block: LoggerUtils.getBlockMetadata(block, this.storage) }
             );
             return BlockValidationResult.DUPLICATE;
         }
