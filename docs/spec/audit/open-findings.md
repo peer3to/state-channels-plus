@@ -803,6 +803,48 @@ the accepted frame rate until the general rate limit lands; no state grows. The 
 cost remains the absent-sender sync-application loop, bounded by per-peer in-flight sync coalescing
 until rate limiting; a crafted payload that throws there is not demonstrated.
 
+<a id="find-runtime-4-5zzd5t"></a>
+
+### FIND-RUNTIME-4-5ZZD5T
+
+**Defect:** _Open (2026-10-30, engineer: deferred)._ A seated peer whose runtime was paused, with
+no event handling, cannot catch up with a whole dispute cycle it missed and fails fatally. Example:
+a background tab or a frozen process. Sequence, while the peer is away:
+
+1. Other peers dispute the current fork (for example a timeout of another participant), reduce it,
+   and post the state snapshot update of the new fork.
+2. That update deletes the dispute windows and prunes the old inbound message blocks
+   (`_clearStorage` in `StateSnapshotFacet.sol`).
+3. On return, [`EventHandler`](../implementation/source/src/eventHandlers/EventHandler.ts.md)
+   handles the missed events in order:
+    - the old disputes are ignored, because their windows are gone (`getRelevantWindow`);
+    - the reduction event's challenge period reads as not expired, because the window is gone. Its
+      validation passes, and `tryReduce` stands down on the missing window;
+    - `onStateSnapshotUpdated` then meets a snapshot it does not know. The peer is still listed
+      (`signerRemoved` is false), so it throws "unknown snapshot while participant/pending, fatal".
+
+The same holds for a missed final dispute. Before `getRelevantWindow`, its event still ran
+`completeWithGenesis`, which could rebuild the new fork from the event's auditing data. It is now
+ignored like the others (engineer decision 2026-10-30: same deferral).
+
+This failure of a seated peer is derived from the code, not observed. A peer that the update
+removed leaves: `LeaveChannelService.dropIfRemovedWhileAway` ends its membership when a snapshot
+update it never installed removed it and the chain no longer lists it. `checkLeft` alone cannot,
+because it reads the participants of the stale local fork, which still lists the peer (fixed
+2026-10-30). After that drop the stale fork still runs locally: the participant-timeout check reads
+the local participants, not the status, and a committed block of that fork can set the status back
+to participating. Deferred with this finding. Seen 2026-10-30 on the poker web app:
+the phone was the removed peer, on channel
+`0xba7b073a1a062661814979c9968eb4bf2cdc07033bce1ac06ebf29e0b4bb7675`. Before
+`getRelevantWindow`, it failed earlier: it audited the old disputes against the pruned chain, tried
+to kill them, and failed to build its own state proof. The resume hook of
+[`OQ-AUDIT-RUNTIME-2-BC6Q5G`](open-questions.md#oq-audit-runtime-2-bc6q5g) does not solve this
+alone: a peer that missed the cycle has no local data for the new fork.
+
+**Proposed direction:** Luka (2026-10-30): solve it later with persistence. The peer rebuilds the
+new fork from the state it already has and the on-chain snapshot, instead of failing. Deferred until
+then.
+
 <a id="find-inbound-gas-1-2bz8de"></a>
 
 ### FIND-INBOUND-GAS-1-2BZ8DE

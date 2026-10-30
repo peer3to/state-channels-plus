@@ -43,6 +43,7 @@ import {
     tryDecodeCustomError,
     Type
 } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
 import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
 import type { TimeoutManager } from "@/utils/TimeoutManager";
 import * as factory from "@test/factory";
@@ -94,6 +95,7 @@ export type SignatureBlockMatch = {
 type DisputeCommittedEventKey = string;
 type CalldataPostedEventKey = string;
 type InboundMessageLogKey = string;
+type ContractLogKey = string;
 
 /** The manager contract runner's gas estimate, as the estimate stubs wrap it. */
 type EstimateGas = (tx: TransactionRequest) => Promise<bigint>;
@@ -134,6 +136,7 @@ export type StubKey =
     | "inboundMessageStorage"
     | "disputeCommittedEvents"
     | "calldataPostedEvents"
+    | "contractLogs"
     | "disputeInitiation"
     | "reducedCommitEvents"
     | "reduce"
@@ -813,6 +816,11 @@ export class StubService extends ANetworkRpcService<
     disputeCommittedHandlingGate?: StubGate;
     /** Resolvers waiting for the first held calldata log. */
     private readonly heldCalldataPostedWaiters: (() => void)[] = [];
+    /** Every contract log held by `holdContractLogs`, first delivery each, in arrival order. */
+    private readonly heldContractLogs = new Map<
+        ContractLogKey,
+        Parameters<StateManager["eventSyncService"]["scheduleLog"]>
+    >();
     /** Whether the dispute-event hold stub should pass its first new log. */
     passFirstDisputeCommittedEvent = true;
     readonly heldReducedCommitArgs: unknown[][] = [];
@@ -3665,6 +3673,62 @@ export class StubService extends ANetworkRpcService<
             }
             return original(...args);
         };
+    }
+
+    /**
+     * Hold every contract log before the scheduler sees it, as a paused
+     * runtime that handles no chain event: each log is kept once, in arrival
+     * order, for `releaseContractLogs`. Unlike the calldata hold, recovery
+     * reads are held too: a paused runtime reads nothing.
+     */
+    public holdContractLogs(): void {
+        const eventSyncService = this.sm.eventSyncService;
+        if (!this.stubOriginals.has("contractLogs")) {
+            this.stubOriginals.set(
+                "contractLogs",
+                eventSyncService.scheduleLog.bind(eventSyncService)
+            );
+        }
+        eventSyncService.scheduleLog = async (...args) => {
+            const key = `${args[0].transactionHash}:${args[0].index}`;
+            if (!this.heldContractLogs.has(key))
+                this.heldContractLogs.set(key, args);
+        };
+    }
+
+    /**
+     * Start the held logs in arrival order, running concurrently as a resumed
+     * runtime handles the events it missed. With `events`, only their logs
+     * start and every other log, later ones included, stays held; without
+     * (none, or an empty list: the control RPC sends a missing argument as
+     * one), all start and the hold ends. A released dispatch must not wait on
+     * a log that is still held. Resolves with the error message of each
+     * dispatch that failed.
+     */
+    public async releaseContractLogs(events?: string[]): Promise<string[]> {
+        const eventSyncService = this.sm.eventSyncService;
+        const original = this.stubOriginals.get("contractLogs") as
+            | typeof eventSyncService.scheduleLog
+            | undefined;
+        if (original === undefined) return [];
+        const isReleasingAll = !events?.length;
+        if (isReleasingAll) {
+            eventSyncService.scheduleLog = original;
+            this.stubOriginals.delete("contractLogs");
+        }
+        const contract = this.sm.stateChannelManagerContract;
+        const released = [...this.heldContractLogs].filter(
+            ([, [log]]) =>
+                isReleasingAll ||
+                events.includes(contract.interface.parseLog(log)?.name ?? "")
+        );
+        for (const [key] of released) this.heldContractLogs.delete(key);
+        const outcomes = await Promise.allSettled(
+            released.map(([, args]) => original(...args))
+        );
+        return outcomes.flatMap((outcome) =>
+            outcome.status === "rejected" ? [errorMessage(outcome.reason)] : []
+        );
     }
 
     public restoreCalldataPostedEvents(): boolean {

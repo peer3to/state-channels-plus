@@ -1713,6 +1713,26 @@ export class RpcStubActions<
     }
 
     /**
+     * Hold every contract log of a peer, as a paused runtime that handles no
+     * chain event. The returned release starts them in arrival order, running
+     * concurrently as the resumed runtime does, and resolves with the error
+     * message of each dispatch that failed. A release of named `events`
+     * starts only their logs and keeps the rest held; a release without
+     * events starts all and ends the hold.
+     */
+    async holdContractLogs(
+        peerIndex: number
+    ): Promise<(events?: string[]) => Promise<string[]>> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl().stubHoldContractLogs().request();
+        return async (keptEvents = []) =>
+            await ctl().releaseContractLogs(keptEvents).request({
+                timeoutMs: this.harness.event.protocolEventTimeoutMs()
+            });
+    }
+
+    /**
      * Stop a peer running the participant-timeout check, so staging is not cut
      * short by a real timeout dispute. Returns a teardown.
      */

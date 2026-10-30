@@ -90,7 +90,9 @@ Disputes never arrive over peer communication; the chain is the sole intake
 ([`REQ-IX-7-A004VZ` (Chain observation)](../interactions.md#req-ix-7-a004vz)). For each observed dispute event: replicate into the
 local mirror, deduplicate by dispute identity, and gate by relevance (the disputed fork is the
 node's current fork, or a decided dispute for a fork with in-progress recovery — late events for
-resolved forks are ignored). Relevant disputes purge the dead fork's queued blocks and trigger the
+resolved forks are ignored), and whose dispute window still exists on chain (a window a later
+snapshot update cleared means the fork was settled while the event waited, so the event is
+ignored). Relevant disputes purge the dead fork's queued blocks and trigger the
 one-round [dispute acknowledgment](../peer-communication/dispute-acknowledgment.md).
 Participants and pending participants then run the audit of Stage 4, which needs the evidence for
 their retained region; an uncommitted observer only persists the dispute and schedules the reduction

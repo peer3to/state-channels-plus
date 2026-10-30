@@ -19,6 +19,8 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-AUDIT-SYNC-1-83NTJY`](open-questions.md#oq-audit-sync-1-83ntjy)       | Inbound blocks in the sync payload                           | Engineer question (2026-10-07)  | [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx), [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf), [synchronization.md](../specification/peer-communication/synchronization.md) | Open (low priority)   |
 | [`OQ-AUDIT-RPC-1-BQA20A`](open-questions.md#oq-audit-rpc-1-bqa20a)         | Send reads and transactions to multiple nodes                | PR #511 review (2026-10-07)     | [security-assessment.md](./security-assessment.md), [chain-observation.md](../specification/runtime/chain-observation.md)                                                                                      | Open                  |
 | [`OQ-AUDIT-RPC-2-4VVAT0`](open-questions.md#oq-audit-rpc-2-4vvat0)         | Universal keepalive for idle chain WebSocket connections     | Live poker bots (2026-10-15)    | [`OQ-AUDIT-RPC-1-BQA20A`](open-questions.md#oq-audit-rpc-1-bqa20a), [chain-observation.md](../specification/runtime/chain-observation.md)                                                                      | Resolved (2026-10-26) |
+| [`OQ-AUDIT-RUNTIME-2-BC6Q5G`](open-questions.md#oq-audit-runtime-2-bc6q5g) | Resume after a frozen page or process                        | Phone poker page (2026-10-30)   | [`OQ-AUDIT-RUNTIME-1-HH601X`](open-questions.md#oq-audit-runtime-1-hh601x), [BrowserLogger.ts](../../../src/utils/logging/browser/BrowserLogger.ts)                                                            | Open                  |
+| [`OQ-AUDIT-RUNTIME-3-18DXNX`](open-questions.md#oq-audit-runtime-3-18dxnx) | Chain events handled during recovery                         | Phone poker page (2026-10-30)   | [`FIND-RUNTIME-4-5ZZD5T`](open-findings.md#find-runtime-4-5zzd5t), [EventHandler.ts](../../../src/eventHandlers/EventHandler.ts)                                                                               | Open                  |
 
 <a id="oq-5-4q38m5"></a>
 
@@ -187,3 +189,86 @@ timeout; the universal solution must account for that.
 
 Related: [`OQ-AUDIT-RPC-1-BQA20A`](open-questions.md#oq-audit-rpc-1-bqa20a),
 [chain-observation.md](../specification/runtime/chain-observation.md).
+
+<a id="oq-audit-runtime-2-bc6q5g"></a>
+
+## OQ-AUDIT-RUNTIME-2-BC6Q5G — Resume after a frozen page or process
+
+Seen on a phone (2026-10-30). A poker page stayed in a background tab for about 8 h 25 min. Android
+froze the tab and its workers. On return the browser event-loop monitor measured that frozen time
+as one delay of 30,273,182 ms, above the web app's 3,600 s
+`EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS`, and threw. The runtime failed, and the page showed
+its fatal "Poker stopped" modal.
+
+The monitor measures how late a 50 ms timer fires
+([BrowserLogger.ts:188-197](../../../src/utils/logging/browser/BrowserLogger.ts#L188-L197)) and
+throws past the threshold
+([BrowserLogger.ts:136-149](../../../src/utils/logging/browser/BrowserLogger.ts#L136-L149)). It
+cannot tell a frozen page from a thread that runs and is blocked. The SDK has no handling for
+page freeze or resume: no `freeze`, `resume` or `visibilitychange` listener exists in `src/`.
+
+Luka's direction (2026-10-30): the SDK gets one general resume hook, for example
+`onResumeFromFreeze`. It follows the browser Page Lifecycle convention (`freeze`, `resume`,
+`visibilitychange`) and is general enough to apply later to Node.js or other hosts (for example a
+process resumed after a system sleep). On resume the SDK resyncs what the frozen time made stale,
+and the monitor restarts its measurement, so it measures only the event-loop delay of a running
+thread and never trips on frozen time. Other components that depend on timers can use the same
+hook.
+
+Rejected for the long term: (a) a browser monitor that only reports and never throws; (b)
+per-thread visibility listeners with ad hoc baseline resets forwarded to each worker; (c) a
+threshold of 0, which also turns the monitor's reports off.
+
+Open decisions: which events start the hook in each host (browser page, dedicated worker, Node.js);
+how the page tells its SDK workers, which get no page lifecycle events; what the SDK resyncs on
+resume (chain view, channel membership and state, peer connections, timers and deadlines that
+passed while frozen); and whether a stale runtime resyncs in place or is rebuilt.
+
+Second sighting (2026-10-30, channel
+`0xba7b073a1a062661814979c9968eb4bf2cdc07033bce1ac06ebf29e0b4bb7675`): the same phone was in the
+background for about 90 s, with the web threshold already at 2 s. The worker monitor did not see
+the pause: its reports just before and just after it give a maximum delay of 289 ms and 364 ms. Timer
+gaps are therefore not a reliable freeze signal, and the hook has to start from the host's resume
+events. On return the runtime replayed the dispute events it missed and failed for a different
+reason, fixed in `EventHandler.handleDisputeCommitted`: a dispute whose window a later state
+snapshot update already cleared is now ignored. A peer still seated after such a missed cycle fails
+later: [`FIND-RUNTIME-4-5ZZD5T`](open-findings.md#find-runtime-4-5zzd5t).
+
+Stopgap (2026-10-30): the poker web app reloads the page, instead of showing the fatal modal, when
+the fatal failure is an event-loop delay above 3 s. Blocking effect: none while that stopgap is in
+place.
+
+Related: [`OQ-AUDIT-RUNTIME-1-HH601X`](open-questions.md#oq-audit-runtime-1-hh601x),
+[`OQ-AUDIT-RPC-2-4VVAT0`](open-questions.md#oq-audit-rpc-2-4vvat0).
+
+<a id="oq-audit-runtime-3-18dxnx"></a>
+
+## OQ-AUDIT-RUNTIME-3-18DXNX — Chain events handled during recovery
+
+Raised by Luka (2026-10-30). A runtime that was paused, or that catches up after a gap, handles the
+chain events it missed in arrival order, and they run concurrently. Each handler then decides
+against chain state that has already moved past the event: a dispute window a later snapshot update
+cleared, inbound message blocks it pruned, a fork that was reduced and replaced. Two fixes of
+2026-10-30 are local patches for this:
+
+- `EventHandler.getRelevantWindow` ignores a dispute whose window the chain already cleared;
+- `LeaveChannelService.dropIfRemovedWhileAway` ends the membership of a peer that a snapshot update
+  it never installed removed.
+
+A peer that is still seated after such a cycle cannot install the new fork and fails
+([`FIND-RUNTIME-4-5ZZD5T`](open-findings.md#find-runtime-4-5zzd5t)).
+
+Open decisions:
+
+1. How events are handled during recovery in general: handle each in order against the chain as it
+   is now, skip events whose effects the chain already settled, or first sync to the latest chain
+   state and then handle only the newer events.
+2. How a peer that was away reduces: whether it replays the reduction from the events, or adopts the
+   reduced fork and its snapshot from the chain and its peers.
+3. How it syncs to the new fork: from its persisted state plus the on-chain snapshot (Luka's
+   direction in [`FIND-RUNTIME-4-5ZZD5T`](open-findings.md#find-runtime-4-5zzd5t)), or from a peer.
+4. Whether the two local patches above stay once this is designed, or are replaced by it.
+
+Blocking effect: none for now; the patches above cover the observed case (a removed peer).
+
+Related: [`OQ-AUDIT-RUNTIME-2-BC6Q5G`](open-questions.md#oq-audit-runtime-2-bc6q5g).

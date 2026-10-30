@@ -508,18 +508,9 @@ export class EventHandler {
             windowCreationTimestamp
         );
 
-        const isCurrentFork = this.stateManager.forkId === forkId;
-        // isDisputeWindowRelevant?
-        // A final dispute can complete an operation after its locally computed
-        // candidate changed the current fork. Late non-final events must not
-        // restart validation or evidence construction for the resolved fork.
-        const isRelevant =
-            isCurrentFork ||
-            (isFinal &&
-                this.stateManager.reductionManager.hasOperation(forkId));
-        if (!isRelevant) {
-            return;
-        }
+        const window = await this.getRelevantWindow(channelId, forkId, isFinal);
+        if (!window) return;
+        const { isExpired, killPeriodEnd } = window;
 
         this.stateManager.blockQueueManager.clearFork(forkId);
 
@@ -635,14 +626,6 @@ export class EventHandler {
             return;
         }
 
-        // Use the authoritative on-chain window for this current-time race
-        // decision. Only an existing, expired window changes the normal audit
-        // path: challenging is then forbidden, so persist for reduction.
-        const { windowExists, isExpired, killPeriodEnd } =
-            await this.stateManager.stateChannelManagerContract.isKillPeriodExpired(
-                channelId,
-                forkId
-            );
         // only participants and pending participants audit: data
         // availability is guaranteed to them alone
         if (!isCommittedParticipantStatus(this.stateManager.status)) {
@@ -657,7 +640,8 @@ export class EventHandler {
             );
             return;
         }
-        if (windowExists && isExpired) {
+        // The window read above decides this current-time race.
+        if (isExpired) {
             // The kill period is over, so this dispute can no longer be
             // challenged. Preserve all available data and reduce from it.
             this.logger.warn(
@@ -795,6 +779,40 @@ export class EventHandler {
             forkId,
             Number(killPeriodEnd)
         );
+    }
+
+    /**
+     * The on-chain window of a relevant dispute, or undefined for one that is
+     * not. A dispute is relevant on the current fork, or when final and it
+     * completes an operation after its locally computed candidate changed the
+     * current fork: late non-final events must not restart validation or
+     * evidence construction for the resolved fork. The fork's first dispute
+     * upload opens its window. The chain deletes the windows only when it
+     * closes the channel, or on a snapshot update that clears storage and
+     * whose fork has no window, so a dispute without its window was settled
+     * while its event waited to be handled.
+     */
+    private async getRelevantWindow(
+        channelId: ChannelId,
+        forkId: ForkId,
+        isFinal: boolean
+    ) {
+        const isTracked =
+            this.stateManager.forkId === forkId ||
+            (isFinal &&
+                this.stateManager.reductionManager.hasOperation(forkId));
+        if (!isTracked) return undefined;
+        const window =
+            await this.stateManager.stateChannelManagerContract.isKillPeriodExpired(
+                channelId,
+                forkId
+            );
+        if (window.windowExists) return window;
+        this.logger.warn(
+            "Ignoring a dispute whose window the chain already cleared",
+            { channelId, forkId }
+        );
+        return undefined;
     }
 
     private async persistDisputeAndNotify(

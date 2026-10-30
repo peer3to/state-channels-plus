@@ -373,6 +373,9 @@ export async function stageFrozenViewBehindDisputeTail(h: MathPeerTestHarness) {
         .query.getLatestBlockHeight(forkId)
         .request())!;
     await h.network.blacklistAndDisconnectPeer(frozen.index);
+    // the cut-off peer still follows the chain: a live peer's calldata post
+    // of the unsigned tail block would hand it the tail
+    await h.byzantine.stubCalldataHandler(frozen.index);
     const live = h.peers
         .map((peer) => peer.index)
         .filter((index) => index !== frozen.index);

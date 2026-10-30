@@ -1000,11 +1000,16 @@ export async function applySyncPayload(
  * the joiner applied its first answer and waits for the reduction, and the
  * kill period has ended with the window still unreduced on chain: the
  * joiner's state then, its responder, and handles to reduce the window and
- * read the outcome.
+ * read the outcome. `holdInitialSyncDeadline` never runs the joiner's
+ * initial-sync deadline, for a case about what happens before it: a slow
+ * reduction would otherwise let it abort the joiner first.
  */
 export async function stageJoinerWaitingOnUnreducedWindow(
     h: MathPeerTestHarness,
-    options: { connectAfterKillPeriod: boolean }
+    options: {
+        connectAfterKillPeriod: boolean;
+        holdInitialSyncDeadline?: boolean;
+    }
 ) {
     const forkId = h.activeForkId!;
     const participants = h.peers.slice(0, 4);
@@ -1030,6 +1035,10 @@ export async function stageJoinerWaitingOnUnreducedWindow(
     await joinerStub
         .stubHoldSpectateSyncApplication(undefined, false, true)
         .request();
+    if (options.holdInitialSyncDeadline)
+        await h.rpcStub.recordScheduledTasks(joiner.index, {
+            suppressPrefix: "P2PManager - initial sync participant deadline"
+        });
     await h.join.connectSpectator(joiner);
     await waitFor(
         async () =>

@@ -14065,6 +14065,12 @@
       "peakRssGb": 0.974,
       "measurementReason": null
     },
+    "hardhat|test/stateManager/DisputeWindowClearedEvent.test.ts|Dispute window cleared before handling a timed-out peer whose chain events were held through the disputes, the reduction and a same-fork snapshot update ignores the disputes and leaves": {
+      "durationMs": 36175,
+      "avgCores": 0.389,
+      "peakRssGb": 0.75,
+      "measurementReason": null
+    },
     "hardhat|test/stateManager/EventBus.test.ts|EventBus (worker + main thread) delivers nothing to the client after runtime disposal": {
       "durationMs": 11263,
       "avgCores": 0.703,
@@ -16562,9 +16568,9 @@
       "measurementReason": null
     },
     "hardhat|test/unit/AgreementManager.test.ts|Unit: AgreementManager buildStateProof proof requested below the on-chain anchor (a leave the exits' snapshot covers) → buildStateProof throws, no proof from history below the anchor": {
-      "durationMs": 29457,
-      "avgCores": 0.943,
-      "peakRssGb": 1.211,
+      "durationMs": 16663,
+      "avgCores": 2.068,
+      "peakRssGb": 1.525,
       "measurementReason": null
     },
     "hardhat|test/unit/AgreementManager.test.ts|Unit: AgreementManager buildStateProof proofs sampled while 10 blocks are produced → each verifies on-chain at its sampled height": {

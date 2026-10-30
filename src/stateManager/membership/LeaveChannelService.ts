@@ -7,6 +7,7 @@ import type { Address, ForkId } from "@/types/types";
 import { addressesEqual, DetachedPromises, Logger } from "@/utils";
 import { config } from "@/utils/config";
 import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
+import type { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 /**
  * Chain refusals of an exit post: the snapshot has not consumed the inbound
@@ -76,15 +77,17 @@ export default class LeaveChannelService {
                 "eventHandler",
                 "onStateSnapshotUpdated",
                 (_, snapshot) => {
-                    // a snapshot that still lists this signer removed no
-                    // one: only a pending exit checks it
-                    if (
-                        !this.exit &&
+                    const isListed =
                         stateManager.membershipService.includesSigner(
                             snapshot.snapshotData.participants as Address[]
-                        )
-                    )
-                        return;
+                        );
+                    // a snapshot that still lists this signer removed no
+                    // one: only a pending exit checks it
+                    if (!this.exit && isListed) return;
+                    if (!isListed)
+                        this.enqueue(() =>
+                            this.dropIfRemovedWhileAway(snapshot)
+                        );
                     this.requestCheck();
                 }
             ),
@@ -173,14 +176,59 @@ export default class LeaveChannelService {
     private requestCheck(): void {
         if (this.isCheckQueued) return;
         this.isCheckQueued = true;
-        const check = this.checks.then(() => {
+        this.enqueue(() => {
             this.isCheckQueued = false;
             return this.checkLeft();
         });
+    }
+
+    /** Runs `task` after the queued checks; its failure is fatal. */
+    private enqueue(task: () => Promise<void>): void {
+        const check = this.checks.then(task);
         this.checks = check.catch(() => undefined);
         DetachedPromises.observe(check, (error) => {
             throw error;
         });
+    }
+
+    /**
+     * Ends the membership of a peer whose fork the chain settled while it was
+     * away: a snapshot update removed this signer, the peer never installed
+     * that snapshot, so its local participants are stale and still list it,
+     * and the chain no longer lists it either. `checkLeft` cannot see this,
+     * because it reads the local participants. Recovering the new fork
+     * locally is deferred (FIND-RUNTIME-4-5ZZD5T).
+     */
+    private async dropIfRemovedWhileAway(
+        snapshot: StateSnapshotStruct
+    ): Promise<void> {
+        const sm = this.stateManager;
+        // a pending joiner is not listed until its join lands: its join
+        // service ends that membership
+        if (
+            sm.isDisposed ||
+            this.exit ||
+            sm.status !== Status.PARTICIPATING ||
+            sm.channelJoinService.isJoinInProgress()
+        )
+            return;
+        const hash = StateSnapshot.from(snapshot).hash;
+        if (sm.storage.stateSnapshots.getStateSnapshotByHash(hash)) return;
+        // an older snapshot the mirror already replaced decides nothing: a
+        // local read spares the chain reads below
+        const mirrored = StateSnapshot.from(
+            await sm.diamondStateMachine.localDiamondContract.getStateSnapshot(
+                sm.channelId
+            )
+        );
+        if (mirrored.hash !== hash) return;
+        if (await sm.membershipService.isSignerOnChain()) return;
+        if (sm.isDisposed) return;
+        this.logger.warn(
+            "Removed by a snapshot this peer never installed: leaving",
+            { forkId: sm.forkId, snapshotForkId: snapshot.forkId }
+        );
+        sm.membershipService.dropMembership();
     }
 
     /** Ends the membership once it is gone from the local state and the chain. */

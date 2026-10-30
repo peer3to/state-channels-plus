@@ -1844,8 +1844,11 @@ describe("E2E: Spectate Service", function () {
             await h.lifecycle.start(4, 0);
             await h.transition.advanceState({ count: 2 });
             await h.assert.sync.peersInSyncWait();
+            // the throw must come before the initial-sync deadline, whose
+            // abort is the sibling case above
             const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
-                connectAfterKillPeriod: true
+                connectAfterKillPeriod: true,
+                holdInitialSyncDeadline: true
             });
             const hostErrors: Error[] = [];
             const unsubscribe = staged.joiner.p2pInstance.onHostError((error) =>

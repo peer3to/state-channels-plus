@@ -3356,6 +3356,20 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.restoreCalldataPostedEvents();
     }
 
+    /** Hold every contract log, as a paused runtime. */
+    public stubHoldContractLogs(): boolean {
+        this.service.holdContractLogs();
+        return true;
+    }
+
+    /**
+     * Dispatch the held contract logs in order, only those of `events` when
+     * given; the failed dispatches' messages.
+     */
+    public releaseContractLogs(events?: string[]): Promise<string[]> {
+        return this.service.releaseContractLogs(events);
+    }
+
     /** Resolves once a subscribed calldata log has been held. */
     public waitForHeldCalldataPostedEvent(): Promise<boolean> {
         return this.service.waitForHeldCalldataPostedEvent();
