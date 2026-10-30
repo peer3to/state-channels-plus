@@ -15,7 +15,6 @@ import { BigNumberish, getNumber, Log, Provider } from "ethers";
 const CATCH_UP_ABANDONED = Symbol("catch-up abandoned");
 
 class StateChannelEventListener {
-    private static readonly DISPOSE_TIMEOUT_MS = 30000;
     private readonly logger: Logger;
     /** Every node socket the channel is subscribed on, with its callback. */
     private readonly subscribedSockets = new NodeSocketSubscriptions();
@@ -165,13 +164,15 @@ class StateChannelEventListener {
         if (generation === this.generation) this.currentChannelKey = undefined;
     }
 
-    /** Stop accepting logs and drain work without starting an unsubscribe. */
+    /**
+     * Stop accepting logs without starting an unsubscribe. Work already
+     * dispatched is not drained: under the runtime's disposal cut-off a
+     * dispute or reduce it awaits never settles.
+     */
     async stop(): Promise<void> {
         this.disposed = true;
         this.generation += 1;
-        await this.eventSyncService.stop(
-            StateChannelEventListener.DISPOSE_TIMEOUT_MS
-        );
+        this.eventSyncService.stop();
     }
 
     async dispose(): Promise<void> {

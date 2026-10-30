@@ -21,7 +21,7 @@ const CATCH_UP_HANDLERS = [
 ] as const;
 
 describe("EventSyncService", function () {
-    it("drops subscription callbacks while stop is still draining scheduled work", async () => {
+    it("drops subscription callbacks after stop, before the unsubscribe starts", async () => {
         await assertListenerStopWindow(TestSession.getHarness());
     });
     it("starts no log dispatch after stop, so a recovery still running in a disposing runtime needs nothing its disposal closes", async () => {

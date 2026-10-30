@@ -18,7 +18,7 @@ Mode-specific channel-listener ownership
 
 - [ ] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P1` — retained same-target subscription and event delivery
 - [ ] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P2` — ordinary clear removes the filter
-- [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P3` — A real subscribed log delivered while stop is draining is dropped before scheduling; unsubscribe has not yet run
+- [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P3` — A real subscribed log delivered after stop is dropped before scheduling; unsubscribe has not yet run, and stop drains nothing
 - [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P4` — one subscription on every node socket
 - [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P5` — a node that first connects after startup is subscribed and caught up as reopened
 - [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P6` — a reopened socket's live logs held until its catch-up scheduled what it read

@@ -340,27 +340,21 @@ class StateManager<
         return !this.isDisposed && this.forkId === forkId;
     }
 
-    //Mark resources for garbage collection
+    // Mark resources for garbage collection; the root releases the loggers.
     public dispose(): Promise<void> {
         return (this.disposalPromise ??= (async () => {
             try {
                 await this.stop();
             } finally {
-                try {
-                    await Promise.all([
-                        this.stateChannelEventListener.dispose(),
-                        this.p2pManager.dispose(),
-                        this.diamondStateMachine.dispose()
-                    ]);
-                } finally {
-                    this.logger.dispose({
-                        cascadeChildren: true
-                    });
-                }
+                await Promise.all([
+                    this.stateChannelEventListener.dispose(),
+                    this.p2pManager.dispose(),
+                    this.diamondStateMachine.dispose()
+                ]);
             }
         })());
     }
-    /** Stop producers and drain work while the executor is still available. */
+    /** Stop producers while the executor is still available; drain nothing. */
     public stop(): Promise<void> {
         if (this.stoppingPromise) {
             return this.stoppingPromise;
@@ -382,15 +376,11 @@ class StateManager<
             () => this.p2pManager.localRpc.dispose(),
             () => this.stateChannelEventListener.stop(),
             // `isDisposed` above already stops the block queue from starting
-            // probes or recoveries. Its work in flight still needs p2p, the
-            // timeout manager and the EVM executor, so it drains first. The
-            // sync timeout bounds only a probe's request; a probe whose
-            // response arrives after disposal installs nothing.
-            () => this.blockQueueManager.dispose(),
-            // Drain scheduled work (queued block applications) before its
-            // dependencies disappear: a queued entry mid-execution still
-            // needs the EVM executor and p2p below. The drain is bounded by
-            // the timeout manager's dispose wait.
+            // probes or recoveries. Its work in flight is not drained: the
+            // disposal cut-off froze its sends, so a drain could wait on a
+            // send forever; whatever it does next leaves the runtime no more.
+            // The timeout manager cancels its timers, and with them the
+            // queue's timeouts; a task already running is not waited for.
             () => this.timeoutManager.dispose(),
             // An abort's log flush, already running: disposal ends the
             // workers only after it (it never fails; each realm reports its

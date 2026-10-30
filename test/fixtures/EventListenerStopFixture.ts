@@ -1,4 +1,4 @@
-// @spec-test-coverage-ignore: real subscription callback during the stop drain window
+// @spec-test-coverage-ignore: real subscription callback after the listener stopped
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { expect } from "chai";
 
@@ -16,21 +16,14 @@ export async function assertListenerStopWindow(
         const log = logs.at(-1);
         if (!log) throw new Error("Expected the channel's opening log");
         const sync = sm.eventSyncService;
-        const wait = sync.waitForScheduled.bind(sync);
         const schedule = sync.scheduleLog.bind(sync);
-        let release!: () => void;
-        const held = new Promise<void>((resolve) => {
-            release = resolve;
-        });
         let calls = 0;
-        sync.waitForScheduled = async (...args) => {
-            await held;
-            return wait(...args);
-        };
         sync.scheduleLog = (...args) => {
             calls += 1;
             return schedule(...args);
         };
+        // stop drains nothing, so the subscription callback runs while the
+        // runtime is stopped and its unsubscribe has not started
         const stopping = listener.stop();
         try {
             callback(log);
@@ -39,9 +32,7 @@ export async function assertListenerStopWindow(
                 stillSubscribed: listener["listener"] === callback
             };
         } finally {
-            release();
             await stopping;
-            sync.waitForScheduled = wait;
             sync.scheduleLog = schedule;
         }
     });

@@ -6,31 +6,36 @@ import sinon from "sinon";
 const logger = createLogger({}, {}, { level: "error" });
 
 describe("Unit: TimeoutManager", function () {
-    it("dispose waits for a running task and leaves no timer once it settles", async function () {
+    it("dispose cancels pending timers and returns while a task still runs", async function () {
         const clock = sinon.useFakeTimers();
         try {
             const manager = new TimeoutManager(logger);
-            let finish: () => void = () => undefined;
-            let isFinished = false;
+            let isRunning = false;
+            let isPendingRun = false;
+            // a task frozen on a cut send: it never settles
             manager.scheduleTask(
-                () =>
-                    new Promise<void>((resolve) => {
-                        finish = () => {
-                            isFinished = true;
-                            resolve();
-                        };
-                    }),
+                () => {
+                    isRunning = true;
+                    return new Promise<void>(() => undefined);
+                },
                 0,
                 "running task"
             );
+            manager.scheduleTask(
+                () => {
+                    isPendingRun = true;
+                },
+                1_000,
+                "pending task"
+            );
             await clock.tickAsync(0);
 
-            const disposal = manager.dispose();
-            finish();
-            await disposal;
+            manager.dispose();
+            await clock.tickAsync(1_000);
 
-            expect(isFinished).to.equal(true);
-            // a pending bound timer would keep a worker thread alive
+            expect(isRunning).to.equal(true);
+            expect(isPendingRun).to.equal(false);
+            // a pending timer would keep a worker thread alive
             expect(clock.countTimers()).to.equal(0);
         } finally {
             clock.restore();

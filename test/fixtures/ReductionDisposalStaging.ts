@@ -3,6 +3,7 @@
 import HarnessControlRpc from "./customRpc/harnessControl/HarnessControlRpc";
 import { inlineHostFor, runtimeEndpointFor } from "./RuntimeRootObservation";
 import { Status } from "@/types";
+import { sleep } from "@/utils";
 import { DetachedPromises } from "@/utils/DetachedPromises";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
@@ -115,9 +116,9 @@ export async function assertReadFailureDuringGenesisApplication(
 /**
  * Stage a reducible disputed fork on peer 0, hold its reduce send after the
  * local install, abort while it is held, and release the send while the
- * teardown is parked before the chain provider closes. The disposal does not
- * intercept a send already started: it goes out once, and its detached
- * submission settles without a rejection or a reported failure.
+ * teardown is parked before the chain provider closes. The released send
+ * reaches the signer after the disposal cut-off: it is submitted once, never
+ * broadcasts and never settles, with no rejection or reported failure.
  */
 export async function assertDisposalDuringHeldReduceSend(
     h: MathPeerTestHarness
@@ -135,9 +136,9 @@ export async function assertDisposalDuringHeldReduceSend(
     };
     executor["submitDetached"] = (...args) => {
         const collect = DetachedPromises.collect;
+        // kept out of the session's drain: the send freezes at the cut
         DetachedPromises.collect = (promise) => {
             submission = promise;
-            collect.call(DetachedPromises, promise);
         };
         try {
             submitDetached.apply(executor, args);
@@ -167,7 +168,15 @@ export async function assertDisposalDuringHeldReduceSend(
         stub.abortDetached();
         await waitFor(async () => sm.isDisposed);
         stub.restoreReductionAttempt();
-        await submission;
+        // released after the cut, the send never broadcasts and never settles
+        const isSettled = await Promise.race([
+            submission!.then(
+                () => true,
+                () => true
+            ),
+            sleep(1_000).then(() => false)
+        ]);
+        expect(isSettled).to.equal(false);
         expect(stub.getReductionSubmitCallCount()).to.equal(1);
         expect(reportedFailures).to.equal(0);
     } finally {

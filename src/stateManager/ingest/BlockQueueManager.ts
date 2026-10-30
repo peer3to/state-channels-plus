@@ -20,7 +20,7 @@ import {
     Signature,
     Timestamp
 } from "@/types/types";
-import { Logger } from "@/utils";
+import { DetachedPromises, Logger } from "@/utils";
 import { channelKey } from "@/utils/channelKey";
 import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -52,9 +52,6 @@ export default class BlockQueueManager {
     private readonly recoveryScheduledForFork: Set<ForkId> = new Set();
     private readonly recoverySuppressedUntil: Map<ForkId, Timestamp> =
         new Map();
-    // Source probes and fork recoveries in flight. This manager owns them:
-    // `dispose` waits for them, so none outlives the stop of its StateManager.
-    private readonly inFlight: Set<Promise<void>> = new Set();
 
     constructor(
         private readonly stateManager: StateManager,
@@ -686,37 +683,12 @@ export default class BlockQueueManager {
     }
 
     /**
-     * The StateManager is already disposed, so no producer here starts new
-     * work. Cancel the queue timers, then wait for the probes and recoveries
-     * in flight: they still use p2p, the timeout manager and the executor,
-     * so the caller keeps those alive until this returns. Every job settles
-     * before the queues clear, even when one fails; the first failure then
-     * rejects this call, so it is not hidden.
-     */
-    public async dispose(): Promise<void> {
-        for (const hash of this.timeoutHandles.keys())
-            this.cancelQueueTimeout(hash);
-        const results = await Promise.allSettled(this.inFlight);
-        this.stateManager.storage.queues.clear();
-        this.recoveryScheduledForFork.clear();
-        this.recoverySuppressedUntil.clear();
-        const failure = results.find(
-            (result): result is PromiseRejectedResult =>
-                result.status === "rejected"
-        );
-        if (failure) throw failure.reason;
-    }
-
-    /**
-     * Start work this manager owns. Nothing starts after disposal. A failure
-     * outside `dispose` stays an unhandled rejection, as for detached work.
+     * Start detached work. Nothing starts after disposal; work in flight is
+     * not drained, since the disposal cut-off may have frozen its sends.
      */
     private track(work: () => Promise<void>): void {
         if (this.stateManager.isDisposed) return;
-        const promise: Promise<void> = work().finally(() =>
-            this.inFlight.delete(promise)
-        );
-        this.inFlight.add(promise);
+        DetachedPromises.collect(work());
     }
 
     private cancelQueueTimeout(blockHash: Hash): void {
@@ -738,8 +710,7 @@ export default class BlockQueueManager {
      * window the chain has not reduced waits inside `syncBlockSource` for
      * that reduction and is judged after it. A
      * probe that succeeds without that lineage carrying the block proves the
-     * peer supplied junk: it is excluded here. Probes are owned work that
-     * `dispose` waits for.
+     * peer supplied junk: it is excluded here. Probes are detached work.
      */
     private probeSources(entry: QueuedBlockEntry): void {
         for (const peer of getSourcePeers(entry)) {

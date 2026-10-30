@@ -79,10 +79,7 @@ the still-absent spectator is blacklisted.
 
 ## Tests
 
-- `stopping the manager clears a future queued block and cancels its timeout`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P37
-- `stop waits for a source probe held in flight at its sync`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P42
-- `stop drains a pending probe after another fails, clears the queue, then rejects with the failure`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P44
-- `stop waits for a fork recovery held in flight, then clears the recovery state`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P45
+- `stopping the runtime cancels a future queued block's armed timeout`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P37
 - `a fork recovery scheduled or firing after stop began never runs`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P46
 - `a queue timeout firing after stop began starts no source probe`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P43
 - `a junk supplier answering a source probe through a window the chain has not reduced is asked again once the chain reduces it, then excluded`: REQ-SYNC-4-AWHFPA.T1.P8

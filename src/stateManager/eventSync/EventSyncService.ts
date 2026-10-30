@@ -170,13 +170,12 @@ export default class EventSyncService {
     }
 
     /**
-     * Starts no further log dispatch, then drains the scheduled ones. A
-     * recovery still running in the stopping runtime schedules nothing after
-     * this, so no dispatch needs a dependency the disposal closes next.
+     * Starts no further log dispatch. A recovery still running in the
+     * stopping runtime schedules nothing after this, so no new dispatch needs
+     * a dependency the disposal closes next.
      */
-    async stop(timeoutMs: number): Promise<void> {
+    stop(): void {
         this.isStopped = true;
-        await this.waitForScheduled(timeoutMs);
     }
 
     async waitForScheduled(timeoutMs: number): Promise<void> {
