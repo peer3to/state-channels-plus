@@ -51,7 +51,7 @@ Specification cases tested: 5/5.
 Specification cases tested: 7/7.
 
 [`INV-ENFFP-1-BGVZN4` (Slash set integrity)](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4)
-Specification cases tested: 6/17. Untested: T1.P1, T1.P2, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P14.
+Specification cases tested: 10/20. Untested: T1.P1, T1.P2, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11.
 
 [`INV-ENFPROOF-1-DR1N9B` (Side-effect-free verification)](../specification/enforcement/proof-verification.md#inv-enfproof-1-dr1n9b)
 Specification cases tested: 0/8.
@@ -357,7 +357,7 @@ Specification cases tested: 5/22. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P7, T
 Specification cases tested: 2/16. Untested: T1.P1, T1.P2, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15.
 
 [`REQ-DIS-6-Y92H1M` (Every initiated dispute window MUST end in a canonical successor fork, genesis…)](../specification/disputes/disputes.md#req-dis-6-y92h1m)
-Specification cases tested: 4/16. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
+Specification cases tested: 5/17. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
 
 [`REQ-DIS-9-64WHCD` (The on-chain snapshot advances to a successor fork only along committed…)](../specification/disputes/disputes.md#req-dis-9-64whcd)
 Specification cases tested: 1/22. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16, T1.P17, T1.P18, T1.P19, T1.P20, T1.P21, T1.P22.

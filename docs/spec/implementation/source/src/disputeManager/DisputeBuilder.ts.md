@@ -61,6 +61,10 @@ Construction correctness
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P14` — local probe fails outside the EVM (executor transport failure): construction throws it and the chain is never read
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P15` — local probe "final", chain read fails with a transport error: construction throws it, no dispute is built
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P16` — the auditing-data omission predicate reverts locally during dispute construction: construction fails without a chain read or a constructed dispute
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P17` — a stored forged-inbound proof whose inbound block same-fork adoption pruned is left out of `fraudProofsToApply` and its target is not added to `onChainSlashes`
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P18` — a stored forged-inbound proof over a fabricated inbound block above the snapshot's inbound head is bundled into `fraudProofsToApply` and its target added to `onChainSlashes`
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P19` — a stale forged-inbound proof stored before a valid proof against the same participant: the valid proof is applied and the participant is added to `onChainSlashes`
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P20` — a stored forged-inbound proof citing a genuine inbound block still stored above the snapshot's inbound head is left out and its target is not added
 
 ## UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ
 

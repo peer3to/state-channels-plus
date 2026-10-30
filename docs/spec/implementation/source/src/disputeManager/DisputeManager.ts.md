@@ -87,6 +87,7 @@ Escalation guard: once per fork, rollback on failure, serialized
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P52` — the same with the upload facet reverting without data, which the proxy reports as its "Delegatecall failed" `Error(string)`: classified by the estimate refusal as the lost evidence race, a no-op
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P53` — the upload of a mined kill-and-dispute multicall is refused with a custom error no dispute handler takes (`ErrorDisputerNotMsgSender`): the kill landed once in the multicall, the marker rolls back, `dispute` rejects with that refusal and no kill is sent alone
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P54` — the upload of a mined kill-and-dispute multicall is refused without revert data while its all-or-nothing estimate succeeded: nothing classifies the refusal, so `dispute` rejects, the marker rolls back, the kill landed once in the multicall and none is sent alone
+- [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P56` — a snapshot that passes a stored forged-inbound proof's height between construction and mining reverts the multicall with `RaceConditionBlockHeightTooOld`: no rejection, and the dispute is rebuilt once and sent again
 
 ## UNIT-TEST-DISPUTE-MANAGER-3-0KFW5T
 
@@ -121,6 +122,7 @@ Kill preconditions and races
 - [x] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P11` — An unrecognized upload receipt failure rejects with the original error and clears the local disputed marker
 - [x] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P12` — An unrecognized kill send failure rejects with the original error after one apply attempt, without retry or slashing the submitter
 - [x] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P13` — An unrecognized kill receipt failure rejects with the original error after one apply attempt, without retry or slashing the submitter
+- [x] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P14` — a nested forged-inbound proof whose inbound block a snapshot pruned reverts `RaceConditionBlockHeightTooOld`: `killDispute` handles it as a no-op
 
 ## UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9
 

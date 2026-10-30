@@ -83,7 +83,12 @@ export class ContractExecutorService extends AInternalRpcService<ContractExecuto
             })
         ]);
         const evm = await createEvm(
-            { allowUnlimitedContractSize: true, customPrecompiles },
+            // local-only: LocalDiamond never deploys on chain -> no EIP-170/3860 limit
+            {
+                allowUnlimitedContractSize: true,
+                allowUnlimitedInitCodeSize: true,
+                customPrecompiles
+            },
             logger,
             this.router.rpcRoot
         );

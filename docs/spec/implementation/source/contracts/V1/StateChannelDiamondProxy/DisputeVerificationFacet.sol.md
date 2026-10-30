@@ -59,6 +59,9 @@ Reduction algebra
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P28` — a child fork whose reduction sees the parent fork's already applied slash as a candidate plus a timeout removes the timed-out participant: the slashed signer is no participant of the child fork, so the slash is not applied and does not suppress the timeout
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P29` — `reduceAndFinalize` with the committed set plus one dispute the window never committed reverts naming both commitment hash arrays, so the extra hash is identifiable
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P30` — `reduceAndFinalize` with only one of two committed disputes reverts naming both commitment hash arrays, so the missing hash is identifiable
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P31` — `reduce` after a same-fork adoption pruned the channel's inbound head and no newer inbound block landed: the output keeps that head's hash and the snapshot's inbound height, not 0
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P32` — `reduce` after a same-fork prune whose walk stops on a stored inbound block above the snapshot's inbound head: the output carries that block's hash and its own height
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P33` — `reduce` after a same-fork prune where an inbound block newer than the window's expiry landed: the walk steps over it and ends on the pruned head, with the snapshot's inbound height
 
 ## UNIT-TEST-SM-DISPUTE-VERIFICATION-1-ZAJQV6
 

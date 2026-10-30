@@ -115,6 +115,7 @@ class DisputeManager {
         let txResponse;
         let rethrow: unknown;
         let refreshSlashes = false;
+        let retryWithoutStaleProof = false;
         let submittedTimeout: TimeoutStruct | undefined;
         let timeoutRetry: { delayMs: number; reason: string } | undefined;
         let postedTimeout: TimeoutStruct | undefined;
@@ -322,6 +323,14 @@ class DisputeManager {
                             { forkId, channelId: this.channelId }
                         );
                     },
+                    // the snapshot passed a stored forged-inbound proof's height -> rebuild once without it
+                    RaceConditionBlockHeightTooOld: () => {
+                        this.logger.info(
+                            "dispute retry: fraud proof below the snapshot's inbound head",
+                            { forkId, channelId: this.channelId }
+                        );
+                        retryWithoutStaleProof = true;
+                    },
                     // the chain inbound head moved past our anchor (a join landed
                     // after construction, or our inbound store lags): the marker
                     // rolls back below and we retry from the chain's head
@@ -446,6 +455,12 @@ class DisputeManager {
                 refusedInboundHead: inboundRetry.chainHead
             });
         }
+        if (
+            retryWithoutStaleProof &&
+            !this.stateManager.isDisposed &&
+            this.stateManager.forkId === forkId
+        )
+            return this.dispute(forkId);
         return { lostEvidenceRace };
     }
 
@@ -549,6 +564,12 @@ class DisputeManager {
                     RaceConditionUnexpectedBlockCalldataPosted: () => {
                         this.logger.info(
                             `killDispute no-op: unexpected block calldata posted for dispute ${formattedHash}`,
+                            { disputeMeta }
+                        );
+                    },
+                    RaceConditionBlockHeightTooOld: () => {
+                        this.logger.info(
+                            `killDispute no-op: forged inbound block below the snapshot's inbound head for dispute ${formattedHash}`,
                             { disputeMeta }
                         );
                     }

@@ -54,6 +54,8 @@ Predicate chain
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P32` — With older history pruned but a different block retained at height 2 below next height 3, a conflicting unlinked arrival still reaches conflictingButNotLinkedBlockDetected and returns DISCONNECT without a dispute
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P33` — With older history pruned, an unlinked arrival at the actual next height reaches blockIsNotLinkedAndIsNotFirstBlock and returns DISCONNECT without a dispute
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P35` — Compact sync installs above an already queued gossip block while omitting its history; release drops that block without closing the spectator or blacklisting honest sources, and the spectator then follows a new live head
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P36` — forged-inbound detector: a carried genuine inbound block that same-fork adoption pruned, absent from local storage, is not flagged
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P37` — forged-inbound detector: a fabricated inbound block one above the snapshot's inbound head, absent locally and on chain, is flagged and returned
 
 ## UNIT-TEST-SM-VALIDATION-1-1GFNNY
 

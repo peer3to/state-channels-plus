@@ -28,6 +28,12 @@ and only its supplier is punished
 (`INV-MIRROR-1-VAF778.T1.P9`). Block decoding is not a
 `ValidationService` concern (it is `Codec` in the `Block` model), so the file has no decoding cases.
 
+A `detectForgedInboundMessageBlock` group stages a real top-up that honest blocks consume and a
+posted same-fork snapshot then prunes on chain, asserting the snapshot's inbound head is that
+top-up. A spectator synced afterwards, which never stored the top-up, runs the real detector
+through the validation probe: a block carrying the pruned genuine top-up is not flagged, and a
+fabricated inbound block one above the snapshot's inbound head is flagged and returned.
+
 ## Tests
 
 - `a linked insertion from the wrong leader reaches the SDK deviation without changing state or eligibility`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P22
@@ -96,3 +102,5 @@ and only its supplier is punished
 - `repositions the state machine to the block's predecessor before the leader check`: none
 - `the same candidate crosses the future→next boundary as storage advances → NOT_READY then DISCONNECT`: none
 - `concurrent probes are serialized → every one gets an uncorrupted patch/restore`: none
+- `genuine inbound pruned by a same-fork snapshot, absent locally -> not flagged`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P36
+- `fabricated inbound one above the snapshot's inbound head -> flagged`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P37

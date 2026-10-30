@@ -524,7 +524,7 @@ install, reduction genesis and block commit. Prove each with a regression in whi
 
 ## Codex Security reassessment
 
-The [current Codex Security reassessment](./codex-security-triage.md) checks the 7 protocol findings of the supplied scan against `dispute` at `9dc243769`: **6 confirmed, 1 fixed**. Four of the confirmed findings have since been fixed: [`FIND-SECURITY-1-6SAJ4E`](open-findings.md#find-security-1-6saj4e), [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v), [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz) and [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx); [`FIND-SECURITY-3-REDPJW`](open-findings.md#find-security-3-redpjw) and [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) remain confirmed. This is static evidence, not runtime validation or engineer approval. The report includes exact paths, preconditions, counterevidence and proposed fix/test handoffs. The scan's 5 developer-tooling findings are tracked in the tooling's own documentation, as the report lists.
+The [current Codex Security reassessment](./codex-security-triage.md) checks the 7 protocol findings of the supplied scan against `dispute` at `9dc243769`: **6 confirmed, 1 fixed**. Five of the confirmed findings have since been fixed: [`FIND-SECURITY-1-6SAJ4E`](open-findings.md#find-security-1-6saj4e), [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v), [`FIND-SECURITY-3-REDPJW`](open-findings.md#find-security-3-redpjw), [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz) and [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx); [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) remains confirmed. This is static evidence, not runtime validation or engineer approval. The report includes exact paths, preconditions, counterevidence and proposed fix/test handoffs. The scan's 5 developer-tooling findings are tracked in the tooling's own documentation, as the report lists.
 
 **Engineer decision (2026-09-30):** publish this assessment now, with no fixes in the change that adds it. Each finding below stays open until its fix and regression test land.
 
@@ -566,12 +566,17 @@ never slashes an honest signer either. Regression:
 
 ### FIND-SECURITY-3-REDPJW
 
-**Current defect:** **Open; high.** Pruned genuine inbound history can falsely slash honest authors.
+**Current defect:** **Resolved (2026-10-02); high.** Pruned genuine inbound history could falsely
+slash honest authors.
 
-**Proposed direction and handoff:**
-[Evidence and proposed fix](./codex-security-triage.md#pruned-inbound). Engineer review pending;
-preserve the report's prerequisites and proof gaps. Owed regression:
-[`INV-ENFFP-1-BGVZN4.T1.P14`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p14).
+**Proposed direction and handoff:** Done: a forged-inbound proof at or below the snapshot's inbound
+head now reverts `RaceConditionBlockHeightTooOld` and slashes nobody; the SDK detector reads the
+chain's predicate through `isUncommittedInboundMessageBlock`; dispute construction skips proofs the
+chain no longer judges, and `dispute()` retries once after a race; `reduce` keeps the snapshot's
+inbound height after a prune ([fix record](./codex-security-triage.md#pruned-inbound)). Mapped
+regressions: [`INV-ENFFP-1-BGVZN4.T1.P14`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p14),
+[`INV-ENFFP-1-BGVZN4.T1.P18`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p18),
+[`INV-ENFFP-1-BGVZN4.T1.P19`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p19).
 
 <a id="find-security-4-02dywz"></a>
 

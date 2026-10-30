@@ -329,6 +329,14 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
         return _hasInboundMessageBlock(channelId, messageBlockHash);
     }
 
+    function isUncommittedInboundMessageBlock(bytes32 channelId, MessageBlock memory messageBlock)
+        public
+        view
+        returns (bool)
+    {
+        return _isUncommittedInboundMessageBlock(channelId, messageBlock);
+    }
+
     function getOnChainSlashedParticipantsUpToTimestamp(bytes32 channelId, uint256 timestamp)
         public
         view

@@ -5,6 +5,7 @@ import { StateSnapshot } from "../models";
 import { Address, ChannelId, ForkId, Hash } from "../types/types";
 import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import Storage from "@/storage";
+import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
 import {
     hash,
     intersection,
@@ -334,13 +335,27 @@ export default class DisputeBuilder {
 
         const fraudProofsToApply: FraudProofStruct[] = [];
         for (const participant of difference(participants, slashedOnChain)) {
-            const fraudProof =
-                this.storage.fraudProofs.getFraudProofForParticipant(
-                    participant
-                );
-            if (fraudProof) {
+            for (const fraudProof of this.storage.fraudProofs.getFraudProofsForParticipant(
+                participant
+            )) {
+                // a forged-inbound proof the chain no longer judges reverts the whole multicall -> try the next proof
+                if (
+                    Number(fraudProof.proofType) ===
+                        toSolidityFraudProofType(
+                            FraudProofType.ForgedInboundMessageBlock
+                        ) &&
+                    !(await this.stateChannelManagerContract.isUncommittedInboundMessageBlock(
+                        this.channelId,
+                        Codec.decode(
+                            fraudProof.encodedProof,
+                            FraudProofType.ForgedInboundMessageBlock
+                        ).forgedInboundMessageBlock
+                    ))
+                )
+                    continue;
                 fraudProofsToApply.push(fraudProof);
                 slashedOnChain.add(participant);
+                break;
             }
         }
         // Only participants of the latest state may be listed: a slash of

@@ -40,17 +40,11 @@ export class FraudProofStorage {
     // ====================================
 
     /**
-     * Get all fraud proofs for a specific participant
+     * Get all fraud proofs for a specific participant, in insertion order
      */
-    getFraudProofForParticipant(
-        participant: Address
-    ): FraudProofStruct | undefined {
-        const proofIds = this.participantToProofs.get(participant);
-        if (!proofIds || proofIds.size === 0) {
-            return undefined;
-        }
-        const firstId = proofIds.values().next().value;
-        return this.fraudProofs.get(firstId!);
+    getFraudProofsForParticipant(participant: Address): FraudProofStruct[] {
+        const proofIds = this.participantToProofs.get(participant) ?? [];
+        return [...proofIds].map((id) => this.fraudProofs.get(id)!);
     }
 
     getFraudProofByHash(proofHash: Hash): FraudProofStruct | undefined {
