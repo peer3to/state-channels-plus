@@ -1,80 +1,16 @@
-# retry.ts — Source Report
+# retry.ts
 
-> **Source:** [src/utils/retry.ts](../../../../../../src/utils/retry.ts) > **Status:** Authored — engineer verification pending.
-> **Design views:** [architecture/sdk/components.md](../../../views/architecture/sdk/components.md)
+> **Source:** [src/utils/retry.ts](../../../../../../src/utils/retry.ts)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-LOG-1-H2VQ8X` (Logging cleanup preserves surviving owners)](../../../../specification/runtime/log-collection.md#req-log-1-h2vq8x)
 
-## Responsibility and observable boundary
+## UNIT-TEST-RETRY-1-19CEJ1
 
-Bounded retry helper with backoff.
+An abort ends a pending retry delay at once and starts no further attempt.
 
-## Key design decisions
+- Setup: Call `retry` with a function that always rejects, `maxRetries: 3`, a 5 s `delayMs` and an abort signal; abort once `onRetry` reports the first failure, so the abort lands inside the delay.
+- Oracle: The call rejects with the function's own error within 1 s of the abort, well before the 5 s delay, and the function ran exactly once.
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
-
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                      | Specification IDs |
-| ------------------------------------------------ | ----------------- |
-| [retry.ts](../../../../../../src/utils/retry.ts) |                   |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Utility semantics must hold identically on both supported hosts.
-
-## Specification adherence
-
-- Role-consistent with the owning views.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
-
-## Related source reports
-
-- Consumers per the views.
+- [x] `UNIT-TEST-RETRY-1-19CEJ1.P1` — an abort during the retry delay rejects at once with the last error, after one attempt

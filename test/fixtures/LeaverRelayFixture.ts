@@ -21,9 +21,11 @@ export async function assertLeaverRelaysNothingAfterItsLeave() {
         .filter((index) => index !== leaver.index);
     const send = await h.rpcStub.holdSnapshotPostSend(leaver.index);
     try {
+        // the leaver also finalizes its leave block first: a late copy that
+        // brings it a new signature of that block is relayed, legitimately
         await h.transition.participantLeaveStateTransition({
             leaverIndex: leaver.index,
-            waitForPeers: remaining,
+            waitForPeers: [...remaining, leaver.index],
             waitForFinalization: true
         });
         // count only what the leaver sends after its own leave block

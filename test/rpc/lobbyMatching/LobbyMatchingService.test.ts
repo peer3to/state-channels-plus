@@ -14,6 +14,10 @@ import { ethers } from "ethers";
 
 describe("LobbyMatchingService", function () {
     let fixture: P2PManagerFixture;
+    /** The selected peer of `probeLobbyHandoffExit`. */
+    const handedOffPeer = ethers.getAddress(
+        "0xffffffffffffffffffffffffffffffffffffffff"
+    );
 
     beforeEach(async function () {
         fixture = new P2PManagerFixture();
@@ -120,13 +124,68 @@ describe("LobbyMatchingService", function () {
         expect(result.localChannelId).to.equal(ethers.ZeroHash);
         expect(result.lobbyTransportsExcludedBeforeCommit).to.equal(true);
         expect(result.ordinaryHookCountBeforeCommit).to.equal(0);
-        expect(result.selectedTransportHeldBeforeCompletion).to.equal(true);
+        expect(result.selectedTransportPromotedAtCommit).to.equal(true);
         expect(result.selectedTransportHeldAfterExpiredTimeout).to.equal(true);
-        expect(result.selectedTransportPromotedAfterCompletion).to.equal(true);
+        expect(result.selectedTransportConnectedAfterCompletion).to.equal(true);
         expect(result.nonSelectedTransportClosed).to.equal(true);
-        expect(result.ordinaryHookCountAfterCommitBeforeCompletion).to.equal(0);
+        expect(result.ordinaryHookCountAfterCommit).to.equal(1);
         expect(result.ordinaryHookCountAfterCompletion).to.equal(1);
+        expect(result.selectedPeerReceivedOrdinaryBroadcast).to.equal(true);
         expect(result.discardedPeerMissedOrdinaryBroadcast).to.equal(true);
+    });
+
+    it("removes the promoted peer from the connection set on handoff release", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyHandoffExit("release", false)
+            .request();
+
+        expect(result.selectedPromotedAtCommit).to.equal(true);
+        expect(result.ordinaryHookCountBeforeExit).to.equal(1);
+        expect(result.handedOffTransportsRemovedAfterExit).to.equal(true);
+        expect(result.reportedConnectionsAfterCommit).to.include(handedOffPeer);
+        expect(result.reportsDuringExit).to.be.greaterThan(0);
+        expect(result.lastReportedConnections).to.not.include(handedOffPeer);
+    });
+
+    it("removes the promoted peer from the connection set on handoff disconnect", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyHandoffExit("disconnect", false)
+            .request();
+
+        expect(result.selectedPromotedAtCommit).to.equal(true);
+        expect(result.ordinaryHookCountBeforeExit).to.equal(1);
+        expect(result.handedOffTransportsRemovedAfterExit).to.equal(true);
+        expect(result.reportedConnectionsAfterCommit).to.include(handedOffPeer);
+        expect(result.reportsDuringExit).to.be.greaterThan(0);
+        expect(result.lastReportedConnections).to.not.include(handedOffPeer);
+    });
+
+    it("removes the promoted peer from the connection set on handoff dispose", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyHandoffExit("dispose", false)
+            .request();
+
+        expect(result.selectedPromotedAtCommit).to.equal(true);
+        expect(result.ordinaryHookCountBeforeExit).to.equal(1);
+        expect(result.handedOffTransportsRemovedAfterExit).to.equal(true);
+        expect(result.reportedConnectionsAfterCommit).to.include(handedOffPeer);
+        expect(result.reportsDuringExit).to.be.greaterThan(0);
+        expect(result.lastReportedConnections).to.not.include(handedOffPeer);
+    });
+
+    it("promotes a replacement transport once during the handoff and closes it on release", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyHandoffExit("release", true)
+            .request();
+
+        expect(result.selectedPromotedAtCommit).to.equal(true);
+        expect(result.replacementPromoted).to.equal(true);
+        expect(result.ordinaryHookCountBeforeExit).to.equal(2);
+        expect(result.handedOffTransportsRemovedAfterExit).to.equal(true);
     });
 
     it("keeps a reservation through final profile loss, strikes at its bound, and bounds rejected lobby traffic", async function () {
@@ -260,7 +319,7 @@ describe("LobbyMatchingService", function () {
             .request();
 
         expect(result.matchHasChannelId).to.equal(false);
-        expect(result.ordinaryHookCountAfterCommitBeforeCompletion).to.equal(0);
+        expect(result.localChannelId).to.equal(ethers.ZeroHash);
     });
 
     it("unmatched finite timeout cleans only matcher-owned resources", async function () {
@@ -290,7 +349,6 @@ describe("LobbyMatchingService", function () {
             .request();
 
         expect(result.selectedTransportHeldAfterExpiredTimeout).to.equal(true);
-        expect(result.ordinaryHookCountAfterCommitBeforeCompletion).to.equal(0);
     });
 
     it("accepted match has no matchmaking timeout during negotiation", async function () {
@@ -300,7 +358,7 @@ describe("LobbyMatchingService", function () {
             .request();
 
         expect(result.selectedTransportHeldAfterExpiredTimeout).to.equal(true);
-        expect(result.selectedTransportHeldBeforeCompletion).to.equal(true);
+        expect(result.selectedTransportPromotedAtCommit).to.equal(true);
     });
 
     it("finite matchmaking timeout returns false while unmatched", async function () {
@@ -319,8 +377,9 @@ describe("LobbyMatchingService", function () {
             .p2pManagerProbe.probeLobbyProtocol()
             .request();
 
-        expect(result.selectedTransportHeldBeforeCompletion).to.equal(true);
-        expect(result.selectedTransportPromotedAfterCompletion).to.equal(true);
+        expect(result.selectedTransportPromotedAtCommit).to.equal(true);
+        expect(result.selectedTransportConnectedAfterCompletion).to.equal(true);
+        expect(result.ordinaryHookCountAfterCompletion).to.equal(1);
         expect(result.nonSelectedTransportClosed).to.equal(true);
     });
 
@@ -415,7 +474,7 @@ describe("LobbyMatchingService", function () {
             .request();
 
         expect(result.discardedPeerMissedOrdinaryBroadcast).to.equal(true);
-        expect(result.ordinaryHookCountAfterCommitBeforeCompletion).to.equal(0);
+        expect(result.selectedPeerReceivedOrdinaryBroadcast).to.equal(true);
     });
 
     it("observed-open loser releases matching ownership for the selected channel", async function () {

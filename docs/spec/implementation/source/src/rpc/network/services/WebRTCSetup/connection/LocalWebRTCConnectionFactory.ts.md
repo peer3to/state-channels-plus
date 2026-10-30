@@ -1,84 +1,41 @@
-# LocalWebRTCConnectionFactory.ts — Source Report
+# LocalWebRTCConnectionFactory.ts
 
-> **Source:** [src/rpc/network/services/WebRTCSetup/connection/LocalWebRTCConnectionFactory.ts](../../../../../../../../../../src/rpc/network/services/WebRTCSetup/connection/LocalWebRTCConnectionFactory.ts) > **Status:** Authored — engineer verification pending.
-> **Design views:** [architecture/sdk/rpc/webrtc-setup.md](../../../../../../../views/architecture/sdk/rpc/webrtc-setup.md)
+> **Source:** [src/rpc/network/services/WebRTCSetup/connection/LocalWebRTCConnectionFactory.ts](../../../../../../../../../../src/rpc/network/services/WebRTCSetup/connection/LocalWebRTCConnectionFactory.ts)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-UPG-1-MFBTZ1` (Identity-bound signaling)](../../../../../../../../specification/peer-communication/transport-upgrade.md#req-upg-1-mfbtz1)
+- [`REQ-UPG-9-60XCXK` (A direct connection survives a short path loss)](../../../../../../../../specification/peer-communication/transport-upgrade.md#req-upg-9-60xcxk)
+- [`REQ-RUNTIME-9-P5VPT5` (An uncaught non-error failure is reported as one error)](../../../../../../../../specification/runtime/execution.md#req-runtime-9-p5vpt5)
 
-## Responsibility and observable boundary
+## UNIT-TEST-LOCAL-WEBRTC-FACTORY-1-6YHWHJ
 
-The in-context factory: per-address strong map of RTC connections; createOffer/acceptOffer
-(closing and replacing any existing connection for that address), applyAnswer/addIceCandidate
-as no-ops without a pending connection, callback wiring for ICE/data-channel/state, close().
+Connection lifecycle
 
-## Key design decisions
+- Setup: Offer/accept/replace/orphan/close per address
+- Oracle: Replacement closes prior; orphans no-op; callbacks fire; close deletes
 
-1. **Replace-and-close on new attempts** bounds pending state to one per peer ([`REQ-UPG-1-MFBTZ1` (Identity-bound signaling)](../../../../../../../../specification/peer-communication/transport-upgrade.md#req-upg-1-mfbtz1)); the strong map's leak-without-close is the service-level note.
+- [ ] `UNIT-TEST-LOCAL-WEBRTC-FACTORY-1-6YHWHJ.P1` — offer then replace
+- [ ] `UNIT-TEST-LOCAL-WEBRTC-FACTORY-1-6YHWHJ.P2` — accept path
+- [ ] `UNIT-TEST-LOCAL-WEBRTC-FACTORY-1-6YHWHJ.P3` — orphan answer
+- [ ] `UNIT-TEST-LOCAL-WEBRTC-FACTORY-1-6YHWHJ.P4` — close cleanup
+- [ ] `UNIT-TEST-LOCAL-WEBRTC-FACTORY-1-6YHWHJ.P5` — orphan candidate
+- [x] `UNIT-TEST-LOCAL-WEBRTC-FACTORY-1-6YHWHJ.P6` — two browser main-thread connections exchange one payload each way through a real RTCPeerConnection
 
-## Inputs, outputs, state, and side effects
+## UNIT-TEST-LOCAL-WEBRTC-FACTORY-2-FY5T0W
 
-| Aspect       | Contents                               |
-| ------------ | -------------------------------------- |
-| Inputs       | Offers/answers/candidates per address. |
-| Outputs      | SDP; wrapped channels via callbacks.   |
-| Owned state  | address → connection map.              |
-| Side effects | RTC resources.                         |
+State reports with path statistics
 
-## Linked requirements
+- Setup: Open a connection over a stand-in RTCPeerConnection that dispatches its state events to added listeners and whose `getStats` calls can be held one by one, held without end under fake timers, or made to fail; change both states, or only the ICE state as werift does; close it while a report waits, and replace it with the peer's next connection; repeat with a stand-in that has no `getStats`.
+- Oracle: Every ICE and connection-state change of the current connection, also an ICE change alone, is reported once, in the order of the changes, with the selected candidate pair's statistics where the runtime has them: the pair the transport names, else the pair marked selected (Firefox), else no pair fields; a failed statistics read is reported as an error and the change still is; a statistics read that has not settled within `STATS_READ_TIME_LIMIT_MS` (2 s) is reported as a failed read, and the change is reported without statistics at that limit, not before; a throw in the state handling is not reported as a factory error and escapes once as an unhandled rejection, and later changes are still reported; a closed or replaced connection reports nothing more.
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                                                                                                                      | Specification IDs                                                                                                    |
-| ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| [LocalWebRTCConnectionFactory.ts](../../../../../../../../../../src/rpc/network/services/WebRTCSetup/connection/LocalWebRTCConnectionFactory.ts) | [`REQ-UPG-1-MFBTZ1`](../../../../../../../../specification/peer-communication/transport-upgrade.md#req-upg-1-mfbtz1) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Callbacks route outward signaling; the factory never sends itself.
-
-## Specification adherence
-
-- One-pending-per-peer with replacement ([`REQ-UPG-1-MFBTZ1` (Identity-bound signaling)](../../../../../../../../specification/peer-communication/transport-upgrade.md#req-upg-1-mfbtz1)); orphan answers/candidates are no-ops.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated (leak noted at service level).
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                                              | Implementation status | Evidence                                     | Gap / divergence                                                                 |
-| -------------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------- | -------------------------------------------------------------------------------- |
-| [`REQ-UPG-1-MFBTZ1`](../../../../../../../../specification/peer-communication/transport-upgrade.md#req-upg-1-mfbtz1) | Covered               | **Here:** replacement close + orphan no-ops. | None here (map leak noted in [WebRTCSetupService](../WebRTCSetupService.ts.md)). |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                                  | Obligation           | Public entry and setup                        | Oracle and forbidden effects                                           | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| --------------------------------------------------------------------------------------------- | -------------------- | --------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-local-webrtc-factory-1-6yhwhj"></a>`UNIT-TEST-LOCAL-WEBRTC-FACTORY-1-6YHWHJ` | Connection lifecycle | Offer/accept/replace/orphan/close per address | Replacement closes prior; orphans no-op; callbacks fire; close deletes | <a id="unit-test-local-webrtc-factory-1-6yhwhj.p1"></a>`UNIT-TEST-LOCAL-WEBRTC-FACTORY-1-6YHWHJ.P1` — offer then replace; <a id="unit-test-local-webrtc-factory-1-6yhwhj.p2"></a>`UNIT-TEST-LOCAL-WEBRTC-FACTORY-1-6YHWHJ.P2` — accept path; <a id="unit-test-local-webrtc-factory-1-6yhwhj.p3"></a>`UNIT-TEST-LOCAL-WEBRTC-FACTORY-1-6YHWHJ.P3` — orphan answer; <a id="unit-test-local-webrtc-factory-1-6yhwhj.p4"></a>`UNIT-TEST-LOCAL-WEBRTC-FACTORY-1-6YHWHJ.P4` — close cleanup; <a id="unit-test-local-webrtc-factory-1-6yhwhj.p5"></a>`UNIT-TEST-LOCAL-WEBRTC-FACTORY-1-6YHWHJ.P5` — orphan candidate; <a id="unit-test-local-webrtc-factory-1-6yhwhj.p6"></a>`UNIT-TEST-LOCAL-WEBRTC-FACTORY-1-6YHWHJ.P6` — two browser main-thread connections exchange one payload each way through a real RTCPeerConnection |
-
-## Related source reports
-
-- [WebRTCSetupService](../WebRTCSetupService.ts.md).
+- [x] `UNIT-TEST-LOCAL-WEBRTC-FACTORY-2-FY5T0W.P1` — each change is reported with its selected path's statistics, in the order of the changes, also when the first stats read is slow
+- [x] `UNIT-TEST-LOCAL-WEBRTC-FACTORY-2-FY5T0W.P2` — a runtime without `getStats` reports changes without path statistics
+- [x] `UNIT-TEST-LOCAL-WEBRTC-FACTORY-2-FY5T0W.P3` — a failed stats read is reported, and the change is reported without path statistics
+- [x] `UNIT-TEST-LOCAL-WEBRTC-FACTORY-2-FY5T0W.P4` — a closed connection reports nothing more, also a change whose stats read was running
+- [x] `UNIT-TEST-LOCAL-WEBRTC-FACTORY-2-FY5T0W.P5` — a replaced connection reports nothing more; the next one's changes are reported
+- [x] `UNIT-TEST-LOCAL-WEBRTC-FACTORY-2-FY5T0W.P6` — an ICE change without a connection-state change is reported (werift)
+- [x] `UNIT-TEST-LOCAL-WEBRTC-FACTORY-2-FY5T0W.P7` — without transport statistics the pair marked selected gives the path statistics (Firefox)
+- [x] `UNIT-TEST-LOCAL-WEBRTC-FACTORY-2-FY5T0W.P8` — while no candidate pair is selected only the transport statistics are reported
+- [x] `UNIT-TEST-LOCAL-WEBRTC-FACTORY-2-FY5T0W.P9` — a throw in the state handling escapes exactly once as an unhandled rejection, is not reported as a factory error, and later changes are still reported
+- [x] `UNIT-TEST-LOCAL-WEBRTC-FACTORY-2-FY5T0W.P10` — a stats read that never settles is reported as a failure at the 2 s limit, the change is reported then without path statistics, and a later change is reported with its statistics

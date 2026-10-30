@@ -174,10 +174,10 @@ export async function assertKilledOpenerSubmissionRace(
         } else {
             // The original opener is gone, but acceptance still supplies this
             // contribution's reason. The auditor must not depend on an opener.
-            const verdict = await h
-                .control(killer)
-                .dispute.runDisputeValidation(submissions[0].encodedDispute)
-                .request();
+            const verdict = await h.dispute.auditDispute(
+                killer.index,
+                Codec.decode(submissions[0].encodedDispute, Type.Dispute)
+            );
             expect(verdict.outcome).to.equal("returned");
             if (verdict.outcome === "returned")
                 expect(verdict.isValid).to.equal(true);
@@ -315,7 +315,7 @@ export async function assertRecoveredSlashTimestampAndDedup(
         );
         await dropped.waitUntilDropped();
         if (failQueries) {
-            await h.control(target).stub.stubFailChainLogQueries().request();
+            await h.control(target).stub.stubHideChainLogs().request();
             try {
                 await expect(
                     h.execOnHost(target, (sm) =>

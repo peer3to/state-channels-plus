@@ -1,23 +1,51 @@
 // @spec-test-coverage-ignore: node ownership helper; executable evidence belongs to its calling test declarations
 import { JsonRpcProvider } from "ethers";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { createServer } from "node:net";
 import path from "node:path";
 
-/** How long the private node gets to answer its first request. */
+/** How long the private node gets to start listening. */
 const NODE_STARTUP_BUDGET_MS = 15_000;
 
-/** A free TCP port, released before the node claims it. */
-async function reservePort(): Promise<number> {
-    const reservation = createServer();
-    reservation.listen(0, "127.0.0.1");
-    await once(reservation, "listening");
-    const address = reservation.address();
-    if (!address || typeof address === "string")
-        throw new Error("Expected a TCP reservation");
-    await new Promise<void>((resolve) => reservation.close(() => resolve()));
-    return address.port;
+/**
+ * Waits for the node's startup line and returns the port it bound. The node
+ * binds port 0 itself: a port reserved and released first can be taken by
+ * another process on the same host before the node binds it.
+ */
+async function waitForBoundPort(child: ChildProcess): Promise<number> {
+    return await new Promise<number>((resolve, reject) => {
+        let output = "";
+        const timer = setTimeout(
+            () => fail(new Error("Timed out waiting for the private node")),
+            NODE_STARTUP_BUDGET_MS
+        );
+        const onData = (chunk: Buffer) => {
+            output += chunk.toString();
+            const match = /JSON-RPC server at http:\/\/[^:]+:(\d+)\//.exec(
+                output
+            );
+            if (!match) return;
+            clearTimeout(timer);
+            child.off("exit", onExit);
+            child.stdout!.off("data", onData);
+            // keep draining the node's request log so its pipe never fills
+            child.stdout!.resume();
+            resolve(Number(match[1]));
+        };
+        const onExit = () =>
+            fail(
+                new Error(
+                    `The private node exited before it started:\n${output}`
+                )
+            );
+        const fail = (error: Error) => {
+            clearTimeout(timer);
+            child.stdout!.off("data", onData);
+            reject(error);
+        };
+        child.stdout!.on("data", onData);
+        child.once("exit", onExit);
+    });
 }
 
 /**
@@ -26,9 +54,10 @@ async function reservePort(): Promise<number> {
  * snapshots) are safe here and only here: no other test shares the node.
  */
 export async function withIsolatedHardhatNode<T>(
-    use: (provider: JsonRpcProvider) => Promise<T>
+    use: (provider: JsonRpcProvider) => Promise<T>,
+    options: { chainId?: number } = {}
 ): Promise<T> {
-    const port = await reservePort();
+    const chainId = options.chainId ?? 31337;
     const child = spawn(
         process.execPath,
         [path.resolve("scripts/infra/start-hardhat-node.js")],
@@ -36,29 +65,21 @@ export async function withIsolatedHardhatNode<T>(
             env: {
                 ...process.env,
                 HARDHAT_NODE_HOST: "127.0.0.1",
-                HARDHAT_NODE_PORT: String(port)
+                HARDHAT_NODE_PORT: "0",
+                HARDHAT_CHAIN_ID: String(chainId)
             },
-            stdio: "ignore"
+            stdio: ["ignore", "pipe", "ignore"]
         }
     );
-    const provider = new JsonRpcProvider(`http://127.0.0.1:${port}`, 31337, {
-        staticNetwork: true
-    });
+    let provider: JsonRpcProvider | undefined;
     try {
-        const started = Date.now();
-        for (;;) {
-            try {
-                await provider.getBlockNumber();
-                break;
-            } catch (error) {
-                if (Date.now() - started > NODE_STARTUP_BUDGET_MS) throw error;
-                // Poll the private node's startup; no protocol time is changed here.
-                await new Promise((resolve) => setTimeout(resolve, 100));
-            }
-        }
+        const port = await waitForBoundPort(child);
+        provider = new JsonRpcProvider(`http://127.0.0.1:${port}`, chainId, {
+            staticNetwork: true
+        });
         return await use(provider);
     } finally {
-        provider.destroy();
+        provider?.destroy();
         if (child.exitCode === null && child.signalCode === null) {
             const exited = once(child, "exit");
             child.kill("SIGTERM");

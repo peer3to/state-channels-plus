@@ -1,3 +1,4 @@
+import type { OpenConnection } from "./transport/TransportType";
 import { Status } from "./types";
 import { Address, ChannelId, ForkId, Hash } from "./types/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -11,6 +12,9 @@ type P2pEventHooks = {
 
     /** Fires when a peer transport closes unexpectedly. */
     onDisconnection?: (address: Address) => void;
+
+    /** Fires after a transport joins or leaves the active connection set, with the new set. */
+    onConnectionsChanged?: (connections: OpenConnection[]) => void;
 
     /** Fires after applied state selects the author and timing for the next block. */
     onTurn?: (
@@ -54,6 +58,14 @@ type P2pEventHooks = {
 
     /** Fires when a remote peer acknowledges that the current fork is disputed. */
     onDisputeAcknowledgment?: (address: Address) => void;
+
+    /**
+     * Fires when this runtime's membership or pending join ends (it drops to
+     * SYNCED), whatever ended it: its leave, an exit it authored, a slash, an
+     * eviction, or a join that was refused or expired before it landed.
+     * A join that fails and aborts the runtime fires it before `onAbort`.
+     */
+    onLeftChannel?: () => void;
 
     /** Fires when a block commit or signature merge finds all required signatures. */
     onBlockFinalized?: () => void;

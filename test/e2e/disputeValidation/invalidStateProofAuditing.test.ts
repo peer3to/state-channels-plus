@@ -47,7 +47,14 @@ describe("E2E: dispute validation / invalidStateProofAuditing", function () {
             participant: dispute.input.disputer,
             dispute,
             encodedProof: Codec.encode(
-                { auditingData: junkAuditing },
+                {
+                    milestoneIndex: 0,
+                    hasBlockIndex: false,
+                    blockIndex: 0,
+                    auditingData: junkAuditing,
+                    previousStateSnapshot: junkAuditing.latestStateSnapshot,
+                    resultingStateSnapshot: junkAuditing.latestStateSnapshot
+                },
                 DisputeFraudProofType.DisputeInvalidStateProof
             )
         };

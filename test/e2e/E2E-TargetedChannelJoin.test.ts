@@ -82,23 +82,6 @@ describe("E2E: Targeted channel join", function () {
         peerIndex: number
     ) => await h.control(h.getPeer(peerIndex)).query.getStatus().request();
 
-    const waitForHeldMatchedNegotiation = async (
-        h: ReturnType<typeof TestSession.getHarness>,
-        peerIndices: number[]
-    ) => {
-        await waitFor(async () => {
-            const counts = await Promise.all(
-                peerIndices.map((index) =>
-                    h
-                        .control(h.getPeer(index))
-                        .stub.getHeldMatchedNegotiationCount()
-                        .request()
-                )
-            );
-            return counts.every((count) => count === 1);
-        }, 20_000);
-    };
-
     it("unopened target without autoOpen and without balance returns false without discovery", async function () {
         const { h, channelId, targeted } = await unopened("target-no-open");
         expect(await targeted.connect(h.getPeer(0), channelId)).to.equal(false);
@@ -140,11 +123,11 @@ describe("E2E: Targeted channel join", function () {
         leaver.p2pInstance.events.on("p2pEventHooks", "onLeaveTurn", () => {
             exit = leaver.p2pInstance.p2pContractInstance.leaveChannel();
         });
-        const leave = leaver.p2pInstance.leaveChannel();
+        leaver.p2pInstance.leaveChannel();
         await h.transition.advanceState();
         await h.event.waitForPeers("onLeaveTurn", [leaver.index], 1);
         await exit;
-        await leave;
+        await h.event.waitUntilLeftChannel(leaver.index);
         expect(
             (await h.channelManager.getParticipants(channelId)).includes(
                 leaver.address
@@ -169,9 +152,7 @@ describe("E2E: Targeted channel join", function () {
         expect(
             await h.control(freshPeers[0]).query.getChannelId().request()
         ).to.equal(nextChannelId);
-        await expect(
-            leaver.p2pInstance.p2pSigner.getChannelStatus()
-        ).to.be.rejectedWith("disposed");
+        await h.event.waitUntilDisposed(leaver.index);
     });
 
     it("unopened target without autoOpen and with balance returns false without discovery", async function () {
@@ -267,6 +248,15 @@ describe("E2E: Targeted channel join", function () {
             const selectedIndex = h.peers.find(
                 (peer) => peer.address.toLowerCase() === selected.toLowerCase()
             )!.index;
+            // the target is recorded before its request is sent: cut the
+            // connection only once the held request reached the target, or
+            // the target drops it from the blacklisted peer uncounted
+            await waitFor(
+                async () =>
+                    (await h.rpcStub.getSpectateRequestCount(selectedIndex)) ===
+                    1,
+                h.event.protocolEventTimeoutMs()
+            );
             await h.network.blacklistAndDisconnectPeer(selectedIndex);
             expect(await connect).to.equal(false);
             expect(
@@ -406,7 +396,9 @@ describe("E2E: Targeted channel join", function () {
             4
         );
         const refreshReleases = await Promise.all(
-            [2, 3].map((index) => h.rpcStub.holdPostMatchTargetRefresh(index))
+            [2, 3].map((index) =>
+                h.rpcStub.holdOpenedStatusRefresh(index, "second")
+            )
         );
         const negotiationReleases = await Promise.all(
             [2, 3].map((index) => h.rpcStub.holdMatchedNegotiation(index))
@@ -420,7 +412,7 @@ describe("E2E: Targeted channel join", function () {
                     [2, 3].map((index) =>
                         h
                             .control(h.getPeer(index))
-                            .stub.getHeldPostMatchTargetRefreshCount()
+                            .stub.getHeldOpenedStatusRefreshCount()
                             .request()
                     )
                 );
@@ -572,7 +564,7 @@ describe("E2E: Targeted channel join", function () {
             })
         );
         try {
-            await waitForHeldMatchedNegotiation(h, [0, 1]);
+            await h.rpcStub.waitForHeldMatchedNegotiation([0, 1], 20_000);
             await sleep(3_100);
             expect(
                 await h
@@ -734,7 +726,7 @@ describe("E2E: Targeted channel join", function () {
             targeted.connect(h.getPeer(index), channelId, { autoOpen: true })
         );
         try {
-            await waitForHeldMatchedNegotiation(h, [0, 1]);
+            await h.rpcStub.waitForHeldMatchedNegotiation([0, 1], 20_000);
             expect(
                 await h
                     .getPeer(0)
@@ -774,6 +766,57 @@ describe("E2E: Targeted channel join", function () {
         expect(
             await h.control(h.getPeer(0)).query.getChannelId().request()
         ).to.equal(channelId);
+    });
+
+    it("releases the promoted peer when targeted negotiation throws after commitment", async function () {
+        const { h, channelId, targeted } = await unopened(
+            "target-negotiation-throw-releases"
+        );
+        // The zero balance passes matching and fails at the start of
+        // negotiation, after the commitment promoted the peer.
+        const results = await Promise.allSettled(
+            h.peers.map((peer) =>
+                targeted.connect(peer, channelId, {
+                    autoOpen: true,
+                    balance: { amount: 0n, data: "0x" }
+                })
+            )
+        );
+        expect(
+            results.map((result) =>
+                result.status === "rejected"
+                    ? String(result.reason?.message)
+                    : result.status
+            )
+        ).to.deep.equal([
+            "local opening balance must be greater than zero",
+            "local opening balance must be greater than zero"
+        ]);
+        expect(
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.control(peer).query.getConnectedPeerAddresses().request()
+                )
+            )
+        ).to.deep.equal([[], []]);
+        // The release also ended the lobby session: a new explicit connect
+        // matches again instead of finding a stuck handoff.
+        expect(
+            (
+                await Promise.all(
+                    h.peers.map((peer) =>
+                        h.control(peer).query.getLobbyAvailability().request()
+                    )
+                )
+            ).map(({ topic }) => topic)
+        ).to.deep.equal([undefined, undefined]);
+        expect(
+            await Promise.all(
+                h.peers.map((peer) =>
+                    targeted.connect(peer, channelId, { autoOpen: true })
+                )
+            )
+        ).to.deep.equal([true, true]);
     });
 
     it("starts a fresh same-ID targeted attempt only after another explicit call", async function () {
@@ -903,7 +946,7 @@ describe("E2E: Targeted channel join", function () {
         await h.execOnHost(
             h.getPeer(2),
             async (sm, args: { offender: string }) => {
-                await sm.p2pManager.localRpc.spectateService.sync(
+                await sm.p2pManager.localRpc.spectateService.requestSync(
                     args.offender,
                     sm.channelId
                 );
@@ -931,7 +974,7 @@ describe("E2E: Targeted channel join", function () {
         await h.execOnHost(
             h.getPeer(0),
             async (sm, args: { offender: string }) => {
-                await sm.p2pManager.localRpc.spectateService.sync(
+                await sm.p2pManager.localRpc.spectateService.requestSync(
                     args.offender,
                     sm.channelId
                 );
@@ -957,8 +1000,8 @@ describe("E2E: Targeted channel join", function () {
         const probe = await control.p2pManagerProbe
             .probeLobbyProtocol()
             .request();
-        expect(probe.selectedTransportHeldBeforeCompletion).to.equal(true);
-        expect(probe.selectedTransportPromotedAfterCompletion).to.equal(true);
+        expect(probe.selectedTransportPromotedAtCommit).to.equal(true);
+        expect(probe.selectedTransportConnectedAfterCompletion).to.equal(true);
         expect(probe.ordinaryHookCountAfterCompletion).to.equal(1);
     });
 

@@ -46,11 +46,19 @@ operational limits. It hosts every other system without changing their observabl
   applied state that drops the signer (a reduced fork it computed itself) keeps the current status
   until the chain's snapshot confirms the removal.
 - **Lobby control.** `joinLobby(topic, options)` is indefinite while matching unless the caller supplies
-  a positive finite `matchTimeoutMs`. `leaveLobby(topic)` returns true only when it cancels active matching;
-  after commitment it returns false and the host-owned negotiation continues to its chain-observed outcome.
+  a positive finite `matchTimeoutMs`. `leaveLobby(topic)` ends every ordinary join on the topic, cancels
+  active matching, and waits until those joins have settled. It returns true when the runtime is then out
+  of the lobby with no channel, and false when the leave changed nothing: no ordinary join was on the
+  topic, or a join's negotiation opened a channel first. After commitment the host-owned negotiation
+  continues to its chain-observed outcome, and any outcome other than opening then ends the join instead
+  of rematching; a leave before matching starts ends the join without matching.
+- **Connection observation.** `getOpenConnections()` returns the active peer connections with each
+  peer's address and transport kind, and `onConnectionsChanged` emits the new set after each change
+  ([`REQ-SDK-ARCH-7-H64K87` (Open connections are observable)](sdk.md#req-sdk-arch-7-h64k87)).
 - **Invariants (owned).** [`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](execution.md#inv-runtime-1-akrhak), `REQ-RUNTIME-*` ([execution.md](./execution.md));
   [`INV-SDK-ARCH-1-KNAX7F` (Coherent participant state)](sdk.md#inv-sdk-arch-1-knax7f), `REQ-SDK-ARCH-*` ([sdk.md](./sdk.md)); `REQ-CONFIG-*`
-  ([configuration.md](./configuration.md)); `INV-LOG-*`, `REQ-LOG-*` ([log-collection.md](./log-collection.md)). Durable storage is its own system:
+  ([configuration.md](./configuration.md)); `INV-CHAINOBS-*`, `REQ-CHAINOBS-*`
+  ([chain-observation.md](./chain-observation.md)); `INV-LOG-*`, `REQ-LOG-*` ([log-collection.md](./log-collection.md)). Durable storage is its own system:
   [../storage/README.md](../storage/README.md).
 - **Failure and recovery outcomes.** Context failure is contained at its boundary; restart recovers
   from the storage system's durable set and re-enters the block-progression pipeline without
@@ -71,6 +79,7 @@ operational limits. It hosts every other system without changing their observabl
 | [execution.md](./execution.md) | Runtime isolation and concurrency: transfer-safe boundaries, ownership/ordering, lifecycle convergence, platform equivalence. |
 | [sdk.md](./sdk.md) | Participant service architecture: coherent state, explicit ownership, ordered lifecycle, event fidelity, execution isolation. |
 | [configuration.md](./configuration.md) | Deployment configuration semantics: timing windows, limits, and their validation. |
+| [chain-observation.md](./chain-observation.md) | Chain access through an ordered list of RPC endpoints: per-request failover, per-endpoint event streams with reconnect and catch-up, exactly-once event processing. |
 | [log-collection.md](./log-collection.md) | Gathering a session's logs from every execution context into one stored log: coverage, termination, truthful outcome, attribution, effectively-once delivery, bounded expansion. |
 
 Durable storage and recovery were factored out into [System 9 — Storage](../storage/README.md),

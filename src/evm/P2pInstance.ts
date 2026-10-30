@@ -2,17 +2,22 @@ import type ClientChainSigner from "./signer/ClientChainSigner";
 import type ClientP2pSigner from "./signer/ClientP2pSigner";
 import type { EventBus } from "@/events/EventBus";
 import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
+import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
 import type { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot";
-import MainRpcService from "@/rpc/network/MainRpcService";
+import type {
+    ApplicationOf,
+    HostEventsOf,
+    P2pRuntimeHostRoot
+} from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import type StateManager from "@/stateManager/StateManager";
-import { Logger } from "@/utils";
+import { DetachedPromises, Logger } from "@/utils";
 import type { StateChannelManagerInterface } from "@typechain-types";
 import { AStateMachine } from "@typechain-types";
 
 export default class P2pInstance<
     T extends AStateMachine,
-    TCustomRpc extends MainRpcService = MainRpcService
+    THost extends P2pRuntimeHostRoot = P2pRuntimeHostRoot
 > {
     p2pContractInstance: T;
     p2pSigner: ClientP2pSigner;
@@ -27,18 +32,26 @@ export default class P2pInstance<
      * peer (and, for request/response methods, the reply is returned across the
      * port).
      */
-    hostRpc: RemoteRpcProxyType<TCustomRpc>;
+    hostRpc: RemoteRpcProxyType<ApplicationOf<THost>>;
+
+    /**
+     * Typed connection to this peer's host root: its internal services,
+     * including those an application's host root subclass adds. Calls run in
+     * the runtime and are unreachable from any network transport.
+     */
+    readonly host: RuntimeConnection<THost>;
 
     /**
      * Client event surface: `events.on(kind, eventName, listener)` for
-     * p2p hooks, contract events, and mirrored `EventHandler` events — the
-     * same bus shape the worker realm exposes on `stateManager.events`.
+     * p2p hooks, contract events, mirrored `EventHandler` events, and the
+     * host root's declared `application` events — the same bus shape the
+     * worker realm exposes on `stateManager.events`.
      */
-    readonly events: EventBus;
+    readonly events: EventBus<HostEventsOf<THost>>;
 
-    private readonly p2pRuntimeClientRoot: P2pRuntimeClientRoot;
+    private readonly p2pRuntimeClientRoot: P2pRuntimeClientRoot<THost>;
     private disposal?: Promise<void>;
-    private terminalLeavePromise?: Promise<void>;
+    private isLeaveRequested = false;
 
     /**
      * Main-thread end of the WebRTC bridge `MessagePort`. Present only when the
@@ -62,14 +75,14 @@ export default class P2pInstance<
     }
 
     constructor(
-        client: P2pRuntimeClientRoot,
+        client: P2pRuntimeClientRoot<THost>,
         application: {
             contract: T;
             signer: ClientP2pSigner;
             chainSigner: ClientChainSigner;
             stateChannelManagerContract: StateChannelManagerInterface;
             logger: Logger;
-            hostRpc: RemoteRpcProxyType<TCustomRpc>;
+            hostRpc: RemoteRpcProxyType<ApplicationOf<THost>>;
         }
     ) {
         this.p2pRuntimeClientRoot = client;
@@ -79,6 +92,7 @@ export default class P2pInstance<
         this.stateChannelManagerContract =
             application.stateChannelManagerContract;
         this.logger = application.logger;
+        this.host = client.p2pRuntimeHostRemoteRoot!.rpc;
         this.events = client.events;
         this.hostRpc = application.hostRpc;
         client.onClosed(() => {
@@ -95,6 +109,16 @@ export default class P2pInstance<
      */
     public getGasUsageTable(): Promise<GasUsageRow[]> {
         return this.chainSigner.getGasUsageTable();
+    }
+
+    /**
+     * Uploads the logs of every thread of this runtime now; settles once they
+     * are up, or within `CRASH_LOG_FLUSH_MS`. It never fails. A client calls it
+     * before it disposes a runtime whose logs it needs, such as one whose
+     * setup ran past the client's own bound.
+     */
+    public flushLogs(): Promise<void> {
+        return this.p2pRuntimeClientRoot.logger.startFlush();
     }
 
     public dispose(): Promise<void> {
@@ -119,16 +143,23 @@ export default class P2pInstance<
         }
     }
 
-    public leaveChannel(): Promise<void> {
-        if (!this.terminalLeavePromise) {
-            this.terminalLeavePromise = this.leaveAndDispose();
-        }
-        return this.terminalLeavePromise;
-    }
-
-    private async leaveAndDispose(): Promise<void> {
-        await this.p2pSigner.leaveChannel();
-        await this.dispose();
+    /**
+     * Starts the terminal leave: once the runtime reports `onLeftChannel`,
+     * this instance disposes itself.
+     */
+    public leaveChannel(): void {
+        if (this.isLeaveRequested) return;
+        this.isLeaveRequested = true;
+        // The disposal is not detached domain work: the root settles what is
+        // in flight when it disposes, but its own failure must surface.
+        this.events.on("p2pEventHooks", "onLeftChannel", () =>
+            DetachedPromises.observe(this.dispose(), (error) => {
+                throw error;
+            })
+        );
+        DetachedPromises.observe(this.p2pSigner.leaveChannel(), (error) => {
+            throw error;
+        });
     }
 
     /**
@@ -153,7 +184,7 @@ export default class P2pInstance<
      * Direct state manager access is intentionally disabled for all modes.
      * Runtime interaction must happen through message-port RPC boundaries.
      */
-    public getStateManager(): StateManager<TCustomRpc> {
+    public getStateManager(): StateManager<ApplicationOf<THost>> {
         throw new Error(
             "getStateManager() is disabled; use runtime RPC over the message port"
         );

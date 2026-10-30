@@ -5,6 +5,7 @@ import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelMa
 import {DisputeFraudProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol";
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
 import {
+    ErrorNonCanonicalEncoding,
     RaceConditionDisputeEvidencePeriodExpired,
     RaceConditionGenesisTimestampNotAvailable,
     RaceConditionUnexpectedBlockCalldataPosted
@@ -105,6 +106,18 @@ contract DisputeFraudProofFacetPayloadsTest is DiamondHarness {
         diamond.uploadDispute(bobConfirmation);
     }
 
+    function test_uploadDispute_nonCanonicalEncodedDispute_revertsThroughDiamond() public {
+        bytes32 forkId = diamond.getStateSnapshot(EVIDENCE_CHANNEL_ID).forkId;
+        DisputeConfirmation memory confirmation = _disputeConfirmation(EVIDENCE_CHANNEL_ID, forkId, ALICE_PK);
+        confirmation.signedDispute.encodedDispute =
+            bytes.concat(confirmation.signedDispute.encodedDispute, abi.encode(uint256(0)));
+
+        vm.prank(vm.addr(ALICE_PK));
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
+        diamond.uploadDispute(confirmation);
+        assertEq(diamond.getWindowCommitments(EVIDENCE_CHANNEL_ID, forkId).length, 0, "window was created");
+    }
+
     // ---- _handleTimeoutTooEarly: the genesis branch ----
 
     // A timeout proof whose fork starts at genesis needs the chain to date that
@@ -157,8 +170,9 @@ contract DisputeFraudProofFacetPayloadsTest is DiamondHarness {
         dispute.input.forkId = TIMEOUT_FORK_ID;
         dispute.input.timeout.participant = TIMED_OUT_PARTICIPANT;
         dispute.input.timeout.blockHeight = POSTED_BLOCK_HEIGHT;
-        dispute.input.stateProof.signedBlocks = new SignedBlock[](1);
-        dispute.input.stateProof.signedBlocks[0].encodedBlock =
+        dispute.input.stateProof.milestones = new MilestoneProof[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations[0].signedBlock.encodedBlock =
             abi.encode(_block(PREVIOUS_BLOCK_AUTHOR, TIMEOUT_CHANNEL_ID, TIMEOUT_FORK_ID, PREVIOUS_BLOCK_HEIGHT));
 
         // the timed-out participant, the previous author and the two hashes must
@@ -186,8 +200,9 @@ contract DisputeFraudProofFacetPayloadsTest is DiamondHarness {
     // Same undatable genesis, reached through the second timeout-proof pipeline:
     // the posted block's calldata is genuinely on chain, the state proof holds no
     // block, and nothing dates the fork's genesis.
-    function test_validateTimeoutCalldataPostedProof_genesisTimestampUnavailable_revertsCarryingChannelOriginAndTargetForks(
-    ) public {
+    function test_validateTimeoutCalldataPostedProof_genesisTimestampUnavailable_revertsCarryingChannelOriginAndTargetForks()
+        public
+    {
         TimeoutCalldataPosted memory proof;
         proof.genesisStateSnapshotData.originForkId = ORIGIN_FORK_ID;
         bytes32 forkId = keccak256(abi.encode(proof.genesisStateSnapshotData));
@@ -225,8 +240,9 @@ contract DisputeFraudProofFacetPayloadsTest is DiamondHarness {
     // timed-out block but denies one for the previous block, so the pipeline must
     // report the previous block's own fork, height, author and stored commitment -
     // never the timed-out block's, which differ in every position.
-    function test_validateTimeoutCalldataPostedProof_previousBlockCalldataPosted_revertsCarryingForkHeightAuthorAndCommitment(
-    ) public {
+    function test_validateTimeoutCalldataPostedProof_previousBlockCalldataPosted_revertsCarryingForkHeightAuthorAndCommitment()
+        public
+    {
         address timedOut = vm.addr(TIMED_OUT_PK);
         address previousAuthor = vm.addr(PREVIOUS_AUTHOR_PK);
         assertTrue(timedOut != previousAuthor);
@@ -267,8 +283,9 @@ contract DisputeFraudProofFacetPayloadsTest is DiamondHarness {
         dispute.input.forkId = CALLDATA_FORK_ID;
         dispute.input.timeout.participant = timedOut;
         dispute.input.timeout.blockHeight = POSTED_BLOCK_HEIGHT;
-        dispute.input.stateProof.signedBlocks = new SignedBlock[](1);
-        dispute.input.stateProof.signedBlocks[0] = previousBlock;
+        dispute.input.stateProof.milestones = new MilestoneProof[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations[0].signedBlock = previousBlock;
 
         vm.expectRevert(
             abi.encodeWithSelector(

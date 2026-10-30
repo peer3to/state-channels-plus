@@ -5,16 +5,26 @@
  * own sandbox unless asked (`chromiumSandbox` defaults to false), so the
  * isolation a distributed worker relies on is the container itself. What the
  * container does change is shared memory: it keeps the default 64MB /dev/shm,
- * so Chromium's shared memory belongs in /tmp. The runner image declares that
- * environment with SCP_BROWSER_CONTAINED; everywhere else Playwright's defaults
- * stand.
+ * and its /tmp is a 256MB tmpfs that every task in the container shares. So
+ * Chromium creates its shared memory files in TMPDIR, which points at the
+ * environment's HOME on the disk-backed volume: two gates in one container
+ * exhausted the shared /tmp while their pages loaded worker module graphs, and
+ * every request that could not get a data pipe failed the worker with an empty
+ * error event. The runner image declares that environment with
+ * SCP_BROWSER_CONTAINED; everywhere else Playwright's defaults stand.
  *
  * CommonJS, not ESM: the gates are ESM and import it, while the Mocha suite that
  * pins this policy is CommonJS and must require it on the Node 20 CI runners.
  */
 function chromiumLaunchOptions(env = process.env) {
     if (env.SCP_BROWSER_CONTAINED !== "1") return { headless: true };
-    return { headless: true, args: ["--disable-dev-shm-usage"] };
+    if (!env.HOME)
+        throw new Error("A contained browser environment needs HOME");
+    return {
+        headless: true,
+        args: ["--disable-dev-shm-usage"],
+        env: { ...env, TMPDIR: env.HOME }
+    };
 }
 
 /**

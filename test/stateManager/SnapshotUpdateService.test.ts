@@ -1,6 +1,14 @@
+import { StateSnapshot } from "@/models";
+import { chainSnapshot } from "@test/fixtures/MilestoneSyncStaging";
+import {
+    postSnapshotFrom,
+    stageUninstalledFinalReducedFork
+} from "@test/fixtures/ProofOwnerStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
+import { ethers } from "ethers";
 
 describe("SnapshotUpdateService", function () {
     it("returns an admissible no-op when the on-chain fork is not disputed", async function () {
@@ -32,32 +40,54 @@ describe("SnapshotUpdateService", function () {
         await h.transition.advanceState();
         const snapshotBefore = await h.query.getOnChainSnapshotHash();
 
-        const posted = await h.execOnHost(h.getPeer(0), (sm) =>
-            sm.snapshotUpdateService.postStateSnapshotWait(sm.forkId)
-        );
-
-        expect(posted).to.equal(true);
+        expect(await postSnapshotFrom(h, 0)).to.equal("posted");
         expect(await h.query.getOnChainSnapshotHash()).to.not.equal(
             snapshotBefore
         );
     });
 
-    it("resolves false when a dispute commits between preparation and send", async function () {
+    it("a mined post resolves with the snapshot the chain now holds", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(4, 0);
+        await h.transition.advanceState();
+        const snapshotBefore = await h.query.getOnChainSnapshotHash();
+
+        const encodedSnapshot = await h.execOnHost(h.getPeer(0), async (sm) => {
+            const posted = await sm.snapshotUpdateService.postStateSnapshotWait(
+                sm.forkId
+            );
+            return posted?.encode() ?? null;
+        });
+
+        expect(encodedSnapshot, "a mined post returns its snapshot").to.not.be
+            .null;
+        const posted = StateSnapshot.decode(encodedSnapshot!);
+        const onChain = await h.channelManager.getStateSnapshot(h.channelId);
+        expect(posted.hash).to.not.equal(snapshotBefore);
+        expect(posted.hash).to.equal(await h.query.getOnChainSnapshotHash());
+        expect(posted.snapshotData.participants).to.deep.equal([
+            ...onChain.snapshotData.participants
+        ]);
+        expect(posted.snapshotData.participants).to.have.members(
+            h.peers.map((peer) => peer.address)
+        );
+    });
+
+    it("rejects with the disputed-fork refusal when a dispute commits between preparation and send", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
         const send = await h.rpcStub.holdSnapshotPostSend(0);
         let refusal: string | null = null;
         try {
-            const posted = h.execOnHost(h.getPeer(0), (sm) =>
-                sm.snapshotUpdateService.postStateSnapshotWait(sm.forkId)
-            );
+            const posted = postSnapshotFrom(h, 0);
             await send.waitUntilHeld();
             await h.tamper.postTamperedDispute(1, (dispute) => {
                 dispute.input.stateProof.milestones = [];
-                dispute.input.stateProof.signedBlocks = [];
             });
             refusal = await send.release();
-            expect(await posted).to.equal(false);
+            expect(await posted).to.equal(
+                "RaceConditionSnapshotUpdateDisputedFork"
+            );
         } finally {
             await send.release();
         }
@@ -84,7 +114,7 @@ describe("SnapshotUpdateService", function () {
                             "prepareUpdateStateSnapshotFork"
                         ]();
                     const posted =
-                        await sm.snapshotUpdateService.postStateSnapshot(
+                        await sm.snapshotUpdateService.postStateSnapshotWait(
                             sm.forkId
                         );
                     return {
@@ -107,7 +137,150 @@ describe("SnapshotUpdateService", function () {
         }
     });
 
-    it("blocks same-fork calldata when its snapshot has not consumed the on-chain inbound head", async function () {
+    it("a walk to a final reduced fork this peer has not installed yet waits: no fork calldata, the post resolves undefined; after the install the post adopts that fork", async function () {
+        const h = TestSession.getHarness();
+        const { forkId, reducedForkId, release, installedWait } =
+            await stageUninstalledFinalReducedFork(h);
+        try {
+            const result = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, { reducedForkId }) => {
+                    const prepared =
+                        await sm.snapshotUpdateService[
+                            "prepareUpdateStateSnapshotFork"
+                        ]();
+                    const posted =
+                        await sm.snapshotUpdateService.postStateSnapshotWait(
+                            sm.forkId
+                        );
+                    return {
+                        isInstalled:
+                            sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                                reducedForkId
+                            ) !== undefined,
+                        canPost: prepared.canPost,
+                        callDataCount: prepared.callData.length,
+                        posted: posted !== undefined
+                    };
+                },
+                { reducedForkId }
+            );
+
+            expect(result.isInstalled, "premise: the fork is not installed").to
+                .be.false;
+            expect(result.canPost).to.equal(false);
+            expect(result.callDataCount).to.equal(0);
+            expect(result.posted).to.equal(false);
+        } finally {
+            await release();
+        }
+
+        // the held reduction installs; the next post adopts the reduced fork
+        await installedWait();
+        expect(
+            (await chainSnapshot(h)).forkID,
+            "premise: no other post moved the chain off the disputed fork"
+        ).to.equal(forkId);
+        const recovered = await h.execOnHost(
+            h.getPeer(0),
+            async (sm) => {
+                const prepared =
+                    await sm.snapshotUpdateService[
+                        "prepareUpdateStateSnapshotFork"
+                    ]();
+                const posted =
+                    await sm.snapshotUpdateService.postStateSnapshotWait(
+                        sm.forkId
+                    );
+                return {
+                    canPost: prepared.canPost,
+                    callDataCount: prepared.callData.length,
+                    posted: posted !== undefined
+                };
+            },
+            {}
+        );
+        expect(recovered).to.deep.equal({
+            canPost: true,
+            callDataCount: 1,
+            posted: true
+        });
+        expect((await chainSnapshot(h)).forkID).to.equal(reducedForkId);
+    });
+
+    it("once the channel is closed on chain, the same-fork preparation returns nothing to post without building a state proof or reading local outbound blocks, and the post resolves undefined", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0);
+        // both members exit: the snapshot that lands the last exit has no
+        // participant, and the chain closes the channel
+        await h.transition.participantLeaveStateTransition();
+        await h.transition.participantLeaveStateTransition();
+        await waitFor(
+            async () => !(await h.channelManager.isChannelOpen(h.channelId))[0],
+            h.event.protocolEventTimeoutMs()
+        );
+        expect(
+            (await chainSnapshot(h)).forkID,
+            "premise: the close deleted the chain snapshot"
+        ).to.equal(ethers.ZeroHash);
+
+        const result = await h.execOnHost(
+            h.getPeer(0),
+            async (sm) => {
+                // record-only: each call still runs the real method
+                const outbound = sm.storage.outboundMessages;
+                const agreement = sm.agreementManager;
+                const readRange = outbound.getMessageBlocksInRange;
+                const buildProof = agreement.buildStateProof;
+                const reads = { rangeReads: 0, proofBuilds: 0 };
+                outbound.getMessageBlocksInRange = (...args) => {
+                    reads.rangeReads += 1;
+                    return readRange.apply(outbound, args);
+                };
+                agreement.buildStateProof = (...args) => {
+                    reads.proofBuilds += 1;
+                    return buildProof.apply(agreement, args);
+                };
+                try {
+                    const prepared = await sm.snapshotUpdateService[
+                        "prepareUpdateSnapshotSameFork"
+                    ](sm.forkId);
+                    const posted =
+                        await sm.snapshotUpdateService.postStateSnapshotWait(
+                            sm.forkId
+                        );
+                    return {
+                        localBlockCount: sm.storage.blocks.getNextBlockHeight(
+                            sm.forkId
+                        ),
+                        canPost: prepared.canPost,
+                        callDataCount: prepared.callData.length,
+                        posted: posted !== undefined,
+                        ...reads
+                    };
+                } finally {
+                    // the own properties shadow the prototype methods
+                    Reflect.deleteProperty(outbound, "getMessageBlocksInRange");
+                    Reflect.deleteProperty(agreement, "buildStateProof");
+                }
+            },
+            {}
+        );
+
+        expect(
+            result.localBlockCount,
+            "premise: the member holds blocks of the closed fork"
+        ).to.be.greaterThan(0);
+        expect(result).to.deep.include({
+            canPost: false,
+            callDataCount: 0,
+            posted: false,
+            rangeReads: 0,
+            proofBuilds: 0
+        });
+    });
+
+    it("a same-fork post whose snapshot has not consumed the on-chain inbound head reverts with the pending-inbound refusal", async function () {
         const h = TestSession.getHarness();
         const { joiner, confirmation, expectedSnapshotHash, expectedForkId } =
             await h.scenario.syncSpectatorAndPrepareJoin();
@@ -125,27 +298,12 @@ describe("SnapshotUpdateService", function () {
             waitForPeers: [0, 1, 2]
         });
 
-        const result = await h.execOnHost(
-            h.getPeer(0),
-            async (sm, args) => {
-                const prepared = await sm.snapshotUpdateService[
-                    "prepareUpdateSnapshotSameFork"
-                ](args.forkId);
-                const posted = await sm.snapshotUpdateService.postStateSnapshot(
-                    args.forkId
-                );
-                return {
-                    canPost: prepared.canPost,
-                    callDataCount: prepared.callData.length,
-                    postedSnapshotHash: posted?.hash ?? null
-                };
-            },
-            { forkId: h.activeForkId! }
-        );
+        const snapshotBefore = await h.query.getOnChainSnapshotHash();
 
-        expect(result.canPost).to.equal(false);
-        expect(result.callDataCount).to.equal(0);
-        expect(result.postedSnapshotHash).to.equal(null);
+        expect(await postSnapshotFrom(h, 0)).to.equal(
+            "RaceConditionPendingInboundNotConsumed"
+        );
+        expect(await h.query.getOnChainSnapshotHash()).to.equal(snapshotBefore);
     });
 
     it("walks two finalized dispute windows and prepares one terminal fork update", async function () {

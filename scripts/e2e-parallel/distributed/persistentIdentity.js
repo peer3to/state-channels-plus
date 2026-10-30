@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const DHT = require("@hyperswarm/dht");
+const DHT = require("hyperdht");
 
 function loadPersistentKeyPair(stateDir, seedFileName) {
     const seedPath = path.join(stateDir, seedFileName);

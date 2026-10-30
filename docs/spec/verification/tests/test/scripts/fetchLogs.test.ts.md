@@ -1,11 +1,6 @@
-# test/scripts/fetchLogs.test.ts — Test Report
+# fetchLogs.test.ts
 
-> **Test file:** [test/scripts/fetchLogs.test.ts](../../../../../../test/scripts/fetchLogs.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/scripts/fetchLogs.test.ts](../../../../../../test/scripts/fetchLogs.test.ts)
 
 ## Overview
 
@@ -15,14 +10,7 @@ the fat one is skipped from the merged read, and asserts the fetched result coun
 and that the persisted file says at its top that the read is incomplete; the control case with a
 complete read writes no such marker.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                  | Covers                                                                                                 |
-| --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| [`fetch-logs > marks a persisted log the server read short`](../../../../../../test/scripts/fetchLogs.test.ts#L40) (line 40)      | [`REQ-LOG-7-M2RC5W.T1.P7`](../../../../specification/runtime/log-collection.md#req-log-7-m2rc5w.t1.p7) |
-| [`fetch-logs > writes no marker for a read the server completed`](../../../../../../test/scripts/fetchLogs.test.ts#L81) (line 81) | —                                                                                                      |
+- `marks a persisted log the server read short`: REQ-LOG-7-M2RC5W.T1.P7
+- `writes no marker for a read the server completed`: none

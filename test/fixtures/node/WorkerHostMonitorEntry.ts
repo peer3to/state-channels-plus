@@ -3,6 +3,7 @@ import { MonitorProbeService } from "../runtimeRpc/probe/monitor/MonitorProbeSer
 import { rootStartContext } from "@/rpc/internal/createRoot";
 import { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
 import type { ContractExecutorInitialization } from "@/rpc/internal/services/contractExecutor/ContractExecutorService";
+import { config, createConfig } from "@/utils/config";
 import { createLogger } from "@platform/createLogger";
 import {
     onRootBootstrap,
@@ -51,18 +52,14 @@ onRootBootstrap<ContractExecutorInitialization>(
             "worker",
             { close: () => logger.dispose(), logger }
         );
-        const root = new ContractExecutorRoot(
-            {
-                ...payload,
-                config: {
-                    ...payload.config,
-                    EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS:
-                        mode === "disabled" ? 0 : 1
-                }
-            },
-            undefined,
-            context
-        );
+        // This worker replaces the creator's config it was bootstrapped with
+        // before the root reads the monitor threshold.
+        createConfig({
+            ...config,
+            EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS:
+                mode === "disabled" ? 0 : 1
+        });
+        const root = new ContractExecutorRoot(payload, undefined, context);
         Object.assign(root, {
             monitorProbe: new MonitorProbeService(root, () => ({ ...counts }))
         });

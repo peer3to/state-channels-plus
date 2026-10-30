@@ -1,12 +1,7 @@
-# test/V1/AStateMachineStipend.t.sol — Test Report
+# AStateMachineStipend.t.sol
 
-> **Test file:** [test/V1/AStateMachineStipend.t.sol](../../../../../../test/V1/AStateMachineStipend.t.sol) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [AStateMachine.sol](../../../../implementation/source/contracts/V1/AStateMachine.sol.md), [StateChannelManagerProxy.sol](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md), [DisputeFraudProofFacet.sol](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/V1/AStateMachineStipend.t.sol](../../../../../../test/V1/AStateMachineStipend.t.sol)
+Exercises: [AStateMachine.sol](../../../../implementation/source/contracts/V1/AStateMachine.sol.md), [StateChannelManagerProxy.sol](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md), [DisputeFraudProofFacet.sol](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md), [FraudProofFacet.sol](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol.md), [UtilityFacet.sol](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md)
 
 ## Overview
 
@@ -53,7 +48,7 @@ message is reported and stored. One fuzzes the input size (up to 128 KiB) and th
 (the requirement ±300,000) directly on the machine: whenever the call succeeds, the transition saw
 at least its budget minus 20,000 gas at entry.
 
-Ten tests cover the dispute fraud proof that replays: a timeout refuted by posted calldata. The
+Nineteen tests cover the dispute fraud proof that replays: a timeout refuted by posted calldata. The
 staging (`test/V1/harness/TimeoutCalldataPostedStaging.sol`) uploads a timeout dispute by
 participant 1 against participant 0 for height 0 of the genesis fork, then has participant 0 post a
 signed block for that height in time, through the diamond's public entry points. The block's
@@ -68,19 +63,32 @@ attached gas assert that an honest `guardedAdd` refutation either kills the disp
 verdict, and that a `burn` refutation never kills it and slashes the submitter exactly when the call
 succeeds.
 
-Three of the ten post a block that is honest for its own base but not linked to the dispute's latest
+Three of the nineteen fault only the posted block's author signature: one signed by the wrong key, one carrying unrecoverable 65 zero bytes, and one with an empty signature. Each funded refutation succeeds as a call, leaves the timeout dispute committed, keeps the disputer standing, and slashes the submitter.
+
+Three of the nineteen post a block that is honest for its own base but not linked to the dispute's latest
 state (`_stageTimeoutCalldataPostedOn`): a snapshot whose state hash names a forged genesis state
 (participant 0 holds a balance it never had), with that forged state and a `previousBlockHash`
 matching the forged snapshot; the real genesis snapshot with the forged state; and the real genesis
 snapshot and state with a `previousBlockHash` of another block. Each funded refutation succeeds as a
 call, leaves the timeout dispute committed, keeps the disputer standing and slashes the submitter.
 
-One of the ten gives the dispute a state proof with one signed block by participant 1
+One of the nineteen gives the dispute a state proof with one signed block by participant 1
 (`_stageTimeoutCalldataPostedAfter`), signed as that block's canonical encoding plus one trailing
 zero word; it asserts that the bytes decode to the same block and hash differently. The dispute
 blames participant 0 for height 1, and the posted block builds on the genesis state through a
 snapshot that the proved block commits to, with a `previousBlockHash` of `keccak256` of the signed
 bytes. The funded refutation kills the timeout dispute and slashes the disputer.
+Five of the nineteen post a block that carries inbound message blocks. The staging's `_joinOnChain`
+runs a real `topUpBalance` or `joinChannel` and reads the inbound block from the event log, and
+`_fundedReplay` applies the posted block's inbound blocks as clients do. A consumed top-up and a
+join by a new address (the replayed snapshot has three participants, the joiner last) each kill the
+timeout dispute. An inbound block with a mis-linked `previousBlockHash` or a skipped height is a
+failed refutation that slashes the submitter, and an inbound message the machine rejects reverts with
+`ErrorDisputeStateMachineInboundProcessingFailed` and no verdict.
+
+One of the nineteen sends the funded refutation inside the upload multicall, five frames below the call that
+attaches the gas, on a 32M-budget machine: below about 21M the estimate's own slack hides a missing
+frame. It kills the dispute only with `getStateTransitionReplayGas` counting all five frames.
 The oracles are the revert data, `getSum`, `isParticipantSlashedOnChain`, and whether the dispute is
 still committed.
 
@@ -95,54 +103,56 @@ Loosening the upfront gas check in `AStateMachine` by 2M makes both guarded swee
 run, while the 32-run guarded fuzzes still pass. The sweeps assign no test IDs of their own:
 `T1.P6`, `T1.P7`, `T1.P21` and `T1.P22` stay with the fuzzes that cover the full attached-gas range.
 
-[`REQ-ENFSM-1-DKJCY2.T1.P2`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p2) (exactly at the gas bound) has no test.
+`REQ-ENFSM-1-DKJCY2.T1.P2` (exactly at the gas bound) has no test.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                  | Covers                                                                                                                                                                                                                                                                                                              |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`test_stateTransition_refusesCheapTransitionBelowStipend`](../../../../../../test/V1/AStateMachineStipend.t.sol#L82) (line 82)                                   | [`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P2`](../../../../implementation/source/contracts/V1/AStateMachine.sol.md#unit-test-astate-machine-2-z2xxmf.p2)                                                                                                                                                                  |
-| [`test_stateTransition_runsWithItsGasRequirement`](../../../../../../test/V1/AStateMachineStipend.t.sol#L93) (line 93)                                            | [`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P4`](../../../../implementation/source/contracts/V1/AStateMachine.sol.md#unit-test-astate-machine-2-z2xxmf.p4)                                                                                                                                                                  |
-| [`test_stateTransition_refusesTheBareBudget`](../../../../../../test/V1/AStateMachineStipend.t.sol#L104) (line 104)                                               | [`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P5`](../../../../implementation/source/contracts/V1/AStateMachine.sol.md#unit-test-astate-machine-2-z2xxmf.p5)                                                                                                                                                                  |
-| [`test_stateTransition_guardedTransitionMatchesAddWhenFunded`](../../../../../../test/V1/AStateMachineStipend.t.sol#L115) (line 115)                              | [`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P6`](../../../../implementation/source/contracts/V1/AStateMachine.sol.md#unit-test-astate-machine-2-z2xxmf.p6)                                                                                                                                                                  |
-| [`test_stateTransition_refusesGuardedTransitionBelowStipend`](../../../../../../test/V1/AStateMachineStipend.t.sol#L126) (line 126)                               | [`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P7`](../../../../implementation/source/contracts/V1/AStateMachine.sol.md#unit-test-astate-machine-2-z2xxmf.p7)                                                                                                                                                                  |
-| [`test_stateTransition_bareRevertIsAVerdictWhenFunded`](../../../../../../test/V1/AStateMachineStipend.t.sol#L136) (line 136)                                     | [`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P8`](../../../../implementation/source/contracts/V1/AStateMachine.sol.md#unit-test-astate-machine-2-z2xxmf.p8)                                                                                                                                                                  |
-| [`test_stateTransition_preservesTheTransitionsError`](../../../../../../test/V1/AStateMachineStipend.t.sol#L146) (line 146)                                       | [`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P9`](../../../../implementation/source/contracts/V1/AStateMachine.sol.md#unit-test-astate-machine-2-z2xxmf.p9)                                                                                                                                                                  |
-| [`test_stateTransition_refusesOutOfGasBelowStipend`](../../../../../../test/V1/AStateMachineStipend.t.sol#L156) (line 156)                                        | [`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P1`](../../../../implementation/source/contracts/V1/AStateMachine.sol.md#unit-test-astate-machine-2-z2xxmf.p1)                                                                                                                                                                  |
-| [`test_stateTransition_reportsBudgetExceededWhenFunded`](../../../../../../test/V1/AStateMachineStipend.t.sol#L166) (line 166)                                    | [`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P3`](../../../../implementation/source/contracts/V1/AStateMachine.sol.md#unit-test-astate-machine-2-z2xxmf.p3)                                                                                                                                                                  |
-| [`test_applyFraudProofs_refusesUnderfundedCheapReplay`](../../../../../../test/V1/AStateMachineStipend.t.sol#L248) (line 248)                                     | [`UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P2`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-3-c3ny4x.p2), [`REQ-ENFSM-1-DKJCY2.T1.P8`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p8)        |
-| [`test_applyFraudProofs_fundedCheapReplayKeepsHonestAuthor`](../../../../../../test/V1/AStateMachineStipend.t.sol#L257) (line 257)                                | [`UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P6`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-3-c3ny4x.p6)                                                                                                                                |
-| [`test_applyFraudProofs_refusesUnderfundedGuardedReplay`](../../../../../../test/V1/AStateMachineStipend.t.sol#L265) (line 265)                                   | [`UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P7`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-3-c3ny4x.p7), [`REQ-ENFSM-1-DKJCY2.T1.P9`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p9)        |
-| [`test_applyFraudProofs_fundedGuardedReplayKeepsHonestAuthor`](../../../../../../test/V1/AStateMachineStipend.t.sol#L274) (line 274)                              | [`UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P8`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-3-c3ny4x.p8), [`REQ-ENFSM-1-DKJCY2.T1.P11`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p11)      |
-| [`test_getStateTransitionReplayGas_fundsReplayOnTopOfItsCost`](../../../../../../test/V1/AStateMachineStipend.t.sol#L285) (line 285)                              | [`UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P10`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-3-c3ny4x.p10), [`REQ-ENFSM-1-DKJCY2.T1.P10`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p10)    |
-| [`test_executeStateTransition_refusesAnOutOfGasMachineFrame`](../../../../../../test/V1/AStateMachineStipend.t.sol#L308) (line 308)                               | [`UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P11`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-3-c3ny4x.p11)                                                                                                                              |
-| [`test_applyFraudProofs_underfundedOutOfGasRevertsInsteadOfAdjudicating`](../../../../../../test/V1/AStateMachineStipend.t.sol#L324) (line 324)                   | [`UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P1`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-3-c3ny4x.p1), [`REQ-ENFSM-1-DKJCY2.T1.P5`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p5)        |
-| [`test_applyFraudProofs_fundedOutOfGasIsFraud`](../../../../../../test/V1/AStateMachineStipend.t.sol#L333) (line 333)                                             | [`UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P4`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-3-c3ny4x.p4), [`REQ-ENFSM-1-DKJCY2.T1.P4`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p4)        |
-| [`testFuzz_applyFraudProofs_attachedGasNeverFlipsHonestVerdict`](../../../../../../test/V1/AStateMachineStipend.t.sol#L344) (line 344)                            | [`UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P3`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-3-c3ny4x.p3), [`REQ-ENFSM-1-DKJCY2.T1.P6`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p6)        |
-| [`testFuzz_applyFraudProofs_attachedGasNeverFlipsGuardedVerdict`](../../../../../../test/V1/AStateMachineStipend.t.sol#L357) (line 357)                           | [`UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P9`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-3-c3ny4x.p9)                                                                                                                                |
-| [`test_stateTransition_callerPaysForDeletingManyPreviousOutboundMessages`](../../../../../../test/V1/AStateMachineStipend.t.sol#L371) (line 371)                  | [`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P13`](../../../../implementation/source/contracts/V1/AStateMachine.sol.md#unit-test-astate-machine-2-z2xxmf.p13)                                                                                                                                                                |
-| [`test_stateTransition_previousOutboundMessagesNeverRaiseTheTransitionsCost`](../../../../../../test/V1/AStateMachineStipend.t.sol#L404) (line 404)               | [`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P14`](../../../../implementation/source/contracts/V1/AStateMachine.sol.md#unit-test-astate-machine-2-z2xxmf.p14)                                                                                                                                                                |
-| [`testFuzz_applyFraudProofs_leftoverOutboundMessagesNeverFlipHonestVerdict`](../../../../../../test/V1/AStateMachineStipend.t.sol#L439) (line 439)                | [`UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P13`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-3-c3ny4x.p13)                                                                                                                              |
-| [`test_stateTransition_reportsOnlyThisTransitionsMessagesAfterALongerList`](../../../../../../test/V1/AStateMachineStipend.t.sol#L453) (line 453)                 | [`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P11`](../../../../implementation/source/contracts/V1/AStateMachine.sol.md#unit-test-astate-machine-2-z2xxmf.p11)                                                                                                                                                                |
-| [`testFuzz_stateTransition_grantsFullBudgetForAnyInputSize`](../../../../../../test/V1/AStateMachineStipend.t.sol#L471) (line 471)                                | [`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P12`](../../../../implementation/source/contracts/V1/AStateMachine.sol.md#unit-test-astate-machine-2-z2xxmf.p12), [`REQ-ENFSM-1-DKJCY2.T1.P12`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p12)                                      |
-| [`testFuzz_applyFraudProofs_inputSizeNeverFlipsGuardedVerdict`](../../../../../../test/V1/AStateMachineStipend.t.sol#L492) (line 492)                             | [`UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P12`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-3-c3ny4x.p12)                                                                                                                              |
-| [`testFuzz_applyFraudProofs_attachedGasNeverFlipsFraudVerdict`](../../../../../../test/V1/AStateMachineStipend.t.sol#L508) (line 508)                             | [`UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P5`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-3-c3ny4x.p5), [`REQ-ENFSM-1-DKJCY2.T1.P7`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p7)        |
-| [`test_applyDisputeFraudProofs_refusesUnderfundedTimeoutCalldataReplay`](../../../../../../test/V1/AStateMachineStipend.t.sol#L563) (line 563)                    | [`REQ-ENFSM-1-DKJCY2.T1.P17`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p17)                                                                                                                                                                                            |
-| [`test_applyDisputeFraudProofs_fundedTimeoutCalldataReplayKillsTimeoutDispute`](../../../../../../test/V1/AStateMachineStipend.t.sol#L574) (line 574)             | [`REQ-ENFSM-1-DKJCY2.T1.P18`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p18)                                                                                                                                                                                            |
-| [`test_applyDisputeFraudProofs_fundedOverBudgetPostedBlockKeepsTimeoutDispute`](../../../../../../test/V1/AStateMachineStipend.t.sol#L584) (line 584)             | [`REQ-ENFSM-1-DKJCY2.T1.P19`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p19)                                                                                                                                                                                            |
-| [`test_applyDisputeFraudProofs_rejectsTimeoutRefutationFromUnlinkedSnapshot`](../../../../../../test/V1/AStateMachineStipend.t.sol#L645) (line 645)               | [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P34`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p34), [`REQ-DIS-10-SAHJBN.T1.P17`](../../../../specification/disputes/disputes.md#req-dis-10-sahjbn.t1.p17) |
-| [`test_applyDisputeFraudProofs_rejectsTimeoutRefutationWhoseStateMissesTheSnapshot`](../../../../../../test/V1/AStateMachineStipend.t.sol#L657) (line 657)        | [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P35`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p35), [`REQ-DIS-10-SAHJBN.T1.P18`](../../../../specification/disputes/disputes.md#req-dis-10-sahjbn.t1.p18) |
-| [`test_applyDisputeFraudProofs_rejectsTimeoutRefutationBlockBuiltOnAnotherBlock`](../../../../../../test/V1/AStateMachineStipend.t.sol#L668) (line 668)           | [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P36`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p36), [`REQ-DIS-10-SAHJBN.T1.P19`](../../../../specification/disputes/disputes.md#req-dis-10-sahjbn.t1.p19) |
-| [`test_applyDisputeFraudProofs_timeoutRefutationLinksToLatestBlockSignedBytes`](../../../../../../test/V1/AStateMachineStipend.t.sol#L683) (line 683)             | [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P37`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p37)                                                                                                        |
-| [`test_getStateTransitionReplayGas_fundsTimeoutCalldataReplayOnTopOfItsCost`](../../../../../../test/V1/AStateMachineStipend.t.sol#L733) (line 733)               | [`REQ-ENFSM-1-DKJCY2.T1.P20`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p20)                                                                                                                                                                                            |
-| [`testFuzz_applyDisputeFraudProofs_attachedGasNeverFlipsHonestPostedCalldata`](../../../../../../test/V1/AStateMachineStipend.t.sol#L760) (line 760)              | [`REQ-ENFSM-1-DKJCY2.T1.P21`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p21)                                                                                                                                                                                            |
-| [`testFuzz_applyDisputeFraudProofs_attachedGasNeverFlipsOverBudgetPostedCalldata`](../../../../../../test/V1/AStateMachineStipend.t.sol#L775) (line 775)          | [`REQ-ENFSM-1-DKJCY2.T1.P22`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p22)                                                                                                                                                                                            |
-| [`test_applyFraudProofs_sweepAcrossRequirementKeepsGuardedHonestAuthor`](../../../../../../test/V1/AStateMachineStipend.t.sol#L851) (line 851)                    | —                                                                                                                                                                                                                                                                                                                   |
-| [`test_applyFraudProofs_sweepAcrossRequirementNeverAcquitsOverBudget`](../../../../../../test/V1/AStateMachineStipend.t.sol#L860) (line 860)                      | —                                                                                                                                                                                                                                                                                                                   |
-| [`test_applyDisputeFraudProofs_sweepAcrossRequirementKeepsHonestPostedCalldata`](../../../../../../test/V1/AStateMachineStipend.t.sol#L872) (line 872)            | —                                                                                                                                                                                                                                                                                                                   |
-| [`test_applyDisputeFraudProofs_sweepAcrossRequirementNeverAcceptsOverBudgetPostedCalldata`](../../../../../../test/V1/AStateMachineStipend.t.sol#L881) (line 881) | —                                                                                                                                                                                                                                                                                                                   |
+- `test_stateTransition_refusesCheapTransitionBelowStipend`: UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P2
+- `test_stateTransition_runsWithItsGasRequirement`: UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P4
+- `test_stateTransition_refusesTheBareBudget`: UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P5
+- `test_stateTransition_guardedTransitionMatchesAddWhenFunded`: UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P6
+- `test_stateTransition_refusesGuardedTransitionBelowStipend`: UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P7
+- `test_stateTransition_bareRevertIsAVerdictWhenFunded`: UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P8
+- `test_stateTransition_preservesTheTransitionsError`: UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P9
+- `test_stateTransition_refusesOutOfGasBelowStipend`: UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P1
+- `test_stateTransition_reportsBudgetExceededWhenFunded`: UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P3
+- `test_applyFraudProofs_refusesUnderfundedCheapReplay`: UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P2, REQ-ENFSM-1-DKJCY2.T1.P8
+- `test_applyFraudProofs_fundedCheapReplayKeepsHonestAuthor`: UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P6
+- `test_applyFraudProofs_refusesUnderfundedGuardedReplay`: UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P7, REQ-ENFSM-1-DKJCY2.T1.P9
+- `test_applyFraudProofs_fundedGuardedReplayKeepsHonestAuthor`: UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P8, REQ-ENFSM-1-DKJCY2.T1.P11
+- `test_getStateTransitionReplayGas_fundsReplayOnTopOfItsCost`: UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P10, REQ-ENFSM-1-DKJCY2.T1.P10
+- `test_executeStateTransition_refusesAnOutOfGasMachineFrame`: UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P11
+- `test_applyFraudProofs_underfundedOutOfGasRevertsInsteadOfAdjudicating`: UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P1, REQ-ENFSM-1-DKJCY2.T1.P5
+- `test_applyFraudProofs_fundedOutOfGasIsFraud`: UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P4, REQ-ENFSM-1-DKJCY2.T1.P4
+- `testFuzz_applyFraudProofs_attachedGasNeverFlipsHonestVerdict`: UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P3, REQ-ENFSM-1-DKJCY2.T1.P6
+- `testFuzz_applyFraudProofs_attachedGasNeverFlipsGuardedVerdict`: UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P9
+- `test_stateTransition_callerPaysForDeletingManyPreviousOutboundMessages`: UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P13
+- `test_stateTransition_previousOutboundMessagesNeverRaiseTheTransitionsCost`: UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P14
+- `testFuzz_applyFraudProofs_leftoverOutboundMessagesNeverFlipHonestVerdict`: UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P13
+- `test_stateTransition_reportsOnlyThisTransitionsMessagesAfterALongerList`: UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P11
+- `testFuzz_stateTransition_grantsFullBudgetForAnyInputSize`: UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P12, REQ-ENFSM-1-DKJCY2.T1.P12
+- `testFuzz_applyFraudProofs_inputSizeNeverFlipsGuardedVerdict`: UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P12
+- `testFuzz_applyFraudProofs_attachedGasNeverFlipsFraudVerdict`: UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P5, REQ-ENFSM-1-DKJCY2.T1.P7
+- `test_applyDisputeFraudProofs_refusesUnderfundedTimeoutCalldataReplay`: REQ-ENFSM-1-DKJCY2.T1.P17
+- `test_applyDisputeFraudProofs_rejectsTimeoutRefutationSignedByAnotherKey`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P206, REQ-DIS-10-SAHJBN.T1.P22
+- `test_applyDisputeFraudProofs_rejectsTimeoutRefutationWithUnrecoverableSignature`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P207, REQ-DIS-10-SAHJBN.T1.P23
+- `test_applyDisputeFraudProofs_rejectsTimeoutRefutationWithoutSignature`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P208, REQ-DIS-10-SAHJBN.T1.P26
+- `test_applyDisputeFraudProofs_fundedTimeoutCalldataReplayKillsTimeoutDispute`: REQ-ENFSM-1-DKJCY2.T1.P18, REQ-DIS-10-SAHJBN.T1.P24
+- `test_applyDisputeFraudProofs_fundedOverBudgetPostedBlockKeepsTimeoutDispute`: REQ-ENFSM-1-DKJCY2.T1.P19
+- `test_applyDisputeFraudProofs_rejectsTimeoutRefutationFromUnlinkedSnapshot`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P34, REQ-DIS-10-SAHJBN.T1.P17
+- `test_applyDisputeFraudProofs_rejectsTimeoutRefutationWhoseStateMissesTheSnapshot`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P35, REQ-DIS-10-SAHJBN.T1.P18
+- `test_applyDisputeFraudProofs_rejectsTimeoutRefutationBlockBuiltOnAnotherBlock`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P36, REQ-DIS-10-SAHJBN.T1.P19
+- `test_applyDisputeFraudProofs_timeoutRefutationLinksToLatestBlockSignedBytes`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P37
+- `test_applyDisputeFraudProofs_timeoutRefutationConsumingATopUpKillsTimeoutDispute`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P209
+- `test_applyDisputeFraudProofs_rejectsTimeoutRefutationWhoseInboundBlockMissesTheInboundHead`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P210, REQ-DIS-10-SAHJBN.T1.P14
+- `test_applyDisputeFraudProofs_rejectsTimeoutRefutationWhoseInboundBlockSkipsAHeight`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P211
+- `test_applyDisputeFraudProofs_timeoutRefutationWithAnInboundMessageTheMachineRejectsReverts`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P212
+- `test_applyDisputeFraudProofs_timeoutRefutationAdmittingAJoinerKillsTimeoutDispute`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P213
+- `test_getStateTransitionReplayGas_fundsTimeoutCalldataReplayInsideMulticall`: UNIT-TEST-UTILITY-FACET-3-VYANPT.P1
+- `test_getStateTransitionReplayGas_fundsTimeoutCalldataReplayOnTopOfItsCost`: REQ-ENFSM-1-DKJCY2.T1.P20
+- `testFuzz_applyDisputeFraudProofs_attachedGasNeverFlipsHonestPostedCalldata`: REQ-ENFSM-1-DKJCY2.T1.P21
+- `testFuzz_applyDisputeFraudProofs_attachedGasNeverFlipsOverBudgetPostedCalldata`: REQ-ENFSM-1-DKJCY2.T1.P22
+- `test_applyFraudProofs_sweepAcrossRequirementKeepsGuardedHonestAuthor`: none
+- `test_applyFraudProofs_sweepAcrossRequirementNeverAcquitsOverBudget`: none
+- `test_applyDisputeFraudProofs_sweepAcrossRequirementKeepsHonestPostedCalldata`: none
+- `test_applyDisputeFraudProofs_sweepAcrossRequirementNeverAcceptsOverBudgetPostedCalldata`: none

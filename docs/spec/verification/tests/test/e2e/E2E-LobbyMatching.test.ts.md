@@ -1,8 +1,7 @@
-# test/e2e/E2E-LobbyMatching.test.ts — Test Report
+# E2E-LobbyMatching.test.ts
 
-> **Test file:** [test/e2e/E2E-LobbyMatching.test.ts](../../../../../../test/e2e/E2E-LobbyMatching.test.ts)  
-> **Status:** Authored — engineer verification pending.  
-> **Exercises:** [LobbyMatchingService.ts](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md), [OpenChannelNegotiationService.ts](../../../../implementation/source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md), [LocalDiscoveryServer.ts](../../../../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md)
+Test file: [test/e2e/E2E-LobbyMatching.test.ts](../../../../../../test/e2e/E2E-LobbyMatching.test.ts)
+Exercises: [LobbyMatchingService.ts](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md), [OpenChannelNegotiationService.ts](../../../../implementation/source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md), [LocalDiscoveryServer.ts](../../../../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md)
 
 ## Overview
 
@@ -20,30 +19,103 @@ The normal matching case counts on-chain transactions: the higher participant se
 transaction and the lower sends none. The exact submitted payload and both signatures are asserted by the
 `OpenChannelNegotiationService` suite.
 
+The promotion case holds matched negotiation on both peers and asserts that each already lists the other
+in ordinary connection tracking while no channel ID exists, so the block of turn #0 is broadcast to it.
+Both joins then leave and the held negotiations fail: neither peer rematches and both connection sets
+are empty.
+The commitment-handoff upgrade case also asserts that the WebRTC replacement is in that set.
+
+The first-block case holds `completeLobby` on both founders after the open, advances one turn, and
+asserts that both reach block #0 while neither founder's `onPostingCalldata` fired, so the block reached
+the other founder over P2P and not through the chain fallback.
+
 The pending-selection upgrade case holds the pick reply and its matching RPC-expiry task until the real WebRTC upgrade completes. It asserts one captured expiry task, pending selection and no blacklist, then releases the reply and observes channel opening. The bound-order cases exercise timeout liability separately.
 
-## Tests and covered test IDs
+The disconnect-during-selection case holds the completion of the higher peer's channel selection (its event listener's subscription removal) after the lower peer's terms validated, then isolates the lower peer, so the unsigned attempt is cleared while the selection is still pending. A third peer joins the same topic; once both sides of the new pair selected the new ID and one `openProposal` reply is parked, the stale selection is released. The oracle is that the new pair opens exactly the negotiated channel, both peers reach `PARTICIPATING` on it, the dead ID never opens, and neither new partner blacklists the other. Without the selection guards the released selection re-subscribes the higher peer's listener to the dead channel, the higher peer never observes its own opening, and the case times out waiting for `PARTICIPATING`.
 
-| Test declaration                                                                                                                                                                                                       | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`E2E: lobby matching > matches two authenticated peers, derives one ID, and opens one channel`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L10) (line 10)                                                   | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P1`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p1), [`REQ-LOBBY-1-PZTPKD.T1.P1`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-1-pztpkd.t1.p1), [`REQ-LOBBY-9-N894C0.T1.P8`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p8), [`REQ-NEG-1-RTKPT1.T1.P7`](../../../../specification/peer-communication/channel-negotiation.md#req-neg-1-rtkpt1.t1.p7) |
-| [`E2E: lobby matching > keeps two caller-supplied lobby topics isolated`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L154) (line 154)                                                                        | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P2`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p2), [`REQ-LOBBY-1-PZTPKD.T1.P2`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-1-pztpkd.t1.p2)                                                                                                                                                                                                                                                |
-| [`E2E: lobby matching > converges four peers on one topic into two exclusive pairs`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L216) (line 216)                                                             | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P3`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p3), [`INV-LOBBY-1-TW7RZT.T1.P1`](../../../../specification/peer-communication/lobby-matching.md#inv-lobby-1-tw7rzt.t1.p1), [`INV-LOBBY-1-TW7RZT.T1.P3`](../../../../specification/peer-communication/lobby-matching.md#inv-lobby-1-tw7rzt.t1.p3), [`REQ-LOBBY-4-E0TARV.T1.P3`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-4-e0tarv.t1.p3)  |
-| [`E2E: lobby matching > suspends a repeatedly silent picker at the retry bound and pairs with another peer on the same topic`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L276) (line 276)                   | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P4`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p4), [`REQ-LOBBY-7-BXQ1QA.T1.P1`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-7-bxq1qa.t1.p1), [`REQ-LOBBY-7-BXQ1QA.T1.P3`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-7-bxq1qa.t1.p3), [`REQ-LOBBY-7-BXQ1QA.T1.P8`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-7-bxq1qa.t1.p8)  |
-| [`E2E: lobby matching > treats final profile loss during selection as neutral and retries immediately`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L337) (line 337)                                          | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P5`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p5), [`REQ-LOBBY-8-31BE0F.T1.P5`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-8-31be0f.t1.p5)                                                                                                                                                                                                                                                |
-| [`E2E: lobby matching > strikes both sides after commitment silence and lets the same pair rematch`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L417) (line 417)                                             | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P6`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p6), [`REQ-LOBBY-7-BXQ1QA.T1.P2`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-7-bxq1qa.t1.p2), [`REQ-LOBBY-7-BXQ1QA.T1.P4`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-7-bxq1qa.t1.p4)                                                                                                                         |
-| [`E2E: lobby matching > excludes both sides when the advertiser bound fires before the selector bound`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L492) (line 492)                                          | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P13`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p13), [`REQ-LOBBY-7-BXQ1QA.T1.P5`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-7-bxq1qa.t1.p5)                                                                                                                                                                                                                                              |
-| [`E2E: lobby matching > excludes both sides when the selector bound fires before the advertiser bound`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L542) (line 542)                                          | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P14`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p14), [`REQ-LOBBY-7-BXQ1QA.T1.P6`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-7-bxq1qa.t1.p6)                                                                                                                                                                                                                                              |
-| [`E2E: lobby matching > keeps a pending selection intact through a successful transport upgrade`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L597) (line 597)                                                | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P9`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p9), [`REQ-LOBBY-6-QSZEXP.T1.P1`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-6-qszexp.t1.p1), [`REQ-LOBBY-8-31BE0F.T1.P3`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-8-31be0f.t1.p3)                                                                                                                         |
-| [`E2E: lobby matching > keeps the committed pair intact when transport upgrade completes during negotiation handoff`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L711) (line 711)                            | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P10`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p10), [`REQ-LOBBY-8-31BE0F.T1.P6`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-8-31be0f.t1.p6)                                                                                                                                                                                                                                              |
-| [`E2E: lobby matching > keeps a reservation unchanged under stale, duplicate, malformed, and wrong-peer RPCs`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L854) (line 854)                                   | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P7`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p7), [`REQ-LOBBY-4-E0TARV.T1.P4`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-4-e0tarv.t1.p4), [`REQ-LOBBY-9-N894C0.T1.P1`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p1), [`REQ-LOBBY-2-TSWRV6.T1.P5`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-2-tswrv6.t1.p5)  |
-| [`E2E: lobby matching > queues early negotiation while matched initialization and ID selection are held`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1000) (line 1000)                                      | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P8`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p8)                                                                                                                                                                                                                                                                                                                                                                       |
-| [`E2E: lobby matching > leaves the lobby topic at handoff so the matched pair stops redialing non-selected peers during negotiation`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1076) (line 1076)          | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P11`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p11), [`REQ-LOBBY-9-N894C0.T1.P14`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p14)                                                                                                                                                                                                                                            |
-| [`E2E: lobby matching > leaves the targeted lobby topic at handoff so the matched pair stops redialing non-selected peers during negotiation`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1191) (line 1191) | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P12`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p12), [`REQ-LOBBY-9-N894C0.T1.P15`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p15)                                                                                                                                                                                                                                            |
-| [`E2E: lobby matching > treats a remote negotiation abort as a lobby exit, not a fault`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1303) (line 1303)                                                       | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P15`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p15), [`REQ-NEG-4-ZQ0985.T1.P12`](../../../../specification/peer-communication/channel-negotiation.md#req-neg-4-zq0985.t1.p12)                                                                                                                                                                                                                                           |
+The two commit-in-flight refusal cases keep the selector's commit open on purpose: they park the
+advertiser's commit reply and hold the selector's commit RPC timeout and the advertiser's reservation
+expiry, so only the released reply settles the commit. In the third-peer case a third peer joins the
+topic and, once its transport to the selector is live, sends a raw `exchangeTerms` request to the
+selector. The oracle is that the selector blacklists the third peer within one agreement window while
+the same commit is still in flight and the selector has no negotiation attempt. A deferred request
+waits two agreement windows, so this refusal was not a deferral. After the reply is released, the
+advertiser and the selector open one channel, the third peer has no channel ID, and the selector does
+not blacklist the advertiser. When the commit-in-flight branch admits any peer, the third peer's
+request is deferred and the case times out waiting for the blacklist.
+
+In the rejected-commit case the advertiser sends a raw `exchangeTerms` request to the selector before
+the parked reply, on the same transport, and the reply is then released as `rejected` without running
+the advertiser's commit endpoint. Right after the selector's commit settles, the selector has not
+blacklisted the advertiser, so the request was deferred. The oracle is that the deferred request later
+expires and the selector blacklists the advertiser, the selector has no negotiation attempt, and
+neither peer has a channel ID. When expiry does not apply the failure policy, the case times out
+waiting for the blacklist.
+
+The signed-attempt remote-abort case waits for both peers to observe transport closure before checking their respective zero/one strike outcomes. Run 453 queried the lower peer before its socket-close event arrived. The signature retention and eventual chain-opening assertions remain unchanged; runtime revalidation is pending.
+
+The expired-opening case shortens the lower proposer's opening window to six seconds with a host stub
+that offsets only the clock read that derives the deadline. Six seconds is below the higher peer's
+30-second minimum, so a second stub offsets only the higher peer's clock read that sets its deadline
+bounds, lowering that minimum to one second for this one proposal; a real deadline over 30 seconds plus
+setup, matching, and the expiry observation would not fit the global test timeout. The case parks the
+higher peer's real submission after it co-signed. It waits until the higher peer's own expiry observation ends the signed attempt,
+then polls the latest block until its timestamp is past the deadline, and only then releases the
+retained signatures to the real submission. The wait sends no transactions and calls no time RPC: it
+relies on the interval-mined E2E node to advance chain time, so on an automine node it times out. A
+record-only wrapper reads the reverted transaction's error back from its trace. The oracle is exactly
+one recorded rejection, `RaceConditionOpenChannelExpired`, and the negotiated channel still closed on
+chain. Without the contract check the same release opens the channel and the case fails.
+
+The late-mined-opening case uses the same two deadline stubs and the submission hold. It also holds
+both peers' opening-expiry observation tasks, so the signed attempts stay current. After the latest
+block is past the deadline, it asserts the higher peer's attempt is unchanged and only then releases
+the submission, so the higher peer's own `open` is mined late on a live attempt. The oracle is exactly
+one recorded rejection, `RaceConditionOpenChannelExpired`; the higher peer's attempt then ends, the
+negotiated channel stays closed, and the higher peer records no strike and no blacklist against the
+lower peer. The case then drops the higher peer's held expiry task, runs the lower peer's held task to
+end its signed attempt, and requires both peers to open one fresh channel with a different ID on the
+same topic. It settles the reverted receipt as the expected detached error. When the receipt-failure
+close spends a strike instead, the case fails on the strike count.
+
+The too-close-deadline case shortens the lower proposer's opening window to ten seconds, below the
+higher peer's 30-second minimum, without lowering that minimum, and installs the submission hold on the
+higher peer so that any submission would be parked and counted. It waits until the higher peer
+blacklists the lower peer, then asserts that the proposer's stub derived the short deadline, that the
+higher peer parked no submission, and that no opening rejection was recorded: the proposer is excluded
+before the higher peer signs or submits anything. It then waits until the lower peer's own signed attempt ends at its
+deadline before leaving the lobby.
+
+## Tests
+
+- `matches two authenticated peers, derives one ID, and opens one channel`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P1, REQ-LOBBY-1-PZTPKD.T1.P1, REQ-LOBBY-9-N894C0.T1.P8, REQ-NEG-1-RTKPT1.T1.P7
+- `keeps two caller-supplied lobby topics isolated`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P2, REQ-LOBBY-1-PZTPKD.T1.P2
+- `converges four peers on one topic into two exclusive pairs`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P3, INV-LOBBY-1-TW7RZT.T1.P1, INV-LOBBY-1-TW7RZT.T1.P3, REQ-LOBBY-4-E0TARV.T1.P3
+- `suspends a repeatedly silent picker at the retry bound and pairs with another peer on the same topic`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P4, REQ-LOBBY-7-BXQ1QA.T1.P1, REQ-LOBBY-7-BXQ1QA.T1.P3, REQ-LOBBY-7-BXQ1QA.T1.P8
+- `treats final profile loss during selection as neutral and retries immediately`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P5, REQ-LOBBY-8-31BE0F.T1.P5
+- `strikes both sides after commitment silence and lets the same pair rematch`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P6, REQ-LOBBY-7-BXQ1QA.T1.P2, REQ-LOBBY-7-BXQ1QA.T1.P4
+- `excludes both sides when the advertiser bound fires before the selector bound`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P13, REQ-LOBBY-7-BXQ1QA.T1.P5
+- `excludes both sides when the selector bound fires before the advertiser bound`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P14, REQ-LOBBY-7-BXQ1QA.T1.P6
+- `keeps a pending selection intact through a successful transport upgrade`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P9, REQ-LOBBY-6-QSZEXP.T1.P1, REQ-LOBBY-8-31BE0F.T1.P3
+- `keeps the committed pair intact when transport upgrade completes during negotiation handoff`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P10, REQ-LOBBY-8-31BE0F.T1.P6
+- `promotes the committed peer into the connection set at commitment and drops it when the negotiation fails`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P21
+- `delivers block #0 of a lobby-opened channel over P2P before the lobby session ends`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P22
+- `keeps a reservation unchanged under stale, duplicate, malformed, and wrong-peer RPCs`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P7, REQ-LOBBY-4-E0TARV.T1.P4, REQ-LOBBY-9-N894C0.T1.P1, REQ-LOBBY-2-TSWRV6.T1.P5
+- `queues early negotiation while matched initialization and ID selection are held`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P8
+- `defers the advertiser's first negotiation request that reaches the selector before its commit acknowledgement: one channel opens and neither side blacklists the other`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P18
+- `blacklists a third peer's negotiation request that reaches the selector while its commit is in flight: the pair still opens one channel without it`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P19
+- `refuses the advertiser's deferred negotiation request when the selector's commit is rejected: the request expires, the selector blacklists the advertiser, and no channel opens`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P20, REQ-NEG-4-ZQ0985.T1.P2
+- `rematches and opens one channel after the counterparty disconnects while the higher peer is still selecting the channel`: none
+- `leaves the lobby topic at handoff so the matched pair stops redialing non-selected peers during negotiation`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P11, REQ-LOBBY-9-N894C0.T1.P14
+- `leaves the targeted lobby topic at handoff so the matched pair stops redialing non-selected peers during negotiation`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P12, REQ-LOBBY-9-N894C0.T1.P15
+- `treats a remote negotiation abort as a lobby exit, not a fault`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P15, REQ-NEG-4-ZQ0985.T1.P12
+- `ends a lobby join left during the negotiation handoff instead of rematching`: REQ-LOBBY-9-N894C0.T1.P26
+- `keeps a signed attempt observing the chain after a remote abort and opens on the observed submission`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P16
+- `rejects retained opening signatures submitted on chain after the SDK expired the opening terms`: REQ-ENFADM-4-2NN96F.T1.P4
+- `closes the peer without a strike and rematches when a live attempt's own opening is mined after the deadline`: REQ-NEG-4-ZQ0985.T1.P19
+- `excludes a proposer whose opening deadline leaves less than the minimum window, without submitting`: INV-NEG-1-6FW90P.T1.P11
+- `retries a targeted connect on the same runtime after a remote abort`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P17
 
 The ordinary regression keeps transcript-derived negotiation distinct from targeted fixed-ID work. Matching
 returns a generic committed peer; `joinLobby` starts negotiation and consumes its direct outcome. An
 already-open derived ID is a protocol failure with punishment, listener cleanup, and no raw-topic sync path.
-| [`E2E: lobby matching > keeps a signed attempt observing the chain after a remote abort and opens on the observed submission`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1375) (line 1375) | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P16`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p16) |
-| [`E2E: lobby matching > retries a targeted connect on the same runtime after a remote abort`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1470) (line 1470) | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P17`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p17) |

@@ -27,6 +27,24 @@ const timeConfig = {
     evidenceTime: 60
 };
 
+function hardhatWallets() {
+    return [0, 1, 2, 3].map((index) =>
+        ethers.HDNodeWallet.fromPhrase(
+            DEFAULT_HARDHAT_MNEMONIC,
+            undefined,
+            `m/44'/60'/0'/0/${index}`
+        )
+    );
+}
+
+/** The two runtime wallets: the deployer joins the existing channel it opens. */
+function peerWallets(openExistingChannel) {
+    const [deployerWallet, peerAWallet, peerBWallet] = hardhatWallets();
+    return openExistingChannel
+        ? [deployerWallet, peerAWallet]
+        : [peerAWallet, peerBWallet];
+}
+
 /**
  * Deploy the full stack against the external hardhat node (reached through the
  * same-origin RPC proxy) and derive a shared channel id for discovery. The
@@ -35,15 +53,7 @@ const timeConfig = {
  */
 export async function deployStack(providerUrl, openExistingChannel) {
     const provider = new ethers.JsonRpcProvider(providerUrl);
-    const wallets = [0, 1, 2, 3].map((index) =>
-        ethers.HDNodeWallet.fromPhrase(
-            DEFAULT_HARDHAT_MNEMONIC,
-            undefined,
-            `m/44'/60'/0'/0/${index}`
-        )
-    );
-    const [deployerWallet, peerAWallet, peerBWallet, genesisPeerWallet] =
-        wallets;
+    const [deployerWallet, , , genesisPeerWallet] = hardhatWallets();
     const deployerSigner = new NonceManager(deployerWallet.connect(provider));
 
     const scmDeployment = await deployFullStack(deployerSigner, {
@@ -98,9 +108,7 @@ export async function deployStack(providerUrl, openExistingChannel) {
         provider,
         scmAddress: scmDeployment.address,
         channelId,
-        peerWallets: openExistingChannel
-            ? [deployerWallet, peerAWallet]
-            : [peerAWallet, peerBWallet],
+        peerWallets: peerWallets(openExistingChannel),
         openConfirmedChannel
     };
 }
@@ -222,11 +230,20 @@ export async function setupBrowserPeer(
 // setup (~12.7s of ~13s under the gate's interval mining), and no scenario
 // here depends on a fresh deployment: each only needs a manager to set a
 // runtime up against. Keyed by provider URL, so a realm that ever sees another
-// node deploys again.
+// node deploys again. A worker realm whose runtime config carries the page's
+// scmAddress reuses that deployment, so a page and its workers deploy once.
 const sharedDeployments = new Map();
 
 function sharedDeployment(providerUrl) {
     let deployment = sharedDeployments.get(providerUrl);
+    const scmAddress = globalThis.__SDK_RUNTIME__?.scmAddress;
+    if (!deployment && scmAddress) {
+        deployment = Promise.resolve({
+            scmAddress,
+            peerWallets: peerWallets(false)
+        });
+        sharedDeployments.set(providerUrl, deployment);
+    }
     if (!deployment) {
         deployment = deployStack(providerUrl, false).then((stack) => {
             // Callers get their own provider; this one only served the deploy.
@@ -278,26 +295,38 @@ export async function createBrowserSdkExecutor(options = {}) {
                 onRuntimeRoot: options.onRuntimeRoot,
                 hostContext: {
                     createContractExecutor: async (factoryOptions, owner) => {
-                        if (options.clockAdjustmentSeconds !== undefined) {
-                            shiftedClock = new TestClockProvider(
-                                stack.provider,
-                                options.clockAdjustmentSeconds -
-                                    Clock.getClockAdjustmentSeconds()
-                            );
-                            await Clock.init(shiftedClock);
-                            // The sync keeps any offset within one average
-                            // block time, so the adjustment the executor
-                            // receives can differ from the requested one.
-                            clockAdjustmentSeconds =
-                                Clock.getClockAdjustmentSeconds();
-                        }
+                        // Shifted once the host's own Clock runs: the executor
+                        // reads the adjustment after its configuration.
+                        const configuration =
+                            options.clockAdjustmentSeconds === undefined
+                                ? factoryOptions.configuration
+                                : factoryOptions.configuration.then(
+                                      async (executorConfiguration) => {
+                                          shiftedClock = new TestClockProvider(
+                                              stack.provider,
+                                              options.clockAdjustmentSeconds -
+                                                  Clock.getClockAdjustmentSeconds()
+                                          );
+                                          await Clock.init(shiftedClock);
+                                          // The sync keeps any offset within one average
+                                          // block time, so the adjustment the executor
+                                          // receives can differ from the requested one.
+                                          clockAdjustmentSeconds =
+                                              Clock.getClockAdjustmentSeconds();
+                                          return executorConfiguration;
+                                      }
+                                  );
                         const NativeWorker = globalThis.Worker;
                         if (options.dependencies?.workerUrl) {
                             globalThis.Worker = class extends NativeWorker {
                                 constructor(url, workerOptions) {
+                                    // The worker runtime spawns from the absolute URL.
                                     const isExecutor =
-                                        String(url) ===
-                                        String(executorWorkerUrl);
+                                        new URL(url, location.href).href ===
+                                        new URL(
+                                            executorWorkerUrl,
+                                            location.href
+                                        ).href;
                                     super(
                                         isExecutor
                                             ? options.dependencies.workerUrl
@@ -314,17 +343,18 @@ export async function createBrowserSdkExecutor(options = {}) {
                                 }
                             };
                         }
+                        // The executor is the host's first child: its handler is in
+                        // place before it starts, so its earliest error is reported.
+                        if (options.dependencies?.onDetachedError)
+                            RootCreationControl.reportNextChildErrors(
+                                owner,
+                                options.dependencies.onDetachedError
+                            );
                         try {
                             executor = await createContractExecutor(
-                                factoryOptions,
+                                { ...factoryOptions, configuration },
                                 owner
                             );
-                            if (options.dependencies?.onDetachedError)
-                                [...owner.children]
-                                    .at(-1)
-                                    .onError(
-                                        options.dependencies.onDetachedError
-                                    );
                         } finally {
                             globalThis.Worker = NativeWorker;
                         }
@@ -336,6 +366,7 @@ export async function createBrowserSdkExecutor(options = {}) {
         return {
             executor,
             instance,
+            scmAddress: stack.scmAddress,
             clockAdjustmentSeconds,
             async dispose() {
                 try {

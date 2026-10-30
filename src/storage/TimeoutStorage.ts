@@ -16,14 +16,15 @@ export class TimeoutStorage {
     // CREATE & UPDATE
     // ====================================
 
+    // stores happen only at the node's next height, so a stored timeout at a
+    // lower height names a height the node already passed -> newest wins
     storeTimeout(forkId: ForkId, timeout: TimeoutStruct): void {
-        const existingTimeout = this.timeouts.get(forkId);
-        if (
-            existingTimeout &&
-            timeout.blockHeight > existingTimeout.blockHeight
-        )
-            return;
         this.timeouts.set(forkId, timeout);
+    }
+
+    // drops any stored timeout, forced included
+    removeTimeout(forkId: ForkId): void {
+        this.timeouts.delete(forkId);
     }
 
     // drops a refused plain timeout; a forced one stored since survives

@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: shared runtime setup for P2PManager component tests
 
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import { Status } from "@/types";
 import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
@@ -21,11 +22,15 @@ export type P2PManagerFixtureSetup = {
     peerCount?: number;
     openChannel?: boolean;
     timeConfig?: HarnessOptions["timeConfig"];
+    /** Each peer in its own thread, so a probe's process-wide patch stays in its peer. */
+    isolatedPeers?: boolean;
+    /** Every host inline in the test process, so a test reads its log store after abort. */
+    inlineHosts?: boolean;
 };
 
 export class P2PManagerFixture {
     private readonly harness = new PeerTestHarness<
-        PingPongRpc,
+        P2pRuntimeHostRoot<PingPongRpc>,
         MathStateMachine
     >({ deployment: DEFAULT_MATH_HARNESS_DEPLOYMENT });
 
@@ -33,6 +38,11 @@ export class P2PManagerFixture {
         await this.harness.setup(options.peerCount ?? 2, {
             autoConnect: false,
             timeConfig: options.timeConfig,
+            configOverrides: options.isolatedPeers
+                ? { RUN_SDK_IN_THREAD: true }
+                : options.inlineHosts
+                  ? { RUN_SDK_IN_THREAD: false }
+                  : undefined,
             customRpcManifest: {
                 module: path.resolve(
                     __dirname,
@@ -48,16 +58,17 @@ export class P2PManagerFixture {
     }
 
     public control(): RemoteRpcProxyType<PingPongRpc> {
-        return this.harness.control(
-            this.harness.getPeer(0)
-        ) as RemoteRpcProxyType<PingPongRpc>;
+        return this.harness.getPeer(0).p2pInstance.hostRpc;
     }
 
     public address(index: number): string {
         return String(this.harness.getPeerAddresses()[index]);
     }
 
-    public getHarness(): PeerTestHarness<PingPongRpc, MathStateMachine> {
+    public getHarness(): PeerTestHarness<
+        P2pRuntimeHostRoot<PingPongRpc>,
+        MathStateMachine
+    > {
         return this.harness;
     }
 

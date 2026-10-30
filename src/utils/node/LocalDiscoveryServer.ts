@@ -51,8 +51,13 @@ type DiscoverySession = {
     connectionKeys: Set<PeerConnectionKey>;
     pendingDials: Set<WebSocket>;
     retryTimers: Set<ReturnType<typeof setTimeout>>;
+    // Latest advertised endpoint for each peer in this exact topic session.
+    peerPorts: Map<ChecksumAddress, Port>;
     // When the last accepted socket from each dialer (checksum address) closed.
     inboundClosedAt: Map<ChecksumAddress, number>;
+    // Peers this session has an outbound dial in flight to. They end with the
+    // session, so a rejoin can dial before a left dial's socket finishes closing.
+    dialingPeers: Set<ChecksumAddress>;
 };
 
 /**
@@ -91,10 +96,6 @@ export class LocalDiscoveryServer {
 
     /** Retry count per outbound local-port to peer-port connection. */
     private static _peerRetryCount: Map<PeerConnectionKey, number> = new Map();
-    // Per runtime: checksum EVM addresses with an outbound dial in flight on
-    // any observed topic, so a second topic never dials the same peer twice.
-    private static dialingPeers: WeakMap<P2PManager, Set<string>> =
-        new WeakMap();
 
     /** Discovery and primary peer-dial retries owned by this server. */
     private static pendingTimers: Set<ReturnType<typeof setTimeout>> =
@@ -814,7 +815,9 @@ export class LocalDiscoveryServer {
             connectionKeys: new Set(),
             pendingDials: new Set(),
             retryTimers: new Set(),
-            inboundClosedAt: new Map()
+            peerPorts: new Map(),
+            inboundClosedAt: new Map(),
+            dialingPeers: new Set()
         };
         sessions.set(rendezvousKey, session);
         this.discoverySessions.set(p2pManager, sessions);
@@ -1044,6 +1047,10 @@ export class LocalDiscoveryServer {
             );
             if (!session || session.server !== myServer) return;
 
+            // A restart can announce a replacement while the old dial is still
+            // active. Retain it even when duplicate-dial admission skips it.
+            session.peerPorts.set(getChecksumAddress(peerAddress), peerPort);
+
             if (this.isPeerExcluded(p2pManager, peerAddress)) {
                 this.logger.debug("Announcement ignored (blacklisted)", {
                     ...logBase,
@@ -1106,29 +1113,11 @@ export class LocalDiscoveryServer {
             peerAddress as Address
         );
         if (profile && profile.getLiveTransports().length > 0) return true;
-        return (
-            this.dialingPeers
-                .get(p2pManager)
-                ?.has(getChecksumAddress(peerAddress)) === true
+        // An outbound dial in flight on any observed topic.
+        const sessions = this.discoverySessions.get(p2pManager)?.values() ?? [];
+        return [...sessions].some((session) =>
+            session.dialingPeers.has(getChecksumAddress(peerAddress))
         );
-    }
-
-    private static markPeerDialing(
-        p2pManager: P2PManager,
-        peerAddress: string
-    ): void {
-        const dialing = this.dialingPeers.get(p2pManager) ?? new Set();
-        dialing.add(getChecksumAddress(peerAddress));
-        this.dialingPeers.set(p2pManager, dialing);
-    }
-
-    private static unmarkPeerDialing(
-        p2pManager: P2PManager,
-        peerAddress: string
-    ): void {
-        this.dialingPeers
-            .get(p2pManager)
-            ?.delete(getChecksumAddress(peerAddress));
     }
 
     /** A recorded verdict or a session suspension: do not dial this peer again. */
@@ -1155,9 +1144,12 @@ export class LocalDiscoveryServer {
         myPeerPort: Port
     ): void {
         const session = this.getDiscoverySession(p2pManager, rendezvousKey);
+        if (!session) return;
+        // Retry callbacks may have captured a port belonging to an old runtime.
+        peerPort =
+            session.peerPorts.get(getChecksumAddress(peerAddress)) ?? peerPort;
         const connectionKey: PeerConnectionKey = `${myPeerPort}->${peerPort}`;
         const retryCount = this._peerRetryCount.get(connectionKey) || 0;
-        if (!session) return;
         const skipReason = this._cleanupRequested
             ? "cleanup-requested"
             : p2pManager.isDisposed
@@ -1189,7 +1181,7 @@ export class LocalDiscoveryServer {
 
         session.activeDials.add(connectionKey);
         session.connectionKeys.add(connectionKey);
-        this.markPeerDialing(p2pManager, peerAddress);
+        session.dialingPeers.add(getChecksumAddress(peerAddress));
 
         const attempt = retryCount + 1;
         const peerUrl = `ws://${LOCAL_WS_HOST}:${peerPort}`;
@@ -1331,7 +1323,7 @@ export class LocalDiscoveryServer {
                 clearTimeout(transportReadyTimeout);
                 session.pendingDials.delete(_ws);
                 session.activeDials.delete(connectionKey);
-                this.unmarkPeerDialing(p2pManager, peerAddress);
+                session.dialingPeers.delete(getChecksumAddress(peerAddress));
                 this.logger.debug("Peer connection closed", {
                     mode: "peer",
                     myPeerAddress,
@@ -1364,7 +1356,7 @@ export class LocalDiscoveryServer {
             },
             onConnectFailure: (reason, details) => {
                 session.pendingDials.delete(dialWs);
-                this.unmarkPeerDialing(p2pManager, peerAddress);
+                session.dialingPeers.delete(getChecksumAddress(peerAddress));
                 scheduleRetry(reason, details);
             }
         });
@@ -1456,7 +1448,6 @@ export class LocalDiscoveryServer {
         // 4. Clear internal state
         this._peerRetryCount.clear();
         this.discoverySessions = new WeakMap();
-        this.dialingPeers = new WeakMap();
         this.registeredPeers = [];
 
         this.logger.debug("LocalDiscovery cleanup complete", {

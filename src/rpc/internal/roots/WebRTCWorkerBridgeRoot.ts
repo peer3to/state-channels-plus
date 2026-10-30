@@ -1,6 +1,6 @@
 import { AInternalRpcRoot } from "../AInternalRpcRoot";
 import { createRoot, type RootStartContext } from "../createRoot";
-import type { RemoteRoot } from "../RemoteRoot";
+import { RootDisposedError, type RemoteRoot } from "../RemoteRoot";
 import { WebRTCMainThreadBridgeRoot } from "./WebRTCMainThreadBridge";
 import { WebRTCBridgeService } from "../services/webRTCBridge/WebRTCBridgeService";
 import { WebRTCNegotiationService } from "../services/webRTCNegotiation/WebRTCNegotiationService";
@@ -95,7 +95,9 @@ export class WebRTCWorkerBridgeRoot extends AInternalRpcRoot {
         // Fail pending bridge work during disposal instead of leaving callers waiting.
         return this.disposeRoot(() =>
             this.router.rejectAllRpcRequests(
-                new Error("WebRTC bridge disposed with the runtime host")
+                new RootDisposedError(
+                    "WebRTC bridge disposed with the runtime host"
+                )
             )
         );
     }

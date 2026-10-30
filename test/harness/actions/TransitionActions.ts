@@ -1,13 +1,18 @@
 // @spec-test-coverage-ignore: shared transition actions exercised by owning mapped test declarations
 import { Block, StateSnapshot } from "@/models";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { IngestBlockConfirmationOptions } from "@/stateManager/ingest/BlockQueueManager";
 import { Status } from "@/types";
-import type { ForkId } from "@/types/types";
+import type { ForkId, Timestamp } from "@/types/types";
 import { Codec, Logger, sleep, Type } from "@/utils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import type { TestPeer } from "@test/harness/core/types";
+import { waitFor } from "@test/utils/waitFor";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { AStateMachine as AStateMachineContract } from "@typechain-types/index";
 
@@ -67,11 +72,12 @@ export function effectiveWaitForFinalization(
  * Handles state transition operations on the state machine
  */
 export class TransitionActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc,
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>,
     TContract extends AStateMachineContract = AStateMachineContract
 > {
     constructor(
-        protected harness: PeerTestHarness<TCustomRpc, TContract>,
+        protected harness: PeerTestHarness<THost, TContract>,
         protected logger: Logger
     ) {}
 
@@ -84,7 +90,7 @@ export class TransitionActions<
     ): Promise<any> {
         const nextPeer =
             (await this.harness.query.getNextPeerToWrite()) as TestPeer<
-                TCustomRpc,
+                THost,
                 TContract
             >;
 
@@ -197,49 +203,49 @@ export class TransitionActions<
             // keep-alive block late and the stamps fall behind the wall clock
             // until the subjective window rejects them.
             lastWriteAt = Date.now();
-            await this.submit(writer, options.txFn, { waitForPeers });
+            await this.submit(writer, options.txFn, { waitForSync: false });
             blocksAuthored += 1;
+            // the awaited condition (a dispute, a removal) can stop this
+            // block from committing, so it ends the wait as well
+            await this.waitUntilSyncedOr(writer, waitForPeers, until);
         }
         return blocksAuthored;
     }
 
+    /**
+     * One write from the next honest writer; waits for tip agreement on the
+     * active honest peers. A later block finalizes this one by virtual
+     * voting, so only a caller whose next step needs this tip final in every
+     * view (a snapshot post of it) passes `waitForFinalization`.
+     */
     async fromHonestPeersOnly(
         txFn: (contract: TContract) => Promise<any>,
-        options?: { waitForSync?: boolean }
+        options?: { waitForSync?: boolean; waitForFinalization?: boolean }
     ): Promise<void> {
         const syncIndices = this.harness
             .getActiveHonestPeers()
             .map((p) => p.index);
 
-        // waitForPeers limits who we barrier on, but we still want union finalization on those peers.
         await this.submitNext(txFn, {
             waitForTurn: true,
             waitForPeers: syncIndices,
             waitForSync: options?.waitForSync ?? true,
-            waitForFinalization: true
+            waitForFinalization: options?.waitForFinalization ?? false
         });
     }
 
+    /**
+     * Writes from the honest writers in turn. Each write waits for tip
+     * agreement only: the next block finalizes the previous one by virtual
+     * voting, while full explicit signatures on a tip can stay short (a peer
+     * that commits a block from calldata never gets a signature sent before
+     * it held the block), so waiting for them would starve the next write.
+     */
     async sequenceFromHonestPeers(
         txFns: Array<(contract: TContract) => Promise<any>>
     ): Promise<void> {
-        const syncIndices = this.harness
-            .getActiveHonestPeers()
-            .map((p) => p.index);
-        if (!syncIndices) {
-            throw new Error(
-                "honestPeerIndices not set - resolve dispute context first"
-            );
-        }
-
         for (const txFn of txFns) {
-            await this.submitNext(txFn, {
-                waitForTurn: true,
-                waitForPeers: syncIndices,
-                waitForSync: true,
-                // Same as fromHonestPeersOnly: filtered barrier, full finalization on waited peers.
-                waitForFinalization: true
-            });
+            await this.fromHonestPeersOnly(txFn);
         }
     }
 
@@ -255,10 +261,8 @@ export class TransitionActions<
         forkId?: string;
         timeoutMs?: number;
     }): Promise<StateSnapshot | undefined> {
-        // Submit without holding the control RPC open for the transaction:
-        // a mined transaction on a loaded farm outlasts the RPC budget. The
-        // barrier below is the completion signal; a failed post surfaces as
-        // a detached host error at quiesce.
+        // The post resolves once mined; the barrier below waits until every
+        // honest peer holds the posted snapshot.
         const expectedSnapshot = await this.requestPostSnapshot(options);
         if (!expectedSnapshot) return undefined;
 
@@ -302,7 +306,10 @@ export class TransitionActions<
         }
 
         const transition = this.harness.control(peer).transition;
-        const result = await transition.postStateSnapshot(forkId).request();
+        // the post waits until mined: the protocol event budget bounds it
+        const result = await transition.postStateSnapshot(forkId).request({
+            timeoutMs: this.harness.event.protocolEventTimeoutMs()
+        });
         return result
             ? StateSnapshot.from(
                   Codec.decode(result.encodedSnapshot, Type.StateSnapshot)
@@ -353,27 +360,11 @@ export class TransitionActions<
         };
     }
 
-    async validWithoutPeer(
-        excludePeer: number,
-        txFn: (contract: TContract) => Promise<any>
-    ): Promise<void> {
-        const includedPeers = this.harness.peers
-            .map((_: unknown, i: number) => i)
-            .filter((i: number) => i !== excludePeer);
-
-        await this.submitNext(txFn, {
-            waitForPeers: includedPeers,
-            waitForSync: true,
-            // Exclude one peer from the sync barrier only; still require finalized tips on included peers.
-            waitForFinalization: true
-        });
-    }
-
     /**
      * Submit a transaction from a specific peer
      */
     async submit(
-        peer: TestPeer<TCustomRpc, TContract>,
+        peer: TestPeer<THost, TContract>,
         txFn: (contract: TContract) => Promise<any>,
         options: TransitionOptions = {}
     ): Promise<any> {
@@ -416,6 +407,32 @@ export class TransitionActions<
         }
 
         return result;
+    }
+
+    /**
+     * `peer` posts a block's calldata on-chain the way the chain-fallback path
+     * does; the harness provider waits until it mines. Returns the chain block
+     * the post landed in and that block's timestamp.
+     */
+    async postBlockCalldataOnChainWait(
+        peer: TestPeer<THost, TContract>,
+        encodedSignedBlock: string
+    ): Promise<{ blockNumber: number; onChainTimestamp: Timestamp }> {
+        const { transactionHash } = await this.harness
+            .control(peer)
+            .validation.postBlockCalldataOnChain(encodedSignedBlock)
+            .request();
+        const receipt = await this.harness.provider.waitForTransaction(
+            transactionHash,
+            1,
+            this.harness.event.protocolEventTimeoutMs()
+        );
+        if (!receipt) throw new Error("postBlockCalldata produced no receipt");
+        const chainBlock = await receipt.getBlock();
+        return {
+            blockNumber: receipt.blockNumber,
+            onChainTimestamp: chainBlock.timestamp
+        };
     }
 
     async ingestBlockConfirmationWait(options: {
@@ -477,7 +494,7 @@ export class TransitionActions<
      * Wait for a peer to receive their turn
      */
     private async waitForTurn(
-        peer: TestPeer<TCustomRpc, TContract>,
+        peer: TestPeer<THost, TContract>,
         timeoutMs?: number
     ): Promise<void> {
         const waitTimeoutMs =
@@ -565,6 +582,40 @@ export class TransitionActions<
                 return sm.status;
             },
             { forkId, timestampOverride, timestampOffsetSeconds }
+        );
+    }
+
+    /** Waits until `waitForPeers` reach the writer's latest height, or `until` holds. */
+    private async waitUntilSyncedOr(
+        writer: TestPeer<THost, TContract>,
+        waitForPeers: number[] | undefined,
+        until: () => boolean | Promise<boolean>
+    ): Promise<void> {
+        const forkId = this.harness.activeForkId;
+        if (!forkId)
+            throw new Error("No active fork ID - cannot wait for sync");
+        const height = await this.harness
+            .control(writer)
+            .query.getLatestBlockHeight(forkId)
+            .request();
+        const peers =
+            waitForPeers !== undefined
+                ? this.harness.getFilteredPeers(waitForPeers)
+                : this.harness.getActiveHonestPeers();
+        await waitFor(
+            async () =>
+                (await until()) ||
+                (
+                    await Promise.all(
+                        peers.map((peer) =>
+                            this.harness
+                                .control(peer)
+                                .query.getLatestBlockHeight(forkId)
+                                .request()
+                        )
+                    )
+                ).every((peerHeight) => (peerHeight ?? -1) >= (height ?? 0)),
+            this.harness.event.protocolEventTimeoutMs()
         );
     }
 }

@@ -1,4 +1,4 @@
-const DHT = require("@hyperswarm/dht");
+const DHT = require("hyperdht");
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");

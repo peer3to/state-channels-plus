@@ -46,14 +46,14 @@ const notRoutedByFacet: Record<
             "dispute computation helper - LocalDiamond delegatecalls it with its own gas budget",
         computeDisputeOutputState:
             "dispute computation helper - LocalDiamond delegatecalls it with its own gas budget",
-        generateDisputeOutputState:
-            "internal step of the dispute pipeline, not part of the diamond surface",
         isDisputeOutputCorrect:
             "dispute verification helper - LocalDiamond delegatecalls it with its own gas budget",
         killDispute:
             "invoked from within the dispute pipeline; exposing it externally would widen the attack surface"
     },
     FraudProofFacet: {
+        isBlockReplayValid:
+            "replay step shared by the fraud-proof handlers; DisputeFraudProofFacet delegatecalls it",
         runFraudProof:
             "single fraud-proof step driven by applyFraudProofs; not callable on its own"
     },
@@ -67,7 +67,6 @@ const notRoutedByFacet: Record<
         concatExitChannelArrays:
             "stateless helper called on the facet directly",
         decodeBlock: "stateless helper called on the facet directly",
-        inParticipantUnion: "stateless helper called on the facet directly",
         insertBytesInByteArray: "stateless helper called on the facet directly",
         insertIntoAddressArrayNoDuplicates:
             "stateless helper called on the facet directly",
@@ -145,7 +144,7 @@ export async function expectFacetSelectorsNotRouted(
 }
 
 /** Functions the proxy implements itself - they dispatch before the fallback. */
-export function proxyOwnedFunctions(): DiamondFunction[] {
+function proxyOwnedFunctions(): DiamondFunction[] {
     return functionFragments(
         StateChannelManagerProxy__factory.abi as InterfaceAbi
     ).map((fragment) => ({
@@ -155,7 +154,7 @@ export function proxyOwnedFunctions(): DiamondFunction[] {
 }
 
 /** Facet functions the fallback routes: every facet function the spec doesn't exclude. */
-export function routedFacetFunctions(): DiamondFunction[] {
+function routedFacetFunctions(): DiamondFunction[] {
     return facetRoutingSpecs.flatMap((spec) =>
         functionFragments(spec.abi)
             .filter((fragment) => !(fragment.name in spec.notRouted))

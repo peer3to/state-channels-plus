@@ -119,7 +119,8 @@ describe("browser tier environment", function () {
     it("checks the gates' Chromium before a run schedules them", async function () {
         // The browser typecheck says nothing about the browser,
         // so without this the tier fails only after the whole run.
-        expect(await browserChromiumFailure()).to.equal(null);
+        const failure = await browserChromiumFailure();
+        if (failure) throw failure;
     });
 
     it("passes the Chromium pre-check when only the headless shell the gates launch is installed", function () {
@@ -136,6 +137,7 @@ describe("browser tier environment", function () {
     });
 
     it("launches a real Chromium through the gates' own policy", function () {
-        expect(runGateLaunchProbe("launch")).to.contain("LAUNCHED");
+        const output = runGateLaunchProbe("launch");
+        expect(output, output).to.contain("LAUNCHED");
     });
 });

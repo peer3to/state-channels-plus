@@ -67,7 +67,10 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         NetworkTransport,
         () => void
     >();
-    /** Selected transports promoted for negotiation and closed on retry. */
+    /**
+     * Selected transports, promoted into the connection set at commitment and
+     * closed on retry.
+     */
     private readonly handedOffTransports = new Set<NetworkTransport>();
     /** Selected profile that may add replacement transports during handoff. */
     private handedOffPeerAddress?: Address;
@@ -132,7 +135,8 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
     public async match(
         topic: string,
         matchTimeoutMs?: number | null,
-        observedTargetChannelId?: string
+        observedTargetChannelId?: string,
+        left?: () => boolean
     ): Promise<LobbyMatch | undefined> {
         const normalizedTopic = this.validateTopic(topic);
         const normalizedTimeout = validateMatchTimeout(matchTimeoutMs);
@@ -146,14 +150,24 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         this.matchesWaitingForCleanup += 1;
         try {
             await this.cleanupInFlight;
-            if (this.activeTopic && !this.matchResolve) {
-                throw new Error(
-                    "Lobby matching already handed off to channel negotiation"
-                );
+            // a caller that has left replaces no session, its own or another's
+            if (!left?.()) {
+                if (this.activeTopic && !this.matchResolve) {
+                    throw new Error(
+                        "Lobby matching already handed off to channel negotiation"
+                    );
+                }
+                if (this.activeTopic) await this.cleanup();
             }
-            if (this.activeTopic) await this.cleanup();
         } finally {
             this.matchesWaitingForCleanup -= 1;
+        }
+        // A caller that left while this waited starts no session; the session
+        // starts synchronously below, so a later leave cancels it instead.
+        // Cleanup without a session only settles discovery status.
+        if (left?.()) {
+            if (!this.activeTopic) await this.cleanup();
+            return undefined;
         }
         return this.startMatching(
             normalizedTopic,
@@ -182,16 +196,13 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         return true;
     }
 
-    /** Ends topic membership after negotiation has reached an opened channel. */
+    /**
+     * Ends the lobby session after negotiation has reached an opened channel;
+     * the handed-off transports stay connected.
+     */
     public async completeLobby(topic: string): Promise<void> {
         const normalizedTopic = this.validateTopic(topic);
         if (normalizedTopic !== this.activeTopic || this.matchResolve) return;
-        if (this.handedOffPeerAddress) {
-            this.p2pManager.promoteLobbyConnections(
-                this.handedOffTransports,
-                this.handedOffPeerAddress
-            );
-        }
         await this.cleanup({ preserveHandedOffTransports: true });
     }
 
@@ -206,13 +217,17 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         return this.activeTopic;
     }
 
+    /**
+     * The handed-off peer, or the peer this selector's commit is in flight
+     * to: the advertiser's acknowledgement and its first negotiation request
+     * can arrive in one read, so that request runs before the commit resolves.
+     */
     public ownsNegotiationPeer(transport: NetworkTransport): boolean {
         const peerAddress = this.peerAddress(transport);
-        return (
-            !!peerAddress &&
-            !this.matchResolve &&
-            this.handedOffPeerAddress === peerAddress
-        );
+        if (!peerAddress) return false;
+        if (this.commitInFlight)
+            return this.inFlightSelection?.peerAddress === peerAddress;
+        return !this.matchResolve && this.handedOffPeerAddress === peerAddress;
     }
 
     public takeObservedTargetOpen(channelId: string): boolean {
@@ -292,6 +307,10 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         ) {
             if (this.handedOffTransports.has(transport)) return;
             this.handedOffTransports.add(transport);
+            this.p2pManager.promoteLobbyConnections(
+                [transport],
+                handedOffPeerAddress
+            );
             return;
         }
         if (!this.activeTopic || !this.matchResolve) {
@@ -862,6 +881,14 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
                 nonSelectedTransports.push(transport);
             }
         }
+        // Promote at commitment, not at completion: the opening's genesis
+        // starts turn #0 before negotiation reports the open, and the first
+        // block must already reach the peer. Every failure path closes these
+        // transports, which also removes them from the connection set.
+        this.p2pManager.promoteLobbyConnections(
+            this.handedOffTransports,
+            peerAddress
+        );
         // Leave the lobby topic before cutting the non-selected transports.
         // Closing a transport does not stop discovery, so a loser cut while
         // the topic is still joined is re-dialled for the whole negotiation.
@@ -948,7 +975,7 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         );
     }
 
-    private validateTopic(topic: string): string {
+    public validateTopic(topic: string): string {
         requireBytes32(topic, "Rendezvous topic must be exactly 32 bytes");
         return ethers.hexlify(topic);
     }

@@ -2,6 +2,7 @@
 import type { SpectateControlService } from "./SpectateControlService";
 import Block from "@/models/Block";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Address, ChannelId, ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
@@ -18,13 +19,19 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
         super(transport, service);
     }
 
-    public sync(peerAddress: Address, forkId: ForkId, blockHeight: number) {
-        return this.service.spectate.sync(
+    /** True when the spectate sync succeeded. */
+    public async sync(
+        peerAddress: Address,
+        forkId: ForkId,
+        blockHeight: number
+    ): Promise<boolean> {
+        const result = await this.service.spectate.requestSync(
             peerAddress,
             this.service.sm.channelId,
             forkId,
             blockHeight
         );
+        return result === SyncResult.Synced;
     }
 
     /** Generate a sync payload, returned encoded (or null if not provable). */
@@ -51,8 +58,7 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
 
     /**
      * Start a real local spectate sync toward `peerAddress`, targeting the
-     * host peer's own channel. Fire-and-forget (as `SpectateService.sync`
-     * is): returns once the request is launched — tests wait on observable
+     * host peer's own channel. Fire-and-forget: returns once the request is launched — tests wait on observable
      * convergence / blacklist state, not this return.
      */
     public startSync(
@@ -69,7 +75,7 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
         }
         // Omitted optionals cross the port as null; the service treats only
         // undefined as "not requested".
-        void this.service.spectate.sync(
+        void this.service.spectate.requestSync(
             peerAddress,
             channelId,
             forkId ?? undefined,
@@ -85,19 +91,37 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
         blockHeight: number,
         encodedSyncPayload: string
     ): Promise<boolean> {
-        return this.service.spectate.applySyncResponse(
+        const { synced } = await this.service.spectate.applySyncResponse(
             String(responderAddress),
             this.service.buildSyncRequest(forkId, blockHeight),
             encodedSyncPayload
         );
+        return synced;
     }
 
-    /** Persist an encoded sync payload; returns whether spectating aborted. */
-    public async persistSyncPayload(
-        encodedSyncPayload: string
-    ): Promise<{ shouldAbort: boolean }> {
-        const payload = Codec.decode(encodedSyncPayload, Type.SyncPayload);
-        return this.service.spectate.persistSyncPayload(payload);
+    /**
+     * Run the real `reduceAndFinalizeLocally` on one window of an encoded sync
+     * payload, expecting its `reducedForkId`; true when this call committed it.
+     */
+    public async reduceSyncWindowLocally(
+        encodedSyncPayload: string,
+        windowIndex: number
+    ): Promise<boolean> {
+        const window = Codec.decode(encodedSyncPayload, Type.SyncPayload)
+            .disputeWindows[windowIndex];
+        if (!window) throw new Error("No dispute window at this index");
+        return this.service.sm.diamondStateMachine.reduceAndFinalizeLocally(
+            window.disputeConfirmations.map((disputeConfirmation) =>
+                Codec.decode(
+                    disputeConfirmation.signedDispute.encodedDispute,
+                    Type.Dispute
+                )
+            ),
+            window.latestStateSnapshot,
+            window.latestEncodedStateMachineState,
+            window.inboundMessageBlocksAppliedInReduce,
+            window.reducedForkId
+        );
     }
 
     /** Store a block straight into storage (`justPersist`); returns its hash. */
@@ -110,6 +134,16 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
                 justPersist: true
             })
         );
+    }
+
+    /** Replace the stored block at the block's height with it; returns its hash. */
+    public replaceStoredBlock(encodedSignedBlock: string): string {
+        const block = Block.fromSignedBlock(
+            Codec.decode(encodedSignedBlock, Type.SignedBlock)
+        );
+        const blocks = this.service.sm.storage.blocks;
+        blocks.deleteBlock(block.forkId, block.height);
+        return String(blocks.storeBlock(block));
     }
 }
 

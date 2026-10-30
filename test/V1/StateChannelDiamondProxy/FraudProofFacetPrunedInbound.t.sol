@@ -232,8 +232,7 @@ contract FraudProofFacetPrunedInboundTest is DiamondHarness {
             dispute: dispute,
             encodedProof: abi.encode(
                 DisputeInvalidBlockInStateProofApplyFraudProof({
-                    fraudProof: _forgedInboundProof(authorPk, inbound),
-                    blockIndexInUnfinalizedPartOfStateProof: 0
+                    fraudProof: _forgedInboundProof(authorPk, inbound), blockIndex: 1
                 })
             )
         });
@@ -251,8 +250,7 @@ contract FraudProofFacetPrunedInboundTest is DiamondHarness {
             participant: vm.addr(authorPk),
             encodedProof: abi.encode(
                 ForgedInboundMessageBlockProof({
-                    invalidBlock: _blockCarrying(authorPk, inbound),
-                    forgedInboundMessageBlock: inbound
+                    invalidBlock: _blockCarrying(authorPk, inbound), forgedInboundMessageBlock: inbound
                 })
             )
         });
@@ -264,15 +262,16 @@ contract FraudProofFacetPrunedInboundTest is DiamondHarness {
         carrier.transaction.header.channelId = CHANNEL;
         carrier.transaction.header.participant = vm.addr(authorPk);
         carrier.transaction.header.forkId = forkId;
-        carrier.transaction.header.transactionCnt = 1;
+        // one above the on-chain snapshot block (height 1) -> past the last milestone's protected boundary
+        carrier.transaction.header.transactionCnt = 2;
         carrier.messageBlocks = new MessageBlock[](1);
         carrier.messageBlocks[0] = inbound;
         bytes memory encodedBlock = abi.encode(carrier);
         return SignedBlock({encodedBlock: encodedBlock, signature: _sign(authorPk, encodedBlock)});
     }
 
-    /// `disputerPk` commits a dispute at the chain inbound head whose unfinalized state proof is one block of
-    /// `authorPk` carrying `inbound`
+    /// `disputerPk` commits a dispute at the chain inbound head whose last milestone is a protected first block
+    /// followed by one block of `authorPk` carrying `inbound`
     function _uploadDisputeCarrying(uint256 disputerPk, uint256 authorPk, MessageBlock memory inbound)
         internal
         returns (Dispute memory dispute)
@@ -283,8 +282,17 @@ contract FraudProofFacetPrunedInboundTest is DiamondHarness {
         dispute.input.disputer = vm.addr(disputerPk);
         dispute.input.latestInboundMessageBlockHash = head.latestInboundMessageBlockHash;
         dispute.input.lastInboundMessageBlockHeight = head.latestInboundMessageBlockHeight;
-        dispute.input.stateProof.signedBlocks = new SignedBlock[](1);
-        dispute.input.stateProof.signedBlocks[0] = _blockCarrying(authorPk, inbound);
+        Block memory first;
+        first.transaction.header.channelId = CHANNEL;
+        first.transaction.header.participant = vm.addr(authorPk);
+        first.transaction.header.forkId = forkId;
+        first.transaction.header.transactionCnt = 1;
+        bytes memory encodedFirst = abi.encode(first);
+        dispute.input.stateProof.milestones = new MilestoneProof[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](2);
+        dispute.input.stateProof.milestones[0].blockConfirmations[0].signedBlock =
+            SignedBlock({encodedBlock: encodedFirst, signature: _sign(authorPk, encodedFirst)});
+        dispute.input.stateProof.milestones[0].blockConfirmations[1].signedBlock = _blockCarrying(authorPk, inbound);
         DisputeConfirmation memory confirmation;
         confirmation.signedDispute =
             SignedDispute({encodedDispute: abi.encode(dispute), signature: _sign(disputerPk, abi.encode(dispute))});

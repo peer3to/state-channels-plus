@@ -47,7 +47,6 @@ export async function assertStandaloneRoot(fail: boolean): Promise<void> {
             createRoot(ObservedStandaloneExecutorRoot, {
                 mode: "inline",
                 args: {
-                    config,
                     customPrecompiles: [
                         {
                             address:
@@ -356,8 +355,9 @@ export async function assertParentedClientRoot(): Promise<void> {
             if (!(root instanceof P2pRuntimeClientRoot))
                 throw new Error("Expected local client root");
             expect("contract" in root).to.equal(false);
+            const clientRoot: P2pRuntimeClientRoot = root;
             expect(
-                await root
+                await clientRoot
                     .p2pRuntimeHostRemoteRoot!.rpc.deploySigner.getAddress()
                     .request()
             ).to.equal(signer.address);

@@ -1,58 +1,45 @@
-# RootWorkerRuntime.ts — Source Report
+# RootWorkerRuntime.ts
 
-> **Source:** [RootWorkerRuntime.ts](../../../../../../../../src/rpc/internal/browser/RootWorkerRuntime.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [RootWorkerRuntime.ts](../../../../../../../../src/rpc/internal/browser/RootWorkerRuntime.ts)
 
-## Responsibility and observable boundary
+## Requirements
 
-Browser worker observation, transferred-port bootstrap and worker termination.
+- [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)
+- [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
+- [`REQ-RUNTIME-7-A2VAR0` (Bounded isolated-context teardown)](../../../../../../specification/runtime/execution.md#req-runtime-7-a2var0)
+- [`REQ-CONFIG-4-WW7BRX` (Isolated contexts start with their creator's configuration)](../../../../../../specification/runtime/configuration.md#req-config-4-ww7brx)
+- [`REQ-RUNTIME-8-M3ENFM` (An isolated context's failure names its cause)](../../../../../../specification/runtime/execution.md#req-runtime-8-m3enfm)
+- [`REQ-LOG-10-69CTN1` (A thread that is ending waits only for its own logs)](../../../../../../specification/runtime/log-collection.md#req-log-10-69ctn1)
+- [`REQ-RUNTIME-9-P5VPT5` (An uncaught non-error failure is reported as one error)](../../../../../../specification/runtime/execution.md#req-runtime-9-p5vpt5)
 
-## Key design decisions
+## UNIT-TEST-CONTRACT-EXECUTOR-BROWSER-RUNTIME-1-6HX1GX
 
-`expectShutdown()` is a no-op because browser workers expose no exit event to classify. It does not terminate the worker; `shutdown()` still owns termination after common cleanup.
+Browser detached-error reporting
 
-The bootstrap handler consumes the same generic WorkerBootstrapMessage as Node. Its rootWorkerUrl stub exists for shared test fixture compilation; built-in browser workers use bundled asset URLs.
+- Setup: Create the browser worker executor with a scripted entry through the gate page; arm each failure and keep calling
+- Oracle: One detached report per arm with the worker still serving; no worker `error` event and no console error
 
-Worker globals are initialized by the common createRoot import. Worker detection only controls platform globals. Explicit worker entry modules call the common bootstrap; importing a root does not start it.
+- [x] `UNIT-TEST-CONTRACT-EXECUTOR-BROWSER-RUNTIME-1-6HX1GX.P1` — a watchdog trip is one report with `runtime: "browser"` delay data
+- [x] `UNIT-TEST-CONTRACT-EXECUTOR-BROWSER-RUNTIME-1-6HX1GX.P2` — an autonomous throw is one report
+- [x] `UNIT-TEST-CONTRACT-EXECUTOR-BROWSER-RUNTIME-1-6HX1GX.P3` — an unhandled rejection is one report
+- [x] `UNIT-TEST-CONTRACT-EXECUTOR-BROWSER-RUNTIME-1-6HX1GX.P4` — a real browser worker loads the custom precompile and returns its expected contract result
 
-One generic `createRootWorker` accepts an entry URL for every root. No concrete root names, paths or per-root factory functions live in this platform owner.
+## UNIT-TEST-BROWSER-ROOT-WORKER-1-1WG3WR
 
-Common worker observation is separate from literal per-root launch URLs to avoid circular worker bundles. Detached errors are marked handled and forwarded through the root; fatal startup failures reach the parent.
+Browser root worker failure cause and drain
 
-## Inputs, outputs, state, and side effects
+- Setup: Through the gate page, create parentless browser worker roots from a script that answers 404, a script whose requests are aborted, an unparsable script, an unparsable script that the server changes before the diagnostic fetch, and a script that throws at top level; make the owner's failure log write throw. On a recorded worker, dispatch an `ErrorEvent` with no message, a second bare `error` event while the diagnostic fetch of the first runs, and an `ErrorEvent` on a ready worker before its disposal. Dispose a ready logger-probe root right after an error-level line, one whose upload outlasts the drain bound, and that one again with a drain warning write that throws.
+- Oracle: Creation rejects with the summary that names the cause; the owner logs one error-level `Root worker failed` line with `eventType`, `workerUrl`, `workerName` and `msSinceSpawn`, plus the host's message and position for an `ErrorEvent`, or `received` (the browser's recorded load of the script, or `null`) and `fetched` for a load or parse failure; the drain ends on the child's closing message, or at `CRASH_LOG_FLUSH_MS` plus the 1 s close margin with one warning that carries `workerUrl`, `workerName` and `drainTimeoutMs`; a throwing log write changes neither outcome and is reported as uncaught.
 
-The public entry signatures define the startup values and platform handles. Domain roots own services; the common router owns pending requests. Startup and cleanup may allocate or release ports and workers. No separate readiness registry is introduced here.
-
-## Linked requirements
-
-| Source file                                                                                   | Specification IDs                                                                                                                                                                                        |
-| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [RootWorkerRuntime.ts](../../../../../../../../src/rpc/internal/browser/RootWorkerRuntime.ts) | [`REQ-RUNTIME-3-VQXW59`](../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59), [`REQ-RUNTIME-4-B0N70Y`](../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-Startup data must be cloneable. Local dependencies stay in the receiving realm. The caller supplies an emitted module-worker URL. URL construction and bundler syntax belong to the application; the browser adapter calls the standard Worker constructor.
-
-## Specification adherence
-
-Creation preserves the existing domain readiness points and explicit parent ownership. Platform bootstrap shares the transferred-port boundary.
-
-## Specification contradictions
-
-None identified for this construction change.
-
-## Missing behavior
-
-This file contributes only the behavior described above; domain execution and lifecycle policy remain with their owners.
-
-## Conformance traceability
-
-| Requirement / invariant                                                                             | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                   | Gap / divergence                                         |
-| --------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| [`REQ-RUNTIME-3-VQXW59`](../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59) | Covered               | **Here:** [RootWorkerRuntime.ts](../../../../../../../../src/rpc/internal/browser/RootWorkerRuntime.ts) supplies the construction/platform boundary. **Other files:** [RuntimeLifecycleService](../../../../../../../../src/rpc/internal/services/lifecycle/RuntimeLifecycleService.ts) owns readiness and quiescence; [createRoot](../../../../../../../../src/rpc/internal/createRoot.ts) connects the parent and child. | None identified; the cited owners compose this boundary. |
-| [`REQ-RUNTIME-4-B0N70Y`](../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) | Covered               | **Here:** [RootWorkerRuntime.ts](../../../../../../../../src/rpc/internal/browser/RootWorkerRuntime.ts) supplies the construction/platform boundary. **Other files:** [RuntimeLifecycleService](../../../../../../../../src/rpc/internal/services/lifecycle/RuntimeLifecycleService.ts) owns readiness and quiescence; [createRoot](../../../../../../../../src/rpc/internal/createRoot.ts) connects the parent and child. | None identified; the cited owners compose this boundary. |
-
-## Component test obligations
-
-| Unit test ID                                                                                                            | Obligation                       | Public entry and setup                                                                                            | Oracle and forbidden effects                                                                            | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ----------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-contract-executor-browser-runtime-1-6hx1gx"></a>`UNIT-TEST-CONTRACT-EXECUTOR-BROWSER-RUNTIME-1-6HX1GX` | Browser detached-error reporting | Create the browser worker executor with a scripted entry through the gate page; arm each failure and keep calling | One detached report per arm with the worker still serving; no worker `error` event and no console error | <a id="unit-test-contract-executor-browser-runtime-1-6hx1gx.p1"></a>`UNIT-TEST-CONTRACT-EXECUTOR-BROWSER-RUNTIME-1-6HX1GX.P1` — a watchdog trip is one report with `runtime: "browser"` delay data; <a id="unit-test-contract-executor-browser-runtime-1-6hx1gx.p2"></a>`UNIT-TEST-CONTRACT-EXECUTOR-BROWSER-RUNTIME-1-6HX1GX.P2` — an autonomous throw is one report; <a id="unit-test-contract-executor-browser-runtime-1-6hx1gx.p3"></a>`UNIT-TEST-CONTRACT-EXECUTOR-BROWSER-RUNTIME-1-6HX1GX.P3` — an unhandled rejection is one report; <a id="unit-test-contract-executor-browser-runtime-1-6hx1gx.p4"></a>`UNIT-TEST-CONTRACT-EXECUTOR-BROWSER-RUNTIME-1-6HX1GX.P4` — a real browser worker loads the custom precompile and returns its expected contract result |
+- [x] `UNIT-TEST-BROWSER-ROOT-WORKER-1-1WG3WR.P1` — a 404 script fails with `failed to load (HTTP 404)` and its absolute URL; the log carries `eventType` `Event`, `received` `null` and `fetched.status` 404
+- [x] `UNIT-TEST-BROWSER-ROOT-WORKER-1-1WG3WR.P2` — a script whose diagnostic fetch also fails fails with `failed to load (the browser's request failed; a fetch now fails: …)` and its URL; `received` is `null` and `fetched` holds only the fetch error
+- [x] `UNIT-TEST-BROWSER-ROOT-WORKER-1-1WG3WR.P3` — an unparsable script fails with `failed to parse or link (the browser received HTTP 200, 16 bytes; a fetch now returns HTTP 200, 16 bytes)` and its URL; `received` holds status 200 and the 16 bytes, `fetched` the status, content type and size
+- [x] `UNIT-TEST-BROWSER-ROOT-WORKER-1-1WG3WR.P4` — a top-level throw fails with `Root worker failed: <message> (<file>:<line>:<col>)`; the log carries `eventType` `ErrorEvent`, the message and the position, and no `fetched`
+- [x] `UNIT-TEST-BROWSER-ROOT-WORKER-1-1WG3WR.P5` — an `ErrorEvent` with no message fails with `Root worker failed with no error message (<position>)` ([`REQ-RUNTIME-8-M3ENFM.T1.P6`](../../../../../../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p6))
+- [x] `UNIT-TEST-BROWSER-ROOT-WORKER-1-1WG3WR.P6` — a failure log write that throws still fails the root with the same summary, and the write error is reported as uncaught
+- [x] `UNIT-TEST-BROWSER-ROOT-WORKER-1-1WG3WR.P7` — a ready worker disposed right after an error-level line posts its closing message after its upload settled; the drain ends before the flush bound, and the line is stored when the disposal returns
+- [x] `UNIT-TEST-BROWSER-ROOT-WORKER-1-1WG3WR.P8` — a ready worker that does not close within `CRASH_LOG_FLUSH_MS` plus 1 s: the disposal ends no earlier than that bound and before the worker's own upload ends, with one warning that carries `workerUrl`, `workerName` and `drainTimeoutMs`
+- [x] `UNIT-TEST-BROWSER-ROOT-WORKER-1-1WG3WR.P9` — a drain warning write that throws leaves no stored warning, is reported as uncaught, and the disposal still ends no earlier than the drain bound and before the worker's own upload ends
+- [x] `UNIT-TEST-BROWSER-ROOT-WORKER-1-1WG3WR.P10` — a second load or parse failure event of a worker whose script fetch already started neither fetches nor reports again ([`REQ-RUNTIME-8-M3ENFM.T1.P7`](../../../../../../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p7))
+- [x] `UNIT-TEST-BROWSER-ROOT-WORKER-1-1WG3WR.P11` — a worker that failed ends its drain at once ([`REQ-RUNTIME-7-A2VAR0.T1.P15`](../../../../../../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p15))
+- [x] `UNIT-TEST-BROWSER-ROOT-WORKER-1-1WG3WR.P12` — an unparsable script that the server changes before the diagnostic fetch fails with the 16 bytes the browser received and the 28 bytes the fetch now returns

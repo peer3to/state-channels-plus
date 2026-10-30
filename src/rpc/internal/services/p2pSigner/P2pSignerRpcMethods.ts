@@ -35,6 +35,7 @@ export class P2pSignerRpcMethods extends AInternalRpcMethods<P2pSignerService> {
             .connectToChannel(channelId, {
                 autoOpen: options?.autoOpen,
                 shouldJoin: options?.shouldJoin,
+                shouldSpectateWhenFull: options?.shouldSpectateWhenFull,
                 balance: options?.encodedBalance
                     ? Codec.decode(options.encodedBalance, Type.Balance)
                     : undefined,
@@ -48,8 +49,8 @@ export class P2pSignerRpcMethods extends AInternalRpcMethods<P2pSignerService> {
             .cancelConnectToChannel(channelId);
     }
 
-    public async leaveChannel() {
-        await this.service.requireP2pSigner().leaveChannel();
+    public leaveChannel(): void {
+        this.service.requireP2pSigner().leaveChannel();
     }
 
     public async joinLobby(
@@ -120,6 +121,10 @@ export class P2pSignerRpcMethods extends AInternalRpcMethods<P2pSignerService> {
 
     public async getChannelStatus() {
         return await this.service.requireP2pSigner().getChannelStatus();
+    }
+
+    public async getOpenConnections() {
+        return await this.service.requireP2pSigner().getOpenConnections();
     }
 
     public async setIsLeader(value: boolean) {

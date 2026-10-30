@@ -1,21 +1,24 @@
 import { ContractExecutorRpcMethods } from "./ContractExecutorRpcMethods";
 import ContractExecutor from "../../../../evm/contractExecutor/ContractExecutor";
 import Clock from "@/Clock";
-import { createEvm, type EvmCustomPrecompileManifest } from "@/evm/EvmFactory";
+import {
+    resolveCustomPrecompiles,
+    type EvmCustomPrecompileManifest
+} from "@/evm/EvmCustomPrecompiles";
 import { IN_FLIGHT_REPLY_DRAIN_MS } from "@/rpc/internal/AInternalRpcRoot";
 import { AInternalRpcService } from "@/rpc/internal/AInternalRpcService";
 import type { InternalRpcRouter } from "@/rpc/router/InternalRpcRouter";
 import type InternalTransport from "@/transport/InternalTransport";
 import type { Logger } from "@/utils";
-import type { Config } from "@/utils/config";
 
 export type ContractExecutorInitialization = {
     customPrecompiles: Array<
         Omit<EvmCustomPrecompileManifest, "address"> & { address: string }
     >;
-    // Config the worker re-establishes so logging and timing use the same
-    // thresholds as the rest of the runtime.
-    config: Config;
+};
+
+/** What a runtime reads from the chain before its first call; it may arrive after the start. */
+export type ContractExecutorConfiguration = {
     // The host Clock's adjustment from wall time to estimated chain
     // time; the worker keeps the same perception as ambient block time.
     // Absent for a host without a Clock (time zero, as before).
@@ -51,41 +54,57 @@ export class ContractExecutorService extends AInternalRpcService<ContractExecuto
 
     public async init(request: ContractExecutorInitialization) {
         const logger = this.logger;
-        const evm = await createEvm(
-            {
-                allowUnlimitedContractSize: true,
-                customPrecompiles: request.customPrecompiles.map(
+        const startedAtMs = Date.now();
+        const sinceStart = () => Date.now() - startedAtMs;
+        const timings: Record<string, number> = {};
+        // In parallel: the EVM module loads while the custom precompiles load and
+        // start (a precompile may start its own worker). Loaded here -> a host that
+        // only proxies to a worker executor never loads the evm.
+        const [{ createEvm }, customPrecompiles] = await Promise.all([
+            import("@/evm/EvmFactory").then((module) => {
+                timings.evmModuleMs = sinceStart();
+                return module;
+            }),
+            resolveCustomPrecompiles(
+                request.customPrecompiles.map(
                     ({ address, module, exportName, options }) => ({
                         address,
                         module,
                         exportName,
                         options
                     })
-                )
+                ),
+                logger,
+                // Local-only: custom precompiles parent their child roots here.
+                this.router.rpcRoot
+            ).then((precompiles) => {
+                timings.customPrecompilesMs = sinceStart();
+                return precompiles;
+            })
+        ]);
+        const evm = await createEvm(
+            // local-only: LocalDiamond never deploys on chain -> no EIP-170/3860 limit
+            {
+                allowUnlimitedContractSize: true,
+                allowUnlimitedInitCodeSize: true,
+                customPrecompiles
             },
             logger,
-            // Local-only: custom precompiles parent their child roots here.
             this.router.rpcRoot
         );
-        // The same perception as the host Clock, advancing with wall time.
-        const adjustment = request.clockAdjustmentSeconds;
-        // Every call observes the runtime's estimated chain time as ambient
-        // block time, read at call time so it keeps advancing. A runtime
-        // initializes the Clock before it builds its executor; an executor
-        // built without one (a bare unit test) keeps time zero.
-        const clock =
-            adjustment !== undefined
-                ? () => Math.floor(Date.now() / 1000) + adjustment
-                : Clock.isInitialized()
-                  ? () => Clock.getTimeInSeconds()
-                  : undefined;
-        this.executor = new ContractExecutor(evm, logger, {
-            clock,
-            callGasLimit:
-                request.callGasLimit === undefined
-                    ? undefined
-                    : BigInt(request.callGasLimit)
+        // Each from the start: the two loads run in parallel, then the EVM is built.
+        logger.debug("Contract executor start steps", {
+            ...timings,
+            evmMs: sinceStart()
         });
+        // The runtime's configuration comes with `configure`; until then the
+        // realm's Clock (if any) and the EVM's default call gas apply.
+        this.executor = new ContractExecutor(evm, logger, executorOptions({}));
+    }
+
+    /** Sets the chain-read configuration a runtime sends once it has it, before any call. */
+    public configure(request: ContractExecutorConfiguration): void {
+        this.getExecutor().configure(executorOptions(request));
     }
 
     /**
@@ -171,4 +190,28 @@ export class ContractExecutorService extends AInternalRpcService<ContractExecuto
             error
         });
     }
+}
+
+/**
+ * Executor options from a configuration, read when it is applied: the host
+ * Clock's adjustment for a worker, else this realm's Clock once it is
+ * initialized; a bare executor keeps time zero.
+ */
+function executorOptions(request: ContractExecutorConfiguration): {
+    clock?: () => number;
+    callGasLimit?: bigint;
+} {
+    const adjustment = request.clockAdjustmentSeconds;
+    return {
+        clock:
+            adjustment !== undefined
+                ? () => Math.floor(Date.now() / 1000) + adjustment
+                : Clock.isInitialized()
+                  ? () => Clock.getTimeInSeconds()
+                  : undefined,
+        callGasLimit:
+            request.callGasLimit === undefined
+                ? undefined
+                : BigInt(request.callGasLimit)
+    };
 }

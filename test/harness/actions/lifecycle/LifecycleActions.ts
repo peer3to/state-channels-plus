@@ -1,11 +1,14 @@
 // @spec-test-coverage-ignore: harness helper restored to its existing readiness ordering
 import { NetworkController } from "../NetworkController";
 import Clock from "@/Clock";
-import { TimeConfig } from "@/types";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { ForkId } from "@/types/types";
 import { Codec, SignatureUtils, Type } from "@/utils";
 import { Logger, sleep } from "@/utils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import { HarnessOptions } from "@test/harness/core/types";
@@ -17,10 +20,11 @@ import { BytesLike } from "ethers";
  * Handles channel-related operations: open channel and bootstrap.
  */
 export class LifecycleActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
     constructor(
-        protected harness: PeerTestHarness<TCustomRpc>,
+        protected harness: PeerTestHarness<THost>,
         protected logger: Logger
     ) {}
 
@@ -31,7 +35,7 @@ export class LifecycleActions<
     async start(
         numPeers: number,
         transitionCount: number = 0,
-        options?: HarnessOptions & {
+        options?: HarnessOptions<THost> & {
             waitForFinalization?: boolean;
         }
     ): Promise<ForkId> {
@@ -79,7 +83,15 @@ export class LifecycleActions<
         return this.submitOpenChannel(openChannel, signatures);
     }
 
-    async openChannelForParticipants(peerIndices: number[]): Promise<ForkId> {
+    /**
+     * Open the channel with `peerIndices` as its participants. By default
+     * every peer must observe the open; `observePeerIndices` narrows that to
+     * the peers able to observe it now (e.g. one whose RPC node is cut).
+     */
+    async openChannelForParticipants(
+        peerIndices: number[],
+        options: { observePeerIndices?: number[] } = {}
+    ): Promise<ForkId> {
         this.logger.info("Opening channel for selected participants...");
         await Clock.init(this.harness.peers[0].signer.provider!);
         const participantAddresses = peerIndices.map(
@@ -92,7 +104,11 @@ export class LifecycleActions<
             openChannel,
             peerIndices
         );
-        return this.submitOpenChannel(openChannel, signatures);
+        return this.submitOpenChannel(
+            openChannel,
+            signatures,
+            options.observePeerIndices
+        );
     }
 
     // ************** PRIVATE HELPERS ****************
@@ -129,8 +145,12 @@ export class LifecycleActions<
 
     private async submitOpenChannel(
         openChannel: OpenChannelStruct,
-        signatures: BytesLike[]
+        signatures: BytesLike[],
+        observePeerIndices?: number[]
     ): Promise<ForkId> {
+        const observers = observePeerIndices
+            ? observePeerIndices.map((index) => this.harness.getPeer(index))
+            : this.harness.peers;
         await this.harness.setChannelId(openChannel.channelId);
         this.logger.debug(`Channel created with ID: ${openChannel.channelId}`);
 
@@ -144,8 +164,8 @@ export class LifecycleActions<
 
         await Promise.all([tx.wait(), sleep(100)]);
 
-        const eventCounts = this.harness.peers.map((_, index: number) => ({
-            peerId: index,
+        const eventCounts = observers.map((peer) => ({
+            peerId: peer.index,
             expectedCount: 1
         }));
         await this.harness.event.waitForEventCounts(
@@ -167,7 +187,7 @@ export class LifecycleActions<
         const isValidForkId = (forkId: ForkId | undefined): boolean =>
             !!forkId && forkId !== "0x00" && forkId !== "0x0";
 
-        const getPeerForkIds = () => this.harness.peerForkIds();
+        const getPeerForkIds = () => this.harness.peerForkIds(observers);
 
         this.logger.debug("Waiting for fork ID to be set on all peers...");
 

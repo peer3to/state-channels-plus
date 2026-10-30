@@ -1,12 +1,7 @@
-# test/V1/StateChannelDiamondProxy/StateSnapshotFacetUpdateFork.t.sol — Test Report
+# StateSnapshotFacetUpdateFork.t.sol
 
-> **Test file:** [test/V1/StateChannelDiamondProxy/StateSnapshotFacetUpdateFork.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetUpdateFork.t.sol) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [StateSnapshotFacet.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/V1/StateChannelDiamondProxy/StateSnapshotFacetUpdateFork.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetUpdateFork.t.sol)
+Exercises: [StateSnapshotFacet.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md)
 
 ## Overview
 
@@ -31,14 +26,9 @@ are different values before submitting. Every case is a revert oracle on the exa
 payload, so a gate that fired for the wrong reason fails the test rather than passing on the name
 alone.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree.
-
-| Test declaration                                                                                                                                                                                                  | Covers                                                                                                                                                                                            |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`test_updateStateSnapshotFork_snapshotNotGenesis_revertsCarryingBothForkIdsAndHeight`](../../../../../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetUpdateFork.t.sol#L27) (line 27)                   | [`UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P8`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md#unit-test-state-snapshot-facet-1-vjarbb.p8)   |
-| [`test_updateStateSnapshotFork_noDisputeWindowOnOriginFork_revertsCarryingBothForkIds`](../../../../../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetUpdateFork.t.sol#L44) (line 44)                   | [`UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P9`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md#unit-test-state-snapshot-facet-1-vjarbb.p9)   |
-| [`test_updateStateSnapshotFork_genesisTimestampMismatch_revertsCarryingBothTimestamps`](../../../../../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetUpdateFork.t.sol#L60) (line 60)                   | [`UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P10`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md#unit-test-state-snapshot-facet-1-vjarbb.p10) |
-| [`test_updateStateSnapshotFork_targetForkUnreachableByReductions_revertsCarryingCurrentAndTargetForkIds`](../../../../../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetUpdateFork.t.sol#L76) (line 76) | [`UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P11`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md#unit-test-state-snapshot-facet-1-vjarbb.p11) |
+- `test_updateStateSnapshotFork_snapshotNotGenesis_revertsCarryingBothForkIdsAndHeight`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P8
+- `test_updateStateSnapshotFork_noDisputeWindowOnOriginFork_revertsCarryingBothForkIds`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P9
+- `test_updateStateSnapshotFork_genesisTimestampMismatch_revertsCarryingBothTimestamps`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P10
+- `test_updateStateSnapshotFork_targetForkUnreachableByReductions_revertsCarryingCurrentAndTargetForkIds`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P11

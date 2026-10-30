@@ -12,7 +12,10 @@ const EXCLUDED_SOURCE_ROOTS = new Set([
     "artifacts",
     "diagrams",
     "docs",
-    "internal_docs"
+    "internal_docs",
+    // Scheduling metadata is consumed by the orchestrator, not the worker build.
+    "test-costs.json",
+    "test-costs.overrides.json"
 ]);
 
 function readPackageJson(root) {
@@ -118,6 +121,25 @@ function gitSourceFiles(repositoryRoot) {
     return files;
 }
 
+// The files under the declared build outputs (paths relative to the
+// repository); a missing output is skipped.
+function buildOutputFiles(repositoryRoot, outputs) {
+    const files = [];
+    const visit = (relative) => {
+        const target = path.join(repositoryRoot, relative);
+        if (!fs.existsSync(target)) return;
+        if (!fs.lstatSync(target).isDirectory()) {
+            files.push(relative);
+            return;
+        }
+        for (const entry of fs.readdirSync(target)) {
+            visit(path.join(relative, entry));
+        }
+    };
+    for (const output of outputs) visit(path.normalize(output));
+    return files;
+}
+
 function isExcludedSourcePath(relative) {
     const [root] = relative.split(/[\\/]/);
     return EXCLUDED_SOURCE_ROOTS.has(root);
@@ -186,7 +208,23 @@ async function buildRuntimeManifest(projectRoot, onProgress = () => {}) {
                 "Source workspace cannot preserve repository paths safely"
             );
         }
-        const sourceFiles = gitSourceFiles(repository.root);
+        // The orchestrator builds every repository that declares build outputs
+        // before manifesting, so those outputs ship and workers never rebuild
+        // them. A repository without the declaration keeps its worker prepare.
+        const builtHere =
+            !!repository.packageJson.peer3TestDistribution?.buildOutputs;
+        const sourceFiles = [
+            ...new Set([
+                ...gitSourceFiles(repository.root),
+                ...(builtHere
+                    ? buildOutputFiles(
+                          repository.root,
+                          repository.packageJson.peer3TestDistribution
+                              .buildOutputs
+                      )
+                    : [])
+            ])
+        ];
         for (const relative of sourceFiles) {
             const source = path.join(repository.root, relative);
             const stat = fs.lstatSync(source);
@@ -205,15 +243,19 @@ async function buildRuntimeManifest(projectRoot, onProgress = () => {}) {
                 path: workspacePath,
                 bytes: stat.size,
                 sha256: await sha256File(source),
-                mode: stat.mode & 0o777
+                // the mode the archive carries: tar adds owner read and write
+                // and drops group/other write, and both ends compare against this
+                mode: (stat.mode | 0o600) & 0o755
             });
         }
-        const prepareScript =
-            repository.packageJson.peer3TestDistribution?.prepareScript ||
-            (repository.packageJson.scripts?.compile ? "compile" : null);
-        const cachedPrepareScript =
-            repository.packageJson.peer3TestDistribution?.cachedPrepareScript ||
-            null;
+        const prepareScript = builtHere
+            ? null
+            : repository.packageJson.peer3TestDistribution?.prepareScript ||
+              (repository.packageJson.scripts?.compile ? "compile" : null);
+        const cachedPrepareScript = builtHere
+            ? null
+            : repository.packageJson.peer3TestDistribution
+                  ?.cachedPrepareScript || null;
         const contractCompileInputs =
             repository.packageJson.peer3TestDistribution
                 ?.contractCompileInputs || [];

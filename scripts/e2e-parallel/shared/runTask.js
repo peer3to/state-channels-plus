@@ -4,6 +4,11 @@ const fs = require("fs");
 const path = require("path");
 const { killProcessGroup } = require("./processGroup");
 const { threadDump } = require("./threadDump");
+const { TaskProcessSampler } = require("./resourceGate");
+const {
+    TASK_COST_FIRST_SAMPLE_MS,
+    TASK_COST_SAMPLE_MS
+} = require("./constants");
 
 // A child that goes quiet for this long without exiting gets its threads
 // dumped into its log once, so a silent hang leaves evidence of what every
@@ -46,6 +51,11 @@ function teardownTaskChildren() {
     }
 }
 
+/** The gap before the next cost sample: doubling up to the steady interval. */
+function nextSampleDelayMs(delayMs) {
+    return Math.min(delayMs * 2, TASK_COST_SAMPLE_MS);
+}
+
 async function runTask(
     cmd,
     args,
@@ -82,6 +92,9 @@ async function runTask(
                 : output;
 
         const childEnv = {
+            // node's own compile cache is checksummed and written via temp
+            // file + rename -> safe to share across parallel children
+            NODE_COMPILE_CACHE: path.resolve("cache", "node-compile-cache"),
             ...process.env,
             ...env,
             // Parallel Hardhat processes can read v8-compile-cache's shared
@@ -100,6 +113,22 @@ async function runTask(
             detached: process.platform !== "win32"
         });
         liveTaskChildren.add(child);
+        const sampler = new TaskProcessSampler(
+            child.pid,
+            options.sampleOptions
+        );
+        sampler.sample();
+        let sampleDelayMs = TASK_COST_FIRST_SAMPLE_MS;
+        let sampleTimer;
+        const scheduleSample = () => {
+            sampleTimer = setTimeout(() => {
+                sampler.sample();
+                sampleDelayMs = nextSampleDelayMs(sampleDelayMs);
+                scheduleSample();
+            }, sampleDelayMs);
+            sampleTimer.unref();
+        };
+        scheduleSample();
 
         const terminate = () => {
             killProcessGroup(child, "SIGTERM");
@@ -179,6 +208,9 @@ async function runTask(
         const finish = async (code, signal) => {
             if (settled) return;
             settled = true;
+            const durationMs = Date.now() - startedAt;
+            clearTimeout(sampleTimer);
+            await sampler.inFlight;
             child.stdout.off("data", onStdout);
             child.stderr.off("data", onStderr);
             // The test owns its detached process group. If its leader crashes,
@@ -189,8 +221,8 @@ async function runTask(
             clearInterval(silenceTimer);
             cancellationSignal?.removeEventListener("abort", onAbort);
             await outputSink.close();
-            const durationMs = Date.now() - startedAt;
             resolve({
+                ...sampler.result(durationMs),
                 code: code ?? 1,
                 label,
                 stdout,
@@ -212,6 +244,7 @@ async function runTask(
 }
 
 module.exports = {
+    nextSampleDelayMs,
     liveTaskChildren,
     teardownTaskChildren,
     createFileOutputSink,

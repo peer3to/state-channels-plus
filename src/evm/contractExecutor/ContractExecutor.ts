@@ -63,10 +63,10 @@ export default class ContractExecutor extends AContractExecutor {
      * Seconds of estimated chain time for the next call, or undefined for
      * an executor with no clock (ambient block time stays zero).
      */
-    private readonly clock?: () => number;
+    private clock?: () => number;
 
     // Gas granted to every call (see localEvmCallGasLimit).
-    private readonly callGasLimit: bigint;
+    private callGasLimit: bigint = DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT;
 
     constructor(
         evm: EVM,
@@ -74,14 +74,25 @@ export default class ContractExecutor extends AContractExecutor {
         options?: { clock?: () => number; callGasLimit?: bigint }
     ) {
         super();
-        this.clock = options?.clock;
-        this.callGasLimit =
-            options?.callGasLimit ?? DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT;
+        if (options) this.configure(options);
         this.evm = evm;
         this.logger = logger?.child({
             component: "ContractExecutor"
         });
         this.mutex = new Mutex();
+    }
+
+    /**
+     * Sets the clock and call gas of later calls. A runtime builds its EVM
+     * before it has read either from the chain, and sets them before any call.
+     */
+    public configure(options: {
+        clock?: () => number;
+        callGasLimit?: bigint;
+    }): void {
+        this.clock = options.clock;
+        this.callGasLimit =
+            options.callGasLimit ?? DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT;
     }
 
     // AContractExecutor.dispose releases this executor's own logger.
@@ -96,9 +107,16 @@ export default class ContractExecutor extends AContractExecutor {
         });
 
         try {
-            return await this.deployOn(this.evm, data);
+            const startedAtMs = Date.now();
+            const deployment = await this.deployOn(this.evm, data);
+            // A slow runtime setup separates the EVM's own time from the deploy's thread crossings.
+            this.logger?.debug("Local contract deployed", {
+                evmMs: Date.now() - startedAtMs,
+                initCodeKB: Math.round(ethers.dataLength(data) / 1024)
+            });
+            return deployment;
         } finally {
-            this.mutex.unlock({ scheduleNextAsMacroTask: true });
+            this.release();
         }
     }
 
@@ -114,7 +132,7 @@ export default class ContractExecutor extends AContractExecutor {
         try {
             return await this.executeCallOn(this.evm, data, contractAddress);
         } finally {
-            this.mutex.unlock({ scheduleNextAsMacroTask: true });
+            this.release();
         }
     }
 
@@ -139,10 +157,22 @@ export default class ContractExecutor extends AContractExecutor {
                 await evm.journal.revert();
             }
         } finally {
-            // A burst of serialized simulations must yield to timers and I/O
-            // instead of draining the whole queue through microtasks.
-            this.mutex.unlock({ scheduleNextAsMacroTask: true });
+            this.release();
         }
+    }
+
+    /**
+     * Frees the executor on the next timer turn, never in the current one.
+     * A burst of requests reaches this worker as queued port messages, and
+     * the port drains them in one event-loop callback. A call runs to its end
+     * in microtasks, so with an immediate release each queued request found
+     * the mutex free and ran in that same callback: a dispute audit burst
+     * (about 30 calls) then blocks the loop for its whole sum. Holding the
+     * mutex until a later timer turn queues those requests, and each one
+     * starts in its own loop iteration.
+     */
+    private release(): void {
+        setTimeout(() => this.mutex.unlock(), 0);
     }
 
     private deployOn(evm: EVM, data: Bytes): Promise<ContractExecutionResult> {

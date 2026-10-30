@@ -1,4 +1,5 @@
-import type { EvmCustomPrecompileManifest } from "@/evm/EvmFactory";
+import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
+import type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";
 import type { CustomRpcManifest } from "@/rpc/network/registry";
 import type { Config } from "@/utils/config";
 
@@ -29,6 +30,11 @@ export interface SetupPayload {
     peerId?: number;
     /** Optional dynamic custom RPC manifest resolved on the host side. */
     customRpcManifest?: CustomRpcManifest;
+    /**
+     * Optional host root manifest: the application's `P2pRuntimeHostRoot`
+     * subclass, resolved in the realm that runs the host.
+     */
+    hostRootManifest?: HostRootManifest;
     /** Optional custom precompile manifests forwarded to the contract executor. */
     customPrecompiles?: EvmCustomPrecompileManifest[];
 }
@@ -39,6 +45,8 @@ export interface SetupPayload {
  */
 export interface WorkerBootstrapMessage<T = SetupPayload> {
     threadName?: string;
+    /** The creating thread's config, applied before the worker builds its root. */
+    config?: Config;
     type: "connect";
     payload: T;
     /** The transferred raw MessagePort (platform-specific); adapted by the worker. */

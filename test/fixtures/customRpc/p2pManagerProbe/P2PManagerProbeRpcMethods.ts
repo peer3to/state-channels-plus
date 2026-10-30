@@ -14,9 +14,12 @@ import type {
     TimeoutSelectionProbe,
     DisconnectCleanupProbe,
     TransportRetirementProbe,
+    RemoteRetirementProbe,
     BulkPenaltyProbe,
     ConnectedPeerFallbackProbe,
+    ConnectionsChangedProbe,
     BanPolicyProbe,
+    HolepunchSocketErrorProbe,
     DisconnectPolicyProbe,
     SuspendPolicyProbe,
     RetryTierProbe,
@@ -33,20 +36,30 @@ import type {
     NegotiationAbortProbe,
     RelayAdmissionProbe,
     UpgradeBanPolicyProbe,
+    WebRTCConnectionStatesProbe,
+    WebRTCConnectionStatesScenario,
     UnblacklistBanPolicyProbe,
     UnblacklistBanPolicyScenario,
     HolepunchTopicProbe,
-    HandshakeFailureProbe,
+    HolepunchAnnounceScenario,
+    HolepunchAnnounceLookupProbe,
+    HolepunchBanReleaseProbe,
+    HolepunchConnectionAttemptProbe,
+    HolepunchSwarmProbe,
     LateHandshakeProbe,
     ReplacementHandshakeProbe,
     ProfileDisconnectLifecycleProbe,
     LobbyProtocolProbe,
+    LobbyHandoffExit,
+    LobbyHandoffExitProbe,
     LobbyRecoveryProbe,
     LobbyRecoveryBoundProbe,
     LobbyCommitCancellationProbe,
     LobbySessionCleanupProbe,
     MatchedNegotiationAdmissionProbe,
+    AttemptClearedDuringTermsProbe,
     InvalidNegotiationAmountProbe,
+    LowerTermsPendingProbe,
     NegotiationFailureProbe,
     NegotiationFailureScenario,
     SignedAttemptObservationProbe,
@@ -163,6 +176,10 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         return this.service.probeTransportRetirement(address);
     }
 
+    public probeRemoteRetirement(address: string): RemoteRetirementProbe {
+        return this.service.probeRemoteRetirement(address);
+    }
+
     public probeBulkPenalty(
         firstAddress: string,
         secondAddress: string
@@ -204,6 +221,16 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         return this.service.probeConnectedPeerFallback(address);
     }
 
+    public probeConnectionsChanged(
+        holepunchAddress: string,
+        webRtcAddress: string
+    ): ConnectionsChangedProbe {
+        return this.service.probeConnectionsChanged(
+            holepunchAddress,
+            webRtcAddress
+        );
+    }
+
     public probeForeignResponse(
         intendedAddress: string,
         foreignAddress: string
@@ -234,6 +261,10 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
 
     public probeUnauthenticatedBlacklist(): BanPolicyProbe {
         return this.service.probeUnauthenticatedBlacklist();
+    }
+
+    public probeHolepunchSocketErrors(): HolepunchSocketErrorProbe {
+        return this.service.probeHolepunchSocketErrors();
     }
 
     public probeUnauthenticatedClose(): BanPolicyProbe {
@@ -359,6 +390,13 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         return this.service.probeUpgradeBanPolicy(address);
     }
 
+    public probeWebRTCConnectionStates(
+        address: string,
+        scenario: WebRTCConnectionStatesScenario
+    ): Promise<WebRTCConnectionStatesProbe> {
+        return this.service.probeWebRTCConnectionStates(address, scenario);
+    }
+
     public probeExplicitBlacklist(address: string): BanPolicyProbe {
         return this.service.probeExplicitBlacklist(address);
     }
@@ -410,10 +448,84 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         return this.service.probeHolepunchRejoinAfterLeave(duplicate);
     }
 
-    public probeHandshakeParticipantReadFailure(
-        address: string
-    ): Promise<HandshakeFailureProbe> {
-        return this.service.probeHandshakeParticipantReadFailure(address);
+    public probeHolepunchAnnounceLookup(
+        scenario: HolepunchAnnounceScenario
+    ): Promise<HolepunchAnnounceLookupProbe> {
+        return this.service.probeHolepunchAnnounceLookup(scenario);
+    }
+
+    public probeHolepunchConnectionAttempts(): Promise<HolepunchConnectionAttemptProbe> {
+        return this.service.probeHolepunchConnectionAttempts();
+    }
+
+    public probeHolepunchBanReleaseLookup(
+        value: boolean
+    ): Promise<HolepunchBanReleaseProbe> {
+        return this.service.probeHolepunchBanReleaseLookup(value);
+    }
+
+    public async joinHolepunchOnLocalDht(
+        channelId: string,
+        bootstrapPort: number
+    ): Promise<boolean> {
+        await this.service.joinHolepunchOnLocalDht(channelId, bootstrapPort);
+        return true;
+    }
+
+    public async lookUpHolepunchTopics(): Promise<boolean> {
+        await this.service.lookUpHolepunchTopics();
+        return true;
+    }
+
+    public async waitForHolepunchAnnounced(): Promise<boolean> {
+        await this.service.waitForHolepunchAnnounced();
+        return true;
+    }
+
+    public async leaveHolepunchOnLocalDht(channelId: string): Promise<boolean> {
+        await this.service.leaveHolepunchOnLocalDht(channelId);
+        return true;
+    }
+
+    public async closeHolepunchSwarmConnections(): Promise<boolean> {
+        await this.service.closeHolepunchSwarmConnections();
+        return true;
+    }
+
+    public async waitForOpenSwarmConnections(count: number): Promise<boolean> {
+        await this.service.waitForOpenSwarmConnections(count);
+        return true;
+    }
+
+    public lookUpHolepunchPeerKeys(channelId: string): Promise<string[]> {
+        return this.service.lookUpHolepunchPeerKeys(channelId);
+    }
+
+    public holdIncomingUntilOwnDial(): boolean {
+        this.service.holdIncomingUntilOwnDial();
+        return true;
+    }
+
+    public waitForFirewallVerdicts(count: number): Promise<boolean[]> {
+        return this.service.waitForFirewallVerdicts(count);
+    }
+
+    public holepunchSwarmState(peerAddress: string): HolepunchSwarmProbe {
+        return this.service.holepunchSwarmState(peerAddress);
+    }
+
+    public requestSumFrom(peerAddress: string): Promise<number> {
+        return this.service.requestSumFrom(peerAddress);
+    }
+
+    public async closeChainProvider(): Promise<boolean> {
+        await this.service.closeChainProvider();
+        return true;
+    }
+
+    public abortOnNextHandshake(): boolean {
+        this.service.abortOnNextHandshake();
+        return true;
     }
 
     public probeMissingHandshake(address: string): Promise<LateHandshakeProbe> {
@@ -444,6 +556,13 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
 
     public probeLobbyProtocol(): Promise<LobbyProtocolProbe> {
         return this.service.probeLobbyProtocol();
+    }
+
+    public probeLobbyHandoffExit(
+        exit: LobbyHandoffExit,
+        withReplacement: boolean
+    ): Promise<LobbyHandoffExitProbe> {
+        return this.service.probeLobbyHandoffExit(exit, withReplacement);
     }
 
     public probeLobbyRecovery(): Promise<LobbyRecoveryProbe> {
@@ -490,6 +609,16 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         zeroBalance = false
     ): Promise<InvalidNegotiationAmountProbe> {
         return this.service.probeInvalidNegotiationAmount(zeroBalance);
+    }
+
+    public probeAttemptClearedDuringTerms(
+        phase: "balance" | "selection"
+    ): Promise<AttemptClearedDuringTermsProbe> {
+        return this.service.probeAttemptClearedDuringTerms(phase);
+    }
+
+    public probeLowerSelectionDuringTerms(): Promise<LowerTermsPendingProbe> {
+        return this.service.probeLowerSelectionDuringTerms();
     }
 
     public probeNegotiationFailure(

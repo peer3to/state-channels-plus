@@ -1,11 +1,16 @@
 // @spec-test-coverage-ignore: typed raw-RPC harness actions exercised by mapped lobby E2E declarations
 import { Block } from "@/models";
+import StateSnapshot from "@/models/StateSnapshot";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type Rpc from "@/rpc/Rpc";
 import type { Address } from "@/types/types";
 import { ForkId, Bytes, BlockHeight, Hash } from "@/types/types";
 import { Codec, Logger, Type } from "@/utils";
 import * as factory from "@test/factory";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type {
     LobbyRawMethod,
     NegotiationRawMethod
@@ -19,16 +24,30 @@ import {
 import type { TestPeer } from "@test/harness/core/types";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import type { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { ethers, Signer } from "ethers";
 
 export class ByzantineActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
     constructor(
-        protected harness: PeerTestHarness<TCustomRpc>,
+        protected harness: PeerTestHarness<THost>,
         protected logger: Logger
     ) {}
+
+    /** `snapshot` committing the application state `stateMachineStateHash` instead of its own. */
+    withStateHash(
+        snapshot: StateSnapshot,
+        stateMachineStateHash: StateSnapshot["stateMachineStateHash"]
+    ): StateSnapshotStruct {
+        const struct = snapshot.toStruct();
+        return {
+            ...struct,
+            snapshotData: { ...struct.snapshotData, stateMachineStateHash }
+        };
+    }
 
     async sendRawLobbyRpc(
         peerIndex: number,
@@ -250,7 +269,7 @@ export class ByzantineActions<
     async craftInvalidTransitionBlock(
         observerIndex: number,
         options: { offenderIndex?: number } = {}
-    ): Promise<{ offender: TestPeer<TCustomRpc>; encodedBlock: string }> {
+    ): Promise<{ offender: TestPeer<THost>; encodedBlock: string }> {
         const observer = this.harness.getPeer(observerIndex);
         const forkId = this.harness.activeForkId;
         if (!forkId) {
@@ -311,7 +330,7 @@ export class ByzantineActions<
     async storeInvalidTransitionFraudProof(
         observerIndex: number,
         options: { offenderIndex?: number } = {}
-    ): Promise<TestPeer<TCustomRpc>> {
+    ): Promise<TestPeer<THost>> {
         const { offender, encodedBlock } =
             await this.craftInvalidTransitionBlock(observerIndex, options);
         const validation = await this.harness

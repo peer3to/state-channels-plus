@@ -1,51 +1,19 @@
-# P2pRuntimeHostRootEntry.ts — Source Report
+# P2pRuntimeHostRootEntry.ts
 
-> **Source:** [worker/P2pRuntimeHostRootEntry.ts](../../../../../../../../src/rpc/internal/worker/P2pRuntimeHostRootEntry.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [worker/P2pRuntimeHostRootEntry.ts](../../../../../../../../src/rpc/internal/worker/P2pRuntimeHostRootEntry.ts)
 
-## Responsibility and observable boundary
+## Requirements
 
-Explicit worker entry for P2pRuntimeHostRoot. Sets the built-in diagnostic thread name, imports the class and calls the shared startRootWorker without selecting behavior by name.
+- [`REQ-RPC-9-8FFE6S` (Application host root)](../../../../../../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s)
+- [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
 
-## Key design decisions
+## UNIT-TEST-HOST-ROOT-ENTRY-1-T7VY0Q
 
-Creation owns initialization. Class names label diagnostics only. Worker policy is common across root types.
+The SDK worker names its thread and starts the host root its payload names
 
-## Inputs, outputs, state, and side effects
+- Setup: Run a full SDK setup with the SDK host in a worker started from this entry and collect logs at a real receiver; run it with a payload naming the probe host root and with one naming a non-class export.
+- Oracle: The receiver stores the SDK worker's chunks under the `sdk` thread; the probe root serves its internal service; a non-class export fails worker startup and the client's setup rejects with the loader's error.
 
-Uses the shared root bootstrap and thread environment. No domain cleanup or request tracking is duplicated.
-
-## Linked requirements
-
-| Source file                                                                                                     | Specification IDs                                                                                   |
-| --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| [worker/P2pRuntimeHostRootEntry.ts](../../../../../../../../src/rpc/internal/worker/P2pRuntimeHostRootEntry.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-Worker entry modules must be bundled as entries. Root class modules are safe to import independently.
-
-## Specification adherence
-
-Preserves explicit initialization across inline and worker placement.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-| Requirement / invariant                                                                             | Implementation status | Evidence                                                                                                                                                                                                                                                                | Gap / divergence            |
-| --------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
-| [`REQ-RUNTIME-4-B0N70Y`](../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) | Covered               | **Here:** [worker/P2pRuntimeHostRootEntry.ts](../../../../../../../../src/rpc/internal/worker/P2pRuntimeHostRootEntry.ts) supplies the entry or shared diagnostic state. **Other files:** [createRoot](../createRoot.ts.md) owns initialization and parent connections. | None for this contribution. |
-
-## Component test obligations
-
-Covered through the common root creation obligations in [createRoot](../createRoot.ts.md), including worker entry initialization and preservation of inline globals.
-
-## Related source reports
-
-[createRoot](../createRoot.ts.md).
+- [x] `UNIT-TEST-HOST-ROOT-ENTRY-1-T7VY0Q.P1` — the entry starts its worker as `sdk`, so that worker's uploads are filed under `sdk`
+- [x] `UNIT-TEST-HOST-ROOT-ENTRY-1-T7VY0Q.P2` — the entry resolves the payload's host root manifest before it constructs the root
+- [x] `UNIT-TEST-HOST-ROOT-ENTRY-1-T7VY0Q.P3` — a manifest naming no constructor fails worker startup and rejects the client's setup

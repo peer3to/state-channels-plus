@@ -113,7 +113,7 @@ export async function storeForgedInboundProofAboveHead(
                 timestamp
             },
             transaction: factory.transaction({
-                body: { encodedData: call.data, data: call.data }
+                body: { data: call.data }
             }),
             previousBlockHash: latest!.hash,
             messageBlocks: [fabricated]

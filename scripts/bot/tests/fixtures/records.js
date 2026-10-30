@@ -67,4 +67,18 @@ function result(input = request(), overrides = {}) {
         ...overrides
     };
 }
-module.exports = { request, result };
+/**
+ * Resolved threads whose request JSON is larger than `bytes`. Each entry is
+ * valid under the request schema, so the client sends the request as is.
+ */
+function resolvedThreads(bytes) {
+    const comments = Array.from({ length: 100 }, (_, index) => 100_000 + index);
+    const threads = [];
+    for (let size = 0; size <= bytes; ) {
+        const thread = { id: `thread-${threads.length}`, comments };
+        threads.push(thread);
+        size += JSON.stringify(thread).length;
+    }
+    return threads;
+}
+module.exports = { request, result, resolvedThreads };

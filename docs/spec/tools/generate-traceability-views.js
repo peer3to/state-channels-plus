@@ -4,7 +4,7 @@
 // Inverse traceability views (review objective 46): requirement -> production files and test
 // declarations; production file -> requirements and tests; test declaration -> classification,
 // production boundaries, and specification permutations; protocol system -> related evidence.
-// Path equality is never evidence: these views join stable IDs, source inventories, and exact
+// Path equality is never evidence: these views join stable IDs, file reports, and exact
 // mapped test declarations from the shared documentation graph.
 
 const fs = require("node:fs");
@@ -34,7 +34,7 @@ function generateTraceabilityViews(graph = buildDocumentationGraph()) {
     const repo = graph.roots.repo;
     const specRoot = path.join(graph.roots.spec, "specification");
 
-    // source -> ids, ids -> sources (from every implementation source inventory row)
+    // source -> ids, ids -> sources (from every ID in each source's file report)
     const sourceIds = new Map();
     for (const { source, owners } of graph.mirrors) {
         const ids = new Set();

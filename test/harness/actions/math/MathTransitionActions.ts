@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: shared math transition actions exercised by owning mapped test declarations
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { Status } from "@/types";
 import { DetachedPromises } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
@@ -22,7 +23,7 @@ type ParticipantLeaveOptions = TransitionOptions & {
 };
 
 export class MathTransitionActions extends TransitionActions<
-    HarnessControlRpc,
+    P2pRuntimeHostRoot<HarnessControlRpc>,
     MathStateMachine
 > {
     constructor(
@@ -126,12 +127,10 @@ export class MathTransitionActions extends TransitionActions<
      */
     async postNextBlockOnlyOnChainWait(options?: { observerIndex?: number }) {
         const authored = await this.authorNextBlockOffWireWait(options);
-        await this.harness
-            .control(authored.leader)
-            .validation.postBlockCalldataOnChain(
-                authored.authored.encodedSignedBlock
-            )
-            .request();
+        await this.postBlockCalldataOnChainWait(
+            authored.leader,
+            authored.authored.encodedSignedBlock
+        );
         return authored;
     }
 

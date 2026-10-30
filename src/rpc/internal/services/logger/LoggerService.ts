@@ -7,6 +7,8 @@ import { config } from "@/utils/config";
 import { DetachedPromises } from "@/utils/DetachedPromises";
 import type { LogStore } from "@/utils/logging/logStore";
 import type { LogUploadOutcome } from "@/utils/logging/LogUploader";
+import { randomHexId } from "@/utils/randomHexId";
+import { settleBy } from "@/utils/settleBy";
 
 /** Store uploads stay with their logger family; the service coordinates neighbours.
  * Adopting the generation index before forwarding prevents cycles from repeating uploads. */
@@ -14,7 +16,8 @@ export class LoggerService extends AInternalRpcService<LoggerRpcMethods> {
     private readonly stores = new Map<
         LogStore,
         {
-            upload: () => Promise<LogUploadOutcome>;
+            /** `flushDeadlineMs`: the abort flush this upload is part of, if any */
+            upload: (flushDeadlineMs?: number) => Promise<LogUploadOutcome>;
             detach: () => void;
             updateContext: (context: SharedLoggerContext) => void;
         }
@@ -24,6 +27,8 @@ export class LoggerService extends AInternalRpcService<LoggerRpcMethods> {
     private pendingUpload?: ReturnType<typeof setTimeout>;
     private disposed = false;
     private contextSender?: InternalTransport;
+    /** Flushes this realm took part in: a flush that reaches it again settles at once. */
+    private readonly flushIds = new Set<string>();
 
     constructor(private readonly root: AInternalRpcRoot) {
         super(root.router);
@@ -41,7 +46,7 @@ export class LoggerService extends AInternalRpcService<LoggerRpcMethods> {
     public attachStore(
         store: LogStore,
         callbacks: {
-            upload: () => Promise<LogUploadOutcome>;
+            upload: (flushDeadlineMs?: number) => Promise<LogUploadOutcome>;
             detach: () => void;
             updateContext: (context: SharedLoggerContext) => void;
         }
@@ -73,6 +78,63 @@ export class LoggerService extends AInternalRpcService<LoggerRpcMethods> {
         this.windowEndsAt = Date.now() + config.CRASH_LOG_UPLOAD_COALESCE_MS;
         this.forward(reason);
         this.uploadStores(store);
+    }
+
+    /**
+     * A flush of every reachable realm that settles within the configured bound.
+     * With no upload endpoint there is nothing to flush: every realm runs with
+     * its creator's configuration, so none of them can upload either.
+     */
+    public startFlush(): Promise<void> {
+        if (!config.CRASH_LOG_UPLOAD_ENDPOINT) return Promise.resolve();
+        return this.flush(
+            randomHexId(),
+            Date.now() + config.CRASH_LOG_FLUSH_MS
+        );
+    }
+
+    /**
+     * Uploads every store of this realm now, without the coalescing window, and
+     * asks each other open neighbour to do the same; settles once all of them
+     * have, or at the deadline. Every realm stops waiting at the same deadline,
+     * leaving out what has not uploaded by then (a worker cancels it as its
+     * thread ends, see settleRealmUploads). It never fails: a neighbour's
+     * failure is reported through this realm's root at once, since a reply
+     * after the deadline would reach no one, and the other uploads run on.
+     */
+    public async flush(
+        flushId: string,
+        deadlineMs: number,
+        sender?: InternalTransport
+    ): Promise<void> {
+        if (this.disposed || this.flushIds.has(flushId)) return;
+        this.flushIds.add(flushId);
+        const report = (error: unknown) => this.root.reportError(error);
+        const neighbours = [...this.root.connections]
+            .filter(
+                ([transport, remoteRoot]) =>
+                    transport !== sender && !remoteRoot.isClosed
+            )
+            .map(([, remoteRoot]) =>
+                remoteRoot.rpc.logger
+                    .flush(flushId, deadlineMs)
+                    // settleBy bounds the wait; closure rejects the request.
+                    .request({ timeoutMs: null })
+                    .catch((error: unknown) => {
+                        // A neighbour that closed took its logs with it; that is not a failure.
+                        if (!remoteRoot.isClosed) report(error);
+                    })
+            );
+        await settleBy(
+            Promise.all([
+                // An upload's own failure is a network outcome it reports itself.
+                ...[...this.stores.values()].map((callbacks) =>
+                    callbacks.upload(deadlineMs)
+                ),
+                ...neighbours
+            ]),
+            deadlineMs
+        );
     }
 
     public upload(

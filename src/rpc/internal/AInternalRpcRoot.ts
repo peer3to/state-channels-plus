@@ -121,15 +121,17 @@ export abstract class AInternalRpcRoot<
 
     public async startRuntime(context: RootStartContext): Promise<void> {
         this.startContext = context;
-        await this.start();
-        // An active thread monitor keeps its existing options.
-        if (
+        const isMonitored =
             context.mode === "worker" &&
-            config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0
-        )
+            config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0;
+        // An active thread monitor keeps its existing options.
+        const startMonitor = () =>
             this.logger.attachedLogger.startPerformanceMonitoring({
                 threadLabel: globalThis.threadName
             });
+        if (isMonitored && config.EVENT_LOOP_MONITOR_STARTUP) startMonitor();
+        await this.start();
+        if (isMonitored) startMonitor();
     }
 
     public abstract start(): Promise<void>;

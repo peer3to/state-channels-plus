@@ -10,7 +10,8 @@ const {
     TARGET_LOAD_PER_CORE,
     MEM_LIMIT_FRACTION,
     MAX_SLOTS_FROM_POOL,
-    DEFAULT_STREAM_CHILD_OUTPUT
+    DEFAULT_STREAM_CHILD_OUTPUT,
+    DEFAULT_COST_OVERRIDES_PATH
 } = require("./e2e-parallel/shared/constants");
 
 const {
@@ -22,6 +23,7 @@ const {
     compiledTestTreeAvailable,
     refreshCompiledTestTree
 } = require("./e2e-parallel/shared/compiledTree");
+const { readOverrides } = require("./e2e-parallel/shared/costCache");
 const { discoverTasks } = require("./e2e-parallel/shared/taskDiscovery");
 const {
     discoverForgeTasks
@@ -31,6 +33,7 @@ const {
 } = require("./e2e-parallel/shared/browserTaskDiscovery");
 const {
     TASK_RUNNERS,
+    tierBuildFailure,
     browserTypecheckFailure,
     browserChromiumFailure,
     countTasksForRunner,
@@ -52,7 +55,8 @@ const {
 } = require("./e2e-parallel/distributed/orchestratorIdentity");
 const logging = require("./e2e-parallel/shared/logging");
 const {
-    buildRuntimeManifest
+    buildRuntimeManifest,
+    discoverRepositories
 } = require("./e2e-parallel/distributed/runtimeBundle");
 const {
     buildRemoteEnvironment
@@ -89,7 +93,7 @@ function validateDiscoveryResults(
         return `--forge-test-pattern ${JSON.stringify(cli.forgeTestPattern)} conflicts with the selected tiers (--no-forge=${!cli.forge}, --browser-only=${cli.browserOnly}, --e2e-only=${cli.e2eOnly})`;
     }
     if (cli.browserTestPattern !== undefined && !selection.includeBrowser) {
-        return `--browser-test-pattern ${JSON.stringify(cli.browserTestPattern)} conflicts with the selected tiers (--no-browser=${!cli.browser}, --forge-only=${cli.forgeOnly}, --e2e-only=${cli.e2eOnly})`;
+        return `--browser-test-pattern ${JSON.stringify(cli.browserTestPattern)} conflicts with the selected tiers (--test-browser=${cli.browser}, --forge-only=${cli.forgeOnly}, --e2e-only=${cli.e2eOnly})`;
     }
     if (cli.mochaTestPattern !== undefined && mocha.preGrepTaskCount === 0) {
         return `Mocha tier selected by --mocha-test-pattern ${JSON.stringify(cli.mochaTestPattern)} contains no runnable tests`;
@@ -114,19 +118,18 @@ function validateDiscoveryResults(
  * What a run has to warm before it admits a task, in order: forge so concurrent
  * tasks never race on a cold via_ir build, Chromium because a gate cannot run
  * without it, and the browser typecheck so one run performs it once rather than
- * per gate. A tier with no scheduled task warms nothing. Distributed workers
- * build forge in their prepare script and carry Chromium in their image, so a
- * distributed run warms only the typecheck: it checks the same sources the
- * workers receive, and running it here keeps it out of every worker prepare,
- * which a run without browser gates would otherwise pay for.
+ * per gate. A tier with no scheduled task warms nothing. Forge is warmed in
+ * both modes; a distributed run ships the result to its workers. Chromium is
+ * checked only locally, because workers carry it in their image. The browser
+ * typecheck runs once here, for the same sources the workers receive.
  */
 function resolveWarmUps(tasks, distributed) {
     return [
         {
             runner: TASK_RUNNERS.FORGE,
-            localOnly: true,
+            localOnly: false,
             message: "Warming the Foundry build before the forge tier...",
-            warm: forgeBuildFailure
+            warm: () => forgeBuildFailure(tasks, distributed)
         },
         {
             runner: TASK_RUNNERS.BROWSER,
@@ -145,6 +148,39 @@ function resolveWarmUps(tasks, distributed) {
         .filter(({ localOnly }) => !distributed || !localOnly)
         .filter(({ runner }) => countTasksForRunner(tasks, runner) > 0)
         .map(({ runner, message, warm }) => ({ runner, message, warm }));
+}
+
+/**
+ * Compile a project's contracts and generate the TypeScript read from them. A
+ * project without the generator scripts has nothing to build. Returns the
+ * failure, or null.
+ */
+function contractBuildFailure(root) {
+    const manifestPath = path.join(root, "package.json");
+    const scripts = fs.existsSync(manifestPath)
+        ? (JSON.parse(fs.readFileSync(manifestPath, "utf8")).scripts ?? {})
+        : {};
+    if (!scripts["generate-enums"] || !scripts["generate-artifacts"]) {
+        return null;
+    }
+    for (const args of [
+        ["hardhat", "compile"],
+        // Hardhat's compile task already updates TypeChain for changed contracts.
+        // Recover a missing generated tree even when Solidity's cache is warm.
+        ...(!fs.existsSync(path.join(root, "typechain-types", "index.ts"))
+            ? [["hardhat", "typechain"]]
+            : []),
+        ["generate-enums"],
+        ["generate-artifacts"]
+    ]) {
+        const failure = tierBuildFailure("yarn", args, {
+            missing: "Install the project dependencies before running tests.",
+            failed: "Fix contract compilation before building the TypeScript test tree.",
+            cwd: root
+        });
+        if (failure) return failure;
+    }
+    return null;
 }
 
 /**
@@ -218,6 +254,42 @@ async function main(options = {}) {
         console.log(getHelpText());
         return;
     }
+    // A broken overrides file fails the run before anything is built.
+    readOverrides(path.resolve(process.cwd(), DEFAULT_COST_OVERRIDES_PATH));
+
+    if (!cli.skipBuild && !cli.dryRun) {
+        // A distributed run ships the build outputs its linked repositories
+        // declare, so it builds them here, dependencies first: the project's
+        // own build reads them.
+        const projectRoot = fs.realpathSync(process.cwd());
+        const linked = cli.distributed
+            ? discoverRepositories(projectRoot).filter(
+                  ({ root, packageJson }) =>
+                      root !== projectRoot &&
+                      packageJson.peer3TestDistribution?.buildOutputs
+              )
+            : [];
+        for (const { root, packageJson } of linked) {
+            const failure =
+                contractBuildFailure(root) ??
+                (compiledTestTreeAvailable(root)
+                    ? refreshCompiledTestTree(root)
+                    : undefined);
+            if (failure) {
+                console.error(
+                    `Building linked repository ${packageJson.name} (${root}) failed:`,
+                    failure
+                );
+                process.exit(1);
+            }
+        }
+        // Contracts supply the types read by the local build, including distributed discovery.
+        const failure = contractBuildFailure(process.cwd());
+        if (failure) {
+            console.error(failure);
+            process.exit(1);
+        }
+    }
 
     // ---- discover tasks ----
     // The Mocha, Foundry and browser tiers are discovered independently and
@@ -239,8 +311,9 @@ async function main(options = {}) {
             "Compiled test mode needs this project's test:parallel:build script; running the TypeScript sources under ts-node."
         );
     }
-    // Distributed workers build in their prepare script; the local path
-    // refreshes the tree here when a source is newer than the last build. The
+    // Both paths build here: a distributed run ships this tree to its workers
+    // with the other declared build outputs. The tree is refreshed when a
+    // source is newer than the last build. The
     // refresh emits in place and never deletes dist: this runner may itself be
     // a task of an outer run whose siblings are loading from that tree.
     if (compiledAvailable && !cli.skipBuild && !cli.dryRun) {
@@ -257,7 +330,11 @@ async function main(options = {}) {
                 cli.grep,
                 undefined,
                 cli.mochaTestPattern ?? cli.testPattern,
-                { compiled: compiledAvailable }
+                {
+                    compiled: compiledAvailable,
+                    includeParallelScript: cli.testParallelScript,
+                    includeBrowser
+                }
             );
         } catch (e) {
             console.error(discoveryFailureMessage("Mocha", cli.grep, e), e);
@@ -440,7 +517,11 @@ async function main(options = {}) {
                 );
                 const stats = await runDistributed({
                     tasks,
+                    schedule: cli.schedule,
                     projectRoot: process.cwd(),
+                    costCachePath: cli.costCachePath,
+                    costCacheReadOnly: cli.costCacheReadOnly,
+                    costOverridesPath: DEFAULT_COST_OVERRIDES_PATH,
                     archivePath,
                     manifest,
                     logDir,
@@ -537,6 +618,11 @@ async function main(options = {}) {
 
         const stats = await runScheduler({
             tasks,
+            schedule: cli.schedule,
+            projectRoot: process.cwd(),
+            costCachePath: cli.costCachePath,
+            costCacheReadOnly: cli.costCacheReadOnly,
+            costOverridesPath: DEFAULT_COST_OVERRIDES_PATH,
             slots,
             slotCount,
             concurrencyCap,

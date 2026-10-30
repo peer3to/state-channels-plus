@@ -1,7 +1,10 @@
 import { TransportType } from "@/transport/TransportType";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
-import { MathTestSession as TestSession } from "@test/harness";
+import {
+    MathTestSession as TestSession,
+    resolveTestTimeConfig
+} from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -785,6 +788,28 @@ describe("E2E: lobby matching", function () {
                 h.event.protocolEventTimeoutMs(),
                 200
             );
+            // The replacement joins the connection set the commitment
+            // promoted, not only the handoff.
+            for (const [index, peer] of h.peers.entries()) {
+                expect(
+                    await h.execOnHost(
+                        peer,
+                        (stateManager, args) => {
+                            const transport =
+                                stateManager.p2pManager.profileManager.getTransportByEvmAddress(
+                                    args.peerAddress
+                                );
+                            return (
+                                !!transport &&
+                                stateManager.p2pManager.openConnections.includes(
+                                    transport
+                                )
+                            );
+                        },
+                        { peerAddress: h.peers[1 - index].address }
+                    )
+                ).to.equal(true);
+            }
             expect(
                 await Promise.all([
                     h
@@ -848,6 +873,120 @@ describe("E2E: lobby matching", function () {
         } finally {
             await Promise.all(releaseMatched.map((release) => release()));
             await h.network.leaveLobby([0, 1], topic);
+        }
+    });
+
+    it("promotes the committed peer into the connection set at commitment and drops it when the negotiation fails", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-promotion-at-commitment");
+        const connectedPeers = async () =>
+            (
+                await Promise.all(
+                    h.peers.map((peer) =>
+                        h
+                            .control(peer)
+                            .query.getConnectedPeerAddresses()
+                            .request()
+                    )
+                )
+            ).map((addresses) => [...new Set(addresses)]);
+        const release = await h.network.joinLobbyHeldAtHandoff([0, 1], topic);
+        try {
+            // Negotiation has not started and no channel exists: the
+            // broadcast set already holds the committed peer.
+            expect(await connectedPeers()).to.deep.equal([
+                [h.peers[1].address],
+                [h.peers[0].address]
+            ]);
+            expect(
+                await Promise.all(
+                    h.peers.map((peer) =>
+                        h.control(peer).query.getChannelId().request()
+                    )
+                )
+            ).to.deep.equal([ethers.ZeroHash, ethers.ZeroHash]);
+
+            // The left joins end on the failed negotiation without a
+            // rematch, and the release closes the promoted transports.
+            expect(
+                await h.network.leaveLobbyAtHeldHandoff([0, 1], topic, release)
+            ).to.deep.equal([true, true]);
+            await TestSession.settleDetached();
+            expect(await connectedPeers()).to.deep.equal([[], []]);
+        } finally {
+            await release();
+        }
+    });
+
+    it("delivers block #0 of a lobby-opened channel over P2P before the lobby session ends", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-first-block-over-p2p");
+        // The open is reported but `completeLobby` waits: the channel runs
+        // on the connection set the commitment built.
+        const releases = await Promise.all(
+            [0, 1].map((index) => h.rpcStub.holdLobbyCompletion(index))
+        );
+        try {
+            await h.network.joinLobby([0, 1], topic);
+            await waitFor(
+                async () => {
+                    const statuses = await Promise.all(
+                        h.peers.map((peer) =>
+                            h.control(peer).query.getStatus().request()
+                        )
+                    );
+                    return statuses.every(
+                        (status) => status === Status.PARTICIPATING
+                    );
+                },
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                200
+            );
+
+            // The lobby session has not ended: `completeLobby` is held.
+            expect(
+                (
+                    await Promise.all(
+                        h.peers.map((peer) =>
+                            h
+                                .control(peer)
+                                .query.getLobbyAvailability()
+                                .request()
+                        )
+                    )
+                ).every(({ topic }) => topic !== undefined)
+            ).to.equal(true);
+
+            await h.transition.advanceState({ count: 1 });
+            await h.assert.sync.blockHeight({ expectedHeight: 0 });
+            // A block that only reached the peer through the chain fallback
+            // had its author post calldata first.
+            expect(
+                h.peers.map(
+                    (peer) => peer.eventSpies.onPostingCalldata?.callCount
+                )
+            ).to.deep.equal([0, 0]);
+            expect(
+                await Promise.all(releases.map((release) => release()))
+            ).to.deep.equal([1, 1]);
+            // The released joins complete the lobby and end the session.
+            await TestSession.settleDetached();
+            expect(
+                (
+                    await Promise.all(
+                        h.peers.map((peer) =>
+                            h
+                                .control(peer)
+                                .query.getLobbyAvailability()
+                                .request()
+                        )
+                    )
+                ).map(({ topic }) => topic)
+            ).to.deep.equal([undefined, undefined]);
+        } finally {
+            await Promise.all(releases.map((release) => release()));
         }
     });
 
@@ -1070,6 +1209,396 @@ describe("E2E: lobby matching", function () {
             await releaseMatched();
             await releaseSetChannelId();
             await h.network.leaveLobby([0, 1], topic);
+        }
+    });
+
+    it("defers the advertiser's first negotiation request that reaches the selector before its commit acknowledgement: one channel opens and neither side blacklists the other", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-terms-before-commit-ack");
+        const [advertiserIndex, selectorIndex] = h.network.lobbyRoleIndices();
+        const advertiser = h.control(h.peers[advertiserIndex]);
+        await advertiser.stub.delayCommitReplyUntilNegotiation().request();
+
+        try {
+            await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
+            let ids: string[] = [];
+            await waitFor(
+                async () => {
+                    ids = await Promise.all(
+                        h.peers.map((peer) =>
+                            h.control(peer).query.getChannelId().request()
+                        )
+                    );
+                    return ids.every((id) => id !== ethers.ZeroHash);
+                },
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                200
+            );
+            expect(ids[0]).to.equal(ids[1]);
+            await waitFor(
+                () =>
+                    h
+                        .control(h.peers[selectorIndex])
+                        .query.isChannelOpen(ids[0])
+                        .request(),
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                50
+            );
+            for (const [observer, target] of [
+                [advertiserIndex, selectorIndex],
+                [selectorIndex, advertiserIndex]
+            ]) {
+                expect(
+                    await h
+                        .control(h.peers[observer])
+                        .query.isBlacklisted(h.peers[target].address)
+                        .request(),
+                    `peer ${observer} must not blacklist peer ${target}`
+                ).to.equal(false);
+            }
+        } finally {
+            await advertiser.stub.releaseLobbyReply().request();
+        }
+    });
+
+    it("blacklists a third peer's negotiation request that reaches the selector while its commit is in flight: the pair still opens one channel without it", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(3, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-third-peer-during-commit");
+        const [advertiserIndex, selectorIndex] = h.network.lobbyRoleIndices();
+        const thirdIndex = 2;
+        const selector = h.control(h.peers[selectorIndex]);
+        const third = h.peers[thirdIndex];
+        // The commit stays in flight until the test releases it: the reply
+        // is parked and neither side's agreement bound fires.
+        const releaseCommit = await h.rpcStub.holdLobbyReply(
+            advertiserIndex,
+            "commit"
+        );
+        const selectorTimeout = await h.rpcStub.holdScheduledTasks(
+            selectorIndex,
+            "rpcRequest:lobbyMatchingService.commit"
+        );
+        const advertiserExpiry = await h.rpcStub.holdScheduledTasks(
+            advertiserIndex,
+            "lobby advertiser reservation expiry"
+        );
+        const restoreDurations = await Promise.all(
+            [0, 1, 2].map((index) =>
+                h.rpcStub.overrideLobbyRoleDuration(index, 20_000)
+            )
+        );
+
+        try {
+            await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
+            await waitFor(
+                async () => (await selectorTimeout.heldCount()) === 1,
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
+            await h.network.joinLobby([thirdIndex], topic);
+            await waitFor(
+                async () =>
+                    !(await selector.query
+                        .isTransportClosed(third.address)
+                        .request()) &&
+                    !(await h
+                        .control(third)
+                        .query.isTransportClosed(h.peers[selectorIndex].address)
+                        .request()),
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
+
+            await h.byzantine.sendRawNegotiationRpc(
+                thirdIndex,
+                selectorIndex,
+                "exchangeTerms",
+                [
+                    `0x${"a1".repeat(32)}`,
+                    `0x${"a2".repeat(32)}`,
+                    `0x${"a3".repeat(32)}`,
+                    "0x"
+                ]
+            );
+            // A deferred request waits two agreement windows before it is
+            // refused; a refusal inside one window was never deferred.
+            await waitFor(
+                () => selector.query.isBlacklisted(third.address).request(),
+                resolveTestTimeConfig(h.options.timeConfig).agreementTime *
+                    1000,
+                50
+            );
+            expect(
+                (await selector.query.getLobbyAvailability().request())
+                    .inFlight,
+                "the selector's commit is still in flight"
+            ).to.equal(true);
+            expect(await selectorTimeout.heldCount()).to.equal(1);
+            expect(
+                await selector.query.getNegotiationAttempt().request()
+            ).to.equal(null);
+
+            await releaseCommit();
+            let ids: string[] = [];
+            await waitFor(
+                async () => {
+                    ids = await Promise.all(
+                        [advertiserIndex, selectorIndex].map((index) =>
+                            h
+                                .control(h.peers[index])
+                                .query.getChannelId()
+                                .request()
+                        )
+                    );
+                    return (
+                        ids[0] !== ethers.ZeroHash &&
+                        ids[0] === ids[1] &&
+                        (await selector.query.isChannelOpen(ids[0]).request())
+                    );
+                },
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                200
+            );
+            expect(
+                await h.control(third).query.getChannelId().request()
+            ).to.equal(ethers.ZeroHash);
+            expect(
+                await selector.query
+                    .isBlacklisted(h.peers[advertiserIndex].address)
+                    .request()
+            ).to.equal(false);
+        } finally {
+            await releaseCommit();
+            await selectorTimeout.release(false);
+            await advertiserExpiry.release(false);
+            await h.network.leaveLobby([0, 1, 2], topic);
+            await Promise.all(restoreDurations.map((restore) => restore()));
+        }
+    });
+
+    it("refuses the advertiser's deferred negotiation request when the selector's commit is rejected: the request expires, the selector blacklists the advertiser, and no channel opens", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id(
+            "e2e-lobby-deferred-request-after-rejected-commit"
+        );
+        const [advertiserIndex, selectorIndex] = h.network.lobbyRoleIndices();
+        const selector = h.control(h.peers[selectorIndex]);
+        const advertiserAddress = h.peers[advertiserIndex].address;
+        // The advertiser's commit reply is parked and then rejected without
+        // running the endpoint. Its reservation bound and the selector's
+        // commit timeout are held, so only that reply settles the commit.
+        const rejectCommit = await h.rpcStub.holdLobbyReply(
+            advertiserIndex,
+            "commit",
+            true
+        );
+        const selectorTimeout = await h.rpcStub.holdScheduledTasks(
+            selectorIndex,
+            "rpcRequest:lobbyMatchingService.commit"
+        );
+        const advertiserExpiry = await h.rpcStub.holdScheduledTasks(
+            advertiserIndex,
+            "lobby advertiser reservation expiry"
+        );
+        const restoreDurations = await Promise.all(
+            [advertiserIndex, selectorIndex].map((index) =>
+                h.rpcStub.overrideLobbyRoleDuration(index, 20_000)
+            )
+        );
+
+        try {
+            await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
+            await waitFor(
+                async () => (await selectorTimeout.heldCount()) === 1,
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
+            // Sent before the reply on the same transport, so the selector
+            // reads it while its commit is in flight and defers it.
+            await h.byzantine.sendRawNegotiationRpc(
+                advertiserIndex,
+                selectorIndex,
+                "exchangeTerms",
+                [
+                    `0x${"b1".repeat(32)}`,
+                    `0x${"b2".repeat(32)}`,
+                    `0x${"b3".repeat(32)}`,
+                    "0x"
+                ]
+            );
+            await rejectCommit();
+            await waitFor(
+                async () =>
+                    !(await selector.query.getLobbyAvailability().request())
+                        .inFlight,
+                h.event.protocolEventTimeoutMs(),
+                50
+            );
+            expect(
+                await selector.query.isBlacklisted(advertiserAddress).request(),
+                "the request was deferred, not refused on arrival"
+            ).to.equal(false);
+
+            await waitFor(
+                () => selector.query.isBlacklisted(advertiserAddress).request(),
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
+            expect(
+                await selector.query.getNegotiationAttempt().request()
+            ).to.equal(null);
+            for (const peer of h.peers) {
+                expect(
+                    await h.control(peer).query.getChannelId().request()
+                ).to.equal(ethers.ZeroHash);
+            }
+        } finally {
+            await rejectCommit();
+            await selectorTimeout.release(false);
+            await advertiserExpiry.release(false);
+            await h.network.leaveLobby([advertiserIndex, selectorIndex], topic);
+            await Promise.all(restoreDurations.map((restore) => restore()));
+        }
+    });
+
+    it("rematches and opens one channel after the counterparty disconnects while the higher peer is still selecting the channel", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(3, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-disconnect-during-selection");
+        const [lowerIndex, higherIndex] = h.network.lobbyRoleIndices();
+        const thirdIndex = 2;
+        const higher = h.control(h.peers[higherIndex]);
+        const third = h.control(h.peers[thirdIndex]);
+        // The higher peer's first listener removal after setup is the one
+        // its channel selection awaits once the lower peer's terms validate.
+        const releaseRemoval =
+            await h.rpcStub.holdEventListenerRemoval(higherIndex);
+
+        try {
+            await h.network.joinLobby([lowerIndex, higherIndex], topic);
+            await waitFor(
+                async () =>
+                    (await higher.stub
+                        .getHeldEventListenerRemovalCount()
+                        .request()) === 1,
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                200
+            );
+            const deadAttempt = await higher.query
+                .getNegotiationAttempt()
+                .request();
+            if (!deadAttempt) expect.fail("negotiation attempt is gone");
+            expect(deadAttempt.peerAddress).to.equal(
+                h.peers[lowerIndex].address
+            );
+            expect(await higher.query.getChannelId().request()).to.equal(
+                deadAttempt.channelId
+            );
+
+            // step 1 - the counterparty drops while the selection is parked
+            await h.network.blacklistAndDisconnectPeer(lowerIndex);
+            await waitFor(
+                async () =>
+                    (await higher.query.getNegotiationAttempt().request()) ===
+                    null,
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
+            expect(await higher.query.getChannelId().request()).to.equal(
+                ethers.ZeroHash
+            );
+            await h.network.leaveLobby([lowerIndex], topic);
+
+            // step 2 - the new pair selects its channel; the parked selection
+            // resumes before either side handles the opening proposal
+            let newChannelId = ethers.ZeroHash;
+            await h.rpcStub.withHeldNegotiationReplies(
+                [higherIndex, thirdIndex],
+                "openProposal",
+                async () => {
+                    await h.network.joinLobby([thirdIndex], topic);
+                    await waitFor(
+                        async () =>
+                            (
+                                await Promise.all(
+                                    [higher, third].map((peer) =>
+                                        peer.stub
+                                            .getHeldNegotiationReplyCount()
+                                            .request()
+                                    )
+                                )
+                            ).reduce((sum, count) => sum + count, 0) === 1,
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }),
+                        200
+                    );
+                    const attempt = await higher.query
+                        .getNegotiationAttempt()
+                        .request();
+                    if (!attempt) expect.fail("new negotiation is gone");
+                    expect(attempt.peerAddress).to.equal(
+                        h.peers[thirdIndex].address
+                    );
+                    expect(attempt.channelId).not.to.equal(
+                        deadAttempt.channelId
+                    );
+                    newChannelId = attempt.channelId;
+                    expect(
+                        await higher.query.getChannelId().request()
+                    ).to.equal(newChannelId);
+                    expect(await releaseRemoval()).to.equal(1);
+                }
+            );
+
+            // step 3 - the new pair opens exactly the channel it negotiated,
+            // and the higher peer's listener observes that opening
+            await waitFor(
+                () => third.query.isChannelOpen(newChannelId).request(),
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                50
+            );
+            await waitFor(
+                async () =>
+                    (
+                        await Promise.all(
+                            [higher, third].map((peer) =>
+                                peer.query.getStatus().request()
+                            )
+                        )
+                    ).every((status) => status === Status.PARTICIPATING),
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                200
+            );
+            expect(
+                await Promise.all(
+                    [higher, third].map((peer) =>
+                        peer.query.getChannelId().request()
+                    )
+                )
+            ).to.deep.equal([newChannelId, newChannelId]);
+            expect(
+                await third.query.isChannelOpen(deadAttempt.channelId).request()
+            ).to.equal(false);
+            const registry = await third.query.getOpenChannelIds().request();
+            expect(registry).to.include(newChannelId);
+            expect(registry).not.to.include(deadAttempt.channelId);
+            expect(
+                await higher.query
+                    .isBlacklisted(h.peers[thirdIndex].address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await third.query
+                    .isBlacklisted(h.peers[higherIndex].address)
+                    .request()
+            ).to.equal(false);
+        } finally {
+            await releaseRemoval();
+            await h.network.leaveLobby([0, 1, 2], topic);
         }
     });
 
@@ -1305,6 +1834,7 @@ describe("E2E: lobby matching", function () {
         await h.setup(2, { autoConnect: false });
         const topic = ethers.id("e2e-lobby-negotiation-abort");
         const [lowerIndex, higherIndex] = h.network.lobbyRoleIndices();
+        let rematchReleases: (() => Promise<number>)[] = [];
 
         try {
             // Both attempts exist while the terms exchange is parked, so the
@@ -1332,6 +1862,15 @@ describe("E2E: lobby matching", function () {
                     if (!commitment) {
                         throw new Error("Negotiation attempt is gone");
                     }
+                    // Both peers stay in the lobby and re-match after the
+                    // abort. Park the re-match before it creates an attempt,
+                    // so the cleared attempt stays observable and the parked
+                    // terms exchange cannot fail a second attempt.
+                    rematchReleases = await Promise.all(
+                        [lowerIndex, higherIndex].map((index) =>
+                            h.rpcStub.holdMatchedNegotiation(index)
+                        )
+                    );
                     await h.byzantine.sendRawNegotiationRpc(
                         lowerIndex,
                         higherIndex,
@@ -1368,7 +1907,38 @@ describe("E2E: lobby matching", function () {
                 }
             );
         } finally {
+            await Promise.all(rematchReleases.map((release) => release()));
             await h.network.leaveLobby([lowerIndex, higherIndex], topic);
+        }
+    });
+
+    it("ends a lobby join left during the negotiation handoff instead of rematching", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-leave-during-handoff");
+        const release = await h.network.joinLobbyHeldAtHandoff([0, 1], topic);
+        try {
+            // both joins settle on their failed negotiation without a rematch,
+            // so both leaves report true and neither peer opens a channel
+            expect(
+                await h.network.leaveLobbyAtHeldHandoff([0, 1], topic, release)
+            ).to.deep.equal([true, true]);
+            await TestSession.settleDetached();
+            for (const peer of h.peers) {
+                expect(
+                    (
+                        await h
+                            .control(peer)
+                            .query.getLobbyAvailability()
+                            .request()
+                    ).topic
+                ).to.equal(undefined);
+                expect(
+                    await h.control(peer).query.getChannelId().request()
+                ).to.equal(ethers.ZeroHash);
+            }
+        } finally {
+            await release();
         }
     });
 
@@ -1437,6 +2007,16 @@ describe("E2E: lobby matching", function () {
             ).to.equal(false);
             // The lower peer lost its committed partner mid-negotiation: one
             // strike, and its own signed attempt keeps observing too.
+            // Its socket-close notification is independent of the higher peer's.
+            await waitFor(
+                () =>
+                    h
+                        .control(lower)
+                        .query.isTransportClosed(higher.address)
+                        .request(),
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
             expect(
                 await h
                     .control(lower)
@@ -1463,6 +2043,256 @@ describe("E2E: lobby matching", function () {
             );
         } finally {
             await h.control(higher).stub.releaseOpeningSubmission().request();
+            await h.network.leaveLobby([lowerIndex, higherIndex], topic);
+        }
+    });
+
+    it("rejects retained opening signatures submitted on chain after the SDK expired the opening terms", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-expired-opening-submission");
+        const [lowerIndex, higherIndex] = h.network.lobbyRoleIndices();
+        const lowerStub = h.control(h.peers[lowerIndex]).stub;
+        const higher = h.control(h.peers[higherIndex]);
+        const higherAttempt = () =>
+            higher.query.getNegotiationAttempt().request();
+
+        // Time is the test input: the lower proposer's terms expire a few
+        // seconds after it signs them, instead of the full opening window.
+        await lowerStub.stubShortOpeningDeadline(6).request();
+        // Six seconds is below the receiver's minimum remaining window, so
+        // the higher peer lowers that minimum for this one proposal and the
+        // test stays within the global timeout.
+        await higher.stub.stubLowerOpeningMinimumWindow(1).request();
+        // The higher peer co-signs and keeps both signatures, but parks the
+        // submission until the terms have expired.
+        await higher.stub.stubHoldOpeningSubmission().request();
+        try {
+            await h.network.joinLobby([lowerIndex, higherIndex], topic);
+            await waitFor(
+                async () =>
+                    (await higher.stub
+                        .getHeldOpeningSubmissionCount()
+                        .request()) === 1,
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
+            );
+            const signed = await higherAttempt();
+            if (!signed) expect.fail("negotiation attempt is gone");
+            expect(signed.localOpeningSignatureIssued).to.equal(true);
+
+            // The SDK's own expiry observation ends the signed attempt once
+            // the deadline has passed without an open.
+            await waitFor(
+                async () =>
+                    (await higherAttempt())?.attemptNonce !==
+                    signed.attemptNonce,
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
+            );
+            // The peer clocks only estimate chain time, so the retained
+            // signatures are submitted once the chain itself is past the
+            // deadline.
+            const deadline = await lowerStub
+                .getShortOpeningDeadline()
+                .request();
+            if (deadline === null) expect.fail("terms were not shortened");
+            await h.event.waitForChainTimeAfter(deadline);
+
+            await higher.stub.releaseOpeningSubmission().request();
+            let rejections: string[] = [];
+            await waitFor(
+                async () =>
+                    (rejections = await higher.stub
+                        .getOpeningSubmissionRejections()
+                        .request()).length > 0,
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(rejections).to.deep.equal([
+                "RaceConditionOpenChannelExpired"
+            ]);
+            expect(
+                await higher.query.isChannelOpen(signed.channelId).request()
+            ).to.equal(false);
+        } finally {
+            await higher.stub.releaseOpeningSubmission().request();
+            await h.network.leaveLobby([lowerIndex, higherIndex], topic);
+        }
+    });
+
+    it("closes the peer without a strike and rematches when a live attempt's own opening is mined after the deadline", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-late-mined-opening");
+        const [lowerIndex, higherIndex] = h.network.lobbyRoleIndices();
+        const lowerAddress = h.peers[lowerIndex].address;
+        const lower = h.control(h.peers[lowerIndex]);
+        const higher = h.control(h.peers[higherIndex]);
+        const peers = [lower, higher];
+        const expiryTask = "opening payload expiry observation";
+        const higherAttempt = () =>
+            higher.query.getNegotiationAttempt().request();
+
+        // The lower proposer's terms expire a few seconds after it signs
+        // them, and the higher peer accepts that short window once.
+        await lower.stub.stubShortOpeningDeadline(6).request();
+        await higher.stub.stubLowerOpeningMinimumWindow(1).request();
+        // The higher peer co-signs, then parks its own submission.
+        await higher.stub.stubHoldOpeningSubmission().request();
+        // Both expiry observations are held, so the signed attempts stay
+        // current while the submission is mined after the deadline.
+        await lower.stub.stubHoldScheduledTasks(expiryTask).request();
+        await higher.stub.stubHoldScheduledTasks(expiryTask).request();
+        try {
+            await h.network.joinLobby([lowerIndex, higherIndex], topic);
+            await waitFor(
+                async () =>
+                    (await higher.stub
+                        .getHeldOpeningSubmissionCount()
+                        .request()) === 1,
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
+            );
+            const signed = await higherAttempt();
+            if (!signed) expect.fail("negotiation attempt is gone");
+            expect(signed.localOpeningSignatureIssued).to.equal(true);
+
+            const deadline = await lower.stub
+                .getShortOpeningDeadline()
+                .request();
+            if (deadline === null) expect.fail("terms were not shortened");
+            await h.event.waitForChainTimeAfter(deadline);
+            // The attempt is still live when its own submission goes out.
+            expect((await higherAttempt())?.attemptNonce).to.equal(
+                signed.attemptNonce
+            );
+
+            await higher.stub.releaseOpeningSubmission().request();
+            let rejections: string[] = [];
+            await waitFor(
+                async () =>
+                    (rejections = await higher.stub
+                        .getOpeningSubmissionRejections()
+                        .request()).length > 0,
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(rejections).to.deep.equal([
+                "RaceConditionOpenChannelExpired"
+            ]);
+            // The failed receipt ends the attempt.
+            await waitFor(
+                async () =>
+                    (await higherAttempt())?.attemptNonce !==
+                    signed.attemptNonce,
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(
+                await higher.query.isChannelOpen(signed.channelId).request()
+            ).to.equal(false);
+            // The receipt failure is not the lower peer's fault: no strike
+            // and no blacklist.
+            expect(
+                await higher.query.getStrikes(lowerAddress).request()
+            ).to.equal(0);
+            expect(
+                await higher.query.isBlacklisted(lowerAddress).request()
+            ).to.equal(false);
+
+            // The higher peer's held check belongs to the ended attempt. The
+            // lower peer's check ends its own signed attempt, so both peers
+            // match again on the same topic and open a fresh channel.
+            await higher.stub
+                .restoreHeldScheduledTasks(expiryTask, false)
+                .request();
+            await lower.stub
+                .restoreHeldScheduledTasks(expiryTask, true)
+                .request();
+            let channelIds: string[] = [];
+            await waitFor(
+                async () => {
+                    channelIds = await Promise.all(
+                        peers.map((peer) => peer.query.getChannelId().request())
+                    );
+                    return (
+                        channelIds[0] !== ethers.ZeroHash &&
+                        channelIds[0] !== signed.channelId &&
+                        channelIds[0] === channelIds[1]
+                    );
+                },
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }) *
+                    2
+            );
+            await waitFor(
+                async () =>
+                    (
+                        await Promise.all(
+                            peers.map((peer) =>
+                                peer.query
+                                    .isChannelOpen(channelIds[0])
+                                    .request()
+                            )
+                        )
+                    ).every(Boolean),
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
+            );
+            // The reverted receipt surfaces as the higher peer's detached
+            // submission error.
+            await TestSession.settleDetached({
+                expectedErrorIncludes: "transaction execution reverted"
+            });
+        } finally {
+            await higher.stub.releaseOpeningSubmission().request();
+            await higher.stub
+                .restoreHeldScheduledTasks(expiryTask, false)
+                .request();
+            await lower.stub
+                .restoreHeldScheduledTasks(expiryTask, false)
+                .request();
+            await h.network.leaveLobby([lowerIndex, higherIndex], topic);
+        }
+    });
+
+    it("excludes a proposer whose opening deadline leaves less than the minimum window, without submitting", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-too-close-opening-deadline");
+        const [lowerIndex, higherIndex] = h.network.lobbyRoleIndices();
+        const lower = h.peers[lowerIndex];
+        const lowerStub = h.control(lower).stub;
+        const higher = h.control(h.peers[higherIndex]);
+
+        // The lower proposer's terms leave 10 seconds, below the receiver's
+        // 30-second minimum.
+        await lowerStub.stubShortOpeningDeadline(10).request();
+        // Any opening submission by the higher peer would be parked and
+        // counted here.
+        await higher.stub.stubHoldOpeningSubmission().request();
+        try {
+            await h.network.joinLobby([lowerIndex, higherIndex], topic);
+            await waitFor(
+                () => higher.query.isBlacklisted(lower.address).request(),
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
+            );
+            expect(
+                await lowerStub.getShortOpeningDeadline().request()
+            ).not.to.equal(null);
+
+            expect(
+                await higher.stub.getHeldOpeningSubmissionCount().request()
+            ).to.equal(0);
+            expect(
+                await higher.stub.getOpeningSubmissionRejections().request()
+            ).to.deep.equal([]);
+            // The lower peer signed its own proposal, so its attempt keeps
+            // observing the chain until that deadline expires; only then does
+            // leaving the lobby end its join.
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(lower)
+                        .query.getNegotiationAttempt()
+                        .request()) === null,
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
+            );
+        } finally {
+            await higher.stub.releaseOpeningSubmission().request();
             await h.network.leaveLobby([lowerIndex, higherIndex], topic);
         }
     });

@@ -13,6 +13,13 @@ import type {
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
+interface PreparedState {
+    previousEncodedState: Bytes;
+    participants: Address[];
+    listedOnChain: boolean;
+    nextToWrite: Address;
+}
+
 /**
  * Applies a received snapshot as the session's latest state: persists it,
  * pushes it into the local VM, swaps the active fork, recomputes the status
@@ -29,53 +36,57 @@ export default class StateApplicationService {
         this.logger = logger.child({ component: "StateApplication" });
     }
 
+    /**
+     * Installs `stateSnapshot` in two stages. Prepare writes the VM and makes
+     * the reads the commit needs; nothing in storage, fork or status changes
+     * yet, but the VM already holds the new state (FIND-STATE-2-4BH3Y1).
+     * Commit runs `persistHistory` (the caller's storage writes for this
+     * install), then persists the state, swaps the fork and recomputes the
+     * status with no await in between, so no task sees the new history under
+     * the old fork.
+     * When `persistHistory` stores nothing (false) the VM is restored and
+     * nothing is committed (false). When it throws the VM is restored and
+     * the error is rethrown.
+     */
     public async unsafeSetLatestState(
         stateSnapshot: StateSnapshotStruct,
         encodedState: Bytes,
-        outboundMessageBlock?: MessageBlockStruct
-    ): Promise<void> {
+        outboundMessageBlock?: MessageBlockStruct,
+        persistHistory: () => boolean = () => true
+    ): Promise<boolean> {
         const sm = this.stateManager;
-        const normalizedGenesisTimestamp = Number(stateSnapshot.timestamp);
-        const previousEncodedState = await sm.diamondStateMachine.getState();
-        // Update local EVM/state machine
-        await sm.diamondStateMachine.setState(encodedState);
-        let participants: Address[];
-        let listedOnChain: boolean;
-        let nextToWrite: Address;
+        const prepared = await this.prepare(encodedState);
+        const restore = () =>
+            sm.diamondStateMachine.setState(prepared.previousEncodedState);
+        let isPersisted: boolean;
         try {
-            participants = await sm.diamondStateMachine.getParticipants();
-            listedOnChain = await this.isSignerListedOnChain(participants);
-            nextToWrite = await sm.diamondStateMachine.getNextToWrite();
+            isPersisted = persistHistory();
         } catch (error) {
-            await sm.diamondStateMachine.setState(previousEncodedState);
+            await restore();
             throw error;
         }
-        this.persistLatestState(
+        if (!isPersisted) {
+            await restore();
+            return false;
+        }
+        const previousForkId = sm.forkId;
+        this.commit(
             stateSnapshot,
             encodedState,
-            outboundMessageBlock
+            outboundMessageBlock,
+            prepared
         );
-        // Update the forkId to the new fork
-        const forkId = stateSnapshot.forkId;
-        const previousForkId = sm.forkId;
-        sm.forkId = forkId;
-        sm.membershipService.publishOffChainEligibility(
-            stateSnapshot.snapshotData.participants
-        );
-        if (previousForkId !== forkId)
+        if (previousForkId !== stateSnapshot.forkId)
             sm.reductionManager.settleForkLeft(previousForkId);
-        this.applyParticipationStatus(participants, listedOnChain);
-        this.scheduleFollowUps(forkId, nextToWrite, normalizedGenesisTimestamp);
-        await sm.leaveChannelService.onSettledStateObserved();
+        return true;
     }
 
     /**
-     * Reduction genesis with a staged commit. Every VM call happens first;
-     * one final `shouldCommit` check follows, and storage, fork, status,
-     * timers, and hooks are then committed with no await in between. Returns
-     * false when the commit was cancelled (disposal) or when a read after the
-     * canonical `setState` failed, in which case the runtime is aborted so it
-     * never keeps serving with the VM and storage describing different states.
+     * Reduction genesis with the same staged commit. One final
+     * `shouldCommit` check follows the prepare. Returns false when the
+     * commit was cancelled (disposal) or when a read after the canonical
+     * `setState` failed, in which case the runtime is aborted so it never
+     * keeps serving with the VM and storage describing different states.
      */
     public async unsafeApplyReductionGenesis(
         genesisSnapshot: StateSnapshotStruct,
@@ -85,22 +96,14 @@ export default class StateApplicationService {
     ): Promise<boolean> {
         const sm = this.stateManager;
         const { forkId, snapshotData } = genesisSnapshot;
-        const normalizedGenesisTimestamp = Number(genesisSnapshot.timestamp);
         this.logger.info("Setting reduction genesis state", {
             forkId,
-            genesisTimestamp: normalizedGenesisTimestamp,
+            genesisTimestamp: Number(genesisSnapshot.timestamp),
             participant: snapshotData.participants
         });
-
-        // Prepare: the canonical VM write and both derived reads.
-        await sm.diamondStateMachine.setState(encodedState);
-        let participants: Address[];
-        let nextToWrite: Address;
-        let listedOnChain: boolean;
+        let prepared: PreparedState;
         try {
-            participants = await sm.diamondStateMachine.getParticipants();
-            nextToWrite = await sm.diamondStateMachine.getNextToWrite();
-            listedOnChain = await this.isSignerListedOnChain(participants);
+            prepared = await this.prepare(encodedState);
         } catch (error) {
             this.logger.error(
                 "Reduction genesis inspection failed after the VM write; aborting",
@@ -112,46 +115,104 @@ export default class StateApplicationService {
             sm.abort();
             return false;
         }
-
-        // Commit: final check, then synchronous mutations only.
         if (!shouldCommit()) return false;
-        this.persistLatestState(
+        this.commit(
             genesisSnapshot,
             encodedState,
-            outboundMessageBlock
+            outboundMessageBlock,
+            prepared
         );
-        sm.forkId = forkId;
-        sm.membershipService.publishOffChainEligibility(
-            genesisSnapshot.snapshotData.participants
-        );
-        this.applyParticipationStatus(participants, listedOnChain);
-        this.scheduleFollowUps(forkId, nextToWrite, normalizedGenesisTimestamp);
-
-        // Follow-up: may await; disposal after this point rolls nothing back.
-        await sm.leaveChannelService.onSettledStateObserved();
         return true;
     }
 
-    private persistLatestState(
+    public async unsafeSetGenesisState(
+        snapshotData: SnapshotDataStruct,
+        encodedState: Bytes,
+        forkId: ForkId,
+        genesisTimestamp: Timestamp,
+        outboundMessageBlock?: MessageBlockStruct
+    ): Promise<void> {
+        const normalizedGenesisTimestamp = Number(genesisTimestamp);
+        this.logger.info("Setting genesis state", {
+            forkId,
+            genesisTimestamp: normalizedGenesisTimestamp,
+            participant: snapshotData.participants
+        });
+
+        // generate and store genesis snapshot
+        const _genesisSnapshot: StateSnapshotStruct = {
+            forkId,
+            blockHeight: 0,
+            timestamp: normalizedGenesisTimestamp,
+            snapshotData: snapshotData
+        };
+        this.logger.debug("Stored genesis snapshot", { _genesisSnapshot });
+
+        await this.unsafeSetLatestState(
+            _genesisSnapshot,
+            encodedState,
+            outboundMessageBlock
+        );
+    }
+
+    /**
+     * Prepare: the canonical VM write and the derived VM and chain reads.
+     * A failed read restores the previous VM state and throws.
+     */
+    private async prepare(encodedState: Bytes): Promise<PreparedState> {
+        const sm = this.stateManager;
+        const previousEncodedState = await sm.diamondStateMachine.getState();
+        // Update local EVM/state machine
+        await sm.diamondStateMachine.setState(encodedState);
+        try {
+            const participants = await sm.diamondStateMachine.getParticipants();
+            const listedOnChain =
+                await this.isSignerListedOnChain(participants);
+            return {
+                previousEncodedState,
+                participants,
+                listedOnChain,
+                nextToWrite: await sm.diamondStateMachine.getNextToWrite()
+            };
+        } catch (error) {
+            await sm.diamondStateMachine.setState(previousEncodedState);
+            throw error;
+        }
+    }
+
+    /** Commit: synchronous mutations only. */
+    private commit(
         stateSnapshot: StateSnapshotStruct,
         encodedState: Bytes,
-        outboundMessageBlock?: MessageBlockStruct
+        outboundMessageBlock: MessageBlockStruct | undefined,
+        prepared: PreparedState
     ): void {
         const sm = this.stateManager;
-
         // Persist state snapshot (as a model)
-        const latestSnapshot = StateSnapshot.from(stateSnapshot);
-        sm.storage.stateSnapshots.storeStateSnapshot(latestSnapshot);
-
+        sm.storage.stateSnapshots.storeStateSnapshot(
+            StateSnapshot.from(stateSnapshot)
+        );
         // Persist outbound message block if provided
-        if (outboundMessageBlock) {
+        if (outboundMessageBlock)
             sm.storage.outboundMessages.store(outboundMessageBlock);
-        }
-
         // Persist state machine state (keyed by snapshot hash when available)
         sm.storage.stateMachineStates.storeStateMachineState(encodedState, {
             hash: stateSnapshot.snapshotData.stateMachineStateHash
         });
+        // Update the forkId to the new fork
+        sm.forkId = stateSnapshot.forkId;
+        sm.membershipService.publishOffChainEligibility(
+            stateSnapshot.snapshotData.participants
+        );
+        this.applyParticipationStatus(
+            prepared.participants,
+            prepared.listedOnChain
+        );
+        this.scheduleFollowUps(
+            stateSnapshot.forkId,
+            prepared.nextToWrite,
+            Number(stateSnapshot.timestamp)
+        );
     }
 
     /**
@@ -173,7 +234,9 @@ export default class StateApplicationService {
      * once the chain no longer lists it either. A locally reduced fork can
      * drop the signer before the transaction recording that reduction and
      * posting its snapshot is mined; the chain's snapshot event then makes
-     * the transition.
+     * the transition. A pending joiner whose join can still land stays
+     * pending, so its own-join observation still starts the force-join
+     * bounds; the join service ends a join whose authorization expired.
      */
     private applyParticipationStatus(
         participants: Address[],
@@ -182,8 +245,17 @@ export default class StateApplicationService {
         const sm = this.stateManager;
         const isParticipant = participants.includes(sm.signerAddress);
         if (isParticipant) {
+            // a reduction genesis can seat a pending joiner: its join ends on
+            // this status change (ChannelJoinService subscribes to
+            // onStatusChanged)
             sm.setStatus(Status.PARTICIPATING);
+        } else if (sm.channelJoinService.isJoinInProgress()) {
+            // the join service ends a join that does not land
+            this.logger.info(
+                "Installed state does not list this signer; its join is in progress, keeping PENDING_PARTICIPANT"
+            );
         } else if (!listedOnChain) {
+            // LeaveChannelService reports this drop as onLeftChannel
             sm.setStatus(Status.SYNCED);
         } else {
             this.logger.info(
@@ -244,35 +316,5 @@ export default class StateApplicationService {
             logger: this.logger,
             leaveChannelService: sm.leaveChannelService
         });
-    }
-
-    public async unsafeSetGenesisState(
-        snapshotData: SnapshotDataStruct,
-        encodedState: Bytes,
-        forkId: ForkId,
-        genesisTimestamp: Timestamp,
-        outboundMessageBlock?: MessageBlockStruct
-    ): Promise<void> {
-        const normalizedGenesisTimestamp = Number(genesisTimestamp);
-        this.logger.info("Setting genesis state", {
-            forkId,
-            genesisTimestamp: normalizedGenesisTimestamp,
-            participant: snapshotData.participants
-        });
-
-        // generate and store genesis snapshot
-        const _genesisSnapshot: StateSnapshotStruct = {
-            forkId,
-            blockHeight: 0,
-            timestamp: normalizedGenesisTimestamp,
-            snapshotData: snapshotData
-        };
-        this.logger.debug("Stored genesis snapshot", { _genesisSnapshot });
-
-        await this.unsafeSetLatestState(
-            _genesisSnapshot,
-            encodedState,
-            outboundMessageBlock
-        );
     }
 }

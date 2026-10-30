@@ -1,18 +1,16 @@
-# test/evm/ContractExecutorWithoutClock.test.ts — Test Report
+# ContractExecutorWithoutClock.test.ts
 
-> **Test file:** [test/evm/ContractExecutorWithoutClock.test.ts](../../../../../../test/evm/ContractExecutorWithoutClock.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [ContractExecutor.ts](../../../../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md)
+Test file: [test/evm/ContractExecutorWithoutClock.test.ts](../../../../../../test/evm/ContractExecutorWithoutClock.test.ts)
+Exercises: [ContractExecutor.ts](../../../../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md)
 
 ## Overview
 
 Full SDK setup initializes Clock before constructing its inline or dedicated executor. Each case reads a deployed timestamp contract through that SDK-owned executor and compares it with the live Clock within one second. The former standalone zero-time setup is unreachable through this construction boundary, so these declarations do not receive the old zero-time permutation credits.
 
-## Tests and covered test IDs
+## Tests
 
-| Test                                                                                                                                                                                                        | Covers                                                                                                                                                                                                                          |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`ContractExecutor SDK clock initialization > initializes the Clock before creating an inline SDK executor`](../../../../../../test/evm/ContractExecutorWithoutClock.test.ts#L20) (line 20)                 | [`UNIT-TEST-EXECUTOR-ROOT-1-WPQCJH.P15`](../../../../implementation/source/src/rpc/internal/roots/ContractExecutorRoot.ts.md#unit-test-executor-root-1-wpqcjh.p15)                                                              |
-| [`ContractExecutor SDK clock initialization > initializes the Clock before creating a dedicated SDK executor`](../../../../../../test/evm/ContractExecutorWithoutClock.test.ts#L33) (line 33)               | [`UNIT-TEST-EXECUTOR-ROOT-1-WPQCJH.P16`](../../../../implementation/source/src/rpc/internal/roots/ContractExecutorRoot.ts.md#unit-test-executor-root-1-wpqcjh.p16)                                                              |
-| [`ContractExecutor SDK clock initialization > uses an explicit zero clock offset even when the shared Clock is initialized`](../../../../../../test/evm/ContractExecutorWithoutClock.test.ts#L45) (line 45) | [`UNIT-TEST-CONTRACT-EXECUTOR-WORKER-PROTOCOL-1-0CQ37K.P5`](../../../../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-contract-executor-worker-protocol-1-0cq37k.p5) |
-| [`ContractExecutor SDK clock initialization > uses an explicit clock offset for an inline root`](../../../../../../test/evm/ContractExecutorWithoutClock.test.ts#L48) (line 48)                             | [`UNIT-TEST-CONTRACT-EXECUTOR-WORKER-PROTOCOL-1-0CQ37K.P6`](../../../../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-contract-executor-worker-protocol-1-0cq37k.p6) |
-| [`ContractExecutor SDK clock initialization > keeps timestamp zero without an adjustment or initialized Clock`](../../../../../../test/evm/ContractExecutorWithoutClock.test.ts#L16) (line 16)              | [`UNIT-TEST-CONTRACT-EXECUTOR-WORKER-PROTOCOL-1-0CQ37K.P7`](../../../../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-contract-executor-worker-protocol-1-0cq37k.p7) |
+- `initializes the Clock before creating an inline SDK executor`: UNIT-TEST-EXECUTOR-ROOT-1-WPQCJH.P15
+- `initializes the Clock before creating a dedicated SDK executor`: UNIT-TEST-EXECUTOR-ROOT-1-WPQCJH.P16
+- `uses an explicit zero clock offset even when the shared Clock is initialized`: UNIT-TEST-CONTRACT-EXECUTOR-WORKER-PROTOCOL-1-0CQ37K.P5
+- `uses an explicit clock offset for an inline root`: UNIT-TEST-CONTRACT-EXECUTOR-WORKER-PROTOCOL-1-0CQ37K.P6
+- `keeps timestamp zero without an adjustment or initialized Clock`: UNIT-TEST-CONTRACT-EXECUTOR-WORKER-PROTOCOL-1-0CQ37K.P7

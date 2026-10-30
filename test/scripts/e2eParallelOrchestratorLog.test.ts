@@ -18,6 +18,7 @@ const {
     promoteAttemptLog,
     promoteStarvationAttemptLog,
     recordWorkerFailure,
+    reportLostTasks,
     recordWorkerRetirement,
     validateWorkerStats,
     workerFaultStatus
@@ -48,6 +49,41 @@ const {
 } = require("../../scripts/e2e-parallel/shared/taskCoordinator.js");
 
 describe("distributed orchestrator logs", function () {
+    it("annotates a task lost with its only capable worker", function () {
+        const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "scp-lost-"));
+        const reason =
+            "Its attempt was lost with the worker, and no connected worker can run it";
+        const lines: string[] = [];
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalActions = process.env.GITHUB_ACTIONS;
+        console.log = (line = "") => lines.push(line);
+        console.error = () => {};
+        process.env.GITHUB_ACTIONS = "true";
+        try {
+            reportLostTasks(
+                [
+                    {
+                        label: "lost",
+                        logName: "lost",
+                        infrastructureDiagnostics: ["earlier", reason]
+                    }
+                ],
+                logDir
+            );
+        } finally {
+            console.log = originalLog;
+            console.error = originalError;
+            if (originalActions === undefined)
+                delete process.env.GITHUB_ACTIONS;
+            else process.env.GITHUB_ACTIONS = originalActions;
+            fs.rmSync(logDir, { recursive: true, force: true });
+        }
+        expect(lines).to.deep.equal([
+            `::error title=Test failed::lost [${reason}]`
+        ]);
+    });
+
     it("rejects an incompatible worker host before leasing it", function () {
         expect(() =>
             assertCompatibleWorkerProtocol({
@@ -412,6 +448,8 @@ describe("distributed orchestrator logs", function () {
                 capabilities: { slots: 1, workers: 4, memoryGb: 12 },
                 executionProfile: { workers: 2 },
                 stats: {
+                    meanConcurrency: 1.25,
+                    peakConcurrency: 2,
                     peakCpu: 0.9,
                     avgCpu: 0.6,
                     peakOccupiedGb: 8,
@@ -422,10 +460,33 @@ describe("distributed orchestrator logs", function () {
             17
         );
         expect(line).to.include("server-2");
-        expect(line).to.include("1 slots, 2 workers (max 4), 12GB");
+        expect(line).to.include("1 slots, ceiling 2 workers (default 4), 12GB");
         expect(line).to.include("17 tests");
+        expect(line).to.include("concurrent tests avg 1.3 / peak 2");
         expect(line).to.include("cpu avg 60% / peak 90%");
         expect(line).to.include("mem peak 8.0GB / bound 10.0GB");
+        expect(line).not.to.include("budget holds");
+    });
+
+    it("prints a worker's cost-budget refusals in its summary", function () {
+        const line = formatWorkerSummary(
+            {
+                color: "",
+                label: "server-2",
+                capabilities: { slots: 1, workers: 4, memoryGb: 12 },
+                stats: {
+                    peakCpu: 0.9,
+                    avgCpu: 0.6,
+                    peakOccupiedGb: 8,
+                    avgPerTestGb: 1.25,
+                    memBoundGb: 10
+                }
+            },
+            17,
+            { cpu: 3, memory: 1 }
+        );
+        expect(line).to.include("budget holds cpu 3 / memory 1");
+        expect(line).to.include("concurrent tests unavailable");
     });
 
     it("keeps canonical, failure, and attempt filenames within filesystem limits", function () {

@@ -1,11 +1,6 @@
-# test/e2e/E2E-FinalDispute.test.ts — Test Report
+# E2E-FinalDispute.test.ts
 
-> **Test file:** [test/e2e/E2E-FinalDispute.test.ts](../../../../../../test/e2e/E2E-FinalDispute.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/E2E-FinalDispute.test.ts](../../../../../../test/e2e/E2E-FinalDispute.test.ts)
 
 ## Overview
 
@@ -13,7 +8,8 @@ The suite stages threshold-final disputes (signed by the full participant set) o
 channel via the harness helpers `submitFinalDispute` / `submitFinalDisputeFromStoredEvidence` and
 resolves them on-chain with `resolveFinalDispute`. It asserts the final-dispute fast path in the
 reduction stack: the exact final output (fork id and genesis timestamp) is installed without
-running `validateDispute`, a queued ordinary reduction task released afterwards is a no-op (no
+running `validateDispute`, a late non-final delivery of the dispute against the source fork, which
+is no longer current, enters no validation and leaves the successor authoring and finalizing blocks, a queued ordinary reduction task released afterwards is a no-op (no
 second `onSetState`; the completed reduction joins the final fork), duplicate completion via
 `awaitReduction` is idempotent, and a peer whose `DisputeCommitted` delivery was withheld still
 lands on the exact final output during reduction. A participant with a pending leave whose turn falls
@@ -28,13 +24,11 @@ scope (`E2E-ReductionManager`, `test/stateManager/ReductionManager.test.ts`).
 The pending-leave case keeps the writer slot alive through the shared `keepAuthoringUntil` helper while the
 exit snapshot lands, with the leaver marked AFK from its exit turn on.
 
-## Tests and covered test IDs
+## Tests
 
-| Test                                                                                                                                                                                                     | Covers                                                                                                                                                                      |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`E2E: final dispute resolution > threshold-final dispute installs its exact output and can post the next snapshot`](../../../../../../test/e2e/E2E-FinalDispute.test.ts#L7) (line 7)                    | [`REQ-ENFDIS-1-8CSA6B.T1.P4`](../../../../specification/enforcement/dispute-window.md#req-enfdis-1-8csa6b.t1.p4)                                                            |
-| [`E2E: final dispute resolution > direct final-dispute reduction re-homes a pending leave onto the reduced fork and settles it once`](../../../../../../test/e2e/E2E-FinalDispute.test.ts#L77) (line 77) | [`REQ-DISPUTE-PIPE-3-PHE3SQ.T1.P19`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq.t1.p19)                                             |
-| [`E2E: final dispute resolution > threshold-final dispute makes a queued reduction timeout a no-op`](../../../../../../test/e2e/E2E-FinalDispute.test.ts#L201) (line 201)                                | [`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P4`](../../../../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37.p4) |
-| [`E2E: final dispute resolution > duplicate completion is idempotent`](../../../../../../test/e2e/E2E-FinalDispute.test.ts#L261) (line 261)                                                              | —                                                                                                                                                                           |
-| [`E2E: final dispute resolution > missed final-dispute delivery recovers the exact final output during reduction`](../../../../../../test/e2e/E2E-FinalDispute.test.ts#L286) (line 286)                  | [`REQ-DIS-6-Y92H1M.T1.P16`](../../../../specification/disputes/disputes.md#req-dis-6-y92h1m.t1.p16)                                                                         |
-| [`E2E: final dispute resolution > failed final-dispute preparation propagates without abandoning participation`](../../../../../../test/e2e/E2E-FinalDispute.test.ts#L335) (line 335)                    | [`REQ-DIS-6-Y92H1M.T1.P15`](../../../../specification/disputes/disputes.md#req-dis-6-y92h1m.t1.p15)                                                                         |
+- `threshold-final dispute installs its exact output and can post the next snapshot`: REQ-ENFDIS-1-8CSA6B.T1.P4, REQ-LIF-7-0XZBDM.T1.P3
+- `direct final-dispute reduction re-homes a pending leave onto the reduced fork and settles it once`: REQ-DISPUTE-PIPE-3-PHE3SQ.T1.P19
+- `threshold-final dispute makes a queued reduction timeout a no-op`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P4
+- `duplicate completion is idempotent`: none
+- `missed final-dispute delivery recovers the exact final output during reduction`: REQ-DIS-6-Y92H1M.T1.P16
+- `failed final-dispute preparation propagates without abandoning participation`: REQ-DIS-6-Y92H1M.T1.P15

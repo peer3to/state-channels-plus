@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: shared setup for direct custom-RPC E2E cases
 
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
@@ -10,7 +11,7 @@ import path from "node:path";
 
 export class PingPongE2EFixture {
     public readonly harness = new PeerTestHarness<
-        PingPongRpc,
+        P2pRuntimeHostRoot<PingPongRpc>,
         MathStateMachine
     >({
         deployment: DEFAULT_MATH_HARNESS_DEPLOYMENT
@@ -49,8 +50,8 @@ export class PingPongE2EFixture {
     }
 
     public control(
-        peer: TestPeer<PingPongRpc, MathStateMachine>
+        peer: TestPeer<P2pRuntimeHostRoot<PingPongRpc>, MathStateMachine>
     ): RemoteRpcProxyType<PingPongRpc> {
-        return this.harness.control(peer) as RemoteRpcProxyType<PingPongRpc>;
+        return peer.p2pInstance.hostRpc;
     }
 }

@@ -6,6 +6,8 @@ class Clock {
     private clockAdjustmentSeconds: number;
     private provider: ethers.Provider;
     private averageBlockTime: number | undefined; // in seconds
+    /** Set once no runtime owns `provider`: it is destroyed when replaced. */
+    private providerReleased = false;
 
     private constructor(runner: ethers.Provider) {
         this.provider = runner;
@@ -27,7 +29,14 @@ class Clock {
             Clock.initialization = instance
                 .syncClock()
                 .then(() => {
+                    const replaced = Clock.instance;
                     Clock.instance = instance;
+                    // a provider only the Clock still used is now unused
+                    if (
+                        replaced?.providerReleased &&
+                        replaced.provider !== provider
+                    )
+                        replaced.provider.destroy();
                 })
                 .catch((error) => {
                     Clock.initialization = undefined;
@@ -41,6 +50,14 @@ class Clock {
     }
     public static ownsProvider(provider: ethers.Provider): boolean {
         return Clock.instance?.provider === provider;
+    }
+    /**
+     * The runtime that owned `provider` is gone. The Clock keeps reading
+     * through it and destroys it once a new provider replaces it.
+     */
+    public static releaseProvider(provider: ethers.Provider): void {
+        if (Clock.instance?.provider === provider)
+            Clock.instance.providerReleased = true;
     }
     public static getTimeInSeconds(): number {
         return (

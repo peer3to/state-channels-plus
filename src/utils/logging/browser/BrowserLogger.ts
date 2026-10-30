@@ -310,10 +310,10 @@ export class BrowserLogger extends Logger {
         }
 
         // thread role -> a merged replay shows where a line came from
-        const threadName = logEntry.sharedContext.threadName;
-        if ((threadName ?? "main") !== "main") {
-            push(`[${threadName}]`, "color: #9ca3af; opacity: 0.85");
-        }
+        push(
+            `[${logEntry.sharedContext.threadName ?? "main"}]`,
+            "color: #9ca3af; opacity: 0.85"
+        );
 
         // Component
         if (logEntry.context.component) {

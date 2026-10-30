@@ -42,16 +42,16 @@ trigger src code).
 
 For any design, source, contract, or test change that affects specified
 behavior, follow `docs/spec/AGENTS.md` in the same pass. Identify affected
-requirements, planned tests, matching implementation subjects and source inventories, conformance traceability,
+requirements, planned tests, the file reports' requirement bullets and case lists,
 test traceability, individual test declarations, questions, findings, and audit
 approvals. Planned tests preserve the owning requirement ID, for example
-`INV-DA-1.T1`; exact tests map to permutation IDs such as `INV-DA-1.T1.P1`. Update all affected layers, rerun related evidence, and
-preserve the forward-only subject chain: neutral `specification/A`, concrete
-`implementation/A`, then evidence-owning `verification/A`. Verification has
-only its overview and the specification/implementation traceability matrices;
-exact test links and coverage judgments belong in those rows. Regenerate all
-six inverse reports with `yarn spec:refresh` (the command never authors the
-maintained subject documents). Before a commit run
+`INV-DA-1.T1`; exact tests map to permutation IDs such as `INV-DA-1.T1.P1`. Update all affected layers and
+rerun related evidence. The layers link through stable IDs, not paths.
+Verification holds one report per test file plus the tool-written
+`verification/requirements.md`; tested status is derived, never typed.
+`yarn spec:refresh` regenerates the reports under `generated/` (it never
+authors the maintained documents). The full rules live in
+`docs/spec/AGENTS.md`. Before a commit run
 `yarn spec:impact` and `yarn spec:impact --staged`; during PR review run
 `yarn spec:impact --base <merge-base-ref>` and semantically recheck every
 reported path. PR reviews report specification drift,
@@ -64,13 +64,25 @@ uncertain, and leave final fingerprint approval to the engineer.
 
 ### Canonical test command and parallel run logs
 
-`yarn test:parallel:distributed` is the canonical full test gate. It runs three
+`yarn test:parallel:distributed --test-parallel-script --test-browser` is the canonical full test gate (also used by CI). Without those flags, parallel-runner self-tests and browser tests are excluded. The full gate runs three
 tiers across the configured distributed workers: all Mocha tests, the forge
 tests and the browser gates (`test/browser/run-*.mjs`). Pass `--e2e-only` to
 limit Mocha discovery to `test/e2e`; it also drops the forge and browser tiers.
 
+During development, leave these optional groups disabled unless the changes
+touch their relevant files or dependencies:
+
+- Use `--test-parallel-script` when changing parallel-runner scripts, their
+  configuration, or their self-tests.
+- Use `--test-browser` when changing browser code, browser build/runtime
+  dependencies, or browser tests, including shared code that affects those paths.
+
+Run only the relevant optional group and focused tests for those changes. Do not
+add both flags routinely to development validation; CI runs both groups on every
+full gate so the development cycle stays lean.
+
 Browser gates, and Mocha test files marked `// @distributed-requires: browser`,
-run only on a protocol 14 worker host whose runner image was built with
+run only on a protocol 14 or newer worker host whose runner image was built with
 `yarn test:parallel:image`. When no such host connects within the discovery
 window, the run skips them with a warning that lists them instead of failing,
 so a green run is not complete until that warning has been checked. A Mocha
@@ -195,6 +207,12 @@ Applies to `src/stateManager/validationStrategy/*` and their call sites
   one message are a signature-level offense for every message type, so they are
   detected in `SignerRecoveryCache` and punished by `P2PManager`, not through
   `AValidationStrategy`.
+- **Exception: past blocks.** A block this peer is already past (stored, or an
+  unstored block at or below the local height on its fork) is deduplicated
+  before validation by `BlockQueueManager.isPastBlock` / `settlePastBlock`,
+  not through `AValidationStrategy`: the rule is the same for every live
+  pipeline, and dispute replay (no live gates) treats only a stored block as
+  past.
 - **The pipeline's unit of work is the `QueuedBlockEntry`, never a bare
   block + ad-hoc sender parameter.** Entries merge signatures and
   `sourcesToSignatures` in QueueStorage until dequeued. Each source has its own
@@ -212,6 +230,9 @@ Applies to `src/stateManager/validationStrategy/*` and their call sites
 methods }`. Never interleave a field declaration between methods. When adding a
   new field, put it with the other fields at the top of the class (keep any
   explanatory comment with it), not next to the method that happens to use it.
+- **Public methods before private ones** — after the fields and the
+  constructor come the public methods and getters, then protected, then
+  private. The interface reads first; the internals follow.
 
 ### Import order
 
@@ -266,7 +287,7 @@ methods }`. Never interleave a field declaration between methods. When adding a
   below) + a `StateChannelManagerInterface` decl; TS calls
   `stateChannelManagerContract.<fn>.staticCall(...)`, other facets
   `delegatecall` the facet address (see `isCorrectLatestState`,
-  `areSignedBlocksLinkedAndVerified`). Broadly-shared primitive → `internal`
+  `verifyMilestones`). Broadly-shared primitive → `internal`
   `_`-prefixed on `StateChannelCommon` (`_isBlockAuthentic`), plus a thin
   `public` wrapper on `UtilityFacet` when TS or a test needs to call it
   (`isBlockAuthentic`). Keep the internal `virtual` so `LocalDiamond` can
@@ -343,7 +364,7 @@ limit, so it implements only what needs its own storage and composition (`open`,
 { ... }` structural shapes that re-state an existing type. Reach the real type
   instead: type the entry point so the concrete type flows through. E.g. a
   harness-control `*Service`/`*RpcMethods` should declare its `p2pManager` as
-  `P2PManager<HarnessControlRpc>` (via the `ANetworkRpcService`/`ANetworkRpcMethods`
+  `P2PManager<HarnessControlRpcShape>` (via the `ANetworkRpcService`/`ANetworkRpcMethods`
   `TP2PManager` param) — then `localRpc`/`remoteRpc` are fully typed (the SDK's
   own services included) with no casts. Generic helpers should be generic over
   their args (e.g. `execOnHost<T, A>(…, args: A)`) so call sites are checked
@@ -386,6 +407,11 @@ limit, so it implements only what needs its own storage and composition (`open`,
 - Never log with `console.*`. Use the internal logger (the one returned during `p2pSetup`); its output is collected and shipped for analysis, so `console.*` calls are invisible to that pipeline. This applies to main-thread code too. If a module has no logger in scope, thread one through its options/params rather than reaching for `console.*`. Exception: `scripts/` CLIs (test runners, infra tooling) write their user-facing output with `console.*` by design — the rule governs `src/` and harness code whose logs must ship through the pipeline.
 
 ### Required Human review decisions
+
+- When the human makes a review decision in this conversation, record it in the
+  assessment and ready-to-post reply, and update affected decision/finding records.
+  Do not ask for the same decision again. Keep drafts in the review UI’s supported
+  reply section; do not post them without an explicit request.
 
 - When an automated review flags an unresolved design choice, implementing agents
   must ask their human unless the specification or an existing human decision

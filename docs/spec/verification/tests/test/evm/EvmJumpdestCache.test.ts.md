@@ -1,12 +1,7 @@
-# test/evm/EvmJumpdestCache.test.ts — Test Report
+# EvmJumpdestCache.test.ts
 
-> **Test file:** [test/evm/EvmJumpdestCache.test.ts](../../../../../../test/evm/EvmJumpdestCache.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [node/evmJumpdestCache.ts](../../../../implementation/source/src/evm/node/evmJumpdestCache.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/evm/EvmJumpdestCache.test.ts](../../../../../../test/evm/EvmJumpdestCache.test.ts)
+Exercises: [node/evmJumpdestCache.ts](../../../../implementation/source/src/evm/node/evmJumpdestCache.ts.md)
 
 ## Overview
 
@@ -21,16 +16,9 @@ EVM's own `common` invalidates the entry — the same code reference is re-analy
 opcode table and `PUSH0` flips from failing on Paris to succeeding on Shanghai. Cache eviction
 policy and the browser platform variant are not exercised here.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                  | Covers |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`EVM jumpdest cache (component) > analyzes once and then hits the cache for the same stored code`](../../../../../../test/evm/EvmJumpdestCache.test.ts#L44) (line 44)            | —      |
-| [`EVM jumpdest cache (component) > executes distinct code buffers independently`](../../../../../../test/evm/EvmJumpdestCache.test.ts#L64) (line 64)                              | —      |
-| [`EVM jumpdest cache (component) > keeps separate EVM instances independent`](../../../../../../test/evm/EvmJumpdestCache.test.ts#L78) (line 78)                                  | —      |
-| [`EVM jumpdest cache (component) > follows the active hardfork after it changes, for the same code reference`](../../../../../../test/evm/EvmJumpdestCache.test.ts#L87) (line 87) | —      |
+- `analyzes once and then hits the cache for the same stored code`: none
+- `executes distinct code buffers independently`: none
+- `keeps separate EVM instances independent`: none
+- `follows the active hardfork after it changes, for the same code reference`: none

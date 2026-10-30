@@ -1,6 +1,7 @@
 import type P2PManager from "@/P2PManager";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
 import type MainRpcService from "@/rpc/network/MainRpcService";
+import type { ModuleManifest } from "@/utils/moduleLoader/resolveManifestExport";
 
 /**
  * Local construction context for a custom RPC. It carries live references in
@@ -21,16 +22,7 @@ export type CustomRpcConstructor<
     context: CustomRpcContext
 ) => TCustomRpc;
 
-export type CustomRpcManifest<TOptions = unknown> = {
-    /**
-     * Node import specifier, absolute path, file URL, or browser/bundler URL.
-     */
-    module: string;
-    /**
-     * Optional named export to load from the module. If omitted, the loader
-     * uses the default export.
-     */
-    exportName?: string;
+export type CustomRpcManifest<TOptions = unknown> = ModuleManifest & {
     /** Serializable options forwarded to the custom RPC constructor. */
     options?: TOptions;
 };

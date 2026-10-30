@@ -1,15 +1,21 @@
+// @spec-test-coverage-ignore: shared dispute assertions exercised by owning mapped test declarations
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { ForkId } from "@/types/types";
 import { addressesEqual } from "@/utils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { expect } from "chai";
 
 export class AssertDisputeActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
-    constructor(private readonly harness: PeerTestHarness<TCustomRpc>) {}
+    constructor(private readonly harness: PeerTestHarness<THost>) {}
 
     async initiatedAndCommitedWait(options?: {
         expectedCount?: number;
@@ -134,31 +140,30 @@ export class AssertDisputeActions<
         peerIndices: number[];
         timeoutMs?: number;
     }): Promise<void> {
-        await Promise.all(
-            options.peerIndices.map((peerIndex) =>
-                waitFor(
-                    async () =>
-                        (await this.harness
+        // Assert the fork each peer recorded when its wait passed. A peer that
+        // leaves right after the reduction (its exit turn) stops its state
+        // manager, which drops the record; a second read would see null.
+        const completedForkIds = await Promise.all(
+            options.peerIndices.map(async (peerIndex) => {
+                let completedForkId: ForkId | null = null;
+                await waitFor(
+                    async () => {
+                        completedForkId = await this.harness
                             .control(this.harness.getPeer(peerIndex))
                             .query.getCompletedReductionForkId(
                                 options.sourceForkId
                             )
-                            .request()) !== null,
+                            .request();
+                        return completedForkId !== null;
+                    },
                     options.timeoutMs ??
                         this.harness.event.protocolEventTimeoutMs({
                             withFirstBlockGrace: true
                         }),
                     50
-                )
-            )
-        );
-        const completedForkIds = await Promise.all(
-            options.peerIndices.map((peerIndex) =>
-                this.harness
-                    .control(this.harness.getPeer(peerIndex))
-                    .query.getCompletedReductionForkId(options.sourceForkId)
-                    .request()
-            )
+                );
+                return completedForkId;
+            })
         );
         const expectedForkIds =
             options.reducedForkId !== undefined
@@ -172,6 +177,41 @@ export class AssertDisputeActions<
                       )
                   );
         expect(completedForkIds).to.deep.equal(expectedForkIds);
+    }
+
+    /**
+     * Every active honest auditor reached the same audit result: it sits on
+     * `forkId`, lists the same participants and stored the same dispute
+     * fraud proofs (proof type and accused disputer).
+     */
+    async auditorsAgree(forkId: ForkId): Promise<void> {
+        const auditors = this.harness.getActiveHonestPeers();
+        expect(auditors.length).to.be.greaterThan(1);
+        const views = await Promise.all(
+            auditors.map(async (peer) => {
+                const query = this.harness.control(peer).query;
+                const [peerForkId, participants, accusations] =
+                    await Promise.all([
+                        query.getForkId().request(),
+                        query.getParticipants().request(),
+                        query.getDisputeFraudProofAccusations().request()
+                    ]);
+                return {
+                    forkId: peerForkId,
+                    participants: [...participants].sort(),
+                    accusations: accusations
+                        .map((a) => `${a.proofType}:${a.participant}`)
+                        .sort()
+                };
+            })
+        );
+        expect(views).to.deep.equal(
+            auditors.map(() => ({
+                forkId,
+                participants: views[0].participants,
+                accusations: views[0].accusations
+            }))
+        );
     }
 
     noDisputes(): void {

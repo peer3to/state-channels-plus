@@ -3,7 +3,7 @@ import { fragmentKey } from "@/utils/contractAbi";
 import { errorAbis } from "@/utils/GeneratedArtifacts";
 import { ethers, Fragment, InterfaceAbi } from "ethers";
 
-export function abiFragments(abi: InterfaceAbi): readonly Fragment[] {
+function abiFragments(abi: InterfaceAbi): readonly Fragment[] {
     return ethers.Interface.from(abi).fragments;
 }
 

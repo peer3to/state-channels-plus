@@ -7,7 +7,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const crypto = require("node:crypto");
+const { contentHash } = require("./generate-pending-review");
 
 const SPEC_ROOT = path.join(__dirname, "..");
 const REGISTER = path.join(SPEC_ROOT, "audit/review-state.json");
@@ -32,11 +32,7 @@ for (const f of files) {
         console.error(`skip (outside tree or missing): ${f}`);
         continue;
     }
-    const hash = crypto
-        .createHash("sha256")
-        .update(fs.readFileSync(abs))
-        .digest("hex")
-        .slice(0, 16);
+    const hash = contentHash(abs);
     register[rel] = {
         hash,
         reviewer,

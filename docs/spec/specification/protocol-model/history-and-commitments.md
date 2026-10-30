@@ -40,15 +40,15 @@ a separate concern (see [../security/data-availability.md](../security/data-avai
 
 A **transaction** is a single proposed state transition:
 
-| Struct              | Field                 | Meaning                                                                                                                                                                 |
-| ------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TransactionHeader` | `channelId`           | The channel this transition belongs to.                                                                                                                                 |
-|                     | `participant`         | The logical author (see [state-machines.md](./state-machines.md) §2).                                                                                                   |
-|                     | `forkId`              | The fork this transition extends (§4).                                                                                                                                  |
-|                     | `transactionCnt`      | The height on that fork. For this protocol version: one transaction per block, so this is also the block height (the off-chain participant reads it as `Block.height`). |
-|                     | `timestamp`           | Protocol time of authorship; validated per [../protocol/time.md](./time.md).                                                                                            |
-| `TransactionBody`   | `encodedData`, `data` | The EVM calldata to execute. For this protocol version: both fields carry the same calldata; the split is a placeholder for a polymorphic encoding.                     |
-| `Transaction`       | `header`, `body`      | The proposed transition.                                                                                                                                                |
+| Struct              | Field            | Meaning                                                                                                                                                                 |
+| ------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TransactionHeader` | `channelId`      | The channel this transition belongs to.                                                                                                                                 |
+|                     | `participant`    | The logical author (see [state-machines.md](./state-machines.md) §2).                                                                                                   |
+|                     | `forkId`         | The fork this transition extends (§4).                                                                                                                                  |
+|                     | `transactionCnt` | The height on that fork. For this protocol version: one transaction per block, so this is also the block height (the off-chain participant reads it as `Block.height`). |
+|                     | `timestamp`      | Protocol time of authorship; validated per [../protocol/time.md](./time.md).                                                                                            |
+| `TransactionBody`   | `data`           | The EVM calldata to execute.                                                                                                                                            |
+| `Transaction`       | `header`, `body` | The proposed transition.                                                                                                                                                |
 
 ## 3. Blocks and the commitment hierarchy
 

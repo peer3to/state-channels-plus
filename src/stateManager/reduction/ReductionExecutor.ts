@@ -4,13 +4,14 @@ import type StateManager from "../StateManager";
 import Clock from "@/Clock";
 import { StateSnapshot } from "@/models";
 import { Status } from "@/types";
+import { isCommittedParticipantStatus } from "@/types/flags";
 import type { ForkId, Timestamp } from "@/types/types";
 import { DetachedPromises, Logger, Mutex } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import {
     type ContractErrorName,
     type CustomEvmError,
-    type RaceConditionErrorHandlers,
+    type EvmErrorHandlers,
     tryDecodeCustomError,
     tryHandleEvmError
 } from "@/utils/evmErrorHandler";
@@ -48,6 +49,25 @@ function isReductionRaceErrorName(
     errorName: ContractErrorName | undefined
 ): errorName is ReductionRaceErrorName {
     return REDUCTION_RACE_ERRORS.some((candidate) => candidate === errorName);
+}
+
+/**
+ * Reverts of a fork adoption post (`updateStateSnapshotFork`) that leave
+ * nothing to adopt: a later reduction is already final (the next post adopts
+ * it), the target fork is disputed, or another post of a fork with no
+ * participant already closed the channel. Another post that adopted the fork
+ * first and left the channel open is no revert: the call returns on the
+ * adopted fork.
+ */
+const SETTLED_ADOPTION_ERRORS = [
+    "RaceConditionSnapshotUpdateNotLatestFork",
+    "RaceConditionSnapshotUpdateDisputedFork",
+    "RaceConditionGenesisTimestampNotAvailable"
+] as const;
+
+function isSettledAdoptionError(error: unknown): boolean {
+    const name = tryDecodeCustomError(error)?.name;
+    return SETTLED_ADOPTION_ERRORS.some((candidate) => candidate === name);
 }
 
 export default class ReductionExecutor {
@@ -257,6 +277,9 @@ export default class ReductionExecutor {
         submission: { calldata: string[] },
         submissionStatus: ReductionSubmissionStatus
     ): Promise<void> {
+        const wasMember = isCommittedParticipantStatus(
+            this.stateManager.status
+        );
         const installed =
             await this.stateManager.reductionManager.completeWithGenesis(
                 forkId,
@@ -269,15 +292,14 @@ export default class ReductionExecutor {
                 }
             );
         // After an install the active fork is the reduced one, so only
-        // disposal can make the submission stale here.
+        // disposal can make the submission stale here. A member the install
+        // dropped to SYNCED left the channel and submits nothing.
+        const hasLeft = wasMember && this.stateManager.status === Status.SYNCED;
         if (
             installed &&
             !this.stateManager.isDisposed &&
             submissionStatus === "submit" &&
-            !(
-                this.stateManager.leaveChannelService.isLeaving &&
-                this.stateManager.status === Status.SYNCED
-            )
+            !hasLeft
         ) {
             this.submitDetached(forkId, candidate, submission);
         }
@@ -342,31 +364,34 @@ export default class ReductionExecutor {
         return { calldata: [reduceCalldata] };
     }
 
-    // a failed adoption post is retried once; a refusal on chain is final
+    // a failed adoption post is retried once; a settled one is final
     private adoptReducedFork(forkId: ForkId, retries: number): void {
         DetachedPromises.collect(
             this.stateManager.snapshotUpdateService
                 .postStateSnapshotWait(forkId, { forkAdoptionOnly: true })
-                .then(
-                    () => undefined,
-                    (error) => {
-                        if (retries === 0 || this.stateManager.isDisposed)
-                            throw error;
-                        this.logger.warn(
-                            "Fork adoption post failed, retrying once",
-                            {
-                                forkId,
-                                error: errorMessage(error)
-                            }
-                        );
-                        this.stateManager.timeoutManager.scheduleTask(
-                            () => this.adoptReducedFork(forkId, retries - 1),
-                            this.stateManager.timeConfig.chainFallbackTime *
-                                1000,
-                            `adoptReducedFork-${forkId}`
-                        );
+                .catch((error) => {
+                    if (isSettledAdoptionError(error)) {
+                        this.logger.info("Fork adoption post settled", {
+                            forkId,
+                            error: errorMessage(error)
+                        });
+                        return;
                     }
-                )
+                    if (retries === 0 || this.stateManager.isDisposed)
+                        throw error;
+                    this.logger.warn(
+                        "Fork adoption post failed, retrying once",
+                        {
+                            forkId,
+                            error: errorMessage(error)
+                        }
+                    );
+                    this.stateManager.timeoutManager.scheduleTask(
+                        () => this.adoptReducedFork(forkId, retries - 1),
+                        this.stateManager.timeConfig.chainFallbackTime * 1000,
+                        `adoptReducedFork-${forkId}`
+                    );
+                })
         );
     }
 
@@ -408,29 +433,27 @@ export default class ReductionExecutor {
             channelId: this.stateManager.channelId
         });
         let txResponse: TransactionResponse | undefined;
+        // the reduce is mined -> adopt the latest undisputed fork
+        const onMined = () => {
+            if (!this.stateManager.isDisposed)
+                this.adoptReducedFork(candidate.reducedForkId, 1);
+        };
+        // Gas comes from the signer's estimate: the dispute execution limit
+        // bounds one dispute computation, not the reduce transaction, whose
+        // calldata and on-chain checks grow with the disputes it carries.
+        // The disposal check in `complete` runs before the send starts; a
+        // disposal during the send does not stop the broadcast, only the
+        // adoption after it.
         const transaction = this.stateManager.stateChannelManagerContract
-            .getGasLimit()
-            .then((gasLimit) => {
-                // Disposal can land while the gas limit resolves; the chain
-                // write is the last reduction-owned effect and is re-checked
-                // right before it happens.
-                if (this.stateManager.isDisposed) return undefined;
-                return this.stateManager.stateChannelManagerContract.multicall(
-                    submission.calldata,
-                    { gasLimit }
-                );
-            })
+            .multicall(submission.calldata)
             .then(async (tx) => {
-                if (!tx) return;
                 txResponse = tx;
                 await tx.wait();
-                // the reduce is mined -> adopt the latest undisputed fork
-                if (!this.stateManager.isDisposed)
-                    this.adoptReducedFork(candidate.reducedForkId, 1);
+                onMined();
             })
             .catch(async (error) => {
                 let raceErrorName: ReductionRaceErrorName | undefined;
-                const handlers: RaceConditionErrorHandlers = {};
+                const handlers: EvmErrorHandlers = {};
                 for (const errorName of REDUCTION_RACE_ERRORS) {
                     handlers[errorName] = () => {
                         raceErrorName = errorName;
@@ -443,6 +466,11 @@ export default class ReductionExecutor {
                     signer: this.stateManager.signer,
                     handlers
                 });
+                // handled without a race: its resend of the reduce was mined
+                if (handled && !raceErrorName) {
+                    onMined();
+                    return;
+                }
                 if (handled && raceErrorName) {
                     const status = await this.classifyReductionRace(
                         raceErrorName,

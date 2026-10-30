@@ -12,9 +12,10 @@ class IsForkDisputedRpcMethods extends ANetworkRpcMethods<IsForkDisputedService>
     /**
      * Peer receives a dispute acknowledgment request. Request/response: resolves
      * to `true` once we confirm the fork is disputed (recording that we
-     * acknowledged it to this peer). A fork that isn't disputed, a missing peer
-     * address, or a duplicate request is a protocol violation: we disconnect the
-     * requester and throw so its `.request(...)` rejects.
+     * acknowledged it to this peer). A missing peer address or a duplicate
+     * request is a protocol violation: we blacklist the requester. A fork we
+     * don't see as disputed may be our own lag: a counted close. Either way we
+     * throw so its `.request(...)` rejects.
      */
     public async onDisputeAcknowledgmentRequest(
         channelId: ChannelId,
@@ -65,11 +66,14 @@ class IsForkDisputedRpcMethods extends ANetworkRpcMethods<IsForkDisputedService>
         }
 
         if (!isDisputed) {
-            // Fork is not disputed - disconnect
+            // our chain view may lag the requester's -> spend its retry bound
             this.service.logger.debug(
                 `Fork ${forkId} is not disputed, disconnecting`
             );
-            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peerAddress);
+            this.p2pManager.disconnectConnection(
+                peerAddress,
+                DisconnectPolicy.allowRetry()
+            );
             throw new Error("fork not disputed");
         }
 

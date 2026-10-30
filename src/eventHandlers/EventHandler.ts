@@ -14,14 +14,7 @@ import {
     ForkId,
     Bytes
 } from "@/types/types";
-import {
-    Codec,
-    DetachedPromises,
-    hash,
-    Logger,
-    tryDecodeCustomError,
-    Type
-} from "@/utils";
+import { Codec, DetachedPromises, hash, Logger, Type } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import { tryHandleEvmError } from "@/utils/evmErrorHandler";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -109,177 +102,31 @@ export class EventHandler {
             );
             return;
         }
-        await this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
+        const localDiamond = this.diamondStateMachine.localDiamondContract;
+        await localDiamond.onStateSnapshotUpdated(
             channelId,
             stateSnapshot,
             coordinate.blockNumber,
             coordinate.logIndex
         );
+        // The mirror drops a snapshot older than one it already applied (a
+        // pinned read that resolves after a later event); membership then
+        // keeps the newer one too.
+        const mirrored = StateSnapshot.from(
+            await localDiamond.getStateSnapshot(channelId)
+        );
+        if (mirrored.hash !== StateSnapshot.from(stateSnapshot).hash) {
+            this.logger.debug(
+                "Ignoring a state snapshot older than the mirrored one",
+                { channelId, mirroredSnapshotHash: mirrored.hash }
+            );
+            return;
+        }
 
         this.stateManager.membershipService.publishOnChainSnapshot(
             stateSnapshot
         );
         await this.processStateSnapshotUpdated(channelId, stateSnapshot);
-    }
-
-    /** Whether the chain's pending set (unconsumed JOINs) lists this signer. */
-    private async isSignerPendingOnChain(
-        channelId: ChannelId
-    ): Promise<boolean> {
-        const pendingParticipants =
-            (await this.stateManager.stateChannelManagerContract.getPendingParticipants(
-                channelId
-            )) as Address[];
-        return this.stateManager.membershipService.includesSigner(
-            pendingParticipants
-        );
-    }
-
-    private async processStateSnapshotUpdated(
-        channelId: ChannelId,
-        stateSnapshot: StateSnapshotStruct
-    ): Promise<void> {
-        // TODO - gate this TS handler by ascending (blockNumber, logIndex); the local-EVM mirror already does
-
-        const updatedSnapshot = StateSnapshot.from(stateSnapshot);
-        const knownSnapshot =
-            this.storage.stateSnapshots.getStateSnapshotByHash(
-                updatedSnapshot.hash
-            );
-        if (!knownSnapshot) {
-            const status = this.stateManager.status;
-            if (status === Status.SYNCED) {
-                if (this.stateManager.leaveChannelService.isLeaving) {
-                    await this.stateManager.leaveChannelService.onSettledStateObserved();
-                    return;
-                }
-                // TODO: call stateManager.abort() here; it drops to OPENED and disposes,
-                // but no resync path exists yet.
-
-                this.logger.warn(
-                    "onStateSnapshotUpdated - unknown snapshot while SYNCED, should abort + resync",
-                    { channelId, hash: updatedSnapshot.hash }
-                );
-                return;
-            }
-            if (isCommittedParticipantStatus(status)) {
-                const snapshotParticipants = stateSnapshot.snapshotData
-                    .participants as Address[];
-                const signerRemoved =
-                    !this.stateManager.membershipService.includesSigner(
-                        snapshotParticipants
-                    );
-                if (signerRemoved) {
-                    if (this.stateManager.leaveChannelService.isLeaving) {
-                        this.logger.info(
-                            "onStateSnapshotUpdated - pending leave observed signer removal",
-                            { channelId, status, hash: updatedSnapshot.hash }
-                        );
-                        const inLocal =
-                            await this.stateManager.membershipService.isSignerInLocalState();
-                        if (!inLocal) {
-                            this.stateManager.setStatus(Status.SYNCED);
-                            await this.stateManager.leaveChannelService.onSettledStateObserved();
-                            return;
-                        }
-                    } else {
-                        // We were removed from the channel (e.g. slashed by dispute
-                        // resolution): a new snapshot we never produced no longer
-                        // lists us. This is a legitimate exit, not a desync — abort
-                        // participation instead of treating it as fatal.
-                        this.logger.warn(
-                            "onStateSnapshotUpdated - unknown snapshot excludes signer (slashed/removed), aborting",
-                            {
-                                channelId,
-                                status,
-                                hash: updatedSnapshot.hash
-                            }
-                        );
-                        this.stateManager.abort();
-                        return;
-                    }
-                }
-                const currentForkId = this.stateManager.forkId;
-                if (updatedSnapshot.forkID !== currentForkId) {
-                    // Chain events carry no cross-event ordering. Join the
-                    // fork's one reduction operation before deciding the
-                    // announced snapshot is unknown.
-                    await this.stateManager.reductionManager.tryReduce(
-                        currentForkId
-                    );
-                }
-                const converged =
-                    this.storage.stateSnapshots.getStateSnapshotByHash(
-                        updatedSnapshot.hash
-                    );
-                if (!converged) {
-                    this.logger.error(
-                        "onStateSnapshotUpdated - unknown snapshot while participant/pending, fatal",
-                        {
-                            channelId,
-                            status,
-                            hash: updatedSnapshot.hash
-                        }
-                    );
-                    throw new Error(
-                        `onStateSnapshotUpdated: unknown snapshot ${updatedSnapshot.hash} while status=${status}`
-                    );
-                }
-            }
-        }
-
-        const signerAddress = this.stateManager.signerAddress;
-        const snapshotParticipants = stateSnapshot.snapshotData
-            .participants as Address[];
-        const status = this.stateManager.status;
-
-        const snapshotHasSigner =
-            this.stateManager.membershipService.includesSigner(
-                snapshotParticipants
-            );
-
-        // Detect when we've fully left the channel: PARTICIPATING → SYNCED
-        if (status === Status.PARTICIPATING) {
-            const localParticipants =
-                await this.stateManager.getParticipantsCurrent();
-            const inLocal =
-                this.stateManager.membershipService.includesSigner(
-                    localParticipants
-                );
-            if (!snapshotHasSigner && !inLocal) {
-                if (!(await this.isSignerPendingOnChain(channelId))) {
-                    this.logger.info(
-                        "onStateSnapshotUpdated - signer left channel, transitioning PARTICIPATING → SYNCED",
-                        { channelId }
-                    );
-                    this.stateManager.setStatus(Status.SYNCED);
-                }
-            }
-        }
-
-        // Check if channel should be closed (0 participants remaining)
-        if (stateSnapshot.snapshotData.participants.length === 0) {
-            this.logger.info(
-                "Channel has 0 participants remaining, closing channel",
-                {
-                    channelId
-                }
-            );
-            await this.handleChannelClose(channelId);
-        }
-        await this.stateManager.leaveChannelService.onSettledStateObserved();
-    }
-
-    private async handleChannelClose(channelId: ChannelId): Promise<void> {
-        this.logger.info("Handling channel close", { channelId });
-
-        this.stateManager.setStatus(Status.NOT_OPENED);
-
-        // Disconnect from all peers in this channel
-        this.stateManager.p2pManager.disconnectAll();
-
-        // Trigger channelclosed hook?
-        this.p2pEventHooks.onCloseChannel?.(channelId);
     }
 
     async onBlockCalldataPosted(
@@ -348,6 +195,286 @@ export class EventHandler {
         return handling;
     }
 
+    async onChainSlashed(
+        channelId: ChannelId,
+        participant: Address,
+        timestamp: Timestamp
+    ): Promise<void> {
+        this.stateManager.membershipService.observeOnChainSlash(participant);
+        await this.diamondStateMachine.localDiamondContract.onOnChainSlashAdded(
+            channelId,
+            participant,
+            timestamp
+        );
+        this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+            participant
+        );
+        const latestFork = this.stateManager.forkId;
+        let isDisputed =
+            await this.diamondStateMachine.localDiamondContract.isForkDisputed(
+                channelId,
+                latestFork
+            );
+        if (!isDisputed)
+            isDisputed =
+                await this.stateManager.stateChannelManagerContract.isForkDisputed(
+                    channelId,
+                    latestFork
+                );
+        const participants = await this.diamondStateMachine.getParticipants();
+        if (!isDisputed && participants.includes(participant.toString())) {
+            await this.stateManager.disputeManager.dispute(latestFork);
+        }
+    }
+
+    async onDisputeReducedResultCommitted(
+        channelId: ChannelId,
+        forkId: ForkId,
+        reducedForkId: ForkId,
+        reductionTimestamp: Timestamp,
+        reducer: Address,
+        coordinate: EventCoordinate
+    ): Promise<void> {
+        // The fork's dispute window is over; its evidence comparison with it.
+        this.stateManager.disputeManager.clearCache(forkId);
+        // sync LocalDiamond state
+        await this.diamondStateMachine.localDiamondContract.onDisputeReducedResultCommitted(
+            channelId,
+            forkId,
+            reducedForkId,
+            reductionTimestamp,
+            reducer,
+            coordinate.blockNumber,
+            coordinate.logIndex
+        );
+
+        // Event synchronization remains pending while reduction validation and
+        // any companion dispute-event recovery settle.
+        await this.processDisputeReducedResultCommitted(
+            channelId,
+            forkId,
+            reducedForkId,
+            reducer
+        );
+    }
+
+    async onWithdrawalsUpdated(
+        channelId: ChannelId,
+        totalWithdrawals: any,
+        coordinate: EventCoordinate
+    ): Promise<void> {
+        await this.diamondStateMachine.localDiamondContract.onWithdrawalsUpdated(
+            channelId,
+            totalWithdrawals,
+            coordinate.blockNumber,
+            coordinate.logIndex
+        );
+    }
+
+    async onChannelStorageCleared(
+        channelId: ChannelId,
+        latestInboundMessageBlockHash: Hash,
+        coordinate: EventCoordinate
+    ): Promise<void> {
+        await this.diamondStateMachine.localDiamondContract.onChannelStorageCleared(
+            channelId,
+            latestInboundMessageBlockHash,
+            coordinate.blockNumber,
+            coordinate.logIndex
+        );
+        this.stateManager.membershipService.resetEligibility();
+    }
+
+    async onDisputeKilled(
+        channelId: ChannelId,
+        forkId: ForkId,
+        disputer: Address,
+        disputeHash: Hash,
+        blockTimestamp: Timestamp
+    ): Promise<void> {
+        // The cached comparison may have been against the killed dispute; the
+        // next audit of this fork compares again.
+        this.stateManager.disputeManager.clearCache(forkId);
+        this.stateManager.membershipService.observeOnChainSlash(disputer);
+        await this.diamondStateMachine.localDiamondContract.onOnChainSlashAdded(
+            channelId,
+            disputer,
+            blockTimestamp
+        );
+        await this.diamondStateMachine.localDiamondContract.onDisputeKilled(
+            channelId,
+            forkId,
+            disputer,
+            disputeHash
+        );
+
+        // Log dispute killed event
+        // Note: The kill reason is logged earlier when validation fails in onDisputeCommitted
+        this.logger.warn("💀 Dispute killed on-chain", {
+            forkId,
+            disputer: disputer,
+            disputeHash: disputeHash,
+            channelId
+        });
+
+        // disconnect disputer
+        this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+            disputer
+        );
+
+        const commitments =
+            await this.stateManager.stateChannelManagerContract.getWindowCommitments(
+                channelId,
+                forkId
+            );
+        if (commitments.length !== 0) return;
+
+        //isDisputeWindowRelevant?
+        const isRelevant = this.stateManager.forkId === forkId;
+        if (!isRelevant) return;
+
+        // All honest peers can observe the kill and attempt to replace the
+        // dispute. Only the first upload wins.
+        await this.stateManager.disputeManager.dispute(forkId);
+    }
+
+    async onInboundMessagesProcessed(
+        channelId: ChannelId,
+        messageBlock: MessageBlockStruct
+    ): Promise<void> {
+        const messageBlockHash = hash(
+            Codec.encode(messageBlock, Type.MessageBlock)
+        );
+        await this.stateManager.onInboundMessage(
+            messageBlock,
+            messageBlockHash
+        );
+        await this.diamondStateMachine.localDiamondContract.onInboundMessagesProcessed(
+            channelId,
+            messageBlock
+        );
+
+        // A delivered join event publishes eligibility before later gossip.
+        this.stateManager.membershipService.observeInboundMembership(
+            messageBlock
+        );
+    }
+
+    private async processStateSnapshotUpdated(
+        channelId: ChannelId,
+        stateSnapshot: StateSnapshotStruct
+    ): Promise<void> {
+        // TODO - gate this TS handler by ascending (blockNumber, logIndex); the local-EVM mirror already does
+
+        const updatedSnapshot = StateSnapshot.from(stateSnapshot);
+        const knownSnapshot =
+            this.storage.stateSnapshots.getStateSnapshotByHash(
+                updatedSnapshot.hash
+            );
+        if (!knownSnapshot) {
+            const status = this.stateManager.status;
+            if (status === Status.SYNCED) {
+                // TODO: call stateManager.abort() here; it drops to OPENED and disposes,
+                // but no resync path exists yet.
+
+                this.logger.warn(
+                    "onStateSnapshotUpdated - unknown snapshot while SYNCED, should abort + resync",
+                    { channelId, hash: updatedSnapshot.hash }
+                );
+                return;
+            }
+            if (isCommittedParticipantStatus(status)) {
+                const snapshotParticipants = stateSnapshot.snapshotData
+                    .participants as Address[];
+                const signerRemoved =
+                    !this.stateManager.membershipService.includesSigner(
+                        snapshotParticipants
+                    );
+                // a removal (a leave, a slash, an eviction): the leave service
+                // observes it and reports onLeftChannel. A pending joiner is
+                // never listed: its join service ends the join (seated,
+                // refused, expired, or dropped by the chain).
+                if (signerRemoved) return;
+                const currentForkId = this.stateManager.forkId;
+                if (updatedSnapshot.forkID !== currentForkId) {
+                    // Chain events carry no cross-event ordering. Join the
+                    // fork's one reduction operation before deciding the
+                    // announced snapshot is unknown.
+                    await this.stateManager.reductionManager.tryReduce(
+                        currentForkId
+                    );
+                }
+                const converged =
+                    this.storage.stateSnapshots.getStateSnapshotByHash(
+                        updatedSnapshot.hash
+                    );
+                if (!converged) {
+                    this.logger.error(
+                        "onStateSnapshotUpdated - unknown snapshot while participant/pending, fatal",
+                        {
+                            channelId,
+                            status,
+                            hash: updatedSnapshot.hash
+                        }
+                    );
+                    throw new Error(
+                        `onStateSnapshotUpdated: unknown snapshot ${updatedSnapshot.hash} while status=${status}`
+                    );
+                }
+            }
+        }
+
+        const snapshotParticipants = stateSnapshot.snapshotData
+            .participants as Address[];
+        const status = this.stateManager.status;
+
+        const snapshotHasSigner =
+            this.stateManager.membershipService.includesSigner(
+                snapshotParticipants
+            );
+
+        // Detect when we've fully left the channel: the chain drops a seat or
+        // a landed pending join after the local state already dropped it.
+        const membership = this.stateManager.membershipService;
+        if (
+            isCommittedParticipantStatus(status) &&
+            !snapshotHasSigner &&
+            !(await membership.isSignerInLocalState()) &&
+            !(await membership.isSignerPendingOnChain(channelId)) &&
+            !this.stateManager.channelJoinService.isJoinInProgress()
+        ) {
+            this.logger.info(
+                "onStateSnapshotUpdated - signer left channel, transitioning to SYNCED",
+                { channelId, status: LoggerUtils.enumToString(Status, status) }
+            );
+            // LeaveChannelService reports this drop as onLeftChannel
+            membership.dropMembership();
+        }
+
+        // Check if channel should be closed (0 participants remaining)
+        if (stateSnapshot.snapshotData.participants.length === 0) {
+            this.logger.info(
+                "Channel has 0 participants remaining, closing channel",
+                {
+                    channelId
+                }
+            );
+            await this.handleChannelClose(channelId);
+        }
+    }
+
+    private async handleChannelClose(channelId: ChannelId): Promise<void> {
+        this.logger.info("Handling channel close", { channelId });
+
+        this.stateManager.setStatus(Status.NOT_OPENED);
+
+        // Disconnect from all peers in this channel
+        this.stateManager.p2pManager.disconnectAll();
+
+        // Trigger channelclosed hook?
+        this.p2pEventHooks.onCloseChannel?.(channelId);
+    }
+
     private async handleDisputeCommitted(
         channelId: ChannelId,
         disputeConfirmation: DisputeConfirmationStruct,
@@ -412,41 +539,36 @@ export class EventHandler {
             this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
             let genesis: ReductionGenesis;
             try {
-                if (!disputeAuditingData) {
-                    const { isPartial, auditingData } =
-                        await this.stateManager.disputeManager.getAuditingData(
-                            forkId,
-                            dispute.input.stateProof,
-                            {
-                                disputeLatestInboundMessageBlockHash:
-                                    dispute.input.latestInboundMessageBlockHash
-                            }
-                        );
-                    if (isPartial) {
-                        // cannot rebuild the final dispute's data yet. the
-                        // confirmation is already stored, so the ordinary reduce
-                        // path picks the window up with this dispute in it and
-                        // derives the same result
-                        this.logger.warn(
-                            "Final dispute genesis deferred: auditing data could not be rebuilt locally",
-                            { channelId, forkId, dispute: disputeMeta }
-                        );
-                        this.stateManager.reductionManager.schedule(
-                            forkId,
-                            Number(disputeCreationTimestamp) +
-                                this.stateManager.timeConfig.chainFallbackTime,
-                            true
-                        );
-                        return;
-                    }
-                    disputeAuditingData = auditingData;
-                }
-
                 const latestSnapshot =
                     this.stateManager.agreementManager.getLatestSnapshotFromStateProof(
                         dispute.input.stateProof,
                         forkId
                     );
+                const inboundMessageBlocks =
+                    disputeAuditingData?.inboundMessageBlocks ??
+                    (await this.stateManager.eventSyncService.loadSynchronizedInboundRun(
+                        dispute.input.latestInboundMessageBlockHash as Hash,
+                        latestSnapshot.latestInboundMessageBlockHash,
+                        latestSnapshot.timestamp,
+                        channelId
+                    ));
+                if (!inboundMessageBlocks) {
+                    // cannot read the final dispute's inbound run yet. the
+                    // confirmation is already stored, so the ordinary reduce
+                    // path picks the window up with this dispute in it and
+                    // derives the same result
+                    this.logger.warn(
+                        "Final dispute genesis deferred: inbound run unavailable",
+                        { channelId, forkId, dispute: disputeMeta }
+                    );
+                    this.stateManager.reductionManager.schedule(
+                        forkId,
+                        Number(disputeCreationTimestamp) +
+                            this.stateManager.timeConfig.chainFallbackTime,
+                        true
+                    );
+                    return;
+                }
                 const latestStateMachineState =
                     this.storage.stateMachineStates.getStateMachineState(
                         latestSnapshot.stateMachineStateHash as Hash
@@ -462,14 +584,14 @@ export class EventHandler {
                         dispute.input,
                         latestSnapshot.toStruct(),
                         latestStateMachineState,
-                        disputeAuditingData.inboundMessageBlocks
+                        inboundMessageBlocks
                     );
                 const disputeOutputState =
                     await this.diamondStateMachine.localDiamondContract.computeDisputeOutputState.staticCall(
                         dispute.input,
                         latestSnapshot.toStruct(),
                         latestStateMachineState,
-                        disputeAuditingData.inboundMessageBlocks
+                        inboundMessageBlocks
                     );
                 genesis = {
                     genesisSnapshot: {
@@ -521,6 +643,20 @@ export class EventHandler {
                 channelId,
                 forkId
             );
+        // only participants and pending participants audit: data
+        // availability is guaranteed to them alone
+        if (!isCommittedParticipantStatus(this.stateManager.status)) {
+            await this.persistDisputeAndNotify(
+                channelId,
+                forkId,
+                disputeConfirmation
+            );
+            this.stateManager.reductionManager.schedule(
+                forkId,
+                Number(killPeriodEnd)
+            );
+            return;
+        }
         if (windowExists && isExpired) {
             // The kill period is over, so this dispute can no longer be
             // challenged. Preserve all available data and reduce from it.
@@ -528,38 +664,18 @@ export class EventHandler {
                 "onDisputeCommited: Kill period EXPIRED! Unconditionally persisting the dispute!",
                 { dispute: disputeMeta }
             );
-            let persistableAuditingData = disputeAuditingData;
-            if (!persistableAuditingData) {
-                try {
-                    const derived =
-                        await this.stateManager.disputeManager.getAuditingData(
-                            forkId,
-                            dispute.input.stateProof,
-                            {
-                                disputeLatestInboundMessageBlockHash:
-                                    dispute.input.latestInboundMessageBlockHash
-                            }
-                        );
-                    if (!derived.isPartial) {
-                        persistableAuditingData = derived.auditingData;
-                    } else {
-                        this.logger.warn(
-                            "Expired dispute proof data is partial; snapshots, state, or messages are unavailable",
-                            { dispute: disputeMeta }
-                        );
-                    }
-                } catch (error) {
-                    this.logger.warn(
-                        "Expired dispute auditing data is unavailable; persisting decodable committed blocks only",
-                        { dispute: disputeMeta, error }
-                    );
-                }
-            }
-            this.stateManager.disputeValidationService.persistDisputeDataWithoutAudit(
-                dispute,
-                persistableAuditingData,
-                { includeUnfinalizedBlocks: true }
-            );
+            // Audit it anyway: the replay persists the blocks, snapshots
+            // and states the reduction reads. Its verdict can no longer kill.
+            const isValid =
+                await this.stateManager.disputeValidationService.validateDispute(
+                    dispute,
+                    disputeAuditingData
+                );
+            if (!isValid)
+                this.logger.warn(
+                    "Expired dispute is invalid, but can no longer be killed",
+                    { dispute: disputeMeta }
+                );
             await this.persistDisputeAndNotify(
                 channelId,
                 forkId,
@@ -572,7 +688,30 @@ export class EventHandler {
             return;
         }
 
-        // not final - validate dispute and challenge if invalid
+        // not final - validate dispute and challenge if invalid. The kill
+        // period end is the one read before the audit; later evidence only
+        // extends it.
+        const deadlines = {
+            killPeriodEnd: Number(killPeriodEnd),
+            evidencePeriodEnd:
+                Number(windowCreationTimestamp) +
+                this.stateManager.timeConfig.evidenceTime
+        };
+        this.logger.info(
+            `Dispute audit start ${formattedHash}`,
+            LoggerUtils.getDisputeDeadlineMetadata(deadlines)
+        );
+        // our dispute's proof builds while the audit runs: the kill or the
+        // evidence comparison after the verdict reuses it; a failed build
+        // resolves undefined and the dispute builds its own
+        const latestStateProof = this.storage.disputes.didIDispute(forkId)
+            ? undefined
+            : this.stateManager.agreementManager
+                  .buildStateProof(
+                      forkId,
+                      this.storage.blocks.getLatestBlockHeight(forkId)
+                  )
+                  .catch(() => undefined);
         const isValid =
             await this.stateManager.disputeValidationService.validateDispute(
                 dispute,
@@ -601,22 +740,30 @@ export class EventHandler {
             this.logger.warn(
                 `❌ Dispute auditing failed - killing dispute ${formattedHash}`,
                 {
-                    killReason
+                    killReason,
+                    ...LoggerUtils.getDisputeDeadlineMetadata(deadlines)
                 }
             );
 
-            // Sequential: kill must mine first so the spammer appears in onChainSlashes,
-            // otherwise the counter-dispute would be constructed with onChainSlashes=[]
-            // and could itself be killed as InvalidDisputeReason.
-            //  TODO - should be multicall
-            await this.stateManager.disputeManager.killDispute(dispute);
-            // TODO, under the multicall pass the expectation who to slash (who will be killed) to dispute(),
-            // otherwise don't run dispute(forkId) here, since we pickup on-chain slashes from DisputeKilled event and here we might end up creating an empty dispute since we didn't observe on-chain slashes
-            // await this.stateManager.disputeManager.dispute(forkId);
+            // Our own evidence goes in at once: the kill and our dispute, which
+            // counts the killed submitter's slash, land in one multicall. A peer
+            // that already disputed this fork only kills, at once and
+            // concurrently with its own upload. Slashes its own dispute misses
+            // are applied in the next fork.
+            if (this.storage.disputes.didIDispute(forkId))
+                await this.stateManager.disputeManager.killDispute(dispute);
+            else
+                await this.stateManager.disputeManager.dispute(forkId, {
+                    kill: dispute,
+                    latestStateProof
+                });
             return;
         }
 
-        this.logger.info(`✅ Dispute auditing successful ${formattedHash}`);
+        this.logger.info(
+            `✅ Dispute auditing successful ${formattedHash}`,
+            LoggerUtils.getDisputeDeadlineMetadata(deadlines)
+        );
         await this.persistDisputeAndNotify(
             channelId,
             forkId,
@@ -626,7 +773,8 @@ export class EventHandler {
         const canConstructMoreEvidence =
             await this.stateManager.disputeManager.shouldAddOwnEvidence(
                 forkId,
-                dispute
+                dispute,
+                latestStateProof
             );
         if (canConstructMoreEvidence) {
             this.logger.info(
@@ -638,7 +786,9 @@ export class EventHandler {
             // through and schedule from the commitment handled here. If this
             // call uploads a fresh commitment, its event can reschedule the
             // reduction with the later window end.
-            await this.stateManager.disputeManager.dispute(forkId);
+            await this.stateManager.disputeManager.dispute(forkId, {
+                latestStateProof
+            });
         }
 
         this.stateManager.reductionManager.schedule(
@@ -661,69 +811,6 @@ export class EventHandler {
             diamondStateMachine: this.diamondStateMachine,
             logger: this.logger
         });
-    }
-
-    async onChainSlashed(
-        channelId: ChannelId,
-        participant: Address,
-        timestamp: Timestamp
-    ): Promise<void> {
-        this.stateManager.membershipService.observeOnChainSlash(participant);
-        await this.diamondStateMachine.localDiamondContract.onOnChainSlashAdded(
-            channelId,
-            participant,
-            timestamp
-        );
-        this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-            participant
-        );
-        const latestFork = this.stateManager.forkId;
-        let isDisputed =
-            await this.diamondStateMachine.localDiamondContract.isForkDisputed(
-                channelId,
-                latestFork
-            );
-        if (!isDisputed)
-            isDisputed =
-                await this.stateManager.stateChannelManagerContract.isForkDisputed(
-                    channelId,
-                    latestFork
-                );
-        const participants = await this.diamondStateMachine.getParticipants();
-        if (!isDisputed && participants.includes(participant.toString())) {
-            await this.stateManager.disputeManager.dispute(latestFork);
-        }
-    }
-
-    async onDisputeReducedResultCommitted(
-        channelId: ChannelId,
-        forkId: ForkId,
-        reducedForkId: ForkId,
-        reductionTimestamp: Timestamp,
-        reducer: Address,
-        coordinate: EventCoordinate
-    ): Promise<void> {
-        // The fork's dispute window is over; its evidence comparison with it.
-        this.stateManager.disputeManager.forgetEvidenceComparison(forkId);
-        // sync LocalDiamond state
-        await this.diamondStateMachine.localDiamondContract.onDisputeReducedResultCommitted(
-            channelId,
-            forkId,
-            reducedForkId,
-            reductionTimestamp,
-            reducer,
-            coordinate.blockNumber,
-            coordinate.logIndex
-        );
-
-        // Event synchronization remains pending while reduction validation and
-        // any companion dispute-event recovery settle.
-        await this.processDisputeReducedResultCommitted(
-            channelId,
-            forkId,
-            reducedForkId,
-            reducer
-        );
     }
 
     private async processDisputeReducedResultCommitted(
@@ -749,7 +836,6 @@ export class EventHandler {
         ) {
             // If final, set fork and start building on it
             await this.stateManager.reductionManager.tryReduce(forkId);
-            await this.stateManager.leaveChannelService.onSettledStateObserved();
             return;
         }
 
@@ -788,127 +874,6 @@ export class EventHandler {
 
         // Reduction is valid and correct - set fork and start building on it
         await this.stateManager.reductionManager.tryReduce(forkId);
-    }
-
-    async onWithdrawalsUpdated(
-        channelId: ChannelId,
-        totalWithdrawals: any,
-        coordinate: EventCoordinate
-    ): Promise<void> {
-        await this.diamondStateMachine.localDiamondContract.onWithdrawalsUpdated(
-            channelId,
-            totalWithdrawals,
-            coordinate.blockNumber,
-            coordinate.logIndex
-        );
-    }
-
-    async onChannelStorageCleared(
-        channelId: ChannelId,
-        latestInboundMessageBlockHash: Hash,
-        coordinate: EventCoordinate
-    ): Promise<void> {
-        await this.diamondStateMachine.localDiamondContract.onChannelStorageCleared(
-            channelId,
-            latestInboundMessageBlockHash,
-            coordinate.blockNumber,
-            coordinate.logIndex
-        );
-        this.stateManager.membershipService.resetEligibility();
-    }
-
-    async onDisputeKilled(
-        channelId: ChannelId,
-        forkId: ForkId,
-        disputer: Address,
-        disputeHash: Hash,
-        blockTimestamp: Timestamp
-    ): Promise<void> {
-        // The cached comparison may have been against the killed dispute; the
-        // next audit of this fork compares again.
-        this.stateManager.disputeManager.forgetEvidenceComparison(forkId);
-        this.stateManager.membershipService.observeOnChainSlash(disputer);
-        await this.diamondStateMachine.localDiamondContract.onOnChainSlashAdded(
-            channelId,
-            disputer,
-            blockTimestamp
-        );
-        await this.diamondStateMachine.localDiamondContract.onDisputeKilled(
-            channelId,
-            forkId,
-            disputer,
-            disputeHash
-        );
-
-        // Log dispute killed event
-        // Note: The kill reason is logged earlier when validation fails in onDisputeCommitted
-        this.logger.warn("💀 Dispute killed on-chain", {
-            forkId,
-            disputer: disputer,
-            disputeHash: disputeHash,
-            channelId
-        });
-
-        // disconnect disputer
-        this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-            disputer
-        );
-
-        const commitments =
-            await this.stateManager.stateChannelManagerContract.getWindowCommitments(
-                channelId,
-                forkId
-            );
-        if (commitments.length !== 0) return;
-
-        //isDisputeWindowRelevant?
-        const isRelevant = this.stateManager.forkId === forkId;
-        if (!isRelevant) return;
-
-        // All honest peers can observe the kill and attempt to replace the
-        // dispute. Only the first upload wins; the others keep the intentional
-        // DisputeManager throw contained to this expected redispute race.
-        try {
-            await this.stateManager.disputeManager.dispute(forkId);
-        } catch (error) {
-            const customError = tryDecodeCustomError(error);
-            if (
-                customError?.name ===
-                "RaceConditionDisputeEvidencePeriodExpired"
-            ) {
-                this.logger.info(
-                    "onDisputeKilled: another participant supplied replacement evidence",
-                    { forkId, channelId }
-                );
-                return;
-            }
-            throw error;
-        }
-    }
-
-    async onInboundMessagesProcessed(
-        channelId: ChannelId,
-        messageBlock: MessageBlockStruct,
-        coordinate: EventCoordinate
-    ): Promise<void> {
-        const messageBlockHash = hash(
-            Codec.encode(messageBlock, Type.MessageBlock)
-        );
-        await this.stateManager.onInboundMessage(
-            messageBlock,
-            messageBlockHash
-        );
-        await this.diamondStateMachine.localDiamondContract.onInboundMessagesProcessed(
-            channelId,
-            messageBlock,
-            coordinate.blockNumber,
-            coordinate.logIndex
-        );
-
-        // A delivered join event publishes eligibility before later gossip.
-        this.stateManager.membershipService.observeInboundMembership(
-            messageBlock
-        );
     }
 
     private async validateDisputeReductionAndChallenge(

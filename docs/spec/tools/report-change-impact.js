@@ -4,7 +4,11 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
-const { REPO_ROOT, localTargets } = require("./shared/traceability-utils");
+const {
+    REPO_ROOT,
+    REQUIREMENT_STATUS,
+    localTargets
+} = require("./shared/traceability-utils");
 const {
     REQUIREMENT_PATTERN,
     SPECIFICATION_PLAN_PATTERN,
@@ -21,6 +25,22 @@ const {
 const { ignoreDisposition } = require("./shared/test-inventory");
 
 const REQUIREMENT_GLOBAL_RE = new RegExp(REQUIREMENT_PATTERN, "g");
+const REQUIREMENT_ID_RE = new RegExp(`^${REQUIREMENT_PATTERN}$`);
+// A file report that implements no specified behavior says so in one line.
+const NO_SPECIFIED_BEHAVIOR_RE = /^No specified behavior:/m;
+// Derived by `yarn spec:ids:fix` and names every requirement; the test-bullet edit
+// that changed it is in the same diff and seeds the right requirement.
+const REQUIREMENT_STATUS_PATH = path
+    .relative(REPO_ROOT, REQUIREMENT_STATUS)
+    .split(path.sep)
+    .join("/");
+
+function specifiesNothing(report) {
+    return (
+        NO_SPECIFIED_BEHAVIOR_RE.test(report) &&
+        !new RegExp(REQUIREMENT_PATTERN).test(report)
+    );
+}
 const PLAN_GLOBAL_RE = new RegExp(
     `${SPECIFICATION_PLAN_PATTERN}(?:\\.P\\d+)?`,
     "g"
@@ -203,7 +223,7 @@ function replacementOwners(graph, sourcePath) {
     return owners;
 }
 
-function priorSourceReasons(graph, change, directReasons) {
+function priorSourceReasons(graph, change, directReasons, accountedFiles) {
     const issues = [];
     for (const sourcePath of change.removedSources) {
         const reportPath = `docs/spec/implementation/source/${sourcePath}.md`;
@@ -264,7 +284,9 @@ function priorSourceReasons(graph, change, directReasons) {
             addReason(directReasons, id, sourcePath);
             recovered = true;
         }
-        if (!recovered)
+        if (!recovered && specifiesNothing(report))
+            accountedFiles.add(sourcePath);
+        else if (!recovered)
             issues.push(
                 `${sourcePath}: no surviving requirement or test owner from its prior report`
             );
@@ -285,6 +307,7 @@ function changedDocumentationIds(patch) {
         const target = section.match(/^diff --git a\/.+ b\/(.+)$/m)?.[1];
         if (
             !target ||
+            target === REQUIREMENT_STATUS_PATH ||
             !/^docs\/spec\/(?:specification|implementation|verification|audit)\//.test(
                 target
             )
@@ -319,15 +342,32 @@ function main() {
     const deletedSourceIssues = priorSourceReasons(
         graph,
         change,
-        directReasons
+        directReasons,
+        accountedFiles
     );
 
+    // A removed support file cannot receive an inline ignore in this revision.
+    // Keep its explicit reason on the selected side; never apply it to live files.
+    const removedSupportPath = path.join(
+        graph.roots.spec,
+        "deleted-test-support.json"
+    );
+    const removedSupport = fs.existsSync(removedSupportPath)
+        ? JSON.parse(fs.readFileSync(removedSupportPath, "utf8"))
+        : {};
+
+    const retiredTests = [];
     for (const testPath of change.removedTests) {
         const content = git(graph.roots.repo, [
             "show",
             `${change.oldSide}:${testPath}`
         ]);
-        if (ignoreDisposition(testPath, content).ignored) {
+        const removalReason = removedSupport[testPath];
+        const excludedSupport =
+            !/(?:\.(?:test|spec)\.[cm]?[jt]sx?|\.t\.sol)$/.test(testPath) &&
+            typeof removalReason === "string" &&
+            removalReason.trim().length > 0;
+        if (ignoreDisposition(testPath, content).ignored || excludedSupport) {
             accountedFiles.add(testPath);
             continue;
         }
@@ -341,15 +381,27 @@ function main() {
         } catch {
             continue;
         }
-        for (const id of report.match(
-            new RegExp(
-                `${IMPLEMENTATION_TEST_PATTERN}(?:\\.P\\d+)?|${SPECIFICATION_PLAN_PATTERN}(?:\\.P\\d+)?`,
-                "g"
-            )
-        ) || []) {
+        const reportIds =
+            report.match(
+                new RegExp(
+                    `${IMPLEMENTATION_TEST_PATTERN}(?:\\.P\\d+)?|${SPECIFICATION_PLAN_PATTERN}(?:\\.P\\d+)?`,
+                    "g"
+                )
+            ) || [];
+        for (const id of reportIds) {
             if (!graph.nodes.has(id)) continue;
             addReason(directReasons, id, testPath);
             accountedFiles.add(testPath);
+        }
+        // Deleting obsolete IDs with their tests is the documented way to
+        // retire coverage: a removed test whose every planned ID was deleted
+        // too is accounted for, and listed for the reviewer.
+        if (
+            reportIds.length > 0 &&
+            reportIds.every((id) => !graph.nodes.has(id))
+        ) {
+            accountedFiles.add(testPath);
+            retiredTests.push({ testPath, ids: [...new Set(reportIds)] });
         }
     }
 
@@ -372,10 +424,12 @@ function main() {
         accountedFiles.add(document);
     }
 
-    for (const source of graph.sources) {
+    for (const { source, owners } of graph.mirrors) {
         const sourcePath = relative(graph.roots.repo, source);
         if (!changed.has(sourcePath)) continue;
         addReason(directReasons, `source:${sourcePath}`, sourcePath);
+        if (owners.some(({ raw }) => specifiesNothing(raw)))
+            accountedFiles.add(sourcePath);
     }
 
     for (const test of graph.tests.tests) {
@@ -412,6 +466,7 @@ function main() {
 
     for (const changedPath of changed) {
         if (
+            changedPath === REQUIREMENT_STATUS_PATH ||
             !/^docs\/spec\/(?:specification|implementation|verification|audit)\//.test(
                 changedPath
             )
@@ -463,9 +518,16 @@ function main() {
         }
     }
 
+    // A changed source impacts exactly the requirements its report links. A
+    // requirement, and a test or source reached from elsewhere, is a leaf:
+    // walking on would join unrelated obligations through shared tests and
+    // families.
     const propagatedReasons = new Map();
     for (const [seed, reasons] of directReasons) {
-        const queue = [seed];
+        const fromSource = seed.startsWith("source:");
+        const queue = fromSource
+            ? [seed, ...(graph.dependencies.get(seed) || [])]
+            : [seed];
         const visited = new Set();
         while (queue.length) {
             const current = queue.shift();
@@ -473,6 +535,14 @@ function main() {
             visited.add(current);
             for (const reason of reasons)
                 addReason(propagatedReasons, current, reason);
+            if (
+                fromSource ||
+                REQUIREMENT_ID_RE.test(current) ||
+                (current !== seed &&
+                    (current.startsWith("test:") ||
+                        current.startsWith("source:")))
+            )
+                continue;
             queue.push(...(adjacency.get(current) || []));
         }
     }
@@ -521,6 +591,14 @@ function main() {
         process.stdout.write(
             `- Mapped tests to rerun/review: ${requirement.tests.length}\n\n`
         );
+    }
+    if (retiredTests.length) {
+        process.stdout.write(
+            "## Removed tests whose planned IDs were deleted\n"
+        );
+        for (const { testPath, ids } of retiredTests)
+            process.stdout.write(`- ${testPath}: ${ids.join(", ")}\n`);
+        process.stdout.write("\n");
     }
     if (deletedSourceIssues.length) {
         process.stdout.write(

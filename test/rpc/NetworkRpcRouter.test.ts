@@ -1,6 +1,7 @@
 import { assertUnauthenticatedTransportCleanup } from "@test/fixtures/NetworkRpcRouterFixture";
 import {
     assertInternalClosedAdmission,
+    assertNetworkClosedAdmission,
     assertNetworkByteForwarding,
     assertNetworkRouterOwnership
 } from "@test/fixtures/NetworkRpcRouterFixture";
@@ -13,12 +14,12 @@ describe("NetworkRpcRouter", () => {
         await assertNetworkRouterOwnership();
     });
     it("converts WebRTC strings Buffer and Uint8Array before router ingress", async () => {
-        await assertNetworkByteForwarding(false);
-    });
-    it("keeps network receive-after-close admission unchanged", async () => {
-        await assertNetworkByteForwarding(true);
+        await assertNetworkByteForwarding();
     });
     it("ignores internal messages after close at both receive entry points", async () => {
         await assertInternalClosedAdmission();
+    });
+    it("drops network frames on a closed transport before dispatch or logging", async () => {
+        await assertNetworkClosedAdmission();
     });
 });

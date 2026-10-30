@@ -240,10 +240,12 @@ export class BlockStorage {
     }
 
     getNextBlockHeight(forkId: ForkId): BlockHeight {
-        if (this.forkIdToMaxHeightMap.has(forkId)) {
-            return this.forkIdToMaxHeightMap.get(forkId)! + 1;
-        }
-        return 0;
+        return this.getLatestBlockHeight(forkId) + 1;
+    }
+
+    // -1 when the fork holds no block yet (its genesis is the latest state)
+    getLatestBlockHeight(forkId: ForkId): BlockHeight {
+        return this.forkIdToMaxHeightMap.get(forkId) ?? -1;
     }
 
     /*────────────────────────────────────────────────────────────────────────────

@@ -2,11 +2,16 @@
 import { P2pInstance, type EvmCustomPrecompileManifest } from "@/evm";
 import { StateSnapshot } from "@/models";
 import type { CustomRpcManifest } from "@/rpc";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";
 import { TimeConfig } from "@/types";
 import { ForkId } from "@/types/types";
 import { EventBarrier, Logger } from "@/utils";
 import { Config } from "@/utils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { AStateMachine as AStateMachineContract } from "@typechain-types";
 import { ChannelBalanceStructOutput } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -113,7 +118,10 @@ export type HarnessConstructorOptions<
 /**
  * Options for configuring the test harness
  */
-export type HarnessOptions = {
+export type HarnessOptions<
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
+> = {
     maxChannelParticipants?: number;
     /**
      * ⚙️ LOG LEVEL CONTROL (for cleaner test output)
@@ -144,6 +152,8 @@ export type HarnessOptions = {
     peerSetupConcurrency?: number;
     configOverrides?: Partial<Config>; // Direct config overrides
     customRpcManifest?: CustomRpcManifest;
+    /** The host root subclass every peer runs; the SDK's own by default. */
+    hostRootManifest?: HostRootManifest<THost>;
     customPrecompiles?: EvmCustomPrecompileManifest[];
     /**
      * Gas granted to every local EVM call of the listed peers (peer index ->
@@ -153,16 +163,30 @@ export type HarnessOptions = {
      * reachable.
      */
     executorCallGasLimitByPeer?: Record<number, number>;
+    /**
+     * WebSocket proxies in front of the test node for the listed peers (peer
+     * index -> proxy count). Such a peer's PROVIDER_URLS lists its proxies in
+     * order, so a test can cut one of its RPC nodes without touching the
+     * node. Read them with `PeerTestHarness.getRpcNodeProxies`.
+     */
+    rpcNodeProxiesByPeer?: Record<number, number>;
+    /**
+     * Proxies of `rpcNodeProxiesByPeer` cut before their peer starts (peer
+     * index -> proxy positions), so that peer starts with those RPC nodes
+     * down. Restore them through `PeerTestHarness.getRpcNodeProxies`.
+     */
+    rpcNodeProxiesCutAtStart?: Record<number, number[]>;
 };
 
 export type TestPeer<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc,
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>,
     TContract extends AStateMachineContract = AStateMachineContract
 > = {
     index: number;
     signer: Signer;
     address: string;
-    p2pInstance: P2pInstance<TContract, TCustomRpc>;
+    p2pInstance: P2pInstance<TContract, THost>;
     contractInstance: TContract;
     eventSpies: EventSpies;
     turnBarrier: EventBarrier;
@@ -178,6 +202,7 @@ export type EventSpies = {
     onConnection?: sinon.SinonSpy;
     onTurn?: sinon.SinonSpy;
     onLeaveTurn?: sinon.SinonSpy;
+    onLeftChannel?: sinon.SinonSpy;
     onSetState?: sinon.SinonSpy;
     onAbort?: sinon.SinonSpy;
     onStatusChanged?: sinon.SinonSpy;
@@ -202,7 +227,8 @@ export type EventSpies = {
 };
 
 export type CreateAndResolveDisputeResult<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc,
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>,
     TContract extends AStateMachineContract = AStateMachineContract
 > = {
     originalForkId: ForkId;
@@ -210,5 +236,5 @@ export type CreateAndResolveDisputeResult<
     maliciousPeerIndices: number[];
     afkPeerIndices: number[];
     honestPeerIndices: number[];
-    honestPeers: Array<TestPeer<TCustomRpc, TContract>>;
+    honestPeers: Array<TestPeer<THost, TContract>>;
 };

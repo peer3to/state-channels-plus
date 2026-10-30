@@ -1,3 +1,5 @@
+// First: it counts every WebAssembly instance this thread creates after it.
+import "@/utils/threadResources";
 import Clock from "@/Clock";
 import {
     AContractExecutor,
@@ -11,7 +13,7 @@ import P2PManager from "@/P2PManager";
 
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
-import { HandshakeCompletedGuard, LocalOnlyGuard } from "@/rpc/network/guards";
+import { HandshakeCompletedGuard } from "@/rpc/network/guards";
 import MainRpcService from "@/rpc/network/MainRpcService";
 import { NetworkTransport } from "@/transport";
 import {
@@ -65,16 +67,26 @@ export {
     ANetworkRpcService,
     MainRpcService,
     HandshakeCompletedGuard,
-    LocalOnlyGuard,
     NetworkTransport,
     getChecksumAddress
 };
+// Consumers call createConfig in their main thread before they create loggers
+// or roots; every worker root inherits that config at bootstrap.
+export { createConfig } from "@/utils/config";
+export type { Config } from "@/utils/config";
 export { DisconnectPolicy } from "@/DisconnectPolicy";
-export { Status } from "@/types";
+export { TransportType } from "@/transport/TransportType";
+export type { OpenConnection } from "@/transport/TransportType";
+export { Status, isCommittedParticipantStatus } from "@/types";
 export type { ChannelId } from "@/types";
+export type { default as P2pInstance } from "@/evm/P2pInstance";
+export type { P2pSetupOptions } from "@/evm/p2pRuntime/setupP2pRuntime";
+export { createRpcNodesProvider } from "@/evm/p2pRuntime/RuntimeChainContext";
+export type { default as MultiRpcProvider } from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 export {
     EventBus,
     attachContractEvents,
+    type ApplicationEventMap,
     type BusEventMaps,
     type BusKind,
     type ContractEventTarget
@@ -92,6 +104,14 @@ export type {
 export { Address } from "@ethereumjs/util";
 
 export * from "@/utils/logging";
+export { errorMessage } from "@/utils/errorMessage";
+export {
+    getErrorWasmDiagnostics,
+    type RuntimeEnvironment,
+    type ThreadResources,
+    type WasmFailureDiagnostics,
+    type WasmMemoryProbe
+} from "@/utils/threadResources";
 export {
     connectStateChannelManager,
     mergeStateChannelManagerAbi,
@@ -115,18 +135,12 @@ export { default as ATransport } from "./transport/ATransport";
 
 // Generic internal RPC roots for consumers that run their own services in a
 // worker or inline under an explicit local owner.
+export * from "@/internalRoot";
+// Applications extend the runtime host root with internal services and
+// declared events, loaded by a host root manifest.
 export {
-    AInternalRpcRoot,
-    type RuntimeConnection
-} from "@/rpc/internal/AInternalRpcRoot";
-export { AInternalRpcService } from "@/rpc/internal/AInternalRpcService";
-export { AInternalRpcMethods } from "@/rpc/internal/AInternalRpcMethods";
-export {
-    createRoot,
-    startRootWorker,
-    type RootConstructor,
-    type RootStartContext
-} from "@/rpc/internal/createRoot";
-export type { RemoteRoot } from "@/rpc/internal/RemoteRoot";
-export type { InternalRpcRouter } from "@/rpc/router/InternalRpcRouter";
-export type { default as InternalTransport } from "@/transport/InternalTransport";
+    P2pRuntimeHostRoot,
+    type ApplicationOf,
+    type HostEventsOf
+} from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+export type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";

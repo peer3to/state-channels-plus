@@ -10,6 +10,7 @@ import {
     setupP2pRuntime,
     type P2pSetupOptions
 } from "@/evm/p2pRuntime/setupP2pRuntime";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { createLogger, type Logger } from "@/utils/logging";
 import { LocalDiscoveryServer } from "@/utils/node/LocalDiscoveryServer";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
@@ -170,12 +171,10 @@ async function setupP2pInstance(options: {
 }) {
     const { scm, deployedStateMachine, deployStateMachine, setupOptions } =
         await prepareRuntimeSetup(options);
-    return EvmStateMachine.p2pSetup<MathStateMachine, ReadyLifecycleRpc>(
-        scm,
-        deployedStateMachine,
-        deployStateMachine,
-        setupOptions
-    );
+    return EvmStateMachine.p2pSetup<
+        MathStateMachine,
+        P2pRuntimeHostRoot<ReadyLifecycleRpc>
+    >(scm, deployedStateMachine, deployStateMachine, setupOptions);
 }
 
 const WATCHDOG_VM_WORKER_ENTRY = path.resolve(
@@ -446,9 +445,11 @@ export async function assertGeneratedHostSigner(): Promise<void> {
         generateSigner: true
     });
     try {
-        expect(await p2pInstance.chainSigner.getAddress()).to.match(
-            /^0x[0-9a-fA-F]{40}$/
-        );
+        const address = await p2pInstance.chainSigner.getAddress();
+        expect(address).to.match(/^0x[0-9a-fA-F]{40}$/);
+        // the forwarded signature recovers to the generated host key
+        const signature = await p2pInstance.chainSigner.signMessage("probe");
+        expect(ethers.verifyMessage("probe", signature)).to.equal(address);
         expect(
             await p2pInstance.stateChannelManagerContract.getAllTimes()
         ).to.have.length(4);
@@ -648,9 +649,14 @@ export async function assertReportABugReportsItsThreads(): Promise<void> {
         const sent = await p2pInstance.logger.uploadLogs("user report");
 
         expect(sent.ok).to.equal(true);
-        await receiver.waitForRequests(2);
-        expect(threadStream(receiver, "main").length).to.be.greaterThan(0);
-        expect(threadStream(receiver, "sdk").length).to.be.greaterThan(0);
+        // Each thread uploads on its own, in no fixed order (the vm thread's
+        // may come first): wait for the two this report needs.
+        await waitFor(
+            () =>
+                threadStream(receiver, "main").length > 0 &&
+                threadStream(receiver, "sdk").length > 0,
+            UPLOAD_WAIT_MS
+        );
 
         failUploads = true;
         p2pInstance.logger.warn("a second thing to report");

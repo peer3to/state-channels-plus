@@ -80,15 +80,17 @@ export class TimeoutManager {
             const tasks = [...this.runningTasks];
             const timeoutMs = TimeoutManager.DISPOSE_WAIT_TIMEOUT_MS;
 
-            const completion = Promise.allSettled(tasks).then(() => true);
-            const timedOut = await Promise.race<boolean>([
-                completion,
-                new Promise<boolean>((resolve) =>
-                    setTimeout(() => resolve(false), timeoutMs)
-                )
-            ]);
+            // the bound is cleared once the tasks settle: a pending timer
+            // keeps a worker thread alive after disposal until it fires
+            let bound: ReturnType<typeof setTimeout> | undefined;
+            const isSettled = await Promise.race<boolean>([
+                Promise.allSettled(tasks).then(() => true),
+                new Promise<boolean>((resolve) => {
+                    bound = setTimeout(() => resolve(false), timeoutMs);
+                })
+            ]).finally(() => clearTimeout(bound));
 
-            if (!timedOut) {
+            if (!isSettled) {
                 this.logger.warn(
                     `Dispose timed out waiting for running tasks; continuing cleanup`,
                     {

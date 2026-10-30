@@ -1,5 +1,5 @@
 import { Codec, Type } from "../utils/Codec";
-import { recoverSigner } from "@/cache";
+import { isContractAcceptedSignature, recoverSigner } from "@/cache";
 import {
     ForkId,
     BlockHeight,
@@ -268,6 +268,23 @@ export default class Block {
 
     get allSignerAddresses(): Set<Address> {
         return this.deriveAllSignerAddresses();
+    }
+
+    /**
+     * The signers (author and confirmations) whose signatures the contracts
+     * accept; a rejected signature is peer data that names no signer.
+     */
+    get acceptedSignerAddresses(): Set<Address> {
+        const addresses = new Set<Address>();
+        for (const signature of [
+            this._originalSignature,
+            ...this._confirmationSignatures
+        ]) {
+            // a rejected signature counts as no signer, as on chain
+            if (isContractAcceptedSignature(signature))
+                addresses.add(this.signatureToAddress(signature));
+        }
+        return addresses;
     }
 
     async signAsAuthor(signer: Signer): Promise<Block> {

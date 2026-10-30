@@ -4,6 +4,8 @@ import {
     protocolEventTimeoutMs,
     MIN_TEST_TIME_CONFIG
 } from "../../harness/core/testTimeConfig";
+import type { NonErrorFailure } from "../workerAnswerPrecompile";
+import { createSdkOwnedExecutor } from "./SdkExecutorFixture";
 import type { EvmCustomPrecompileManifest } from "@/evm";
 import contractExecutorRootUrl from "@platform/contractExecutorRootUrl";
 import { createRootWorker } from "@platform/rootWorkerRuntime";
@@ -55,6 +57,58 @@ export function crashingPrecompile(
     };
 }
 
+// lets a value that is not an Error escape the worker thread after a call
+export function nonErrorFailurePrecompile(
+    address: string,
+    nonErrorFailure: NonErrorFailure
+): EvmCustomPrecompileManifest {
+    return {
+        address,
+        module: path.resolve(__dirname, "../workerAnswerPrecompile.ts"),
+        options: {
+            expectedData: "0x1234",
+            value: "42",
+            nonErrorFailure
+        }
+    };
+}
+
+// one port hop -> above the default poll budget under load
+const NON_ERROR_REPORT_WAIT_MS = 15_000;
+
+/**
+ * The detached reports of one dedicated-thread executor whose precompile
+ * call lets `nonErrorFailure` escape the worker. Once the first report
+ * arrived, one more call settles the rest: the worker posts every report of
+ * the escape before it answers a later call, on the same port.
+ */
+export async function workerNonErrorReports(
+    nonErrorFailure: NonErrorFailure
+): Promise<Error[]> {
+    const address = "0x00000000000000000000000000000000000000bf";
+    const reports: Error[] = [];
+    const executor = await createSdkOwnedExecutor(
+        {
+            dedicatedThread: true,
+            customPrecompiles: [
+                nonErrorFailurePrecompile(address, nonErrorFailure)
+            ]
+        },
+        { onDetachedError: (error) => reports.push(error) }
+    );
+    try {
+        await executor.simulateCall("0x1234", address);
+        await waitFor(() => reports.length >= 1, NON_ERROR_REPORT_WAIT_MS, 50);
+        await executor.simulateCall(
+            "0x",
+            "0x00000000000000000000000000000000000000c0"
+        );
+        return reports;
+    } finally {
+        await executor.dispose();
+    }
+}
+
 // points every realm's uploader at a real receiver, jitter off. the worker
 // rebuilds config from the init payload.
 export function useReceiver(receiver: LogReceiver) {
@@ -88,12 +142,15 @@ export const createLogOnlyInitCode = (topic: string) => {
 export async function assertWorkerFailureOrder() {
     const { workerUrl, workerData } = watchdogWorkerRuntime("prefunnel");
     const errors: Error[] = [];
+    const { logger } = createUploaderFixture({ uploadEndpoint: "" });
     const worker = await RootWorkerControl.run(
         "vm",
         { workerUrl, workerData },
         async () =>
-            createRootWorker(contractExecutorRootUrl, (error) =>
-                errors.push(error)
+            createRootWorker(
+                contractExecutorRootUrl,
+                (error) => errors.push(error),
+                logger
             )
     );
     try {
@@ -109,5 +166,6 @@ export async function assertWorkerFailureOrder() {
         expect(errors[1].message).to.equal("Root worker exited with 1");
     } finally {
         await worker.shutdown();
+        logger.dispose();
     }
 }

@@ -1,124 +1,55 @@
-# LocalP2pSigner.ts — Source Report
+# LocalP2pSigner.ts
 
-> **Source:** [src/evm/signer/LocalP2pSigner.ts](../../../../../../../src/evm/signer/LocalP2pSigner.ts) > **Status:** Authored — engineer verification pending.
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../views/architecture/sdk/runtime-and-concurrency.md), [architecture/sdk/architecture.md](../../../../views/architecture/sdk/architecture.md)
+> **Source:** [src/evm/signer/LocalP2pSigner.ts](../../../../../../../src/evm/signer/LocalP2pSigner.ts)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-ID-3-KR0BE3` (Confined signing authority)](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)
+- [`REQ-TJOIN-6-0HEVYH` (Single-channel runtime ownership)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh)
+- [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)
+- [`INV-TJOIN-1-R3K75D` (Exact target ownership)](../../../../../specification/peer-communication/targeted-channel-join.md#inv-tjoin-1-r3k75d)
+- [`REQ-TJOIN-2-MFWADG` (Separated matching and handoff)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-2-mfwadg)
+- [`REQ-TJOIN-1-5VGR1F` (Independent public options)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f)
+- [`REQ-TJOIN-3-DCZKS6` (Verified synchronization and membership)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-3-dczks6)
+- [`REQ-TJOIN-4-SDPZJW` (Direct response routing)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-4-sdpzjw)
+- [`REQ-TJOIN-5-Q795M7` (Phase-specific failure)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7)
+- [`REQ-LOBBY-9-N894C0` (Bounded inactive ingress and cleanup)](../../../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0)
+- [`REQ-SDK-ARCH-7-H64K87` (Open connections are observable)](../../../../../specification/runtime/sdk.md#req-sdk-arch-7-h64k87)
+- [`REQ-JOINSIG-4-3NBKHK` (Full-channel join)](../../../../../specification/peer-communication/join-authorization.md#req-joinsig-4-3nbkhk)
 
-## Responsibility and observable boundary
+## UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW
 
-In addition to the existing host-side signing surface, `joinLobby(topic, options)` owns ordinary discovery
-and `connectToChannel(channelId, options)` separately owns fixed-target selection, optional opening,
-exact-channel synchronization, and optional membership. Both wrappers independently consume the same generic
-matcher and direct negotiation outcome. They never call each other and cannot own matching concurrently.
-Matcher deadlines and both public cancellation routes end unmatched work only. `connectToChannel` returns a
-Boolean at the option-selected sync or receipt-confirmed membership boundary; expected operational failures
-return `false`.
+Targeted connect composition
 
-The inline signer facade: local key-backed signing plus the join-collection entry (`collectJoinChannelConfirmation` via the service).
+- Setup: Call the public signer through unopened, matched, opened, synced, pending, and participating states
+- Oracle: The signer sequentially delegates each phase and returns the final owner result without retaining an attempt object
 
-## Key design decisions
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P1` — unopened false
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P2` — targeted opening
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P3` — observer sync
+- [ ] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P4` — pending reuse
+- [ ] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P5` — participating reuse
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P6` — Both lobby founders publish channel discovery records only after becoming PARTICIPATING
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P7` — Both lobby founders open the same channel; a later spectator discovers it, synchronizes on that channel and connects to both founders
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P8` — A later joiner discovers the lobby-opened channel and connectToChannel with shouldJoin succeeds, with its address present among on-chain pending participants
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P9` — a participating caller's connect with a balance tops up through the join owner's collection: when one threshold member answers only after the request deadline, connect returns `false` and keeps `PARTICIPATING`
 
-Lobby input checks delegate to the shared topic/timeout validators, then the application state machine checks positive balance. Validation order and the original messages stay unchanged. See [LocalP2pSigner.ts](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L283).
+## UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ
 
-1. **One facade for signing + protocol collection** so integrators never touch services directly.
-   `connectToChannel` answers `false` when an error surfaces after the runtime was aborted or disposed, logging the suppressed error at debug level: the abort is the connect's outcome, not the error a torn-down dependency raised on the way out.
-2. **Host-owned composition** keeps live profiles, attempts, timers, and retry state out of the runtime port.
+Ordinary lobby join leave
 
-## Inputs, outputs, state, and side effects
+- Setup: Park both peers' matched negotiations at the handoff, leave from the in-process signer, then fail the negotiations unsigned
+- Oracle: Each leave waits for its join and returns true; each join resolves undefined with no channel, NOT_OPENED status, and no lobby session
 
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P1` — same-topic leave ends both joins
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P2` — a rejected second join on the signer keeps the leave
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P3` — a differently cased leave counts, and a later leave of another topic returns false and does not undo it
 
-## Linked requirements
+## UNIT-TEST-LOCAL-P2P-SIGNER-3-3XWPRV
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
+Targeted connect cancel before matching starts
 
-| Source file                                                                | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [LocalP2pSigner.ts](../../../../../../../src/evm/signer/LocalP2pSigner.ts) | [`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3), [`REQ-TJOIN-6-0HEVYH`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh), [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay), [`INV-TJOIN-1-R3K75D`](../../../../../specification/peer-communication/targeted-channel-join.md#inv-tjoin-1-r3k75d), [`REQ-TJOIN-2-MFWADG`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-2-mfwadg) |
+- Setup: Hold the first on-chain opened-status read of an unopened target's connect with opening permission, cancel the connect during that read, then release the read
+- Oracle: The cancel returns true; the connect returns false and no matching session or targeted topic exists
 
-[`INV-TJOIN-1-R3K75D` (Exact target ownership)](../../../../../specification/peer-communication/targeted-channel-join.md#inv-tjoin-1-r3k75d): [connectToChannel](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L160) normalizes and retains one channel ID through matching, negotiation, discovery and membership.
-
-[`REQ-TJOIN-2-MFWADG` (Separated matching and handoff)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-2-mfwadg): [connectToChannel](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L186) uses the separated matching topic, completes the winning lobby handoff or releases the observed-open loser, then joins the selected raw discovery key.
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Cross-context values use the canonical transfer-safe encodings; ownership and ordering per the runtime rules.
-
-## Specification adherence
-
-- Signing confinement per the identity rules.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                                             | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Gap / divergence   |
-| ------------------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| [`INV-TJOIN-1-R3K75D`](../../../../../specification/peer-communication/targeted-channel-join.md#inv-tjoin-1-r3k75d) | Covered               | **Here:** [connectToChannel](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L160) normalizes and retains one channel ID through matching, negotiation, discovery and membership. **Other files:** [StateManager](../../stateManager/StateManager.ts.md) owns the selected channel; [LobbyMatchingService](../../rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md) owns matching; [SpectateService](../../rpc/network/services/spectate/SpectateService.ts.md) verifies synchronization. | None demonstrated. |
-| [`REQ-TJOIN-2-MFWADG`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-2-mfwadg) | Covered               | **Here:** [connectToChannel](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L186) uses the separated matching topic, completes the winning lobby handoff or releases the observed-open loser, then joins the selected raw discovery key. **Other files:** [LobbyMatchingService](../../rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md) cancels the matching timer on acceptance and owns transport handoff.                                                                           | None demonstrated. |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                          | Obligation                   | Public entry and setup                                                                              | Oracle and forbidden effects                                                                                        | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------------------------------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-local-p2p-signer-1-q80vpw"></a>`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW` | Targeted connect composition | Call the public signer through unopened, matched, opened, synced, pending, and participating states | The signer sequentially delegates each phase and returns the final owner result without retaining an attempt object | <a id="unit-test-local-p2p-signer-1-q80vpw.p1"></a>`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P1` — unopened false; <a id="unit-test-local-p2p-signer-1-q80vpw.p2"></a>`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P2` — targeted opening; <a id="unit-test-local-p2p-signer-1-q80vpw.p3"></a>`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P3` — observer sync; <a id="unit-test-local-p2p-signer-1-q80vpw.p4"></a>`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P4` — pending reuse; <a id="unit-test-local-p2p-signer-1-q80vpw.p5"></a>`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P5` — participating reuse |
-
-## Related source reports
-
-## Channel ownership and leave contribution
-
-The signer rejects a different selected target before any clear or set, removes the public setter, and gates
-connect and membership operations while terminal leave is pending. Its internal leave route delegates to the
-state manager service. That route is internal to `P2pInstance.leaveChannel`; calling it directly waits for
-settled removal but does not dispose the outer runtime. These boundaries implement [`REQ-TJOIN-6-0HEVYH` (Single-channel runtime ownership)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh) and contribute to [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
-
-| Requirement / invariant                                                                                             | Implementation status | Evidence                                                                                                                                                                                                        | Gap / divergence |
-| ------------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-TJOIN-6-0HEVYH`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh) | Covered               | **Here:** normalized different-ID rejection occurs before clear/set and the public setter is absent. **Other files:** the worker protocol and host expose no setter request.                                    | None.            |
-| [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay) | Covered               | **Here:** leave delegates to the single service operation and channel or membership work is gated while it is active. **Other files:** the leave service owns progress and the instance owns terminal disposal. | None.            |
-
-- [identity.md](../../../../../specification/protocol-model/identity.md), [P2pRuntimeHost](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md).
-
-## Targeted connect implementation
-
-`connectToChannel` is a sequential composition wrapper. It selects the requested channel, refreshes chain
-state, calls the generic matcher and negotiation only for unopened auto-open work, joins the exact raw topic,
-and delegates sync and membership to their existing owners. It keeps no active-attempt object, waiter,
-normalization copy, or lifecycle engine. `joinLobby` remains a distinct wrapper.
-
-Component obligations use [`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW`](LocalP2pSigner.ts.md#unit-test-local-p2p-signer-1-q80vpw): `.P1` terminal targeted `false` without
-implicit rematch, `.P2` fresh explicit same-ID pre-sync retry, plus separate disposed-observer and committed
-preservation permutations. See [`REQ-TJOIN-1-5VGR1F` (Independent public options)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f)–[`REQ-TJOIN-5-Q795M7` (Phase-specific failure)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7).
-
-Shared operation owners: [errorMessage.ts.md](../../utils/errorMessage.ts.md), [bytes32.ts.md](../../utils/bytes32.ts.md), [ADiamondStateMachine.ts.md](../../ADiamondStateMachine.ts.md).
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-3-3XWPRV.P1` — a cancel during the opened-status read is kept, and the connect ends false without starting matching

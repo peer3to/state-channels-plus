@@ -1,8 +1,10 @@
+import { addressesEqual } from "./address";
 import { errorAbis } from "./GeneratedArtifacts";
 import { LoggerUtils } from "./LoggerUtils";
 import { Logger } from "./logging";
 import { ForkId } from "@/types";
-import { ErrorDescription, Signer, ethers } from "ethers";
+import type { StateChannelManagerInterface } from "@typechain-types";
+import { ErrorDescription, Log, Signer, ethers } from "ethers";
 import { TransactionResponse } from "ethers";
 
 // every custom error the contracts declare, plus ethers' built-in Error(string) and Panic(uint256)
@@ -20,8 +22,8 @@ export type RaceConditionErrorName = Extract<
     | "ErrorDisputeCommitmentNotAvailable"
 >;
 
-export type RaceConditionErrorHandlers = Partial<
-    Record<RaceConditionErrorName, (error: CustomEvmError) => void>
+export type EvmErrorHandlers = Partial<
+    Record<ContractErrorName, (error: CustomEvmError) => void>
 >;
 
 // interface for parsing errors
@@ -122,6 +124,70 @@ export function isInvalidStateTransitionError(error: unknown): boolean {
     );
 }
 
+/**
+ * What the manager proxy reverts with when a facet reverted without data
+ * (`GeneralUtils._delegatecall`): the proxy's form of a reasonless revert.
+ */
+const PROXY_REASONLESS_FACET_REVERT = ethers.concat([
+    ethers.id("Error(string)").slice(0, 10),
+    ethers.AbiCoder.defaultAbiCoder().encode(
+        ["string"],
+        ["StateChannelManagerProxy - Delegatecall failed"]
+    )
+]);
+
+/**
+ * Whether `revertData` names no reason: it is empty, or the manager proxy's
+ * revert for a facet that reverted without data.
+ */
+export function isReasonlessRevert(revertData: string): boolean {
+    return (
+        revertData === "0x" ||
+        revertData.toLowerCase() === PROXY_REASONLESS_FACET_REVERT
+    );
+}
+
+/**
+ * The raw revert data a mined `multicallBestEffortLast` of `manager` reported
+ * for its last call (`MulticallLastCallFailed`), or undefined when its last
+ * call landed. Only that event of the manager itself is decoded: any other
+ * log of the receipt is skipped before decoding.
+ */
+export async function multicallLastCallRevertData(
+    manager: StateChannelManagerInterface,
+    logs: readonly Log[]
+): Promise<string | undefined> {
+    const address = await manager.getAddress();
+    const topic = manager.interface.getEvent(
+        "MulticallLastCallFailed"
+    ).topicHash;
+    for (const log of logs) {
+        if (!addressesEqual(log.address, address) || log.topics[0] !== topic)
+            continue;
+        return String(manager.interface.parseLog(log)!.args.revertData);
+    }
+    return undefined;
+}
+
+/**
+ * Whether a failed submission is proven not to have landed: the chain named
+ * a reason (`custom`, the decoded custom error of `error`, or null), or the
+ * transaction was mined and its receipt failed. Any other failure (no
+ * receipt, no decoded revert) leaves the outcome uncertain.
+ */
+export function isProvenSubmissionFailure(
+    error: unknown,
+    custom: CustomEvmError | null
+): boolean {
+    if (custom !== null) return true;
+    return (
+        ethers.isError(error, "CALL_EXCEPTION") &&
+        error.receipt !== null &&
+        error.receipt !== undefined &&
+        Number(error.receipt.status) === 0
+    );
+}
+
 export function isCustomEvmError(error: any): error is CustomEvmError {
     return !!error && error.isCustomError === true;
 }
@@ -129,7 +195,7 @@ export function isCustomEvmError(error: any): error is CustomEvmError {
 export type HandleEvmErrorOptions = {
     tx?: TransactionResponse;
     logger?: Logger;
-    handlers?: RaceConditionErrorHandlers;
+    handlers?: EvmErrorHandlers;
     signer?: Signer;
     forkId?: ForkId;
 };
@@ -160,8 +226,7 @@ async function _tryHandleEvmError(
     const customError = tryDecodeCustomError(error);
 
     if (customError) {
-        const handler =
-            handlers?.[customError.name as keyof RaceConditionErrorHandlers];
+        const handler = handlers?.[customError.name];
         if (handler) {
             logger?.info(
                 `tryHandleEvmError - Handling custom EVM error: ${customError.name} for fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`

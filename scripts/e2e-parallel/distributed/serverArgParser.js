@@ -167,12 +167,6 @@ function parseServerArgs(argv, env = process.env) {
             throw new Error(`Invalid server limit ${key}`);
         }
     }
-    if (result.workers > MAX_SLOTS_FROM_POOL) {
-        console.warn(
-            `Clamping workers from ${result.workers} to funded-account capacity ${MAX_SLOTS_FROM_POOL}`
-        );
-        result.workers = MAX_SLOTS_FROM_POOL;
-    }
     if (!result.name) {
         throw new Error(
             "Worker name is required; set SCP_TEST_WORKER_NAME in .env or pass --name"

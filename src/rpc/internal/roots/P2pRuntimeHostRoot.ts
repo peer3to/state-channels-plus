@@ -11,6 +11,7 @@ import { AContractExecutor } from "@/evm/contractExecutor";
 import { localEvmCallGasLimit } from "@/evm/contractExecutor/ContractExecutor";
 import {
     createContractExecutor,
+    type ContractExecutorFactoryConfiguration,
     type ContractExecutorFactoryOptions
 } from "@/evm/contractExecutor/createContractExecutor";
 import EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
@@ -25,7 +26,9 @@ import HostNonceManager from "@/evm/signer/HostNonceManager";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
 import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
 import { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
-import MainRpcService from "@/rpc/network/MainRpcService";
+import MainRpcService, {
+    type ApplicationEventsOf
+} from "@/rpc/network/MainRpcService";
 import { resolveCustomRpcConstructor } from "@/rpc/network/resolveCustomRpcManifest";
 import { doesWorkerNeedMainThreadBridge } from "@/rpc/network/services/WebRTCSetup/connection/WebRTCProvider";
 import WorkerBridgeWebRTCConnectionFactory from "@/rpc/network/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory";
@@ -34,11 +37,11 @@ import Storage from "@/storage";
 import { TimeConfig } from "@/types";
 import { DebugProxy } from "@/utils";
 import { LocalDiscoveryServer } from "@/utils";
-import { config, isNodeRuntime } from "@/utils/config";
-import { createConfig } from "@/utils/config";
+import { config, createConfig, isNodeRuntime } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
+import { StepTimer } from "@/utils/StepTimer";
 import { reportRootStartupTiming } from "@platform/rootWorkerRuntime";
 import type { StateChannelManagerInterface } from "@typechain-types";
 import { ethers, type InterfaceAbi } from "ethers";
@@ -103,14 +106,35 @@ async function bubbleWebRTCBridgePortIfNeeded(
     return factory;
 }
 
+/** Type-only key of the network root class a host root serves. */
+declare const applicationType: unique symbol;
+
+/** The network root (custom RPC) class a host root class serves. */
+export type ApplicationOf<THost extends P2pRuntimeHostRoot> =
+    THost[typeof applicationType];
+
+/** The application event map a host root's network root declares. */
+export type HostEventsOf<THost extends P2pRuntimeHostRoot> =
+    ApplicationEventsOf<ApplicationOf<THost>>;
+
 /**
  * Construct the live p2p runtime graph and drive it from a {@link RuntimePort}.
  *
  * Requests arriving on the port are dispatched to the state manager / internal
  * signer; p2p event hooks and contract events are forwarded back to the client.
  * Emits a `ready` message once fully constructed.
+ *
+ * An application extends this root the way it extends `MainRpcService`: its
+ * subclass adds internal services as typed fields and reaches its custom RPC
+ * (`TApplication`, which also declares the application events) through
+ * {@link application}. A host root manifest names the subclass; the SDK loads
+ * it in the runtime's realm.
  */
-export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
+export class P2pRuntimeHostRoot<
+    TApplication extends MainRpcService = MainRpcService
+> extends AInternalRpcRoot<P2pRuntimeClientRoot> {
+    /** Type-only: carries `TApplication` to the client; never set at runtime. */
+    declare public readonly [applicationType]: TApplication;
     public chainSigner!: ChainSignerService;
     private webRTCConnectionFactory?: WorkerBridgeWebRTCConnectionFactory;
     public deploySigner!: DeploySignerService;
@@ -131,13 +155,18 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
     private maxChannelParticipants!: number;
     private signerAddress!: string;
     private readonly context: HostContext;
+    private readonly payload: SetupPayload;
 
     constructor(
-        private readonly payload: SetupPayload,
+        payload: SetupPayload,
         local: HostContext = {},
         context: RootStartContext
     ) {
-        // Restore worker configuration before common logger construction.
+        // A worker's bootstrap applies the config to the entry's module graph.
+        // A host root bundled apart from that entry has its own copy of the
+        // config module, so the root applies its own peer's configuration to
+        // its graph before its logger reads it; with one shared graph this
+        // reapplies the same values.
         if (context.mode === "worker") createConfig(payload.config);
         super(
             (error) => {
@@ -160,6 +189,7 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
             30_000,
             context
         );
+        this.payload = payload;
         this.context = {
             ...local,
             threadLabel:
@@ -172,78 +202,52 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
         const payload = this.payload;
         const ctx = this.context;
         const { threadLabel } = ctx;
-        // Provider creation happens before the rest of the runtime graph exists,
-        // but its failure must still settle the paired client's `ready` promise.
-        this.chainContext = await createRuntimeChainContext(
-            payload.config,
-            payload.signerSecret
-        );
-        const { signer } = this.chainContext;
-        const signerAddress = (this.signerAddress = await signer.getAddress());
         const logger = this.rootLogger;
-        logger.updateSharedContext({
-            peerId: payload.peerId,
-            peerAddress: signerAddress
-        });
-
-        // Own this account's nonce so the peer's concurrent async flows can't collide
-        // on it (the REPLACEMENT_UNDERPRICED race). Used only for the real-chain SCM
-        // send + retry paths below; the local-VM signers (deploy/executor, p2p) and
-        // the read-only Clock stay on the raw signer.
-        const chainSigner = (this.managedSigner = new HostNonceManager(
-            signer,
-            logger
-        ));
-
-        const scmContract = connectStateChannelManager(
-            payload.scm.address,
-            chainSigner,
-            JSON.parse(payload.scm.abiJson) as InterfaceAbi
+        // Where a slow start goes; the setup's own bound counts all of it.
+        const steps = new StepTimer(
+            () => this.chainContext?.provider.requestCount ?? 0
         );
-        this.stateMachineContract = new ethers.Contract(
-            payload.stateMachine.address,
-            JSON.parse(payload.stateMachine.abiJson),
-            signer
+        // The executor starts first and builds its EVM while this root connects
+        // and reads the chain; the chain reads' configuration reaches it after.
+        let configure!: (
+            configuration: ContractExecutorFactoryConfiguration
+        ) => void;
+        let failConfiguration!: (error: unknown) => void;
+        const configuration = new Promise<ContractExecutorFactoryConfiguration>(
+            (resolve, reject) => {
+                configure = resolve;
+                failConfiguration = reject;
+            }
         );
-
-        // Sync clock to DLT.
-        await Clock.init(signer.provider!);
-
-        // Connect the managed signer to the state channel manager contract so every
-        // on-chain SCM send draws its nonce from the owned counter.
-        let connectedScmContract = scmContract;
-        if (payload.config.DEBUG_CHANNEL_CONTRACT) {
-            connectedScmContract = DebugProxy.createProxy(connectedScmContract);
+        // A detached error inside the contract-executor worker is reported the
+        // way the sdk worker's own detached errors are: one host error report, and the
+        // executor keeps serving.
+        const executorCreation = (
+            ctx.createContractExecutor ?? createContractExecutor
+        )(
+            {
+                dedicatedThread: payload.config.VM_DEDICATED_THREAD,
+                customPrecompiles: payload.customPrecompiles,
+                configuration,
+                logger: payload.config.VM_DEDICATED_THREAD
+                    ? undefined
+                    : logger.child({ component: "ContractExecutor" })
+            },
+            this
+        );
+        // Awaited below; a start that fails first leaves it to this root's
+        // disposal. The factory may still be starting the executor when the
+        // configuration fails, so that failure is handled here too.
+        executorCreation.catch(() => undefined);
+        configuration.catch(() => undefined);
+        try {
+            configure({ callGasLimit: await this.readChain(steps) });
+        } catch (error) {
+            failConfiguration(error);
+            throw error;
         }
-
-        // Resolve time configuration from the SCM proxy.
-        const configTimes = await connectedScmContract.getAllTimes();
-        const timeConfig: TimeConfig = (this.timeConfig = {
-            p2pTime: Number(configTimes[0]),
-            agreementTime: Number(configTimes[1]),
-            chainFallbackTime: Number(configTimes[2]),
-            evidenceTime: Number(configTimes[3])
-        });
-        const [disputeExecutionGasLimit, stateTransitionReplayGas] =
-            await Promise.all([
-                connectedScmContract.getGasLimit(),
-                connectedScmContract.getStateTransitionReplayGas()
-            ]);
-        this.disputeExecutionGasLimit = Number(disputeExecutionGasLimit);
-        this.maxChannelParticipants = Number(
-            await connectedScmContract.getMaxChannelParticipants()
-        );
-        if (
-            !Number.isSafeInteger(this.maxChannelParticipants) ||
-            this.maxChannelParticipants < 1
-        ) {
-            throw new Error(
-                "Deployed maximum participant count is not a positive safe integer"
-            );
-        }
-        await LoggerUtils.logTimestamp(logger, "info", timeConfig);
-
-        this.connectedScmContract = connectedScmContract;
+        const { signer } = this.chainContext!;
+        const chainSigner = this.managedSigner!;
         this.chainSigner = new ChainSignerService(this.router, chainSigner);
         this.deploySigner = new DeploySignerService(
             this.router,
@@ -262,25 +266,8 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
             (local, diamond) => this.buildRuntime(local, diamond),
             logger
         );
-        // A detached error inside the contract-executor worker is reported the
-        // way the sdk worker's own detached errors are: one host error report, and the
-        // executor keeps serving.
-        this.contractExecutor = await (
-            ctx.createContractExecutor ?? createContractExecutor
-        )(
-            {
-                dedicatedThread: payload.config.VM_DEDICATED_THREAD,
-                customPrecompiles: payload.customPrecompiles,
-                callGasLimit: localEvmCallGasLimit(
-                    disputeExecutionGasLimit,
-                    stateTransitionReplayGas
-                ),
-                logger: payload.config.VM_DEDICATED_THREAD
-                    ? undefined
-                    : logger.child({ component: "ContractExecutor" })
-            },
-            this
-        );
+        this.contractExecutor = await executorCreation;
+        steps.mark("contractExecutor");
         this.localDeploySigner = new LocalContractExecutorSigner(
             signer,
             this.contractExecutor
@@ -296,15 +283,194 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
                 error
             });
         }
+        steps.mark("webRTCBridge");
+        steps.log(logger, "Runtime host start steps");
         reportRootStartupTiming({
             runtimeReadyMs: Date.now() - runtimeStartedAt,
             ...(threadLabel ? { runtimeThread: threadLabel } : {})
         });
     }
 
+    // Overrides AInternalRpcRoot.isDisposed to include domain abort before root cleanup starts.
+    public override get isDisposed(): boolean {
+        return (
+            super.isDisposed ||
+            (this.runtimeHandle?.stateManager.isDisposed ?? false)
+        );
+    }
+
+    // Implements root cleanup through the shared recursive disposal contract.
+    public override dispose(): Promise<void> {
+        return this.disposeRoot(
+            async () => {
+                const runtimeHandle = this.runtimeHandle;
+                const provider = this.chainContext?.provider;
+                const ctx = this.context;
+                // Reported before the provider closes; the settle is bounded
+                // so disposal never hangs on the chain.
+                if (this.managedSigner) {
+                    this.rootLogger.info(
+                        "gas usage",
+                        LoggerUtils.getGasUsageMetadata(
+                            await this.managedSigner.gasUsage.settledSnapshot(
+                                config.GAS_USAGE_SETTLE_MS
+                            )
+                        )
+                    );
+                    // The report is out; end the receipt waits still running
+                    // before the provider that would never end them closes.
+                    this.managedSigner.gasUsage.dispose();
+                }
+                try {
+                    try {
+                        // Destroy first so ethers sends no eth_unsubscribe the destroy
+                        // would cancel; node sockets settle any that are sent (NodeSocket).
+                        if (provider && !Clock.ownsProvider(provider))
+                            await provider.destroy();
+                        // The Clock keeps reading through it, but this
+                        // runtime's node reconnects and their logs end here;
+                        // the Clock destroys it once a new provider replaces it.
+                        else if (provider) {
+                            provider.stopReconnecting();
+                            Clock.releaseProvider(provider);
+                        }
+                    } finally {
+                        if (runtimeHandle) {
+                            await runtimeHandle.stateManager.dispose();
+                        }
+                    }
+                } finally {
+                    this.closeChildConnections();
+                    try {
+                        // TODO: Delegate cleanup through the shared Holepunch/local
+                        // discovery lifecycle API once the backend is injected.
+                        if (
+                            ctx.threadLabel &&
+                            config.DEBUG_LOCAL_TRANSPORT &&
+                            isNodeRuntime() &&
+                            config.LOCAL_DISCOVERY_REGISTRY_URL
+                        ) {
+                            await LocalDiscoveryServer.cleanup();
+                        }
+                    } finally {
+                        // Late network callbacks must not use the disposed parent connection.
+                        runtimeHandle?.stateManager.events.setBridgeTap(
+                            undefined
+                        );
+                    }
+                }
+            },
+            () => this.runtimeHandle?.stateManager.stop()
+        );
+    }
+
+    /**
+     * The live custom RPC of this runtime; rejects with "Runtime is not ready"
+     * before the runtime is built.
+     */
+    protected get application(): TApplication {
+        // The custom RPC manifest fixes the class at runtime; the subclass
+        // names its type.
+        return this.requireManager().localRpc as TApplication;
+    }
+
     private requireManager() {
         if (!this.runtimeHandle) throw new Error("Runtime is not ready");
         return this.runtimeHandle.stateManager.p2pManager;
+    }
+
+    /**
+     * Connects to the chain, syncs the Clock and reads the channel manager's
+     * configuration; the Clock and the reads run in parallel. Answers the
+     * local EVM's call gas.
+     */
+    private async readChain(steps: StepTimer): Promise<bigint> {
+        const payload = this.payload;
+        const logger = this.rootLogger;
+        // Provider creation happens before the rest of the runtime graph exists,
+        // but its failure must still settle the paired client's `ready` promise.
+        this.chainContext = await createRuntimeChainContext(
+            payload.config,
+            payload.signerSecret,
+            logger
+        );
+        steps.mark("provider");
+        const { signer } = this.chainContext;
+        const signerAddress = (this.signerAddress = await signer.getAddress());
+        logger.updateSharedContext({
+            peerId: payload.peerId,
+            peerAddress: signerAddress
+        });
+
+        // Own this account's nonce so the peer's concurrent async flows can't collide
+        // on it (the REPLACEMENT_UNDERPRICED race). Used only for the real-chain SCM
+        // send + retry paths below; the local-VM signers (deploy/executor, p2p) and
+        // the read-only Clock stay on the raw signer.
+        const chainSigner = (this.managedSigner = new HostNonceManager(
+            signer,
+            logger
+        ));
+
+        // Connect the managed signer to the state channel manager contract so every
+        // on-chain SCM send draws its nonce from the owned counter.
+        let connectedScmContract = connectStateChannelManager(
+            payload.scm.address,
+            chainSigner,
+            JSON.parse(payload.scm.abiJson) as InterfaceAbi
+        );
+        if (payload.config.DEBUG_CHANNEL_CONTRACT) {
+            connectedScmContract = DebugProxy.createProxy(connectedScmContract);
+        }
+        this.connectedScmContract = connectedScmContract;
+        this.stateMachineContract = new ethers.Contract(
+            payload.stateMachine.address,
+            JSON.parse(payload.stateMachine.abiJson),
+            signer
+        );
+
+        // Sync clock to DLT while the SCM proxy's configuration is read. A
+        // failed read still waits for the sync: the Clock then owns the
+        // provider, and disposal leaves it to the Clock instead of destroying
+        // it under the sync.
+        const [clockSync, reads] = await Promise.allSettled([
+            Clock.init(signer.provider!),
+            Promise.all([
+                connectedScmContract.getAllTimes(),
+                connectedScmContract.getGasLimit(),
+                connectedScmContract.getStateTransitionReplayGas(),
+                connectedScmContract.getMaxChannelParticipants()
+            ])
+        ]);
+        if (clockSync.status === "rejected") throw clockSync.reason;
+        if (reads.status === "rejected") throw reads.reason;
+        const [
+            configTimes,
+            disputeExecutionGasLimit,
+            stateTransitionReplayGas,
+            maxChannelParticipants
+        ] = reads.value;
+        const timeConfig: TimeConfig = (this.timeConfig = {
+            p2pTime: Number(configTimes[0]),
+            agreementTime: Number(configTimes[1]),
+            chainFallbackTime: Number(configTimes[2]),
+            evidenceTime: Number(configTimes[3])
+        });
+        this.disputeExecutionGasLimit = Number(disputeExecutionGasLimit);
+        this.maxChannelParticipants = Number(maxChannelParticipants);
+        if (
+            !Number.isSafeInteger(this.maxChannelParticipants) ||
+            this.maxChannelParticipants < 1
+        ) {
+            throw new Error(
+                "Deployed maximum participant count is not a positive safe integer"
+            );
+        }
+        await LoggerUtils.logTimestamp(logger, "info", timeConfig);
+        steps.mark("clockAndChannelManagerReads");
+        return localEvmCallGasLimit(
+            disputeExecutionGasLimit,
+            stateTransitionReplayGas
+        );
     }
 
     private async buildRuntime(
@@ -323,10 +489,14 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
         const logger = this.rootLogger;
         const remote = this.parent?.rpc;
         const handlerExecutionContext = this.handlerExecutionContext;
+        const steps = new StepTimer(
+            () => this.chainContext?.provider.requestCount ?? 0
+        );
         const customRpcResolved = await resolveCustomRpcConstructor<
             MainRpcService,
             unknown
         >(payload.customRpcManifest);
+        steps.mark("applicationModule");
 
         const { evmDiamondStateMachine } =
             await EvmDiamondStateMachine.createStandaloneFromLocalStateMachineWithExecutor(
@@ -338,6 +508,7 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
                 timeConfig,
                 disputeExecutionGasLimit
             );
+        steps.mark("stateMachine");
 
         const storage = new Storage(this.maxChannelParticipants);
 
@@ -393,74 +564,9 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
         }
 
         this.runtimeHandle = { stateManager, evmDiamondStateMachine };
+        steps.mark("stateManager");
         await stateManager.p2pManager.localRpc.ready();
-    }
-
-    // Overrides AInternalRpcRoot.isDisposed to include domain abort before root cleanup starts.
-    public override get isDisposed(): boolean {
-        return (
-            super.isDisposed ||
-            (this.runtimeHandle?.stateManager.isDisposed ?? false)
-        );
-    }
-
-    // Implements root cleanup through the shared recursive disposal contract.
-    public override dispose(): Promise<void> {
-        return this.disposeRoot(
-            async () => {
-                const runtimeHandle = this.runtimeHandle;
-                const provider = this.chainContext?.provider;
-                const ctx = this.context;
-                // Reported before the provider closes; the settle is bounded
-                // so disposal never hangs on the chain.
-                if (this.managedSigner) {
-                    this.rootLogger.info(
-                        "gas usage",
-                        LoggerUtils.getGasUsageMetadata(
-                            await this.managedSigner.gasUsage.settledSnapshot(
-                                config.GAS_USAGE_SETTLE_MS
-                            )
-                        )
-                    );
-                    // The report is out; end the receipt waits still running
-                    // before the provider that would never end them closes.
-                    this.managedSigner.gasUsage.dispose();
-                }
-                try {
-                    try {
-                        // Destroy first so ethers marks the provider closed before its
-                        // listener cleanup schedules unsubscribe microtasks. Explicitly
-                        // removing listeners first leaves eth_unsubscribe requests that
-                        // destroy then rejects as unhandled.
-                        if (provider && !Clock.ownsProvider(provider))
-                            await provider.destroy();
-                    } finally {
-                        if (runtimeHandle) {
-                            await runtimeHandle.stateManager.dispose();
-                        }
-                    }
-                } finally {
-                    this.closeChildConnections();
-                    try {
-                        // TODO: Delegate cleanup through the shared Holepunch/local
-                        // discovery lifecycle API once the backend is injected.
-                        if (
-                            ctx.threadLabel &&
-                            config.DEBUG_LOCAL_TRANSPORT &&
-                            isNodeRuntime() &&
-                            config.LOCAL_DISCOVERY_REGISTRY_URL
-                        ) {
-                            await LocalDiscoveryServer.cleanup();
-                        }
-                    } finally {
-                        // Late network callbacks must not use the disposed parent connection.
-                        runtimeHandle?.stateManager.events.setBridgeTap(
-                            undefined
-                        );
-                    }
-                }
-            },
-            () => this.runtimeHandle?.stateManager.stop()
-        );
+        steps.mark("applicationReady");
+        steps.log(logger, "Runtime build steps");
     }
 }

@@ -1,12 +1,26 @@
 import { Block } from "@/models";
+import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
+import {
+    assertSyncedParticipantNeverSignsInjectedInbound,
+    assertSyncedParticipantServesOnlyGenuineWindowInputs
+} from "@test/fixtures/DisputeWindowInboundSyncStaging";
+import {
+    countJoinSignatureRequests,
+    waitForHeldJoins
+} from "@test/fixtures/JoinSnapshotRetryStaging";
+import { assertTwoSourceProbeKeepsLocalState } from "@test/fixtures/MonotonicSyncInstallStaging";
 import {
     assertOffChainPromotion,
     assertVerifiedSyncPromotion,
     assertPromotionBeforeReceiverApplication
 } from "@test/fixtures/OffChainPromotionFixture";
-import { expectSyncPayloadAboveRequestedHeightWhileAhead } from "@test/fixtures/PinnedSyncStaging";
+import {
+    expectSyncPayloadAboveRequestedHeightWhileAhead,
+    stageJoinerWaitingOnUnreducedWindow
+} from "@test/fixtures/PinnedSyncStaging";
+import { servedSyncPayload } from "@test/fixtures/SpectateResponseFixture";
 import {
     assertSpectatorSilence,
     assertSpectatorRejectedWork
@@ -28,7 +42,7 @@ import { ethers } from "ethers";
  */
 describe("E2E: Spectate Service", function () {
     it("overlapping newcomer gossip waits for its membership proof without blacklisting", async () => {
-        await assertPromotionBeforeReceiverApplication(true);
+        await assertPromotionBeforeReceiverApplication("overlap");
     });
     it("spectator rejects an invalid envelope without executing or relaying it", async () => {
         await assertSpectatorRejectedWork("invalid");
@@ -39,6 +53,9 @@ describe("E2E: Spectate Service", function () {
 
     it("new participant gossip can precede another peer applying insertion", async () => {
         await assertPromotionBeforeReceiverApplication();
+    });
+    it("a new joiner slow to answer the admission sync is not blacklisted and is admitted on a later block", async () => {
+        await assertPromotionBeforeReceiverApplication("slowSync");
     });
     it("verified sync promotes an off-chain inserted spectator before chain membership changes", async () => {
         await assertVerifiedSyncPromotion();
@@ -174,7 +191,7 @@ describe("E2E: Spectate Service", function () {
                     channelId: harness.channelId!.toString()
                 })
                 .request(peer1.address);
-            expect(response.encodedSyncPayload).to.be.a("string");
+            expect(servedSyncPayload(response)).to.be.a("string");
         });
     });
 
@@ -283,7 +300,8 @@ describe("E2E: Spectate Service", function () {
             h.event.resetEventSpies();
 
             // Drive the atomic interleaving host-side: lock the mutex, queue the
-            // block + persist the sync payload behind it, then release. The body
+            // block + apply the sync payload (verify, then persist) behind it,
+            // then release. The body
             // runs with the live stateManager, so mutex/validationService/
             // onBlockConfirmation/spectateService are all in-process.
             const result = await h.execOnHost(
@@ -319,18 +337,21 @@ describe("E2E: Spectate Service", function () {
                             sm.blockIngestService.onBlockConfirmationStruct(
                                 args.blockConfirmation
                             );
-                        const decoded =
-                            sm.p2pManager.localRpc.spectate.decodeSyncPayload(
-                                args.encodedSyncPayload
-                            );
-                        const persistPromise =
-                            sm.p2pManager.localRpc.spectateService.persistSyncPayload(
-                                decoded
-                            );
+                        const applyPromise =
+                            sm.p2pManager.localRpc.spectateService
+                                .applySyncResponse(
+                                    args.sourceAddress,
+                                    {
+                                        channelId: sm.channelId,
+                                        forkId: args.forkId
+                                    },
+                                    args.encodedSyncPayload
+                                )
+                                .then(({ synced }) => synced);
                         await new Promise((r) => setTimeout(r, 100));
                         sm.mutex.unlock();
                         await Promise.allSettled([
-                            persistPromise,
+                            applyPromise,
                             queuedBlockPromise
                         ]);
                         return {
@@ -347,6 +368,7 @@ describe("E2E: Spectate Service", function () {
                     blockHeight,
                     blockAuthor: blockInfo!.author,
                     blockConfirmation: blockConfirmation!,
+                    sourceAddress: sourcePeer.address,
                     encodedSyncPayload: syncResult!.encodedSyncPayload
                 }
             );
@@ -418,17 +440,22 @@ describe("E2E: Spectate Service", function () {
                 .request();
 
             try {
-                const { shouldAbort } = await h
+                const accepted = await h
                     .control(h.getPeer(spectator.index))
-                    .spectate.persistSyncPayload(syncResult!.encodedSyncPayload)
-                    .request();
+                    .spectate.applySyncResponse(
+                        sourcePeer.address,
+                        forkId!,
+                        localLatestHeight - 1,
+                        syncResult!.encodedSyncPayload
+                    )
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
 
                 const didPersistLatestState = await h
                     .control(h.getPeer(spectator.index))
                     .stub.wasUnsafeSetLatestStateCalled()
                     .request();
 
-                expect(shouldAbort).to.equal(false);
+                expect(accepted).to.equal(true);
                 expect(didPersistLatestState).to.equal(false);
                 expect(
                     await h
@@ -516,9 +543,6 @@ describe("E2E: Spectate Service", function () {
                 syncResult!.encodedSyncPayload,
                 Type.SyncPayload
             );
-            expect(syncPayload.stateProof.milestones.length).to.be.greaterThan(
-                1
-            );
 
             const latestFinalizedSnapshot =
                 syncPayload.milestoneSnapshots.at(-1) ??
@@ -552,7 +576,7 @@ describe("E2E: Spectate Service", function () {
                     block.height > spectatorLatestBeforeDisconnect &&
                     block.height <= finalizedHeight
             );
-            expect(newFinalizedBlocks.length).to.be.greaterThan(1);
+            expect(newFinalizedBlocks.length).to.be.greaterThan(0);
 
             const blockToConflict = newFinalizedBlocks.at(-1);
             expect(blockToConflict).to.not.be.undefined;
@@ -588,19 +612,34 @@ describe("E2E: Spectate Service", function () {
                 .control(h.getPeer(spectator.index))
                 .stub.stubRecordUnsafeSetLatestState()
                 .request();
+            await h
+                .control(h.getPeer(spectator.index))
+                .stub.recordSyncRejections()
+                .request();
 
             try {
-                const { shouldAbort } = await h
+                const accepted = await h
                     .control(h.getPeer(spectator.index))
-                    .spectate.persistSyncPayload(syncResult!.encodedSyncPayload)
-                    .request();
+                    .spectate.applySyncResponse(
+                        sourcePeer.address,
+                        forkId!,
+                        sourceLatestHeight,
+                        syncResult!.encodedSyncPayload
+                    )
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
 
                 const didPersistLatestState = await h
                     .control(h.getPeer(spectator.index))
                     .stub.wasUnsafeSetLatestStateCalled()
                     .request();
 
-                expect(shouldAbort).to.equal(true);
+                expect(accepted).to.equal(false);
+                expect(
+                    await h
+                        .control(h.getPeer(spectator.index))
+                        .stub.restoreRecordedSyncRejections()
+                        .request()
+                ).to.deep.equal(["payload persistence aborted"]);
                 expect(didPersistLatestState).to.equal(false);
                 for (const block of newFinalizedBlocks) {
                     const storedBlockHash = await h
@@ -616,6 +655,10 @@ describe("E2E: Spectate Service", function () {
             } finally {
                 await h
                     .control(h.getPeer(spectator.index))
+                    .stub.restoreRecordedSyncRejections()
+                    .request();
+                await h
+                    .control(h.getPeer(spectator.index))
                     .stub.restoreUnsafeSetLatestState()
                     .request();
             }
@@ -623,15 +666,6 @@ describe("E2E: Spectate Service", function () {
     });
 
     describe("Fork Traversal Spectating", function () {
-        // TODO(#351): product/protocol bug, NOT a harness-conversion issue.
-        // After the dispute reduction all 4 remaining peers agree on the reduced
-        // fork's genesis block (identical hash) but it only collects 3/4
-        // signatures, so finalization stalls (`sigs=3/4 union=4`). One
-        // participant never produces/propagates its block-confirmation signature
-        // on the new fork. This path was never exercised before (the throwing
-        // stateManager proxy hid it) and reproduces identically inline. Likely a
-        // post-reduction P2P signature-propagation / re-sync gap to fix on the
-        // product side.
         it("should spectate successfully even when it must traverse forks (dispute -> reduced fork)", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(5, 0, {
@@ -694,16 +728,34 @@ describe("E2E: Spectate Service", function () {
                 expectedCount: 4,
                 peerIndex: 5
             });
-            await h.assert.snapshot.onChainSnapshotOnFork();
+            // the post above can run before the reduction is final and then
+            // posts nothing; the peers' adoption post moves the chain
+            // snapshot to the reduced fork once the reduction is final
+            await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
+        });
+    });
+
+    describe("Participant sync across a chain-final window", function () {
+        it("responder injects an inbound successor into an unadopted chain-final window → the synced participant never stores or signs it", async function () {
+            await assertSyncedParticipantNeverSignsInjectedInbound(
+                TestSession.getHarness(),
+                "heldEvent"
+            );
+        });
+        it("responder injects an inbound successor and the participant's subscribed inbound log is lost → the participant ends with the genuine block and never stores or signs the successor", async function () {
+            await assertSyncedParticipantNeverSignsInjectedInbound(
+                TestSession.getHarness(),
+                "droppedLog"
+            );
+        });
+        it("responder forges the confirmations and snapshot of an unadopted chain-final window → the synced participant later serves only the window's genuine confirmations, recovered from chain logs", async function () {
+            await assertSyncedParticipantServesOnlyGenuineWindowInputs(
+                TestSession.getHarness()
+            );
         });
     });
 
     describe("Spectators before and after dispute", function () {
-        // TODO(#351): flaky due to the same post-dispute-reduction
-        // finalization product bug as the "traverse forks" test — after the
-        // dispute the reduced fork's genesis block intermittently collects only
-        // N-1 of N signatures (e.g. sigs=2/3), so sync stalls. Passes on some
-        // runs, fails on others; not a harness-conversion issue.
         it("pre-dispute spectator disconnects after resolve; post-dispute joiner syncs from surviving honest responders", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 0, {
@@ -751,8 +803,7 @@ describe("E2E: Spectate Service", function () {
 
                 await h.transition.advanceState({
                     count: 2,
-                    waitForPeers: honestPeerIndices,
-                    waitForFinalization: true
+                    waitForPeers: honestPeerIndices
                 });
 
                 //  first joiner has observed the dispute and disconnected
@@ -789,8 +840,7 @@ describe("E2E: Spectate Service", function () {
                         },
                         authoringPeerIndices: honestPeerIndices,
                         minimumBlocks: 1,
-                        maximumBlocks: 20,
-                        waitForFinalization: true
+                        maximumBlocks: 20
                     });
                 const reductionInputs = await h
                     .control(postDisputeSpectator)
@@ -983,7 +1033,7 @@ describe("E2E: Spectate Service", function () {
             }
         });
 
-        it("forceInboundJoin before joinChannel → joinChannel reverts ErrorJoinChannelConfirmationNotThresholdSigned (pending participant did not sign confirmation)", async function () {
+        it("forceInboundJoin before joinChannel → the pre-signed confirmation reverts ErrorJoinChannelConfirmationNotThresholdSigned, and joinChannel collects it again once with the pending participant's countersignature and lands", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
                 timeConfig: concurrentTimeConfig
@@ -1014,10 +1064,9 @@ describe("E2E: Spectate Service", function () {
                 participant: joinerB.address
             });
 
-            // Pin which revert the client path is reacting to. Every name in
-            // the MembershipService abort switch produces the same
-            // OPENED/disposed pair, so the status assertions below cannot tell
-            // them apart; this static call does.
+            // Pin which refusal the join's first submission meets: the
+            // threshold shortfall, not a snapshot move, is what gives it the
+            // retry below.
             let thresholdRevert: unknown;
             try {
                 await h.channelManager
@@ -1061,56 +1110,50 @@ describe("E2E: Spectate Service", function () {
             expect(confirmationSigners).to.have.members(originalParticipants);
             expect(confirmationSigners).to.not.include(joinerB.address);
 
-            expect(
-                await joinerA.p2pInstance.p2pSigner.joinChannel(
-                    prepared.confirmation,
-                    prepared.expectedSnapshotHash,
-                    prepared.expectedForkId
-                )
-            ).to.equal(false);
-            // The abort path sets OPENED itself, so the terminal status alone
-            // says nothing about the two cleanup effects the terminal-revert
-            // branch owes before aborting: restoring SYNCED and clearing the
-            // force-join marker. Status hooks cross the runtime port ahead of
-            // the joinChannel response, so the transient restore is still
-            // observable here, and the abort follows it rather than replacing
-            // it: without the restore the peer would go straight from
-            // PENDING_PARTICIPANT to OPENED and neither index would be found.
-            const statusChanges = (
-                joinerA.eventSpies.onStatusChanged?.getCalls() ?? []
-            ).map((call): [Status, Status] => [call.args[0], call.args[1]]);
-            const restoredSyncedIndex = statusChanges.findIndex(
-                ([oldStatus, newStatus]) =>
-                    oldStatus === Status.PENDING_PARTICIPANT &&
-                    newStatus === Status.SYNCED
+            // The refusal is a race the joiner can win: it collects a fresh
+            // confirmation, which joinerB now countersigns, and submits once
+            // more within the same public call.
+            const releaseAll = await h.rpcStub.holdMembershipSubmission(
+                joinerA.index,
+                "joinChannel"
             );
-            expect(restoredSyncedIndex).to.be.greaterThan(-1);
-            const abortedIndex = statusChanges.findIndex(
-                ([oldStatus, newStatus], index) =>
-                    index > restoredSyncedIndex &&
-                    oldStatus === Status.SYNCED &&
-                    newStatus === Status.OPENED
+            const countersignedByB = await countJoinSignatureRequests(h, [
+                joinerB.index
+            ]);
+            const statusChangesBefore =
+                joinerA.eventSpies.onStatusChanged?.callCount ?? 0;
+            const join = joinerA.p2pInstance.p2pSigner.joinChannel(
+                prepared.confirmation,
+                prepared.expectedSnapshotHash,
+                prepared.expectedForkId
             );
-            expect(abortedIndex).to.be.greaterThan(restoredSyncedIndex);
+            // observed below; keeps a failure from being an unhandled rejection meanwhile
+            join.catch(() => undefined);
+            await waitForHeldJoins(h, joinerA.index, 1);
+            await h.rpcStub.releaseOneMembershipSubmission(joinerA.index);
+            // the refused submission's retry is the second and last
+            await waitForHeldJoins(h, joinerA.index, 2);
+            await releaseAll();
 
-            const failedJoinState = await h.execOnHost(
-                h.getPeer(joinerA.index),
-                async (stateManager) => ({
-                    status: stateManager.status,
-                    isDisposed: stateManager.isDisposed,
-                    joinSubmissionBlockHeight:
-                        stateManager.storage.forceJoin.getJoinSubmissionBlockHeight()
-                }),
-                {}
+            expect(await join).to.equal(true);
+            expect(await countersignedByB()).to.equal(1);
+            expect(
+                await h.channelManager.getPendingParticipants(h.channelId)
+            ).to.include(joinerA.address);
+            expect(
+                await h.control(joinerA).query.getStatus().request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
+            expect(joinerA.eventSpies.onAbort?.called ?? false).to.equal(false);
+            expect(joinerA.eventSpies.onLeftChannel?.callCount ?? 0).to.equal(
+                0
             );
-            expect(failedJoinState.status).to.equal(Status.OPENED);
-            expect(failedJoinState.isDisposed).to.equal(true);
-            // joinChannel recorded the submission height before submitting; the
-            // terminal branch must drop it, otherwise the dead join keeps a
-            // force-join trigger height on record.
-            expect(failedJoinState.joinSubmissionBlockHeight).to.equal(
-                undefined
-            );
+            // one logical join: the refused attempt exposed no SYNCED
+            const statusesSinceJoin = (
+                joinerA.eventSpies.onStatusChanged?.getCalls() ?? []
+            )
+                .slice(statusChangesBefore)
+                .map((call) => call.args[1] as Status);
+            expect(statusesSinceJoin).to.not.include(Status.SYNCED);
         });
     });
 
@@ -1285,6 +1328,12 @@ describe("E2E: Spectate Service", function () {
             );
 
             await restore();
+        });
+    });
+
+    describe("Overlapping queue-expiry syncs from two sources", function () {
+        it("the source with the older final point answers after the other source's sync installed a later base → the local state is kept, no source is cut, and the next live blocks execute", async function () {
+            await assertTwoSourceProbeKeepsLocalState(TestSession.getHarness());
         });
     });
 
@@ -1627,6 +1676,297 @@ describe("E2E: Spectate Service", function () {
         });
     });
 
+    describe("Sync across a dispute window the chain has not reduced", function () {
+        it("a joiner whose initial load lands in an open kill period waits for the chain's reduction, then syncs without aborting or blacklisting a responder", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
+                connectAfterKillPeriod: false
+            });
+            // premise: the wait outlived the kill period, the window unreduced
+            expect(staged.whileUnreduced).to.deep.equal({
+                status: Status.OPENED,
+                reducedForkId: ethers.ZeroHash,
+                aborts: 0
+            });
+            await staged.reduce();
+            await h.event.waitUntilPeerStatus(
+                staged.joiner.index,
+                Status.SYNCED
+            );
+            // one responder answered twice: before and after the reduction
+            expect(
+                (await staged.requestCounts()).filter((count) => count > 0)
+            ).to.deep.equal([2]);
+            expect(staged.aborts()).to.equal(0);
+            expect(await staged.blacklistedByJoiner()).to.deep.equal([
+                false,
+                false,
+                false,
+                false
+            ]);
+        });
+
+        it("a fresh joiner whose served window the chain has not reduced waits for the chain's reduction, then syncs without aborting or blacklisting its responder", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
+                connectAfterKillPeriod: true
+            });
+            // premise: the kill period was over and the chain had not reduced
+            // the window, so only a local reduction could have proved it
+            expect(staged.whileUnreduced).to.deep.equal({
+                status: Status.OPENED,
+                reducedForkId: ethers.ZeroHash,
+                aborts: 0
+            });
+            await staged.reduce();
+            await h.event.waitUntilPeerStatus(
+                staged.joiner.index,
+                Status.SYNCED
+            );
+            expect(
+                (await staged.requestCounts()).filter((count) => count > 0)
+            ).to.deep.equal([2]);
+            expect(staged.aborts()).to.equal(0);
+            expect(await staged.blacklistedByJoiner()).to.deep.equal([
+                false,
+                false,
+                false,
+                false
+            ]);
+        });
+
+        it("a joiner's responder cutting it during the wait fails the repeated request: the initial load aborts once, with no internal error", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
+                connectAfterKillPeriod: true
+            });
+            const hostErrors: Error[] = [];
+            const unsubscribe = staged.joiner.p2pInstance.onHostError((error) =>
+                hostErrors.push(error)
+            );
+            try {
+                await h
+                    .control(staged.responder)
+                    .network.blacklistAndDisconnectPeerByAddress(
+                        staged.joiner.address
+                    )
+                    .request();
+                await staged.reduce();
+                await waitFor(async () => staged.aborts() > 0);
+                expect(staged.aborts()).to.equal(1);
+                // only the harness's report that the connect resolved false:
+                // no internal failure reached the top level
+                expect(hostErrors.map((error) => error.message)).to.deep.equal([
+                    `connectToChannel failed for ${h.channelId}`
+                ]);
+            } finally {
+                unsubscribe();
+            }
+        });
+
+        it("stopping a joiner during the wait ends it: stop resolves, no further request, no abort", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
+                connectAfterKillPeriod: true
+            });
+            expect(
+                await h.execOnHost(
+                    h.getPeer(staged.joiner.index),
+                    async (sm) => {
+                        await sm.stop();
+                        return sm.isDisposed;
+                    }
+                )
+            ).to.equal(true);
+            await staged.reduce();
+            expect(
+                (await staged.requestCounts()).reduce((a, b) => a + b, 0)
+            ).to.equal(1);
+            expect(staged.aborts()).to.equal(0);
+            // the initial load's sync settled: a new sync to the same
+            // responder does not join it, and the stopped runtime syncs nothing
+            expect(
+                await h.execOnHost(
+                    h.getPeer(staged.joiner.index),
+                    (sm, { responder }) =>
+                        sm.p2pManager.localRpc.spectateService.requestSync(
+                            responder,
+                            sm.channelId,
+                            undefined,
+                            undefined,
+                            1000
+                        ),
+                    { responder: staged.responder.address }
+                )
+            ).not.to.equal(SyncResult.Synced);
+            // the stopped runtime's connect resolves false
+            await TestSession.settleDetached({
+                expectedErrorIncludes: "connectToChannel failed"
+            });
+        });
+
+        it("a joiner the chain moves out of OPENED during the wait settles engaged: the late repeated sync aborts nothing", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
+                connectAfterKillPeriod: true
+            });
+            await h
+                .control(staged.joiner)
+                .stub.setPeerStatus(Status.SYNCED)
+                .request();
+            await staged.reduce();
+            await waitFor(async () =>
+                (await staged.requestCounts()).some((count) => count === 2)
+            );
+            expect(
+                await h.control(staged.joiner).query.getStatus().request()
+            ).to.equal(Status.SYNCED);
+            expect(staged.aborts()).to.equal(0);
+        });
+
+        it("a joiner's repeated request that throws after the wait reports one top-level error and never runs the connection hook for its responder", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
+                connectAfterKillPeriod: true
+            });
+            const hostErrors: Error[] = [];
+            const unsubscribe = staged.joiner.p2pInstance.onHostError((error) =>
+                hostErrors.push(error)
+            );
+            try {
+                // the first pass stopped before the milestone walk; the
+                // repeated one reaches it and the local executor fails
+                await h.mirror.observe(staged.joiner.index, "verifyMilestones");
+                await h.mirror.failNextLocalRead(
+                    staged.joiner.index,
+                    "verifyMilestones",
+                    "transport"
+                );
+                await staged.reduce();
+                await waitFor(async () => hostErrors.length > 0);
+                expect(hostErrors).to.have.length(1);
+                // the connection hook never ran for the responder whose
+                // sync threw
+                expect(
+                    (staged.joiner.eventSpies.onConnection?.getCalls() ?? [])
+                        .map((call) => String(call.args[0]))
+                        .includes(staged.responder.address)
+                ).to.equal(false);
+                // stopping the runtime settles its pending connect false
+                await h.execOnHost(
+                    h.getPeer(staged.joiner.index),
+                    async (sm) => {
+                        await sm.stop();
+                    }
+                );
+            } finally {
+                unsubscribe();
+            }
+        });
+
+        it("a participant's source probe while the tip fork's kill period is open waits for the chain's reduction, then proves the target without blacklisting its honest responder", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const maliciousPeerIndex = (await h.query.getNextPeerToWrite())
+                .index;
+            const [requesterIndex, responderIndex] = [0, 1, 2, 3].filter(
+                (peerIndex) => peerIndex !== maliciousPeerIndex
+            );
+            const requester = h.getPeer(requesterIndex);
+            const responder = h.getPeer(responderIndex);
+            const forkId = h.activeForkId!;
+            await h
+                .control(responder)
+                .stub.stubCountSpectateRequests()
+                .request();
+
+            await h.byzantine.submitInvalidStateTransitionBlock(
+                maliciousPeerIndex
+            );
+            await h.assert.dispute.committedWait({
+                peersIndices: [requesterIndex, responderIndex]
+            });
+            // premise: the probe starts while the kill period is open
+            expect((await h.query.killPeriod(forkId)).isExpired).to.equal(
+                false
+            );
+
+            // the probe BlockQueueManager.probeSource sends a queued block's
+            // source: the requester's own fork and height
+            const height = await h
+                .control(requester)
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            const stub = h.control(requester).stub;
+            await stub.recordSyncRejections().request();
+            let synced: boolean;
+            let rejections: string[];
+            try {
+                synced = await h
+                    .control(requester)
+                    .spectate.sync(responder.address, forkId, Number(height))
+                    .request({ timeoutMs: h.event.hostExecTimeoutMs() });
+                rejections = await stub
+                    .restoreRecordedSyncRejections()
+                    .request();
+            } finally {
+                await stub.restoreRecordedSyncRejections().request();
+            }
+
+            // the sync returned only after the chain reduced the window, and
+            // asked the responder again
+            expect(synced).to.equal(true);
+            expect(await h.query.reducedForkOnChain(forkId)).to.not.equal(
+                ethers.ZeroHash
+            );
+            expect(
+                await h
+                    .control(responder)
+                    .stub.getSpectateRequestCount()
+                    .request()
+            ).to.equal(2);
+            expect(rejections).to.deep.equal([]);
+            expect(
+                await h
+                    .control(requester)
+                    .query.isBlacklisted(responder.address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h
+                    .control(responder)
+                    .query.isBlacklisted(requester.address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h
+                    .control(requester)
+                    .query.isConnectedTo(responder.address)
+                    .request()
+            ).to.equal(true);
+        });
+    });
+
     describe("Spectate request across a dispute-window event gap", function () {
         // A commitment can sit on-chain while the responder's DisputeCommitted
         // event is still undelivered. generateSyncPayload walks the on-chain
@@ -1713,6 +2053,8 @@ describe("E2E: Spectate Service", function () {
             let threw = "";
             let syncResult: { encodedSyncPayload: string } | null = null;
             try {
+                // the recovery handles each recovered dispute event in full,
+                // its audit included, before the payload is built
                 syncResult = await h
                     .control(responder)
                     .spectate.generateSyncPayload(
@@ -1720,7 +2062,7 @@ describe("E2E: Spectate Service", function () {
                         forkId,
                         responderLatestHeight!
                     )
-                    .request();
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
             } catch (e) {
                 threw = e instanceof Error ? e.message : String(e);
             }

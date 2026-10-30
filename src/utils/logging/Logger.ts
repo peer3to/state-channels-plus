@@ -132,8 +132,8 @@ export abstract class Logger {
             updateContext: (context) => {
                 Object.assign(this.sharedContext, context);
             },
-            upload: () =>
-                this.logUploader?.uploadLogs() ??
+            upload: (flushDeadlineMs) =>
+                this.logUploader?.uploadLogs(flushDeadlineMs) ??
                 Promise.resolve({ ok: true, entries: 0 }),
             detach: () => {
                 this.sharedResources.loggerService = undefined;
@@ -147,6 +147,21 @@ export abstract class Logger {
         this.assertActive();
         this.loggerService?.uploadStarted(this.logStore, reason);
         return this.uploadOwnLogs();
+    }
+
+    /**
+     * Upload this realm's store and every realm reachable through the coordination service
+     * now; settles once all have, or within `CRASH_LOG_FLUSH_MS`. It never fails: each realm
+     * reports its own flush failures through its root.
+     */
+    public flushLogs(): Promise<void> {
+        this.assertActive();
+        const service = this.loggerService;
+        if (!service)
+            throw new Error(
+                "Logger has no coordination service to flush through"
+            );
+        return service.startFlush();
     }
 
     /** upload only this realm's store */

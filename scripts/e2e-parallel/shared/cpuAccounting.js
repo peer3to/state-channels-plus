@@ -65,6 +65,41 @@ function ownCgroupRoot(readFile) {
     return `/sys/fs/cgroup${line.slice(3).trim()}`.replace(/\/+$/, "");
 }
 
+// Only use a bounded cgroup: an unbounded host group is not a worker allocation.
+function readMemorySnapshot(options = {}) {
+    if ((options.platform || process.platform) !== "linux") return undefined;
+    const readFile = options.readFile || defaultReadFile;
+    const root = ownCgroupRoot(readFile);
+    if (!root) return undefined;
+    const current = Number(tryRead(readFile, `${root}/memory.current`));
+    const limit = Number(tryRead(readFile, `${root}/memory.max`));
+    if (
+        !Number.isFinite(current) ||
+        current < 0 ||
+        !Number.isFinite(limit) ||
+        limit <= 0
+    )
+        return undefined;
+    // Inactive file cache is reclaimable; retain anonymous, active file and
+    // kernel memory in the admission estimate. Missing stats stay conservative.
+    const stats = parseKeyValues(
+        tryRead(readFile, `${root}/memory.stat`) || ""
+    );
+    const inactiveFile = Number.isFinite(stats.inactive_file)
+        ? Math.max(0, Math.min(current, stats.inactive_file))
+        : 0;
+    // Idle progress may reclaim either file LRU. Shared memory is on the anon
+    // lists, so it remains counted along with kernel and anonymous allocations.
+    const activeFile = Number.isFinite(stats.active_file)
+        ? Math.max(0, Math.min(current - inactiveFile, stats.active_file))
+        : 0;
+    return {
+        idleUsedGb: (current - inactiveFile - activeFile) / 1024 ** 3,
+        usedGb: (current - inactiveFile) / 1024 ** 3,
+        limitGb: limit / 1024 ** 3
+    };
+}
+
 // /proc/stat first line: user nice system idle iowait irq softirq steal ...
 function readHostStat(readFile) {
     const text = tryRead(readFile, "/proc/stat");
@@ -211,5 +246,6 @@ module.exports = {
     osTimes,
     parseCpuList,
     parsePressure,
-    readCpuSnapshot
+    readCpuSnapshot,
+    readMemorySnapshot
 };

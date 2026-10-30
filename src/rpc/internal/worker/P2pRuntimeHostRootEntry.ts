@@ -1,5 +1,9 @@
 import { startRootWorker } from "../createRoot";
 import { P2pRuntimeHostRoot } from "../roots/P2pRuntimeHostRoot";
+import { resolveHostRootConstructor } from "../roots/resolveHostRootManifest";
 
-globalThis.threadName = "sdk";
-startRootWorker(P2pRuntimeHostRoot);
+startRootWorker(P2pRuntimeHostRoot, {
+    threadName: "sdk",
+    resolveRoot: (payload) =>
+        resolveHostRootConstructor(payload.hostRootManifest)
+});

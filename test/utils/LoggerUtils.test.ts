@@ -7,6 +7,36 @@ import { expect } from "chai";
 import { ethers } from "ethers";
 
 describe("LoggerUtils", function () {
+    it("names an RPC node by scheme and host, without credentials, path or query", function () {
+        expect(
+            LoggerUtils.getRpcNodeMetadata(
+                "wss://user:secret@rpc.example:443/v2/secret?key=secret"
+            )
+        ).to.deep.equal({ rpcNode: "wss://rpc.example" });
+        expect(
+            LoggerUtils.getRpcNodeMetadata(
+                "ws://127.0.0.1:8546/v2/secret?key=1"
+            )
+        ).to.deep.equal({ rpcNode: "ws://127.0.0.1:8546" });
+    });
+
+    it("names an unparseable RPC node URL without repeating it", function () {
+        expect(
+            LoggerUtils.getRpcNodeMetadata("not a url secret")
+        ).to.deep.equal({ rpcNode: "unparseable URL" });
+    });
+
+    it("names every RPC node of a list by scheme and host", function () {
+        expect(
+            LoggerUtils.getRpcNodesMetadata([
+                "wss://user:secret@primary.example/v2?key=secret",
+                "not a url"
+            ])
+        ).to.deep.equal({
+            rpcNodes: ["wss://primary.example", "unparseable URL"]
+        });
+    });
+
     it("marks block confirmation bytes that do not decode instead of throwing", function () {
         const blockConfirmation = factory.blockConfirmation({
             signedBlock: {

@@ -1,11 +1,6 @@
-# test/e2e/E2E-FirstBlockTimestampGrace.test.ts — Test Report
+# E2E-FirstBlockTimestampGrace.test.ts
 
-> **Test file:** [test/e2e/E2E-FirstBlockTimestampGrace.test.ts](../../../../../../test/e2e/E2E-FirstBlockTimestampGrace.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/E2E-FirstBlockTimestampGrace.test.ts](../../../../../../test/e2e/E2E-FirstBlockTimestampGrace.test.ts)
 
 ## Overview
 
@@ -23,19 +18,12 @@ timed-out peer does not. Oracles are decoded genesis snapshots and block bundles
 control RPC plus dispute event spies. On-chain adjudication of `InvalidTimestamp` proofs and
 non-grace timeout scheduling are out of scope. After the permutation atomization the window
 scenarios stand alone, so the arithmetic, boundary-cap, and grace-deadline tests carry their
-[`REQ-TIME-3-MT1MMF.T1`](../../../../specification/protocol-model/time.md#req-time-3-mt1mmf.t1) scenarios; honest-skew bounds and the non-grace due-time boundaries remain with
+`REQ-TIME-3-MT1MMF.T1` scenarios; honest-skew bounds and the non-grace due-time boundaries remain with
 the dedicated timeouts suite.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                      | Covers                                                                                                                                                                                                       |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`E2E: First block timestamp grace > adds evidenceTime only to the height 0 participant timeout`](../../../../../../test/e2e/E2E-FirstBlockTimestampGrace.test.ts#L23) (line 23)                      | [`REQ-TIME-3-MT1MMF.T1.P1`](../../../../specification/protocol-model/time.md#req-time-3-mt1mmf.t1.p1)                                                                                                        |
-| [`E2E: First block timestamp grace > authors height 0 after the old participant deadline and every peer finalizes it`](../../../../../../test/e2e/E2E-FirstBlockTimestampGrace.test.ts#L78) (line 78) | —                                                                                                                                                                                                            |
-| [`E2E: First block timestamp grace > caps height 1 without evidenceTime grace and every peer finalizes it`](../../../../../../test/e2e/E2E-FirstBlockTimestampGrace.test.ts#L151) (line 151)          | [`REQ-TIME-3-MT1MMF.T1.P9`](../../../../specification/protocol-model/time.md#req-time-3-mt1mmf.t1.p9)                                                                                                        |
-| [`E2E: First block timestamp grace > does not time out height 0 inside the grace window and times out after it`](../../../../../../test/e2e/E2E-FirstBlockTimestampGrace.test.ts#L210) (line 210)     | [`REQ-TIME-3-MT1MMF.T1.P2`](../../../../specification/protocol-model/time.md#req-time-3-mt1mmf.t1.p2), [`REQ-TIME-3-MT1MMF.T1.P7`](../../../../specification/protocol-model/time.md#req-time-3-mt1mmf.t1.p7) |
+- `adds evidenceTime only to the height 0 participant timeout`: REQ-TIME-3-MT1MMF.T1.P1
+- `authors height 0 after the old participant deadline and every peer finalizes it`: none
+- `caps height 1 without evidenceTime grace and every peer finalizes it`: REQ-TIME-3-MT1MMF.T1.P9
+- `does not time out height 0 inside the grace window and times out after it`: REQ-TIME-3-MT1MMF.T1.P2, REQ-TIME-3-MT1MMF.T1.P7

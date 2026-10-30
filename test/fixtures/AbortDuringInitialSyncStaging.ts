@@ -1,9 +1,11 @@
 // @spec-test-coverage-ignore: shared initial-sync staging exercised by mapped P2PManager declarations
 
 import { clientRootFor } from "./RuntimeRootObservation";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
-import type HarnessControlRpc from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type { HarnessControlRpcShape } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type { ParticipantCheckAnswer } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import type { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
@@ -14,10 +16,10 @@ import { expect } from "chai";
 
 /** Keep the participants authoring through a fresh observer's spawn and test body. */
 export async function withFreshInitialSyncObserver<
-    TCustomRpc extends HarnessControlRpc
+    THost extends P2pRuntimeHostRoot<HarnessControlRpcShape>
 >(
-    h: PeerTestHarness<TCustomRpc, MathStateMachine>,
-    run: (observer: TestPeer<TCustomRpc, MathStateMachine>) => Promise<void>
+    h: PeerTestHarness<THost, MathStateMachine>,
+    run: (observer: TestPeer<THost, MathStateMachine>) => Promise<void>
 ): Promise<void> {
     await h.lifecycle.openChannelForParticipants([0, 1]);
     await h.network.joinSelectedKey([0, 1], String(h.channelId));
@@ -44,6 +46,70 @@ export async function withFreshInitialSyncObserver<
     }
 }
 
+/** The observer's pre-request bound on its first participant handshake. */
+export const INITIAL_SYNC_DEADLINE_TASK =
+    "P2PManager - initial sync participant deadline";
+
+/**
+ * Hold the observer's handshake participant checks and its initial-sync
+ * deadline, start its connect, wait until a check is held (exactly
+ * `heldChecks` when given) and the deadline is held, then run the deadline
+ * while the checks stay held. `run` gets the connect and a release of every
+ * held check. Checks still held when `run` ends are released with "chain".
+ */
+export async function withInitialDeadlineElapsedDuringHeldChecks<
+    THost extends P2pRuntimeHostRoot<HarnessControlRpcShape>
+>(
+    h: PeerTestHarness<THost, MathStateMachine>,
+    observer: TestPeer<THost, MathStateMachine>,
+    options: { heldChecks?: number },
+    run: (staged: {
+        connect: Promise<boolean>;
+        releaseChecks: (answer: ParticipantCheckAnswer) => Promise<number>;
+    }) => Promise<void>
+): Promise<void> {
+    const stub = h.control(observer).stub;
+    await stub.holdParticipantCheck().request();
+    const deadline = await h.rpcStub.holdScheduledTasks(
+        observer.index,
+        INITIAL_SYNC_DEADLINE_TASK
+    );
+    let isReleased = false;
+    let isDeadlineRun = false;
+    try {
+        const connect = observer.p2pInstance.p2pSigner.connectToChannel(
+            h.channelId
+        );
+        await waitFor(async () => {
+            const held = await stub.getHeldParticipantCheckCount().request();
+            const isCheckHeld =
+                options.heldChecks === undefined
+                    ? held > 0
+                    : held === options.heldChecks;
+            return isCheckHeld && (await deadline.heldCount()) === 1;
+        }, h.event.protocolEventTimeoutMs());
+        // The pre-request deadline elapses while the checks are held.
+        isDeadlineRun = true;
+        expect(await deadline.runHeld()).to.deep.equal({
+            ran: 1,
+            errors: []
+        });
+        await run({
+            connect,
+            releaseChecks: async (answer) => {
+                const released = await stub
+                    .releaseParticipantCheck(answer)
+                    .request();
+                isReleased = true;
+                return released;
+            }
+        });
+    } finally {
+        if (!isDeadlineRun) await deadline.release(false);
+        if (!isReleased) await stub.releaseParticipantCheck("chain").request();
+    }
+}
+
 /**
  * Open a two-participant channel, spawn an observer, start its connect and
  * abort the runtime as soon as the status is OPENED. `stage` runs on the
@@ -52,14 +118,12 @@ export async function withFreshInitialSyncObserver<
  * must close afterwards.
  */
 export async function assertObserverConnectSettlesFalseOnAbort<
-    TCustomRpc extends HarnessControlRpc
+    THost extends P2pRuntimeHostRoot<HarnessControlRpcShape>
 >(
-    h: PeerTestHarness<TCustomRpc, MathStateMachine>,
+    h: PeerTestHarness<THost, MathStateMachine>,
     options: {
         settledWithinMs: number;
-        stage?: (
-            observer: TestPeer<TCustomRpc, MathStateMachine>
-        ) => Promise<void>;
+        stage?: (observer: TestPeer<THost, MathStateMachine>) => Promise<void>;
     }
 ): Promise<void> {
     await h.lifecycle.openChannelForParticipants([0, 1]);
@@ -90,9 +154,9 @@ export async function assertObserverConnectSettlesFalseOnAbort<
  * settles `false` on the abort and the late result changes nothing.
  */
 export async function assertLateSyncResultAfterAbortChangesNothing<
-    TCustomRpc extends HarnessControlRpc
+    THost extends P2pRuntimeHostRoot<HarnessControlRpcShape>
 >(
-    h: PeerTestHarness<TCustomRpc, MathStateMachine>,
+    h: PeerTestHarness<THost, MathStateMachine>,
     lateResult: "success" | "failure"
 ): Promise<void> {
     await withFreshInitialSyncObserver(h, async (observer) => {

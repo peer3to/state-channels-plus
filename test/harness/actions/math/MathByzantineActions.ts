@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: typed Math Byzantine harness actions exercised by mapped dispute and fraud-proof declarations
 import { ForkId, Bytes, Hash } from "@/types/types";
 import type { Logger } from "@/utils";
 import { Codec, hash, Type } from "@/utils";
@@ -82,7 +83,7 @@ export class MathByzantineActions extends ByzantineActions {
                 transactionCnt: BigInt(ctx.nextBlockHeight),
                 timestamp
             },
-            body: { encodedData: transactionData, data: transactionData }
+            body: { data: transactionData }
         };
 
         const blockStruct: BlockStruct = {
@@ -155,7 +156,7 @@ export class MathByzantineActions extends ByzantineActions {
                 transactionCnt: BigInt(ctx.nextBlockHeight),
                 timestamp: BigInt(blockTimestampBase)
             },
-            body: { encodedData: transactionData, data: transactionData }
+            body: { data: transactionData }
         };
 
         const blockStruct: BlockStruct = {
@@ -235,7 +236,6 @@ export class MathByzantineActions extends ByzantineActions {
                 )
             },
             body: {
-                encodedData: malformedData as Bytes,
                 data: malformedData as Bytes
             }
         };
@@ -250,7 +250,6 @@ export class MathByzantineActions extends ByzantineActions {
                     {
                         ...transaction,
                         body: {
-                            encodedData: validEncodedData,
                             data: validEncodedData
                         }
                     },
@@ -307,7 +306,7 @@ export class MathByzantineActions extends ByzantineActions {
                     Math.max(ctx.currentTimestamp, ctx.latestBlockTimestamp)
                 )
             },
-            body: { encodedData: transactionData, data: transactionData }
+            body: { data: transactionData }
         };
 
         const brokenMessageBlock: MessageBlockStruct = {
@@ -364,7 +363,7 @@ export class MathByzantineActions extends ByzantineActions {
                 transactionCnt: 0n,
                 timestamp: BigInt(ctx.currentTimestamp)
             },
-            body: { encodedData: transactionData, data: transactionData }
+            body: { data: transactionData }
         };
 
         const blockStruct: BlockStruct = {
@@ -413,7 +412,7 @@ export class MathByzantineActions extends ByzantineActions {
                     Math.max(ctx.currentTimestamp, ctx.latestBlockTimestamp)
                 )
             },
-            body: { encodedData: transactionData, data: transactionData }
+            body: { data: transactionData }
         };
 
         const blockStruct: BlockStruct = {
@@ -462,7 +461,7 @@ export class MathByzantineActions extends ByzantineActions {
                 transactionCnt: BigInt(ctx.nextBlockHeight),
                 timestamp: invalidTimestamp
             },
-            body: { encodedData: transactionData, data: transactionData }
+            body: { data: transactionData }
         };
 
         const blockStruct: BlockStruct = {

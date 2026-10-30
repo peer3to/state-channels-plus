@@ -3,9 +3,31 @@ import type { SerializedError } from "./errorWire";
 import type InternalTransport from "@/transport/InternalTransport";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { SharedLoggerContext } from "@/utils/logging/Logger";
+import {
+    getErrorWasmDiagnostics,
+    getThreadResources
+} from "@/utils/threadResources";
+
+const ROOT_DISPOSED_ERROR_NAME = "RootDisposedError";
+
+/** The rejection a root's disposal gives the requests it cuts off. */
+export class RootDisposedError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = ROOT_DISPOSED_ERROR_NAME;
+    }
+}
+
+/**
+ * True for a disposal rejection, also one restored after it crossed a port:
+ * the name crosses, the class does not.
+ */
+export function isRootDisposedError(error: unknown): boolean {
+    return error instanceof Error && error.name === ROOT_DISPOSED_ERROR_NAME;
+}
 
 export function childDisposedError(): Error {
-    return new Error("Runtime child disposed");
+    return new RootDisposedError("Runtime child disposed");
 }
 
 /** A connected root owns its RPC surface and its connection lifetime together. */
@@ -27,6 +49,8 @@ export class RemoteRoot<T extends AInternalRpcRoot> {
     ) {
         const removeSettlement = owner.router.onRequestSettled((details) => {
             if (details.transport !== transport) return;
+            // A reply can land after this root's disposal released its logging.
+            if (owner.logger.attachedLogger.isDisposed) return;
             const metadata = LoggerUtils.getRpcRequestMetadata(
                 details.rpc,
                 details.startedAtMs
@@ -49,6 +73,10 @@ export class RemoteRoot<T extends AInternalRpcRoot> {
                     "Worker failed with pending requests",
                     {
                         error,
+                        // Taken in the failed worker, for a WebAssembly failure.
+                        wasm: getErrorWasmDiagnostics(error),
+                        // This thread's workers and WebAssembly.
+                        resources: getThreadResources(),
                         pendingRequests: pending.map(({ rpc, startedAtMs }) =>
                             LoggerUtils.getRpcRequestMetadata(rpc, startedAtMs)
                         )

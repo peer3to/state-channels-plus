@@ -2,6 +2,13 @@ import peer3Config from "../../peer3.config";
 
 export type Config = {
     PROVIDER_URL: string;
+    // RPC nodes in priority order. The first one sends transactions while it
+    // is connected. Unset or empty means the single node PROVIDER_URL.
+    PROVIDER_URLS?: string[];
+    // Most blocks one eth_getLogs read may span. Event catch-up and recovery
+    // read longer ranges in windows of this size; set it at or below the
+    // endpoints' own range limit. A positive integer.
+    LOG_QUERY_MAX_BLOCKS: number;
     DEBUG_STATE_MANAGER: boolean;
     DEBUG_DISPUTE_HANDLER: boolean;
     DEBUG_P2P_MANAGER: boolean;
@@ -23,11 +30,19 @@ export type Config = {
     // enables the ##E2E_TIMING## diagnostics the parallel runner parses
     // (per-thread delay peaks, worker boot times). Tests set 1.
     EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: number;
+    // With the monitor enabled: true starts a worker root's monitor before its
+    // own start, so the start's load shows too. False (the default, and what
+    // tests use) starts it once the root is ready, so a loaded test machine's
+    // slow startups do not trip the threshold.
+    EVENT_LOOP_MONITOR_STARTUP: boolean;
     // Max entries in the per-thread signer-recovery cache (message+signature ->
     // address). Bounds memory; evicts oldest past this.
     SIGNER_RECOVERY_CACHE_MAX: number;
     // Local liveness deadline before terminal leave starts self-removal.
     LEAVE_CHANNEL_WATCHDOG_MS: number;
+    // Chain seconds a join authorization stays valid after it is prepared;
+    // no block after its deadline admits the join.
+    JOIN_CHANNEL_DEADLINE_SECONDS: number;
     // How long a gas-usage read (the public table read and the disposal
     // report) waits for outstanding receipts before it answers with the rows
     // already recorded. A receipt still pending then shows up on a later
@@ -41,10 +56,17 @@ export type Config = {
     CRASH_LOG_UPLOAD_COALESCE_MS: number;
     // upper bound of the random per-upload jitter that spreads realms apart
     CRASH_LOG_UPLOAD_JITTER_MAX_MS: number;
+    // longest wait of a log flush (an aborting runtime's, before it disposes) for its realms' uploads.
+    CRASH_LOG_FLUSH_MS: number;
 };
+
+/** Default lifetime of a prepared join authorization, in chain seconds. */
+export const DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS = 120;
 
 const DEFAULT_CONFIG: Config = {
     PROVIDER_URL: "http://localhost:8545",
+    PROVIDER_URLS: [],
+    LOG_QUERY_MAX_BLOCKS: 1000,
     DEBUG_STATE_MANAGER: false,
     DEBUG_DISPUTE_HANDLER: false,
     DEBUG_P2P_MANAGER: false,
@@ -60,16 +82,30 @@ const DEFAULT_CONFIG: Config = {
     VM_DEDICATED_THREAD: false,
     RUN_SDK_IN_THREAD: false,
     EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 0,
+    EVENT_LOOP_MONITOR_STARTUP: false,
     SIGNER_RECOVERY_CACHE_MAX: 100_000,
     LEAVE_CHANNEL_WATCHDOG_MS: 15_000,
+    JOIN_CHANNEL_DEADLINE_SECONDS: DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS,
     GAS_USAGE_SETTLE_MS: 2_000,
     // Crash log collection is enabled when upload endpoint is configured.
     CRASH_LOG_UPLOAD_ENDPOINT: "",
     CRASH_LOG_API_TOKEN: "",
     CRASH_LOG_MAX_SIZE_MB: 10,
     CRASH_LOG_UPLOAD_COALESCE_MS: 3000,
-    CRASH_LOG_UPLOAD_JITTER_MAX_MS: 3000
+    CRASH_LOG_UPLOAD_JITTER_MAX_MS: 3000,
+    CRASH_LOG_FLUSH_MS: 15_000
 };
+
+/**
+ * Rejects a log window size that is not a positive integer: windows of
+ * zero, fractional or negative blocks never cover a range.
+ */
+export function assertLogQueryMaxBlocks(maxBlocks: number): void {
+    if (!Number.isSafeInteger(maxBlocks) || maxBlocks < 1)
+        throw new Error(
+            `LOG_QUERY_MAX_BLOCKS must be a positive integer, got ${maxBlocks}`
+        );
+}
 
 export function isNodeRuntime() {
     return (

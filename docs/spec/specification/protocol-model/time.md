@@ -80,7 +80,7 @@ accurate to a band of about one block interval. This lag is a feature for safety
 the re-adjustment trigger be one average block time, two, or a fixed bound independent of block
 time?
 
-**Open question:** For this protocol version: the clock syncs once per session (at init and on provider
+**Open question ([`OQ-SPEC-CLOCK-1-Z8TBFE` (Keeping runtime clocks in agreement over a session)](../open-questions.md#oq-spec-clock-1-z8tbfe)):** For this protocol version: the clock syncs once per session (at init and on provider
 replacement) and is never re-synced periodically. Wall-clock drift, chain block-time changes, and
 reorganizations during a long session are not corrected. Is a periodic or event-driven re-sync
 (e.g. on each observed chain block) required, and with what cadence?
@@ -112,6 +112,13 @@ time-dependent recovery path (timeouts, disputes, settlement).
 - **[`REQ-TIME-3-MT1MMF`](time.md#req-time-3-mt1mmf)** — Deployments MUST treat the window values and the clock-skew bound as explicit
   configuration with the trade-off above; the windows MUST be large relative to the maximum
   honest clock skew and the chain's block-time variance.
+
+Sizing `evidenceTime` (guidance, not a requirement): it should cover an honest auditor's whole
+kill, because an invalid dispute that no honest auditor kills inside the kill period survives into
+the reduction. That work is the audit, building the auditor's own dispute, estimating and sending the
+transaction, and waiting for inclusion, so `evidenceTime` should exceed that work under the expected
+load plus a margin of a few block times. On a 12 second block chain the 30 second default leaves
+about one block of margin.
 
 **Open question:** the default values (15/5/30/30 seconds) are development defaults and have not
 been empirically validated under representative delay, skew, reorganization, and block-production
@@ -240,6 +247,11 @@ Threats include dishonest/lagging RPC views, miner/validator timestamp latitude,
 future timestamps, stale estimates, integer overflow, delayed inclusion, and treating subjective local delay as
 slashable evidence. Tests must vary authoritative and estimated time independently and prove that subjective
 checks only gate local behavior while objective claims use chain-verifiable values.
+
+An `evidenceTime` too short for the honest kill (see the sizing guidance in §3) lets an invalid
+dispute survive into the reduction: an auditor slower than expected (a heavily loaded host,
+back-to-back disputes) or inclusion delayed by fees, congestion or censorship makes the honest kill
+land after the kill period ends. No mechanism enforces the sizing; it is a deployment choice.
 
 ## Requirements and invariants
 

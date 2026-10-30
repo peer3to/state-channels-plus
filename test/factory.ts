@@ -102,7 +102,6 @@ export function transactionBody(
     overrides: Partial<TransactionBodyStruct> = {}
 ): TransactionBodyStruct {
     return {
-        encodedData: "0x",
         data: "0x",
         ...overrides
     };
@@ -184,6 +183,13 @@ export function block(
     return Block.fromSignedBlock(signedBlockStruct);
 }
 
+/** A mock block at the given fork and height (`transactionCnt`). */
+export function blockAt(forkId: ForkId, height: BlockHeight): Block {
+    return block({
+        header: transactionHeader({ forkId, transactionCnt: height })
+    });
+}
+
 /** Copy of `blockStruct` with `transaction.header` shallow-merged with `header`. */
 export function blockStructWithTransactionHeader(
     bs: BlockStruct,
@@ -220,8 +226,7 @@ export function dispute(
             latestInboundMessageBlockHash: hash(),
             lastInboundMessageBlockHeight: 0,
             stateProof: {
-                milestones: [],
-                signedBlocks: []
+                milestones: []
             },
             onChainSlashes: [],
             disputeAuditingDataHash: ethers.hexlify(ethers.randomBytes(32)),
@@ -565,6 +570,10 @@ function zeroValueForParamType(paramType: ethers.ParamType): unknown {
     );
 }
 
+// One ABI value for a custom-error parameter: numbers, addresses and bytes as
+// strings, `bool` parameters as real booleans (the string "false" encodes true).
+export type CustomErrorArg = string | boolean;
+
 /**
  * Revert data for `errorName`, with a zero value for every argument the error
  * declares. Derived from the error's own ABI fragment, so a test that only
@@ -576,7 +585,7 @@ function zeroValueForParamType(paramType: ethers.ParamType): unknown {
  */
 export function encodedCustomErrorRevert(
     errorName: string,
-    args?: string[]
+    args?: CustomErrorArg[]
 ): Bytes {
     const errorInterface = getErrorInterface();
     const errorFragment = errorInterface.getError(errorName);
@@ -678,7 +687,6 @@ export function milestoneProof(
                     blockConfirmations: [blockConfirmation()]
                 }
             ],
-            signedBlocks: [],
             ...overrides
         }
     };
