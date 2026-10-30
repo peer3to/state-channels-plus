@@ -187,6 +187,35 @@ describe("MirrorRpcProvider", function () {
         );
     });
 
+    it("samples balance, nonce and code reads against the node too", async function () {
+        await withMirrorSession(
+            async (session) => {
+                const { address } = await deployMirroredStorage(session);
+                const owner = await session.signer.getAddress();
+
+                await session.provider.getBalance(address);
+                await session.provider.getCode(address);
+                await session.provider.getTransactionCount(owner, "latest");
+                await waitFor(
+                    () => session.provider.mirrorStatistics?.sampleChecks === 3,
+                    5_000,
+                    20
+                );
+
+                expect(session.provider.mirrorStatistics).to.include({
+                    sampleChecks: 3,
+                    sampleMismatches: 0,
+                    sampleSkipped: 0
+                });
+                expect(nodeRequests(session, "eth_getBalance")).to.have.length(
+                    1
+                );
+                expect(nodeRequests(session, "eth_getCode")).to.have.length(1);
+            },
+            { sampleRate: 1 }
+        );
+    });
+
     it("sends nothing to the node at a sample rate of 0", async function () {
         await withMirrorSession(async (session) => {
             const { storage, address } = await deployMirroredStorage(session);
