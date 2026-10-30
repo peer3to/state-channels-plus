@@ -1,7 +1,8 @@
 import {
     RECORDED_ACCOUNT_INFO,
     withSubstrateNode,
-    type SubstrateContract
+    type SubstrateContract,
+    type SubstrateNode
 } from "../../fixtures/node/SubstrateChildTrieNode";
 import { ChainMovedError } from "@/utils/node/storageDiff/backfillBlocks/ABackfillBlockSource";
 import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
@@ -32,10 +33,7 @@ const NO_UPSTREAM = {
 /** Runs `use` with a source on a node of `contract`, closed in `finally`. */
 async function withSource<T>(
     contract: SubstrateContract,
-    use: (
-        source: ChildTrieBlockSource,
-        reads: { rootReads: () => number }
-    ) => Promise<T>
+    use: (source: ChildTrieBlockSource, reads: SubstrateNode) => Promise<T>
 ): Promise<T> {
     return await withSubstrateNode(contract, async (node) => {
         const source = new ChildTrieBlockSource(node.url);
@@ -131,6 +129,30 @@ describe("ChildTrieBlockSource", function () {
             expect(await source.countStorageEntries(ADDRESS, TIP)).to.equal(
                 2_000
             );
+        });
+    });
+
+    it("shares the block hash read of counts asked for at one block at the same time", async function () {
+        await withSource(chain({ entries: 7 }), async (source, node) => {
+            const counts = await Promise.all([
+                source.countStorageEntries(ADDRESS, TIP),
+                source.countStorageEntries(ADDRESS, TIP),
+                source.countStorageEntries(ADDRESS, TIP)
+            ]);
+
+            expect(counts).to.deep.equal([7, 7, 7]);
+            expect(node.requests().chain_getBlockHash).to.equal(1);
+        });
+    });
+
+    it("reads the account info once for a contract it counts again", async function () {
+        await withSource(chain({ entries: 7 }), async (source, node) => {
+            await source.countStorageEntries(ADDRESS, TIP);
+            await source.countStorageEntries(ADDRESS, {
+                number: TIP.number + 1n
+            });
+
+            expect(node.requests().state_getStorage).to.equal(1);
         });
     });
 });
