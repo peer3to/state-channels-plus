@@ -168,12 +168,29 @@ class AgreementManager {
         blockHeight: BlockHeight,
         options?: { finalizedOnly?: boolean }
     ): Promise<BuiltStateProof> {
+        const built = await this.tryBuildStateProof(
+            forkId,
+            blockHeight,
+            options
+        );
+        if (built) return built;
+        const startHeight = this.getStartHeight(
+            await this.getConstructionStart(forkId)
+        );
+        throw new Error(
+            `Cannot build a state proof for fork ${forkId} at height ${blockHeight}: below its anchor at height ${startHeight}`
+        );
+    }
+
+    /** `buildStateProof`, but undefined when `blockHeight` is below the anchor: this view is behind the chain. */
+    public async tryBuildStateProof(
+        forkId: ForkId,
+        blockHeight: BlockHeight,
+        options?: { finalizedOnly?: boolean }
+    ): Promise<BuiltStateProof | undefined> {
         const start = await this.getConstructionStart(forkId);
         const startHeight = this.getStartHeight(start);
-        if (blockHeight !== -1 && blockHeight < startHeight)
-            throw new Error(
-                `Cannot build a state proof for fork ${forkId} at height ${blockHeight}: below its anchor at height ${startHeight}`
-            );
+        if (blockHeight !== -1 && blockHeight < startHeight) return undefined;
         const milestones =
             blockHeight === -1
                 ? []

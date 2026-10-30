@@ -62,6 +62,7 @@ Escalation guard: once per fork, rollback on failure, serialized
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P26` — dispute admission refuses disposal while waiting for the state mutex
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P27` — dispute admission refuses a changed fork before construction
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P28` — a non-timeout dispute refused as early does not schedule a timeout retry
+- [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P55` — a dispute built on a view behind the chain's anchor (its latest block below the mirrored anchor) is a no-op, like an `ErrorCantParticipateInDispute` refusal: it resolves with no upload and the marker rolls back
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P31` — RaceConditionDisputeTimeoutCalldataPosted: the stored candidate is dropped and the withheld posted block reaches the pipeline once, with no check re-armed
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P32` — RaceConditionDisputeTimeoutCalldataPosted over a posted block that fails its state transition: the following fraud-proof dispute carries no timeout
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P33` — a refusal for another reason while a posted block was withheld: the re-armed check still ends with that block judged

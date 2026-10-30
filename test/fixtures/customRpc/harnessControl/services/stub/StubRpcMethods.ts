@@ -1668,8 +1668,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
-    public recordChainMembershipReads(): boolean {
-        this.service.recordChainMembershipReads();
+    public recordChainMembershipReads(hold = false): boolean {
+        this.service.recordChainMembershipReads(hold);
         return true;
     }
 
@@ -2811,13 +2811,13 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         if (!this.service.stubOriginals.has("stateProofBuilds"))
             this.service.stubOriginals.set(
                 "stateProofBuilds",
-                agreementManager.buildStateProof.bind(agreementManager)
+                agreementManager.tryBuildStateProof.bind(agreementManager)
             );
         const build = this.service.stubOriginals.get(
             "stateProofBuilds"
-        ) as typeof agreementManager.buildStateProof;
+        ) as typeof agreementManager.tryBuildStateProof;
         this.service.stateProofBuildCount = 0;
-        agreementManager.buildStateProof = async (
+        agreementManager.tryBuildStateProof = async (
             forkId,
             blockHeight,
             buildOptions
@@ -2907,10 +2907,10 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /**
-     * Park `constructDispute` for `forkId` at its `buildStateProof` await -
+     * Park `constructDispute` for `forkId` at its `tryBuildStateProof` await -
      * the first async boundary inside it, so a construction parked there has
      * started but has not yet read the stored fraud proofs. The park is scoped
-     * to a running `constructDispute`, so an unrelated `buildStateProof`
+     * to a running `constructDispute`, so an unrelated `tryBuildStateProof`
      * caller can never take it instead and leave the test's race unstaged.
      */
     public stubPauseConstructDisputeAtStateProof(forkId: ForkId): boolean {
@@ -2919,7 +2919,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         if (!this.service.stubOriginals.has("constructDisputeStateProof")) {
             this.service.stubOriginals.set(
                 "constructDisputeStateProof",
-                agreementManager.buildStateProof.bind(agreementManager)
+                agreementManager.tryBuildStateProof.bind(agreementManager)
             );
         }
         if (!this.service.stubOriginals.has("constructDisputeEntry")) {
@@ -2930,7 +2930,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         }
         const originalStateProof = this.service.stubOriginals.get(
             "constructDisputeStateProof"
-        ) as typeof agreementManager.buildStateProof;
+        ) as typeof agreementManager.tryBuildStateProof;
         const originalConstruct = this.service.stubOriginals.get(
             "constructDisputeEntry"
         ) as typeof disputeManager.constructDispute;
@@ -2966,7 +2966,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             });
         };
 
-        agreementManager.buildStateProof = async (
+        agreementManager.tryBuildStateProof = async (
             requestedForkId,
             blockHeight,
             options
@@ -3008,8 +3008,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         );
         if (originalStateProof === undefined) return false;
         const agreementManager = this.service.sm.agreementManager;
-        agreementManager.buildStateProof =
-            originalStateProof as typeof agreementManager.buildStateProof;
+        agreementManager.tryBuildStateProof =
+            originalStateProof as typeof agreementManager.tryBuildStateProof;
         this.service.stubOriginals.delete("constructDisputeStateProof");
 
         const originalConstruct = this.service.stubOriginals.get(

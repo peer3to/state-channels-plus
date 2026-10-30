@@ -266,7 +266,41 @@ describe("Unit: AgreementManager", function () {
                 },
                 { forkId, requestedHeight: changeHeights[0] }
             );
-            expect(r.thrownMessage).to.match(/below its anchor/);
+            expect(r.thrownMessage).to.include(
+                `below its anchor at height ${anchorHeight}`
+            );
+        });
+
+        it("proof requested below the on-chain anchor (a leave the exits' snapshot covers) → tryBuildStateProof returns undefined, no proof from history below the anchor", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.setupTwoLeaversAcrossMilestones();
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 3] });
+
+            const forkId = h.activeForkId!;
+            const anchorHeight = Number(
+                (await h.channelManager.getStateSnapshot(h.channelId))
+                    .blockHeight
+            );
+            const changeHeights = await h
+                .control(h.getPeer(0))
+                .query.getParticipantChangeHeights(forkId)
+                .request();
+            // staging sanity: the leaves sit below the posted exit snapshot
+            expect(changeHeights[0]).to.be.lessThan(anchorHeight);
+
+            // this view is behind the chain at that height -> no proof
+            const r = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, args) => ({
+                    isBuilt:
+                        (await sm.agreementManager.tryBuildStateProof(
+                            args.forkId,
+                            args.requestedHeight
+                        )) !== undefined
+                }),
+                { forkId, requestedHeight: changeHeights[0] }
+            );
+            expect(r.isBuilt).to.equal(false);
         });
 
         it("proof requested below a participant join → tops out at the requested height", async function () {

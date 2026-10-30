@@ -9,7 +9,7 @@ It checks latest signer evidence, everyone-signed predicates, milestone-only `bu
 final and latest snapshot selection, and reduction inputs. Built proofs are checked by the chain
 verifier. The genesis case keeps an unfinalized block-zero run in one milestone and checks the
 replay index and genesis final snapshot. Other cases cover membership changes, missing signatures,
-unknown forks, concurrent construction, and inbound recovery for reduction. Skipped declarations
+unknown forks, a height below the anchor (`buildStateProof` throws, `tryBuildStateProof` returns no proof), concurrent construction, and inbound recovery for reduction. Skipped declarations
 record inputs unavailable through the public surface; they are not passing evidence.
 
 ## Tests
@@ -27,6 +27,7 @@ record inputs unavailable through the public surface; they are not passing evide
 - `U22 (genesis): latest block missing a signature → one unfinalized genesis-linked milestone, the chain walk accepts it`: REQ-SP-8-9ZCCEJ.T6.P1, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P58
 - `unknown fork → buildStateProof throws 'Fork not found', the verification projection → null`: none
 - `proof requested below the on-chain anchor (a leave the exits' snapshot covers) → buildStateProof throws, no proof from history below the anchor`: none
+- `proof requested below the on-chain anchor (a leave the exits' snapshot covers) → tryBuildStateProof returns undefined, no proof from history below the anchor`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P66
 - `proof requested below a participant join → tops out at the requested height`: none
 - `proof requested at the on-chain anchor height → the anchor block alone, reports that height, verifies`: none
 - `proof requested at the exact join-block height, raised threshold completed only above it → tops out at the requested height`: none
