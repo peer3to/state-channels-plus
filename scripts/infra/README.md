@@ -272,6 +272,13 @@ that nest and re-enter" checks this on nested and re-entered frames against
   root reads per changed block, and names only the blocks that changed the
   contract's storage. It does not check that the chain stayed one chain
   between reads beyond the tip block.
+- **Recount after writes.** With `ChildTrieBlockSource` the service counts
+  the child trie entries of each complete account a block wrote, at that
+  block, and compares them with the non-zero slots its cache holds after the
+  block. Per block that is one block hash read (shared by the accounts of the
+  block) plus one key page per account, in two frames; the trie id is read
+  once. A difference warns with both counts and keeps the account lazy, with
+  the `lazy` notice to its subscribers, which drop it to lazy reads.
 - **Complete accounts.** A backfilled account is complete: a slot it does not
   hold reads zero without asking the upstream.
 - **Snapshot.** After backfill the service pushes `scp_snapshot` with
