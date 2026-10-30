@@ -49,7 +49,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-SPEC-OPEN-2-YQTTTB`](open-questions.md#oq-spec-open-2-yqtttb)                         | Minimum time an opening proposal's deadline must leave before the higher peer signs and submits                                                             | Security review                               | [peer-communication/channel-negotiation.md](./peer-communication/channel-negotiation.md)                                                                                                                                   | Resolved                          |
 | [`OQ-SPEC-SPECTATOR-RELAY-1-V6F216`](open-questions.md#oq-spec-spectator-relay-1-v6f216)   | Future spectator relaying                                                                                                                                   | Plan                                          | Current queue admission and optional promotion                                                                                                                                                                             | Future; non-blocking              |
 | [`OQ-SPEC-JOIN-REJOIN-1-D506RT`](open-questions.md#oq-spec-join-rejoin-1-d506rt)           | Rejoin after eviction collects against the disputed snapshot                                                                                                | Shared poker client manager plan (2026-10-26) | [peer-communication/join-authorization.md](./peer-communication/join-authorization.md)                                                                                                                                     | Open (later)                      |
-| [`OQ-SPEC-REDUCE-SPECTATOR-1-1YWDC5`](open-questions.md#oq-spec-reduce-spectator-1-1ywdc5) | Spectator reduction without the reduced latest state snapshot                                                                                               | Shared poker client manager plan (2026-10-26) | [disputes/dispute-processing.md](./disputes/dispute-processing.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md)                                                                       | Open (later)                      |
+| [`OQ-SPEC-REDUCE-SPECTATOR-1-1YWDC5`](open-questions.md#oq-spec-reduce-spectator-1-1ywdc5) | Spectator reduction without the reduced latest state snapshot                                                                                               | Shared poker client manager plan (2026-10-26) | [disputes/dispute-processing.md](./disputes/dispute-processing.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md)                                                                       | Resolved                          |
 | [`OQ-SPEC-RELAY-1-SW2BKP`](open-questions.md#oq-spec-relay-1-sw2bkp)                       | Confirmation re-broadcast volume delays counter-signatures past the agreement window                                                                        | Six-player browser game (2026-10-27)          | [peer-communication/block-gossip.md](./peer-communication/block-gossip.md)                                                                                                                                                 | Open (later)                      |
 
 ## Register assumptions and constraints
@@ -797,8 +797,12 @@ wait for an undisputed snapshot. Affected layers: implementation
 
 ## OQ-SPEC-REDUCE-SPECTATOR-1-1YWDC5 — Spectator reduction without the reduced latest state snapshot
 
-Open; to address later (Luka, 2026-10-26). Found in the shared poker client manager implementation
-review. `AgreementManager.getReduceData` throws "Missing latestStateSnapshot for reducedOutput in
+Resolved (Luke, 2026-10-30): alternative (2). A node that does not hold the reduced head's snapshot and
+state has no reduction yet: a non-participant aborts cleanly, a committed participant retries after
+`chainFallbackTime`, a reduction it cannot back is not challenged, and a sync responder fails the request
+without blacklisting the requester ([`FIND-REDUCE-BEHIND-1-S07637`](../audit/open-findings.md#find-reduce-behind-1-s07637)).
+Before: found in the shared poker client manager implementation
+review. `AgreementManager.getReduceData` threw "Missing latestStateSnapshot for reducedOutput in
 storage for syncing" when the reduced output's latest block is a block whose state snapshot the runtime
 never stored. A spectator that never executed the reduced latest block reaches it when it computes a
 reduction (`ReductionComputationService`).

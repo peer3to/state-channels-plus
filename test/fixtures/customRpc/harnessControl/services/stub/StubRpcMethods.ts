@@ -1627,6 +1627,16 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public holdClockOffset(seconds: number): boolean {
+        this.service.holdClockOffset(seconds);
+        return true;
+    }
+
+    public releaseClockOffset(): boolean {
+        this.service.releaseClockOffset();
+        return true;
+    }
+
     public recordSyncRejections(): boolean {
         this.service.recordSyncRejections();
         return true;
@@ -1668,8 +1678,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
-    public recordChainMembershipReads(): boolean {
-        this.service.recordChainMembershipReads();
+    public recordChainMembershipReads(hold = false): boolean {
+        this.service.recordChainMembershipReads(hold);
         return true;
     }
 
@@ -2811,13 +2821,13 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         if (!this.service.stubOriginals.has("stateProofBuilds"))
             this.service.stubOriginals.set(
                 "stateProofBuilds",
-                agreementManager.buildStateProof.bind(agreementManager)
+                agreementManager.tryBuildStateProof.bind(agreementManager)
             );
         const build = this.service.stubOriginals.get(
             "stateProofBuilds"
-        ) as typeof agreementManager.buildStateProof;
+        ) as typeof agreementManager.tryBuildStateProof;
         this.service.stateProofBuildCount = 0;
-        agreementManager.buildStateProof = async (
+        agreementManager.tryBuildStateProof = async (
             forkId,
             blockHeight,
             buildOptions
@@ -2907,10 +2917,10 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /**
-     * Park `constructDispute` for `forkId` at its `buildStateProof` await -
+     * Park `constructDispute` for `forkId` at its `tryBuildStateProof` await -
      * the first async boundary inside it, so a construction parked there has
      * started but has not yet read the stored fraud proofs. The park is scoped
-     * to a running `constructDispute`, so an unrelated `buildStateProof`
+     * to a running `constructDispute`, so an unrelated `tryBuildStateProof`
      * caller can never take it instead and leave the test's race unstaged.
      */
     public stubPauseConstructDisputeAtStateProof(forkId: ForkId): boolean {
@@ -2919,7 +2929,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         if (!this.service.stubOriginals.has("constructDisputeStateProof")) {
             this.service.stubOriginals.set(
                 "constructDisputeStateProof",
-                agreementManager.buildStateProof.bind(agreementManager)
+                agreementManager.tryBuildStateProof.bind(agreementManager)
             );
         }
         if (!this.service.stubOriginals.has("constructDisputeEntry")) {
@@ -2930,7 +2940,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         }
         const originalStateProof = this.service.stubOriginals.get(
             "constructDisputeStateProof"
-        ) as typeof agreementManager.buildStateProof;
+        ) as typeof agreementManager.tryBuildStateProof;
         const originalConstruct = this.service.stubOriginals.get(
             "constructDisputeEntry"
         ) as typeof disputeManager.constructDispute;
@@ -2966,7 +2976,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             });
         };
 
-        agreementManager.buildStateProof = async (
+        agreementManager.tryBuildStateProof = async (
             requestedForkId,
             blockHeight,
             options
@@ -3008,8 +3018,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         );
         if (originalStateProof === undefined) return false;
         const agreementManager = this.service.sm.agreementManager;
-        agreementManager.buildStateProof =
-            originalStateProof as typeof agreementManager.buildStateProof;
+        agreementManager.tryBuildStateProof =
+            originalStateProof as typeof agreementManager.tryBuildStateProof;
         this.service.stubOriginals.delete("constructDisputeStateProof");
 
         const originalConstruct = this.service.stubOriginals.get(
@@ -3356,6 +3366,23 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.restoreCalldataPostedEvents();
     }
 
+    /** Pin this peer's chain view at the current block. Returns that block. */
+    public stubLagChainView(holdLogs: boolean): Promise<number> {
+        return this.service.lagChainView(holdLogs);
+    }
+
+    public getLaggedHeadReads(): number {
+        return this.service.laggedHeadReads;
+    }
+
+    public getChainHeadWaitsEntered(): number {
+        return this.service.chainHeadWaitsEntered;
+    }
+
+    public restoreChainView(): boolean {
+        return this.service.releaseChainView();
+    }
+
     /** Resolves once a subscribed calldata log has been held. */
     public waitForHeldCalldataPostedEvent(): Promise<boolean> {
         return this.service.waitForHeldCalldataPostedEvent();
@@ -3384,6 +3411,39 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         if (original === undefined) return false;
         disputeManager.dispute = original as typeof disputeManager.dispute;
         this.service.stubOriginals.delete("disputeInitiation");
+        return true;
+    }
+
+    /**
+     * Record-only: count this peer's dispute audits instead of running them.
+     * Each answers valid, so the window persists without the audit's replay.
+     */
+    public stubRecordDisputeAudits(): boolean {
+        const validation = this.service.sm.disputeValidationService;
+        if (!this.service.stubOriginals.has("disputeAudits"))
+            this.service.stubOriginals.set(
+                "disputeAudits",
+                validation.validateDispute.bind(validation)
+            );
+        this.service.recordedDisputeAuditCount = 0;
+        validation.validateDispute = (async () => {
+            this.service.recordedDisputeAuditCount += 1;
+            return true;
+        }) as typeof validation.validateDispute;
+        return true;
+    }
+
+    public getRecordedDisputeAuditCount(): number {
+        return this.service.recordedDisputeAuditCount;
+    }
+
+    public restoreDisputeAudits(): boolean {
+        const validation = this.service.sm.disputeValidationService;
+        const original = this.service.stubOriginals.get("disputeAudits");
+        if (original === undefined) return false;
+        validation.validateDispute =
+            original as typeof validation.validateDispute;
+        this.service.stubOriginals.delete("disputeAudits");
         return true;
     }
 

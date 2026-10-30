@@ -1,6 +1,6 @@
 import { hash as randomHash, randomAddress } from "../factory";
 import { BlockOrigin } from "@/storage/QueueStorage";
-import type { BlockHeight, ForkId } from "@/types/types";
+import type { BlockHeight } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
@@ -266,7 +266,41 @@ describe("Unit: AgreementManager", function () {
                 },
                 { forkId, requestedHeight: changeHeights[0] }
             );
-            expect(r.thrownMessage).to.match(/below its anchor/);
+            expect(r.thrownMessage).to.include(
+                `below its anchor at height ${anchorHeight}`
+            );
+        });
+
+        it("proof requested below the on-chain anchor (a leave the exits' snapshot covers) → tryBuildStateProof returns undefined, no proof from history below the anchor", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.setupTwoLeaversAcrossMilestones();
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 3] });
+
+            const forkId = h.activeForkId!;
+            const anchorHeight = Number(
+                (await h.channelManager.getStateSnapshot(h.channelId))
+                    .blockHeight
+            );
+            const changeHeights = await h
+                .control(h.getPeer(0))
+                .query.getParticipantChangeHeights(forkId)
+                .request();
+            // staging sanity: the leaves sit below the posted exit snapshot
+            expect(changeHeights[0]).to.be.lessThan(anchorHeight);
+
+            // this view is behind the chain at that height -> no proof
+            const r = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, args) => ({
+                    isBuilt:
+                        (await sm.agreementManager.tryBuildStateProof(
+                            args.forkId,
+                            args.requestedHeight
+                        )) !== undefined
+                }),
+                { forkId, requestedHeight: changeHeights[0] }
+            );
+            expect(r.isBuilt).to.equal(false);
         });
 
         it("proof requested below a participant join → tops out at the requested height", async function () {
@@ -906,57 +940,37 @@ describe("Unit: AgreementManager", function () {
             expect(r.bogusDisputeCount).to.equal(0);
         });
 
+        it("reduced head the node never received → undefined, not a throw", async function () {
+            const h = TestSession.getHarness();
+            // a spectator cut off before the participants' last block: the
+            // window reduces to that block, whose snapshot it never stored
+            const { forkId, spectatorIndex } =
+                await h.scenario.stageSpectatedDisputeAboveSpectatorHead();
+
+            const r = await h.query.reduceData(forkId, spectatorIndex);
+            const localHeight = await h
+                .control(h.getPeer(spectatorIndex))
+                .query.getLatestBlockHeight(forkId)
+                .request();
+
+            // premise - the reduced head is above everything the node holds
+            expect(r.reducedHeight).to.be.greaterThan(Number(localHeight));
+            expect(r.threw).to.equal("");
+            expect(r.blockCount).to.equal(null);
+        });
+
+        // no test: the missing-state half of the guard needs a reduced head
+        // whose snapshot the node stored without its state. only a verified
+        // proof hop is stored that way (stageVerifiedProof stores hop
+        // snapshots without executing their blocks), and no staging makes
+        // such a hop the reduced head of a window the node then reads.
+        // missing input: a synced state proof whose hop block is the window's
+        // reduced head
+        it.skip("reduced head snapshot held without its state → undefined, not a throw (needs a synced proof hop that is the reduced head)", function () {});
+
         // the reduce applies the chain's inbound run, which a peer whose
         // InboundMessagesProcessed log never landed cannot walk
         describe("inbound run the reduce applied", function () {
-            /** reduce.staticCall over the window, then getReduceData for it. */
-            const readReduceData = (
-                h: ReturnType<typeof TestSession.getHarness>,
-                peerIndex: number,
-                forkId: ForkId
-            ) =>
-                h.execOnHost(
-                    h.getPeer(peerIndex),
-                    async (sm, args) => {
-                        const disputes =
-                            await sm.reductionManager.getSyncedForkDisputes(
-                                args.forkId
-                            );
-                        if (!disputes) {
-                            throw new Error(
-                                "expected a locally readable dispute window"
-                            );
-                        }
-                        const reducedOutput =
-                            await sm.stateChannelManagerContract.reduce.staticCall(
-                                disputes
-                            );
-                        let threw = "";
-                        let blockCount: number | null = null;
-                        try {
-                            const reduceData =
-                                await sm.agreementManager.getReduceData(
-                                    args.forkId,
-                                    reducedOutput
-                                );
-                            blockCount = reduceData
-                                ? reduceData.inboundMessageBlocks.length
-                                : null;
-                        } catch (e) {
-                            threw = e instanceof Error ? e.message : String(e);
-                        }
-                        return {
-                            threw,
-                            blockCount,
-                            disputeCount: disputes.length
-                        };
-                    },
-                    { forkId },
-                    {
-                        timeoutMs: h.event.hostExecTimeoutMs()
-                    }
-                );
-
             it("unrecoverable reduce run → undefined, not a throw", async function () {
                 const h = TestSession.getHarness();
                 // a spectator: it does not audit, so it holds the window
@@ -965,7 +979,7 @@ describe("Unit: AgreementManager", function () {
                 const { forkId, held, spectatorIndex } =
                     await h.scenario.stageSpectatedDisputeOverHeldInboundGap();
 
-                const r = await readReduceData(h, spectatorIndex, forkId);
+                const r = await h.query.reduceData(forkId, spectatorIndex);
 
                 expect(r.disputeCount).to.be.greaterThan(0);
                 expect(r.threw).to.equal("");
@@ -990,8 +1004,8 @@ describe("Unit: AgreementManager", function () {
                     });
                 await dropped.waitUntilDropped();
 
-                const lagged = await readReduceData(h, lagging, forkId);
-                const healthy = await readReduceData(h, disputerIndex, forkId);
+                const lagged = await h.query.reduceData(forkId, lagging);
+                const healthy = await h.query.reduceData(forkId, disputerIndex);
 
                 expect(lagged.threw).to.equal("");
                 // the same run a peer that never lost the log computes

@@ -1,4 +1,4 @@
-import { Block } from "@/models";
+import { Block, StateSnapshot } from "@/models";
 import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
@@ -7,9 +7,15 @@ import {
     assertSyncedParticipantServesOnlyGenuineWindowInputs
 } from "@test/fixtures/DisputeWindowInboundSyncStaging";
 import {
+    syncForgedGenesisBeforeFirstBlock,
+    syncForgedGenesisCaseWindow,
+    syncForgedSuccessorGenesisBeforeFirstBlock
+} from "@test/fixtures/GenesisTimestampSyncStaging";
+import {
     countJoinSignatureRequests,
     waitForHeldJoins
 } from "@test/fixtures/JoinSnapshotRetryStaging";
+import { applySyncFromChainAheadResponder } from "@test/fixtures/LaggingChainViewSyncStaging";
 import { assertTwoSourceProbeKeepsLocalState } from "@test/fixtures/MonotonicSyncInstallStaging";
 import {
     assertOffChainPromotion,
@@ -20,6 +26,10 @@ import {
     expectSyncPayloadAboveRequestedHeightWhileAhead,
     stageJoinerWaitingOnUnreducedWindow
 } from "@test/fixtures/PinnedSyncStaging";
+import {
+    assertBehindObserverAbortsOnIdleDispute,
+    assertObserverRecoversFromRemovedResponder
+} from "@test/fixtures/RemovedSyncResponderStaging";
 import { servedSyncPayload } from "@test/fixtures/SpectateResponseFixture";
 import {
     assertSpectatorSilence,
@@ -212,6 +222,164 @@ describe("E2E: Spectate Service", function () {
                 peerIndex: 3
             });
             await h.assert.snapshot.onChainSnapshotOnFork();
+        });
+
+        it("byzantine responder serves a timestamp-altered genesis before block zero -> the writer rejects it, never stores it, and its block 0 is not slashable", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, victim, responder, observer, onChainGenesisHash } =
+                await syncForgedGenesisBeforeFirstBlock(h);
+
+            expect(
+                await h
+                    .control(victim)
+                    .query.isBlacklisted(responder.address)
+                    .request()
+            ).to.equal(true);
+            const stored = await h
+                .control(victim)
+                .dispute.getGenesisSnapshotStruct(forkId)
+                .request();
+            expect(stored).to.not.equal(null);
+            expect(StateSnapshot.decode(stored!.encodedSnapshot).hash).to.equal(
+                onChainGenesisHash
+            );
+
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: [victim.index, observer.index]
+            });
+
+            // block 0 links the on-chain genesis -> exactly what WrongGenesis compares
+            const bundle = await h
+                .control(observer)
+                .query.getLatestBlockBundle(forkId)
+                .request();
+            expect(bundle).to.not.equal(null);
+            const block = Block.fromBlockConfirmation({
+                signedBlock: Codec.decode(
+                    bundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: bundle!.confirmationSignatures
+            });
+            expect(block.height).to.equal(0);
+            expect(block.author).to.equal(victim.address);
+            expect(block.previousBlockHash).to.equal(onChainGenesisHash);
+            expect(
+                await h
+                    .control(observer)
+                    .query.getFraudProofType(victim.address)
+                    .request()
+            ).to.equal(null);
+            await h.assert.dispute.didNotInitiate({
+                peers: [victim.index, observer.index]
+            });
+            expect(await h.query.onChainSlashedParticipants()).to.deep.equal(
+                []
+            );
+        });
+
+        it("byzantine responder serves a timestamp-altered successor genesis before its block zero -> the writer rejects it, installs the chain genesis, and its block 0 is not slashable", async function () {
+            const h = TestSession.getHarness();
+            const {
+                successorForkId,
+                victim,
+                responder,
+                observer,
+                successorGenesisHash
+            } = await syncForgedSuccessorGenesisBeforeFirstBlock(h);
+
+            expect(
+                await h
+                    .control(victim)
+                    .query.isBlacklisted(responder.address)
+                    .request()
+            ).to.equal(true);
+            // fork adoption checks the genesis timestamp against the chain's own -> same hash
+            const onChainGenesis = StateSnapshot.from(
+                await h.channelManager.getStateSnapshot(h.channelId)
+            );
+            expect(onChainGenesis.forkID).to.equal(successorForkId);
+            expect(onChainGenesis.hash).to.equal(successorGenesisHash);
+            const stored = await h
+                .control(victim)
+                .dispute.getGenesisSnapshotStruct(successorForkId)
+                .request();
+            expect(stored).to.not.equal(null);
+            expect(StateSnapshot.decode(stored!.encodedSnapshot).hash).to.equal(
+                successorGenesisHash
+            );
+            const slashedBefore = await h.query.onChainSlashedParticipants();
+            // the staged source-fork dispute already counted -> watch only from block 0 on
+            h.event.resetEventSpies();
+
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: [victim.index, observer.index]
+            });
+
+            const bundle = await h
+                .control(observer)
+                .query.getLatestBlockBundle(successorForkId)
+                .request();
+            expect(bundle).to.not.equal(null);
+            const block = Block.fromBlockConfirmation({
+                signedBlock: Codec.decode(
+                    bundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: bundle!.confirmationSignatures
+            });
+            expect(block.height).to.equal(0);
+            expect(block.author).to.equal(victim.address);
+            expect(block.previousBlockHash).to.equal(successorGenesisHash);
+            expect(
+                await h
+                    .control(observer)
+                    .query.getFraudProofType(victim.address)
+                    .request()
+            ).to.equal(null);
+            await h.assert.dispute.didNotInitiate({
+                peers: [victim.index, observer.index]
+            });
+            expect(await h.query.onChainSlashedParticipants()).to.deep.equal(
+                slashedBefore
+            );
+        });
+
+        it("byzantine responder serves a genesis-case dispute window whose genesis timestamp is altered -> the participant rejects it and keeps the genuine genesis, and the dispute still resolves", async function () {
+            const h = TestSession.getHarness();
+            const {
+                sourceForkId,
+                victim,
+                responder,
+                honestPeerIndices,
+                genuineGenesisHash
+            } = await syncForgedGenesisCaseWindow(h);
+            expect(
+                await h
+                    .control(victim)
+                    .query.isBlacklisted(responder.address)
+                    .request()
+            ).to.equal(true);
+            const stored = await h
+                .control(victim)
+                .dispute.getGenesisSnapshotStruct(sourceForkId)
+                .request();
+            expect(StateSnapshot.decode(stored!.encodedSnapshot).hash).to.equal(
+                genuineGenesisHash
+            );
+            const { newForkId } = await h.dispute.resolveDisputeWait({
+                forkId: sourceForkId,
+                honestPeerIndices
+            });
+            expect(
+                await h.control(victim).query.getForkId().request()
+            ).to.equal(newForkId);
+            // the honest participants are not slashed
+            const slashedAfter = await h.query.onChainSlashedParticipants();
+            for (const index of honestPeerIndices)
+                expect(slashedAfter).to.not.include(h.getPeer(index).address);
         });
 
         it("spectate atomic persistence and setState", async function () {
@@ -735,6 +903,19 @@ describe("E2E: Spectate Service", function () {
         });
     });
 
+    describe("Requester chain view behind the responder's", function () {
+        it("participant whose provider lags a snapshot post syncs from a responder that saw it → the sync waits for its provider to catch up and completes; responder kept", async function () {
+            const r = await applySyncFromChainAheadResponder(
+                TestSession.getHarness(),
+                { release: "duringWait", via: "sync" }
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.accepted).to.equal(true);
+            expect(r.responderBlacklisted).to.equal(false);
+            expect(r.connected).to.equal(true);
+        });
+    });
+
     describe("Participant sync across a chain-final window", function () {
         it("responder injects an inbound successor into an unadopted chain-final window → the synced participant never stores or signs it", async function () {
             await assertSyncedParticipantNeverSignsInjectedInbound(
@@ -868,6 +1049,20 @@ describe("E2E: Spectate Service", function () {
             } finally {
                 await Promise.all(reductionHolds.map((hold) => hold.release()));
             }
+        });
+    });
+
+    describe("Initial sync from a removed responder", function () {
+        it("a self-removed peer still listed by the held chain snapshot serves the successor genesis only → the new observer catches up to the survivors without aborting or blacklisting", async function () {
+            await assertObserverRecoversFromRemovedResponder(
+                TestSession.getHarness()
+            );
+        });
+
+        it("the survivors stay idle and dispute the reduced fork while the observer holds only its genesis → the observer, a non-participant behind the reduced head, aborts cleanly at its reduction, nobody blacklists it and the survivors resolve the dispute", async function () {
+            await assertBehindObserverAbortsOnIdleDispute(
+                TestSession.getHarness()
+            );
         });
     });
 

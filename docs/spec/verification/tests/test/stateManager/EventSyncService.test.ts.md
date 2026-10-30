@@ -39,6 +39,14 @@ single top-up's log after the peer already holds the run below it; the load quer
 the run becomes walkable. The other loses every inbound log from before the channel opens, so the
 peer holds no inbound tip; the load recovers the logs and the store tip becomes the recovered head.
 
+Seven `waitForChainHead` cases run on a live peer: a head already at the block resolves true at once;
+a provider pinned behind the block that catches up stays waiting until the next mined block, then
+resolves true; a block that does not arrive within the timeout resolves false after it; an abort
+during the wait resolves false; an abort before the call resolves false with no head read; and a
+head read that fails rejects with its error; and a head read that never settles still resolves
+false at the timeout and at the abort. Each case that subscribes checks that no block
+listener is left behind.
+
 ## Tests
 
 - `drops subscription callbacks while stop is still draining scheduled work`: UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P3
@@ -66,6 +74,13 @@ peer holds no inbound tip; the load recovers the logs and the store tip becomes 
 - `dispatches a log a second stream delivers again only once`: UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P1, INV-CHAINOBS-1-ASVKC1.T1.P1
 - `dispatches a log re-mined in another block after a reorg as a new event`: UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P2, INV-CHAINOBS-1-ASVKC1.T1.P2
 - `ignores a log a reorg removed`: UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P3, INV-CHAINOBS-1-ASVKC1.T1.P3
+- `head already at the block → true without waiting for a new block, no block listener left`: UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P1
+- `the provider catches up during the wait → still waiting until the next mined block, then true`: UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P2
+- `the block does not arrive within the timeout → false after the timeout, no block listener left`: UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P5
+- `aborted during the wait → false, no block listener left`: UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P3
+- `aborted before the call → false at once, with no head read`: UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P6
+- `a failed head read rejects with its error, no block listener left`: UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P4
+- `a head read that never settles → false at the timeout and at the abort, no block listener left`: UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P7
 - `drops a lagging node's log below the watermark`: UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P4, INV-CHAINOBS-1-ASVKC1.T1.P6
 - `schedules the log this peer's subscription lost`: UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P1, REQ-CHAINOBS-3-N137ZP.T1.P4
 - `does not dispatch the channel's opening logs again`: UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P3, INV-CHAINOBS-1-ASVKC1.T1.P5

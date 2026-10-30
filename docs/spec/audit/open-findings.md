@@ -623,18 +623,23 @@ pending. Mapped regressions:
 
 ### FIND-SECURITY-6-884TAJ
 
-**Current defect:** **Open; impact needs recheck.** Supplied genesis persistence remains; the
-trusted walk now chooses canonical final state. The same unverified timestamp can also arrive as
+**Current defect:** **Resolved (2026-10-03, window path 2026-10-30); high.** `applySyncResponse` binds the
+genesis timestamp before persistence, to the step-1 chain genesis on the same fork and to the
+origin window's chain-expired kill-period end for a successor fork; a mismatch rejects as "genesis
+timestamp mismatch". Past genesis on chain no value authenticates it: sync keeps a held genesis, the
+rest is [`FIND-FRAUD-1-TRWDPS`](open-findings.md#find-fraud-1-trwdps). The same timestamp could also arrive as
 the `latestStateSnapshot` of a genesis-case window (its disputes carry no block) that the sync
-reduces itself: that reduction pins only the snapshot data, so the stored snapshot can overwrite
-`genesisSnapshotByForkId` (handed over from
-[`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf); code-traced, not executed).
+reduces itself, whose reduction pins only the snapshot data (handed over from
+[`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf)): that snapshot must now hash to the
+`latestStateSnapshotHash` every committed dispute of the window signed, trusted once the chain
+reports the window's kill period ended (Luke, 2026-10-30: no extra chain read, the flag comes
+from the existing finality multicall).
 
 **Proposed direction and handoff:**
-[Evidence and proposed fix](./codex-security-triage.md#sync-genesis-time). Engineer review pending;
-preserve the report's prerequisites and proof gaps. Owed regression:
+[Evidence and fix](./codex-security-triage.md#sync-genesis-time). Mapped regressions:
 [`INV-SYNC-1-XCQZ28.T1.P12`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p12),
-[`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13).
+[`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13),
+[`INV-SYNC-1-XCQZ28.T1.P23`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p23).
 
 ## No relayer or RPC node available
 
@@ -687,6 +692,14 @@ backoff). Gaps seen in the code:
 Distinct from open questions: for these, the finding is verified in code and a reasonable
 direction exists, but the direction still needs engineer confirmation before implementation.
 Each should become a normal fix + test once confirmed.
+
+<a id="find-fraud-1-trwdps"></a>
+
+### FIND-FRAUD-1-TRWDPS
+
+**Defect:** _Open (2026-10-03)._ An honest peer files a WrongGenesis proof that cannot succeed, and is slashed for it, when a block 0 is judged on a fork whose on-chain snapshot is already past genesis. `_handleWrongGenesis` returns invalid for that fork (contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:295-297) and `applyFraudProofs` slashes the submitter of an invalid proof (FraudProofFacet.sol:19-25). A block 0 still reaches validation after a sync that persisted only history above the anchor: the queue lets stored heights through for double-sign detection, and `isLinked` then compares it with the stored genesis (src/stateManager/ingest/ValidationService.ts:412-418). Triggers: a genuinely wrong late block 0, or an honest block 0 judged against a genesis whose timestamp a sync responder altered while the chain was past genesis (the residual of [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj)). Also unverified: a forged genesis timestamp as the block-timestamp floor in `BlockProductionService.adjustTimestampIfNeeded` when that fork has no stored block. Code-traced, not executed.
+
+**Proposed direction:** Stop judging WrongGenesis for a block 0 once the chain snapshot on its fork is past genesis. Engineer choices: WrongGenesis only or any stale block; a guard in `wrongGenesisDetected` or a new strategy deviation on all strategies; dispute or disconnect at all; the lag of the event-fed local view (preflight through the local diamond); keying stored fraud proofs by fork.
 
 <a id="find-contract-devlog-1-s97s2h"></a>
 
@@ -988,7 +1001,9 @@ exclusion approved under
 is outside this finding; other availability or local-fault blacklist paths stay open except sync
 timeout and transport-failure liability, retained by the owner on 2026-09-07 under the assumption
 that honest peers observe the same reality within agreementTime. This is a protocol assumption, not
-a measured universal execution bound.
+a measured universal execution bound. A responder behind a dispute window's reduced head (reduce
+data not held) fails the request without blacklisting the requester
+([`FIND-REDUCE-BEHIND-1-S07637`](open-findings.md#find-reduce-behind-1-s07637)).
 
 _Scope note (2026-10-23):_ narrowed. A responder whose own view lags a disputed window (the window's
 disputes, or the inbound run its reduce consumed, not yet locally readable) now fails the request
@@ -1135,6 +1150,33 @@ was never disposed, and join, top-up and lobby work stayed blocked.
 send: the signed exit settles through a committed self-removal and resolves with the leaver dropped
 from the reduced state; the unsigned exit stays awaiting settlement. No test stages the exact gap on
 a live chain.
+
+<a id="find-leave-5-7071c7"></a>
+
+### FIND-LEAVE-5-7071C7
+
+**Defect:** _Resolved (2026-10-26)._ A leave watchdog that expired after the remaining
+participants' snapshot with the exit landed, but before the leaver's membership check observed it,
+started the self-removal dispute anyway. The snapshot event moves the local diamond's anchor first;
+the check that drops the leaver runs after the handler and reads the chain. A leaver behind that
+snapshot then failed to build its proof (`AgreementManager.buildStateProof`: below its anchor), and
+the dispute error was fatal for the runtime although the leave settled, against the watchdog bound
+of [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
+`LeaveChannelService.onWatchdog` now runs the membership check before it disputes: a settled exit
+ends there and starts no dispute
+([`REQ-LIF-10-QR8NQ9.T1.P37`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p37),
+[`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P53`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9)).
+An exit snapshot that lands after that check, while the dispute is built, leaves the leaver's latest
+block below its anchor: `AgreementManager.tryBuildStateProof`, which only dispute construction uses,
+returns no proof for a view behind the chain, and `DisputeManager.dispute` treats that as it treats `ErrorCantParticipateInDispute` (marker
+rolled back, no upload), while the check the snapshot requested settles the leave
+([`REQ-LIF-10-QR8NQ9.T1.P38`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p38),
+[`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P56`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9),
+[`UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P55`](../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-1-sqv6zd),
+[`UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P66`](../implementation/source/src/agreementManager/AgreementManager.ts.md#unit-test-agreement-manager-1-kj6q9d)).
+
+**Proposed direction:** None — fixed. With dispute construction switched back to the throwing
+`buildStateProof`, the build-race and behind-view cases fail with "below its anchor".
 
 <a id="find-leave-4-wdh0xc"></a>
 
@@ -1889,8 +1931,8 @@ participant's source probe inside an open kill period.
 cannot recompute locally fails the sync with no verdict and no close. A served window the requester's own chain view does not hold stays a
 verification failure, now "dispute window not on chain": the requester fetches the served windows
 from its chain view into its local diamond before the check, so only a lagging provider can make an
-honest window absent, which is [`FIND-SYNC-5-7W9TWW`](open-findings.md#find-sync-5-7w9tww)'s
-tracked class. The responder keeps serving open windows: a refusal makes `onSpectateRequest`
+honest window absent, and the requester now waits for its view to reach the payload's chain block
+first ([`FIND-SYNC-5-7W9TWW`](open-findings.md#find-sync-5-7w9tww)). The responder keeps serving open windows: a refusal makes `onSpectateRequest`
 blacklist the requester instead
 ([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
 `SpectateService.sync` then waits for the chain to record the window's reduction and asks the same
@@ -1946,8 +1988,8 @@ dispute its handler left unstored (a fork the node already left, or a dispute it
 a stored confirmation no longer always means an accepted audit. Inbound blocks arrive through chain events.
 Residual: until the chain adopts a window reduced on chain after the finality read, the requester
 lacks that window's reduction input and refuses to serve it, as it already did for a chain-final
-window. A genesis-shaped snapshot of a self-reduced window is not checked against its timestamp;
-that case belongs to [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj).
+window. A genesis-shaped snapshot of a self-reduced window is checked against its disputes' signed hash;
+that case is resolved in [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj).
 Regressions:
 [`INV-SYNC-1-XCQZ28.T1.P18`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p18),
 [`INV-SYNC-1-XCQZ28.T1.P19`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p19),
@@ -1957,30 +1999,39 @@ Regressions:
 
 ### FIND-SYNC-5-7W9TWW
 
-**Defect:** _Open (2026-10-09), engineer decision: tracked, not fixed in PR #526._ The sync server
-cuts the latest-fork outbound run at its own local-diamond anchor (`generateSyncPayload` in
-[SpectateService.ts](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
-serves only the outbound blocks above `currentOnChainSnapshot`), while the requester verifies the
-run from the anchor it read from its own provider (`applySyncResponse`). A requester whose provider
-lags the server's (for example one block behind just after a snapshot post) holds an older anchor
-head; no served block links to it, so the run does not verify, the requester calls `rejectSync`
-("latest-fork outbound blocks invalid") and blacklists an honest peer. A retry succeeds once its
-provider catches up. The same lag hits served dispute windows: a requester whose provider has not
-yet seen the responder's dispute commit cannot fetch the served window into its local diamond, so
-step 2.2 rejects with "dispute window not on chain" and blacklists the honest responder. The code assumes the requester's anchor is not behind the server's; nothing
-enforces it and no test covers a lagging requester. Related:
-[`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe),
-[`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed).
-Provider lag is a general concern for the fast local checks, so this needs an overall protocol
-decision. Code-traced, not executed.
+**Defect:** _Resolved (2026-10-21)._ The sync server cut the latest-fork outbound run at its own
+local-diamond anchor (`generateSyncPayload` in
+[SpectateService.ts](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)),
+while the requester verified the run from the anchor its own provider returned
+(`applySyncResponse`). A requester whose provider lagged the server's (for example one block behind
+just after a snapshot post) held an older anchor, no served block linked to it, and the requester
+rejected the honest server with "latest-fork outbound blocks invalid" and blacklisted it. The same
+lag hit served dispute windows: a requester whose provider had not yet seen the responder's dispute
+commit rejected with "dispute window not on chain". The snapshot case is reproduced in a unit case
+and end to end; the window case passes through the same wait, which precedes every chain read.
 
-**Proposed direction:** Decide the provider-lag rule for fast local checks first. Candidate fixes:
-the requester sends its anchor in `SyncRequest` and the server cuts there; the server serves the run
-from the fork genesis; or the requester re-reads its chain anchor once and rechecks before it
-rejects the peer. Confirm with a unit case where the requester's `getStateSnapshot` returns the
-previous anchor while the server's local diamond holds the newer one: the sync is accepted or
-retried, not rejected. Likewise for a window: the requester's provider lags the responder's dispute
-commit, and the sync is retried or accepted, not rejected.
+**Engineer decision (Luke, 2026-10-21).** One pattern for this race class instead of a fix per check:
+the payload names the chain block it was built against, and the requester judges only once its own
+chain view has reached that block. Rejected: the requester sending its anchor in the request (the
+server's local diamond keeps no history, so serving as of an older anchor needs server-side chain
+reads, and a requester that has not seen a dispute has nothing to send for the window case). The
+wait is bounded by one `agreementTime`; a view still behind then is no verdict and no blacklist,
+because a lagging provider and a server naming a future block look the same.
+
+**Fix:** `generateSyncPayload` sets `chainBlock` to its chain head read after its last chain read,
+or a later block whose logs another RPC node already streamed into its local diamond.
+`applySyncResponse` first waits (`EventSyncService.waitForChainHead`) until its own chain head
+reaches `chainBlock`, for at most one agreement window, then runs every chain-derived check; a view
+that does not get there returns not synced with no verdict. A server behind the requester was
+already handled by the existing paths. Regressions:
+[`INV-SYNC-2-AT3RXE.T1.P4`](../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe.t1.p4),
+[`INV-SYNC-2-AT3RXE.T1.P6`](../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe.t1.p6),
+[`INV-SYNC-3-A7A2ED.T1.P34`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p34).
+Residual: a Byzantine responder naming a future block delays one request by up to one agreement
+window. The requester re-reads its head only at announced blocks (no polling), so a provider that
+catches up without a new block, or a read node lagging the node that announced, is seen at the next
+block; with none inside one agreement window the sync ends with no verdict. The same race class (a judgment against chain state made from a view behind the evidence)
+exists outside sync and is not addressed here.
 
 <a id="find-sync-7-sht5k7"></a>
 
@@ -2612,6 +2663,32 @@ drops an unparseable environment value, contrary to
 **Proposed direction:** Validate every timing, memory, concurrency, payload and retry value in
 `createConfig` and reject an unparseable or out-of-range value.
 
+<a id="find-reduce-behind-1-s07637"></a>
+
+### FIND-REDUCE-BEHIND-1-S07637
+
+**Defect:** _Resolved (2026-10-22)._ A node whose local head is behind a dispute window's reduced head
+aborted on a fatal reduction error. A new observer accepted a valid successor-genesis-only proof while
+the survivors were two blocks ahead on that fork. After its initial sync it starts no catch-up of its
+own: a handshake with a participant starts no sync once the initial sync ran, so it waits for the
+next live block. The table went quiet, the survivors timed out the writer at block 3 and disputed
+the reduced fork. The observer's own reduction of that window named a head block it never received,
+`AgreementManager.getReduceData` threw "Missing latestStateSnapshot for reducedOutput in storage for
+syncing", and `ReductionManager` treated the throw as fatal and aborted the runtime. Seen once, in a
+run of the removed-responder staging that let the writer slot go idle; not yet reproduced on purpose.
+Whether other lagging peers hit the same path is unverified.
+
+**Fix:** `getReduceData` treats a non-genesis reduced head whose snapshot or state the node does not
+hold like an unavailable inbound run: no reduce data yet, never a throw. Someone else's reduction is
+not challenged and a sync responder fails the request for the window with an error reply; its own lag
+does not blacklist the requester ([`DEF-10-199C7F`](open-findings.md#def-10-199c7f), Luke, 2026-10-23). At its own reduction a
+non-participant without reduce data aborts cleanly; a committed participant retries after
+`chainFallbackTime` ([`REQ-DVP-2-RG8QR3` (Reducer reads event-synchronized windows)](../specification/disputes/dispute-processing.md#req-dvp-2-rg8qr3)).
+
+Engineer decision (Luke, 2026-10-23): a behind non-participant aborts cleanly at the reduction
+point; a spectator has no stake and can resync later or pick another table. A behind participant is
+the offline case covered by the watchtower assumption (A8).
+
 <a id="find-timeout-1-r8ewz5"></a>
 
 ### FIND-TIMEOUT-1-R8EWZ5
@@ -2673,11 +2750,18 @@ its full oracle. This is the explicit-gap disposition allowed by the accepted tr
 
 <a id="find-sync-1-jwy1c8"></a>
 
-### FIND-SYNC-1-JWY1C8 — Recovery from a removed sync responder lacks verification
+### FIND-SYNC-1-JWY1C8 — Recovery from a removed sync responder
 
-Status: open verification gap. A removed peer can still appear in a held chain snapshot and serve a valid successor-genesis-only proof while surviving participants have advanced. The new observer's subsequent catch-up is not covered by the finalized-window calldata test, which deliberately selects surviving honest responders. Luka approved treating this recovery workflow separately.
+Status: _Resolved (2026-10-22)._ The removed-responder test in
+[E2E-Spectate](../verification/tests/test/e2e/E2E-Spectate.test.ts.md) owns the permutation: the new
+observer recovers to the survivors' state from the next live block's sender, without an abort or a
+blacklist. A dispute on the reduced fork while the observer still holds only the successor genesis
+makes it abort cleanly at its reduction, as decided in
+[`FIND-REDUCE-BEHIND-1-S07637`](open-findings.md#find-reduce-behind-1-s07637).
 
-Required evidence: [`REQ-SYNC-1-T2589H.T1.P16`](../specification/peer-communication/synchronization.md#req-sync-1-t2589h.t1.p16) must exercise the removed responder, then prove recovery to the surviving participants' state without a missing-snapshot abort. No test currently owns this permutation; do not infer coverage from the honest-responder case.
+Original gap: A removed peer can still appear in a held chain snapshot and serve a valid successor-genesis-only proof while surviving participants have advanced. The new observer's subsequent catch-up is not covered by the finalized-window calldata test, which deliberately selects surviving honest responders. Luka approved treating this recovery workflow separately.
+
+Required evidence: [`REQ-SYNC-1-T2589H.T1.P16`](../specification/peer-communication/synchronization.md#req-sync-1-t2589h.t1.p16) must exercise the removed responder, then prove recovery to the surviving participants' state without a missing-snapshot abort. The E2E-Spectate declaration "a self-removed peer still listed by the held chain snapshot serves the successor genesis only → the new observer catches up to the survivors without aborting or blacklisting" owns this permutation.
 
 <a id="find-log-1-659qd2"></a>
 

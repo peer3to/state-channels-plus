@@ -21,7 +21,10 @@ while `constructDispute` is parked at its state-proof read. The inbound-head ref
 forwards a real send instead: a multicall upload is parked while a join moves the chain's inbound
 head, then released so the chain itself reverts `RaceConditionDisputeInboundNotLatest(head,
 anchor)`. Local storage is assumed current through event sync, so the refusal is not retried: the
-marker rolls back and nothing re-uploads.
+marker rolls back and nothing re-uploads. The behind-view case reuses the U72 exit staging: the
+leaver is blind to gossip and its membership reads are parked, so the remaining participants' exit
+snapshot becomes its local anchor above its latest block while its fork stays active; a `dispute()`
+on its host then resolves with no result fields, no recorded upload and the marker rolled back.
 The successor-fork construction case parks every peer's adopt-only snapshot post (the reduction still
 lands), resolves a four-peer dispute, adds one honest transition on the successor and checks that the
 chain anchor is still on the parent fork; the parked posts are sent when the case ends. The dispute constructed on the
@@ -131,6 +134,7 @@ the same error on the apply.
 - `a fraud proof, settled fork → multicall of applyFraudProofs + uploadDispute`: UNIT-TEST-DISPUTE-MANAGER-3-0KFW5T.P1
 - `a fraud proof, unfinalized fork → multicall of applyFraudProofs + uploadDisputeWithCalldata`: none
 - `ErrorCantParticipateInDispute → dispute() resolves and the fork stays undisputed`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P4
+- `a view behind the chain's anchor (a leaver whose latest block the remaining participants' exit snapshot passed) → dispute() resolves {} with no upload and the fork stays undisputed`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P55
 - `an inbound block landing after construction refuses the upload → the retry loads the inbound run and lands at the chain's head`: REQ-DIS-2-PKVZ7E.T2.P1, UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P34
 - `an inbound block landing after construction refuses the upload and the run cannot be loaded → the dispute fails fatally and rolls back`: REQ-DIS-2-PKVZ7E.T2.P2, UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P35
 - `a retry refused again at the same chain inbound head → fatal, marker rolled back, no third upload`: REQ-DIS-2-PKVZ7E.T2.P3, UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P36

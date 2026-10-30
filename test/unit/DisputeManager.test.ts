@@ -11,6 +11,7 @@ import {
 } from "@/types/sol-enums";
 import type { Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
+import { stageInboundBlockedExit } from "@test/fixtures/BotConnectionFixesStaging";
 import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
 import { REPLAY_GAS_READ_STUB_FAILURE } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { assertDisputeAdmissionRefuses } from "@test/fixtures/DisputeAdmissionStaging";
@@ -213,9 +214,9 @@ describe("Unit: DisputeManager", function () {
                             sm.channelId
                         );
                     const { dispute } =
-                        await sm.disputeManager.constructDispute(args.forkId, {
+                        (await sm.disputeManager.constructDispute(args.forkId, {
                             expectedSlashes: [args.removed]
-                        });
+                        }))!;
                     return {
                         onChain: onChain.map(String),
                         listed: dispute.input.onChainSlashes.map(String)
@@ -292,7 +293,9 @@ describe("Unit: DisputeManager", function () {
                 peer,
                 async (sm, args) => {
                     const { dispute, auditingData, fraudProofsToApply } =
-                        await sm.disputeManager.constructDispute(args.forkId);
+                        (await sm.disputeManager.constructDispute(
+                            args.forkId
+                        ))!;
                     // real oracle: the chain's live views accept the proof: the full walk from
                     // its start and the latest state the proof commits to
                     const chain = sm.stateChannelManagerContract;
@@ -352,7 +355,9 @@ describe("Unit: DisputeManager", function () {
                 peer,
                 async (sm, args) => {
                     const { dispute, auditingData, fraudProofsToApply } =
-                        await sm.disputeManager.constructDispute(args.forkId);
+                        (await sm.disputeManager.constructDispute(
+                            args.forkId
+                        ))!;
                     // the chain's live views accept the proof: the full walk from
                     // its start and the latest state the proof commits to
                     const chain = sm.stateChannelManagerContract;
@@ -454,7 +459,9 @@ describe("Unit: DisputeManager", function () {
                 h.getPeer(lagging),
                 async (sm, args) => {
                     const { dispute, auditingData } =
-                        await sm.disputeManager.constructDispute(args.forkId);
+                        (await sm.disputeManager.constructDispute(
+                            args.forkId
+                        ))!;
                     // real oracle: the honest peer's own dispute must not be
                     // provably slashable by the proof the auditors run
                     const slashable =
@@ -613,7 +620,9 @@ describe("Unit: DisputeManager", function () {
                 h.getPeer(2),
                 async (sm, args) => {
                     const { dispute, auditingData } =
-                        await sm.disputeManager.constructDispute(args.forkId);
+                        (await sm.disputeManager.constructDispute(
+                            args.forkId
+                        ))!;
                     // the proof is whole for this peer, and the on-chain
                     // verifier accepts it
                     // the chain's live views accept the proof: the full walk from
@@ -695,7 +704,9 @@ describe("Unit: DisputeManager", function () {
                 observer,
                 async (sm, args) => {
                     const { dispute, fraudProofsToApply } =
-                        await sm.disputeManager.constructDispute(args.forkId);
+                        (await sm.disputeManager.constructDispute(
+                            args.forkId
+                        ))!;
                     const slashes = dispute.input.onChainSlashes.map((a) =>
                         String(a).toLowerCase()
                     );
@@ -736,7 +747,9 @@ describe("Unit: DisputeManager", function () {
                             block.author
                         ).length > 0;
                     const { dispute, fraudProofsToApply } =
-                        await sm.disputeManager.constructDispute(args.forkId);
+                        (await sm.disputeManager.constructDispute(
+                            args.forkId
+                        ))!;
                     return {
                         stored,
                         fraudProofCount: fraudProofsToApply.length,
@@ -766,7 +779,9 @@ describe("Unit: DisputeManager", function () {
                 observer,
                 async (sm, args) => {
                     const { dispute, fraudProofsToApply } =
-                        await sm.disputeManager.constructDispute(args.forkId);
+                        (await sm.disputeManager.constructDispute(
+                            args.forkId
+                        ))!;
                     return {
                         fraudProofCount: fraudProofsToApply.length,
                         authorMarkedSlashed:
@@ -816,7 +831,9 @@ describe("Unit: DisputeManager", function () {
                 observer,
                 async (sm, args) => {
                     const { dispute, fraudProofsToApply } =
-                        await sm.disputeManager.constructDispute(args.forkId);
+                        (await sm.disputeManager.constructDispute(
+                            args.forkId
+                        ))!;
                     return {
                         storedCount:
                             sm.storage.fraudProofs.getFraudProofsForParticipant(
@@ -879,7 +896,9 @@ describe("Unit: DisputeManager", function () {
                         inbound
                     );
                     const { dispute, fraudProofsToApply } =
-                        await sm.disputeManager.constructDispute(args.forkId);
+                        (await sm.disputeManager.constructDispute(
+                            args.forkId
+                        ))!;
                     return {
                         fraudProofCount: fraudProofsToApply.length,
                         authorMarkedSlashed:
@@ -906,7 +925,9 @@ describe("Unit: DisputeManager", function () {
                 h.getPeer(0),
                 async (sm, args) => {
                     const { dispute } =
-                        await sm.disputeManager.constructDispute(args.forkId);
+                        (await sm.disputeManager.constructDispute(
+                            args.forkId
+                        ))!;
                     return { postedAuditingData: dispute.postedAuditingData };
                 },
                 { forkId }
@@ -926,7 +947,9 @@ describe("Unit: DisputeManager", function () {
                 h.getPeer(0),
                 async (sm, args) => {
                     const { dispute } =
-                        await sm.disputeManager.constructDispute(args.forkId);
+                        (await sm.disputeManager.constructDispute(
+                            args.forkId
+                        ))!;
                     return { postedAuditingData: dispute.postedAuditingData };
                 },
                 { forkId }
@@ -954,7 +977,9 @@ describe("Unit: DisputeManager", function () {
                 peer,
                 async (sm, args) => {
                     const { dispute } =
-                        await sm.disputeManager.constructDispute(args.forkId);
+                        (await sm.disputeManager.constructDispute(
+                            args.forkId
+                        ))!;
                     return {
                         timeoutParticipant: String(
                             dispute.input.timeout.participant
@@ -1047,7 +1072,9 @@ describe("Unit: DisputeManager", function () {
                         participantSignatureOnPreviousBlock: "0x"
                     });
                     const { dispute } =
-                        await sm.disputeManager.constructDispute(args.forkId);
+                        (await sm.disputeManager.constructDispute(
+                            args.forkId
+                        ))!;
                     return {
                         attached: String(dispute.input.timeout.participant),
                         stored: Number(
@@ -1603,6 +1630,74 @@ describe("Unit: DisputeManager", function () {
             // the handler consumes the error -> no rejection, marker cleared
             expect(r.rejected).to.equal("");
             expect(r.disputed).to.equal(false);
+        });
+
+        it("a view behind the chain's anchor (a leaver whose latest block the remaining participants' exit snapshot passed) → dispute() resolves {} with no upload and the fork stays undisputed", async function () {
+            const h = TestSession.getHarness();
+            const {
+                leaver,
+                remainingPeerIndices,
+                disputes,
+                includeInboundAgain
+            } = await stageInboundBlockedExit(h);
+            const forkId = h.activeForkId!;
+            // blind to gossip: the leaver stays behind the posted snapshot
+            const restoreConfirmations =
+                await h.rpcStub.dropNetworkConfirmations(leaver.index);
+            // its membership check parks: the exit stays pending, the fork active
+            const membershipReads = h.control(leaver).stub;
+            await membershipReads.recordChainMembershipReads(true).request();
+            try {
+                await includeInboundAgain();
+                await h.transition.advanceState({
+                    waitForPeers: remainingPeerIndices,
+                    waitForFinalization: true
+                });
+                await h.transition.postSnapshot({ peerIndex: 0 });
+                await waitFor(
+                    async () =>
+                        !(
+                            await h.query.getLocalStateSnapshot(leaver)
+                        ).snapshotData.participants.includes(leaver.address),
+                    h.event.protocolEventTimeoutMs()
+                );
+                const anchorHeight = Number(
+                    (await h.channelManager.getStateSnapshot(h.channelId))
+                        .blockHeight
+                );
+
+                const r = await h.execOnHost(
+                    leaver,
+                    async (sm, args) => {
+                        const latestHeight =
+                            sm.storage.blocks.getLatestBlockHeight(args.forkId);
+                        const isActive = sm.isActiveFork(args.forkId);
+                        const result = await sm.disputeManager.dispute(
+                            args.forkId
+                        );
+                        return {
+                            latestHeight,
+                            isActive,
+                            resultKeys: Object.keys(result),
+                            disputed: sm.storage.disputes.didIDispute(
+                                args.forkId
+                            )
+                        };
+                    },
+                    { forkId },
+                    { timeoutMs: h.event.hostExecTimeoutMs() }
+                );
+
+                // staging: admitted on the active fork, below the anchor
+                expect(r.isActive).to.equal(true);
+                expect(r.latestHeight).to.be.lessThan(anchorHeight);
+                expect(r.resultKeys).to.deep.equal([]);
+                expect(r.disputed).to.equal(false);
+                expect(await disputes.submissions()).to.deep.equal([]);
+            } finally {
+                await membershipReads.restoreChainMembershipReads().request();
+                await restoreConfirmations();
+            }
         });
 
         it("an inbound block landing after construction refuses the upload → the retry loads the inbound run and lands at the chain's head", async function () {
@@ -2496,7 +2591,9 @@ describe("Unit: DisputeManager", function () {
                 async (sm, args) => {
                     // a locally constructed dispute nobody audited -> no proof
                     const { dispute } =
-                        await sm.disputeManager.constructDispute(args.forkId);
+                        (await sm.disputeManager.constructDispute(
+                            args.forkId
+                        ))!;
                     let threw = "";
                     try {
                         await sm.disputeManager.killDispute(dispute);
@@ -3085,7 +3182,9 @@ describe("Unit: DisputeManager", function () {
                 observer,
                 async (sm, args) => {
                     const { dispute, fraudProofsToApply } =
-                        await sm.disputeManager.constructDispute(args.forkId);
+                        (await sm.disputeManager.constructDispute(
+                            args.forkId
+                        ))!;
                     return {
                         onChainSlashes: dispute.input.onChainSlashes,
                         fraudProofCount: fraudProofsToApply.length

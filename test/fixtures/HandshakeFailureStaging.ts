@@ -27,8 +27,8 @@ export type HandshakeFailureOutcome = {
  * - `read`: peer 0's chain provider is closed before the handshake, so the
  *   participant read fails.
  * - `sync`: the read succeeds; peer 1 holds its sync response until peer 0's
- *   chain provider is closed, so the chain read that applies the response
- *   fails and the sync throws.
+ *   chain provider is closed, so the head read that applying the response
+ *   starts with fails and the sync throws.
  * - `teardown`: peer 0 aborts and closes its provider while the participant
  *   read is in flight.
  */

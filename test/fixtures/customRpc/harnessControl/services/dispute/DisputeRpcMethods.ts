@@ -77,6 +77,10 @@ export class DisputeRpcMethods extends ANetworkRpcMethods<DisputeService> {
     }> {
         const result =
             await this.service.disputeManager.constructDispute(forkId);
+        if (!result)
+            throw new Error(
+                `constructDispute: fork ${forkId} is below its anchor`
+            );
         return {
             encodedDispute: Codec.encode(
                 result.dispute,
