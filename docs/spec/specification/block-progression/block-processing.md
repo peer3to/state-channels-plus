@@ -197,7 +197,8 @@ predicate establishes, never by who is processing it:
   participant by that participant's own signature: double-signing (same author, two different
   blocks at one fork/height); an invalid state transition by the author (failed execution,
   commitment mismatch, extending the committed predecessor differently, or authoring out of turn);
-  a wrong genesis, when the node holds the fork's genesis to prove it; a fabricated inbound
+  a wrong genesis, when the node holds the fork's genesis to prove it and the chain still holds that
+  fork at its genesis to judge it; a fabricated inbound
   message block; an objective timestamp violation; and — for on-chain postings — an unauthentic
   posted block, a fault of the poster. Evidence against the offender is constructible entirely
   from data the node already holds ([`REQ-BLOCK-PIPE-8-N529VH`](block-processing.md#req-block-pipe-8-n529vh)).
@@ -205,7 +206,10 @@ predicate establishes, never by who is processing it:
   union, a conflicting-but-unlinked block, an unlinked non-first block, undecodable or
   authentication-failing data, a wrong-channel block, or a genesis conflict the node holds no
   genesis to disprove. The only offenders are the suppliers that carried it (transport
-  attribution, never a channel signature). Special case: stray non-member signatures on an
+  attribution, never a channel signature). A block-zero conflict on a fork the chain holds past its
+  genesis is no provable fault either, since the chain no longer judges it: another author's block
+  zero against the stored one cuts its suppliers and its author, and an unlinked block zero with
+  none stored is dropped with no verdict. Special case: stray non-member signatures on an
   otherwise valid block are junk signatures, not a junk block — they are stripped, exactly their
   suppliers are penalized, and the block continues ([`REQ-BLOCK-PIPE-11-DCHAJ2`](block-processing.md#req-block-pipe-11-dchaj2)).
 - **Not-yet-ready.** No misbehavior is demonstrated; the node lacks the context to judge: channel

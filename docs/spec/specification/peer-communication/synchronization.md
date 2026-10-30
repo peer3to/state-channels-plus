@@ -371,8 +371,8 @@ walk, forged finality fails milestone verification, forged history fails range l
 balances fail the invariant check, and retained claims must satisfy the selected trusted-start walk.
 A genesis that differs only in its timestamp, which would make the requester's first block slashable as
 WrongGenesis, fails the step-5 binding to chain values. Past a fork's genesis on chain, a requester
-without a held genesis accepts the genesis timestamp unverified, and an honest peer that judges a block 0
-there files a WrongGenesis proof the chain rejects as invalid
+without a held genesis accepts the genesis timestamp unverified; the chain no longer judges a block 0
+there, so an honest peer files no WrongGenesis proof for it
 ([`FIND-FRAUD-1-TRWDPS`](../../audit/open-findings.md#find-fraud-1-trwdps)).
 Residual exposures include requester-side balance enforcement without an equivalent universal guarantee
 on the snapshot-update path and too-old or

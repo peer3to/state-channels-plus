@@ -65,6 +65,11 @@ Proof application
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P30` — ForgedInboundMessageBlock citing a fabricated inbound block one above the snapshot's inbound head slashes the author
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P31` — a fabricated inbound block at any height from an outsider or an eligible submitter: at or below the snapshot's inbound head the proof reverts and nobody is slashed; above it the author is slashed and the submitter is not
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P32` — any pruned genuine inbound block from an outsider or an eligible submitter reverts; nobody is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P33` — WrongGenesis citing a block 0 that does not link to the fork's on-chain genesis while that snapshot is still the genesis: the author is slashed, the prover kept
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P34` — WrongGenesis citing a block 0 that links to the on-chain genesis while the snapshot is still the genesis: the handler goes on to the origin window, which the opened genesis has none of, and reverts `RaceConditionDisputeWindowNotOpen`; nobody is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P35` — WrongGenesis citing an unlinked block 0 after a same-fork adoption moved the snapshot past genesis reverts `RaceConditionBlockHeightTooOld(snapshotHeight, 0)`; nobody is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P36` — the same past-genesis WrongGenesis with a linked block 0 from an outsider reverts the same way; nobody is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P37` — past genesis, a block 0 with any previous-block hash from an eligible submitter or an outsider: always refused, nobody slashed
 
 ## UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04
 

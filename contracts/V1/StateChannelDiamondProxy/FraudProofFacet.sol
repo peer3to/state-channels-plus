@@ -301,9 +301,12 @@ contract FraudProofFacet is StateChannelCommon {
         StateSnapshot memory onChainSnapshot = _getStateSnapshot(channelId);
 
         if (onChainSnapshot.forkId == forkId) {
-            if (!UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(onChainSnapshot)) {
-                return _invalid();
-            }
+            // past genesis on its fork the chain no longer holds the genesis to judge block 0 against -> revert,
+            // never slash the prover
+            require(
+                UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(onChainSnapshot),
+                RaceConditionBlockHeightTooOld(onChainSnapshot.blockHeight, _block.transaction.header.transactionCnt)
+            );
             if (_block.previousBlockHash != keccak256(abi.encode(onChainSnapshot))) return _valid(blockAuthor);
         }
 

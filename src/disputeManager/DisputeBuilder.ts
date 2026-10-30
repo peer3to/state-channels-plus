@@ -353,6 +353,22 @@ export default class DisputeBuilder {
                     ))
                 )
                     continue;
+                // a WrongGenesis proof the chain no longer judges (its fork past genesis) reverts the multicall too
+                if (
+                    Number(fraudProof.proofType) ===
+                        toSolidityFraudProofType(FraudProofType.WrongGenesis) &&
+                    StateSnapshot.from(
+                        await this.stateChannelManagerContract.getStateSnapshot(
+                            this.channelId
+                        )
+                    ).isPastGenesisOf(
+                        Codec.decode(
+                            fraudProof.encodedProof,
+                            FraudProofType.WrongGenesis
+                        ).genesisSnapshot.forkId
+                    )
+                )
+                    continue;
                 fraudProofsToApply.push(fraudProof);
                 slashedOnChain.add(participant);
                 break;

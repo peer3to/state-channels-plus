@@ -1,7 +1,7 @@
 # DisputeManager.test.ts
 
 Test file: [test/unit/DisputeManager.test.ts](../../../../../../test/unit/DisputeManager.test.ts)
-Exercises: [DisputeManager.ts](../../../../implementation/source/src/disputeManager/DisputeManager.ts.md)
+Exercises: [DisputeManager.ts](../../../../implementation/source/src/disputeManager/DisputeManager.ts.md), [DisputeBuilder.ts](../../../../implementation/source/src/disputeManager/DisputeBuilder.ts.md)
 
 ## Overview
 
@@ -86,6 +86,12 @@ applied; and store a proof citing a genuine top-up still held above the head and
 A `dispute()` case fails the first send once with `RaceConditionBlockHeightTooOld` on the wait and
 sees no rejection and one rebuilt submission naming the author, and a `killDispute` case consumes
 the same error on the apply.
+
+Two construction cases store a WrongGenesis proof against the stored block 0 through the real
+`FraudProofService` producer and run `constructDispute`: once the chain holds the fork past its
+genesis (`WrongGenesisPastGenesisStaging`) the proof stays stored but is left out and its author
+is not added to `onChainSlashes`; while the chain still holds the genesis it is bundled and the
+author is added.
 
 ## Tests
 
@@ -182,5 +188,7 @@ the same error on the apply.
 - `stored forged-inbound proof above the pruned head → constructDispute bundles it, author marked slashed`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P18
 - `stale forged-inbound proof stored before a valid proof against the same author → constructDispute applies the valid one`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P19
 - `stored forged-inbound proof citing a genuine inbound block still held above the head → constructDispute leaves it out`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P20
+- `stored WrongGenesis proof while the chain holds the fork past genesis → constructDispute leaves it out, author not marked slashed`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P21
+- `stored WrongGenesis proof while the chain still holds the genesis → constructDispute bundles it, author marked slashed`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P22
 - `RaceConditionBlockHeightTooOld on the wait → no rejection, one rebuilt dispute is sent`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P56
 - `RaceConditionBlockHeightTooOld on the apply → consumed, no rejection, no detached error`: UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P14

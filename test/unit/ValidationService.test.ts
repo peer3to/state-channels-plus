@@ -13,6 +13,10 @@ import {
     assertObserverHook
 } from "@test/fixtures/SpectatingFraudStaging";
 import {
+    encodeUnlinkedBlockZero,
+    stageChainPastGenesis
+} from "@test/fixtures/WrongGenesisPastGenesisStaging";
+import {
     MathTestSession as TestSession,
     MIN_TEST_TIME_CONFIG
 } from "@test/harness";
@@ -529,6 +533,56 @@ describe("Unit: ValidationService", function () {
                     solProofType(FraudProofType.WrongGenesis)
                 );
             }
+        });
+
+        // the chain no longer judges block 0 once it holds the fork past genesis -> a proof would revert
+        it("height-0 block not linked to genesis while the chain holds the fork past genesis, no block 0 stored → dropped, no fraud proof, no dispute, nobody disconnected", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, blockZeroAuthor } = await stageChainPastGenesis(h);
+            const observer = h.getPeer(0);
+            // history below the anchor pruned, as a sync above the anchor leaves it
+            await h
+                .control(observer)
+                .stub.pruneStoredBlocksBelowAnchor(forkId, 1)
+                .request();
+            expect(
+                await h
+                    .control(observer)
+                    .query.getBlockByHeight(forkId, 0)
+                    .request()
+            ).to.equal(null);
+            const author = h.peers.find((p) => p.address === blockZeroAuthor)!;
+            const encoded = await encodeUnlinkedBlockZero(h, author, forkId);
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockValidation(encoded)
+                .request();
+
+            expect(r.firedHooks).to.include("wrongGenesisDetected");
+            expect(r.resultName).to.equal("DUPLICATE");
+            expect(r.fraudProofType).to.equal(null);
+            expect(r.disputedForkIds).to.deep.equal([]);
+            expect(r.disconnectedAddresses).to.deep.equal([]);
+        });
+
+        it("conflict at height 0 from another author while the chain holds the fork past genesis → DISCONNECT of sources and author, no fraud proof, no dispute", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, blockZeroAuthor } = await stageChainPastGenesis(h);
+            const observer = h.getPeer(0);
+            const other = h.peers.find((p) => p.address !== blockZeroAuthor)!;
+            const encoded = await encodeUnlinkedBlockZero(h, other, forkId);
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockValidation(encoded)
+                .request();
+
+            expect(r.firedHooks).to.include("wrongGenesisDetected");
+            expect(r.resultName).to.equal("DISCONNECT");
+            expect(r.fraudProofType).to.equal(null);
+            expect(r.disputedForkIds).to.deep.equal([]);
+            expect(r.disconnectedAddresses).to.include(other.address);
         });
 
         it("linked next block by the wrong leader → invalidStateTransitionDetected → DISPUTE + InvalidStateTransition proof", async function () {
