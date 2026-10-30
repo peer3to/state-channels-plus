@@ -124,6 +124,27 @@ describe("MirrorRpcProvider", function () {
         );
     });
 
+    it("falls back to a lazy read within the snapshot wait, before a 3 s RPC deadline, when the snapshot is held back", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, address } = await deployMirroredStorage(session);
+            await (await storage.setValue(5n)).wait();
+            const release = session.service.holdNotifications("scp_snapshot");
+
+            const started = Date.now();
+            const word = await session.provider.getStorage(address, 0);
+            const elapsed = Date.now() - started;
+            release();
+
+            expect(BigInt(word)).to.equal(5n);
+            expect(elapsed).to.be.greaterThan(SNAPSHOT_WAIT_MS * 0.8);
+            expect(elapsed).to.be.lessThan(3_000);
+            expect(session.provider.mirrorStatistics).to.include({
+                snapshotTimeouts: 1,
+                lazyReads: 1
+            });
+        });
+    });
+
     it("asks the service for exactly the missing fields, at the head block, when no snapshot comes", async function () {
         await withMirrorSession(async (session) => {
             const { storage, address } = await deployMirroredStorage(session);

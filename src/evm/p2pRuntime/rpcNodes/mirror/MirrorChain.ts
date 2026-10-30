@@ -41,9 +41,11 @@ const OWN_TRANSACTION_WAIT_MS = 4_000;
  * Longest the mirror waits, after following a new account, for the feed to
  * push its snapshot before it asks for the account's state itself. A feed
  * that already holds the account pushes it at once; one that must rebuild it
- * from history pushes it when that is done.
+ * from history pushes it when that is done. It stays below the 3 s deadline
+ * of the SDK's own RPCs (dispute.constructDispute reads through the mirror):
+ * a slow first sync falls back to lazy reads before such a call times out.
  */
-export const SNAPSHOT_WAIT_MS = 4_000;
+export const SNAPSHOT_WAIT_MS = 1_000;
 
 /**
  * Passes over one read the mirror makes before giving up on it: each pass
