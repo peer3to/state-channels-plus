@@ -1,38 +1,62 @@
+import {
+    PersistentCollection,
+    type PersistenceController
+} from "./persistence";
 import StateSnapshot from "@/models/StateSnapshot";
-import { Hash, ForkId } from "@/types/types";
+import type { ForkId, Hash } from "@/types/types";
 
 type StateSnapshotHash = Hash;
-
 type StoreOptions = {
     hash?: StateSnapshotHash;
 };
 
 export class StateSnapshotStorage {
-    private snapshotsByHash: Map<StateSnapshotHash, StateSnapshot>;
-    // Store genesis SnapshotData by forkId (forkId = hash(snapshotData)
-    private genesisSnapshotByForkId: Map<ForkId, StateSnapshot>;
+    private readonly snapshotsByHash: PersistentCollection<
+        StateSnapshotHash,
+        StateSnapshot
+    >;
 
-    constructor() {
-        this.snapshotsByHash = new Map();
-        this.genesisSnapshotByForkId = new Map();
+    // Store genesis SnapshotData by forkId (forkId = hash(snapshotData)
+    private readonly genesisSnapshotByForkId = new Map<
+        ForkId,
+        StateSnapshotHash
+    >();
+
+    constructor(controller?: PersistenceController) {
+        this.snapshotsByHash = new PersistentCollection(
+            "stateSnapshots",
+            controller,
+            () => this.rebuildIndexes()
+        );
     }
 
     // ====================================
     // CREATE
     // ====================================
 
-    storeStateSnapshot(
+    public storeStateSnapshot(
         snapshot: StateSnapshot,
         options?: StoreOptions
     ): StateSnapshotHash {
         const hash = options?.hash ?? snapshot.hash;
-
-        this.snapshotsByHash.set(hash, snapshot);
-
-        if (snapshot.isGenesis) {
-            this.genesisSnapshotByForkId.set(snapshot.forkID, snapshot);
-        }
-
+        this.snapshotsByHash.update(hash, (existing) => {
+            const existingGenesis = this.genesisSnapshotByForkId.get(
+                snapshot.forkID
+            );
+            if (
+                snapshot.isGenesis &&
+                existingGenesis &&
+                existingGenesis !== hash
+            ) {
+                throw new Error(
+                    `Conflicting genesis snapshots for fork ${snapshot.forkID}`
+                );
+            }
+            if (existing && existing.encode() !== snapshot.encode()) {
+                throw new Error(`Incompatible state snapshot for hash ${hash}`);
+            }
+            return snapshot;
+        });
         return hash;
     }
 
@@ -43,13 +67,37 @@ export class StateSnapshotStorage {
     /**
      * Get a state snapshot by its hash
      */
-    getStateSnapshotByHash(
+    public getStateSnapshotByHash(
         snapshotHash: StateSnapshotHash
     ): StateSnapshot | undefined {
         return this.snapshotsByHash.get(snapshotHash);
     }
 
-    getGenesisSnapshotByForkId(forkId: ForkId): StateSnapshot | undefined {
-        return this.genesisSnapshotByForkId.get(forkId);
+    public getGenesisSnapshotByForkId(
+        forkId: ForkId
+    ): StateSnapshot | undefined {
+        const hash = this.genesisSnapshotByForkId.get(forkId);
+        return hash ? this.snapshotsByHash.get(hash) : undefined;
+    }
+
+    public getSnapshotCount(): number {
+        return this.snapshotsByHash.size;
+    }
+
+    public rebuildIndexes(): void {
+        this.genesisSnapshotByForkId.clear();
+        for (const [hash, snapshot] of this.snapshotsByHash.entries()) {
+            if (snapshot.isGenesis) {
+                const existingHash = this.genesisSnapshotByForkId.get(
+                    snapshot.forkID
+                );
+                if (existingHash && existingHash !== hash) {
+                    throw new Error(
+                        `Conflicting genesis snapshots for fork ${snapshot.forkID}`
+                    );
+                }
+                this.genesisSnapshotByForkId.set(snapshot.forkID, hash);
+            }
+        }
     }
 }

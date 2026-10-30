@@ -1,3 +1,7 @@
+import {
+    PersistentCollection,
+    type PersistenceController
+} from "./persistence";
 import { BlockHeight } from "@/types/types";
 
 /** This runtime's submitted join, until it is seated or ends. */
@@ -22,36 +26,41 @@ export type JoinUpdate = Partial<
     Omit<JoinRecord, "id" | "submissionHeight" | "authorizationDeadline">
 >;
 
+type ForceJoinKey = "value";
+
 export class ForceJoinStorage {
-    private join?: JoinRecord;
+    private readonly value: PersistentCollection<ForceJoinKey, JoinRecord>;
     private nextJoinId = 0;
+
+    constructor(controller?: PersistenceController) {
+        this.value = new PersistentCollection("forceJoin", controller);
+    }
 
     startJoin(
         submissionHeight: BlockHeight,
         authorizationDeadline: number
     ): JoinRecord {
-        this.join = {
+        return this.value.set("value", {
             id: this.nextJoinId++,
             submissionHeight,
             authorizationDeadline,
             isForceJoinDeadlinePassed: false,
             isDisputeStarted: false
-        };
-        return this.join;
+        });
     }
 
     getJoin(): JoinRecord | undefined {
-        return this.join;
+        return this.value.get("value");
     }
 
     /** Applies `update` to the join `id`; false when it is no longer the current join. */
     updateJoin(id: number, update: JoinUpdate): boolean {
-        if (this.join?.id !== id) return false;
-        Object.assign(this.join, update);
+        if (this.value.get("value")?.id !== id) return false;
+        this.value.update("value", (join) => join && { ...join, ...update });
         return true;
     }
 
     clear(): void {
-        this.join = undefined;
+        this.value.delete("value");
     }
 }

@@ -1,6 +1,10 @@
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
 import type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";
 import type { CustomRpcManifest } from "@/rpc/network/registry";
+import type {
+    PersistenceOptions,
+    PersistencePartitionIdentity
+} from "@/storage/persistence";
 import type { Config } from "@/utils/config";
 
 /** Serializable description of a deployed contract the host can rebuild. */
@@ -27,6 +31,11 @@ export interface SetupPayload {
      * `ethers.Wallet` inside the host.
      */
     signerSecret: string;
+    persistence?: {
+        options: PersistenceOptions;
+        identity: Omit<PersistencePartitionIdentity, "channelId">;
+        channelId?: string;
+    };
     peerId?: number;
     /** Optional dynamic custom RPC manifest resolved on the host side. */
     customRpcManifest?: CustomRpcManifest;

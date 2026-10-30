@@ -1,6 +1,12 @@
 import { coordinateKey, CoordinateKey } from "./keys";
+import {
+    PersistentCollection,
+    type PersistenceController
+} from "./persistence";
+import type { PersistedBlockRecord } from "./persistence/storageCodecs";
 import { Block, BlockCoordinates } from "@/models";
-import { Hash, ForkId, BlockHeight, Signature, Timestamp } from "@/types/types";
+import { BlockHeight, ForkId, Hash, Signature, Timestamp } from "@/types/types";
+
 type StoreOptions = {
     hash?: Hash;
     coordinates?: BlockCoordinates;
@@ -16,23 +22,23 @@ export class BlockStorage {
     // ====================================
     // STORAGE MAPS
     // ====================================
-    private hashToBlockMap: Map<Hash, Block>;
-    private coordinatesToBlockMap: Map<CoordinateKey, Block>;
+    private readonly records: PersistentCollection<Hash, PersistedBlockRecord>;
+    private readonly coordinateToHash = new Map<CoordinateKey, Hash>();
 
     // NEW: Track highest height for each forkId
-    private forkIdToMaxHeightMap: Map<ForkId, BlockHeight>;
+    private readonly forkIdToMaxHeightMap = new Map<ForkId, BlockHeight>();
 
-    constructor() {
-        this.hashToBlockMap = new Map();
-        this.coordinatesToBlockMap = new Map();
-        this.forkIdToMaxHeightMap = new Map();
+    constructor(controller?: PersistenceController) {
+        this.records = new PersistentCollection("blocks", controller, () =>
+            this.rebuildIndexes()
+        );
     }
 
     // ====================================
     // CREATE
     // ====================================
 
-    storeBlock(block: Block, options?: StoreOptions): Hash | undefined {
+    public storeBlock(block: Block, options?: StoreOptions): Hash | undefined {
         // Determine hash - use provided or compute
         const blockHash = options?.hash ?? block.hash;
 
@@ -40,31 +46,42 @@ export class BlockStorage {
         const coordinates = options?.coordinates ?? block.coordinates;
 
         // Store the block entry
-        const coordinateKey = this.coordinatesToKey(coordinates);
-        const existingBlock = this.coordinatesToBlockMap.get(coordinateKey);
-
-        if (!existingBlock) {
-            // Store new block entry
-            this.hashToBlockMap.set(blockHash, block);
-            this.coordinatesToBlockMap.set(coordinateKey, block);
-
-            // Update max height unless this is a persistence-only operation
-            if (!options?.justPersist) {
-                this._updateMaxHeight(coordinates.forkId, coordinates.height);
+        let compatible = true;
+        this.records.update(blockHash, (record) => {
+            const coordinateKey = this.coordinatesToKey(coordinates);
+            const storedCoordinateHash =
+                this.coordinateToHash.get(coordinateKey);
+            if (storedCoordinateHash && storedCoordinateHash !== blockHash) {
+                // Not equal => abort
+                compatible = false;
+                return record;
             }
 
-            return blockHash;
-        }
+            if (!record) {
+                // Store new block entry
+                return {
+                    block,
+                    coordinates,
+                    advancesTip: !options?.justPersist
+                };
+            }
+            if (
+                !block.equals(record.block) ||
+                this.coordinatesToKey(record.coordinates) !== coordinateKey
+            ) {
+                // Not equal => abort
+                compatible = false;
+                return record;
+            }
 
-        if (!block.equals(existingBlock)) {
-            // Not equal => abort
-            return undefined;
-        }
+            // They are equal => merge signatures
+            record.block.mergeFrom(block);
+            if (!options?.justPersist) record.advancesTip = true;
+            return record;
+        });
+        if (!compatible) return undefined;
 
-        // They are equal => merge signatures
-        existingBlock.mergeFrom(block);
-
-        // Return the hash (same object in both maps)
+        // Update max height unless this is a persistence-only operation
         return blockHash;
     }
 
@@ -77,28 +94,30 @@ export class BlockStorage {
     ────────────────────────────────────────────────────────────────────────────*/
 
     /** [OVERLOAD 1] Get block entry by hash */
-    getBlock(blockHash: Hash): Block | undefined;
+    public getBlock(blockHash: Hash): Block | undefined;
 
     /** [OVERLOAD 2] Get block entry by coordinates */
-    getBlock(forkId: ForkId, height: BlockHeight): Block | undefined;
+    public getBlock(forkId: ForkId, height: BlockHeight): Block | undefined;
 
     /*────────────────────────────────────────────────────────────────────────────
       IMPLEMENTATION
     ────────────────────────────────────────────────────────────────────────────*/
-    getBlock(
+    public getBlock(
         hashOrForkId: Hash | ForkId,
         height?: BlockHeight
     ): Block | undefined {
         if (height === undefined) {
             // ┌─ ROUTES TO: [OVERLOAD 1] - by hash
-            return this.hashToBlockMap.get(hashOrForkId as Hash);
+            return this.records.get(hashOrForkId as Hash)?.block;
         }
         // ┌─ ROUTES TO: [OVERLOAD 2] - by coordinates
-        const coordinateKey = this.coordinatesToKey({
-            forkId: hashOrForkId as ForkId,
-            height
-        });
-        return this.coordinatesToBlockMap.get(coordinateKey);
+        const hash = this.coordinateToHash.get(
+            this.coordinatesToKey({
+                forkId: hashOrForkId as ForkId,
+                height
+            })
+        );
+        return hash ? this.records.get(hash)?.block : undefined;
     }
 
     // ====================================
@@ -110,10 +129,13 @@ export class BlockStorage {
     ────────────────────────────────────────────────────────────────────────────*/
 
     /** [OVERLOAD 1] Insert signature by hash */
-    insertSignature(signature: Signature, blockHash: Hash): Block | undefined;
+    public insertSignature(
+        signature: Signature,
+        blockHash: Hash
+    ): Block | undefined;
 
     /** [OVERLOAD 2] Insert signature by coordinates */
-    insertSignature(
+    public insertSignature(
         signature: Signature,
         forkId: ForkId,
         height: BlockHeight
@@ -122,17 +144,26 @@ export class BlockStorage {
     /*────────────────────────────────────────────────────────────────────────────
       IMPLEMENTATION
     ────────────────────────────────────────────────────────────────────────────*/
-    insertSignature(
+    public insertSignature(
         signature: Signature,
         hashOrForkId: Hash | ForkId,
         height?: BlockHeight
     ): Block | undefined {
-        const block =
+        const blockHash =
             height === undefined
-                ? this.getBlock(hashOrForkId)
-                : this.getBlock(hashOrForkId, height);
-
-        return block?.expandSignatures([signature]);
+                ? (hashOrForkId as Hash)
+                : this.coordinateToHash.get(
+                      this.coordinatesToKey({
+                          forkId: hashOrForkId as ForkId,
+                          height
+                      })
+                  );
+        if (!blockHash) return undefined;
+        const updated = this.records.update(blockHash, (record) => {
+            record?.block.expandSignatures([signature]);
+            return record;
+        });
+        return updated?.block;
     }
 
     // ====================================
@@ -144,10 +175,10 @@ export class BlockStorage {
     ────────────────────────────────────────────────────────────────────────────*/
 
     /** [OVERLOAD 1] Set on-chain timestamp by hash */
-    setOnChainTimestamp(blockHash: Hash, timestamp: Timestamp): boolean;
+    public setOnChainTimestamp(blockHash: Hash, timestamp: Timestamp): boolean;
 
     /** [OVERLOAD 2] Set on-chain timestamp by coordinates */
-    setOnChainTimestamp(
+    public setOnChainTimestamp(
         forkId: ForkId,
         height: BlockHeight,
         timestamp: Timestamp
@@ -156,24 +187,28 @@ export class BlockStorage {
     /*────────────────────────────────────────────────────────────────────────────
       IMPLEMENTATION
     ────────────────────────────────────────────────────────────────────────────*/
-    setOnChainTimestamp(
+    public setOnChainTimestamp(
         hashOrForkId: Hash | ForkId,
         timestampOrHeight: Timestamp | BlockHeight,
         timestamp?: Timestamp
     ): boolean {
-        let block: Block | undefined;
-        let onChainTimestamp: Timestamp;
-        if (timestamp === undefined) {
-            // ┌─ ROUTES TO: [OVERLOAD 1] - by hash
-            block = this.getBlock(hashOrForkId);
-            onChainTimestamp = timestampOrHeight;
-        } else {
-            // ┌─ ROUTES TO: [OVERLOAD 2] - by coordinates
-            block = this.getBlock(hashOrForkId, timestampOrHeight);
-            onChainTimestamp = timestamp;
-        }
-        if (!block) return false;
-        block.onChainTimestamp = onChainTimestamp;
+        const blockHash =
+            timestamp === undefined
+                ? (hashOrForkId as Hash)
+                : this.coordinateToHash.get(
+                      this.coordinatesToKey({
+                          forkId: hashOrForkId as ForkId,
+                          height: timestampOrHeight as BlockHeight
+                      })
+                  );
+        if (!blockHash || !this.records.has(blockHash)) return false;
+        this.records.update(blockHash, (record) => {
+            if (record) {
+                record.block.onChainTimestamp =
+                    timestamp ?? (timestampOrHeight as Timestamp);
+            }
+            return record;
+        });
         return true;
     }
 
@@ -186,72 +221,51 @@ export class BlockStorage {
     ────────────────────────────────────────────────────────────────────────────*/
 
     /** [OVERLOAD 1] Delete block entry by hash */
-    deleteBlock(blockHash: Hash): boolean;
+    public deleteBlock(blockHash: Hash): boolean;
 
     /** [OVERLOAD 2] Delete block entry by coordinates */
-    deleteBlock(forkId: ForkId, height: BlockHeight): boolean;
+    public deleteBlock(forkId: ForkId, height: BlockHeight): boolean;
 
     /*────────────────────────────────────────────────────────────────────────────
       IMPLEMENTATION
     ────────────────────────────────────────────────────────────────────────────*/
-    deleteBlock(hashOrForkId: Hash | ForkId, height?: BlockHeight): boolean {
+    public deleteBlock(
+        hashOrForkId: Hash | ForkId,
+        height?: BlockHeight
+    ): boolean {
         if (height === undefined) {
             // ┌─ ROUTES TO: [OVERLOAD 1] - delete by hash
-            const block = this.hashToBlockMap.get(hashOrForkId as Hash);
-            if (!block) return false;
-
             // Need to find and delete from coordinates map too
-            const coordinateKey = this.coordinatesToKey(block.coordinates);
-
-            this.hashToBlockMap.delete(hashOrForkId as Hash);
-            this.coordinatesToBlockMap.delete(coordinateKey);
-
-            const blockHeight = block.height;
-            if (blockHeight === this.forkIdToMaxHeightMap.get(block.forkId)) {
-                this.forkIdToMaxHeightMap.set(
-                    block.forkId,
-                    Math.max(0, blockHeight - 1)
-                );
-            }
-
-            return true;
+        } else {
+            // ┌─ ROUTES TO: [OVERLOAD 2] - delete by coordinates
+            // Need to find and delete from hash map too
         }
-
-        // ┌─ ROUTES TO: [OVERLOAD 2] - delete by coordinates
-        const forkId = hashOrForkId as ForkId;
-        const coordinateKey = this.coordinatesToKey({
-            forkId: forkId,
-            height
-        });
-        const block = this.coordinatesToBlockMap.get(coordinateKey);
-        if (!block) return false;
-
-        // Need to find and delete from hash map too
-        const blockHash = block.hash;
-
-        this.coordinatesToBlockMap.delete(coordinateKey);
-        this.hashToBlockMap.delete(blockHash);
-
-        if (height === this.forkIdToMaxHeightMap.get(forkId)) {
-            this.forkIdToMaxHeightMap.set(forkId, Math.max(0, height - 1));
-        }
-
-        return true;
+        const blockHash =
+            height === undefined
+                ? (hashOrForkId as Hash)
+                : this.coordinateToHash.get(
+                      this.coordinatesToKey({
+                          forkId: hashOrForkId as ForkId,
+                          height
+                      })
+                  );
+        if (!blockHash) return false;
+        return this.records.delete(blockHash);
     }
 
-    getNextBlockHeight(forkId: ForkId): BlockHeight {
+    public getNextBlockHeight(forkId: ForkId): BlockHeight {
         return this.getLatestBlockHeight(forkId) + 1;
     }
 
     // -1 when the fork holds no block yet (its genesis is the latest state)
-    getLatestBlockHeight(forkId: ForkId): BlockHeight {
+    public getLatestBlockHeight(forkId: ForkId): BlockHeight {
         return this.forkIdToMaxHeightMap.get(forkId) ?? -1;
     }
 
     /*────────────────────────────────────────────────────────────────────────────
       GET ALL BLOCKS BY FORK ID - SEQUENTIAL ITERATOR
     ────────────────────────────────────────────────────────────────────────────*/
-    *getIterator(
+    public *getIterator(
         forkId: ForkId,
         sortOrder?: SortOrder,
         startHeight?: BlockHeight
@@ -262,51 +276,73 @@ export class BlockStorage {
 
         if (sortOrder === SortOrder.ASC) {
             // Start from startHeight or 0, go up to maxHeight
-            const start = startHeight !== undefined ? startHeight : 0;
+            const start = startHeight ?? 0;
             for (let height = start; height <= maxHeight; height++) {
-                const coordinateKey = this.coordinatesToKey({ forkId, height });
-                const block = this.coordinatesToBlockMap.get(coordinateKey);
-                if (block) {
-                    yield block;
-                }
+                const block = this.getBlock(forkId, height);
+                if (block) yield block;
             }
-        } else {
-            // Start from startHeight or maxHeight, go down to 0. Clamp to
-            // maxHeight so a caller passing an absurd startHeight (e.g. a
-            // remote-supplied sync target) can't loop over the empty range
-            // above the fork's tip and stall the event loop.
-            const start =
-                startHeight !== undefined
-                    ? Math.min(startHeight, maxHeight)
-                    : maxHeight;
-            for (let height = start; height >= 0; height--) {
-                const coordinateKey = this.coordinatesToKey({ forkId, height });
-                const block = this.coordinatesToBlockMap.get(coordinateKey);
-                if (block) {
-                    yield block;
-                }
-            }
+            return;
+        }
+
+        // Start from startHeight or maxHeight, go down to 0. Clamp to
+        // maxHeight so a caller passing an absurd startHeight (e.g. a
+        // remote-supplied sync target) can't loop over the empty range
+        // above the fork's tip and stall the event loop.
+        const start =
+            startHeight !== undefined
+                ? Math.min(startHeight, maxHeight)
+                : maxHeight;
+        for (let height = start; height >= 0; height--) {
+            const block = this.getBlock(forkId, height);
+            if (block) yield block;
         }
     }
 
-    getLatestBlock(forkId: ForkId): Block | undefined {
-        const blockIterator = this.getIterator(forkId, SortOrder.DESC);
-        const iteratorResult = blockIterator.next();
-        return iteratorResult.done ? undefined : iteratorResult.value;
+    public getLatestBlock(forkId: ForkId): Block | undefined {
+        const result = this.getIterator(forkId, SortOrder.DESC).next();
+        return result.done ? undefined : result.value;
     }
 
     // ====================================
     // PRIVATE HELPERS
     // ====================================
 
+    public rebuildIndexes(): void {
+        this.coordinateToHash.clear();
+        this.forkIdToMaxHeightMap.clear();
+        for (const [hash, record] of this.records.entries()) {
+            const coordinateKey = this.coordinatesToKey(record.coordinates);
+            const existingHash = this.coordinateToHash.get(coordinateKey);
+            if (existingHash && existingHash !== hash) {
+                throw new Error(
+                    `Conflicting persisted blocks at ${coordinateKey}`
+                );
+            }
+            this.indexRecord(hash, record);
+        }
+    }
+
     private coordinatesToKey(coordinates: BlockCoordinates): CoordinateKey {
         return coordinateKey(coordinates.forkId, coordinates.height);
     }
 
-    private _updateMaxHeight(forkId: ForkId, height: BlockHeight): void {
-        const currentMax = this.forkIdToMaxHeightMap.get(forkId);
-        if (currentMax === undefined || height > currentMax) {
-            this.forkIdToMaxHeightMap.set(forkId, height);
+    private indexRecord(hash: Hash, record: PersistedBlockRecord): void {
+        this.coordinateToHash.set(
+            this.coordinatesToKey(record.coordinates),
+            hash
+        );
+        if (!record.advancesTip) return;
+        const currentMax = this.forkIdToMaxHeightMap.get(
+            record.coordinates.forkId
+        );
+        if (
+            currentMax === undefined ||
+            record.coordinates.height > currentMax
+        ) {
+            this.forkIdToMaxHeightMap.set(
+                record.coordinates.forkId,
+                record.coordinates.height
+            );
         }
     }
 }

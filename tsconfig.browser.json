@@ -22,6 +22,9 @@
             "@platform/p2pRuntimeChannel": [
                 "src/transport/browser/RuntimeChannel"
             ],
+            "@platform/persistenceDatabase": [
+                "src/storage/persistence/browser/createPersistenceDatabase"
+            ],
             "@platform/DeployUtils": ["src/utils/browser/DeployUtils"],
             "@platform/LocalDiscoveryServer": [
                 "src/utils/browser/LocalDiscoveryServer"
@@ -45,6 +48,7 @@
         "temp",
         "node_modules",
         "src/evm/node",
+        "src/storage/persistence/node",
         "src/utils/node",
         "src/utils/logging/node",
         "test/evm/workers/node"
