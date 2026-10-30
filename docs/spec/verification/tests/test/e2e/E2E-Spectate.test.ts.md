@@ -92,7 +92,7 @@ answered twice, neither peer blacklisted the other and the transport stayed open
 - `skips latest state persistence when local storage is already ahead`: INV-SYNC-3-A7A2ED.T1.P30
 - `aborts spectating when a finalized sync block conflicts with storage`: INV-SYNC-3-A7A2ED.T1.P3
 - `should spectate successfully even when it must traverse forks (dispute -> reduced fork)`: none
-- `participant whose provider lags a snapshot post syncs from a responder that saw it → the sync waits for its provider to catch up and completes; responder kept`: INV-SYNC-2-AT3RXE.T1.P4
+- `participant whose provider lags a snapshot post syncs from a responder that saw it → the sync waits for its provider to catch up and completes; responder kept`: INV-SYNC-2-AT3RXE.T1.P6
 - `responder injects an inbound successor into an unadopted chain-final window → the synced participant never stores or signs it`: INV-SYNC-1-XCQZ28.T1.P11
 - `responder injects an inbound successor and the participant's subscribed inbound log is lost → the participant ends with the genuine block and never stores or signs the successor`: INV-SYNC-1-XCQZ28.T1.P14
 - `responder forges the confirmations and snapshot of an unadopted chain-final window → the synced participant later serves only the window's genuine confirmations, recovered from chain logs`: INV-SYNC-1-XCQZ28.T1.P19

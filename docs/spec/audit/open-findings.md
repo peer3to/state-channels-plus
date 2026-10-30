@@ -1978,6 +1978,7 @@ reaches `chainBlock`, for at most one agreement window, then runs every chain-de
 that does not get there returns not synced with no verdict. A server behind the requester was
 already handled by the existing paths. Regressions:
 [`INV-SYNC-2-AT3RXE.T1.P4`](../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe.t1.p4),
+[`INV-SYNC-2-AT3RXE.T1.P6`](../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe.t1.p6),
 [`INV-SYNC-3-A7A2ED.T1.P34`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p34).
 Residual: a Byzantine responder naming a future block delays one request by up to one agreement
 window. The requester re-reads its head only at announced blocks (no polling), so a provider that
