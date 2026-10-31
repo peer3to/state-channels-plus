@@ -103,7 +103,8 @@ export const codecValues = {
         milestoneSnapshots: [snapshot()],
         latestFinalizedEncodedState: factory.hexString(4),
         outboundMessageBlocksUpToLatestGenesis: [factory.messageBlock()],
-        outboundMessageBlocksOfTheLatestFork: [factory.messageBlock()]
+        outboundMessageBlocksOfTheLatestFork: [factory.messageBlock()],
+        chainBlock: 7n
     }),
     blockDoubleSignProof: () => ({
         block1: factory.signedBlock(),

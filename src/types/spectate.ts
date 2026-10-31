@@ -5,6 +5,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeConfirmationStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import type { BigNumberish } from "ethers";
 
 export interface DisputeWindowVerification {
     disputeConfirmations: DisputeConfirmationStruct[];
@@ -24,4 +25,6 @@ export interface SyncPayload {
     latestFinalizedEncodedState: Bytes;
     outboundMessageBlocksUpToLatestGenesis: MessageBlockStruct[];
     outboundMessageBlocksOfTheLatestFork: MessageBlockStruct[];
+    /** the server's chain head after its last chain read: the requester judges once its own head reaches it */
+    chainBlock: BigNumberish;
 }

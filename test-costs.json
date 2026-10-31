@@ -3295,6 +3295,18 @@
       "peakRssGb": 0.78,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service Initial sync from a removed responder a self-removed peer still listed by the held chain snapshot serves the successor genesis only → the new observer catches up to the survivors without aborting or blacklisting": {
+      "durationMs": 24926,
+      "avgCores": 0.745,
+      "peakRssGb": 1.132,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service Initial sync from a removed responder the survivors stay idle and dispute the reduced fork while the observer holds only its genesis → the observer, a non-participant behind the reduced head, aborts cleanly at its reduction, nobody blacklists it and the survivors resolve the dispute": {
+      "durationMs": 48509,
+      "avgCores": 0.818,
+      "peakRssGb": 1.151,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service Minimum-height sync payload generation serves a newer sync payload across a leave above the minimum height": {
       "durationMs": 21313,
       "avgCores": 1.045,
@@ -3337,10 +3349,34 @@
       "peakRssGb": 1.035,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service Requester chain view behind the responder's participant whose provider lags a snapshot post syncs from a responder that saw it → the sync waits for its provider to catch up and completes; responder kept": {
+      "durationMs": 24620,
+      "avgCores": 1.199,
+      "peakRssGb": 0.95,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service Same Fork Spectating aborts spectating when a finalized sync block conflicts with storage": {
       "durationMs": 34572,
       "avgCores": 1.036,
       "peakRssGb": 1.206,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service Same Fork Spectating byzantine responder serves a genesis-case dispute window whose genesis timestamp is altered -> the participant rejects it and keeps the genuine genesis, and the dispute still resolves": {
+      "durationMs": 20600,
+      "avgCores": 0.738,
+      "peakRssGb": 0.956,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service Same Fork Spectating byzantine responder serves a timestamp-altered genesis before block zero -> the writer rejects it, never stores it, and its block 0 is not slashable": {
+      "durationMs": 9442,
+      "avgCores": 0.93,
+      "peakRssGb": 0.744,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service Same Fork Spectating byzantine responder serves a timestamp-altered successor genesis before its block zero -> the writer rejects it, installs the chain genesis, and its block 0 is not slashable": {
+      "durationMs": 22381,
+      "avgCores": 0.857,
+      "peakRssGb": 0.967,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service Same Fork Spectating should spectate successfully when on-chain snapshot is already on the same fork": {
@@ -14383,6 +14419,48 @@
       "peakRssGb": 0.79,
       "measurementReason": null
     },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService waitForChainHead a failed head read rejects with its error, no block listener left": {
+      "durationMs": 5611,
+      "avgCores": 1.164,
+      "peakRssGb": 0.685,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService waitForChainHead a head read that never settles → false at the timeout and at the abort, no block listener left": {
+      "durationMs": 7645,
+      "avgCores": 1.01,
+      "peakRssGb": 0.724,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService waitForChainHead aborted before the call → false at once, with no head read": {
+      "durationMs": 10013,
+      "avgCores": 0.923,
+      "peakRssGb": 0.72,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService waitForChainHead aborted during the wait → false, no block listener left": {
+      "durationMs": 6359,
+      "avgCores": 0.944,
+      "peakRssGb": 0.688,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService waitForChainHead head already at the block → true without waiting for a new block, no block listener left": {
+      "durationMs": 6912,
+      "avgCores": 0.981,
+      "peakRssGb": 0.706,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService waitForChainHead the block does not arrive within the timeout → false after the timeout, no block listener left": {
+      "durationMs": 6361,
+      "avgCores": 0.959,
+      "peakRssGb": 0.697,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService waitForChainHead the provider catches up during the wait → still waiting until the next mined block, then true": {
+      "durationMs": 7682,
+      "avgCores": 0.976,
+      "peakRssGb": 0.721,
+      "measurementReason": null
+    },
     "hardhat|test/stateManager/ReductionManager.test.ts|ReductionManager a leaving signer that becomes SYNCED during installation skips reduction submission": {
       "durationMs": 24903,
       "avgCores": 0.85,
@@ -16621,6 +16699,12 @@
       "peakRssGb": 1.525,
       "measurementReason": null
     },
+    "hardhat|test/unit/AgreementManager.test.ts|Unit: AgreementManager buildStateProof proof requested below the on-chain anchor (a leave the exits' snapshot covers) → tryBuildStateProof returns undefined, no proof from history below the anchor": {
+      "durationMs": 17484,
+      "avgCores": 1.301,
+      "peakRssGb": 1.161,
+      "measurementReason": null
+    },
     "hardhat|test/unit/AgreementManager.test.ts|Unit: AgreementManager buildStateProof proofs sampled while 10 blocks are produced → each verifies on-chain at its sampled height": {
       "durationMs": 15514,
       "avgCores": 1.363,
@@ -16667,6 +16751,12 @@
       "durationMs": 22375,
       "avgCores": 1.141,
       "peakRssGb": 0.995,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/AgreementManager.test.ts|Unit: AgreementManager getForkDisputes / getForkDisputeConfirmations / getReduceData reduced head the node never received → undefined, not a throw": {
+      "durationMs": 13217,
+      "avgCores": 1.148,
+      "peakRssGb": 0.972,
       "measurementReason": null
     },
     "hardhat|test/unit/AgreementManager.test.ts|Unit: AgreementManager getLatestBlockFromStateProof empty proof → null": {
@@ -17497,10 +17587,28 @@
       "peakRssGb": 1.063,
       "measurementReason": null
     },
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: a leave watchdog that expires after the chain dropped the leaver, while the leaver has not received the exit snapshot's chain events, runs its own membership check: the check settles the leave with no self-removal dispute and no runtime error": {
+      "durationMs": 23255,
+      "avgCores": 0.722,
+      "peakRssGb": 0.96,
+      "measurementReason": null
+    },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: a leave watchdog that expires after the leaver submitted its self-removal dispute for an observed dispute, while that fork is still disputed, starts no second dispute; the leave completes once on the reduced snapshot that drops it": {
       "durationMs": 20125,
       "avgCores": 0.805,
       "peakRssGb": 1.003,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: a leave watchdog that expires after the remaining participants' exit snapshot moved the leaver's local anchor past its latest block, while its membership check still reads the chain, starts no self-removal dispute; the check settles the leave once with no runtime error": {
+      "durationMs": 25540,
+      "avgCores": 0.767,
+      "peakRssGb": 0.953,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: a leave watchdog whose membership check finds the exit pending starts the self-removal dispute; the remaining participants' exit snapshot moves the leaver's local anchor past its latest block while that dispute is built, so the dispute is a no-op: no submission, the dispute marker rolls back, one onLeftChannel and no runtime error": {
+      "durationMs": 28296,
+      "avgCores": 0.573,
+      "peakRssGb": 0.972,
       "measurementReason": null
     },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: a leaver posts the latest state snapshot once its exit block is final, and that snapshot settles the leave with no dispute": {
@@ -17573,6 +17681,12 @@
       "durationMs": 25295,
       "avgCores": 0.5,
       "peakRssGb": 0.873,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: disposing a leaver while its expired leave watchdog's own membership check reads the chain starts no self-removal dispute and raises no runtime error": {
+      "durationMs": 24363,
+      "avgCores": 0.574,
+      "peakRssGb": 0.622,
       "measurementReason": null
     },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: disposing a leaver whose exit is blocked stops its posts: the block that consumes the join sends nothing from it": {
@@ -18649,6 +18763,12 @@
       "peakRssGb": 0.809,
       "measurementReason": null
     },
+    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager dispute → upload failure policy a view behind the chain's anchor (a leaver whose latest block the remaining participants' exit snapshot passed) → dispute() resolves {} with no upload and the fork stays undisputed": {
+      "durationMs": 24122,
+      "avgCores": 0.593,
+      "peakRssGb": 0.958,
+      "measurementReason": null
+    },
     "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager dispute → upload failure policy after a late revert on the wait, a retry submits replacement evidence, and the fork is closed to our signing while it holds": {
       "durationMs": 12731,
       "avgCores": 1.124,
@@ -19633,6 +19753,12 @@
       "peakRssGb": 1.015,
       "measurementReason": null
     },
+    "hardhat|test/unit/EventHandlerSpectatorDispute.test.ts|Unit: EventHandler committed dispute on a spectator a spectator behind a threshold-final dispute's latest block aborts cleanly, and the participants reach the dispute's output fork": {
+      "durationMs": 16519,
+      "avgCores": 0.987,
+      "peakRssGb": 1.146,
+      "measurementReason": null
+    },
     "hardhat|test/unit/EventHandlerSpectatorDispute.test.ts|Unit: EventHandler committed dispute on a spectator a spectator does not audit a committed dispute: no audit read, no dispute fraud proof, and it later reduces; a participant audits the same dispute": {
       "durationMs": 30322,
       "avgCores": 0.759,
@@ -20491,10 +20617,28 @@
       "peakRssGb": 1.019,
       "measurementReason": null
     },
-    "hardhat|test/unit/ReductionExecutor.test.ts|Unit: ReductionExecutor reduce data unavailable no reduce data → the attempt reschedules, the peer keeps participating, a later attempt completes": {
-      "durationMs": 25078,
-      "avgCores": 0.696,
-      "peakRssGb": 1.013,
+    "hardhat|test/unit/ReductionExecutor.test.ts|Unit: ReductionExecutor reduce data unavailable inbound run unavailable on a participant → the attempt reschedules after chainFallbackTime, the participant keeps its status": {
+      "durationMs": 21491,
+      "avgCores": 0.667,
+      "peakRssGb": 0.744,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/ReductionExecutor.test.ts|Unit: ReductionExecutor reduce data unavailable inbound run unavailable on a spectator → the attempt aborts it cleanly without a throw, and the participants still reduce": {
+      "durationMs": 21665,
+      "avgCores": 0.653,
+      "peakRssGb": 0.952,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/ReductionExecutor.test.ts|Unit: ReductionExecutor reduce data unavailable reduced head the spectator never received → the attempt aborts it cleanly without a throw, and the participants still reduce": {
+      "durationMs": 26357,
+      "avgCores": 0.681,
+      "peakRssGb": 0.933,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/ReductionExecutor.test.ts|Unit: ReductionExecutor reduce data unavailable someone else's reduction while the reduced head is not held → not challenged, no throw": {
+      "durationMs": 15584,
+      "avgCores": 1.053,
+      "peakRssGb": 0.932,
       "measurementReason": null
     },
     "hardhat|test/unit/ReductionExecutor.test.ts|Unit: ReductionExecutor reduce data unavailable someone else's reduction while the run is unavailable → not challenged, no throw": {
@@ -20603,6 +20747,30 @@
       "durationMs": 18772,
       "avgCores": 1.308,
       "peakRssGb": 1.194,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService chain view behind the server's requester's provider behind the responder's after a snapshot post → the sync waits until its chain head reaches the payload's chain block, then verifies from the moved anchor and accepts; responder kept": {
+      "durationMs": 14254,
+      "avgCores": 1.054,
+      "peakRssGb": 0.964,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService chain view behind the server's requester's provider stays behind the payload's chain block for one agreement window → not synced with no verdict: no rejection, responder neither blacklisted nor cut": {
+      "durationMs": 31749,
+      "avgCores": 1.112,
+      "peakRssGb": 0.952,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService chain view behind the server's requester's sync service stops while it waits for its chain head → not synced at once with no verdict, before the agreement window ends": {
+      "durationMs": 17815,
+      "avgCores": 1.084,
+      "peakRssGb": 0.95,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService chain view behind the server's responder's own provider lags the logs another node streamed into its local diamond → the payload names the streamed block, the lagging requester waits for it and accepts; responder kept": {
+      "durationMs": 11577,
+      "avgCores": 1.284,
+      "peakRssGb": 0.945,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService concurrent identical sync requests share the completed result": {
@@ -20813,6 +20981,66 @@
       "durationMs": 15527,
       "avgCores": 1.208,
       "peakRssGb": 0.966,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService generateSyncPayload reduce data unavailable for a disputed window → the request fails, no fraud proof stored": {
+      "durationMs": 12210,
+      "avgCores": 1.065,
+      "peakRssGb": 0.926,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService genesis timestamp binding block 0's snapshot on chain, height 0 but not a genesis, unaltered payload → accepted, no rejection, responder not blacklisted": {
+      "durationMs": 7884,
+      "avgCores": 1.029,
+      "peakRssGb": 0.745,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService genesis timestamp binding chain past genesis on the same fork, lagging requester, genesis with only the timestamp changed → accepted, the held genesis is kept": {
+      "durationMs": 12772,
+      "avgCores": 1.052,
+      "peakRssGb": 0.953,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService genesis timestamp binding genesis-case window applied while the chain has not yet expired its kill period → not synced with no verdict, the window named unsettled, responder not blacklisted, the held genesis is kept": {
+      "durationMs": 11738,
+      "avgCores": 0.998,
+      "peakRssGb": 0.633,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService genesis timestamp binding genesis-case window snapshot unaltered → accepted, responder not blacklisted, the genesis stays the genuine one": {
+      "durationMs": 14947,
+      "avgCores": 0.837,
+      "peakRssGb": 0.96,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService genesis timestamp binding genesis-case window snapshot with only the timestamp changed → rejected, window genesis timestamp mismatch, responder blacklisted, the held genesis is kept": {
+      "durationMs": 28901,
+      "avgCores": 1.036,
+      "peakRssGb": 0.959,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService genesis timestamp binding genesis-only payload before block zero matching the on-chain genesis → accepted, responder not blacklisted": {
+      "durationMs": 8706,
+      "avgCores": 1.006,
+      "peakRssGb": 0.72,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService genesis timestamp binding genesis-only payload before block zero with only the timestamp changed → rejected, genesis timestamp mismatch, responder blacklisted, altered genesis not stored": {
+      "durationMs": 5934,
+      "avgCores": 1.114,
+      "peakRssGb": 0.724,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService genesis timestamp binding reduced-fork genesis with only the timestamp changed → rejected, genesis timestamp mismatch, altered genesis not stored": {
+      "durationMs": 17679,
+      "avgCores": 1.117,
+      "peakRssGb": 0.949,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService genesis timestamp binding successor genesis applied while the chain has not yet expired its origin window → not synced with no verdict, the origin window named unsettled, responder not blacklisted, not stored": {
+      "durationMs": 29252,
+      "avgCores": 0.988,
+      "peakRssGb": 0.638,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService historic verification on-chain snapshot ahead of the payload genesis on the same fork → milestones and the latest-fork outbound run verified from it, accepted": {
@@ -21073,10 +21301,10 @@
       "peakRssGb": 1.004,
       "measurementReason": null
     },
-    "hardhat|test/unit/SpectateSyncProofStart.test.ts|Unit: SpectateService sync proof verification order a fresh requester whose RPC node lags the second exit's snapshot that its local diamond already applied → the lagged reads do not move its local anchor back, the responder's run above that anchor links, the sync completes and nobody is blacklisted": {
-      "durationMs": 18942,
-      "avgCores": 1.339,
-      "peakRssGb": 1.119,
+    "hardhat|test/unit/SpectateSyncProofStart.test.ts|Unit: SpectateService sync proof verification order a fresh requester whose RPC node lags the second exit's snapshot that its local diamond already applied → the sync waits for the responder's chain block and ends with no verdict: no rejection, the responder not blacklisted, the local diamond keeps the newer anchor": {
+      "durationMs": 15533,
+      "avgCores": 0.788,
+      "peakRssGb": 0.827,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateSyncProofStart.test.ts|Unit: SpectateService sync proof verification order a peer whose RPC node lags the second exit's snapshot that its local diamond already applied refreshes its opened status → the lagged read does not move its local anchor back": {

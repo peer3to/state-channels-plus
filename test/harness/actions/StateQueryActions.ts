@@ -71,6 +71,25 @@ export class StateQueryActions<
             .request();
     }
 
+    /**
+     * Height of the head `forkId`'s dispute window reduces to, read on
+     * `peerIndex`; null when that peer cannot read the window yet.
+     */
+    public async reducedHeadHeight(forkId: ForkId, peerIndex: number) {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .query.getReducedHeadHeight(forkId)
+            .request({ timeoutMs: this.harness.event.hostExecTimeoutMs() });
+    }
+
+    /** `getReduceData` over `forkId`'s reduced window on `peerIndex`. */
+    public async reduceData(forkId: ForkId, peerIndex: number) {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .query.probeReduceData(forkId)
+            .request({ timeoutMs: this.harness.event.hostExecTimeoutMs() });
+    }
+
     /** Participants slashed on-chain, as seen by `peerIndex`. */
     public async onChainSlashedParticipants(
         peerIndex: number = 0

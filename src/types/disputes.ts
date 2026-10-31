@@ -81,7 +81,8 @@ export const SyncPayloadEthersType = `tuple(
     ${StateSnapshotEthersType}[] milestoneSnapshots,
     bytes latestFinalizedEncodedState,
     ${MessageBlockEthersType}[] outboundMessageBlocksUpToLatestGenesis,
-    ${MessageBlockEthersType}[] outboundMessageBlocksOfTheLatestFork
+    ${MessageBlockEthersType}[] outboundMessageBlocksOfTheLatestFork,
+    uint256 chainBlock
 )`;
 
 export const BlockDoubleSignProofEthersType = `tuple(

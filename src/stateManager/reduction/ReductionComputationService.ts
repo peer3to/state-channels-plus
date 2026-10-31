@@ -71,7 +71,7 @@ export default class ReductionComputationService {
                 forkId,
                 reducedOutput
             );
-        // our inbound view cannot back the chain's reduced head yet
+        // this node cannot back the chain's reduced head yet: its state or inbound run is not held
         if (!reduceData) return undefined;
         const [
             reducedSnapshotData,

@@ -168,12 +168,29 @@ class AgreementManager {
         blockHeight: BlockHeight,
         options?: { finalizedOnly?: boolean }
     ): Promise<BuiltStateProof> {
+        const built = await this.tryBuildStateProof(
+            forkId,
+            blockHeight,
+            options
+        );
+        if (built) return built;
+        const startHeight = this.getStartHeight(
+            await this.getConstructionStart(forkId)
+        );
+        throw new Error(
+            `Cannot build a state proof for fork ${forkId} at height ${blockHeight}: below its anchor at height ${startHeight}`
+        );
+    }
+
+    /** `buildStateProof`, but undefined when `blockHeight` is below the anchor: this view is behind the chain. */
+    public async tryBuildStateProof(
+        forkId: ForkId,
+        blockHeight: BlockHeight,
+        options?: { finalizedOnly?: boolean }
+    ): Promise<BuiltStateProof | undefined> {
         const start = await this.getConstructionStart(forkId);
         const startHeight = this.getStartHeight(start);
-        if (blockHeight !== -1 && blockHeight < startHeight)
-            throw new Error(
-                `Cannot build a state proof for fork ${forkId} at height ${blockHeight}: below its anchor at height ${startHeight}`
-            );
+        if (blockHeight !== -1 && blockHeight < startHeight) return undefined;
         const milestones =
             blockHeight === -1
                 ? []
@@ -605,7 +622,8 @@ class AgreementManager {
             "ReduceOutput",
             LoggerUtils.getReducedOutputMetadata(reducedOutput)
         );
-        let reducedLatestStateSnapshot: StateSnapshot;
+        let reducedLatestStateSnapshot: StateSnapshot | undefined;
+        let reducedLatestEncodedStateMachineState: Bytes | undefined;
         if (
             !reducedOutput.latestBlock ||
             reducedOutput.latestBlock.transaction.header.forkId === ZeroHash
@@ -617,28 +635,44 @@ class AgreementManager {
                 throw new Error(`No genesis snapshot found for fork ${forkId}`);
             }
             reducedLatestStateSnapshot = genesisSnapshot;
+            reducedLatestEncodedStateMachineState =
+                this.storage.stateMachineStates.getStateMachineState(
+                    genesisSnapshot.stateMachineStateHash
+                );
+            if (!reducedLatestEncodedStateMachineState)
+                throw new Error(
+                    "Missing latestEncodedState for reducedOutput in storage for syncing"
+                );
         } else {
             // Normal case - use the block's state snapshot
-            const snapshot = this.storage.stateSnapshots.getStateSnapshotByHash(
-                reducedOutput.latestBlock.stateSnapshotHash
-            );
-            if (!snapshot) {
-                throw new Error(
-                    "Missing latestStateSnapshot for reducedOutput in storage for syncing"
+            reducedLatestStateSnapshot =
+                this.storage.stateSnapshots.getStateSnapshotByHash(
+                    reducedOutput.latestBlock.stateSnapshotHash
                 );
+            // Get the corresponding stateMachineState
+            reducedLatestEncodedStateMachineState =
+                reducedLatestStateSnapshot &&
+                this.storage.stateMachineStates.getStateMachineState(
+                    reducedLatestStateSnapshot.stateMachineStateHash
+                );
+            // a node behind a non-genesis reduced head never received its
+            // snapshot or state -> no reduce data yet, and the caller retries
+            // or follows the chain
+            if (
+                !reducedLatestStateSnapshot ||
+                !reducedLatestEncodedStateMachineState
+            ) {
+                this.logger.warn(
+                    "No reduce data: reduced head state not held",
+                    {
+                        forkId,
+                        reducedOutput:
+                            LoggerUtils.getReducedOutputMetadata(reducedOutput)
+                    }
+                );
+                return undefined;
             }
-            reducedLatestStateSnapshot = snapshot;
         }
-
-        // Get the corresponding stateMachineState
-        const reducedLatestEncodedStateMachineState =
-            this.storage.stateMachineStates.getStateMachineState(
-                reducedLatestStateSnapshot.stateMachineStateHash
-            );
-        if (!reducedLatestEncodedStateMachineState)
-            throw new Error(
-                "Missing latestEncodedState for reducedOutput in storage for syncing"
-            );
 
         // the run the chain applied in its reduce. we cannot invent blocks whose
         // log never reached us -> no reduce data yet, and the caller retries

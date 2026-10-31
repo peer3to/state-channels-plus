@@ -678,6 +678,41 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         );
     }
 
+    /** Height of the head `forkId`'s dispute window reduces to; null when the window is not readable locally. */
+    public async getReducedHeadHeight(forkId: ForkId): Promise<number | null> {
+        return (await this.service.reduceWindow(forkId))?.reducedHeight ?? null;
+    }
+
+    /**
+     * `AgreementManager.getReduceData` over `forkId`'s reduced window: the
+     * applied inbound run's length (null for no reduce data) or the throw.
+     */
+    public async probeReduceData(forkId: ForkId) {
+        const window = await this.service.reduceWindow(forkId);
+        if (!window)
+            throw new Error("expected a locally readable dispute window");
+        let threw = "";
+        let blockCount: number | null = null;
+        try {
+            const reduceData =
+                await this.service.sm.agreementManager.getReduceData(
+                    forkId,
+                    window.reducedOutput
+                );
+            blockCount = reduceData
+                ? reduceData.inboundMessageBlocks.length
+                : null;
+        } catch (e) {
+            threw = e instanceof Error ? e.message : String(e);
+        }
+        return {
+            threw,
+            blockCount,
+            disputeCount: window.disputes.length,
+            reducedHeight: window.reducedHeight
+        };
+    }
+
     public getCompletedReductionForkId(forkId: ForkId): ForkId | null {
         return (
             this.service.sm.reductionManager["getCompletedReduction"](forkId)

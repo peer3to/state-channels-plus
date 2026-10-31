@@ -284,10 +284,12 @@ export function countFinalizedBlocks(peer: HarnessPeer): () => number {
  * snapshot has consumed (the joiner's force-join dispute is suppressed).
  * Founder 1's snapshot posts are recorded; its self-removal disputes are
  * recorded and, with `forwardDisputes`, also sent. With `holdWatchdog`, its
- * leave watchdog is held and expires only on `expireWatchdog`.
+ * leave watchdog is held and expires only on `expireWatchdog`. With
+ * `inlineSdk`, the SDK runs on the test thread (`runtimeEndpointFor`).
  */
 type InboundJoinStagingOptions = {
     watchdogMs?: number;
+    inlineSdk?: boolean;
     holdWatchdog?: boolean;
     forwardDisputes?: boolean;
     evidenceTime?: number;
@@ -299,10 +301,12 @@ async function stageOmittedInboundJoin(
 ) {
     const { joiner, confirmation, expectedSnapshotHash, expectedForkId } =
         await h.scenario.syncSpectatorAndPrepareJoin(4, {
-            configOverrides:
-                options.watchdogMs === undefined
-                    ? undefined
-                    : { LEAVE_CHANNEL_WATCHDOG_MS: options.watchdogMs },
+            configOverrides: {
+                ...(options.watchdogMs === undefined
+                    ? {}
+                    : { LEAVE_CHANNEL_WATCHDOG_MS: options.watchdogMs }),
+                ...(options.inlineSdk ? { RUN_SDK_IN_THREAD: false } : {})
+            },
             timeConfig:
                 options.evidenceTime === undefined
                     ? undefined

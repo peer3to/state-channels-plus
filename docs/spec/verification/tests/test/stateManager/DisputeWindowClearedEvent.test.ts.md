@@ -29,4 +29,4 @@ seated peer that misses such a cycle is out of scope
 
 ## Tests
 
-- `a timed-out peer whose chain events were held through the disputes, the reduction and a same-fork snapshot update ignores the disputes and leaves`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P26, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P53
+- `a timed-out peer whose chain events were held through the disputes, the reduction and a same-fork snapshot update ignores the disputes and leaves`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P27, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P57

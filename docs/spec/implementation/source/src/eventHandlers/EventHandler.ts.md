@@ -19,8 +19,8 @@
 
 Dispute-event branches
 
-- Setup: Deliver committed/killed/slashed/reduced events across final/expired/auditable, relevant/irrelevant, duplicate, and race cases
-- Oracle: Branches per the pipeline algorithm; replication precedes action; improvement rule uploads only outcome-changers; challenges fire on mismatched reductions
+- Setup: Deliver committed/killed/slashed/reduced events across final/expired/auditable, relevant/irrelevant, duplicate, and race cases; a final dispute to a spectator that never received its latest block
+- Oracle: Branches per the pipeline algorithm; replication precedes action; improvement rule uploads only outcome-changers; challenges fire on mismatched reductions; a non-participant that cannot back a final dispute aborts cleanly
 
 - [ ] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P1` — final branch
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P2` — dedup
@@ -42,4 +42,5 @@ Dispute-event branches
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P23` — the state proof built during the audit fails: the kill-and-dispute builds its own and lands
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P24` — a peer that already disputed audits an invalid dispute: no state proof is built and its kill goes out alone and lands
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P25` — a non-disputer auditing a valid dispute below its own view builds its state proof once, during the audit, and both the evidence comparison and its own upload reuse it
-- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P26` — a timed-out peer whose chain events were held through the disputes, the reduction and a same-fork snapshot update ignores the disputes whose window that update cleared: no event-pipeline failure, no `onDisputeStarted` or `onDisputeUpdate` for them, and it leaves the channel
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P26` — a cut-off spectator observes a final dispute whose latest block it never received: it aborts cleanly and the participants reach the dispute's output fork
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P27` — a timed-out peer whose chain events were held through the disputes, the reduction and a same-fork snapshot update ignores the disputes whose window that update cleared: no event-pipeline failure, no `onDisputeStarted` or `onDisputeUpdate` for them, and it leaves the channel

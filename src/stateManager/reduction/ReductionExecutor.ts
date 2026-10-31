@@ -230,8 +230,18 @@ export default class ReductionExecutor {
         );
         if (this.isStale(forkId)) return;
         if (!candidate) {
-            // our inbound view cannot back the chain's reduced head yet -> retry,
-            // never abort: the peer would lose its turns and be slashed for it
+            // this node cannot back the chain's reduced head yet (its state or inbound run).
+            // a non-participant has no stake here -> abort, it can resync later
+            const status = this.stateManager.status;
+            if (!isCommittedParticipantStatus(status)) {
+                this.logger.warn(
+                    "Unable to reduce as a non-participant behind the reduced head; aborting",
+                    { forkId, status }
+                );
+                this.stateManager.abort();
+                return;
+            }
+            // a participant retries, never aborts: it would lose its turns and be slashed for it
             this.logger.warn("Reduction deferred: reduce data unavailable", {
                 forkId
             });

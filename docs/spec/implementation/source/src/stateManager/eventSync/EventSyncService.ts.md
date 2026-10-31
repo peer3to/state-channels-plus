@@ -11,6 +11,8 @@
   Partial: a trusted endpoint can hold the completed-block watermark without end by failing every catch-up `eth_getLogs` or head request while its reopened socket stays open; accepted limit ([`FIND-RPC-1-E5ZHAR`](../../../../../audit/open-findings.md#find-rpc-1-e5zhar)).
 - [`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../../../../../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)
   Partial: every listed endpoint is trusted; logs are not cross-checked, so a forged log is processed and moves the watermark past real events; accepted limit ([`FIND-RPC-1-E5ZHAR`](../../../../../audit/open-findings.md#find-rpc-1-e5zhar)).
+- [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../../../../../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)
+- [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
 - [`REQ-IX-7-A004VZ` (Chain observation)](../../../../../specification/interactions.md#req-ix-7-a004vz)
 - [`REQ-MIRROR-3-THD7K8` (Cache, never authority)](../../../../../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8)
 - [`REQ-RMSTORE-1-BWKVBG` (Monotone observation progress)](../../../../../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg)
@@ -79,6 +81,21 @@ Ordering and recovery
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P23` — the dispute-window recovery joins an in-flight dispute log that fails before storing its dispute and rejects with that failure; a second recovery rejects the same way and the dispute stays missing
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P24` — the dispute-window recovery rejects with the failure of a local handler applying a dispute log it dispatched itself
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P25` — the dispute-window recovery for a fork the node already left: the handler runs no audit and stores nothing, the recovery stores the chain's copy of each dispute and resolves with the window
+
+## UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6
+
+Waiting for the chain head
+
+- Setup: A head already at the block, a provider that catches up during the wait before and after a mined block, a block that never arrives within the timeout, an abort during the wait and before the call, a failing head read, and a head read that never settles
+- Oracle: Resolves true once the provider's head reaches the block, read at the start and at each announced block; false on timeout or abort, also while a head read hangs; rejects with a failed head read's error; leaves no block listener behind
+
+- [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P1` — the head is already at the block: true without a new block
+- [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P2` — the provider catches up during the wait: still waiting until the next mined block, then true
+- [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P3` — aborted during the wait: false
+- [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P4` — the head read fails: rejects with its error
+- [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P5` — the block does not arrive within the timeout: false after it
+- [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P6` — aborted before the call: false with no head read
+- [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P7` — a head read never settles: false at the timeout and at the abort
 
 ## UNIT-TEST-LOG-PAGES-1-39HC9S
 

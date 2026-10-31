@@ -350,7 +350,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
      * (never the peer's echo) and the previous channel-binding check is moot.
      * Validation failures reject the peer and return not synced. The caller
      * owns the lifecycle consequence of a failed sync. A disposed runtime
-     * returns not synced with no verdict on the peer; so does a served window
+     * returns not synced with no verdict on the peer; so does a chain view that
+     * does not reach the payload's `chainBlock` within one agreement window,
+     * a served window
      * the chain has not reduced that this peer cannot reduce locally, or
      * (latest mode) an unreduced window on the final fork, naming the fork in
      * `unsettledForkId`.
@@ -372,6 +374,24 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         } catch (e) {
             this.logger.warn(e);
             return this.rejectSync(peerAddress, "payload undecodable");
+        }
+        // every check below reads the chain: judge only once this node's chain
+        // view has reached the server's. a view still behind it after one
+        // agreement window is no verdict - a lagging provider and a server
+        // naming a future block look the same
+        const stateManager = this.p2pManager.stateManager;
+        const reachedServerView =
+            await stateManager.eventSyncService.waitForChainHead(
+                Number(syncPayload.chainBlock),
+                stateManager.timeConfig.agreementTime * 1000,
+                this.disposal.signal
+            );
+        if (!reachedServerView) {
+            this.logger.warn(
+                "applySyncResponse - chain view behind the server's, no verdict",
+                { peerAddress, chainBlock: String(syncPayload.chainBlock) }
+            );
+            return { synced: false };
         }
         {
             this.logger.debug(`Sync payload received`, { syncPayload });
@@ -413,7 +433,6 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // 5) set some syncFlag to true that will start executing the onBlockConfirmation pipeline with `SpectateStrategy` from un-finalized blocks
 
             // ******* TODO - updateStateSnapshotFork/updateStateSnapshotSameFork need dummy contracts to process withdrawals
-            const stateManager = this.p2pManager.stateManager;
             const diamondStateMachine = stateManager.diamondStateMachine;
 
             // 1) Fetch the onChainSnapshot and persist/update the local EVM with it
@@ -433,6 +452,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // reduction this sync runs checks its inputs.
             // Values indicate chain-final reduction for each requested fork.
             const finalizedByFork = new Map<ForkId, boolean>();
+            // a successor fork's genesis timestamp is its origin window's kill period end, final once the chain says expired
+            let originKillPeriod = { isExpired: false, killPeriodEnd: 0n };
+            // a window's kill period ended on chain: its committed disputes are past their audit
+            const killPeriodEndedByFork = new Map<ForkId, boolean>();
             if (forkIds.length > 0) {
                 const contract = stateManager.stateChannelManagerContract;
                 const encodedFinalityCalls = forkIds.map((forkId) =>
@@ -441,15 +464,50 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         [channelId, forkId]
                     )
                 );
+                const encodedKillPeriodCalls = forkIds.map((forkId) =>
+                    contract.interface.encodeFunctionData(
+                        "isKillPeriodExpired",
+                        [channelId, forkId]
+                    )
+                );
                 const encodedFinalityResults =
-                    await contract.multicall.staticCall(encodedFinalityCalls);
+                    await contract.multicall.staticCall([
+                        ...encodedFinalityCalls,
+                        ...encodedKillPeriodCalls,
+                        contract.interface.encodeFunctionData(
+                            "isKillPeriodExpired",
+                            [
+                                channelId,
+                                syncPayload.latestForkGenesisSnapshot
+                                    .snapshotData.originForkId
+                            ]
+                        )
+                    ]);
                 forkIds.forEach((forkId, index) => {
                     const [isFinal] = contract.interface.decodeFunctionResult(
                         "isReduceChallengePeriodExpired",
                         encodedFinalityResults[index]
                     );
                     finalizedByFork.set(forkId, isFinal);
+                    const [windowExists, isExpired] =
+                        contract.interface.decodeFunctionResult(
+                            "isKillPeriodExpired",
+                            encodedFinalityResults[forkIds.length + index]
+                        );
+                    killPeriodEndedByFork.set(
+                        forkId,
+                        windowExists && isExpired
+                    );
                 });
+                const [windowExists, isExpired, killPeriodEnd] =
+                    contract.interface.decodeFunctionResult(
+                        "isKillPeriodExpired",
+                        encodedFinalityResults[2 * forkIds.length]
+                    );
+                originKillPeriod = {
+                    isExpired: windowExists && isExpired,
+                    killPeriodEnd
+                };
             }
             const onChainDisputeWindows =
                 await this.fetchAndPersistOnChainDisputeWindows(
@@ -541,6 +599,30 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                             peerAddress,
                             "dispute window mismatch"
                         );
+                    // with no block in the disputes the reduction pins only the genesis data, not its
+                    // timestamp -> every committed dispute signed the full genesis hash; trusted once
+                    // the chain's kill period ended (a local clock ahead of the chain is no proof)
+                    const windowSnapshot = StateSnapshot.from(
+                        dw.latestStateSnapshot
+                    );
+                    if (windowSnapshot.isGenesis) {
+                        if (!killPeriodEndedByFork.get(dw.forkId))
+                            return {
+                                synced: false,
+                                unsettledForkId: dw.forkId
+                            };
+                        if (
+                            !disputes.every(
+                                (dispute) =>
+                                    dispute.input.latestStateSnapshotHash ===
+                                    windowSnapshot.hash
+                            )
+                        )
+                            return this.rejectSync(
+                                peerAddress,
+                                "window genesis timestamp mismatch"
+                            );
+                    }
                     try {
                         const committedReduction =
                             await diamondStateMachine.reduceAndFinalizeLocally(
@@ -617,10 +699,48 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             if (!isCorrectGenesis)
                 return this.rejectSync(peerAddress, "genesis snapshot invalid");
 
-            // 2.7) verify outboundMessageBlocks from onChainSnapshot (lower/older) to final genesisSnapshot (upper/newer)
+            // the timestamp sits outside snapshotData -> bind it to chain values read in this sync
             const genesisSnapshot = StateSnapshot.from(
                 syncPayload.latestForkGenesisSnapshot
             );
+            const isSuccessorFork =
+                genesisSnapshot.forkID !== onChainSnapshot.forkID;
+
+            // chain still at genesis -> the payload genesis must be exactly that snapshot.
+            // block 0's posted snapshot also has height 0 but is not a genesis
+            const isChainAtGenesis =
+                genesisSnapshot.forkID === onChainSnapshot.forkID &&
+                onChainSnapshot.isGenesis;
+            if (
+                isChainAtGenesis &&
+                genesisSnapshot.hash !== onChainSnapshot.hash
+            )
+                return this.rejectSync(
+                    peerAddress,
+                    "genesis timestamp mismatch"
+                );
+
+            // successor fork -> its timestamp must be the origin kill period end, once the chain says expired.
+            // before that the chain has not reduced the origin window -> no verdict, wait for its reduction
+            if (isSuccessorFork && !originKillPeriod.isExpired)
+                return {
+                    synced: false,
+                    unsettledForkId:
+                        syncPayload.latestForkGenesisSnapshot.snapshotData
+                            .originForkId
+                };
+            if (
+                isSuccessorFork &&
+                originKillPeriod.killPeriodEnd !==
+                    BigInt(genesisSnapshot.timestamp)
+            )
+                return this.rejectSync(
+                    peerAddress,
+                    "genesis timestamp mismatch"
+                );
+            // chain past genesis on this fork -> no chain value authenticates the timestamp; persistence keeps a held genesis
+
+            // 2.7) verify outboundMessageBlocks from onChainSnapshot (lower/older) to final genesisSnapshot (upper/newer)
             // the skipped prefix's blocks are already below the on-chain outbound tip
             const outboundMessageBlocksUpToLatestGenesis =
                 adoptedWindowCount > 0
@@ -1091,7 +1211,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         }
 
         // the run above the local diamond's anchor when it is on this fork:
-        // the requester's chain anchor is not behind it, and nothing below it
+        // the requester judges only once its chain head reaches `chainBlock`,
+        // so its chain anchor is not behind this one, and nothing below it
         // is kept. An anchor at or above the final point leaves nothing.
         const outboundStart =
             currentOnChainSnapshot.forkID === forkId
@@ -1118,19 +1239,23 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             milestoneSnapshots,
             latestFinalizedEncodedState,
             outboundMessageBlocksUpToLatestGenesis,
-            outboundMessageBlocksOfTheLatestFork
+            outboundMessageBlocksOfTheLatestFork,
+            // read after every chain read above, and covering logs a faster
+            // node streamed into the local diamond: the payload reflects no
+            // chain state past it
+            chainBlock:
+                await stateManager.eventSyncService.readViewBlock(channelId)
         };
         this.logger.debug(`Generated syncpayload`, syncPayload);
         return syncPayload;
     }
 
     /**
-     * The chain's state snapshot persisted to the local diamond, and the one
-     * the local diamond then holds: the newest this peer knows. The read is
-     * pinned to one chain block and applied as that block's last log. Logs
-     * arrive from every RPC node but the read goes to one, which can be behind
-     * a snapshot log already applied; its older answer then loses the event
-     * ordering, so the local anchor never moves back.
+     * Fetch the onChainSnapshot, pinned to one chain block, and persist it to
+     * the local diamond as that block's last log. Logs arrive from every RPC
+     * node but the fetch goes to one, which can be behind a snapshot log
+     * already applied; its older answer then loses the event ordering, so the
+     * local diamond never moves back.
      */
     public async fetchAndPersistOnChainSnapshot(
         channelId: ChannelId
@@ -1148,11 +1273,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             read,
             { blockNumber, logIndex: END_OF_BLOCK_LOG_INDEX }
         );
-        return StateSnapshot.from(
-            await stateManager.diamondStateMachine.localDiamondContract.getStateSnapshot(
-                channelId
-            )
-        );
+        return StateSnapshot.from(read);
     }
 
     /**
@@ -1295,11 +1416,18 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                             storage.inboundMessages.store(inboundBlock);
                         }
                     }
-                    storage.stateSnapshots.storeStateSnapshot(
-                        StateSnapshot.from(
-                            syncPayload.latestForkGenesisSnapshot
-                        )
+                    // a held genesis is trusted; past genesis on chain the payload's timestamp is unchecked
+                    const genesisSnapshot = StateSnapshot.from(
+                        syncPayload.latestForkGenesisSnapshot
                     );
+                    if (
+                        !storage.stateSnapshots.getGenesisSnapshotByForkId(
+                            genesisSnapshot.forkID
+                        )
+                    )
+                        storage.stateSnapshots.storeStateSnapshot(
+                            genesisSnapshot
+                        );
                     storage.stateMachineStates.storeStateMachineState(
                         syncPayload.latestForkGenesisEncodedState,
                         {
