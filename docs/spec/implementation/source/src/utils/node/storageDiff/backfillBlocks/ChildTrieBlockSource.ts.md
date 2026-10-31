@@ -5,7 +5,6 @@
 ## Requirements
 
 - [`REQ-SDS-9-ZRPZZW` (A subscription is anchored by a complete snapshot, or told none is coming)](../../../../../../../specification/runtime/storage-diff-service.md#req-sds-9-zrpzzw)
-  Partial: `ChildTrieBlockSource` does not check that the chain stayed one chain between root reads beyond the tip block ([`OQ-IMPL-SDS-1-XP37Y4`](../../../../../../open-questions.md#oq-impl-sds-1-xp37y4)).
 
 ## UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4
 
