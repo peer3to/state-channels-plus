@@ -4,7 +4,10 @@ import {
     withSubstrateNode,
     type SubstrateContract
 } from "../fixtures/node/SubstrateChildTrieNode";
-import { SNAPSHOT_CEILING_MS } from "@/evm/p2pRuntime/rpcNodes/mirror/MirrorChain";
+import {
+    SDK_RPC_DEADLINE_MS,
+    SNAPSHOT_CEILING_MS
+} from "@/evm/p2pRuntime/rpcNodes/mirror/MirrorChain";
 import { sleep } from "@/utils";
 import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
 import { DepthIncludedHeadStrategy } from "@/utils/node/storageDiff/includedHead/DepthIncludedHeadStrategy";
@@ -30,7 +33,14 @@ import {
 } from "@test/fixtures/node/StorageDiffService.fixture";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { AbiCoder, isError, toBeHex, toQuantity, ZeroHash } from "ethers";
+import {
+    AbiCoder,
+    isError,
+    toBeHex,
+    toQuantity,
+    ZeroAddress,
+    ZeroHash
+} from "ethers";
 import path from "node:path";
 
 /** Time is the input: how long a read that must wait is watched for. */
@@ -261,9 +271,9 @@ describe("MirrorRpcProvider", function () {
             const elapsed = Date.now() - started;
 
             expect(BigInt(word)).to.equal(5n);
-            // the ceiling is 5 s, a safety net: stated here, not read from the constant
-            expect(elapsed).to.be.greaterThan(4_500);
-            expect(elapsed).to.be.lessThan(8_000);
+            // a safety net that fires still leaves the caller an answer before the SDK's 3 s RPC deadline
+            expect(elapsed).to.be.greaterThan(900);
+            expect(elapsed).to.be.lessThan(3_000);
             expect(session.provider.mirrorStatistics).to.include({
                 snapshotTimeouts: 1,
                 lazyReads: 1
@@ -1121,6 +1131,34 @@ describe("MirrorRpcProvider", function () {
 
             expect(asked("eth_getTransactionReceipt")).to.equal(receipts + 1);
             expect(asked("eth_getBlockByHash")).to.equal(blocks + 1);
+        });
+    });
+
+    it("answers before the SDK's RPC deadline when a block never reaches the copy and then a ready snapshot never comes", async function () {
+        await withMirrorSession(async (session) => {
+            const { address, chainStorage } =
+                await deployMirroredStorage(session);
+            await backfillAtService(session, [address]);
+            session.service.dropNotifications("scp_snapshot");
+            // the copy follows the chain, and the runtime listens to blocks
+            await session.provider.getBalance(ZeroAddress);
+            await session.provider.on("block", () => undefined);
+            const release =
+                session.service.holdNotifications("scp_subscription");
+
+            await (await chainStorage.setValue(3n)).wait();
+            await sleep(ABSENCE_WINDOW_MS);
+            const started = Date.now();
+            await session.provider.getStorage(address, 0);
+            const elapsed = Date.now() - started;
+            release();
+
+            // both waits ran out one after the other: more than either alone, less than the deadline
+            expect(elapsed).to.be.greaterThan(SNAPSHOT_CEILING_MS * 1.8);
+            expect(elapsed).to.be.lessThan(SDK_RPC_DEADLINE_MS);
+            expect(session.provider.mirrorStatistics).to.include({
+                snapshotTimeouts: 1
+            });
         });
     });
 

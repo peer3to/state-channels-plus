@@ -28,23 +28,43 @@ import type {
  */
 const MAX_APPLIED_BLOCKS = 128;
 /**
- * Longest a read waits for the mirror to reach a block the peer saw (its own
- * transaction, or a block a node announced) before it goes to the RPC node.
- * Over 1,430 waits in the shadow runs (15 E2E files, inline) the head took
- * 3 ms at the median, 18 ms at the 99th percentile and 105 ms at most to
- * arrive after the node's announcement (371 waits in worker mode: 3, 23 and 28
- * ms). The bound is for a service that is stuck, and is not below
- * 4 s, two Asset Hub blocks.
+ * Deadline of the SDK's own RPCs, which read through the mirror (for example
+ * `dispute.constructDispute`): `NetworkRpcRouter` ends a request after the
+ * channel's `agreementTime`, and 3 s is the value the mirror is held to. No
+ * constant of that name exists in the SDK to import.
  */
-const OWN_TRANSACTION_WAIT_MS = 4_000;
+export const SDK_RPC_DEADLINE_MS = 3_000;
+/**
+ * Left of the deadline for what follows a wait that ran out: a round trip to
+ * the node for the fallback read, the local work, and a margin.
+ */
+const FALLBACK_RESERVE_MS = 1_000;
+/**
+ * What the two waits of one read may take together. They run one after the
+ * other (the freshness wait first, then the snapshot wait), so their sum, not
+ * each alone, has to leave {@link FALLBACK_RESERVE_MS} of the deadline.
+ */
+const WAIT_BUDGET_MS = SDK_RPC_DEADLINE_MS - FALLBACK_RESERVE_MS;
+
+/**
+ * Safety net only, not the normal path: the longest a read waits for the
+ * mirror to reach a block the peer saw (its own transaction, or a block a
+ * node announced) before it is answered without it. Over 1,430 waits in the
+ * shadow runs (15 E2E files, inline) the head took 3 ms at the median, 18 ms
+ * at the 99th percentile and 105 ms at most to arrive after the node's
+ * announcement (371 waits in worker mode: 3, 23 and 28 ms). Half of
+ * {@link WAIT_BUDGET_MS}: about nine times the longest wait measured.
+ */
+const OWN_TRANSACTION_WAIT_MS = WAIT_BUDGET_MS / 2;
 
 /**
  * Safety net only, not the normal path: the longest the mirror waits for the
  * snapshot of an account the feed said is `ready` (complete, pushed at once)
  * on a socket that stays open. A snapshot the feed says is `syncing` or
  * `lazy` is not waited for at all, and a lost socket ends the wait at once.
+ * The rest of {@link WAIT_BUDGET_MS} after the freshness wait.
  */
-export const SNAPSHOT_CEILING_MS = 5_000;
+export const SNAPSHOT_CEILING_MS = WAIT_BUDGET_MS - OWN_TRANSACTION_WAIT_MS;
 
 /**
  * Passes over one read the mirror makes before giving up on it: each pass
