@@ -8,7 +8,7 @@ import {
     type StorageDiffServiceSettings
 } from "./StorageDiffService.fixture";
 import type { UpstreamRelay } from "./UpstreamRelay";
-import type { EvmCustomPrecompileManifest } from "@/evm/EvmFactory";
+import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
 import MirrorRpcProvider from "@/evm/p2pRuntime/rpcNodes/MirrorRpcProvider";
 import RpcNodeProvider from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import { createLogger } from "@/utils/logging";

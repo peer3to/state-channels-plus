@@ -1,10 +1,10 @@
+import { carriesGasLimit } from "./mirror/LocalExecutionPolicy";
 import { Mirror, type MirrorCall } from "./mirror/Mirror";
 import {
     MirrorUnavailableError,
     type MirrorBlock,
     type MirrorUpstream
 } from "./mirror/MirrorChain";
-import { carriesGasLimit } from "./mirror/LocalExecutionPolicy";
 import MultiRpcProvider from "./MultiRpcProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
