@@ -10,11 +10,9 @@ transports. It covers guard and endpoint ordering, real loopback bypass, both de
 request-ID presence, method binding and shadowing, captured invocation, and one-attempt response-send
 failure cleanup.
 
-The disposed-runtime case ([DisposedResponderStaging](../../../../../../test/fixtures/DisposedResponderStaging.ts))
-starts an inline responder, holds its join-signature handler for a joiner's request, disposes the responder's
-host, then releases the handler into the disposed runtime. It wraps the responder's router dispatch and
-expects no inbound dispatch to reject. A log or a reply on the disposed runtime goes through its disposed
-logger, which throws, so a resolved dispatch shows that neither happened.
+The disposed-responder case ([DisposedResponderStaging](../../../../../../test/fixtures/DisposedResponderStaging.ts))
+starts a worker responder, holds its join-signature handler for a joiner's request, disposes the
+responder's runtime and releases the handler after the cut: nothing surfaces in the session drain.
 
 ## Tests
 
@@ -45,4 +43,4 @@ logger, which throws, so a resolved dispatch shows that neither happened.
 - `treats an empty request id as a request`: UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P25
 - `disconnects after one failed handler-response send without retrying`: UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P26, REQ-RPC-2-SZDTTM.T1.P20
 - `disconnects after one failed guard-response send without retrying`: UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P27
-- `a handler that ends after its runtime disposed answers nobody and logs nothing: its dispatch resolves`: UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P28, REQ-RPC-2-SZDTTM.T1.P21
+- `a handler that ends after its runtime's cut answers nobody and surfaces no error`: UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P28, REQ-RPC-2-SZDTTM.T1.P21

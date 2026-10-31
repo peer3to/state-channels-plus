@@ -44,4 +44,4 @@ Dispatch-order tail and consequences
 - [x] `UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P25` — empty request ID takes request path
 - [x] `UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P26` — handler-response send fails once and disconnects without unhandled rejection
 - [x] `UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P27` — guard-response send fails once and disconnects without unhandled rejection
-- [x] `UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P28` — a held join-signature handler released after its inline runtime disposed: every inbound dispatch of the responder resolves, so it neither logs nor replies through its disposed logger
+- [x] `UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P28` — a held join-signature handler released after its worker runtime's cut answers nobody and surfaces no error in the session drain

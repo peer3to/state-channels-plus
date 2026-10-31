@@ -21,10 +21,11 @@ state-mutex hold then enters, so the failed candidate released the mutex. The fa
 repeats the refused top-up with a one-shot fault on the writer's next local state write and holds the
 runtime abort it triggers: the candidate rejects with the refusal, the snapshot assembly logs exactly
 one "failed to restore … aborting" error, one abort is held, the height is unchanged and a state-mutex
-hold enters; once the abort is released the writer's `onAbort` fires. The parked-candidate case holds the runtime
-disposal and the state mutex, parks a real `add(1)` behind the mutex, aborts the runtime for real and
-then frees the mutex: the candidate rejects with "Channel participation stopped" and the height is
-unchanged. The two skipped defensive cases
+hold enters; once the abort is released the writer's `onAbort` fires. The aborted-runtime case aborts the writer
+for real, waits for its `onAbort` and its client root to close, then calls `add(1)`: the call rejects
+with RootDisposedError and the other peers' next height stays unchanged. The parked-candidate case parks an `add(1)` on the writer's held state mutex, disposes the writer
+with its disposal held and then frees the mutex: no block frame reaches the other peers, the writer's
+nonce is unchanged and a rebuilt runtime engages. The two skipped defensive cases
 remain unassigned gaps.
 Spectator spawns in this suite go through the shared `addSpectatorAuthoring` helper (`test/harness/JoinActions.test.ts.md`): the spawn runs unawaited while the named participants keep authoring, bounded by literal minimum and maximum block counts, so no spawn or promotion sits inside an idle authoring window.
 
@@ -41,9 +42,10 @@ Spectator spawns in this suite go through the shared `addSpectatorAuthoring` hel
 - `the state machine refuses a pending inbound message → throws, turn and VM state unchanged, the same writer authors once the inbound is processable`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P15, UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P11
 - `a post-commit step throws once after the block is stored → throws, the block stays stored and the VM keeps the stored state`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P19, INV-BLOCK-PIPE-1-1AB2ME.T1.P7
 - `the restore after a refused pending inbound message fails → the runtime aborts, the candidate rejects with its own error and the mutex is released`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P17, UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P13, INV-BLOCK-PIPE-1-1AB2ME.T1.P13
-- `an assembly that fails after the runtime started stopping → restores nothing, logs no restore error, rejects with its own error and releases the mutex`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P16, UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P12
-- `a candidate parked on the state mutex when the runtime aborts → rejects without authoring once the mutex frees`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P18, INV-BLOCK-PIPE-1-1AB2ME.T1.P14
+- `an assembly that fails after the runtime aborted → rejects with its own error and no peer receives a block`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P16
+- `an aborted runtime → the app's next transaction rejects with RootDisposedError and no peer receives a block`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P18, INV-BLOCK-PIPE-1-1AB2ME.T1.P14
 - `connected but never synced → throws Channel not open`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P7
 - `authored promptly → timestamp is the local clock, one second ahead`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P9
 - `authored after the window closed → timestamp clamped back below the local clock`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P11
 - `height 0 links to the fork genesis snapshot; height 1 links to block 0`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P12
+- `a candidate parked on the state mutex when the runtime is disposed → no block leaves the runtime once the mutex frees`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P20

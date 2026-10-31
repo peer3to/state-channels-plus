@@ -7,16 +7,15 @@ import {
 import { EvmStateMachine } from "@/evm";
 import type P2pInstance from "@/evm/P2pInstance";
 import DeploymentBridgeSigner from "@/evm/signer/DeploymentBridgeSigner";
+import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
 import {
-    IN_FLIGHT_REPLY_DRAIN_MS,
-    type RuntimeConnection
-} from "@/rpc/internal/AInternalRpcRoot";
-import { childDisposedError } from "@/rpc/internal/RemoteRoot";
+    childDisposedError,
+    isRootDisposedError
+} from "@/rpc/internal/RemoteRoot";
 import type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";
-import { config } from "@/utils/config";
+import { config, type Config } from "@/utils/config";
 import { bundleProbeHostRoot } from "@test/fixtures/hostRoot/BundledProbeHostRoot";
 import { FAILING_READY_MESSAGE } from "@test/fixtures/hostRoot/FailingReadyRpc";
-import type { ProbeSlowReply } from "@test/fixtures/hostRoot/probe/HostProbeService";
 import type { ProbeHostRoot } from "@test/fixtures/hostRoot/ProbeHostRoot";
 import {
     PROBE_HOST_ROOT_MODULE,
@@ -25,6 +24,7 @@ import {
     probeHostRootManifest,
     probeRpcManifest
 } from "@test/fixtures/hostRoot/ProbeHostRootManifest";
+import { CUT_GRACE_MS } from "@test/harness/core/peerErrorAttribution";
 import type { MathStateMachine } from "@typechain-types";
 import { expect } from "chai";
 import type { Signer } from "ethers";
@@ -57,7 +57,8 @@ async function withRuntime(
     run: (
         instance: ProbeInstance,
         deployStateMachine: (signer: Signer) => Promise<string>
-    ) => Promise<void>
+    ) => Promise<void>,
+    configOverrides: Partial<Config> = {}
 ): Promise<void> {
     await startRuntimeTransportModesFixture();
     let instance: ProbeInstance | undefined;
@@ -72,6 +73,7 @@ async function withRuntime(
             setup.deployStateMachine,
             {
                 ...setup.setupOptions,
+                config: { ...setup.setupOptions.config, ...configOverrides },
                 // The probe application gives both of its manifests.
                 customRpcManifest: hostRootManifest
                     ? probeRpcManifest()
@@ -140,6 +142,9 @@ export async function assertSecondDeployCompleteRejects(
     );
 }
 
+// a peer value no default or environment carries
+const PEER_FLUSH_MS = 1_234;
+
 /**
  * A worker host root compiled apart from the SDK worker entry reads its own
  * config module copy, which holds its peer's configuration.
@@ -147,16 +152,21 @@ export async function assertSecondDeployCompleteRejects(
 export async function assertBundledHostRootAppliesPeerConfig(): Promise<void> {
     const bundle = await bundleProbeHostRoot();
     try {
-        await withRuntime(true, bundle.manifest, async (instance) => {
-            // The setup sent the config it applied here as payload.config;
-            // the module default is false.
-            expect(config.RUN_SDK_IN_THREAD).to.equal(true);
-            expect(
-                await instance.host.probe
-                    .readConfig("RUN_SDK_IN_THREAD")
-                    .request()
-            ).to.equal(config.RUN_SDK_IN_THREAD);
-        });
+        await withRuntime(
+            true,
+            bundle.manifest,
+            async (instance) => {
+                // The setup sent the config it applied here as payload.config;
+                // the value is neither the default nor in the environment.
+                expect(config.DISPOSE_LOG_FLUSH_MS).to.equal(PEER_FLUSH_MS);
+                expect(
+                    await instance.host.probe
+                        .readConfig("DISPOSE_LOG_FLUSH_MS")
+                        .request()
+                ).to.equal(PEER_FLUSH_MS);
+            },
+            { DISPOSE_LOG_FLUSH_MS: PEER_FLUSH_MS }
+        );
     } finally {
         await bundle.dispose();
     }
@@ -215,8 +225,7 @@ export async function assertNonClassManifestRejects(
 
 /**
  * A runtime whose build fails (its application's readiness rejects) answers
- * the setup as soon as its disposal is done: the failed build's own reply is
- * not awaited by that disposal's in-flight reply drain.
+ * the setup as soon as its disposal is done.
  */
 export async function assertFailedBuildRepliesPromptly(
     runSdkInThread: boolean
@@ -251,9 +260,7 @@ export async function assertFailedBuildRepliesPromptly(
                 .trim()
                 .split(/\s/)[0]
         );
-        expect(answeredAtMs - failedAtMs).to.be.below(
-            IN_FLIGHT_REPLY_DRAIN_MS / 2
-        );
+        expect(answeredAtMs - failedAtMs).to.be.below(CUT_GRACE_MS / 2);
     } finally {
         await instance?.dispose();
         stopRuntimeTransportModesFixture();
@@ -287,30 +294,35 @@ export async function assertServiceErrorKeepsIdentity(
 }
 
 /**
- * A request still running when the root's disposal reaches its in-flight
- * reply drain is awaited by that drain and replies; a request sent after
- * disposal rejects without reaching the runtime.
+ * A request still running at disposal is not waited for: it rejects with
+ * RootDisposedError when the port closes, and so does a request sent after
+ * disposal.
  */
-export async function assertDisposalDrainsThenRejects(
+export async function assertDisposalRejectsRunningCall(
     runSdkInThread: boolean
 ): Promise<void> {
     let host: RuntimeConnection<ProbeHostRoot> | undefined;
-    let inFlight: Promise<ProbeSlowReply> | undefined;
+    let running: Promise<Error> | undefined;
+    let disposalMs = 0;
     await withRuntime(
         runSdkInThread,
         probeHostRootManifest(),
         async (instance) => {
             host = instance.host;
-            inFlight = instance.host.probe.slow("drained").request();
+            await instance.host.probe.echo("ready").request();
+            running = rejectionOf(instance.host.probe.hang().request());
+            const startedAt = Date.now();
             await instance.dispose();
+            disposalMs = Date.now() - startedAt;
         }
     );
-    expect(await inFlight).to.deep.equal({
-        value: "drained",
-        isDrainHolding: true
-    });
-    const failure = await rejectionOf(host!.probe.echo("late").request());
+    // the disposal waits for no handler
+    expect(disposalMs).to.be.below(CUT_GRACE_MS);
+    const failure = await running!;
+    expect(isRootDisposedError(failure)).to.equal(true);
     expect(failure.message).to.equal(childDisposedError().message);
+    const late = await rejectionOf(host!.probe.echo("late").request());
+    expect(late.message).to.equal(childDisposedError().message);
 }
 
 /** An event the runtime emits reaches the typed client listener with its args. */

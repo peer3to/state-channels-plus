@@ -1,3 +1,4 @@
+import { isRootDisposedError } from "@/rpc/internal/RemoteRoot";
 import { TransportType, type OpenConnection } from "@/transport";
 import { Status } from "@/types";
 import {
@@ -14,8 +15,9 @@ import {
     setup
 } from "@test/fixtures/DiscoveryRuntimePortStaging";
 import { assertPendingLeaveGuard } from "@test/fixtures/PendingLeaveStaging";
+import { rejectionOf } from "@test/fixtures/ProvenSubmissionFailureStaging";
 import { waitUntilScheduledReductionEntered } from "@test/fixtures/ReductionScheduleStaging";
-import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
+import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
@@ -1326,39 +1328,22 @@ describe("discovery runtime port", function () {
         );
     });
 
-    it("disposal during a held watchdog upload stops the runtime and the late completion reports nothing", async function () {
+    it("disposal during a held watchdog upload stops the runtime without waiting for the upload and reports no leave", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0, {
-            configOverrides: {
-                LEAVE_CHANNEL_WATCHDOG_MS: 50,
-                RUN_SDK_IN_THREAD: false
-            }
+            configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 50 }
         });
         const leaver = h.getPeer(1);
         const recorder = await h.rpcStub.recordDisputeSubmissions(
             leaver.index,
             { hold: true }
         );
-        const endpoint = runtimeEndpointFor(leaver.p2pInstance);
         await leaver.p2pInstance.p2pSigner.leaveChannel();
         await recorder.waitUntilHeld();
-        try {
-            // local shutdown does not wait for the held upload
-            await endpoint.sm.dispose();
-            expect(
-                endpoint.stub.getRecordedDisputeSubmissions().submissions[0]
-                    .waited
-            ).to.equal(false);
-            endpoint.stub.releaseDisputeSubmissions();
-            await waitFor(
-                () =>
-                    endpoint.stub.getRecordedDisputeSubmissions().submissions[0]
-                        .waited
-            );
-            expect(leaver.eventSpies.onLeftChannel?.called).to.equal(false);
-        } finally {
-            endpoint.stub.restoreDisputeSubmissions();
-        }
+        // disposal does not wait for the held upload
+        await leaver.p2pInstance.dispose();
+        expect(runtimeIsClosed(leaver.p2pInstance)).to.equal(true);
+        expect(leaver.eventSpies.onLeftChannel?.called).to.equal(false);
         await TestSession.settleDetached();
     });
 
@@ -1813,7 +1798,7 @@ describe("discovery runtime port", function () {
         }
     });
 
-    it("settles joinLobby when the runtime is disposed after local signing", async function () {
+    it("rejects joinLobby with RootDisposedError when the runtime is disposed after local signing", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });
         const lowerIndex = h.network.lobbyRoleIndices()[0];
@@ -1837,8 +1822,10 @@ describe("discovery runtime port", function () {
                 );
             });
             h.contextApi.markAfkPeer({ afkPeerIndex: lowerIndex });
+            // consume the join before the dispose rejects it
+            const failure = rejectionOf(joins[lowerIndex]);
             await h.peers[lowerIndex].p2pInstance.dispose();
-            expect(await joins[lowerIndex]).to.equal(undefined);
+            expect(isRootDisposedError(await failure)).to.equal(true);
         } finally {
             await release();
             void joins[higherIndex].catch(() => undefined);

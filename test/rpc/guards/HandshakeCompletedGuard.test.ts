@@ -157,26 +157,26 @@ describe("HandshakeCompletedGuard", function () {
         expect(result.managerDisposed).to.equal(true);
     });
 
-    it("settles a pending handshake wait and every later wait as not completed once the runtime RPC root is disposed", async function () {
+    it("settles a pending handshake wait as not completed once the handshake service is released", async function () {
         const result = await fixture
             .control()
             .handshakeCompletedGuardProbe.probeHandshakeWaitDisposal()
             .request();
 
         expect(result.pendingCompleted).to.equal(false);
-        expect(result.laterCompleted).to.equal(false);
     });
 
-    it("drops a deferred guarded RPC without disconnect, verdict or strike when a real shutdown settles its handshake wait", async function () {
+    it("drops a deferred guarded RPC without verdict or strike when the shutdown after the network cut settles its handshake wait", async function () {
         const result = await fixture
             .control()
             .handshakeCompletedGuardProbe.probeShutdownDropsDeferredRpc()
             .request();
 
-        // premise - the wait settled before the P2P manager was disposed
-        expect(result.p2pManagerDisposedAtExpiry).to.equal(false);
+        // premise - the cut disposed the P2P manager before the wait settled
+        expect(result.p2pManagerDisposedAtExpiry).to.equal(true);
         expect(result.invocations).to.deep.equal([]);
-        expect(result.closeCalls).to.equal(0);
+        // the cut's own close, no disconnect
+        expect(result.closeCalls).to.equal(1);
         expect(result.blacklisted).to.equal(false);
         expect(result.strikes).to.equal(0);
     });

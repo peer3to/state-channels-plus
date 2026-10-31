@@ -3,6 +3,8 @@ import { EvidenceComparisonRecorder } from "./node/EvidenceComparisonRecorder";
 import { LiveBlockRetentionRecorder } from "./node/LiveBlockRetentionRecorder";
 import StubRpcMethods from "./StubRpcMethods";
 import type { HarnessControlRpcShape } from "../../HarnessControlRpc";
+import { localExecutorConnection } from "../mirror/MirrorService";
+import { recoverSigner } from "@/cache";
 import Clock from "@/Clock";
 import type DisputeBuilder from "@/disputeManager/DisputeBuilder";
 import { Block } from "@/models";
@@ -39,15 +41,20 @@ import type {
 } from "@/types/types";
 import {
     Codec,
+    DetachedPromises,
+    getChecksumAddress,
     LocalDiscoveryServer,
     multicallLastCallRevertData,
     sleep,
     tryDecodeCustomError,
     Type
 } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
 import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
+import { Mutex } from "@/utils/Mutex";
 import type { TimeoutManager } from "@/utils/TimeoutManager";
 import * as factory from "@test/factory";
+import { signBlockVariant } from "@test/fixtures/QueueAdmissionFixture";
 import type { StateChannelManagerInterface } from "@typechain-types";
 import type {
     DisputeAuditingDataStruct,
@@ -56,17 +63,20 @@ import type {
 import type { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import {
     type ContractTransactionResponse,
+    getBytes,
     hexlify,
+    id,
     type Interface,
     JsonRpcApiProvider,
     type Log,
     resolveAddress,
     toQuantity,
     type TransactionRequest,
+    Wallet,
     ZeroAddress
 } from "ethers";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { WebSocketServer } from "ws";
+import WebSocket, { WebSocketServer } from "ws";
 
 // `NetworkTransport` is used both for `createRPCMethods` and the captured transport.
 
@@ -365,6 +375,18 @@ export type RefusedUploadKind =
 /** A decoded custom-error revert: its name and its arguments as strings. */
 export type RecordedRevert = { name: string; args: string[] };
 
+/** A real private socket registry of this realm's discovery server; read only. */
+export function localDiscoverySockets<
+    K extends "peerServers" | "activeClientConnections"
+>(field: K): Set<K extends "peerServers" ? WebSocketServer : WebSocket> {
+    const sockets: unknown = Reflect.get(LocalDiscoveryServer, field);
+    if (!(sockets instanceof Set))
+        throw new Error(`LocalDiscoveryServer.${field} is not a Set`);
+    return sockets as Set<
+        K extends "peerServers" ? WebSocketServer : WebSocket
+    >;
+}
+
 function recordedRevert(error: unknown): RecordedRevert | null {
     const decoded = tryDecodeCustomError(error);
     return (
@@ -424,14 +446,6 @@ export type DisputeSubmissionHold = {
     release: () => void;
     /** Sends parked at the hold so far. */
     held: number;
-};
-
-/** What a local state restore did once the runtime had started stopping. */
-export type StopDuringAssemblyRecord = {
-    /** Local state writes made after the stop started. */
-    restoreAttempts: number;
-    /** Error logs of the snapshot assembly after the stop started. */
-    restoreErrors: string[];
 };
 
 /** What `stubFailNextRestoreAndHoldAbort` saw until its abort is released. */
@@ -578,8 +592,6 @@ export class StubService extends ANetworkRpcService<
     private restoreClockOffset?: () => void;
     /** Reasons passed to the real sync rejection handler. */
     private syncRejectionReasons: string[] = [];
-    /** Record of `stubRefuseInboundAndStartStop`, once installed. */
-    public stopDuringAssembly?: StopDuringAssemblyRecord;
     /** Record of `stubFailNextRestoreAndHoldAbort`, once installed. */
     public failedRestore?: FailedRestoreRecord;
     /** The real runtime abort that `stubFailNextRestoreAndHoldAbort` held. */
@@ -603,6 +615,13 @@ export class StubService extends ANetworkRpcService<
     private syncWindowHold?: HeldRpcReply;
     private restoreSyncWindow?: () => void;
     private syncInstallHold?: HeldRpcReply;
+    // accepted discovery sockets this realm's listeners stopped reading
+    private heldAcceptedSockets: WebSocket[] = [];
+    // listener port -> the listener read at that port; a closed listener
+    // has no address left to match
+    private readonly listenersByPort = new Map<number, WebSocketServer>();
+    // listener ports one peer's registry announcements carried while observed
+    private discoveryAnnouncements?: { ports: number[]; restore: () => void };
     private restoreSyncInstall?: () => void;
     private restoreSyncReductionRecorder?: () => void;
     private syncReductionWindows: {
@@ -815,8 +834,14 @@ export class StubService extends ANetworkRpcService<
     completeWithGenesisOutcome?: DetachedCallOutcome;
     /** State-manager mutex held by the stub until released. */
     stateMutexGate?: StubGate;
+    /** Unlocks the chain-send nonce mutex the stub holds. */
+    private unlockNonceMutex?: () => void;
     /** The runtime disposal that `stubHoldRuntimeDisposal` holds. */
     runtimeDisposalGate?: StubGate;
+    /** Timer runs and streamed chain logs that `observeRuntimeCallbacks` counts. */
+    runtimeCallbacks?: { timer: number; chainLogs: number };
+    /** Rejects the detached work `collectHeldDetachedWork` collected. */
+    heldDetachedWorkReject?: (error: Error) => void;
     /** How many distinct inbound logs may be dropped (undefined = all). */
     eventLogDropLimit?: number;
     /** Subscribed calldata logs the hold stub has already lost once. */
@@ -934,8 +959,8 @@ export class StubService extends ANetworkRpcService<
         profile: PeerProfile;
         peerInfo: BannablePeerInfo | undefined;
     }[] = [];
-    /** Inbound request frames recorded by the capture stub, oldest first. */
-    private capturedRequestFrames: {
+    /** Inbound frames recorded by the capture stub, oldest first. */
+    public capturedRequestFrames: {
         serializedRpc: string;
         transport: NetworkTransport;
     }[] = [];
@@ -3059,23 +3084,37 @@ export class StubService extends ANetworkRpcService<
 
     /**
      * Record-only: keep every inbound request frame for `service` that
-     * reaches the network router, with the connection it arrived on.
+     * reaches the network router, with the connection it arrived on. With
+     * `senderAddress` instead, keep every frame of any kind from that peer.
      */
-    public captureInboundRequestFrames(service: string): void {
+    public captureInboundRequestFrames(
+        filter: { service: string } | { senderAddress: string }
+    ): void {
         this.restoreInboundRequestFrames();
         const router = this.p2pManager.rpcRouter;
         const onRpc = router.onRpc;
         const frames: typeof this.capturedRequestFrames = [];
         this.capturedRequestFrames = frames;
-        router.onRpc = function (serializedRpc, transport) {
+        const isCaptured = (
+            serializedRpc: string,
+            transport: NetworkTransport
+        ): boolean => {
+            if ("senderAddress" in filter)
+                return (
+                    transport.peerAddress !== undefined &&
+                    getChecksumAddress(transport.peerAddress) ===
+                        getChecksumAddress(filter.senderAddress)
+                );
             const frame = deserializeRpcFrame(serializedRpc);
-            if (
+            return (
                 frame?.kind === "request" &&
-                frame.rpc.service === service &&
+                frame.rpc.service === filter.service &&
                 !transport.isTrusted
-            ) {
+            );
+        };
+        router.onRpc = function (serializedRpc, transport) {
+            if (isCaptured(serializedRpc, transport))
                 frames.push({ serializedRpc, transport });
-            }
             return onRpc.call(this, serializedRpc, transport);
         };
         this.restoreRequestFrameCapture = () => {
@@ -3340,9 +3379,8 @@ export class StubService extends ANetworkRpcService<
 
     /**
      * Start one real timeout-manager task that stays running until the
-     * timeout manager's own dispose begins. The release runs after the
-     * synchronous part of dispose, so dispose provably starts its bounded
-     * wait with this task in flight, and the task then settles inside it.
+     * timeout manager's own dispose ran, so dispose provably meets this
+     * task in flight.
      */
     public holdScheduledTaskUntilDispose(): void {
         const timeoutManager = this.sm.timeoutManager;
@@ -3350,9 +3388,8 @@ export class StubService extends ANetworkRpcService<
         this.disposeWaitTaskGate = gate;
         const dispose = timeoutManager.dispose.bind(timeoutManager);
         timeoutManager.dispose = () => {
-            const disposal = dispose();
+            dispose();
             gate.release();
-            return disposal;
         };
         timeoutManager.scheduleTask(
             async () => {
@@ -3364,16 +3401,51 @@ export class StubService extends ANetworkRpcService<
         );
     }
 
-    /** Entries of the dispose-wait task and the manager's running task count. */
-    public getDisposeWaitTask(): { entered: number; running: number } {
-        const running = Reflect.get(
-            this.sm.timeoutManager,
-            "runningTasks"
-        ) as Set<Promise<void>>;
-        return {
-            entered: this.disposeWaitTaskGate?.entered ?? 0,
-            running: running.size
+    /** Entries of the dispose-wait task. */
+    public getDisposeWaitTask(): { entered: number } {
+        return { entered: this.disposeWaitTaskGate?.entered ?? 0 };
+    }
+
+    /**
+     * Count this runtime's streamed chain logs and arm one timer task due
+     * after `timerDelayMs`; the counts are in `runtimeCallbacks`.
+     */
+    public observeRuntimeCallbacks(timerDelayMs: number): void {
+        const calls = { timer: 0, chainLogs: 0 };
+        this.runtimeCallbacks = calls;
+        const sync = this.sm.eventSyncService;
+        const schedule = sync.scheduleStreamedLog.bind(sync);
+        sync.scheduleStreamedLog = (...args) => {
+            calls.chainLogs += 1;
+            return schedule(...args);
         };
+        this.sm.timeoutManager.scheduleTask(
+            () => {
+                calls.timer += 1;
+            },
+            timerDelayMs,
+            "runtime callback probe"
+        );
+    }
+
+    /** Collect one detached promise that rejects once `heldDetachedWorkReject` runs. */
+    public collectHeldDetachedWork(): void {
+        DetachedPromises.collect(
+            new Promise<void>((_, reject) => {
+                this.heldDetachedWorkReject = reject;
+            })
+        );
+    }
+
+    /** A realm-wide double-signature report: a fresh key signs one hash twice. */
+    public recoverDoubleSignature(): void {
+        const wallet = Wallet.createRandom();
+        const blockHash = id("disposed runtime double signature");
+        for (const variant of [0, 1])
+            recoverSigner(
+                getBytes(blockHash),
+                signBlockVariant(wallet, blockHash, variant)
+            );
     }
 
     /** One releasable pause shared by the reduction-control stubs. */
@@ -3557,6 +3629,7 @@ export class StubService extends ANetworkRpcService<
         this.restoreReductionApplication();
         this.restoreReductionAttempt();
         this.releaseStateMutex();
+        this.releaseNonceMutex();
     }
 
     public restoreReductionApplication(): void {
@@ -3637,6 +3710,35 @@ export class StubService extends ANetworkRpcService<
     public releaseStateMutex(): void {
         this.stateMutexGate?.release();
         this.stateMutexGate = undefined;
+    }
+
+    /** Hold the signer's nonce mutex: every chain send queues behind it. */
+    public holdNonceMutex(): void {
+        this.releaseNonceMutex();
+        const mutex = this.nonceMutex();
+        void mutex.lock({ taskName: "stub.holdNonceMutex" });
+        this.unlockNonceMutex = () => mutex.unlock();
+    }
+
+    public releaseNonceMutex(): void {
+        this.unlockNonceMutex?.();
+        this.unlockNonceMutex = undefined;
+    }
+
+    /** Chain sends parked on the nonce mutex behind its holder. */
+    public getNonceMutexWaiterCount(): number {
+        const queue = Reflect.get(this.nonceMutex(), "queue");
+        if (!Array.isArray(queue))
+            throw new Error("Expected a mutex waiter queue");
+        return queue.length;
+    }
+
+    // the signer's private nonce mutex
+    private nonceMutex(): Mutex {
+        const mutex = Reflect.get(this.sm.signer, "mutex");
+        if (!(mutex instanceof Mutex))
+            throw new Error("Expected the signer's nonce mutex");
+        return mutex;
     }
 
     // the listener's private removal step
@@ -4204,6 +4306,154 @@ export class StubService extends ANetworkRpcService<
             ),
             LocalDiscoveryServer.leave(topic, this.p2pManager)
         ]);
+    }
+
+    /** Leaves every local discovery session of this runtime. */
+    public async leaveAllLocalDiscovery(): Promise<void> {
+        await LocalDiscoveryServer.leave(undefined, this.p2pManager);
+    }
+
+    /**
+     * Starts a discovery join whose listener fails to bind, then leaves every
+     * session of this runtime while the join is still starting. Answers how
+     * the leave settled.
+     */
+    public async leaveAllDuringFailingLocalDiscoveryJoin(
+        topic: string
+    ): Promise<string> {
+        await LocalDiscoveryServer.tryStart();
+        const original = Reflect.get(
+            LocalDiscoveryServer,
+            "createServerWithRetry"
+        );
+        Reflect.set(LocalDiscoveryServer, "createServerWithRetry", async () => {
+            await sleep(50);
+            throw new Error("listener bind failed");
+        });
+        try {
+            const join = LocalDiscoveryServer.connectToPeers(
+                this.p2pManager,
+                topic,
+                this.sm.signerAddress.toString()
+            ).catch(() => undefined);
+            const leave = await LocalDiscoveryServer.leave(
+                undefined,
+                this.p2pManager
+            ).then(
+                () => "resolved",
+                (error: unknown) => `rejected: ${errorMessage(error)}`
+            );
+            await join;
+            return leave;
+        } finally {
+            Reflect.set(
+                LocalDiscoveryServer,
+                "createServerWithRetry",
+                original
+            );
+        }
+    }
+
+    /**
+     * Grants every later local EVM call `callGasLimit`, configured the way
+     * the executor factory configures it from the chain reads.
+     */
+    public async configureExecutorCallGas(
+        callGasLimit: string,
+        dedicatedThread: boolean
+    ): Promise<void> {
+        await localExecutorConnection(this.sm)
+            .rpc.executor.configure({
+                callGasLimit,
+                clockAdjustmentSeconds:
+                    dedicatedThread && Clock.isInitialized()
+                        ? Clock.getClockAdjustmentSeconds()
+                        : undefined
+            })
+            .request();
+    }
+
+    public getLocalDiscoveryListenerPorts(): number[] {
+        return [...localDiscoverySockets("peerServers")].flatMap((server) => {
+            const address = server.address();
+            if (!address || typeof address === "string") return [];
+            this.listenersByPort.set(address.port, server);
+            return [address.port];
+        });
+    }
+
+    /** Pauses the real accepted sockets of this realm's listeners; returns how many. */
+    public holdAcceptedSocketReads(): number {
+        const held = [...localDiscoverySockets("peerServers")].flatMap(
+            (server) => [...server.clients]
+        );
+        for (const socket of held) socket.pause();
+        this.heldAcceptedSockets.push(...held);
+        return held.length;
+    }
+
+    public releaseAcceptedSocketReads(): void {
+        for (const socket of this.heldAcceptedSockets.splice(0))
+            socket.resume();
+    }
+
+    /** This realm's dial sockets to one of `listenerPorts` still closing. */
+    public getClosingLocalDialCount(listenerPorts: number[]): number {
+        return [...localDiscoverySockets("activeClientConnections")].filter(
+            (socket) =>
+                listenerPorts.includes(Number(new URL(socket.url).port)) &&
+                socket.readyState === WebSocket.CLOSING
+        ).length;
+    }
+
+    /** Whether this runtime's topic sessions have a local dial in flight. */
+    public hasPendingLocalDial(): boolean {
+        // Read the real private topic sessions; do not replace their behavior.
+        // Each runtime's sessions are keyed by rendezvous key (hex topic).
+        const sessions = Reflect.get(
+            LocalDiscoveryServer,
+            "discoverySessions"
+        ) as WeakMap<P2PManager, Map<string, { dialingPeers: Set<Address> }>>;
+        return [...(sessions.get(this.p2pManager)?.values() ?? [])].some(
+            (session) => session.dialingPeers.size > 0
+        );
+    }
+
+    /** Records the listener ports the registry announces for `peerAddress` on this realm's sockets. */
+    public observeLocalDiscoveryAnnouncements(peerAddress: string): void {
+        this.restoreLocalDiscoveryAnnouncements();
+        const ports: number[] = [];
+        const observe = (data: WebSocket.RawData) => {
+            const announcement = JSON.parse(data.toString());
+            if (announcement.peerAddress === peerAddress)
+                ports.push(announcement.port);
+        };
+        const sockets = [...localDiscoverySockets("activeClientConnections")];
+        for (const socket of sockets) socket.on("message", observe);
+        this.discoveryAnnouncements = {
+            ports,
+            restore: () => {
+                for (const socket of sockets) socket.off("message", observe);
+            }
+        };
+    }
+
+    public getLocalDiscoveryAnnouncedPorts(): number[] {
+        return [...(this.discoveryAnnouncements?.ports ?? [])];
+    }
+
+    public restoreLocalDiscoveryAnnouncements(): void {
+        this.discoveryAnnouncements?.restore();
+        this.discoveryAnnouncements = undefined;
+    }
+
+    /**
+     * Terminates the accepted sockets of the listener `getLocalDiscoveryListenerPorts`
+     * read on `port`; a left topic's closed listener keeps them.
+     */
+    public terminateLocalDiscoveryListenerClients(port: number): void {
+        for (const socket of this.listenersByPort.get(port)?.clients ?? [])
+            socket.terminate();
     }
 
     public getLocalDiscoveryListenerCount(): number {

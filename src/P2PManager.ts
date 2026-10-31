@@ -6,7 +6,7 @@ import RemoteRpcProxy, {
     RemoteRpcProxyType
 } from "./rpc/network/RemoteRpcProxy";
 import { Address, ChecksumAddress, PeerKey } from "./types/types";
-import { runCleanup } from "./utils/runCleanup";
+import { runCleanup, runCleanupSync } from "./utils/runCleanup";
 import { DoubleSignatureReport, onDoubleSignature } from "@/cache";
 import { DisconnectPolicy, DisconnectTier } from "@/DisconnectPolicy";
 import P2pSigner from "@/evm/signer/LocalP2pSigner";
@@ -28,7 +28,12 @@ import {
 import { isNetworkTransport } from "@/transport/NetworkTransport";
 import { Status } from "@/types";
 import { isEngagedStatus } from "@/types/flags";
-import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
+import {
+    DebugProxy,
+    DetachedPromises,
+    getChecksumAddress,
+    LocalDiscoveryServer
+} from "@/utils";
 import type { Logger } from "@/utils";
 import { addressesEqual } from "@/utils/address";
 import { requireBytes32 } from "@/utils/bytes32";
@@ -55,19 +60,13 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     preferredTransport: TransportType = TransportType.HOLEPUNCH;
 
     private disposalPromise?: Promise<void>;
-    private readonly unsubscribeHandshakeCompleted: () => void;
-    // Settle the initial-sync wait when the runtime leaves OPENED for any
-    // reason other than the sync request itself: chain genesis moves the
-    // status, and an abort keeps OPENED but announces itself through its hook.
-    private readonly unsubscribeStatusChanged: () => void;
-    private readonly unsubscribeAbort: () => void;
     // Removes this manager's double-signature handler from the thread-wide
     // signer recovery cache on dispose.
     private readonly unsubscribeDoubleSignature: () => void;
     private initialSyncStarted = false;
     private initialSyncSettled = false;
-    // Remembered so a wait created after settlement (abort before the
-    // discovery join) resolves at once instead of never.
+    // Remembered so a wait created after settlement (the status left OPENED
+    // before the discovery join) resolves at once instead of never.
     private initialSyncOutcome = false;
     private initialSyncPromise?: Promise<boolean>;
     private resolveInitialSync?: (success: boolean) => void;
@@ -136,7 +135,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         this.loopbackTransport = new LoopbackTransport(this.self.rpcRouter);
         this.holepunch = new Holepunch(this.self);
 
-        this.unsubscribeStatusChanged = this.stateManager.events.on(
+        // Settle the initial-sync wait when the runtime leaves OPENED for any
+        // reason other than the sync request itself: chain genesis moves the
+        // status.
+        this.stateManager.events.on(
             "p2pEventHooks",
             "onStatusChanged",
             (oldStatus, newStatus) => {
@@ -149,39 +151,31 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
                 this.settleInitialSync(isEngagedStatus(newStatus));
             }
         );
-        this.unsubscribeAbort = this.stateManager.events.on(
-            "p2pEventHooks",
-            "onAbort",
-            () => this.settleInitialSync(false)
-        );
-        this.unsubscribeHandshakeCompleted = this.stateManager.events.on(
+        this.stateManager.events.on(
             "p2pEventHooks",
             "handshakeCompleted",
-            (peerAddress) => {
-                void this.onHandshakeCompleted(peerAddress);
-            }
+            (peerAddress) =>
+                DetachedPromises.collect(this.onHandshakeCompleted(peerAddress))
         );
         this.unsubscribeDoubleSignature = onDoubleSignature((report) =>
             this.onDoubleSignature(report)
         );
         return this.self;
     }
-    //Mark resources for garbage collection
+    // Cuts the network: every transport closes in this call, and only the
+    // discovery teardown runs after it.
     public dispose(): Promise<void> {
-        return (this.disposalPromise ??= Promise.resolve().then(async () => {
-            await runCleanup(
-                () => this.unsubscribeHandshakeCompleted(),
-                () => this.unsubscribeStatusChanged(),
-                () => this.unsubscribeAbort(),
-                () => this.unsubscribeDoubleSignature(),
-                () => this.settleInitialSync(false),
-                () => this.profileManager.dispose(),
-                () => {
-                    this.openConnections.length = 0;
-                },
-                () => this.holepunch.dispose()
-            );
-        }));
+        if (this.disposalPromise) return this.disposalPromise;
+        // isDisposed holds while the first step closes the transports
+        this.disposalPromise = Promise.resolve();
+        return (this.disposalPromise = runCleanup(
+            () =>
+                runCleanupSync(
+                    () => this.unsubscribeDoubleSignature(),
+                    () => this.profileManager.dispose()
+                ),
+            () => this.holepunch.dispose()
+        ));
     }
 
     public get isDisposed(): boolean {
@@ -197,7 +191,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
      */
     private onDoubleSignature(report: DoubleSignatureReport): void {
         try {
-            if (this.isDisposed) return;
             if (
                 addressesEqual(report.signer, this.stateManager.signerAddress)
             ) {
@@ -239,8 +232,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
 
     private async onHandshakeCompleted(peerAddress: Address): Promise<void> {
         const stateManager = this.stateManager;
-        if (stateManager.isDisposed) return;
-
         const transport =
             this.profileManager.getTransportByEvmAddress(peerAddress);
         if (!transport || transport.isClosed) return;
@@ -275,7 +266,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         if (isChannelOpened) {
             await this.syncIfParticipant(peerAddress, transport);
             // a check cut by teardown reports no connection
-            if (stateManager.isDisposed || transport.isClosed) return;
+            if (transport.isClosed) return;
         }
 
         stateManager.p2pEventHooks.onConnection?.(peerAddress, isChannelOpened);
@@ -297,7 +288,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
                     stateManager.channelId,
                     peerAddress
                 );
-            if (stateManager.isDisposed || transport.isClosed) return;
+            if (transport.isClosed) return;
             if (isPeerParticipant) {
                 await this.syncConnectedParticipant(peerAddress);
             } else {
@@ -308,7 +299,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         } catch (error) {
             // a read or sync cut by teardown is no failure; any other is
             // fatal: the protocol assumes a working RPC connection
-            if (stateManager.isDisposed || transport.isClosed) return;
+            if (transport.isClosed) return;
             this.logger.error(
                 "Participant read or sync after handshake failed",
                 {
@@ -350,9 +341,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
             this.settleInitialSync(success);
             return;
         }
-        if (!success && !stateManager.isDisposed) {
-            stateManager.abort();
-        }
+        if (!success) stateManager.abort();
         this.settleInitialSync(success);
     }
 
@@ -366,13 +355,8 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     private onResponderSyncing(peerAddress: Address): void {
         this.initialSyncStarted = false;
         const stateManager = this.stateManager;
-        if (
-            this.initialSyncSettled ||
-            stateManager.isDisposed ||
-            stateManager.status !== Status.OPENED
-        ) {
+        if (this.initialSyncSettled || stateManager.status !== Status.OPENED)
             return;
-        }
         const syncingPeer = getChecksumAddress(peerAddress);
         if (!this.syncingPeerRetries.has(syncingPeer)) {
             this.armInitialSyncDeadline();
@@ -393,17 +377,22 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
             if (participant === syncingPeer) continue;
             const transport =
                 this.profileManager.getTransportByEvmAddress(participant);
-            if (transport) void this.syncIfParticipant(participant, transport);
+            if (transport)
+                DetachedPromises.collect(
+                    this.syncIfParticipant(participant, transport)
+                );
         }
     }
 
     private askSyncingPeerAgain(syncingPeer: ChecksumAddress): void {
-        if (this.initialSyncSettled || this.stateManager.isDisposed) return;
+        if (this.initialSyncSettled) return;
         this.syncingPeerRetries.set(syncingPeer, undefined);
         const transport =
             this.profileManager.getTransportByEvmAddress(syncingPeer);
         if (!transport || transport.isClosed) return;
-        void this.syncIfParticipant(syncingPeer, transport);
+        DetachedPromises.collect(
+            this.syncIfParticipant(syncingPeer, transport)
+        );
     }
 
     private settleInitialSync(success: boolean): void {
@@ -460,35 +449,19 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
             }
         })();
 
-        if (!initialSync) {
-            await join;
-            return;
-        }
-        // An abort during the join answers the pending connect now rather
-        // than when the join returns: the disposal the abort starts closes
-        // the port, and a reply that only leaves after that never arrives.
-        // The wait settles on abort and on disposal, so racing it is enough;
-        // the join finishes in the background under that disposal. Any other
-        // settlement keeps waiting for the join as before.
-        await Promise.race([join, initialSync]);
-        if (this.stateManager.isDisposed) {
-            this.settleInitialSync(false);
-            return;
-        }
         await join;
+        if (!initialSync) return;
         // The status may have left OPENED during the discovery join (chain
-        // genesis, abort). Nothing later would settle the wait, so settle now.
-        if (this.stateManager.isDisposed) {
-            this.settleInitialSync(false);
-            return;
-        }
+        // genesis). Nothing later would settle the wait, so settle now.
         if (this.stateManager.status !== Status.OPENED) {
             this.settleInitialSync(isEngagedStatus(this.stateManager.status));
             return;
         }
         for (const transport of [...this.openConnections]) {
             if (transport.peerAddress && !transport.isClosed) {
-                void this.onHandshakeCompleted(transport.peerAddress);
+                DetachedPromises.collect(
+                    this.onHandshakeCompleted(transport.peerAddress)
+                );
             }
         }
         this.armInitialSyncDeadline();
@@ -497,7 +470,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
 
     /**
      * The outcome of this runtime's initial sync: resolves once it settles
-     * (success, abort, disposal, or the status leaving OPENED).
+     * (success, failure, or the status leaving OPENED).
      */
     public isInitialSyncSuccessfulWait(): Promise<boolean> {
         if (this.initialSyncSettled) {
@@ -537,7 +510,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     private expireInitialSyncDeadline(): void {
         const stateManager = this.stateManager;
         this.isInitialSyncDeadlineHeld = false;
-        if (stateManager.isDisposed) return;
         if (stateManager.status !== Status.OPENED) {
             this.settleInitialSync(isEngagedStatus(this.stateManager.status));
             return;

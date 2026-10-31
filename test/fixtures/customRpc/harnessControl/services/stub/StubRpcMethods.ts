@@ -38,7 +38,6 @@ import type {
     SnapshotPostHoldPoint,
     SpectateSyncSettle,
     StateMutexStateHold,
-    StopDuringAssemblyRecord,
     FailedRestoreRecord
 } from "./StubService";
 
@@ -182,6 +181,21 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    /** Hold the signer's nonce mutex until released. */
+    public holdNonceMutex(): boolean {
+        this.service.holdNonceMutex();
+        return true;
+    }
+
+    public releaseNonceMutex(): boolean {
+        this.service.releaseNonceMutex();
+        return true;
+    }
+
+    public getNonceMutexWaiterCount(): number {
+        return this.service.getNonceMutexWaiterCount();
+    }
+
     public getStateMutexWaiterCount(): number {
         const queue = Reflect.get(this.service.sm.mutex, "queue");
         if (!Array.isArray(queue))
@@ -286,45 +300,17 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /**
-     * Make this peer's state machine refuse every inbound message and start
-     * the runtime's real stop while it refuses, as a shutdown that overtakes
-     * an assembly in flight. Record-only from then on: local state writes and
-     * the snapshot assembly's error logs still run unchanged. No restore: the
-     * runtime is stopping and dies with the peer.
+     * Make this peer's state machine refuse every inbound message and abort
+     * the runtime while it refuses, as a shutdown that overtakes an assembly
+     * in flight. No restore: the runtime is aborting and dies with the peer.
      */
-    public stubRefuseInboundAndStartStop(): boolean {
+    public stubRefuseInboundAndAbort(): boolean {
         const sm = this.service.sm;
-        const stateMachine = sm.diamondStateMachine;
-        const record: StopDuringAssemblyRecord = {
-            restoreAttempts: 0,
-            restoreErrors: []
-        };
-        this.service.stopDuringAssembly = record;
-        const setState = stateMachine.setState.bind(stateMachine);
-        stateMachine.setState = async (serializedState) => {
-            if (sm.isDisposed) record.restoreAttempts += 1;
-            return setState(serializedState);
-        };
-        const logger = sm.snapshotAssemblyService["logger"];
-        const logError = logger.error.bind(logger);
-        logger.error = (message, meta) => {
-            if (sm.isDisposed) record.restoreErrors.push(String(message));
-            return logError(message, meta);
-        };
-        stateMachine.processInboundMessage = async () => {
-            // The root's disposal awaits this same stop and surfaces its
-            // failure there.
-            sm.stop().catch(() => undefined);
+        sm.diamondStateMachine.processInboundMessage = async () => {
+            sm.abort();
             return false;
         };
         return true;
-    }
-
-    public getStopDuringAssembly(): StopDuringAssemblyRecord | null {
-        const record = this.service.stopDuringAssembly;
-        return record
-            ? { ...record, restoreErrors: [...record.restoreErrors] }
-            : null;
     }
 
     /**
@@ -1506,13 +1492,43 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return { ran: held.length, errors };
     }
 
+    /**
+     * Count this runtime's streamed chain logs and arm one timer task due
+     * after `timerDelayMs`; read with `getRuntimeCallbacks`.
+     */
+    public observeRuntimeCallbacks(timerDelayMs: number): boolean {
+        this.service.observeRuntimeCallbacks(timerDelayMs);
+        return true;
+    }
+
+    public getRuntimeCallbacks(): { timer: number; chainLogs: number } {
+        return { ...this.service.runtimeCallbacks! };
+    }
+
+    /** Collect one detached promise that rejects on `rejectHeldDetachedWork`. */
+    public collectHeldDetachedWork(): boolean {
+        this.service.collectHeldDetachedWork();
+        return true;
+    }
+
+    public rejectHeldDetachedWork(message: string): boolean {
+        this.service.heldDetachedWorkReject?.(new Error(message));
+        return true;
+    }
+
+    /** Report one double signature in this runtime's realm. */
+    public recoverDoubleSignature(): boolean {
+        this.service.recoverDoubleSignature();
+        return true;
+    }
+
     /** Hold one running timeout-manager task until that manager's dispose starts. */
     public holdScheduledTaskUntilDispose(): boolean {
         this.service.holdScheduledTaskUntilDispose();
         return true;
     }
 
-    public getDisposeWaitTask(): { entered: number; running: number } {
+    public getDisposeWaitTask(): { entered: number } {
         return this.service.getDisposeWaitTask();
     }
 
@@ -2103,23 +2119,44 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /**
-     * Hold the runtime disposal that a real abort starts, so the control RPC
-     * stays reachable after the abort. Release with `releaseRuntimeDisposal`.
+     * Hold the runtime disposal that a real abort or dispose starts right
+     * after its cut, so the control RPC stays reachable after it. At
+     * `release` it holds before the runtime's releases run (the spectate
+     * release is the first); at `providerRelease` it holds after the
+     * children, once the listeners are off the provider the Clock keeps.
+     * Release with `releaseRuntimeDisposal`.
      */
-    public stubHoldRuntimeDisposal(): boolean {
-        // the state manager's private disposal callback
-        const host = this.service.sm as unknown as {
-            disposeRuntime: () => Promise<void>;
-        };
-        const dispose = host.disposeRuntime;
+    public stubHoldRuntimeDisposal(
+        point: "release" | "providerRelease" = "release"
+    ): boolean {
         const gate = this.service.createGate();
         this.service.runtimeDisposalGate = gate;
-        host.disposeRuntime = async () => {
+        if (point === "providerRelease") {
+            const provider =
+                this.service.sm.stateChannelManagerContract.runner!.provider!;
+            const removeAllListeners =
+                provider.removeAllListeners.bind(provider);
+            provider.removeAllListeners = async (...args) => {
+                const removed = await removeAllListeners(...args);
+                gate.entered += 1;
+                await gate.gate;
+                return removed;
+            };
+            return true;
+        }
+        const spectate = this.service.sm.p2pManager.localRpc.spectateService;
+        const dispose = spectate.dispose.bind(spectate);
+        spectate.dispose = async () => {
             gate.entered += 1;
             await gate.gate;
             return dispose();
         };
         return true;
+    }
+
+    /** Disposals that reached the `stubHoldRuntimeDisposal` hold. */
+    public getRuntimeDisposalHoldEntered(): number {
+        return this.service.runtimeDisposalGate?.entered ?? 0;
     }
 
     public releaseRuntimeDisposal(): boolean {
@@ -2259,8 +2296,70 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public async leaveAllLocalDiscovery(): Promise<boolean> {
+        await this.service.leaveAllLocalDiscovery();
+        return true;
+    }
+
+    public leaveAllDuringFailingLocalDiscoveryJoin(
+        topic: string
+    ): Promise<string> {
+        return this.service.leaveAllDuringFailingLocalDiscoveryJoin(topic);
+    }
+
+    public async configureExecutorCallGas(
+        callGasLimit: string,
+        dedicatedThread: boolean
+    ): Promise<boolean> {
+        await this.service.configureExecutorCallGas(
+            callGasLimit,
+            dedicatedThread
+        );
+        return true;
+    }
+
     public getLocalDiscoveryListenerCount(): number {
         return this.service.getLocalDiscoveryListenerCount();
+    }
+
+    public getLocalDiscoveryListenerPorts(): number[] {
+        return this.service.getLocalDiscoveryListenerPorts();
+    }
+
+    public holdAcceptedSocketReads(): number {
+        return this.service.holdAcceptedSocketReads();
+    }
+
+    public releaseAcceptedSocketReads(): boolean {
+        this.service.releaseAcceptedSocketReads();
+        return true;
+    }
+
+    public getClosingLocalDialCount(listenerPorts: number[]): number {
+        return this.service.getClosingLocalDialCount(listenerPorts);
+    }
+
+    public hasPendingLocalDial(): boolean {
+        return this.service.hasPendingLocalDial();
+    }
+
+    public observeLocalDiscoveryAnnouncements(peerAddress: string): boolean {
+        this.service.observeLocalDiscoveryAnnouncements(peerAddress);
+        return true;
+    }
+
+    public getLocalDiscoveryAnnouncedPorts(): number[] {
+        return this.service.getLocalDiscoveryAnnouncedPorts();
+    }
+
+    public restoreLocalDiscoveryAnnouncements(): boolean {
+        this.service.restoreLocalDiscoveryAnnouncements();
+        return true;
+    }
+
+    public terminateLocalDiscoveryListenerClients(port: number): boolean {
+        this.service.terminateLocalDiscoveryListenerClients(port);
+        return true;
     }
 
     /** Broadcast a real calldata post with an expired deadline; its receipt reverts. */
@@ -2437,7 +2536,9 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     public cancelScheduledReductions(): boolean {
-        this.service.sm.reductionManager["cancelScheduledReductions"]();
+        const reductionManager = this.service.sm.reductionManager;
+        for (const forkId of [...reductionManager["timeouts"].keys()])
+            reductionManager.settleForkLeft(forkId);
         return true;
     }
 
@@ -4034,10 +4135,19 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.restoreUnregisteredProfiles();
     }
 
-    /** Record inbound request frames for `service` with their connection. */
-    public stubCaptureInboundRequestFrames(service: string): boolean {
-        this.service.captureInboundRequestFrames(service);
+    /**
+     * Record inbound request frames for `service`, or every frame from
+     * `senderAddress`, with their connection.
+     */
+    public stubCaptureInboundRequestFrames(
+        filter: { service: string } | { senderAddress: string }
+    ): boolean {
+        this.service.captureInboundRequestFrames(filter);
         return true;
+    }
+
+    public getCapturedFrameCount(): number {
+        return this.service.capturedRequestFrames.length;
     }
 
     /** Deliver a captured frame again on the connection it arrived on. */

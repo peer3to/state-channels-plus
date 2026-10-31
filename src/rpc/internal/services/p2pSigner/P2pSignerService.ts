@@ -13,6 +13,7 @@ export class P2pSignerService extends AInternalRpcService<P2pSignerRpcMethods> {
     ) {
         super(router);
     }
+
     public createRPCMethods(sender: InternalTransport) {
         return new P2pSignerRpcMethods(this, sender);
     }

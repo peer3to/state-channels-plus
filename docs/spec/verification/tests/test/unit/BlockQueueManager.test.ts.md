@@ -20,20 +20,11 @@ requested while the entry is parked above the head, and after one honest block i
 restored entry is judged in the same context and the request appears. Timeout scheduling itself is
 recorded rather than run, so no dispute is submitted by either case.
 
-Two shutdown cases run host-side on a live peer with a future queued block. In the first, the real
-queue timeout probes the block's source and the probe is held at its `syncBlockSource` call; `stop()` must
-still be pending when it reaches the queue drain, and it resolves only after the released probe settled. In the
-second, `stop()` is held at the custom RPC disposal after it set `isDisposed`; the real queue
-timeout then fires and must start no `syncBlockSource`. Any detached failure fails either test through the
-session teardown.
-
-Three drain cases cover the rest of the tracked work (staging in `test/fixtures/QueueDrainStaging.ts`).
-With two source probes in flight, one rejects: `stop()` is still pending, one job is still tracked and
-the timeout manager is alive; after the other probe settles nothing is tracked, the queue holds neither
-block, the recovery state is empty, the timeout manager is disposed and `stop()` rejects with the
-probe's failure. A real fork recovery held in flight keeps `stop()` pending with the recovery scheduled
-until it is released, then the recovery state is cleared. A fork recovery scheduled after `stop()`
-began, or whose timer fires after it, never enters recovery.
+A shutdown case runs host-side on a live peer with a future queued block. The
+peer aborts with its teardown held after the disposal cut-off and before the runtime's releases; the real
+queue timeout then fires and probes its source in the aborted runtime (one `syncBlockSource` call), and
+the source's spectate request count stays at zero one second later. Any detached failure fails the
+test through the session teardown.
 
 A drain case holds a fresh spectator's sync with the channel tip in its payload, suppresses its
 queue timeouts, and ingests a copy of that tip and of the next block authored meanwhile; both queue
@@ -67,8 +58,8 @@ own; peer 0 still applies chain events), gossips peer 0 a junk first block on th
 fork, and answers every sync with its real payload, which proves that fork only through the
 unreduced window. Peer 0's queue-timeout probe waits inside `syncBlockSource`; once peer 1 reduces the window
 on chain, peer 0 asks it again and blacklists it. Evidence posted by peer 0 during the wait moves the
-kill period's end and changes nothing. Stopping peer 0 during the wait resolves `stop` and peer 1 is
-never asked again.
+kill period's end and changes nothing. Disposing peer 0's runtime during the wait resolves the
+disposal and peer 1 is never asked again.
 
 One intake case gives the same window to a sender absent from the membership
 (`test/fixtures/QueueNetworkRetentionFixture.ts`): a synced spectator gossips peer 0 a block on the
@@ -79,15 +70,10 @@ the still-absent spectator is blacklisted.
 
 ## Tests
 
-- `stopping the manager clears a future queued block and cancels its timeout`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P37
-- `stop waits for a source probe held in flight at its sync`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P42
-- `stop drains a pending probe after another fails, clears the queue, then rejects with the failure`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P44
-- `stop waits for a fork recovery held in flight, then clears the recovery state`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P45
-- `a fork recovery scheduled or firing after stop began never runs`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P46
-- `a queue timeout firing after stop began starts no source probe`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P43
+- `a queue timeout firing after the runtime aborted sends its source no probe`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P43
 - `a junk supplier answering a source probe through a window the chain has not reduced is asked again once the chain reduces it, then excluded`: REQ-SYNC-4-AWHFPA.T1.P8
 - `evidence posted into the window while a source probe waits extends the kill period and changes nothing: the supplier is asked again after the reduction, then excluded`: REQ-SYNC-4-AWHFPA.T1.P10
-- `stopping the runtime while a source probe waits for the chain's reduction ends the wait: stop resolves and the supplier is not asked again`: REQ-SYNC-4-AWHFPA.T1.P11
+- `disposing the runtime while a source probe waits for the chain's reduction ends the wait: disposal resolves and the supplier is not asked again`: REQ-SYNC-4-AWHFPA.T1.P11
 - `an absent sender's gossip whose sync meets a window the chain has not reduced stays pending through the kill period, then the sender is asked again after the reduction and blacklisted`: REQ-SYNC-4-AWHFPA.T1.P19
 - `sync succeeds but the sender is still absent: blacklisted with no queue entry`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P36
 - `an intake-gate sync whose payload fails validation blacklists the sender through the sync with no queue entry`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P59, REQ-GOSSIP-4-J5Z4DF.T1.P48

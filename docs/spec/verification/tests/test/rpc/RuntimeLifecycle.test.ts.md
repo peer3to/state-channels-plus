@@ -5,9 +5,27 @@ Exercises: [RuntimeLifecycleService](../../../../implementation/source/src/rpc/i
 
 ## Overview
 
-Uses actual SDK roots and channels to check retained readiness, connection-loss isolation, shutdown preparation and child-before-local disposal, failure cleanup, held quiesce replies and parent-only cleanup requests. Two inline cases collect held detached work on a real host root: failing it after the root disposed leaves the drain without a rejection, failing it before keeps the rejection in the drain. Fixtures record original domain operations and control actual frames; shared RPC performs invocation and settlement. The worker-SDK disposal case holds a real worker executor call that is released only in `finally`, after the assertions: disposal of the worker SDK completes through the executor's bounded admission drain, the SDK worker exits, the client root records no host error, and a sibling runtime still answers a probe call. It does not measure the drain duration or read the held call's rejection. The worker-SDK abort case while the parent blocks its thread runs with log collection off (no upload endpoint): the worker exits within the parent's wait, and the client's real connection to the host carries no flush frame. Two worker-SDK teardown cases ([WorkerTeardownFixture](../../../../../../test/fixtures/node/WorkerTeardownFixture.ts)) set up the SDK from a scripted host entry ([TeardownHostEntry](../../../../../../test/fixtures/node/TeardownHostEntry.ts)) and dispose the `P2pInstance`: one closes a bound UDP socket just before the worker closes its handles, ahead of a second open socket, and asserts worker exit code 0, no drain warning in the client root's store and no host error; the other leaks a referenced timer on host disposal and asserts the drain-timeout exit code, a disposal no shorter than `ROOT_WORKER_DRAIN_TIMEOUT_MS`, one warning naming `P2pRuntimeHostRoot`, the drain bound and a `Timeout` resource, and no host error. Both cases start a local log receiver and turn crash-log upload on, because the client root's log store keeps entries only while upload is on; without it both warning checks would read an empty store.
+Uses actual SDK roots and channels to check retained readiness, connection-loss isolation, shutdown preparation and child-before-local disposal, failure cleanup, held quiesce replies and parent-only cleanup requests. Two worker cases collect held detached work in the runtime ([DetachedWorkDisposalFixture](../../../../../../test/fixtures/DetachedWorkDisposalFixture.ts)): failing it after an abort's disposal began leaves the session drain without a rejection, failing it before keeps the rejection in the drain. Fixtures record original domain operations and control actual frames; shared RPC performs invocation and settlement. The worker-SDK disposal case holds a real worker executor call that is released only in `finally`, after the assertions: disposal of the worker SDK completes through the executor's bounded admission drain, the SDK worker exits, the client root records no host error, and a sibling runtime still answers a probe call. It does not measure the drain duration or read the held call's rejection. The worker-SDK abort case while the parent blocks its thread runs with log collection off (no upload endpoint): the worker exits within the parent's wait, and the client's real connection to the host carries no flush frame. Two worker-SDK teardown cases ([WorkerTeardownFixture](../../../../../../test/fixtures/node/WorkerTeardownFixture.ts)) set up the SDK from a scripted host entry ([TeardownHostEntry](../../../../../../test/fixtures/node/TeardownHostEntry.ts)) and dispose the `P2pInstance`: one closes a bound UDP socket just before the worker closes its handles, ahead of a second open socket, and asserts worker exit code 0, no drain warning in the client root's store and no host error; the other leaks a referenced timer on host disposal and asserts the drain-timeout exit code, a disposal no shorter than `ROOT_WORKER_DRAIN_TIMEOUT_MS`, one warning naming `P2pRuntimeHostRoot`, the drain bound and a `Timeout` resource, and no host error. Both cases start a local log receiver and turn crash-log upload on, because the client root's log store keeps entries only while upload is on; without it both warning checks would read an empty store.
 
 The child-failure diagnostics case holds one request to the SDK host root and fails the child twice, each time on a new SDK setup: once with an ordinary `Error`, and once with a real `unreachable` trap that crossed the wire format (`serializeError`, then `deserializeError`), as a WebAssembly failure from a worker arrives. Each logs one `Worker failed with pending requests` line. Its `resources` holds this thread's counts both times; its `wasm` is absent for the ordinary error and equals the diagnostics serialized with the trap otherwise.
+
+The report-during-disposal case raises a host error report while the client disposes the host: it
+is logged at error on the client logger and reaches no `onHostError` listener; a report raised
+before the disposal still reaches the listener.
+
+The setup-disposal cases ([SetupDisposalFixture](../../../../../../test/fixtures/SetupDisposalFixture.ts)) dispose the client
+root, observed as soon as it exists, while the public setup is held, in worker and inline
+placement. The chain-read cases hold every `eth_call` of the host at a proxy in front of the node
+and release the reads after the disposal began (for a worker, once the host's port closed): the
+disposal settles within five seconds of the release. The build cases load
+[HeldBuildHostRoot](../../../../../../test/fixtures/hostRoot/HeldBuildHostRoot.ts) by manifest; it holds the result of the
+local diamond deployment, the build's last executor call before the runtime is constructed. The
+disposal settles within five seconds while the build is held. A worker host lets the
+build through at its own cut, an inline host only after the disposal settled; the host then
+reports, when the setup request settles, that the runtime the build constructed is cut and
+stopped. Every case asserts that the setup rejects, no host error is raised, the signer's chain
+nonce is unchanged, and a fresh runtime for the same signer sets up and answers. With the build's
+disposal check removed, both build cases fail with the runtime neither cut nor stopped.
 
 ## Tests
 
@@ -30,8 +48,6 @@ The child-failure diagnostics case holds one request to the SDK host root and fa
 
 The two root diagnostic cases retain service and method metadata without contract calldata fields, for both slow completion and pending requests on failure.
 
-- `disposes the worker custom RPC before its manager`: UNIT-TEST-RUNTIME-LIFECYCLE-1-GRZ48T.P13
-- `finishes worker manager cleanup after custom RPC disposal rejects`: UNIT-TEST-RUNTIME-LIFECYCLE-1-GRZ48T.P14
 - `automatically disposes root and application logger descendants and crash listeners`: UNIT-TEST-ROOT-DISPOSAL-1-NMS66W.P8, REQ-LOG-1-H2VQ8X.T2.P6
 - `collects new host errors after an earlier inline drain`: UNIT-TEST-RUNTIME-LIFECYCLE-1-GRZ48T.P11
 - `collects new host errors after an earlier worker drain`: UNIT-TEST-RUNTIME-LIFECYCLE-1-GRZ48T.P12
@@ -47,5 +63,10 @@ The two root diagnostic cases retain service and method metadata without contrac
 - `marks worker shutdown expected before parent port closure while client cleanup is held`: UNIT-TEST-CONTRACT-EXECUTOR-WORKER-RUNTIME-1-2ZBBHR.P3, REQ-RUNTIME-3-VQXW59.T1.P59
 - `completes worker SDK disposal when a handle refuses a second close during the worker's handle close`: REQ-RUNTIME-7-A2VAR0.T1.P9, UNIT-TEST-ROOT-WORKER-DRAIN-1-JWKQ0P.P9
 - `completes worker SDK disposal after the drain bound when the host leaks a referenced timer`: REQ-RUNTIME-7-A2VAR0.T1.P10, UNIT-TEST-ROOT-WORKER-DRAIN-1-JWKQ0P.P10
+- `logs a report raised while its root disposes and raises it to nobody`: REQ-RUNTIME-3-VQXW59.T1.P87
+- `disposes a worker runtime whose setup is held at its chain reads, and a fresh runtime for its signer works`: REQ-RUNTIME-3-VQXW59.T1.P88
+- `disposes an inline runtime whose setup is held at its chain reads, and a fresh runtime for its signer works`: REQ-RUNTIME-3-VQXW59.T1.P89
+- `cuts and disposes the runtime a worker setup builds after its disposal began, and a fresh runtime for its signer works`: REQ-RUNTIME-3-VQXW59.T1.P90
+- `cuts and disposes the runtime an inline setup builds after its disposal ended, and a fresh runtime for its signer works`: REQ-RUNTIME-3-VQXW59.T1.P91
 - `settles detached work that fails after root disposal as the disposal outcome`: UNIT-TEST-ROOT-DISPOSAL-1-NMS66W.P9, REQ-RUNTIME-3-VQXW59.T1.P62
 - `keeps a detached failure before root disposal visible in the drain`: UNIT-TEST-ROOT-DISPOSAL-1-NMS66W.P10, REQ-RUNTIME-3-VQXW59.T1.P63

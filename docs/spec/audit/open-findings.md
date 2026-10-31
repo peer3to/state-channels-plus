@@ -714,16 +714,14 @@ development console import.
 
 ### FIND-ROOT-DISPOSAL-1-1ZDQAW
 
-**Defect:** _Open (2026-09-29, engineer: deferred)._ Root disposal, the cascade to child roots, and
+**Defect:** _Resolved (2026-10-31)._ Disposal is now one host root dispose: a synchronous cut, one flat release list, then the children ([`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59), permutations T1.P87 to T1.P96). What follows describes the state before that change. Root disposal, the cascade to child roots, and
 the races around them are handled piecemeal in each component instead of in one place, so every
 component that owns or uses child roots has to reason about lifecycle ordering itself. Current
 instances:
 [`AInternalRpcRoot.disposeRoot`](../implementation/source/src/rpc/internal/AInternalRpcRoot.ts.md)
-orders an optional `prepare` step, child disposal, local cleanup and a bounded in-flight reply drain
-(`IN_FLIGHT_REPLY_DRAIN_MS`).
+orders an optional `prepare` step, child disposal and local cleanup.
 [`ContractExecutorService`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md)
-adds its own admission gate, a per-caller settle-once latch and a second bounded drain (the same
-constant), plugged in through `prepare`, because its in-flight EVM work can call into its own
+adds its own admission gate, a per-caller settle-once latch and a bounded drain (`ADMISSION_DRAIN_MS`), plugged in through `prepare`, because its in-flight EVM work can call into its own
 children (custom precompile roots).
 [`createRoot`](../implementation/source/src/rpc/internal/createRoot.ts.md) chains hidden-parent
 cleanup after child cleanup for parentless workers. `StateManager.stop` orders custom-RPC disposal,
@@ -766,6 +764,77 @@ copies (the executor admission latch, the consumer creation and disposal promise
 mechanism covers them. Needs its own plan; no behavior change is intended, so the existing lifecycle
 tests are the regression suite.
 
+**Update (2026-10-30, dispose cut-off):** host disposal now starts with one synchronous cut-off in
+[`P2pRuntimeHostRoot`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md):
+the network (`P2PManager.dispose` closes every transport in the call, a later transport neither
+sends nor hears), chain sends ([`HostNonceManager`](../implementation/source/src/evm/signer/HostNonceManager.ts.md)
+`cut()`: a later or queued send never settles) and the parent event bus. `BlockQueueManager.dispose`
+and its drain, the `TimeoutManager` running-task wait and the `StateChannelEventListener` stop drain
+are deleted, so `StateManager.stop` no longer drains the block queue or running timer tasks, and a
+reduce send frozen at the cut no longer holds disposal.
+
+**Update (2026-10-31, dispose cut-off slice 2):** the per-component disposal guards behind the cut are
+deleted (block queue, reduction manager and executor, channel join, dispute manager, spectate, the
+P2P manager's handshake and initial-sync terms, the handshake guards, the negotiation and lobby status
+writes); `ReductionManager`, `ReductionExecutor`, `ChannelJoinService` and `LeaveChannelService` lose
+their `dispose`, and `StateManager.stop` is the one memoized producer stop. Their tests now dispose
+through the root and assert what leaves the runtime (no frame, no transaction). Still open: the
+executor admission latch and the consumer creation and disposal promises stay.
+
+**Update (2026-10-31, dispose during setup, Luke: a dispose at any time ends disposed):** a runtime
+build that completes after the cut cuts and disposes the runtime it built and fails the setup
+([`REQ-RUNTIME-3-VQXW59.T1.P90`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p90),
+[`REQ-RUNTIME-3-VQXW59.T1.P91`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p91)). A
+host still starting is never disposed during its start: its parent's disposal ends it once the start
+returns ([`REQ-RUNTIME-3-VQXW59.T1.P88`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p88),
+[`REQ-RUNTIME-3-VQXW59.T1.P89`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p89)), so
+that disposal is bounded by the start's own chain reads. A disposing runtime's warnings and errors are
+logged at info ([`REQ-LOG-1-H2VQ8X` (Logging cleanup preserves surviving owners)](../specification/runtime/log-collection.md#req-log-1-h2vq8x)).
+
+**Update (2026-10-31, late transports, Luke):** a wire transport that connects after the cut closes at
+registration ([`ProfileManager`](../implementation/source/src/ProfileManager.ts.md) `setBannablePeerInfo`
+for Holepunch and local discovery links, the `WebRTCTransport` constructor for a late channel), so its
+socket closes and it sends and hears nothing ([`UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P3`](../implementation/source/src/ProfileManager.ts.md#unit-test-profile-disposal-1-hpxawa)). The per-send cut
+predicate, its loopback exemption and the local discovery checks that only guarded transport creation
+are deleted.
+
+**Update (2026-10-31, dispose cut-off slice 3, Luke: one dispose that makes the runtime implode):**
+[`P2pRuntimeHostRoot`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md)
+`dispose` is the one disposal: the cut, then each edge of the runtime that outlives it released
+once from the root (the custom RPC hook, the negotiation and lobby answers, the handshake barrier,
+the spectate chain-head waits, the timeout manager, the event listener's node subscriptions, the
+abort flush before the children; the gas report, the provider and the network close after them).
+`StateManager.stop`/`dispose`, `StateChannelEventListener.stop`, `EventSyncService.stop`, the
+gas recorder's and diamond's `dispose`, the executor service's `dispose` and the base
+`MainRpcService.dispose` body are deleted, and the SDK services are no longer reached through the
+consumer hook.
+
+**Update (2026-10-31, dispose cut-off slices 4-5, Luke: as few sites as possible know about disposal):**
+the custom RPC hook, the negotiation and lobby answers, P2PManager's network-cut promise and the
+connect race are deleted; the application's pending channel calls reject with the runtime-disposed
+error when the connection closes and no longer hold the parent reply drain. An abort ends in the same
+root dispose. The root's release now also leaves every local discovery session of the manager, closes
+watched peer connections (one still negotiating included) and removes the listeners left on a provider
+the Clock keeps. The block-production, block-ingest and block-queue stop guards and the discovery
+handshake-result check are deleted.
+Still open: a request already parked on the state mutex at an abort can finish in memory after the cut
+and answer the application before the connection closes, and a peer connection created after the
+release closes only when its data channel arrives or ICE fails.
+
+**Update (2026-10-31, dispose cut-off slice 6, Luke):** the parent reply drain is deleted for every
+root: a request whose handler has not answered when the connection closes rejects with the
+runtime-disposed error, and only the disposal's own acknowledgement still leaves. The root flushes its
+logs before the connection closes, so the disposal-time gas report reaches the upload in worker mode.
+Inline mode is marked deprecated; the disposal tests deleted as inline-only run in worker mode, except
+the three that need inline mode's shared realm.
+
+**Update (2026-10-31, executor admission drain, Luke: deleted):** the contract executor no longer waits
+for admitted work. `ContractExecutorService.closeAdmission` closes admission and rejects every admitted
+caller at once with the disposal rejection; each operation's later outcome is dropped, and
+`ADMISSION_DRAIN_MS` and the settle-once latch are deleted.
+
+**Update (2026-11-01, nothing left open, Luke):** each earlier "Still open" item is settled. The executor admission latch is deleted (the update above), and so is the consumer disposal hook (`MainRpcService.dispose`, slice 4). A request already parked on the state mutex may still answer the application between the cut and the connection close; [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59) allows that answer. Luke accepted the peer connection that the factory creates after the release: it closes on its own when its data channel arrives or ICE fails, so it is not tracked as a separate finding.
+
 <a id="find-join-2-ek5dww"></a>
 
 ### FIND-JOIN-2-EK5DWW
@@ -786,7 +855,7 @@ tests are the regression suite.
 
 ### FIND-RUNTIME-2-4B0D0Q
 
-**Defect:** _Open (2026-10-15, engineer: deferred — design first)._ Runtime disposal is not a clean cut-off, and block ingest blames the sender for a local failure. Observed 2026-10-15 on a live poker bot: bot Bob busted and posted his exit snapshot. The chain's `ChannelStorageCleared` made [`EventHandler.onChannelStorageCleared`](../implementation/source/src/eventHandlers/EventHandler.ts.md) reset Bob's eligibility cache. Alice's block confirmation arrived in that gap, so [`BlockQueueManager.ingestBlockConfirmation`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md) started the eligibility refresh (chain reads and local EVM calls through [`MembershipService.resolveSourceEligibility`](../implementation/source/src/stateManager/membership/MembershipService.ts.md) → `refreshOnChainEligibility` → [`EventSyncService.synchronizeChainMembership`](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)). Bob's leave completed and the poker client disposed the runtime. [`StateManager.stop`](../implementation/source/src/stateManager/StateManager.ts.md) → `BlockQueueManager.dispose` drains only `inFlight` (filled by `track`), and `ingestBlockConfirmation` is not tracked, so the root ([`AInternalRpcRoot.disposeRoot`](../implementation/source/src/rpc/internal/AInternalRpcRoot.ts.md), [`P2pRuntimeHostRoot`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md)) disposed the VM child under the running refresh → "Local contract transaction failed: Runtime child disposed". (2) The catch-all in `ingestBlockConfirmation` (`catch (error) { logger.error(...); return false; }`) turned that local failure into a sender verdict, and [`StateTransitionRpcMethods`](../implementation/source/src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts.md) blacklisted the honest Alice. The same catch-all blames the sender for any local failure (chain read, local EVM), contrary to [`REQ-GOSSIP-4-J5Z4DF.T1.P40`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p40) (a local mirror failure during the refresh is fatal) and the rule that internal failures are fatal; see also [`DEF-9-724SXP`](open-findings.md#def-9-724sxp) and [`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw). Impact today: low. The blacklist lives only in memory and is not persisted, so Bob's next session starts with nobody blacklisted.
+**Defect:** _Open (2026-10-15); the disposal half resolved 2026-10-31._ Disposal is now a clean cut-off ([`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw)); the sender blame below stays open. Runtime disposal was not a clean cut-off, and block ingest blames the sender for a local failure. Observed 2026-10-15 on a live poker bot: bot Bob busted and posted his exit snapshot. The chain's `ChannelStorageCleared` made [`EventHandler.onChannelStorageCleared`](../implementation/source/src/eventHandlers/EventHandler.ts.md) reset Bob's eligibility cache. Alice's block confirmation arrived in that gap, so [`BlockQueueManager.ingestBlockConfirmation`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md) started the eligibility refresh (chain reads and local EVM calls through [`MembershipService.resolveSourceEligibility`](../implementation/source/src/stateManager/membership/MembershipService.ts.md) → `refreshOnChainEligibility` → [`EventSyncService.synchronizeChainMembership`](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)). Bob's leave completed and the poker client disposed the runtime. [`StateManager.stop`](../implementation/source/src/stateManager/StateManager.ts.md) → `BlockQueueManager.dispose` drains only `inFlight` (filled by `track`), and `ingestBlockConfirmation` is not tracked, so the root ([`AInternalRpcRoot.disposeRoot`](../implementation/source/src/rpc/internal/AInternalRpcRoot.ts.md), [`P2pRuntimeHostRoot`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md)) disposed the VM child under the running refresh → "Local contract transaction failed: Runtime child disposed". (2) The catch-all in `ingestBlockConfirmation` (`catch (error) { logger.error(...); return false; }`) turned that local failure into a sender verdict, and [`StateTransitionRpcMethods`](../implementation/source/src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts.md) blacklisted the honest Alice. The same catch-all blames the sender for any local failure (chain read, local EVM), contrary to [`REQ-GOSSIP-4-J5Z4DF.T1.P40`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p40) (a local mirror failure during the refresh is fatal) and the rule that internal failures are fatal; see also [`DEF-9-724SXP`](open-findings.md#def-9-724sxp) and [`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw). Impact today: low. The blacklist lives only in memory and is not persisted, so Bob's next session starts with nobody blacklisted.
 
 **Proposed direction:** Design disposal as a hard cut-off of the process: first make sure persisted storage cannot be corrupted during disposal, then cut the network and RPC/chain connections, then shut the runtime down. After the cut-off nothing has lasting consequences, so internal components may fail as they stop; the part to design carefully is that unhandled and detached work (`DetachedPromises`, timeout tasks, in-flight ingest) cannot crash the top-level host process. Removing the ingest catch-all (local failures fatal, peer verdicts only from validation results, [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)) is part of the same design and is deferred with it. Deferred by Luka on 2026-10-15.
 
@@ -802,6 +871,13 @@ its own. The swallow remains a recorded divergence from
 [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)'s
 refresh-is-fatal rule, recorded on the
 [`BlockQueueManager` report](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md).
+
+**Update (2026-10-30, dispose cut-off):** `BlockQueueManager.dispose`, `track` and the `inFlight`
+drain this entry cites are deleted; host disposal begins with a synchronous cut of the network,
+chain sends and the parent bus (see [`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw)),
+so nothing the imploding runtime does after the cut leaves it as a frame or a transaction. The
+VM child is still disposed under a refresh that is still running; that local failure is tolerated
+by the ingest catch since PR #556.
 
 **Side-effect audit of tolerating more (2026-10-16).** (1) No partial queue state: ingest's
 mutations before a throw point are the pre-mutation block clone, one synchronous queue set/merge

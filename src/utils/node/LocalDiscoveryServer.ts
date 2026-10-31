@@ -725,7 +725,6 @@ export class LocalDiscoveryServer {
                     );
                     if (
                         this._cleanupRequested ||
-                        p2pManager.isDisposed ||
                         !session ||
                         session.server !== server ||
                         !dialerAddress ||
@@ -959,12 +958,27 @@ export class LocalDiscoveryServer {
         connectRegistry(1);
     }
 
+    /** Leaves `rendezvousKey`, or every session of `p2pManager` without one. */
     public static async leave(
-        rendezvousKey: string,
+        rendezvousKey: string | undefined,
         p2pManager?: P2PManager
     ): Promise<void> {
         if (!p2pManager) return;
-        await this.discoveryJoins.get(p2pManager)?.get(rendezvousKey);
+        if (rendezvousKey === undefined) {
+            const keys = new Set([
+                ...(this.discoveryJoins.get(p2pManager)?.keys() ?? []),
+                ...(this.discoverySessions.get(p2pManager)?.keys() ?? [])
+            ]);
+            await Promise.allSettled(
+                [...keys].map((key) => this.leave(key, p2pManager))
+            );
+            return;
+        }
+        // a join still binding its listener finishes first; a failed join left no session
+        await this.discoveryJoins
+            .get(p2pManager)
+            ?.get(rendezvousKey)
+            ?.catch(() => undefined);
         const sessions = this.discoverySessions.get(p2pManager);
         const session = sessions?.get(rendezvousKey);
         if (!session) return;
@@ -1270,7 +1284,6 @@ export class LocalDiscoveryServer {
             },
             onMessage: (ws, message) => {
                 if (
-                    p2pManager.isDisposed ||
                     this.getDiscoverySession(p2pManager, rendezvousKey) !==
                         session ||
                     transport ||
@@ -1287,6 +1300,7 @@ export class LocalDiscoveryServer {
                     lt,
                     new LocalPeerInfo(p2pManager, peerAddress)
                 );
+                if (lt.isClosed) return;
                 const handshakeService =
                     p2pManager.localRpc.initHandshakeService;
                 handshakeService.initHandshake(lt);
@@ -1296,11 +1310,6 @@ export class LocalDiscoveryServer {
                         p2pManager.stateManager.timeConfig.agreementTime * 1000
                     )
                     .then((completed) => {
-                        // Shutdown settles every pending handshake wait with
-                        // false before the P2P manager itself is disposed; that
-                        // is not a failed handshake, so nothing is retried.
-                        if (!completed && p2pManager.stateManager.isDisposed)
-                            return;
                         if (!completed) {
                             p2pManager.disconnectConnection(
                                 lt,

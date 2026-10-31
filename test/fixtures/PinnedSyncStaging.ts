@@ -282,14 +282,15 @@ export async function assertQueuedSuccessorBlockSurvivesSyncInstall(
         // each copy of the block re-arms its timeout: every arm is held
         await waitFor(async () => (await timeouts.heldCount()) > 0);
 
-        // the queue timeout runs while the install is held
+        // the queue timeout runs while the install is held: it dequeues the
+        // block and probes its sources
         await timeouts.release(true);
         await waitFor(
             async () =>
-                (await h.execOnHost(
-                    observer,
-                    async (sm) => sm.blockQueueManager["inFlight"].size
-                )) > 0
+                !(await h
+                    .control(observer)
+                    .query.isBlockQueued(blockHash!)
+                    .request())
         );
         expect(
             await h.execOnHost(

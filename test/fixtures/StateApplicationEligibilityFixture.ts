@@ -250,7 +250,7 @@ export async function assertCacheDuringSnapshotPreparation() {
     }
 }
 
-export async function assertReductionCache(cancelled: boolean) {
+export async function assertReductionCache() {
     const h = MathTestSession.getHarness();
     await h.lifecycle.start(2, 1, { maxChannelParticipants: 3 });
     const newcomer = ethers.Wallet.createRandom().address;
@@ -275,57 +275,42 @@ export async function assertReductionCache(cancelled: boolean) {
                         sm.storage.stateMachineStates.getStateMachineState(
                             snapshot.stateMachineStateHash
                         )!;
-                    const previousState =
-                        await sm.diamondStateMachine.getState();
                     const before =
                         sm.membershipService.getCachedSourceEligibility(
                             args.newcomer
                         );
                     const forkBefore = sm.forkId;
-                    try {
-                        const applied =
-                            await sm.stateApplicationService.unsafeApplyReductionGenesis(
-                                {
-                                    ...snapshot.toStruct(),
-                                    forkId: snapshot.snapshotDataHash,
-                                    blockHeight: 0
-                                },
-                                encodedState,
-                                undefined,
-                                () => !args.cancelled
-                            );
-                        return {
-                            applied,
-                            before,
-                            after: sm.membershipService.getCachedSourceEligibility(
-                                args.newcomer
-                            ),
-                            forkBefore,
-                            forkAfter: sm.forkId,
-                            published:
-                                !!sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
-                                    snapshot.snapshotDataHash
-                                )
-                        };
-                    } finally {
-                        if (args.cancelled)
-                            await sm.diamondStateMachine.setState(
-                                previousState
-                            );
-                    }
+                    const applied =
+                        await sm.stateApplicationService.unsafeApplyReductionGenesis(
+                            {
+                                ...snapshot.toStruct(),
+                                forkId: snapshot.snapshotDataHash,
+                                blockHeight: 0
+                            },
+                            encodedState,
+                            undefined
+                        );
+                    return {
+                        applied,
+                        before,
+                        after: sm.membershipService.getCachedSourceEligibility(
+                            args.newcomer
+                        ),
+                        forkBefore,
+                        forkAfter: sm.forkId,
+                        published:
+                            !!sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                                snapshot.snapshotDataHash
+                            )
+                    };
                 },
-                { taskName: "cancelledReductionCache" }
+                { taskName: "reductionCache" }
             ),
-        { newcomer, cancelled }
+        { newcomer }
     );
-    expect(result.applied).to.equal(!cancelled);
+    expect(result.applied).to.equal(true);
     expect(result.before).to.equal(SourceEligibility.ELIGIBLE);
-    if (cancelled) {
-        expect(result.after).to.deep.equal(result.before);
-        expect(result.forkAfter).to.equal(result.forkBefore);
-    } else {
-        expect(result.after).to.equal(SourceEligibility.ABSENT);
-        expect(result.forkAfter).not.to.equal(result.forkBefore);
-    }
-    expect(result.published).to.equal(!cancelled);
+    expect(result.after).to.equal(SourceEligibility.ABSENT);
+    expect(result.forkAfter).not.to.equal(result.forkBefore);
+    expect(result.published).to.equal(true);
 }

@@ -1,6 +1,5 @@
 import { randomAddress } from "@test/factory";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import { observeRuntimeDisposal } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
 import { expect } from "chai";
@@ -796,37 +795,5 @@ describe("EventBus (worker + main thread)", function () {
         } finally {
             await standalone.cleanup();
         }
-    });
-
-    it("disposes the custom RPC root before runtime teardown", async function () {
-        const h = TestSession.getHarness();
-        await h.lifecycle.start(4, 0, {
-            configOverrides: { RUN_SDK_IN_THREAD: false }
-        });
-
-        const result = await observeRuntimeDisposal(h.getPeer(1).p2pInstance);
-
-        // The root ran while the p2p layer was still alive; teardown followed.
-        expect(result.connectionsAtRootDispose).to.be.greaterThan(0);
-        expect(result.connectionsAfter).to.equal(0);
-    });
-
-    it("still tears the runtime down when the custom root dispose rejects", async function () {
-        const h = TestSession.getHarness();
-        // A real custom root whose dispose() rejects, loaded through the
-        // normal manifest path -- no behavior patching on live collaborators.
-        await h.lifecycle.start(4, 0, {
-            configOverrides: { RUN_SDK_IN_THREAD: false },
-            customRpcManifest: {
-                module: `${__dirname}/../fixtures/customRpc/RejectingDisposeRpcManifest.ts`,
-                exportName: "RejectingDisposeRpc"
-            }
-        });
-
-        const result = await observeRuntimeDisposal(h.getPeer(2).p2pInstance);
-
-        // The rejection surfaced, and only after the runtime was torn down.
-        expect(result.message).to.equal("root dispose boom");
-        expect(result.connectionsAfter).to.equal(0);
     });
 });

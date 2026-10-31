@@ -31,11 +31,8 @@ export class ContractExecutorRoot extends AInternalRpcRoot {
     // Implements root cleanup through the shared recursive disposal contract.
     public override dispose(): Promise<void> {
         return this.disposeRoot(
-            () => {
-                this.executor.dispose();
-            },
-            // Admitted EVM work may still call a child (a custom precompile),
-            // so it settles before children are disposed.
+            () => undefined,
+            // Admitted EVM work is abandoned before children are disposed.
             () => this.executor.closeAdmission()
         );
     }

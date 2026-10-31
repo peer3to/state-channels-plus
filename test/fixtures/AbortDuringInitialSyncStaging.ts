@@ -1,6 +1,8 @@
 // @spec-test-coverage-ignore: shared initial-sync staging exercised by mapped P2PManager declarations
 
+import { rejectionOf } from "./ProvenSubmissionFailureStaging";
 import { clientRootFor } from "./RuntimeRootObservation";
+import { isRootDisposedError } from "@/rpc/internal/RemoteRoot";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
@@ -112,17 +114,19 @@ export async function withInitialDeadlineElapsedDuringHeldChecks<
 
 /**
  * Open a two-participant channel, spawn an observer, start its connect and
- * abort the runtime as soon as the status is OPENED. `stage` runs on the
- * observer before the connect and decides which phase the abort lands in.
- * The connect must settle `false` within `settledWithinMs`, and the host root
- * must close afterwards.
+ * abort (or dispose) the runtime as soon as the status is OPENED. `stage`
+ * runs on the observer before the connect and decides which phase the end
+ * lands in. The connect must reject with RootDisposedError within
+ * `settledWithinMs`, the connect frozen at the cut must not hold the
+ * disposal, and the host root must close afterwards.
  */
-export async function assertObserverConnectSettlesFalseOnAbort<
+export async function assertObserverConnectRejectsOnEnd<
     THost extends P2pRuntimeHostRoot<HarnessControlRpcShape>
 >(
     h: PeerTestHarness<THost, MathStateMachine>,
     options: {
         settledWithinMs: number;
+        end?: "abort" | "dispose";
         stage?: (observer: TestPeer<THost, MathStateMachine>) => Promise<void>;
     }
 ): Promise<void> {
@@ -141,8 +145,11 @@ export async function assertObserverConnectSettlesFalseOnAbort<
         h.channelId
     );
     await h.event.waitUntilPeerStatus(observerIndex, Status.OPENED);
-    await h.control(observer).stub.abortDetached().request();
-    expect(await connect).to.equal(false);
+    // observed before the end: a dispose rejects the connect while it runs
+    const rejection = rejectionOf(connect);
+    if (options.end === "dispose") await observer.p2pInstance.dispose();
+    else await h.control(observer).stub.abortDetached().request();
+    expect(isRootDisposedError(await rejection)).to.equal(true);
     expect(Date.now() - startedAt).to.be.lessThan(options.settledWithinMs);
     await waitFor(() => host.isClosed, h.event.protocolEventTimeoutMs());
 }
@@ -150,8 +157,9 @@ export async function assertObserverConnectSettlesFalseOnAbort<
 /**
  * Open a two-participant channel, hold the participants' sync responses so
  * the observer's real initial sync request is in flight, abort the observer,
- * then release the held response as a success or a failure. The connect
- * settles `false` on the abort and the late result changes nothing.
+ * then release the held response as a success or a failure. The cut fails
+ * the in-flight sync request, so the connect answers `false`, and the late
+ * result changes nothing.
  */
 export async function assertLateSyncResultAfterAbortChangesNothing<
     THost extends P2pRuntimeHostRoot<HarnessControlRpcShape>
@@ -187,6 +195,8 @@ export async function assertLateSyncResultAfterAbortChangesNothing<
                 return counts.some((count) => count >= 1);
             });
             await h.control(observer).stub.abortDetached().request();
+            // the cut fails the in-flight sync request: the sync-failure
+            // path answers false before the port closes
             expect(await connect).to.equal(false);
             await waitFor(() => host.isClosed);
             const syncedAtAbort = h.event.getEventCallCount(

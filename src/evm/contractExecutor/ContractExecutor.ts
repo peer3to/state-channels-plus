@@ -95,11 +95,6 @@ export default class ContractExecutor extends AContractExecutor {
             options.callGasLimit ?? DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT;
     }
 
-    // AContractExecutor.dispose releases this executor's own logger.
-    public override dispose(): void {
-        this.logger?.dispose();
-    }
-
     async deploy(data: Bytes): Promise<ContractExecutionResult> {
         await this.mutex.lock({
             taskName: "deploy",

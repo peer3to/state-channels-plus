@@ -69,7 +69,6 @@ export async function createLoggerSdkFixture(
         peerLogger?: Logger;
         identityContext?: boolean;
         signerSecret?: string;
-        rejectDomainDisposal?: boolean;
         customRpcManifest?: CustomRpcManifest;
     } = {}
 ): Promise<LoggerSdkFixture> {
@@ -103,17 +102,6 @@ export async function createLoggerSdkFixture(
         setup.deployStateMachine,
         {
             ...setup.setupOptions,
-            ...(options.rejectDomainDisposal
-                ? {
-                      customRpcManifest: {
-                          module: path.join(
-                              __dirname,
-                              "../customRpc/RejectingDisposeRpcManifest.ts"
-                          ),
-                          exportName: "RejectingDisposeRpc"
-                      }
-                  }
-                : {}),
             ...(options.customRpcManifest
                 ? { customRpcManifest: options.customRpcManifest }
                 : {}),

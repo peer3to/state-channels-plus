@@ -15,7 +15,6 @@ import { BigNumberish, getNumber, Log, Provider } from "ethers";
 const CATCH_UP_ABANDONED = Symbol("catch-up abandoned");
 
 class StateChannelEventListener {
-    private static readonly DISPOSE_TIMEOUT_MS = 30000;
     private readonly logger: Logger;
     /** Every node socket the channel is subscribed on, with its callback. */
     private readonly subscribedSockets = new NodeSocketSubscriptions();
@@ -29,7 +28,6 @@ class StateChannelEventListener {
      */
     private readonly catchUpAborts = new Set<() => void>();
     private generation = 0;
-    private disposed = false;
 
     constructor(
         private readonly stateChannelManagerContract: StateChannelManagerInterface,
@@ -45,18 +43,17 @@ class StateChannelEventListener {
      * later is subscribed too, and its missed logs are caught up.
      */
     async setChannelId(channelId: ChannelId): Promise<void> {
-        if (this.disposed) return;
         const channelKey = toChannelKey(channelId);
         if (channelKey === this.currentChannelKey && this.listener) return;
         // claimed before the await: a clear or newer set during it wins
         const generation = ++this.generation;
         await this.removeListener();
-        if (this.disposed || generation !== this.generation) return;
+        if (generation !== this.generation) return;
         this.eventSyncService.setChannelId(channelId);
         this.currentChannelKey = channelKey;
         const filter = this.eventSyncService.getSubscriptionFilter(channelId);
         const listener = (log: Log) => {
-            if (this.disposed || generation !== this.generation) return;
+            if (generation !== this.generation) return;
             this.logger.debug(
                 "On-chain event streamed",
                 LoggerUtils.getContractLogMetadata(log)
@@ -69,11 +66,11 @@ class StateChannelEventListener {
         const provider = this.getProvider();
         // where a catch-up starts while no event has completed a block yet
         const subscribedAtBlock = await provider.getBlockNumber();
-        if (this.disposed || generation !== this.generation) return;
+        if (generation !== this.generation) return;
         const subscriptions: Promise<unknown>[] = [];
         this.unwatchNodes = provider.nodes.map((node) =>
             node.watchSockets((socket, reopened) => {
-                if (this.disposed || generation !== this.generation) return;
+                if (generation !== this.generation) return;
                 if (!reopened) {
                     subscriptions.push(
                         this.subscribedSockets.add(socket, filter, listener)
@@ -158,29 +155,22 @@ class StateChannelEventListener {
     }
 
     async clearChannelId(): Promise<void> {
-        if (this.disposed) return;
         // a select started during the removal owns the key
         const generation = ++this.generation;
         await this.removeListener();
         if (generation === this.generation) this.currentChannelKey = undefined;
     }
 
-    /** Stop accepting logs and drain work without starting an unsubscribe. */
-    async stop(): Promise<void> {
-        this.disposed = true;
-        this.generation += 1;
-        await this.eventSyncService.stop(
-            StateChannelEventListener.DISPOSE_TIMEOUT_MS
-        );
-    }
-
+    /**
+     * Ends every callback and catch-up in flight and removes the node
+     * watchers and socket subscriptions. Work already dispatched is not
+     * drained: under the runtime's disposal cut-off a dispute or reduce it
+     * awaits never settles.
+     */
     async dispose(): Promise<void> {
-        try {
-            await this.stop();
-        } finally {
-            await this.removeListener();
-            this.currentChannelKey = undefined;
-        }
+        this.generation += 1;
+        await this.removeListener();
+        this.currentChannelKey = undefined;
     }
 
     /**
@@ -216,7 +206,7 @@ class StateChannelEventListener {
         // the head is asked again instead of reading logs
         let awaitingTargetHead = false;
         for (let failedAttempts = 0; ; failedAttempts++) {
-            if (this.disposed || generation !== this.generation) return;
+            if (generation !== this.generation) return;
             if (hasSocketEnded()) return;
             if (!awaitingTargetHead) {
                 const read = await Promise.race([

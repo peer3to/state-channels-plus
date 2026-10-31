@@ -41,3 +41,4 @@ Connection health of an upgraded transport
 - [x] `UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P7` — each path loss gets its own full grace
 - [x] `UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P8` — a replaced connection's transport closes when its replacement starts, without closing the replacement's factory connection
 - [x] `UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P9` — `failed` or `closed` during a grace, before the connection has a transport, closes its factory connection and the service stops tracking it
+- [x] `UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P10` — dispose closes a connection still negotiating, and a connection whose data channel arrives after the network cut closes once its transport is built

@@ -1,7 +1,10 @@
 import { Block } from "@/models";
+import { isRootDisposedError } from "@/rpc/internal/RemoteRoot";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import { sleep } from "@/utils";
+import { disposeAndRelease } from "@test/fixtures/DisposeCutOffStaging";
+import { clientRootFor } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -635,25 +638,32 @@ describe("Unit: BlockProductionService", function () {
         });
     });
 
-    describe("playTransaction → rollback while stopping", function () {
-        it("an assembly that fails after the runtime started stopping → restores nothing, logs no restore error, rejects with its own error and releases the mutex", async function () {
+    describe("playTransaction → rollback while the runtime aborts", function () {
+        it("an assembly that fails after the runtime aborted → rejects with its own error and no peer receives a block", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1);
             const forkId = h.activeForkId!;
 
             const writer = await h.query.getNextPeerToWrite();
-            const control = h.control(writer);
-            const readRecord = await h.rpcStub.refuseInboundAndStartStop(
-                writer.index
+            const others = h.peers.filter(
+                (peer) => peer.index !== writer.index
             );
+            await h.rpcStub.refuseInboundAndAbort(writer.index);
             // a real top-up lands on chain -> the writer's next block must
-            // carry it; its refusal starts the runtime's stop mid-assembly
+            // carry it; its refusal aborts the runtime mid-assembly
             await h.join.forceInboundJoinWait({
                 participant: h.getPeer(0).address
             });
-            const heightBefore = await control.query
-                .getNextBlockHeight(forkId)
-                .request();
+            const heights = () =>
+                Promise.all(
+                    others.map((peer) =>
+                        h
+                            .control(peer)
+                            .query.getNextBlockHeight(forkId)
+                            .request()
+                    )
+                );
+            const heightsBefore = await heights();
 
             let message = "no throw";
             try {
@@ -665,76 +675,78 @@ describe("Unit: BlockProductionService", function () {
             }
 
             expect(message).to.contain("Failed to process inbound message");
-            expect(await readRecord()).to.deep.equal({
-                restoreAttempts: 0,
-                restoreErrors: []
-            });
-            expect(
-                await control.query.getNextBlockHeight(forkId).request()
-            ).to.equal(heightBefore);
-            // the failed assembly released the mutex: another task takes it
-            const hold = await h.rpcStub.holdStateMutex(writer.index);
-            try {
-                await waitFor(
-                    async () => (await hold.entered()) === 1,
-                    h.event.protocolEventTimeoutMs()
-                );
-            } finally {
-                await hold.release();
-            }
+            await h.event.waitForPeers("onAbort", [writer.index], 1);
+            await sleep(1_000);
+            expect(await heights()).to.deep.equal(heightsBefore);
         });
     });
 
-    describe("playTransaction → parked behind the mutex while the runtime aborts", function () {
-        it("a candidate parked on the state mutex when the runtime aborts → rejects without authoring once the mutex frees", async function () {
+    describe("playTransaction → after the runtime aborts", function () {
+        it("an aborted runtime → the app's next transaction rejects with RootDisposedError and no peer receives a block", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1);
             const forkId = h.activeForkId!;
 
             const writer = await h.query.getNextPeerToWrite();
-            const control = h.control(writer);
-            const heightBefore = await control.query
-                .getNextBlockHeight(forkId)
-                .request();
-            // keeps the control RPC reachable after the real abort
-            const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
-                writer.index
+            const others = h.peers.filter(
+                (peer) => peer.index !== writer.index
             );
-            try {
-                const hold = await h.rpcStub.holdStateMutex(writer.index);
-                await waitFor(
-                    async () => (await hold.entered()) === 1,
-                    h.event.protocolEventTimeoutMs()
+            const heights = () =>
+                Promise.all(
+                    others.map((peer) =>
+                        h
+                            .control(peer)
+                            .query.getNextBlockHeight(forkId)
+                            .request()
+                    )
+                );
+            const heightsBefore = await heights();
+            const aborted = h.getPeer(writer.index);
+            const closed = new Promise<void>((resolve) =>
+                clientRootFor(aborted.p2pInstance).onClosed(resolve)
+            );
+
+            await h.control(writer).stub.abortDetached().request();
+            await h.event.waitForPeers("onAbort", [writer.index], 1);
+            await closed;
+            const failure = await aborted.p2pInstance.p2pContractInstance
+                .add(1)
+                .then(
+                    () => undefined,
+                    (error: unknown) => error
                 );
 
-                const parked = h
-                    .getPeer(writer.index)
-                    .p2pInstance.p2pContractInstance.add(1)
-                    .then(
-                        () => "no throw",
-                        (e: unknown) =>
-                            e instanceof Error ? e.message : String(e)
-                    );
-                await waitFor(
-                    async () =>
-                        (await h.rpcStub.getStateMutexWaitingCount(
-                            writer.index
-                        )) === 1,
-                    h.event.protocolEventTimeoutMs()
-                );
-                await control.stub.abortDetached().request();
-                await h.event.waitForPeers("onAbort", [writer.index], 1);
-                await hold.release();
+            expect(isRootDisposedError(failure)).to.equal(true);
+            await sleep(1_000);
+            expect(await heights()).to.deep.equal(heightsBefore);
+        });
+    });
 
-                expect(await parked).to.contain(
-                    "Channel participation stopped"
-                );
-                expect(
-                    await control.query.getNextBlockHeight(forkId).request()
-                ).to.equal(heightBefore);
-            } finally {
-                await releaseDisposal();
-            }
+    describe("playTransaction → parked behind the mutex while the runtime is disposed", function () {
+        it("a candidate parked on the state mutex when the runtime is disposed → no block leaves the runtime once the mutex frees", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+
+            const writer = h.getPeer(
+                (await h.query.getNextPeerToWrite()).index
+            );
+            const hold = await h.rpcStub.holdStateMutex(writer.index);
+            await waitFor(
+                async () => (await hold.entered()) === 1,
+                h.event.protocolEventTimeoutMs()
+            );
+            const parked = writer.p2pInstance.p2pContractInstance
+                .add(1)
+                .catch(() => undefined);
+            await waitFor(
+                async () =>
+                    (await h.rpcStub.getStateMutexWaitingCount(
+                        writer.index
+                    )) === 1,
+                h.event.protocolEventTimeoutMs()
+            );
+            await disposeAndRelease(h, writer, () => hold.release());
+            await parked;
         });
     });
 

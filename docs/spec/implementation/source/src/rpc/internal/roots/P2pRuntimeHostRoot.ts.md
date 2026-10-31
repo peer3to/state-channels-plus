@@ -97,7 +97,8 @@ Exact local owner for the custom RPC
 
 Clock-owned provider on dispose
 
-- Setup: Dispose an inline runtime whose proxied provider the Clock reads through, cut and restore its node, then init the Clock with another provider
-- Oracle: The provider stays open, its node never reconnects, and it and its nodes are destroyed once the Clock replaces it
+- Setup: Dispose a runtime whose proxied provider the Clock reads through, cut and restore its node; inline, then init the Clock with another provider; in a worker, hold the disposal after its provider listeners are removed
+- Oracle: The provider stays open, its node never reconnects, a worker's provider has no listener left, and an inline provider and its nodes are destroyed once the Clock replaces it
 
-- [x] `UNIT-TEST-HOST-RELEASED-PROVIDER-1-H172F6.P1` — kept open without reconnects, destroyed on Clock replacement
+- [x] `UNIT-TEST-HOST-RELEASED-PROVIDER-1-H172F6.P1` — inline: kept open without reconnects, destroyed on Clock replacement
+- [x] `UNIT-TEST-HOST-RELEASED-PROVIDER-1-H172F6.P2` — worker: the provider its Clock reads through stays open with no listener and no reconnects

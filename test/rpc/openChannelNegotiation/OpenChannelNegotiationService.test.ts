@@ -346,8 +346,6 @@ describe("OpenChannelNegotiationService", function () {
             // A burned opening window is one strike, never a fault ban.
             lowerBlacklistedHigherAfterExpiry: false,
             expiredWindowStrikes: 1,
-            signedDisposeOutcomeCancelled: true,
-            signedAttemptClearedOnDispose: true,
             signedPeerBlacklistedOnFinalLoss: false,
             signedAttemptRetainedAfterFinalLoss: true,
             signedAttemptClearedAfterExpiry: true,

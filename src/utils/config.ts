@@ -22,6 +22,11 @@ export type Config = {
     HOLEPUNCH_RELAYER_URLS: string[];
     LOCAL_DISCOVERY_REGISTRY_URL: string;
     VM_DEDICATED_THREAD: boolean;
+    /**
+     * true (the default) runs the SDK in a worker thread, the supported mode.
+     * Inline mode (false) is deprecated; its removal is decided with the
+     * mobile design.
+     */
     RUN_SDK_IN_THREAD: boolean;
     // >0 enables the logger event-loop monitor, which throws in its own thread
     // past this many seconds. In the sdk and contract-executor workers that
@@ -58,6 +63,8 @@ export type Config = {
     CRASH_LOG_UPLOAD_JITTER_MAX_MS: number;
     // longest wait of a log flush (an aborting runtime's, before it disposes) for its realms' uploads.
     CRASH_LOG_FLUSH_MS: number;
+    // longest wait of a plain dispose's log flush; a hanging endpoint must not stall disposal
+    DISPOSE_LOG_FLUSH_MS: number;
 };
 
 /** Default lifetime of a prepared join authorization, in chain seconds. */
@@ -80,7 +87,7 @@ const DEFAULT_CONFIG: Config = {
     HOLEPUNCH_RELAYER_URLS: [],
     LOCAL_DISCOVERY_REGISTRY_URL: "",
     VM_DEDICATED_THREAD: false,
-    RUN_SDK_IN_THREAD: false,
+    RUN_SDK_IN_THREAD: true,
     EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 0,
     EVENT_LOOP_MONITOR_STARTUP: false,
     SIGNER_RECOVERY_CACHE_MAX: 100_000,
@@ -93,7 +100,8 @@ const DEFAULT_CONFIG: Config = {
     CRASH_LOG_MAX_SIZE_MB: 10,
     CRASH_LOG_UPLOAD_COALESCE_MS: 3000,
     CRASH_LOG_UPLOAD_JITTER_MAX_MS: 3000,
-    CRASH_LOG_FLUSH_MS: 15_000
+    CRASH_LOG_FLUSH_MS: 15_000,
+    DISPOSE_LOG_FLUSH_MS: 2_000
 };
 
 /**

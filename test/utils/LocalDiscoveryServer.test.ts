@@ -14,6 +14,74 @@ import { expect } from "chai";
 import { ethers } from "ethers";
 
 describe("LocalDiscoveryServer topic lifecycle", function () {
+    it("leaving every session of a runtime settles while one of its joins fails to bind its listener", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("local-discovery-leave-all-failing-join");
+        const peer = h.getPeer(0);
+        expect(
+            await h
+                .control(peer)
+                .stub.leaveAllDuringFailingLocalDiscoveryJoin(topic)
+                .request()
+        ).to.equal("resolved");
+        expect(
+            await h
+                .control(peer)
+                .stub.getLocalDiscoveryListenerCount()
+                .request()
+        ).to.equal(0);
+    });
+
+    it("leaving every session of a runtime closes each topic's listener and a later join listens again", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topics = [
+            ethers.id("local-discovery-leave-all-first"),
+            ethers.id("local-discovery-leave-all-second")
+        ];
+        const peer = h.getPeer(0);
+        await h.execOnHost(
+            peer,
+            async (sm, args) => {
+                for (const topic of args.topics)
+                    await sm.p2pManager.joinDiscoveryKey(topic);
+                return true;
+            },
+            { topics }
+        );
+        expect(
+            await h
+                .control(peer)
+                .stub.getLocalDiscoveryListenerCount()
+                .request()
+        ).to.equal(2);
+
+        await h.control(peer).stub.leaveAllLocalDiscovery().request();
+        expect(
+            await h
+                .control(peer)
+                .stub.getLocalDiscoveryListenerCount()
+                .request()
+        ).to.equal(0);
+
+        // no session of a left topic remains to absorb the rejoin
+        await h.execOnHost(
+            peer,
+            async (sm, args) => {
+                await sm.p2pManager.joinDiscoveryKey(args.topic);
+                return true;
+            },
+            { topic: topics[0] }
+        );
+        expect(
+            await h
+                .control(peer)
+                .stub.getLocalDiscoveryListenerCount()
+                .request()
+        ).to.equal(1);
+    });
+
     it("retries the replacement endpoint announced while the old endpoint handshake is pending", async function () {
         await assertDiscoveryEndpointReplacement(
             TestSession.getHarness(),
@@ -43,7 +111,8 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
         const socket = await stageLocalDiscoveryReady();
         const discoveryLogger = observeDiscoveryLogger();
         try {
-            await sm.dispose();
+            // the network cut, which the host root's disposal starts with
+            await sm.p2pManager.dispose();
             discoveryLogger.assertActive();
             expect(await socket.sendReady()).to.equal(0);
             expect(sm.p2pManager.openConnections).to.have.length(0);
@@ -72,18 +141,12 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
                 h.control(peer).network.joinSelectedKey(topic).request()
             )
         );
-        const dialer = await waitForPendingLocalDial(
-            h.peers.map(
-                (peer) => runtimeEndpointFor(peer.p2pInstance).sm.p2pManager
-            )
-        );
+        const dialer = await waitForPendingLocalDial(h, h.peers);
         const retries = observeLocalDialRetries();
 
-        // the first half of shutdown settles the dial's handshake wait with
-        // false while its P2P manager and discovery session are still alive
-        await dialer.stateManager.stop();
+        // the disposal settles the dial's handshake wait with false
+        await dialer.p2pInstance.dispose();
 
-        expect(dialer.isDisposed).to.equal(false);
         expect(retries.scheduledSince()).to.deep.equal([]);
     });
 
@@ -227,10 +290,7 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
 
     it("dials the peer again after a leave and rejoin while the left topic's closed socket has not finished closing", async function () {
         const h = TestSession.getHarness();
-        await h.setup(2, {
-            autoConnect: false,
-            configOverrides: { RUN_SDK_IN_THREAD: false }
-        });
+        await h.setup(2, { autoConnect: false });
         const topic = ethers.id("local-discovery-rejoin-pending-close");
         const dialer = h.getPeer(h.network.lobbyRoleIndices()[0]);
         const acceptor = h.getPeer(1 - dialer.index);
@@ -249,7 +309,7 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
         expect(firstToken).to.be.a("number");
 
         // the acceptor stops reading, so the dialer's old socket stays closing
-        const hold = holdAcceptedSocketReads();
+        const hold = await holdAcceptedSocketReads(h);
         try {
             await h.control(dialer).network.leaveSelectedKey(topic).request();
             expect(
@@ -264,9 +324,9 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
                 const token = await dialerToken();
                 return token !== null && token !== firstToken;
             }, h.event.protocolEventTimeoutMs());
-            expect(hold.closingDials()).to.equal(1);
+            expect(await hold.closingDials()).to.equal(1);
         } finally {
-            hold.release();
+            await hold.release();
         }
         await Promise.all(
             h.peers.map((peer) =>
@@ -277,10 +337,7 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
 
     it("keeps a rejoined topic's pending dial deduplicated across topics after the left topic's old socket finishes closing", async function () {
         const h = TestSession.getHarness();
-        await h.setup(2, {
-            autoConnect: false,
-            configOverrides: { RUN_SDK_IN_THREAD: false }
-        });
+        await h.setup(2, { autoConnect: false });
         const topics = [
             ethers.id("local-discovery-rejoin-dedupe-first"),
             ethers.id("local-discovery-rejoin-dedupe-second")
@@ -300,7 +357,7 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
                 )
             );
 
-        const hold = holdAcceptedSocketReads();
+        const hold = await holdAcceptedSocketReads(h);
         try {
             for (const peer of h.peers)
                 await h.control(peer).stub.holdInitHandshakes().request();
@@ -323,8 +380,8 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
                 (await heldCounts()).every((count) => count === 1)
             );
             // the left topic's old socket now finishes closing
-            hold.release();
-            await waitFor(() => hold.closingDials() === 0);
+            await hold.release();
+            await waitFor(async () => (await hold.closingDials()) === 0);
             await Promise.all(
                 h.peers.map((peer) =>
                     h.control(peer).network.joinSelectedKey(topics[1]).request()
@@ -337,7 +394,7 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
                 await h.control(dialer).query.getOpenConnectionCount().request()
             ).to.equal(0);
         } finally {
-            hold.release();
+            await hold.release();
             await Promise.all(
                 h.peers.map((peer) =>
                     h.control(peer).stub.releaseInitHandshakes().request()
@@ -360,16 +417,13 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
 
     it("dials the peer again after a rejoin while the pending dial the leave closed has not finished closing", async function () {
         const h = TestSession.getHarness();
-        await h.setup(2, {
-            autoConnect: false,
-            configOverrides: { RUN_SDK_IN_THREAD: false }
-        });
+        await h.setup(2, { autoConnect: false });
         const topic = ethers.id("local-discovery-rejoin-pending-dial-close");
         const dialer = h.getPeer(h.network.lobbyRoleIndices()[0]);
         const acceptor = h.getPeer(1 - dialer.index);
         for (const peer of h.peers)
             await h.control(peer).stub.holdInitHandshakes().request();
-        let hold: ReturnType<typeof holdAcceptedSocketReads> | undefined;
+        let releaseHold = async () => {};
         try {
             await Promise.all(
                 h.peers.map((peer) =>
@@ -389,10 +443,11 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
                     )
                 ).every((count) => count === 1)
             );
-            hold = holdAcceptedSocketReads();
+            const hold = await holdAcceptedSocketReads(h);
+            releaseHold = hold.release;
             // the leave closes the pending dial, which stays closing
             await h.control(dialer).network.leaveSelectedKey(topic).request();
-            expect(hold.closingDials()).to.equal(1);
+            expect(await hold.closingDials()).to.equal(1);
             await Promise.all(
                 h.peers.map((peer) =>
                     h.control(peer).stub.releaseInitHandshakes().request()
@@ -407,9 +462,9 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
                         .request()) !== null,
                 h.event.protocolEventTimeoutMs()
             );
-            expect(hold.closingDials()).to.equal(1);
+            expect(await hold.closingDials()).to.equal(1);
         } finally {
-            hold?.release();
+            await releaseHold();
             await Promise.all(
                 h.peers.map((peer) =>
                     h.control(peer).stub.releaseInitHandshakes().request()

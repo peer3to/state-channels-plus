@@ -1,10 +1,11 @@
 // @spec-test-coverage-ignore: real SDK startup and disposal staging; declarations live in GasUsageDisposal.test.ts
 import { createLoggerSdkFixture } from "./LoggerServiceFixture";
-import { startLogReceiver } from "../logging/LogUploader.fixture";
+import {
+    decodeUpload,
+    startLogReceiver,
+    type LogReceiver
+} from "../logging/LogUploader.fixture";
 import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
-import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
-import { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot";
-import type { LoggerProbeRoot } from "@test/fixtures/runtimeRpc/probe/logger/LoggerProbeService";
 import { expect } from "chai";
 import { ethers, Wallet } from "ethers";
 
@@ -14,27 +15,25 @@ interface GasUsageReport {
     gasUsage: GasUsageRow[];
 }
 
-function gasUsageReports(root: AInternalRpcRoot): GasUsageReport[] {
-    return (root as AInternalRpcRoot & LoggerProbeRoot).loggerProbe
-        .entries()
+function uploadedGasUsageReports(receiver: LogReceiver): GasUsageReport[] {
+    return receiver.requests
+        .flatMap(decodeUpload)
         .filter((entry) => entry.message === "gas usage")
         .map((entry) => entry.meta[0] as GasUsageReport);
 }
 
 /**
  * Disposal must report the peer's chain spending once, and the receipt that
- * was still outstanding when disposal started must be in it. The SDK runs
- * inline so the host realm's own store survives the disposed connection.
+ * was still outstanding when disposal started must be in it. The SDK runs in
+ * a worker; the oracle is the log upload the disposal flushes before the
+ * worker ends.
  */
 export async function assertGasUsageReportedOnceOnDisposal(): Promise<void> {
     const receiver = await startLogReceiver();
-    const sdk = await createLoggerSdkFixture(receiver, { inlineSdk: true });
+    const sdk = await createLoggerSdkFixture(receiver);
     try {
-        const hostRoot = [...sdk.roots].find(
-            (root) => !(root instanceof P2pRuntimeClientRoot)
-        )!;
         expect(
-            gasUsageReports(hostRoot),
+            uploadedGasUsageReports(receiver),
             "nothing is reported yet"
         ).to.have.length(0);
         const functionSelector = ethers
@@ -50,7 +49,7 @@ export async function assertGasUsageReportedOnceOnDisposal(): Promise<void> {
         });
         await sdk.instance.dispose();
 
-        const reports = gasUsageReports(hostRoot);
+        const reports = uploadedGasUsageReports(receiver);
         expect(
             reports,
             "the aggregate is reported exactly once"

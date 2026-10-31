@@ -29,9 +29,11 @@ Topic-owned local discovery lifecycle
 - [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P11` — an accepted socket sends its valid ready frame after manager disposal but before process-wide discovery cleanup; it closes without acknowledgement or a new transport; discovery can still log after manager disposal, and cleanup then disposes its logger and detaches its store
 - [ ] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P12` — the replacement transport for a closed eligible peer appears no sooner than one second after the close
 - [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P13` — an inbound reconnect inside the cooldown is held by the accepting peer server, admitted once the cooldown has passed, and blacklists neither side
-- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P14` — a dial whose handshake is still pending when its runtime begins shutdown schedules no retry and logs no retry warning
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P14` — a dial whose handshake is still pending when its runtime is disposed schedules no retry and logs no retry warning
 - [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P15` — a replacement endpoint advertised during the old endpoint handshake is retained; after the old socket closes, real retry authenticates a new transport with no blacklist
 - [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P16` — the same replacement advertisement while the old authenticated transport is live is retained and used after its close
 - [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P17` — after a topic leave, a rejoin dials the announced peer again while the left topic's closed dial socket has not finished closing
 - [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P18` — after the left topic's old dial socket finishes closing, the rejoined topic's pending dial still deduplicates a second topic's announcement of the same peer
 - [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P19` — a rejoin dials the announced peer again while the pending, unauthenticated dial its leave closed has not finished closing
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P20` — leaving every session of a runtime while one of its joins fails to bind its listener settles without the join's failure and leaves no listener
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P21` — leaving every session of a runtime closes each joined topic's listener and leaves no session behind, so a later join of a left topic listens again

@@ -60,7 +60,6 @@ import type { MutexLockOptions, MutexUnlockOptions } from "@/utils";
 import { config } from "@/utils/config";
 import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
-import { runCleanup } from "@/utils/runCleanup";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { StateChannelManagerInterface } from "@typechain-types";
 import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -129,10 +128,10 @@ class StateManager<
     readonly membershipService: MembershipService;
     readonly channelJoinService: ChannelJoinService;
     readonly leaveChannelService: LeaveChannelService;
-    private disposalPromise?: Promise<void>;
-    private stoppingPromise?: Promise<void>;
     /** An abort's flush of every reachable realm's logs, which disposal waits for. */
-    private abortFlush?: Promise<void>;
+    private _abortFlush?: Promise<void>;
+    /** The abort flush's deadline; the disposal's last flush ends at it too. */
+    private _abortFlushDeadlineMs?: number;
 
     constructor(
         signer: HostNonceManager,
@@ -315,9 +314,9 @@ class StateManager<
      * rather than SYNCED or NOT_OPENED.
      */
     public abort() {
+        // after the cut an abort would upload a second abort log and flush
+        // through a logger the disposal releases
         if (this.isDisposed) return;
-        this.isDisposed = true;
-        this.membershipService.resetEligibility();
         this.logger.warn("Aborting channel participation", {
             channelId: this.channelId,
             status: Status[this.status]
@@ -325,8 +324,9 @@ class StateManager<
         // Disposal ends the workers, and with them the logs of why it aborted:
         // every reachable realm uploads its logs first, within their bound. The
         // flush starts now, before an onAbort hook can dispose anything;
-        // disposal waits for it as the last step of the producers' stop.
-        this.abortFlush = this.logger.flushLogs();
+        // disposal waits for it before the children are disposed.
+        this._abortFlushDeadlineMs = Date.now() + config.CRASH_LOG_FLUSH_MS;
+        this._abortFlush = this.logger.flushLogs(this._abortFlushDeadlineMs);
         this.p2pEventHooks.onAbort?.();
         this.setStatus(Status.OPENED);
         // The disposal is not detached domain work: the root settles what
@@ -337,68 +337,9 @@ class StateManager<
     }
 
     public isActiveFork(forkId: ForkId): boolean {
-        return !this.isDisposed && this.forkId === forkId;
+        return this.forkId === forkId;
     }
 
-    //Mark resources for garbage collection
-    public dispose(): Promise<void> {
-        return (this.disposalPromise ??= (async () => {
-            try {
-                await this.stop();
-            } finally {
-                try {
-                    await Promise.all([
-                        this.stateChannelEventListener.dispose(),
-                        this.p2pManager.dispose(),
-                        this.diamondStateMachine.dispose()
-                    ]);
-                } finally {
-                    this.logger.dispose({
-                        cascadeChildren: true
-                    });
-                }
-            }
-        })());
-    }
-    /** Stop producers and drain work while the executor is still available. */
-    public stop(): Promise<void> {
-        if (this.stoppingPromise) {
-            return this.stoppingPromise;
-        }
-
-        this.isDisposed = true;
-        this.membershipService.resetEligibility();
-        this.channelJoinService.dispose();
-        this.leaveChannelService.dispose();
-        this.reductionManager.dispose();
-
-        // Event handlers may still need the local EVM while draining already
-        // scheduled contract logs. Dispose their dependencies only afterward.
-        // Every step runs even when an earlier one fails; the first failure
-        // is rethrown after the rest of the teardown.
-        this.stoppingPromise = runCleanup(
-            // The custom RPC root disposes first so it can settle waits that
-            // depend on the timeout manager and p2p below.
-            () => this.p2pManager.localRpc.dispose(),
-            () => this.stateChannelEventListener.stop(),
-            // `isDisposed` above already stops the block queue from starting
-            // probes or recoveries. Its work in flight still needs p2p, the
-            // timeout manager and the EVM executor, so it drains first. The
-            // sync timeout bounds only a probe's request; a probe whose
-            // response arrives after disposal installs nothing.
-            () => this.blockQueueManager.dispose(),
-            // Drain scheduled work (queued block applications) before its
-            // dependencies disappear: a queued entry mid-execution still
-            // needs the EVM executor and p2p below. The drain is bounded by
-            // the timeout manager's dispose wait.
-            () => this.timeoutManager.dispose(),
-            // An abort's log flush, already running: disposal ends the
-            // workers only after it (it never fails; each realm reports its
-            // own flush failures).
-            () => this.abortFlush
-        );
-        return this.stoppingPromise;
-    }
     public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {
         this.appP2pEventHooks = p2pEventHooks;
     }
@@ -478,6 +419,14 @@ class StateManager<
         return this._channelId;
     }
 
+    public get abortFlush(): Promise<void> | undefined {
+        return this._abortFlush;
+    }
+
+    public get abortFlushDeadlineMs(): number | undefined {
+        return this._abortFlushDeadlineMs;
+    }
+
     public async setChannelId(channelId: ChannelId): Promise<void> {
         this.logger.verbose("Setting channel ID", { channelId });
         this.membershipService.resetEligibility();
@@ -485,6 +434,8 @@ class StateManager<
         this.logger.updateSharedContext({ channelId: String(channelId) });
         this.disputeManager.setChannelId(channelId);
         this.eventSyncService.setChannelId(channelId);
+        // a disposed runtime subscribes nothing
+        if (this.isDisposed) return;
         await this.stateChannelEventListener.setChannelId(channelId);
     }
 

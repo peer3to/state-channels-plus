@@ -81,17 +81,27 @@ export class LocalDiscoveryServer {
         });
     }
 
-    /** Ends the topic membership; established peer links stay open. */
+    /**
+     * Ends the topic membership; established peer links stay open. Without
+     * a key it ends every membership of `p2pManager` and closes its links.
+     */
     static async leave(
-        rendezvousKey: string,
+        rendezvousKey: string | undefined,
         p2pManager?: P2PManager
     ): Promise<void> {
         for (const membership of [...this.memberships]) {
-            if (membership.rendezvousKey !== rendezvousKey) continue;
+            if (
+                rendezvousKey !== undefined &&
+                membership.rendezvousKey !== rendezvousKey
+            )
+                continue;
             if (p2pManager && membership.p2pManager !== p2pManager) continue;
             this.memberships.delete(membership);
             membership.ws.close();
         }
+        if (rendezvousKey !== undefined || !p2pManager) return;
+        for (const ws of this.links.get(p2pManager)?.values() ?? []) ws.close();
+        this.links.delete(p2pManager);
     }
 
     static async cleanup(): Promise<void> {
@@ -154,12 +164,6 @@ export class LocalDiscoveryServer {
             if (links.get(key) === ws) links.delete(key);
         });
         ws.addEventListener("open", () => {
-            // A link that opens after its P2P manager was disposed gets no
-            // transport, as in the node discovery.
-            if (p2pManager.isDisposed) {
-                ws.close();
-                return;
-            }
             const transport = new BrowserLocalTransport(
                 ws,
                 p2pManager.rpcRouter

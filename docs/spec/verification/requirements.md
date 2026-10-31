@@ -15,7 +15,7 @@ Specification cases tested: 0/2.
 Specification cases tested: 4/4.
 
 [`INV-BLOCK-PIPE-1-1AB2ME` (Atomic ordered commit)](../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me)
-Specification cases tested: 8/15. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P8.
+Specification cases tested: 7/14. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P8.
 
 [`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)
 Specification cases tested: 8/8.
@@ -378,7 +378,7 @@ Specification cases tested: 3/8. Untested: T1.P1, T1.P2, T1.P3, T1.P7, T1.P8.
 Specification cases tested: 3/11. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8.
 
 [`REQ-DISPUTE-PIPE-3-PHE3SQ` (Deterministic reduction)](../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq)
-Specification cases tested: 14/24. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10.
+Specification cases tested: 7/17. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10.
 
 [`REQ-DISPUTE-PIPE-4-3YVDSA` (Atomic recovery)](../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa)
 Specification cases tested: 6/16. Untested: T1.P1, T1.P3, T1.P4, T1.P6, T1.P7, T1.P8, T1.P9, T1.P13, T1.P14, T1.P15.
@@ -396,7 +396,7 @@ Specification cases tested: 3/3.
 Specification cases tested: 9/9.
 
 [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv)
-Specification cases tested: 39/41. Untested: T1.P37, T1.P39.
+Specification cases tested: 38/40. Untested: T1.P37, T1.P39.
 
 [`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar)
 Specification cases tested: 23/23.
@@ -642,10 +642,10 @@ Specification cases tested: 8/8.
 Specification cases tested: 6/6.
 
 [`REQ-LOBBY-9-N894C0` (Bounded inactive ingress and cleanup)](../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0)
-Specification cases tested: 32/33. Untested: T1.P12.
+Specification cases tested: 31/32. Untested: T1.P12.
 
 [`REQ-LOG-1-H2VQ8X` (Logging cleanup preserves surviving owners)](../specification/runtime/log-collection.md#req-log-1-h2vq8x)
-Specification cases tested: 6/10. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
+Specification cases tested: 7/11. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
 
 [`REQ-LOG-2-N6BJ3D` (The caller receives its local upload outcome)](../specification/runtime/log-collection.md#req-log-2-n6bj3d)
 Specification cases tested: 4/5. Untested: T1.P3.
@@ -789,7 +789,7 @@ Specification cases tested: 18/18.
 Specification cases tested: 0/1.
 
 [`REQ-RUN-13-27YE2T` (Isolated placement is the default)](../specification/runtime/execution.md#req-run-13-27ye2t)
-Specification cases tested: 0/1.
+Specification cases tested: 1/2. Untested: T1.P1.
 
 [`REQ-RUN-14-YAHYR4` (Mid-range mobile browser envelope)](../specification/runtime/execution.md#req-run-14-yahyr4)
 Specification cases tested: 0/1.
@@ -801,7 +801,7 @@ Specification cases tested: 5/12. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T
 Specification cases tested: 1/5. Untested: T1.P2, T1.P3, T1.P4, T1.P5.
 
 [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59)
-Specification cases tested: 83/87. Untested: T1.P2, T1.P3, T1.P4, T1.P6.
+Specification cases tested: 91/95. Untested: T1.P2, T1.P3, T1.P4, T1.P6.
 
 [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../specification/runtime/execution.md#req-runtime-4-b0n70y)
 Specification cases tested: 2/6. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
@@ -825,7 +825,7 @@ Specification cases tested: 5/5.
 Specification cases tested: 5/14. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P11, T1.P12, T1.P13.
 
 [`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8)
-Specification cases tested: 0/5.
+Specification cases tested: 2/5. Untested: T1.P1, T1.P2, T1.P4.
 
 [`REQ-SDK-ARCH-3-WHTDWX` (Event fidelity)](../specification/runtime/sdk.md#req-sdk-arch-3-whtdwx)
 Specification cases tested: 0/7.

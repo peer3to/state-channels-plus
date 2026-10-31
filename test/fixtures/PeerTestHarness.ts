@@ -22,8 +22,6 @@ import { startDiscoveryRegistry, startHardhatNode } from "../utils/nodeInfra";
 import { EVENT_HANDLER_HOOK_NAMES } from "@/eventHandlers/EventHandlerHooks";
 import type { BusEventMaps } from "@/events/EventBus";
 import { EvmStateMachine } from "@/evm";
-import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
-import { setupP2pRuntime } from "@/evm/p2pRuntime/setupP2pRuntime";
 import P2pEventHooks from "@/P2pEventHooks";
 import type {
     ApplicationOf,
@@ -818,11 +816,6 @@ export class PeerTestHarness<
             );
         }
 
-        const executorCallGasLimit =
-            this.options.executorCallGasLimitByPeer?.[index];
-        // The executor factory is reachable only in an inline host, so a peer
-        // with its own call gas always runs inline.
-        const inline = !useWorker || executorCallGasLimit !== undefined;
         const rpcNodeProxies = await this.startRpcNodeProxies(index);
         const setupOptions = {
             peerId: index,
@@ -833,9 +826,6 @@ export class PeerTestHarness<
             signerSecret,
             config: {
                 ...this.harnessConfig,
-                ...(executorCallGasLimit === undefined
-                    ? {}
-                    : { RUN_SDK_IN_THREAD: false }),
                 ...(rpcNodeProxies.length > 0
                     ? {
                           PROVIDER_URLS: rpcNodeProxies.map(
@@ -844,47 +834,17 @@ export class PeerTestHarness<
                       }
                     : {})
             },
-            handlerExecutionContext: inline
-                ? new PeerIdentityExecutionContext(address)
-                : undefined
+            handlerExecutionContext: useWorker
+                ? undefined
+                : new PeerIdentityExecutionContext(address)
         };
         const p2pInstance = await RootCreationControl.observe(() =>
-            executorCallGasLimit === undefined
-                ? EvmStateMachine.p2pSetup<TStateMachine, THost>(
-                      this.channelManager,
-                      contractInstanceMock,
-                      this.sharedStateMachineDeployer,
-                      setupOptions
-                  )
-                : // p2pSetup's own construction, with the production executor
-                  // factory given this peer's call gas
-                  setupP2pRuntime<TStateMachine, THost>(
-                      this.channelManager,
-                      contractInstanceMock,
-                      this.sharedStateMachineDeployer,
-                      setupOptions,
-                      {
-                          hostContext: {
-                              createContractExecutor: (factoryOptions, owner) =>
-                                  createContractExecutor(
-                                      {
-                                          ...factoryOptions,
-                                          configuration:
-                                              factoryOptions.configuration.then(
-                                                  (configuration) => ({
-                                                      ...configuration,
-                                                      callGasLimit:
-                                                          BigInt(
-                                                              executorCallGasLimit
-                                                          )
-                                                  })
-                                              )
-                                      },
-                                      owner
-                                  )
-                          }
-                      }
-                  )
+            EvmStateMachine.p2pSetup<TStateMachine, THost>(
+                this.channelManager,
+                contractInstanceMock,
+                this.sharedStateMachineDeployer,
+                setupOptions
+            )
         );
 
         const peer: TestPeer<THost, TStateMachine> = {
@@ -897,6 +857,18 @@ export class PeerTestHarness<
             turnBarrier: peerTurnBarrier,
             logger: peerLogger
         };
+
+        // a peer with its own call gas: its host's executor is reconfigured
+        // before the peer runs any block
+        const executorCallGasLimit =
+            this.options.executorCallGasLimitByPeer?.[index];
+        if (executorCallGasLimit !== undefined)
+            await this.control(peer)
+                .stub.configureExecutorCallGas(
+                    String(executorCallGasLimit),
+                    !!this.harnessConfig.VM_DEDICATED_THREAD
+                )
+                .request();
 
         // Register the p2p-hook listeners (built above) and the EventHandler
         // spy/barrier listeners on the runtime. All events are forwarded over the

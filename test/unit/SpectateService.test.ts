@@ -1090,7 +1090,7 @@ describe("Unit: SpectateService", function () {
             ).to.equal(false);
         });
 
-        it("the wait's chain read fails → the sync rejects with the read's error, the responder is neither blacklisted nor asked again, stop resolves", async function () {
+        it("the wait's chain read fails → the sync rejects with the read's error, the responder is neither blacklisted nor asked again, disposal resolves", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             const requester = h.control(h.getPeer(2));
@@ -1133,12 +1133,7 @@ describe("Unit: SpectateService", function () {
             expect(
                 await requester.query.isBlacklisted(responder.address).request()
             ).to.equal(false);
-            expect(
-                await h.execOnHost(h.getPeer(2), async (sm) => {
-                    await sm.stop();
-                    return sm.isDisposed;
-                })
-            ).to.equal(true);
+            await h.getPeer(2).p2pInstance.dispose();
         });
 
         it("the service is disposed after the sync applied its answer but before it waits → the sync returns false without waiting, the responder is asked once and not blacklisted", async function () {

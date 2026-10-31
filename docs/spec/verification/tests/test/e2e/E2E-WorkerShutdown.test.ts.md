@@ -16,12 +16,9 @@ assigned; `test/evm/workerShutdown.test.ts` covers executor-level shutdown separ
 
 A second test asserts its premise: through the harness stub it starts one real
 `TimeoutManager` task on a threaded peer that stays running until that manager's own `dispose`
-begins, and checks before cleanup that the task has entered and the manager reports a running
-task. The stub releases the task right after the synchronous part of `dispose`, so `dispose`
-provably starts its bounded wait with the task in flight and the task settles inside that wait.
-The teardown then has the same five-second bound: a wait bound timer left pending after the
-tasks settle keeps the worker thread alive until it fires, so the teardown takes at least five
-seconds and the test fails.
+ran, and checks before cleanup that the task has entered. `dispose` does not wait for a running
+task (a task frozen on a send stopped by the disposal cut-off would hold it), so the teardown
+keeps the same five-second bound with the task still in flight.
 
 ## Tests
 

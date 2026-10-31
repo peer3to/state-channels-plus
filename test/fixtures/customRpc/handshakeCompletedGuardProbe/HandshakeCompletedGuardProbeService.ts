@@ -213,7 +213,6 @@ export type AddresslessGuardProbe = {
 
 export type HandshakeWaitDisposalProbe = {
     pendingCompleted: boolean;
-    laterCompleted: boolean;
 };
 
 export type CustomFailureGuardProbe = {
@@ -684,23 +683,16 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
     }
 
     /**
-     * Runs the custom RPC root's runtime-shutdown hook while a handshake wait
-     * on a never-authenticated transport is pending, then waits again. Both
-     * waits use a timeout far beyond the test timeout, so only disposal can
-     * settle them in time.
+     * Runs the release the host root's disposal calls while a handshake wait
+     * on a never-authenticated transport is pending. The wait uses a timeout
+     * far beyond the test timeout, so only disposal can settle it in time.
      */
     public async probeHandshakeWaitDisposal(): Promise<HandshakeWaitDisposalProbe> {
         const transport = new GuardTransport(this.p2pManager);
         const init = this.p2pManager.localRpc.initHandshakeService;
         const pending = init.waitForHandshakeCompleted(transport, 600_000);
-        await this.p2pManager.localRpc.dispose();
-        return {
-            pendingCompleted: await pending,
-            laterCompleted: await init.waitForHandshakeCompleted(
-                transport,
-                600_000
-            )
-        };
+        init.dispose();
+        return { pendingCompleted: await pending };
     }
 
     public async probeCustomFailure(): Promise<CustomFailureGuardProbe> {
@@ -817,9 +809,11 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
     }
 
     /**
-     * The real shutdown order settles a deferred guarded RPC's handshake wait
-     * with false while the P2P manager is still alive: the RPC is dropped with
-     * no disconnect, no verdict and no retry-bound strike.
+     * The root's disposal order: the cut closes the network, then the
+     * runtime's release settles a deferred guarded RPC's handshake wait with
+     * false. The RPC is dropped with no verdict and no retry-bound strike.
+     * Runs the order by hand: a real dispose would close the control port
+     * before these records could be read.
      */
     public async probeShutdownDropsDeferredRpc(): Promise<ShutdownDeferredRpcProbe> {
         const address = "0xA000000000000000000000000000000000000015";
@@ -832,8 +826,10 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
         init.isNegotiating = () => true;
         try {
             target.runRPC(this.rpc("shutdown-deferred"), transport);
-            await this.p2pManager.stateManager.stop();
+            const networkCut = this.p2pManager.dispose();
+            init.dispose();
             const p2pManagerDisposedAtExpiry = this.p2pManager.isDisposed;
+            await networkCut;
             await this.flush();
             return {
                 invocations: [...target.invocations],

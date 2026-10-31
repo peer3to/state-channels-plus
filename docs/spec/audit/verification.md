@@ -501,7 +501,7 @@ case, and repairs the shifted declaration lines. The [EvmFactory report](../veri
 maps the owner-context and admission-drain cases and the existing bare-EVM composition case. The
 late-admission case now also sends a late deploy and a late simulation, and all three settle with the
 shutdown error without entering the EVM. Three new cases load a real precompile that answers, or fails,
-1.2 seconds after the drain limit. For a late success, a late failure, and a deploy and a simulation
+1.5 seconds after it is called. For a late success, a late failure, and a deploy and a simulation
 queued behind the late call, each reads that the caller settled with exactly `Contract executor shut down
 before the operation finished`. A record-only wrapper on the real executor root's
 `ContractExecutorService.admit`, restored in the same block, records each admitted operation's own
@@ -514,22 +514,26 @@ rejects, the handle closes while the hidden parent is still live, and disposing 
 leaves that parent disposing with no connections
 ([`UNIT-TEST-ROOT-CREATION-1-1NWN3V.P33`](../implementation/source/src/rpc/internal/createRoot.ts.md#unit-test-root-creation-1-1nwn3v), [`REQ-RUNTIME-3-VQXW59.T1.P82`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p82)).
 
-The bounded executor drain ([`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/open-questions.md#oq-impl-executor-drain-1-5d71ym)) has unit and system evidence. `EvmFactory > abandons an admitted call
-stuck past the drain limit, closes the child, and reports no error` never releases the held reply, measures
-disposal against the exported limit, and reads the closed child, the rejected call, the call count, and an
-empty host error list. `RuntimeLifecycle > disposes a worker SDK while its worker executor call is in
+The executor drain is deleted ([`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/open-questions.md#oq-impl-executor-drain-1-5d71ym), Luke 2026-10-31), with unit and system
+evidence. `EvmFactory > abandons an admitted call stuck on its precompile at once, closes the child, and
+reports no error` never releases the held reply, asserts disposal completes in under 2 seconds, and reads
+the closed child, the exact disposal rejection, the call count, and an empty host error list. `EvmFactory >
+rejects an admitted precompile call and its queued deploy and simulation at once and disposes the
+precompile child` reads the same rejection for all three callers. The late-admission case holds the
+child's dispose request so the late calls reach the executor after admission closes. The admitted-failure
+case and its permutations are deleted with their
+obligation, and the late-completion cases use a fixed 1.5-second precompile delay. `RuntimeLifecycle > disposes a worker SDK while its worker executor call is in
 flight` passes again: worker SDK disposal completes with the executor call still held, the SDK worker exits,
 no host error is recorded, and a sibling keeps serving, so it now covers the worker-placement permutation
-[`REQ-RUNTIME-3-VQXW59.T1.P78`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p78); it does not measure the limit, which the unit case does. Starting a consumer's own
+[`REQ-RUNTIME-3-VQXW59.T1.P78`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p78); Starting a consumer's own
 `.ts` worker entry from another package's working directory is exercised only by consumer suites, not in
 this repository.
 
 The handshake-wait disposal fix has unit evidence for the service itself: `HandshakeCompletedGuard >
-settles a pending handshake wait and every later wait as not completed once the service is disposed`
-covers [`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19`](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md#unit-test-init-handshake-service-1-6n4c7r) and [`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P9`](../implementation/source/src/rpc/network/MainRpcService.ts.md#unit-test-main-rpc-service-1-awn39m): its probe awaits the runtime RPC root's real
-`dispose()` shutdown hook with a pending wait, then waits again, and both waits return `false` long before
-their timeout. The indentation fix in that suite moved no declaration line. It does not read the order of negotiation and lobby cleanup or a logger error directly;
-immediate settlement is what keeps any wait timer from outliving the logger.
+settles a pending handshake wait as not completed once the handshake service is released`
+covers [`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19`](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md#unit-test-init-handshake-service-1-6n4c7r): its probe runs the release the host root's
+disposal calls with a pending wait, and the wait returns `false` long before its timeout. It does not
+read a logger error directly; immediate settlement is what keeps any wait timer from outliving the logger.
 
 ## Application host root — 2026-10-16
 
@@ -539,11 +543,9 @@ The [ApplicationHostRoot report](../verification/tests/test/rpc/ApplicationHostR
 [E2E report](../verification/tests/test/e2e/E2E-ApplicationHostRoot.test.ts.md) maps
 [`REQ-RPC-9-8FFE6S.T1.P13`](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s.t1.p13) and [`REQ-RPC-9-8FFE6S.T1.P14`](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s.t1.p14). Every unit case starts a real runtime through the public setup,
 isolated in the production SDK worker entry or inline, and calls the test application's probe service
-through the typed host connection; no root, router or transport is replaced. In the drain case the
-probe call replies only once the root's disposal reaches its in-flight reply drain, and a record-only
-wrapper on the probe root's own router reports whether that drain was still waiting one task later; a
-disposal that skipped the drain fails the case every time, either by the reported flag or by rejecting
-the call. The event cases assert
+through the typed host connection; no root, router or transport is replaced. In the disposal case a
+probe call that never replies rejects with the runtime-disposed error when the client disposes, and a
+later call rejects the same way; a disposal that waited for the call would never settle. The event cases assert
 the listener ran by the time the emitting call replied, which the ordered runtime channel guarantees.
 The E2E network case uses a new byzantine control that sends a real request over the authenticated
 transport and returns how it settled. The removed host-only guard's test

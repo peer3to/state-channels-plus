@@ -24,7 +24,9 @@ The logger's own boundary: defaults, disposal, and what it lets through.
 - [x] `UNIT-TEST-LOGGER-1-4MNRMD.P5` — reparents children to the surviving grandparent and keeps upload working
 - [x] `UNIT-TEST-LOGGER-1-4MNRMD.P6` — keeps one shared store usable across parentless siblings and removes it after the last disposal
 - [x] `UNIT-TEST-LOGGER-1-4MNRMD.P7` — retains shared crash listeners until the last logger is disposed
-- [x] `UNIT-TEST-LOGGER-1-4MNRMD.P8` — cascades through reparented grandchildren and rejects child creation after disposal
+- [x] `UNIT-TEST-LOGGER-1-4MNRMD.P8` — cascades through reparented grandchildren; a child created after disposal is born disposed and stores nothing
 - [ ] `UNIT-TEST-LOGGER-1-4MNRMD.P9` — continues collecting an SDK store after its parent logger is disposed while children remain alive
-- [x] `UNIT-TEST-LOGGER-1-4MNRMD.P10` — every log level and direct entry replay throws with the component name after disposal, including filtered levels, while repeated disposal is harmless
+- [x] `UNIT-TEST-LOGGER-1-4MNRMD.P10` — every log level and direct entry replay after disposal writes to the console without storing, uploading or failing, while repeated disposal is harmless
 - [x] `UNIT-TEST-LOGGER-1-4MNRMD.P11` — a logger without a coordination service refuses to flush
+- [x] `UNIT-TEST-LOGGER-1-4MNRMD.P12` — a disposed child whose parent still lives keeps storing its entries, under its own component, into the family's store
+- [x] `UNIT-TEST-LOGGER-1-4MNRMD.P13` — once its family is marked disposing, a logger writes and stores warnings and errors at info and starts no upload for them; before that they keep their level and an error starts its upload

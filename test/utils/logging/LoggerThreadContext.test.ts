@@ -1,3 +1,4 @@
+import { DetachedPromises } from "@/utils/DetachedPromises";
 import { createLogger } from "@/utils/logging";
 import {
     createUploaderFixture,
@@ -134,9 +135,8 @@ describe("Logger thread context", function () {
             ).to.include("last surviving root");
             right.dispose();
             right.dispose();
-            expect(() => right.info("disposed logger must not write")).to.throw(
-                'Logger "right" has been disposed'
-            );
+            // a disposed logger still writes to its console, never fails
+            right.info("disposed logger writes to its console");
             expect(() => right.upload("all loggers disposed")).to.throw(
                 "has been disposed"
             );
@@ -187,16 +187,66 @@ describe("Logger thread context", function () {
         const leaf = middle.child({ component: "leaf" });
         middle.dispose();
         logger.dispose({ cascadeChildren: true });
-        expect(() =>
-            leaf.info("must not write after cascading disposal")
-        ).to.throw('Logger "leaf" has been disposed');
+        expect(leaf.isDisposed).to.equal(true);
+        leaf.info("stores nothing after cascading disposal");
         expect(logStore.getAllLogs()).to.have.length(0);
-        expect(() => leaf.child({ component: "late" })).to.throw(
-            "has been disposed"
-        );
+        // a late link's logger is born disposed and stores nothing either
+        const late = leaf.child({ component: "late" });
+        expect(late.isDisposed).to.equal(true);
+        late.info("late child of a disposed logger");
+        expect(logStore.getAllLogs()).to.have.length(0);
         leaf.dispose();
     });
-    it("throws on every log level and replay after disposal even when filtered", function () {
+    it("stores a disposed child's entry while its parent lives", function () {
+        const { logger, logStore } = createUploaderFixture({
+            uploadEndpoint: ""
+        });
+        try {
+            const child = logger.child({ component: "disposedChild" });
+            child.dispose();
+            const before = logStore.getAllLogs().length;
+            child.info("disposed child, family alive");
+            const stored = logStore.getAllLogs();
+            expect(stored).to.have.length(before + 1);
+            expect(stored[stored.length - 1].context.component).to.equal(
+                "disposedChild"
+            );
+        } finally {
+            logger.dispose();
+        }
+    });
+    it("writes a disposing runtime's warnings and errors at info and uploads nothing for them", function () {
+        const { logger, logStore } = createUploaderFixture({
+            uploadEndpoint: ""
+        });
+        try {
+            const child = logger.child({ component: "teardown" });
+            const pendingLive = DetachedPromises.size();
+            child.warn("live warning");
+            child.error("live error");
+            // a live error still starts its upload
+            expect(DetachedPromises.size()).to.equal(pendingLive + 1);
+            logger.updateSharedContext({ disposing: true });
+            const pendingDisposing = DetachedPromises.size();
+            child.warn("teardown warning");
+            child.error("teardown error");
+            expect(DetachedPromises.size()).to.equal(pendingDisposing);
+            expect(
+                logStore
+                    .getAllLogs()
+                    .map((entry) => [entry.message, entry.level])
+                    .slice(-4)
+            ).to.deep.equal([
+                ["live warning", "warn"],
+                ["live error", "error"],
+                ["teardown warning", "info"],
+                ["teardown error", "info"]
+            ]);
+        } finally {
+            logger.dispose({ cascadeChildren: true });
+        }
+    });
+    it("logs on every level and replays after disposal without storing, uploading or failing", function () {
         const { logger, logStore } = createUploaderFixture({
             uploadEndpoint: ""
         });
@@ -206,13 +256,15 @@ describe("Logger thread context", function () {
         logger.debug("filtered while active");
         logger.dispose();
         logger.dispose();
-        const message = 'Logger "LogUploaderTest" has been disposed';
-        expect(() => logger.debug("late debug")).to.throw(message);
-        expect(() => logger.info("late info")).to.throw(message);
-        expect(() => logger.warn("late warning")).to.throw(message);
-        expect(() => logger.error("late error")).to.throw(message);
-        expect(() => logger.verbose("late verbose")).to.throw(message);
-        expect(() => logger.logEntry(entry)).to.throw(message);
+        const pendingBefore = DetachedPromises.size();
+        logger.debug("late debug");
+        logger.info("late info");
+        logger.warn("late warning");
+        logger.error("late error");
+        logger.verbose("late verbose");
+        logger.logEntry(entry);
+        // its family is gone: nothing stored, and error() started no upload
         expect(logStore.getAllLogs()).to.have.length(1);
+        expect(DetachedPromises.size()).to.equal(pendingBefore);
     });
 });

@@ -48,7 +48,6 @@ type SubmissionOutcome = "submitted" | "uncertain" | SubmissionRefusal;
  */
 export default class ChannelJoinService {
     private readonly logger: Logger;
-    private readonly unsubscribers: (() => void)[];
     private joining?: Promise<boolean>;
     private toppingUp?: Promise<boolean>;
     // the authorization expiry before the join is observed, the force-join deadline after
@@ -64,13 +63,11 @@ export default class ChannelJoinService {
         this.logger = logger.child({ component: "ChannelJoin" });
         const events = stateManager.events;
         const check = () => this.requestCheck();
-        this.unsubscribers = [
-            events.on("p2pEventHooks", "onStatusChanged", (_, status) => {
-                if (status !== Status.PENDING_PARTICIPANT) this.endJoin();
-            }),
-            events.on("eventHandler", "onInboundMessagesProcessed", check),
-            events.on("eventHandler", "onStateSnapshotUpdated", check)
-        ];
+        events.on("p2pEventHooks", "onStatusChanged", (_, status) => {
+            if (status !== Status.PENDING_PARTICIPANT) this.endJoin();
+        });
+        events.on("eventHandler", "onInboundMessagesProcessed", check);
+        events.on("eventHandler", "onStateSnapshotUpdated", check);
     }
 
     /**
@@ -180,11 +177,6 @@ export default class ChannelJoinService {
             this.requestCheck();
     }
 
-    public dispose(): void {
-        for (const unsubscribe of this.unsubscribers.splice(0)) unsubscribe();
-        this.cancelTimer();
-    }
-
     /** A join call while one runs gets the running join's promise. */
     private shareJoin(run: () => Promise<boolean>): Promise<boolean> {
         return (this.joining ??= run().finally(() => {
@@ -203,14 +195,13 @@ export default class ChannelJoinService {
             );
         let attempt = prepared;
         let outcome = await this.submitJoin(attempt);
-        // each round retries a refusal that a fresh confirmation can win; a
-        // disposed runtime handles no refusal. The cap is the channel's
-        // maximum participant count: each threshold refusal means another
-        // member landed, and a full channel refuses a join finally.
+        // each round retries a refusal that a fresh confirmation can win.
+        // The cap is the channel's maximum participant count: each threshold
+        // refusal means another member landed, and a full channel refuses a
+        // join finally.
         for (
             let retries = 0;
             typeof outcome === "object" &&
-            !sm.isDisposed &&
             retries < sm.storage.queues.maxChannelParticipants;
             retries++
         ) {
@@ -228,10 +219,8 @@ export default class ChannelJoinService {
             const fresh = outcome.hasReplayPassed
                 ? attempt
                 : await this.prepareConfirmationAgain(attempt.confirmation);
-            // the join ended or the runtime was disposed meanwhile: no
-            // further funded submission
-            if (sm.isDisposed || !refused || !this.isCurrent(refused))
-                return false;
+            // the join ended meanwhile: no further funded submission
+            if (!refused || !this.isCurrent(refused)) return false;
             // a retry that cannot be collected ends the join with no further
             // submission; the race refusal itself is no abort
             if (!fresh) {
@@ -241,8 +230,7 @@ export default class ChannelJoinService {
             attempt = fresh;
             outcome = await this.submitJoin(attempt);
         }
-        // a runtime disposed while a submission was pending handles no refusal
-        if (typeof outcome === "object" && !sm.isDisposed)
+        if (typeof outcome === "object")
             this.onJoinRefused(outcome, shouldSpectateWhenFull);
         return outcome === "submitted";
     }
@@ -260,7 +248,6 @@ export default class ChannelJoinService {
         for (
             let retries = 0;
             typeof outcome === "object" &&
-            !sm.isDisposed &&
             retries < sm.storage.queues.maxChannelParticipants &&
             (outcome.hasReplayPassed ||
                 (await this.shouldRetryWithFreshConfirmation(
@@ -272,7 +259,7 @@ export default class ChannelJoinService {
             const fresh = outcome.hasReplayPassed
                 ? attempt
                 : await this.prepareConfirmationAgain(attempt.confirmation);
-            if (!fresh || sm.isDisposed) return false;
+            if (!fresh) return false;
             attempt = fresh;
             outcome = await this.submitTopUp(attempt);
         }
@@ -552,8 +539,6 @@ export default class ChannelJoinService {
      * block bound or deadline passed.
      */
     private async checkJoin(): Promise<void> {
-        // a check queued behind the runtime's disposal starts no read
-        if (this.stateManager.isDisposed) return;
         const join = this.stateManager.storage.forceJoin.getJoin();
         // a retry being collected is one logical join with the refused attempt
         if (!join || join.isRetrying) return;
@@ -641,8 +626,6 @@ export default class ChannelJoinService {
         const sm = this.stateManager;
         const forkId = sm.forkId;
         const isSignerOnChain = await sm.membershipService.isSignerOnChain();
-        // a disposal during the read ends the check: no drop, no dispute
-        if (sm.isDisposed) return;
         // an observed join the chain no longer lists was dropped unseated:
         // the drop to SYNCED ends it, and the leave service reports it
         if (!this.isActive(join)) return;
@@ -761,13 +744,11 @@ export default class ChannelJoinService {
     }
 
     /**
-     * Whether `join` is still the active submission of a live runtime:
-     * current and not retrying. Every check re-reads this after its awaited
-     * reads, before it drops the membership, records an observation or arms
-     * a timer.
+     * Whether `join` is still the active submission: current and not
+     * retrying. Every check re-reads this after its awaited reads, before it
+     * drops the membership, records an observation or arms a timer.
      */
     private isActive(join: JoinRecord): boolean {
-        if (this.stateManager.isDisposed) return false;
         const current = this.stateManager.storage.forceJoin.getJoin();
         return current?.id === join.id && !current.isRetrying;
     }

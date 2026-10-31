@@ -170,8 +170,8 @@ or disposed) or was restarted; only an exit still pending after that check dispu
 `this.exit !== exit` return removed: "below its anchor"),
 [`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P54`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9) (the leaver received no chain event, so only the watchdog's own check
 sees the settlement; it times out waiting for `onLeftChannel` with the `this.requestCheck()` line removed), and
-[`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P55`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9) (disposal during the watchdog's own parked check; it fails when the exit
-return is weakened to a status check: the dispute starts on the disposed runtime).
+[`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P55`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9) (disposal during the watchdog's own parked check; the check resumes after the disposal cut-off and its
+dispute never reaches the chain).
 
 The window after that check is closed too. An exit snapshot that lands while the self-removal dispute is
 built moves the leaver's anchor past its latest block; in the
@@ -1404,9 +1404,9 @@ view record these; new component families are the local-only guard family (remov
 [`UNIT-TEST-P2P-RUNTIME-HOST-34-517JAX`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-34-517jax); the root-creation family replaced its parentless-rejection
 permutation with six parentless-worker permutations. No contradiction is demonstrated. The executor
 drain is bounded by the engineer decision [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/open-questions.md#oq-impl-executor-drain-1-5d71ym): `closeAdmission` races the admitted set against the exported
-`IN_FLIGHT_REPLY_DRAIN_MS`, logs and abandons work still admitted at the limit, and lets disposal proceed.
+`ADMISSION_DRAIN_MS`, logs and abandons work still admitted at the limit, and lets disposal proceed.
 The second implementation review showed that `admit` returned the operation's own promise, so a call that
-completed after the limit, during the later in-flight reply drain, still returned its success to a caller
+completed after the limit, during the rest of the disposal, still returned its success to a caller
 the executor had declared abandoned. By the engineer's decision (option a) `admit` now returns a
 caller-facing promise behind a settle-once latch; at the limit `closeAdmission` rejects every caller still
 waiting with `Contract executor shut down before the operation finished`, and the operation's later
@@ -1417,6 +1417,9 @@ disposal rejection holds even when the operation later succeeds or fails. The ad
 [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P6`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb), [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P7`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb) and
 [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P8`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb) for late success, late failure, and mutex-queued work released after
 the limit; [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P2`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb) now names a late deploy and simulation beside the late call.
+Luke 2026-10-31 deleted the drain: `closeAdmission` is synchronous and rejects every admitted caller at
+once, `ADMISSION_DRAIN_MS` and the settle-once latch are gone, and [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59) now forbids
+waiting for admitted work; the admitted-failure case is deleted, and the late-success, late-failure and queued-work cases now finish after disposal instead of after a limit.
 
 The earlier record said an unidentified transport's "handle is barred". That was wrong:
 `ProfileManager.blacklistPeer(transport)` does nothing when the transport has no profile, so a transport
@@ -1430,17 +1433,17 @@ unexpectedly leaves its hidden parent live until the handle is disposed, which t
 A pre-existing shutdown defect is fixed in the same change: `InitHandshakeService` never settled pending
 `waitForHandshakeCompleted` waits at shutdown, so a wait timer could fire after its logger was disposed and
 surface as an unhandled `Logger InitHandshakeService has been disposed` error, contrary to the
-detached-work rule of [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59). The service now has a `dispose()` that marks it disposed and
-clears the completion barrier, so every pending and later wait settles as not completed at once, and
-`MainRpcService.dispose()` calls it first; the handshake guard suite reaches it through that runtime
-shutdown hook. The [InitHandshakeService](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md) and
-[MainRpcService](../implementation/source/src/rpc/network/MainRpcService.ts.md) reports record it with
-[`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19`](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md#unit-test-init-handshake-service-1-6n4c7r) and [`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P9`](../implementation/source/src/rpc/network/MainRpcService.ts.md#unit-test-main-rpc-service-1-awn39m).
+detached-work rule of [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59). The service now has a `dispose()` that
+clears the completion barrier, so every pending wait settles as not completed at once, and the host
+root's disposal calls it after the cut (2026-10-31, slice 3: no longer through `MainRpcService.dispose()`;
+a later wait is unreachable once the cut closed every transport). The
+[InitHandshakeService](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md) report records it with
+[`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19`](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md#unit-test-init-handshake-service-1-6n4c7r).
 
 The first implementation review asked whether this settlement at runtime shutdown makes a
 `DeferredAdmissionGuard` queue expire as a peer timeout, with a warning and an `allowRetry` disconnect
 against a peer that was only mid-handshake. It does not, and no code change was made: at real runtime
-shutdown `StateManager.stop()` sets `isDisposed` before `localRpc.dispose()` runs, and
+shutdown the cut sets `isDisposed` before the handshake service's release runs, and
 `HandshakeAdmissionPolicy.onExpired` returns early when the state manager is disposed. The settled
 handshake wait therefore never leads to an expiry warning or a retry disconnect.
 
@@ -1519,9 +1522,11 @@ broadcast goes out and only the adoption after it is skipped
 decision 2026-10-08). The harness `holdReductionAttempt(..., "submit")` parks the reduce's own chain
 write (the multicall that carries `reduceAndFinalize`) and counts every chain write
 ([StubRpcMethods.ts](../../../test/fixtures/customRpc/harnessControl/services/stub/StubRpcMethods.ts#L1497)).
-The two `ReductionManager` cases that proved the removed guard were deleted with it; the
-`ReductionManager` case "disposal while the reduce send is held surfaces no rejection and reports no
-failure" replaces them
+The two `ReductionManager` cases that proved the removed guard were deleted with it. The inline
+case "disposal while the reduce send is held surfaces no rejection and reports no failure" that
+replaced them was deleted when every test moved to worker mode (Luke 2026-10-31); the worker
+`ReductionManager` cases that abort while the reduction is held prove the aborted peer's nonce is
+unchanged
 ([ReductionManager.test.ts.md](../verification/tests/test/stateManager/ReductionManager.test.ts.md)).
 Residual: a reduce send released after a full host teardown never settles (the destroyed ethers
 `WebSocketProvider` hangs at populate or estimate), so its detached promise stays pending until
