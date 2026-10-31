@@ -233,7 +233,16 @@ describe("Unit: ParticipantTimeoutService", function () {
             await assertTimeoutRetryAfterForkSwitch(TestSession.getHarness());
         });
         it("the writer block arrives before retry → no second submission", async function () {
-            await assertObsoleteEarlyTimeoutRetry(TestSession.getHarness());
+            await assertObsoleteEarlyTimeoutRetry(
+                TestSession.getHarness(),
+                "block"
+            );
+        });
+        it("runtime disposed before retry → no second submission", async function () {
+            await assertObsoleteEarlyTimeoutRetry(
+                TestSession.getHarness(),
+                "disposed"
+            );
         });
     });
 
@@ -891,6 +900,15 @@ describe("Unit: ParticipantTimeoutService", function () {
         it("M4 writer block obsoletes mismatch retry", async function () {
             await assertObsoleteEarlyTimeoutRetry(
                 TestSession.getHarness(),
+                "block",
+                "mismatch"
+            );
+        });
+
+        it("M4 disposal obsoletes mismatch retry", async function () {
+            await assertObsoleteEarlyTimeoutRetry(
+                TestSession.getHarness(),
+                "disposed",
                 "mismatch"
             );
         });

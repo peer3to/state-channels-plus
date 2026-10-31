@@ -3,6 +3,7 @@ import { isRootDisposedError } from "@/rpc/internal/RemoteRoot";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import { sleep } from "@/utils";
+import { disposeAndRelease } from "@test/fixtures/DisposeCutOffStaging";
 import { clientRootFor } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
@@ -718,6 +719,43 @@ describe("Unit: BlockProductionService", function () {
             expect(isRootDisposedError(failure)).to.equal(true);
             await sleep(1_000);
             expect(await heights()).to.deep.equal(heightsBefore);
+        });
+    });
+
+    describe("playTransaction → parked behind the mutex while the runtime is disposed", function () {
+        it("a candidate parked on the state mutex when the runtime is disposed → no block leaves the runtime once the mutex frees", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+
+            const writer = h.getPeer(
+                (await h.query.getNextPeerToWrite()).index
+            );
+            const hold = await h.rpcStub.holdStateMutex(writer.index);
+            await waitFor(
+                async () => (await hold.entered()) === 1,
+                h.event.protocolEventTimeoutMs()
+            );
+            const parked = writer.p2pInstance.p2pContractInstance
+                .add(1)
+                .catch(() => undefined);
+            await waitFor(
+                async () =>
+                    (await h.rpcStub.getStateMutexWaitingCount(
+                        writer.index
+                    )) === 1,
+                h.event.protocolEventTimeoutMs()
+            );
+            // keeps the port open while the parked candidate runs on
+            const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
+                writer.index
+            );
+
+            await disposeAndRelease(h, writer, async () => {
+                await hold.release();
+                await sleep(1_000);
+                await releaseDisposal();
+            });
+            await parked;
         });
     });
 

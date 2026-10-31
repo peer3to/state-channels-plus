@@ -1492,6 +1492,36 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return { ran: held.length, errors };
     }
 
+    /**
+     * Count this runtime's streamed chain logs and arm one timer task due
+     * after `timerDelayMs`; read with `getRuntimeCallbacks`.
+     */
+    public observeRuntimeCallbacks(timerDelayMs: number): boolean {
+        this.service.observeRuntimeCallbacks(timerDelayMs);
+        return true;
+    }
+
+    public getRuntimeCallbacks(): { timer: number; chainLogs: number } {
+        return { ...this.service.runtimeCallbacks! };
+    }
+
+    /** Collect one detached promise that rejects on `rejectHeldDetachedWork`. */
+    public collectHeldDetachedWork(): boolean {
+        this.service.collectHeldDetachedWork();
+        return true;
+    }
+
+    public rejectHeldDetachedWork(message: string): boolean {
+        this.service.heldDetachedWorkReject?.(new Error(message));
+        return true;
+    }
+
+    /** Report one double signature in this runtime's realm. */
+    public recoverDoubleSignature(): boolean {
+        this.service.recoverDoubleSignature();
+        return true;
+    }
+
     /** Hold one running timeout-manager task until that manager's dispose starts. */
     public holdScheduledTaskUntilDispose(): boolean {
         this.service.holdScheduledTaskUntilDispose();
@@ -2089,22 +2119,44 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /**
-     * Hold the runtime disposal that a real abort starts right after its
-     * cut, before the runtime's releases run (the spectate release is the
-     * first), so the control RPC stays reachable after the abort.
+     * Hold the runtime disposal that a real abort or dispose starts right
+     * after its cut, so the control RPC stays reachable after it. At
+     * `release` it holds before the runtime's releases run (the spectate
+     * release is the first); at `providerRelease` it holds after the
+     * children, once the listeners are off the provider the Clock keeps.
      * Release with `releaseRuntimeDisposal`.
      */
-    public stubHoldRuntimeDisposal(): boolean {
-        const spectate = this.service.sm.p2pManager.localRpc.spectateService;
-        const dispose = spectate.dispose.bind(spectate);
+    public stubHoldRuntimeDisposal(
+        point: "release" | "providerRelease" = "release"
+    ): boolean {
         const gate = this.service.createGate();
         this.service.runtimeDisposalGate = gate;
+        if (point === "providerRelease") {
+            const provider =
+                this.service.sm.stateChannelManagerContract.runner!.provider!;
+            const removeAllListeners =
+                provider.removeAllListeners.bind(provider);
+            provider.removeAllListeners = async (...args) => {
+                const removed = await removeAllListeners(...args);
+                gate.entered += 1;
+                await gate.gate;
+                return removed;
+            };
+            return true;
+        }
+        const spectate = this.service.sm.p2pManager.localRpc.spectateService;
+        const dispose = spectate.dispose.bind(spectate);
         spectate.dispose = async () => {
             gate.entered += 1;
             await gate.gate;
             return dispose();
         };
         return true;
+    }
+
+    /** Disposals that reached the `stubHoldRuntimeDisposal` hold. */
+    public getRuntimeDisposalHoldEntered(): number {
+        return this.service.runtimeDisposalGate?.entered ?? 0;
     }
 
     public releaseRuntimeDisposal(): boolean {

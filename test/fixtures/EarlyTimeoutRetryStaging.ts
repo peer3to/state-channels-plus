@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: shared timeout check staging (deadline, early window, refusals) exercised by ParticipantTimeoutService cases
 import { syncTargetToUnpostedReduction } from "./ReductionForkSwitchStaging";
+import { runtimeIsClosed } from "./RuntimeRootObservation";
 import Clock from "@/Clock";
 import {
     EARLY_TIMEOUT_RECHECK_REASON,
@@ -280,8 +281,18 @@ export async function assertConsecutiveMismatchRetry(
     }
 }
 
+/** Long enough for a released retry to run on and submit what it would. */
+const AFTER_CUT_WINDOW_MS = 1_000;
+
+/**
+ * A timeout refused at the chain boundary schedules its retry; the retry is
+ * held, then made obsolete by `change`: the writer's block arrives, or the
+ * runtime aborts and the held retry runs after the cut. Either way there is
+ * no second submission.
+ */
 export async function assertObsoleteEarlyTimeoutRetry(
     h: MathPeerTestHarness,
+    change: "block" | "disposed",
     refusal: "early" | "mismatch" = "early"
 ): Promise<void> {
     await h.lifecycle.start(3, 0);
@@ -336,6 +347,25 @@ export async function assertObsoleteEarlyTimeoutRetry(
         );
         await waitFor(async () => (await held.heldCount()) === 1);
         expect(await recorder.submissions()).to.have.length(1);
+        if (change === "disposed") {
+            // keeps the control RPC reachable after the abort
+            const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(1);
+            try {
+                await h.control(peer).stub.abortDetached().request();
+                await h.event.waitForPeers("onAbort", [1], 1);
+                // the held retry runs after the cut
+                await held.release(true);
+                await sleep(AFTER_CUT_WINDOW_MS);
+                expect(await recorder.submissions()).to.have.length(1);
+            } finally {
+                await releaseDisposal();
+            }
+            await waitFor(
+                () => runtimeIsClosed(peer.p2pInstance),
+                h.event.protocolEventTimeoutMs()
+            );
+            return;
+        }
         await h.transition.advanceState();
         await held.release(true);
         expect(await recorder.submissions()).to.have.length(1);
@@ -357,8 +387,11 @@ export async function assertObsoleteEarlyTimeoutRetry(
             ).to.equal(ZeroAddress);
         }
     } finally {
-        await held.release(false);
-        await recorder.restore();
+        // a disposed runtime ends with its holds
+        if (change === "block") {
+            await held.release(false);
+            await recorder.restore();
+        }
     }
 }
 

@@ -245,12 +245,15 @@ export class RpcStubActions<
     }
 
     /**
-     * Hold the runtime disposal a real abort starts on this peer right after
-     * its cut, so its control RPC stays reachable after the abort. Returns
-     * the release.
+     * Hold the runtime disposal a real abort or dispose starts on this peer
+     * right after its cut, at `point` (see `stubHoldRuntimeDisposal`), so its
+     * control RPC stays reachable after the cut. Returns the release.
      */
-    async holdRuntimeDisposal(peerIndex: number): Promise<() => Promise<void>> {
-        await this.peerStub(peerIndex).stubHoldRuntimeDisposal().request();
+    async holdRuntimeDisposal(
+        peerIndex: number,
+        point: "release" | "providerRelease" = "release"
+    ): Promise<() => Promise<void>> {
+        await this.peerStub(peerIndex).stubHoldRuntimeDisposal(point).request();
         return async () => {
             await this.peerStub(peerIndex).releaseRuntimeDisposal().request();
         };

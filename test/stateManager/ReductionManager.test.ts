@@ -276,6 +276,13 @@ describe("ReductionManager", function () {
             );
         });
 
+        it("an abort while the reduce send is held after the local install sends no transaction once the send is released", async function () {
+            await assertAbortedReductionSendsNothing(
+                TestSession.getHarness(),
+                "submit"
+            );
+        });
+
         it("an abort while the reduction genesis application is held at setState sends no transaction once it is released", async function () {
             await assertAbortedReductionSendsNothing(
                 TestSession.getHarness(),

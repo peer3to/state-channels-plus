@@ -9,30 +9,39 @@ import { expect } from "chai";
 
 /**
  * Stage a reducible disputed fork on peer 0, hold its reduction at `point`
- * (the attempt, or the genesis application's `setState`), abort while it is
- * held, and release it after the cut: the attempt runs on in the aborted
- * runtime and sends no transaction from peer 0.
+ * (the attempt, its reduce send after the local install, or the genesis
+ * application's `setState`), abort while it is held, and release it after
+ * the cut: the attempt runs on in the aborted runtime and sends no
+ * transaction from peer 0.
  */
 export async function assertAbortedReductionSendsNothing(
     h: MathPeerTestHarness,
-    point: "attempt" | "setState"
+    point: "attempt" | "submit" | "setState"
 ): Promise<void> {
     const { sourceForkId } = await stageDisposalFork(h);
     const target = h.getPeer(0);
     const control = h.control(target);
     const hold =
-        point === "attempt"
-            ? await h.rpcStub.holdReductionAttempt(0, "attempt")
-            : await h.rpcStub.holdReductionGenesisApplication(0, {
+        point === "setState"
+            ? await h.rpcStub.holdReductionGenesisApplication(0, {
                   outcome: "hold",
                   at: "setState"
-              });
+              })
+            : await h.rpcStub.holdReductionAttempt(0, point);
     // through the control port, so the attempt is this peer's work
     await control.stub.startTryReduce(sourceForkId).request();
     await waitFor(
         async () => (await hold.entered()) === 1,
         h.event.protocolEventTimeoutMs()
     );
+    // the send is reached only after the local install
+    if (point === "submit")
+        await waitFor(
+            async () =>
+                (await control.stub.getTryReduceOutcome().request())
+                    ?.settled === true,
+            h.event.protocolEventTimeoutMs()
+        );
     const nonce = await h.provider.getTransactionCount(target.address);
     // the teardown parks after the cut, so the released attempt runs on a
     // live executor and provider and only the signer cut stops its send

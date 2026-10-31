@@ -4,6 +4,7 @@ import { LiveBlockRetentionRecorder } from "./node/LiveBlockRetentionRecorder";
 import StubRpcMethods from "./StubRpcMethods";
 import type { HarnessControlRpcShape } from "../../HarnessControlRpc";
 import { localExecutorConnection } from "../mirror/MirrorService";
+import { recoverSigner } from "@/cache";
 import Clock from "@/Clock";
 import type DisputeBuilder from "@/disputeManager/DisputeBuilder";
 import { Block } from "@/models";
@@ -40,6 +41,7 @@ import type {
 } from "@/types/types";
 import {
     Codec,
+    DetachedPromises,
     getChecksumAddress,
     LocalDiscoveryServer,
     multicallLastCallRevertData,
@@ -52,6 +54,7 @@ import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
 import { Mutex } from "@/utils/Mutex";
 import type { TimeoutManager } from "@/utils/TimeoutManager";
 import * as factory from "@test/factory";
+import { signBlockVariant } from "@test/fixtures/QueueAdmissionFixture";
 import type { StateChannelManagerInterface } from "@typechain-types";
 import type {
     DisputeAuditingDataStruct,
@@ -60,13 +63,16 @@ import type {
 import type { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import {
     type ContractTransactionResponse,
+    getBytes,
     hexlify,
+    id,
     type Interface,
     JsonRpcApiProvider,
     type Log,
     resolveAddress,
     toQuantity,
     type TransactionRequest,
+    Wallet,
     ZeroAddress
 } from "ethers";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -832,6 +838,10 @@ export class StubService extends ANetworkRpcService<
     private unlockNonceMutex?: () => void;
     /** The runtime disposal that `stubHoldRuntimeDisposal` holds. */
     runtimeDisposalGate?: StubGate;
+    /** Timer runs and streamed chain logs that `observeRuntimeCallbacks` counts. */
+    runtimeCallbacks?: { timer: number; chainLogs: number };
+    /** Rejects the detached work `collectHeldDetachedWork` collected. */
+    heldDetachedWorkReject?: (error: Error) => void;
     /** How many distinct inbound logs may be dropped (undefined = all). */
     eventLogDropLimit?: number;
     /** Subscribed calldata logs the hold stub has already lost once. */
@@ -3394,6 +3404,48 @@ export class StubService extends ANetworkRpcService<
     /** Entries of the dispose-wait task. */
     public getDisposeWaitTask(): { entered: number } {
         return { entered: this.disposeWaitTaskGate?.entered ?? 0 };
+    }
+
+    /**
+     * Count this runtime's streamed chain logs and arm one timer task due
+     * after `timerDelayMs`; the counts are in `runtimeCallbacks`.
+     */
+    public observeRuntimeCallbacks(timerDelayMs: number): void {
+        const calls = { timer: 0, chainLogs: 0 };
+        this.runtimeCallbacks = calls;
+        const sync = this.sm.eventSyncService;
+        const schedule = sync.scheduleStreamedLog.bind(sync);
+        sync.scheduleStreamedLog = (...args) => {
+            calls.chainLogs += 1;
+            return schedule(...args);
+        };
+        this.sm.timeoutManager.scheduleTask(
+            () => {
+                calls.timer += 1;
+            },
+            timerDelayMs,
+            "runtime callback probe"
+        );
+    }
+
+    /** Collect one detached promise that rejects once `heldDetachedWorkReject` runs. */
+    public collectHeldDetachedWork(): void {
+        DetachedPromises.collect(
+            new Promise<void>((_, reject) => {
+                this.heldDetachedWorkReject = reject;
+            })
+        );
+    }
+
+    /** A realm-wide double-signature report: a fresh key signs one hash twice. */
+    public recoverDoubleSignature(): void {
+        const wallet = Wallet.createRandom();
+        const blockHash = id("disposed runtime double signature");
+        for (const variant of [0, 1])
+            recoverSigner(
+                getBytes(blockHash),
+                signBlockVariant(wallet, blockHash, variant)
+            );
     }
 
     /** One releasable pause shared by the reduction-control stubs. */

@@ -2,11 +2,12 @@ import * as factory from "../factory";
 import { DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT } from "@/evm/contractExecutor/ContractExecutor";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type { Address, Bytes, Hash } from "@/types/types";
-import { Codec, Type } from "@/utils";
+import { Codec, sleep, Type } from "@/utils";
 import {
     encodeLinkedNextBlock,
     signEncodedBlock
 } from "@test/fixtures/BlockEncodingFixture";
+import { disposeAndRelease } from "@test/fixtures/DisposeCutOffStaging";
 import { BUDGET_ABOVE_DEFAULT } from "@test/fixtures/LocalEvmCallGas.fixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
@@ -730,6 +731,43 @@ describe("Unit: BlockIngestService", function () {
             // onto either run puts it above the missing block 1
             expect(r.storedHash).to.equal(null);
             expect(r.rangeLength).to.equal(0);
+        });
+    });
+
+    describe("onBlockConfirmation → parked behind the mutex while the runtime is disposed", function () {
+        it("a valid block parked on the state mutex when the runtime is disposed → nothing leaves the runtime once the mutex frees", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const { observer, authored } =
+                await h.transition.authorNextBlockOffWireWait();
+            const hold = await h.rpcStub.holdStateMutex(observer.index);
+            await waitFor(
+                async () => (await hold.entered()) === 1,
+                h.event.protocolEventTimeoutMs()
+            );
+            const parked = h
+                .control(observer)
+                .validation.runBlockIngest(authored.encodedBlockConfirmation)
+                .request()
+                .catch(() => undefined);
+            await waitFor(
+                async () =>
+                    (await h.rpcStub.getStateMutexWaitingCount(
+                        observer.index
+                    )) === 1,
+                h.event.protocolEventTimeoutMs()
+            );
+            // keeps the port open while the parked delivery runs on
+            const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
+                observer.index
+            );
+
+            await disposeAndRelease(h, observer, async () => {
+                await hold.release();
+                await sleep(1_000);
+                await releaseDisposal();
+            });
+            await parked;
         });
     });
 

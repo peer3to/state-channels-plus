@@ -1,5 +1,12 @@
 // @spec-test-coverage-ignore: shared abort assertions exercised by StateManagerAbort and P2PManager tests
-import { clientRootFor, inlineHostFor } from "./RuntimeRootObservation";
+import {
+    clientRootFor,
+    inlineHostFor,
+    runtimeIsClosed
+} from "./RuntimeRootObservation";
+import Clock from "@/Clock";
+import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
+import { Status } from "@/types";
 import { sleep } from "@/utils";
 import { config } from "@/utils/config";
 import { crashLogUploadOverrides } from "@test/fixtures/logging/crashLogConfig";
@@ -14,6 +21,13 @@ import { type HarnessOptions, MathTestSession } from "@test/harness";
 import { deferred } from "@test/utils/deferred";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
+import { type WebSocketProvider } from "ethers";
+
+/** Longer than the first reconnect delay of a node that still reconnects. */
+const RECONNECT_ABSENCE_WINDOW_MS = 1_000;
+
+/** A probe task's delay: the cancellation oracle, not a protocol timeout. */
+const PROBE_TIMER_MS = 1_000;
 
 /** The abort's log-flush bound in the bounded-flush case: short, so the case is quick. */
 const ABORT_FLUSH_MS = 3_000;
@@ -293,4 +307,203 @@ export async function assertAbortClosesRuntime(worker: boolean): Promise<void> {
             .request()
     ).to.deep.equal(participants);
     await peer.p2pInstance.dispose();
+}
+
+/**
+ * An abort cancels the runtime's timers: a task due while the disposal is
+ * held after its children never runs, and the runtime is disconnected.
+ */
+export async function assertAbortCancelsTimeout(): Promise<void> {
+    const h = MathTestSession.getHarness();
+    await h.lifecycle.start(4, 0);
+    const peer = h.getPeer(0);
+    const control = h.control(peer);
+    // keeps the control RPC reachable past the task's deadline
+    const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
+        0,
+        "providerRelease"
+    );
+    try {
+        await control.stub.observeRuntimeCallbacks(PROBE_TIMER_MS).request();
+        await control.stub.abortDetached().request();
+        await h.event.waitForPeers("onAbort", [0], 1);
+        await waitFor(
+            async () =>
+                (await control.stub
+                    .getRuntimeDisposalHoldEntered()
+                    .request()) === 1,
+            h.event.protocolEventTimeoutMs()
+        );
+        // a second full interval past the deadline, in which an incorrectly
+        // retained task could run
+        await sleep(2 * PROBE_TIMER_MS);
+        expect(await control.query.getStatus().request()).to.equal(
+            Status.OPENED
+        );
+        expect(
+            (await control.stub.getRuntimeCallbacks().request()).timer
+        ).to.equal(0);
+        expect(
+            await h.execOnHost(
+                peer,
+                (sm) => sm.p2pManager.getConnectedPeers().size
+            )
+        ).to.equal(0);
+    } finally {
+        await releaseDisposal();
+    }
+    await waitFor(
+        () => runtimeIsClosed(peer.p2pInstance),
+        h.event.protocolEventTimeoutMs()
+    );
+}
+
+/**
+ * Inline peers share one realm, so the Clock reads through another
+ * runtime's provider: a disposed runtime destroys its own provider after
+ * its host work stopped, and its nodes, sockets and listeners end with it.
+ * A test of inline mode's shared realm: a worker realm's Clock always reads
+ * through the runtime's own provider.
+ */
+export async function assertProviderShutdownOrder(): Promise<void> {
+    const h = MathTestSession.getHarness();
+    await h.lifecycle.start(4, 0, {
+        configOverrides: {
+            RUN_SDK_IN_THREAD: false,
+            VM_DEDICATED_THREAD: false
+        }
+    });
+    const peer = h.getPeer(0);
+    const host = inlineHostFor(peer.p2pInstance);
+    const sm = host.hostRpc.requireManager().stateManager;
+    const provider = sm.stateChannelManagerContract.runner!.provider!;
+    if (!(provider instanceof MultiRpcProvider))
+        throw new Error("Expected the host RPC node provider");
+    // each node's open socket carries the channel's event subscription
+    const sockets = provider.nodes.map((node) => {
+        let socket: WebSocketProvider | undefined;
+        node.watchSockets((open) => {
+            socket = open;
+        })();
+        if (!socket) throw new Error("Expected every node to be connected");
+        return socket;
+    });
+    const socketListenerCounts = await Promise.all(
+        sockets.map((socket) => socket.listenerCount())
+    );
+    for (const count of socketListenerCounts)
+        expect(count).to.be.greaterThan(0);
+    await peer.p2pInstance.dispose();
+    expect(provider.destroyed).to.equal(true);
+    expect(await provider.listenerCount()).to.equal(0);
+    expect(provider.nodes.map((node) => node.destroyed)).to.deep.equal(
+        provider.nodes.map(() => true)
+    );
+    expect(sockets.map((socket) => socket.destroyed)).to.deep.equal(
+        sockets.map(() => true)
+    );
+    expect(
+        await Promise.all(sockets.map((socket) => socket.listenerCount()))
+    ).to.deep.equal(sockets.map(() => 0));
+    await peer.p2pInstance.dispose();
+}
+
+/**
+ * A runtime whose provider the process-wide Clock reads through is disposed:
+ * the provider stays open for the Clock, its nodes never reconnect, and the
+ * Clock destroys it once a new provider replaces it. A test of inline
+ * mode's shared realm: only there does the Clock outlive the runtime and
+ * take another runtime's provider.
+ */
+export async function assertClockOwnedProviderReleasedOnDispose(): Promise<void> {
+    const h = MathTestSession.getHarness();
+    const proxied = 2;
+    await h.lifecycle.start(3, 0, {
+        configOverrides: {
+            RUN_SDK_IN_THREAD: false,
+            VM_DEDICATED_THREAD: false
+        },
+        rpcNodeProxiesByPeer: { [proxied]: 1 }
+    });
+    const [proxy] = h.getRpcNodeProxies(proxied);
+    const providerOf = (peerIndex: number) => {
+        const provider = inlineHostFor(
+            h.getPeer(peerIndex).p2pInstance
+        ).hostRpc.requireManager().stateManager.stateChannelManagerContract
+            .runner!.provider!;
+        if (!(provider instanceof MultiRpcProvider))
+            throw new Error("Expected the host RPC node provider");
+        return provider;
+    };
+    const provider = providerOf(proxied);
+    const replacement = providerOf(0);
+    // this runtime's provider is now the one the Clock reads through
+    await Clock.init(provider);
+
+    await h.getPeer(proxied).p2pInstance.dispose();
+
+    expect(provider.destroyed).to.equal(false);
+    const [node] = provider.nodes;
+    const chainIdReads = proxy.forwardedCount("eth_chainId");
+    proxy.cut();
+    await waitFor(() => !node.isConnected);
+    proxy.restore();
+    // time is the input: the first reconnect would come within 250 ms
+    await sleep(RECONNECT_ABSENCE_WINDOW_MS);
+    expect(node.isConnected).to.equal(false);
+    expect(proxy.forwardedCount("eth_chainId")).to.equal(chainIdReads);
+
+    await Clock.init(replacement);
+
+    expect(provider.destroyed).to.equal(true);
+    expect(provider.nodes.map((rpcNode) => rpcNode.destroyed)).to.deep.equal(
+        provider.nodes.map(() => true)
+    );
+}
+
+/**
+ * A worker realm's Clock reads through the runtime's own provider. The
+ * disposal, held after its children, has left that provider open for the
+ * Clock with no listener on it, and its node does not reconnect.
+ */
+export async function assertWorkerClockProviderReleasedOnDispose(): Promise<void> {
+    const h = MathTestSession.getHarness();
+    const proxied = 2;
+    await h.lifecycle.start(3, 0, { rpcNodeProxiesByPeer: { [proxied]: 1 } });
+    const peer = h.getPeer(proxied);
+    const [proxy] = h.getRpcNodeProxies(proxied);
+    const stub = h.control(peer).stub;
+    const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
+        proxied,
+        "providerRelease"
+    );
+    const disposal = peer.p2pInstance.dispose();
+    try {
+        await waitFor(
+            async () =>
+                (await stub.getRuntimeDisposalHoldEntered().request()) === 1,
+            h.event.protocolEventTimeoutMs()
+        );
+        expect(
+            await h.execOnHost(peer, async (sm, _args, modules) => {
+                const provider =
+                    sm.stateChannelManagerContract.runner!.provider!;
+                return {
+                    isClockOwned: modules.Clock.ownsProvider(provider),
+                    listeners: await provider.listenerCount()
+                };
+            })
+        ).to.deep.equal({ isClockOwned: true, listeners: 0 });
+        const chainIdReads = proxy.forwardedCount("eth_chainId");
+        expect(chainIdReads).to.be.greaterThan(0);
+        // time is the input: a node that still reconnects would within 250 ms
+        proxy.cut();
+        await sleep(RECONNECT_ABSENCE_WINDOW_MS);
+        proxy.restore();
+        await sleep(RECONNECT_ABSENCE_WINDOW_MS);
+        expect(proxy.forwardedCount("eth_chainId")).to.equal(chainIdReads);
+    } finally {
+        await releaseDisposal();
+    }
+    await disposal;
 }
