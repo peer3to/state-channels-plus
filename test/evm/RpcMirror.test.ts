@@ -272,33 +272,78 @@ describe("MirrorRpcProvider", function () {
         });
     });
 
-    it("asks the node, after the learned backstop, for a snapshot the service has ready and never delivers", async function () {
+    it("asks the node, after a backstop learned from snapshot arrivals, for a snapshot the service has ready and never delivers", async function () {
         await withMirrorSession(async (session) => {
+            const { address: taught } = await deployMirroredStorage(session);
             const { chainStorage, address } =
                 await deployMirroredStorage(session);
-            await backfillAtService(session, [address]);
-            await teachBackstop(session, chainStorage);
-            await waitFor(
-                () =>
-                    (session.provider.mirrorStatistics?.backstopMs ??
-                        SDK_RPC_DEADLINE_MS) < SDK_RPC_DEADLINE_MS,
-                5_000,
-                20
-            );
+            await (await chainStorage.setValue(3n)).wait();
+            await backfillAtService(session, [taught, address]);
+            expect(
+                session.provider.mirrorStatistics?.snapshotBackstopMs
+            ).to.equal(SDK_RPC_DEADLINE_MS);
+            // a snapshot that arrives teaches how long snapshots take
+            await session.provider.getStorage(taught, 0);
+            expect(
+                session.provider.mirrorStatistics?.snapshotBackstopMs
+            ).to.be.lessThan(SDK_RPC_DEADLINE_MS / 2);
             session.service.dropNotifications("scp_snapshot");
 
             const started = Date.now();
             const word = await session.provider.getStorage(address, 0);
             const elapsed = Date.now() - started;
 
-            // the last value teachBackstop wrote
             expect(BigInt(word)).to.equal(3n);
-            expect(elapsed).to.be.lessThan(SDK_RPC_DEADLINE_MS);
+            expect(elapsed).to.be.lessThan(SDK_RPC_DEADLINE_MS / 2);
             expect(session.provider.mirrorStatistics).to.include({
                 snapshotTimeouts: 1,
                 snapshotDelays: 0
             });
             expect(nodeRequests(session, "eth_getStorageAt")).to.have.length(1);
+        });
+    });
+
+    it("does not shorten the wait for a snapshot because blocks arrived fast", async function () {
+        await withMirrorSession(async (session) => {
+            const { chainStorage, address } =
+                await deployMirroredStorage(session);
+            await (await chainStorage.setValue(5n)).wait();
+            await backfillAtService(session, [address]);
+            // an account the service is still backfilling is read lazily: the
+            // mirror follows without any snapshot having arrived
+            const { address: warm } = await deployMirroredStorage(session);
+            await session.provider.getStorage(warm, 0);
+            await session.provider.on("block", () => undefined);
+            for (let value = 1n; value <= 3n; value++)
+                await (await chainStorage.setValue(value)).wait();
+            await waitFor(
+                () =>
+                    (session.provider.mirrorStatistics?.backstopMs ??
+                        SDK_RPC_DEADLINE_MS) <
+                    SDK_RPC_DEADLINE_MS / 2,
+                5_000,
+                20
+            );
+            const blockBackstopMs =
+                session.provider.mirrorStatistics!.backstopMs;
+            expect(
+                session.provider.mirrorStatistics?.snapshotBackstopMs,
+                "no snapshot has arrived: the cap"
+            ).to.equal(SDK_RPC_DEADLINE_MS);
+            const release = session.service.holdNotifications("scp_snapshot");
+
+            const read = session.provider.getStorage(address, 0);
+            // time is the input: longer than a block takes by the learned bound
+            await sleep(blockBackstopMs + ABSENCE_WINDOW_MS);
+            release();
+            const word = await read;
+
+            // the last value teachBackstop wrote
+            expect(BigInt(word)).to.equal(3n);
+            expect(
+                session.provider.mirrorStatistics?.snapshotTimeouts
+            ).to.equal(0);
+            expect(nodeRequests(session, "eth_getStorageAt")).to.have.length(0);
         });
     });
 

@@ -56,6 +56,9 @@ type BlockNumber = bigint;
 /** Milliseconds since the epoch. */
 type EpochMs = number;
 
+/** How the wait for an account's snapshot ended for that account. */
+type SnapshotWaitEnd = "arrived" | "delayed" | "not-coming";
+
 /** A block of the chain as the mirror follows it. */
 type ChainBlock = { number: BlockNumber; hash: string };
 
@@ -101,8 +104,10 @@ export interface MirrorChainStatistics {
     freshnessTimeouts: number;
     /** Reads sent to the node because the service said a block is late, or the node moved on. */
     behindNode: number;
-    /** The longest a wait lasts now when no event ends it. */
+    /** The longest a wait for a block lasts now when no event ends it. */
     backstopMs: number;
+    /** The longest a wait for a snapshot lasts now when no event ends it. */
+    snapshotBackstopMs: number;
     /** Accounts the feed said no snapshot is coming for. */
     lazyNotices: number;
     /** Accounts dropped to lazy reads after they were complete. */
@@ -161,12 +166,20 @@ export class MirrorChain {
      */
     private readonly awaitedSnapshots = new Map<
         AccountAddress,
-        (delayed?: boolean) => void
+        (end: SnapshotWaitEnd) => void
     >();
     /** When a node announced each block number the head has not reached yet. */
     private readonly announcedAt = new Map<BlockNumber, EpochMs>();
-    /** How long a wait lasts when no event ends it, learned from how long records took. */
+    /** How long a wait for a block lasts when no event ends it, learned from how long records took. */
     private readonly backstop = new LearnedBackstop(SDK_RPC_DEADLINE_MS);
+    /**
+     * How long a wait for a snapshot lasts when no event ends it, learned
+     * from how long snapshots took: they come after a subscribe round trip,
+     * which a block's record does not need.
+     */
+    private readonly snapshotBackstop = new LearnedBackstop(
+        SDK_RPC_DEADLINE_MS
+    );
     /**
      * A wait ended without the block it waited for (the service said it is
      * late, the node moved on, or the backstop ran out): reads go to the node
@@ -177,7 +190,10 @@ export class MirrorChain {
     private readonly nodeRead = new Set<AccountAddress>();
     /** Snapshots from a block the head has not reached, by arrival. */
     private pendingSnapshots: StorageDiffSnapshot[] = [];
-    private readonly counters: Omit<MirrorChainStatistics, "backstopMs"> = {
+    private readonly counters: Omit<
+        MirrorChainStatistics,
+        "backstopMs" | "snapshotBackstopMs"
+    > = {
         lazyReads: 0,
         lazyFields: 0,
         snapshots: 0,
@@ -231,7 +247,11 @@ export class MirrorChain {
 
     /** What the mirror's own state reads cost so far. */
     get statistics(): MirrorChainStatistics {
-        return { ...this.counters, backstopMs: this.backstop.boundMs };
+        return {
+            ...this.counters,
+            backstopMs: this.backstop.boundMs,
+            snapshotBackstopMs: this.snapshotBackstop.boundMs
+        };
     }
 
     /** The newest block number a node announced to this runtime. */
@@ -610,14 +630,18 @@ export class MirrorChain {
         const waiting = addresses.filter(
             (address) => !this.state.isComplete(address)
         );
+        // from here the subscribe and the snapshot's arrival are timed together
+        const startedAt = Date.now();
         let remaining = waiting.length;
         let delayed = false;
         let resolveAll!: () => void;
         const all = new Promise<void>((resolve) => (resolveAll = resolve));
         if (remaining === 0) resolveAll();
         for (const address of waiting)
-            this.awaitedSnapshots.set(address, (wasDelayed) => {
-                if (wasDelayed) delayed = true;
+            this.awaitedSnapshots.set(address, (end) => {
+                if (end === "delayed") delayed = true;
+                if (end === "arrived")
+                    this.snapshotBackstop.record(Date.now() - startedAt);
                 if (--remaining === 0) resolveAll();
             });
         return {
@@ -625,7 +649,7 @@ export class MirrorChain {
                 for (const address of released) {
                     const done = this.awaitedSnapshots.get(address);
                     this.awaitedSnapshots.delete(address);
-                    done?.();
+                    done?.("not-coming");
                 }
             },
             settled: async () => {
@@ -636,7 +660,7 @@ export class MirrorChain {
                     timer = setTimeout(() => {
                         expiredAtBackstop = true;
                         resolve();
-                    }, this.backstop.boundMs);
+                    }, this.snapshotBackstop.boundMs);
                 });
                 await Promise.race([all, expired]);
                 clearTimeout(timer);
@@ -672,7 +696,7 @@ export class MirrorChain {
         });
         if (notice.reason === "snapshot-delayed") {
             for (const address of notice.accounts)
-                this.awaitedSnapshots.get(address)?.(true);
+                this.awaitedSnapshots.get(address)?.("delayed");
             return;
         }
         if (this.holds(this.requiredBlock)) return;
@@ -700,7 +724,7 @@ export class MirrorChain {
             this.counters.lazyNotices++;
             const done = this.awaitedSnapshots.get(address);
             this.awaitedSnapshots.delete(address);
-            done?.();
+            done?.("not-coming");
             // the feed found the complete state it pushed before to be short
             if (this.state.isComplete(address))
                 void this.dropToLazy(address, false);
@@ -762,7 +786,7 @@ export class MirrorChain {
             this.trackedSince.set(address, number);
             const done = this.awaitedSnapshots.get(address);
             this.awaitedSnapshots.delete(address);
-            done?.();
+            done?.("arrived");
         }
         this.counters.snapshots++;
     }
@@ -987,7 +1011,8 @@ export class MirrorChain {
 
     /** Ends every wait for a snapshot. */
     private releaseAwaited(): void {
-        for (const done of [...this.awaitedSnapshots.values()]) done();
+        for (const done of [...this.awaitedSnapshots.values()])
+            done("not-coming");
         this.awaitedSnapshots.clear();
     }
 
