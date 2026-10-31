@@ -25,7 +25,7 @@ reject with "Runtime already built" and the probe must still answer with the sam
 the separately built case the test bundles `ProbeHostRoot` with esbuild into a temporary module that
 carries its own copies of the probe, `P2pRuntimeHostRoot` and the config module, every other module
 staying shared; the worker loads that module by manifest, and the probe's `readConfig` value of
-`RUN_SDK_IN_THREAD` from its own copy must equal the peer's `true`.
+`DISPOSE_LOG_FLUSH_MS` from its own copy must equal the peer's value, which neither the default nor the environment carries.
 
 ## Tests
 

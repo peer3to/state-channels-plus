@@ -16,7 +16,7 @@ export class LoggerService extends AInternalRpcService<LoggerRpcMethods> {
     private readonly stores = new Map<
         LogStore,
         {
-            /** `flushDeadlineMs`: the abort flush this upload is part of, if any */
+            /** `flushDeadlineMs`: the flush (abort or dispose) this upload is part of, if any */
             upload: (flushDeadlineMs?: number) => Promise<LogUploadOutcome>;
             detach: () => void;
             updateContext: (context: SharedLoggerContext) => void;

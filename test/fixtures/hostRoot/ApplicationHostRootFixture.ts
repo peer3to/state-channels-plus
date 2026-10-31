@@ -13,7 +13,7 @@ import {
     isRootDisposedError
 } from "@/rpc/internal/RemoteRoot";
 import type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";
-import { config } from "@/utils/config";
+import { config, type Config } from "@/utils/config";
 import { bundleProbeHostRoot } from "@test/fixtures/hostRoot/BundledProbeHostRoot";
 import { FAILING_READY_MESSAGE } from "@test/fixtures/hostRoot/FailingReadyRpc";
 import type { ProbeHostRoot } from "@test/fixtures/hostRoot/ProbeHostRoot";
@@ -57,7 +57,8 @@ async function withRuntime(
     run: (
         instance: ProbeInstance,
         deployStateMachine: (signer: Signer) => Promise<string>
-    ) => Promise<void>
+    ) => Promise<void>,
+    configOverrides: Partial<Config> = {}
 ): Promise<void> {
     await startRuntimeTransportModesFixture();
     let instance: ProbeInstance | undefined;
@@ -72,6 +73,7 @@ async function withRuntime(
             setup.deployStateMachine,
             {
                 ...setup.setupOptions,
+                config: { ...setup.setupOptions.config, ...configOverrides },
                 // The probe application gives both of its manifests.
                 customRpcManifest: hostRootManifest
                     ? probeRpcManifest()
@@ -140,6 +142,9 @@ export async function assertSecondDeployCompleteRejects(
     );
 }
 
+// a peer value no default or environment carries
+const PEER_FLUSH_MS = 1_234;
+
 /**
  * A worker host root compiled apart from the SDK worker entry reads its own
  * config module copy, which holds its peer's configuration.
@@ -147,15 +152,21 @@ export async function assertSecondDeployCompleteRejects(
 export async function assertBundledHostRootAppliesPeerConfig(): Promise<void> {
     const bundle = await bundleProbeHostRoot();
     try {
-        await withRuntime(true, bundle.manifest, async (instance) => {
-            // The setup sent the config it applied here as payload.config.
-            expect(config.RUN_SDK_IN_THREAD).to.equal(true);
-            expect(
-                await instance.host.probe
-                    .readConfig("RUN_SDK_IN_THREAD")
-                    .request()
-            ).to.equal(config.RUN_SDK_IN_THREAD);
-        });
+        await withRuntime(
+            true,
+            bundle.manifest,
+            async (instance) => {
+                // The setup sent the config it applied here as payload.config;
+                // the value is neither the default nor in the environment.
+                expect(config.DISPOSE_LOG_FLUSH_MS).to.equal(PEER_FLUSH_MS);
+                expect(
+                    await instance.host.probe
+                        .readConfig("DISPOSE_LOG_FLUSH_MS")
+                        .request()
+                ).to.equal(PEER_FLUSH_MS);
+            },
+            { DISPOSE_LOG_FLUSH_MS: PEER_FLUSH_MS }
+        );
     } finally {
         await bundle.dispose();
     }

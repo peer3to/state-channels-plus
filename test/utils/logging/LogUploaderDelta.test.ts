@@ -296,6 +296,23 @@ describe("LogUploader delta uploads", function () {
         }
     });
 
+    it("a flush's upload sleeps its jitter at most half the time left to the flush's deadline", async function () {
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url,
+            // every draw is far past the deadline below
+            jitterMaxMs: 60_000
+        });
+        logger.info("logged while disposing");
+        const flushDeadlineMs = Date.now() + 2_000;
+
+        const posted = logUploader.uploadLogs(flushDeadlineMs);
+        await LogUploader.settleRealmUploads(10_000);
+        LogUploader.cancelRealmUploads();
+
+        expect(await posted).to.deep.equal({ ok: true, entries: 1 });
+        expect(Date.now()).to.be.below(flushDeadlineMs);
+    });
+
     it("an ending thread waits for an upload queued without a deadline only until a later flush's deadline", async function () {
         const held = deferred();
         await receiver!.close();

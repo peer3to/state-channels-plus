@@ -57,8 +57,9 @@ export abstract class LogUploader {
     private queuedUpload?: Promise<LogUploadOutcome>;
     /**
      * How long an ending thread waits for the running and the queued upload: the latest deadline
-     * of the abort flushes that asked for it or that it overlaps, endless (up to the thread's own
-     * bound) once a request outside any running flush did.
+     * of the flushes (abort or dispose) that asked for it or that it overlaps, endless (up to the
+     * thread's own bound) for a request outside any flush; a later bounded flush also bounds an
+     * endless queued upload.
      */
     private activeDeadlineMs = Infinity;
     private queuedDeadlineMs = Infinity;
@@ -89,7 +90,7 @@ export abstract class LogUploader {
 
     /**
      * Waits for every upload of this realm still running or queued, at most `timeoutMs`, and
-     * never past the deadline of the abort flush an upload is part of (that flush already
+     * never past the deadline of the flush (abort or dispose) an upload is part of (that flush already
      * waited for it). A thread that ends right after an error (a dispose) would otherwise
      * cancel the upload that error started, during its jitter wait.
      */
@@ -124,10 +125,10 @@ export abstract class LogUploader {
 
     /**
      * One active upload and at most one follow-up; callers await only local work.
-     * `flushDeadlineMs`: the abort flush this upload is part of, if any.
+     * `flushDeadlineMs`: the flush (abort or dispose) this upload is part of, if any.
      */
     public uploadLogs(flushDeadlineMs?: number): Promise<LogUploadOutcome> {
-        // A request while an abort flush's upload is pending is bounded by that flush: the
+        // A request while a flush's upload is pending is bounded by that flush: the
         // abort's disposal ends the threads at its deadline.
         const pendingDeadlineMs = this.queuedUpload
             ? this.queuedDeadlineMs
@@ -273,7 +274,14 @@ export abstract class LogUploader {
                 return { ok: true, entries: 0 };
             }
 
-            await abortableSleep(this.getJitterMs(), signal);
+            // a flush's upload sleeps at most half the time left to its deadline
+            await abortableSleep(
+                Math.min(
+                    this.getJitterMs(),
+                    Math.max(0, (this.activeDeadlineMs - Date.now()) / 2)
+                ),
+                signal
+            );
             if (signal.aborted) return { ok: false, entries: 0 };
 
             // identity and delta are read together, after the sleep: a channel
