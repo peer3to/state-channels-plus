@@ -360,10 +360,12 @@ where this section and the requirement differ, the requirement wins.
   disposed, and the final cleanup releases the chain provider and flushes the logs. An abort ends
   in the same dispose.
 - Do not add `dispose`/`stop` methods or disposed flags to components that hold only in-memory
-  state, and do not add disposed checks to in-memory work. The only reads of disposal state are
-  admission points where outside work can start after the cut: a late connection is closed where it
-  registers (`ProfileManager`, `WebRTCTransport`, `LocalDiscoveryServer`), and a late chain
-  subscription is refused (`StateManager.setChannelId`).
+  state, and do not add disposed checks to in-memory work. In runtime components the only reads of
+  disposal state are admission points where outside work can start after the cut: a late connection
+  is closed where it registers (`ProfileManager`, `WebRTCTransport`, `LocalDiscoveryServer`), a late
+  chain subscription is refused (`StateManager.setChannelId`), and a late abort is ignored
+  (`StateManager.abort`). Root, bridge and logger lifecycle code (`createRoot`, the roots,
+  `RemoteRoot`, `RuntimeLifecycleService`, the logger family) keeps its own disposal state.
 - A component that holds something outside the runtime (a timer, a socket, a subscription to a
   shared or static object, a child thread, a resource on the main thread) gets one small release
   method, called from `releaseRuntime()`. Prefer the existing owners instead: timers through
