@@ -63,6 +63,8 @@ export abstract class LogUploader {
      */
     private activeDeadlineMs = Infinity;
     private queuedDeadlineMs = Infinity;
+    /** ends the running upload's jitter wait early */
+    private wakeJitter?: () => void;
 
     constructor(
         protected readonly logStore: LogStore,
@@ -129,7 +131,7 @@ export abstract class LogUploader {
      */
     public uploadLogs(flushDeadlineMs?: number): Promise<LogUploadOutcome> {
         // A request while a flush's upload is pending is bounded by that flush: the
-        // abort's disposal ends the threads at its deadline.
+        // disposal ends the threads at that flush's deadline.
         const pendingDeadlineMs = this.queuedUpload
             ? this.queuedDeadlineMs
             : this.activeUpload
@@ -138,6 +140,8 @@ export abstract class LogUploader {
         const deadlineMs =
             flushDeadlineMs ??
             (pendingDeadlineMs > Date.now() ? pendingDeadlineMs : Infinity);
+        // a bounded flush must not wait out the running upload's jitter
+        if (flushDeadlineMs !== undefined) this.wakeJitter?.();
         if (this.queuedUpload) {
             // a bounded flush also bounds a follow-up queued without one
             this.queuedDeadlineMs =
@@ -275,13 +279,19 @@ export abstract class LogUploader {
             }
 
             // a flush's upload sleeps at most half the time left to its deadline
+            const jitter = new AbortController();
+            const endJitter = () => jitter.abort();
+            signal.addEventListener("abort", endJitter);
+            this.wakeJitter = endJitter;
             await abortableSleep(
                 Math.min(
                     this.getJitterMs(),
                     Math.max(0, (this.activeDeadlineMs - Date.now()) / 2)
                 ),
-                signal
+                jitter.signal
             );
+            this.wakeJitter = undefined;
+            signal.removeEventListener("abort", endJitter);
             if (signal.aborted) return { ok: false, entries: 0 };
 
             // identity and delta are read together, after the sleep: a channel

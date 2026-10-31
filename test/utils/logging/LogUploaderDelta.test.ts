@@ -296,6 +296,29 @@ describe("LogUploader delta uploads", function () {
         }
     });
 
+    it("a flush cuts short the jitter wait of an error's upload already running, so an ending thread sends it", async function () {
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url,
+            // every draw is far past the flush deadline below
+            jitterMaxMs: 60_000
+        });
+        logger.info("error before the dispose");
+        const running = logUploader.uploadLogs();
+        logger.info("logged while disposing");
+        const flushed = logUploader.uploadLogs(Date.now() + 2_000);
+
+        await LogUploader.settleRealmUploads(10_000);
+        LogUploader.cancelRealmUploads();
+
+        expect((await running).ok).to.equal(true);
+        expect((await flushed).ok).to.equal(true);
+        expect(
+            receiver!.requests.flatMap((_request, index) =>
+                messagesOf(receiver!, index)
+            )
+        ).to.deep.equal(["error before the dispose", "logged while disposing"]);
+    });
+
     it("a flush's upload sleeps its jitter at most half the time left to the flush's deadline", async function () {
         const { logger, logUploader } = createUploaderFixture({
             uploadEndpoint: receiver!.url,
