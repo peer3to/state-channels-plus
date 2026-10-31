@@ -13,6 +13,7 @@ import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
 import { createEvm } from "@/evm/EvmFactory";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
 import type { Logger } from "@/utils/logging/Logger";
+import type { RecentSlowest } from "@/utils/storageDiff/LearnedBackstop";
 import type {
     BlockEnvironment,
     BlockSelector,
@@ -46,6 +47,8 @@ export type MirrorOptions = {
     customPrecompiles: EvmCustomPrecompileManifest[];
     /** The root that owns the precompiles' child roots, if the host has one. */
     owner?: AInternalRpcRoot;
+    /** How long the nodes took lately to answer; the waits leave room for it. */
+    nodeRoundTrips?: RecentSlowest;
     getChainId: () => Promise<bigint>;
 };
 
@@ -72,6 +75,7 @@ export class Mirror {
                 new StorageDiffSocket(options.serviceUrl, handlers),
             state: this.state,
             upstream: options.upstream,
+            nodeRoundTrips: options.nodeRoundTrips,
             logger: options.logger
         });
     }

@@ -1,4 +1,10 @@
-import { LearnedBackstop } from "@/utils/storageDiff/LearnedBackstop";
+import {
+    BACKSTOP_MULTIPLE,
+    BACKSTOP_WINDOW_MS,
+    capLeavingNodeRoundTrips,
+    LearnedBackstop,
+    RecentSlowest
+} from "@/utils/storageDiff/LearnedBackstop";
 import { expect } from "chai";
 
 const CAP_MS = 3_000;
@@ -56,5 +62,66 @@ describe("LearnedBackstop", function () {
 
         clock.advance(WINDOW_MS);
         expect(backstop.boundMs).to.equal(CAP_MS);
+    });
+
+    it("follows a cap that moves, and never exceeds it", function () {
+        let cap = CAP_MS;
+        const backstop = new LearnedBackstop(() => cap, manualClock().now);
+        expect(backstop.boundMs, "no arrival yet: the cap").to.equal(CAP_MS);
+        backstop.record(500);
+        expect(backstop.boundMs).to.equal(BACKSTOP_MULTIPLE * 500);
+
+        cap = 800;
+        expect(backstop.boundMs).to.equal(800);
+
+        cap = 5_000;
+        expect(backstop.boundMs).to.equal(BACKSTOP_MULTIPLE * 500);
+    });
+});
+
+describe("capLeavingNodeRoundTrips", function () {
+    it("is the whole deadline until a node round trip was observed", function () {
+        const roundTrips = new RecentSlowest(manualClock().now);
+
+        expect(capLeavingNodeRoundTrips(CAP_MS, roundTrips)).to.equal(CAP_MS);
+    });
+
+    it("is the deadline less a multiple of the slowest recent node round trip", function () {
+        const roundTrips = new RecentSlowest(manualClock().now);
+
+        roundTrips.record(50);
+        roundTrips.record(120);
+        roundTrips.record(80);
+
+        expect(capLeavingNodeRoundTrips(CAP_MS, roundTrips)).to.equal(
+            CAP_MS - BACKSTOP_MULTIPLE * 120
+        );
+    });
+
+    it("shrinks as node round trips grow, and is never below zero", function () {
+        const roundTrips = new RecentSlowest(manualClock().now);
+        roundTrips.record(100);
+        const fast = capLeavingNodeRoundTrips(CAP_MS, roundTrips);
+
+        roundTrips.record(400);
+        const slower = capLeavingNodeRoundTrips(CAP_MS, roundTrips);
+        roundTrips.record(CAP_MS);
+        const slowest = capLeavingNodeRoundTrips(CAP_MS, roundTrips);
+
+        expect(slower).to.be.lessThan(fast);
+        expect(slowest).to.equal(0);
+    });
+
+    it("is the whole deadline again once the round trips are older than the window", function () {
+        const clock = manualClock();
+        const roundTrips = new RecentSlowest(clock.now);
+        roundTrips.record(400);
+        expect(capLeavingNodeRoundTrips(CAP_MS, roundTrips)).to.be.lessThan(
+            CAP_MS
+        );
+
+        clock.advance(BACKSTOP_WINDOW_MS + 1);
+
+        expect(capLeavingNodeRoundTrips(CAP_MS, roundTrips)).to.equal(CAP_MS);
     });
 });

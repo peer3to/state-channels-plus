@@ -11,7 +11,9 @@ import type { Logger } from "@/utils/logging/Logger";
 import { Mutex } from "@/utils/Mutex";
 import {
     BACKSTOP_WINDOW_MS,
+    capLeavingNodeRoundTrips,
     LearnedBackstop,
+    RecentSlowest,
     SDK_RPC_DEADLINE_MS
 } from "@/utils/storageDiff/LearnedBackstop";
 import type {
@@ -35,10 +37,11 @@ import { toQuantity } from "ethers";
  */
 const MAX_APPLIED_BLOCKS = 128;
 /**
- * The cap of the wait backstop: the deadline of the SDK's own RPCs, which
- * read through the mirror. It is one constant here because the provider is
- * built once per runtime host, before any channel exists, so the real value
- * (`NetworkRpcRouter.defaultRequestTimeoutMs`, from a channel's
+ * The deadline of the SDK's own RPCs, which read through the mirror; the cap
+ * of the wait backstops is this less the time the node needs to answer the
+ * read a wait that gave up falls back to. It is one constant here because the
+ * provider is built once per runtime host, before any channel exists, so the
+ * real value (`NetworkRpcRouter.defaultRequestTimeoutMs`, from a channel's
  * `agreementTime`) cannot reach it without new architecture.
  */
 export { SDK_RPC_DEADLINE_MS };
@@ -109,6 +112,8 @@ export interface MirrorChainStatistics {
     backstopMs: number;
     /** The longest a wait for a snapshot lasts now when no event ends it. */
     snapshotBackstopMs: number;
+    /** The most any wait may last now: the SDK's deadline less the node's round trips. */
+    backstopCapMs: number;
     /** Accounts the feed said no snapshot is coming for. */
     lazyNotices: number;
     /** Accounts dropped to lazy reads after they were complete. */
@@ -126,6 +131,8 @@ export type MirrorChainOptions = {
     openFeed: MirrorFeedOpener;
     state: MirrorStateManager;
     upstream: MirrorUpstream;
+    /** How long the nodes took lately to answer; the waits leave room for it. */
+    nodeRoundTrips?: RecentSlowest;
     logger: Logger;
 };
 
@@ -141,6 +148,8 @@ export class MirrorChain {
     private readonly state: MirrorStateManager;
     private readonly upstream: MirrorUpstream;
     private readonly logger: Logger;
+    /** How long the nodes took lately to answer what the provider forwarded. */
+    private readonly nodeRoundTrips: RecentSlowest;
     private readonly lock = new Mutex();
     /** Addresses the open subscription follows. */
     private readonly tracked = new Set<AccountAddress>();
@@ -172,14 +181,14 @@ export class MirrorChain {
     /** When a node announced each block number the head has not reached yet. */
     private readonly announcedAt = new Map<BlockNumber, EpochMs>();
     /** How long a wait for a block lasts when no event ends it, learned from how long records took. */
-    private readonly backstop = new LearnedBackstop(SDK_RPC_DEADLINE_MS);
+    private readonly backstop = new LearnedBackstop(() => this.waitCapMs);
     /**
      * How long a wait for a snapshot lasts when no event ends it, learned
      * from how long snapshots took: they come after a subscribe round trip,
      * which a block's record does not need.
      */
     private readonly snapshotBackstop = new LearnedBackstop(
-        SDK_RPC_DEADLINE_MS
+        () => this.waitCapMs
     );
     /** The block the service was last asked about at the start of a wait; reset when the head holds what the peer saw. */
     private probedNumber?: BlockNumber;
@@ -195,7 +204,7 @@ export class MirrorChain {
     private pendingSnapshots: StorageDiffSnapshot[] = [];
     private readonly counters: Omit<
         MirrorChainStatistics,
-        "backstopMs" | "snapshotBackstopMs"
+        "backstopMs" | "snapshotBackstopMs" | "backstopCapMs"
     > = {
         lazyReads: 0,
         lazyFields: 0,
@@ -218,6 +227,7 @@ export class MirrorChain {
         this.openFeed = options.openFeed;
         this.state = options.state;
         this.upstream = options.upstream;
+        this.nodeRoundTrips = options.nodeRoundTrips ?? new RecentSlowest();
         this.logger = options.logger.child({ component: "RpcMirror" });
     }
 
@@ -253,8 +263,20 @@ export class MirrorChain {
         return {
             ...this.counters,
             backstopMs: this.backstop.boundMs,
-            snapshotBackstopMs: this.snapshotBackstop.boundMs
+            snapshotBackstopMs: this.snapshotBackstop.boundMs,
+            backstopCapMs: this.waitCapMs
         };
+    }
+
+    /**
+     * The most any wait may last: the SDK's deadline less what the node
+     * needs to answer the read the wait falls back to.
+     */
+    private get waitCapMs(): number {
+        return capLeavingNodeRoundTrips(
+            SDK_RPC_DEADLINE_MS,
+            this.nodeRoundTrips
+        );
     }
 
     /** The newest block number a node announced to this runtime. */

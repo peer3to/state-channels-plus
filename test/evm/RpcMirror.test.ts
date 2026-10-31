@@ -44,6 +44,8 @@ import path from "node:path";
 
 /** Time is the input: how long a read that must wait is watched for. */
 const ABSENCE_WINDOW_MS = 500;
+/** Time is the input: how long a held node reply makes a round trip. */
+const NODE_ROUND_TRIP_MS = 400;
 const CUSTOM_PRECOMPILE_ADDRESS = "0x00000000000000000000000000000000000000f0";
 const CUSTOM_PRECOMPILE_CALLDATA = "0x1234";
 
@@ -59,6 +61,12 @@ async function teachBackstop(
     await session.provider.on("block", () => undefined);
     for (let value = 1n; value <= 3n; value++)
         await (await chainStorage.setValue(value)).wait();
+}
+
+/** Whether the block backstop has learned a bound below the longest wait a node's round trips leave. */
+function blockBackstopLearned(session: MirrorSession, below = 1): boolean {
+    const stats = session.provider.mirrorStatistics;
+    return !!stats && stats.backstopMs < stats.backstopCapMs * below;
 }
 
 describe("MirrorRpcProvider", function () {
@@ -281,7 +289,7 @@ describe("MirrorRpcProvider", function () {
             await backfillAtService(session, [taught, address]);
             expect(
                 session.provider.mirrorStatistics?.snapshotBackstopMs
-            ).to.equal(SDK_RPC_DEADLINE_MS);
+            ).to.equal(session.provider.mirrorStatistics?.backstopCapMs);
             // a snapshot that arrives teaches how long snapshots take
             await session.provider.getStorage(taught, 0);
             expect(
@@ -310,26 +318,22 @@ describe("MirrorRpcProvider", function () {
             await (await chainStorage.setValue(5n)).wait();
             await backfillAtService(session, [address]);
             // an account the service is still backfilling is read lazily: the
-            // mirror follows without any snapshot having arrived
+            // mirror follows, and its snapshot is held back so it teaches nothing
             const { address: warm } = await deployMirroredStorage(session);
+            const releaseWarm =
+                session.service.holdNotifications("scp_snapshot");
             await session.provider.getStorage(warm, 0);
             await session.provider.on("block", () => undefined);
             for (let value = 1n; value <= 3n; value++)
                 await (await chainStorage.setValue(value)).wait();
-            await waitFor(
-                () =>
-                    (session.provider.mirrorStatistics?.backstopMs ??
-                        SDK_RPC_DEADLINE_MS) <
-                    SDK_RPC_DEADLINE_MS / 2,
-                5_000,
-                20
-            );
+            await waitFor(() => blockBackstopLearned(session, 0.5), 5_000, 20);
             const blockBackstopMs =
                 session.provider.mirrorStatistics!.backstopMs;
             expect(
                 session.provider.mirrorStatistics?.snapshotBackstopMs,
                 "no snapshot has arrived: the cap"
-            ).to.equal(SDK_RPC_DEADLINE_MS);
+            ).to.equal(session.provider.mirrorStatistics?.backstopCapMs);
+            releaseWarm();
             const release = session.service.holdNotifications("scp_snapshot");
 
             const read = session.provider.getStorage(address, 0);
@@ -1224,13 +1228,7 @@ describe("MirrorRpcProvider", function () {
             await teachBackstop(session, chainStorage);
             await (await storage.setValue(2n)).wait();
             expect(await storage.getValue()).to.equal(2n);
-            await waitFor(
-                () =>
-                    (session.provider.mirrorStatistics?.backstopMs ??
-                        SDK_RPC_DEADLINE_MS) < SDK_RPC_DEADLINE_MS,
-                5_000,
-                20
-            );
+            await waitFor(() => blockBackstopLearned(session), 5_000, 20);
             const release =
                 session.service.holdNotifications("scp_subscription");
 
@@ -1266,28 +1264,18 @@ describe("MirrorRpcProvider", function () {
         });
     });
 
-    it("has the SDK's RPC deadline as its backstop until a block has reached the copy, and a shorter one after fast blocks", async function () {
+    it("has the longest wait as its backstop until a block has reached the copy, and a shorter one after fast blocks", async function () {
         await withMirrorSession(async (session) => {
             const { storage, chainStorage } =
                 await deployMirroredStorage(session);
-            expect(session.provider.mirrorStatistics?.backstopMs).to.equal(
-                SDK_RPC_DEADLINE_MS
-            );
+            const cap = session.provider.mirrorStatistics!.backstopCapMs;
+            expect(session.provider.mirrorStatistics?.backstopMs).to.equal(cap);
             expect(await storage.getValue()).to.equal(0n);
-            expect(session.provider.mirrorStatistics?.backstopMs).to.equal(
-                SDK_RPC_DEADLINE_MS
-            );
+            expect(session.provider.mirrorStatistics?.backstopMs).to.equal(cap);
 
             await teachBackstop(session, chainStorage);
 
-            await waitFor(
-                () =>
-                    (session.provider.mirrorStatistics?.backstopMs ??
-                        SDK_RPC_DEADLINE_MS) <
-                    SDK_RPC_DEADLINE_MS / 2,
-                5_000,
-                20
-            );
+            await waitFor(() => blockBackstopLearned(session, 0.5), 5_000, 20);
         });
     });
 
@@ -1426,6 +1414,52 @@ describe("MirrorRpcProvider", function () {
                 probes + 2
             );
             heldAgain.release();
+        });
+    });
+
+    it("shortens the longest wait as the node's round trips grow, and a read that waits the whole cap still gets the node's answer inside the deadline", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage } = await deployMirroredStorage(session);
+            expect(await storage.getValue()).to.equal(0n);
+            const quickCapMs = session.provider.mirrorStatistics!.backstopCapMs;
+            expect(quickCapMs).to.be.lessThanOrEqual(SDK_RPC_DEADLINE_MS);
+
+            // the node answers a forwarded request slowly: that is a round trip learned
+            const slowReply = session.node.holdReplies("eth_gasPrice");
+            const forwarded = session.provider.send("eth_gasPrice", []);
+            await waitFor(() => slowReply.heldReplies() === 1, 5_000, 20);
+            // time is the input: how long the node takes to answer
+            await sleep(NODE_ROUND_TRIP_MS);
+            slowReply.release();
+            await forwarded;
+            const slowCapMs = session.provider.mirrorStatistics!.backstopCapMs;
+            expect(slowCapMs).to.be.lessThan(quickCapMs);
+            expect(slowCapMs).to.be.lessThanOrEqual(
+                SDK_RPC_DEADLINE_MS - 3 * NODE_ROUND_TRIP_MS
+            );
+
+            // the service stays silent, so the read waits for the whole cap
+            const release =
+                session.service.holdNotifications("scp_subscription");
+            await (await storage.setValue(7n)).wait();
+            const nodeReply = session.node.holdReplies("eth_call");
+            const started = Date.now();
+            const read = storage.getValue();
+            await waitFor(() => nodeReply.heldReplies() === 1, 10_000, 20);
+            const waited = Date.now() - started;
+            await sleep(NODE_ROUND_TRIP_MS);
+            nodeReply.release();
+            const value = await read;
+
+            expect(value, "the node's value, not the copy's older 0").to.equal(
+                7n
+            );
+            expect(waited).to.be.greaterThan(slowCapMs / 2);
+            expect(Date.now() - started).to.be.lessThan(SDK_RPC_DEADLINE_MS);
+            expect(session.provider.mirrorStatistics).to.include({
+                freshnessTimeouts: 1
+            });
+            release();
         });
     });
 

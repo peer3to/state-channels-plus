@@ -12,6 +12,7 @@ import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
 import { DEFAULT_MIRROR_SAMPLE_RATE } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
+import { RecentSlowest } from "@/utils/storageDiff/LearnedBackstop";
 import {
     toQuantity,
     type JsonRpcError,
@@ -302,6 +303,8 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
     private chainIdAnswer?: unknown;
     private readonly unwatchNodes: (() => void)[] = [];
     private readonly sampleRate: number;
+    /** How long the nodes took lately to answer what this provider forwarded. */
+    private readonly nodeRoundTrips = new RecentSlowest();
 
     constructor(
         nodes: readonly RpcNodeProvider[],
@@ -324,6 +327,7 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
                 logger,
                 customPrecompiles: options.customPrecompiles ?? [],
                 owner: options.owner,
+                nodeRoundTrips: this.nodeRoundTrips,
                 getChainId: async () => (await this.getNetwork()).chainId
             });
         }
@@ -336,6 +340,12 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
     ): Promise<Array<JsonRpcResult | JsonRpcError>> {
         const requests = Array.isArray(payload) ? payload : [payload];
         return Promise.all(requests.map((request) => this.answer(request)));
+    }
+
+    // Overrides MultiRpcProvider.noteNodeAnswer: keeps the node round trips
+    // the mirror's waits leave room for.
+    protected override noteNodeAnswer(durationMs: number): void {
+        this.nodeRoundTrips.record(durationMs);
     }
 
     // Overrides MultiRpcProvider.destroy: also closes the mirror.
