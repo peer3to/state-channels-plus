@@ -25,9 +25,9 @@ The client is a drop-in for the plain multi-endpoint provider ([chain-observatio
 
 **<a id="req-rpcmirror-2-1p38e2"></a>`REQ-RPCMIRROR-2-1P38E2` — Reads the copy cannot answer correctly go to the node whole.** A request the local copy cannot answer as the chain would MUST go to the node, whole. That covers transactions, `eth_estimateGas` (gas on the target chain is weight based), logs, reads at an older block, every read when no service is configured, and a call that carries an explicit gas limit: the local EVM charges no transaction gas (the base cost and calldata), so only the node can tell the least limit at which the call succeeds. A call that executes PolkaVM code, or reaches an address the chain serves with a precompile of its own that the local EVM does not reproduce (the chain's builtin range above the standard precompiles, its external ranges, and the point evaluation address), MUST go to the node whole; a call that reaches a standard precompile the chain implements runs locally. Reading the code of a PolkaVM contract is still answered locally.
 
-**<a id="req-rpcmirror-3-7mqh88"></a>`REQ-RPCMIRROR-3-7MQH88` — A snapshot is waited for only when the service says it is ready.** The client MUST follow an account it reads for the first time and act on the status the service gives it ([`REQ-SDS-9-ZRPZZW`](storage-diff-service.md#req-sds-9-zrpzzw)). For `ready` the read waits for the pushed snapshot, ends the wait when the snapshot arrives (including one that reaches the client before the reply of the subscription that asked for it, under any subscription id), and gives up after a safety ceiling on an open connection (bounded with the wait of [`REQ-RPCMIRROR-4-H35NFC`](rpc-mirror.md#req-rpcmirror-4-h35nfc) below the SDK's RPC deadline). For `syncing` and `lazy` it MUST NOT wait: the missing fields are read at once from the service at the head block, and a syncing account answers locally once its snapshot has come. A notice that no snapshot is coming (the backfill ended without one or failed), or a lost connection, ends any wait at once. When the service later finds a complete account's entries short and announces it lazy, the client MUST drop the account to lazy reads.
+**<a id="req-rpcmirror-3-7mqh88"></a>`REQ-RPCMIRROR-3-7MQH88` — A snapshot is waited for only when the service says it is ready.** The client MUST follow an account it reads for the first time and act on the status the service gives it ([`REQ-SDS-9-ZRPZZW`](storage-diff-service.md#req-sds-9-zrpzzw)). For `ready` the read waits for the pushed snapshot and ends the wait at the first of: the snapshot arriving (including one that reaches the client before the reply of the subscription that asked for it, under any subscription id); the service saying the snapshot is delayed ([`REQ-SDS-12-N40MKR`](storage-diff-service.md#req-sds-12-n40mkr)); the connection dropping; or the backstop of [`REQ-RPCMIRROR-4-H35NFC`](rpc-mirror.md#req-rpcmirror-4-h35nfc) for a silent hang. A wait that ends without the snapshot because it is delayed, or at the backstop, sends the read to the node. For `syncing` and `lazy` it MUST NOT wait: the missing fields are read at once from the service at the head block, and a syncing account answers locally once its snapshot has come. A notice that no snapshot is coming (the backfill ended without one or failed) ends any wait at once and the read reads the account as needed, and a lost connection ends it at once. When the service later finds a complete account's entries short and announces it lazy, the client MUST drop the account to lazy reads.
 
-**<a id="req-rpcmirror-4-h35nfc"></a>`REQ-RPCMIRROR-4-H35NFC` — A read is never older than a block the peer already saw.** A read MUST NOT be answered from a copy older than a block the peer has seen: its own transaction mined, a new head or a log notification a node pushed. The read waits until the copy has applied that block, and for at most a bounded time, after which it is answered by the node. Both this wait and the snapshot ceiling of [`REQ-RPCMIRROR-3-7MQH88`](rpc-mirror.md#req-rpcmirror-3-7mqh88) are safety nets, not the normal path (the waits end on events), and they run one after the other within one read: their sum plus a node round trip for the fallback MUST stay below the 3 s deadline of the SDK's RPCs, so a bound that fires still leaves the caller an answer. When the service's latest block is behind a block a node announced, the latest-block request MUST go to the node.
+**<a id="req-rpcmirror-4-h35nfc"></a>`REQ-RPCMIRROR-4-H35NFC` — A read is never older than a block the peer already saw.** A read MUST NOT be answered from a copy older than a block the peer has seen: its own transaction mined, a new head or a log notification a node pushed. The read waits until the copy has applied that block. The wait ends at the first of: the block's record arriving (the read is then answered locally); the service saying the block will not come soon (its tracing of the block failed or is retried, or its upstream has not seen it: [`REQ-SDS-12-N40MKR`](storage-diff-service.md#req-sds-12-n40mkr)); a node announcing a later block while the copy still lacks the one before (the service is a whole block behind); the service connection dropping; or, for a service connected but silent, a backstop learned from how long records took to arrive after a node announced them (a multiple of the slowest in a short recent window), never longer than the SDK's RPC deadline and equal to that deadline until an arrival has been observed. A wait that ends without the block MUST send the read to the node and MUST NOT answer it from the older copy; reads that follow while the copy still lacks the block go to the node at once, and the copy answers again once it has the block. When the service's latest block is behind a block a node announced, the latest-block request MUST go to the node.
 
 **<a id="req-rpcmirror-5-kdrwdz"></a>`REQ-RPCMIRROR-5-KDRWDZ` — The copy follows the chain through gaps and reorganizations.** The client MUST apply each pushed record on its parent block. After a reorganization it MUST hold the replacement branch's values and restore a slot the orphaned block wrote when the replacement does not write it. A record whose parent is not the head makes the client ask the service for the blocks from the next missing one; when the service no longer retains them the client MUST empty its copy and read from the service again. When the service does not retain the head block of a state read (the not-retained error of [`REQ-SDS-7-PZCBQ9` (State reads come from one shared cache)](storage-diff-service.md#req-sds-7-pzcbq9)), the client reads that block's state from the node, at that block's number, only for as long as the service gives that answer. The block environment of local calls comes from the service's records, not from block reads on the node.
 
@@ -41,7 +41,7 @@ The client is a drop-in for the plain multi-endpoint provider ([chain-observatio
 
 - The storage diff service follows the same chain as the client's RPC nodes and implements [storage-diff-service.md](./storage-diff-service.md).
 - The local EVM is an Ethereum EVM. Code the chain runs on another machine (PolkaVM), the chain's own precompiles, and gas accounting beyond EVM execution are not reproduced.
-- Reads wait only a bounded time for the copy to reach a block the peer saw; the bound exists for a stuck service and is not a delivery guarantee.
+- Reads wait for the copy to reach a block the peer saw only until an event ends the wait, and for a service that hangs silently only until a backstop learned from recent arrivals and capped at the SDK's RPC deadline; the cap is the deadline, so a read that waits the whole cap can be answered by the node only after the deadline. The cap is one constant mirroring the deadline because the provider is built before any channel and its `agreementTime` exists.
 - Phase 1 carries no proofs: a service or node that lies is detected only by sampling, and only for the reads sampled.
 - The service connection does not reconnect by itself: its owner opens a new one after a loss.
 - The copy keeps a bounded number of applied blocks for rollback; a reorganization deeper than that empties it.
@@ -52,7 +52,7 @@ The client is a drop-in for the plain multi-endpoint provider ([chain-observatio
 
 **Trust boundaries.** The service and the node are trusted equally; the mirror adds the service as a second source and the node as its cross-check. A divergence the sample finds drops the account to the node, and is logged without values.
 
-**Threats and defenses.** A wrong service answer is bounded by the sampling fraction and the node-only rules for code and addresses the local EVM would run differently (PolkaVM code, chain precompiles, gas-limited calls). A stuck or lost service cannot stall a peer: waits are bounded or end on events, and reads fall back to the node.
+**Threats and defenses.** A wrong service answer is bounded by the sampling fraction and the node-only rules for code and addresses the local EVM would run differently (PolkaVM code, chain precompiles, gas-limited calls). A stuck or lost service cannot stall a peer: waits end on events or at a learned backstop, and reads fall back to the node.
 
 **Residual risk.** Between samples, a peer can act on a state the service got wrong. The default fraction and the reaction are tuning choices the engineer has not fixed (see the open questions of this layer).
 
@@ -136,11 +136,11 @@ The node receives exactly the requests listed as node-only and receives none of 
 
 **Setup and stimulus:**
 
-Make the service report ready, syncing and lazy for an account; delay, never deliver, or lose the snapshot; make the backfill end without a snapshot and fail; push a snapshot before the subscribe reply; announce a complete account lazy after a block.
+Make the service report ready, syncing and lazy for an account; delay, never deliver, announce as delayed, or lose the snapshot; make the backfill end without a snapshot and fail; push a snapshot before the subscribe reply; announce a complete account lazy after a block.
 
 **Expected result:**
 
-No read waits for a snapshot that is not ready; ready waits end by snapshot, notice, lost connection or the ceiling; lazy accounts are read from the service for exactly the fields missing, including the slot the history omitted.
+No read waits for a snapshot that is not ready; ready waits end by snapshot, a lazy notice, a delayed notice, lost connection or the backstop, the last two sending the read to the node; lazy accounts are read from the service for exactly the fields missing, including the slot the history omitted.
 
 **Required permutations:**
 
@@ -158,11 +158,13 @@ No read waits for a snapshot that is not ready; ready waits end by snapshot, not
 
 <a id="req-rpcmirror-3-7mqh88.t1.p7"></a>`REQ-RPCMIRROR-3-7MQH88.T1.P7` — an account stays lazy when the backfill of a syncing account fails
 
-<a id="req-rpcmirror-3-7mqh88.t1.p8"></a>`REQ-RPCMIRROR-3-7MQH88.T1.P8` — a read waits no longer than the safety ceiling for a ready snapshot that is never delivered
+<a id="req-rpcmirror-3-7mqh88.t1.p8"></a>`REQ-RPCMIRROR-3-7MQH88.T1.P8` — a read of a ready snapshot that is never delivered is answered by the node after the learned backstop
 
 <a id="req-rpcmirror-3-7mqh88.t1.p9"></a>`REQ-RPCMIRROR-3-7MQH88.T1.P9` — the wait for a snapshot ends at once when the service connection drops
 
 <a id="req-rpcmirror-3-7mqh88.t1.p10"></a>`REQ-RPCMIRROR-3-7MQH88.T1.P10` — exactly the missing fields of a syncing account are asked of the service, at the head block
+
+<a id="req-rpcmirror-3-7mqh88.t1.p12"></a>`REQ-RPCMIRROR-3-7MQH88.T1.P12` — a read of a ready snapshot the service says is delayed is answered by the node at once
 
 <a id="req-rpcmirror-3-7mqh88.t1.p11"></a>`REQ-RPCMIRROR-3-7MQH88.T1.P11` — a complete account whose cached entries the service finds short after a block drops to lazy reads and the omitted slot is read
 
@@ -174,11 +176,11 @@ No read waits for a snapshot that is not ready; ready waits end by snapshot, not
 
 **Setup and stimulus:**
 
-Mine the peer's own transaction, or a block a node announces, while the service's pushes are held; read; release the pushes; let the service stay behind a block the node announced; and let a block never reach the copy and a ready snapshot never come in the same read.
+Mine the peer's own transaction, or a block a node announces, while the service's pushes are held; read; release the pushes; let the service stay behind a block the node announced; announce a later block while the copy lacks the one before; make the service's tracing fail or its upstream lag; cut the service connection; and let a block never reach the copy after fast arrivals.
 
 **Expected result:**
 
-The read stays pending while the pushes are held and then returns the post-block value without a node call; a service that stays behind is bypassed by the node; a read whose two waits both run out is answered before the SDK's RPC deadline.
+The read stays pending while the pushes are held and then returns the post-block value without a node call; a service that stays behind is bypassed by the node; every wait that ends without the block ends in an answer equal to the node's, never the older copy's, and a wait that learned its backstop ends before the SDK's RPC deadline.
 
 **Required permutations:**
 
@@ -190,7 +192,17 @@ The read stays pending while the pushes are held and then returns the post-block
 
 <a id="req-rpcmirror-4-h35nfc.t1.p4"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P4` — the node is asked for the latest block while the service is behind a block the node announced
 
-<a id="req-rpcmirror-4-h35nfc.t1.p8"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P8` — a read whose wait for a block and then for a ready snapshot both run out is answered before the SDK's RPC deadline
+<a id="req-rpcmirror-4-h35nfc.t1.p8"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P8` — a block that never reaches the copy within the learned backstop is answered with the node's value, not the older copy's, and later reads go to the node until the block arrives
+
+<a id="req-rpcmirror-4-h35nfc.t1.p9"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P9` — the service saying its tracing of the awaited block failed sends the read to the node at once
+
+<a id="req-rpcmirror-4-h35nfc.t1.p10"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P10` — the service saying its upstream has not seen the awaited block sends the read to the node at once
+
+<a id="req-rpcmirror-4-h35nfc.t1.p11"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P11` — a node announcing a later block while the copy lacks the one before sends the read to the node at once
+
+<a id="req-rpcmirror-4-h35nfc.t1.p12"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P12` — a service connection that drops while a call waits for a block sends the call to the node at once
+
+<a id="req-rpcmirror-4-h35nfc.t1.p13"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P13` — the backstop is the SDK's RPC deadline before any record has arrived and shorter after fast arrivals
 
 #### <a id="req-rpcmirror-5-kdrwdz.t1"></a>`REQ-RPCMIRROR-5-KDRWDZ.T1`
 

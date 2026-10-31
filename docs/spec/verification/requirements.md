@@ -792,10 +792,10 @@ Specification cases tested: 9/9.
 Specification cases tested: 8/8.
 
 [`REQ-RPCMIRROR-3-7MQH88` (A snapshot is waited for only when the service says it is ready)](../specification/runtime/rpc-mirror.md#req-rpcmirror-3-7mqh88)
-Specification cases tested: 11/11.
+Specification cases tested: 12/12.
 
 [`REQ-RPCMIRROR-4-H35NFC` (A read is never older than a block the peer already saw)](../specification/runtime/rpc-mirror.md#req-rpcmirror-4-h35nfc)
-Specification cases tested: 5/5.
+Specification cases tested: 10/10.
 
 [`REQ-RPCMIRROR-5-KDRWDZ` (The copy follows the chain through gaps and reorganizations)](../specification/runtime/rpc-mirror.md#req-rpcmirror-5-kdrwdz)
 Specification cases tested: 6/6.

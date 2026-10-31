@@ -18,7 +18,7 @@ Each case builds a `MirrorRpcProvider` over an isolated anvil test chain with a 
 - `reads an account the service says is lazy at once, without waiting for a snapshot`: REQ-RPCMIRROR-3-7MQH88.T1.P5
 - `keeps an account lazy when the backfill of a syncing account ends without a snapshot`: REQ-RPCMIRROR-3-7MQH88.T1.P6
 - `keeps an account lazy when the backfill of a syncing account fails`: REQ-RPCMIRROR-3-7MQH88.T1.P7
-- `waits no longer than the safety ceiling for a snapshot the service has ready and never delivers`: REQ-RPCMIRROR-3-7MQH88.T1.P8
+- `asks the node, after the learned backstop, for a snapshot the service has ready and never delivers`: REQ-RPCMIRROR-3-7MQH88.T1.P8
 - `stops waiting for a snapshot at once when the service connection drops`: REQ-RPCMIRROR-3-7MQH88.T1.P9
 - `re-asks the node about a sampled read after replying, and counts the match`: REQ-RPCMIRROR-7-4A6NJN.T1.P1
 - `samples balance, nonce and code reads against the node too`: REQ-RPCMIRROR-7-4A6NJN.T1.P2
@@ -40,7 +40,13 @@ Each case builds a `MirrorRpcProvider` over an isolated anvil test chain with a 
 - `takes the block environment from the service without reading blocks from the node`: REQ-RPCMIRROR-5-KDRWDZ.T1.P6
 - `runs a custom precompile locally without an upstream request`: REQ-RPCMIRROR-1-XQNZ4J.T1.P8
 - `holds a call issued after the peer's own transaction is mined until the mirror has that block`: REQ-RPCMIRROR-4-H35NFC.T1.P1
-- `answers before the SDK's RPC deadline when a block never reaches the copy and then a ready snapshot never comes`: REQ-RPCMIRROR-4-H35NFC.T1.P8
+- `answers with the node's value, not the older head's, when a block never reaches the copy within the learned backstop`: REQ-RPCMIRROR-4-H35NFC.T1.P8
+- `has the SDK's RPC deadline as its backstop until a block has reached the copy, and a shorter one after fast blocks`: REQ-RPCMIRROR-4-H35NFC.T1.P13
+- `asks the node at once when the service says its tracing of the awaited block failed`: REQ-RPCMIRROR-4-H35NFC.T1.P9
+- `asks the node at once when the service says its upstream has not seen the awaited block`: REQ-RPCMIRROR-4-H35NFC.T1.P10
+- `asks the node at once when the service says a snapshot it promised as ready is delayed`: REQ-RPCMIRROR-3-7MQH88.T1.P12
+- `asks the node at once when the service connection drops while a call waits for a block`: REQ-RPCMIRROR-4-H35NFC.T1.P12
+- `asks the node at once when a node announces a later block while the copy still lacks the one before`: REQ-RPCMIRROR-4-H35NFC.T1.P11
 - `holds a call until the mirror reaches a block the node announced`: REQ-RPCMIRROR-4-H35NFC.T1.P2
 - `returns what the node returns at the same head for a call, a revert and a read of account state`: REQ-RPCMIRROR-1-XQNZ4J.T1.P5
 - `discards what a call wrote when it ends`: REQ-RPCMIRROR-1-XQNZ4J.T1.P6
