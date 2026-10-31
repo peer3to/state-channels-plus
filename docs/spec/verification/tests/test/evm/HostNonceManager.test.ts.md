@@ -21,19 +21,16 @@ manager and mined, and the settled snapshot must hold one row per selector again
 callee, with the named row counting both of its sends and a total that is twice each bound. Three
 more shared-node cases need no mining control: a send worth more than the wallet holds, with an
 explicit limit so nothing is estimated, must be refused by the node and reject with nothing
-recorded; a deployment of init code whose runtime is the single byte `STOP` must mine — its code
-is read back — and leave the table empty; and a recorder disposed before a send must record
-nothing for it while the send itself still mines.
+recorded; and a deployment of init code whose runtime is the single byte `STOP` must mine — its
+code is read back — and leave the table empty.
 
-The remaining seven each own a hardhat node for their whole lifetime, spawned on a free port and
+The remaining six each own a hardhat node for their whole lifetime, spawned on a free port and
 killed in `finally`, because they need mining turned off or the provider destroyed. A call to a
 deployed always-reverting contract, broadcast with an explicit gas limit so ethers never estimates
 and with automine off so the node cannot throw the revert back at broadcast, must land in the
 row's reverted count and reverted total — matching the real receipt's `gasUsed` — while the
 success count, success total and both bounds stay empty. A transaction replaced at the same nonce
-before it mined must be absent from the table. An observation whose provider is destroyed while its
-receipt wait is subscribed must settle, once the recorder is disposed, before the event loop's next
-turn, and leave no row. An observation started inside an open `settle()` window, kept unmineable
+before it mined must be absent from the table. An observation started inside an open `settle()` window, kept unmineable
 by a nonce gap, must not hold that `settle()` back; receipt waits have no bound of their own, so a
 settle that re-read the set would fail on the test timeout. With automine off, a read bounded to
 500 ms must answer no earlier than its bound and without the pending transaction, and once blocks
@@ -71,7 +68,6 @@ through a new `getBlockNumber()` answered from the cache, rejects with "could no
 - `records the gas of the transactions it broadcast, named by selector`: UNIT-TEST-GAS-USAGE-RECORDER-1-F2H4X8.P1, UNIT-TEST-GAS-USAGE-RECORDER-1-F2H4X8.P2, UNIT-TEST-GAS-USAGE-RECORDER-1-F2H4X8.P3, REQ-SDK-ARCH-6-8DE4ER.T1.P2, REQ-SDK-ARCH-6-8DE4ER.T1.P3, REQ-SDK-ARCH-6-8DE4ER.T1.P6
 - `records a reverted call under the reverted fields only`: UNIT-TEST-GAS-USAGE-RECORDER-1-F2H4X8.P5, REQ-SDK-ARCH-6-8DE4ER.T1.P4
 - `leaves a replaced transaction out of the table`: UNIT-TEST-GAS-USAGE-RECORDER-1-F2H4X8.P4
-- `settles an observation whose provider closed under its receipt wait once disposed`: UNIT-TEST-GAS-USAGE-RECORDER-1-F2H4X8.P6
 - `settles the observations started before the call, not the later ones`: UNIT-TEST-GAS-USAGE-RECORDER-1-F2H4X8.P7
 - `leaves a pending receipt out of a bounded read and counts it once it mines`: UNIT-TEST-GAS-USAGE-RECORDER-1-F2H4X8.P8, REQ-SDK-ARCH-6-8DE4ER.T1.P9
 - `records a transaction the node already held when its broadcast failed`: UNIT-TEST-GAS-USAGE-RECORDER-1-F2H4X8.P9
@@ -80,7 +76,6 @@ through a new `getBlockNumber()` answered from the cache, rejects with "could no
 - `recovers a transaction the node accepted when the broadcast's block-number read failed`: none
 - `records nothing for a broadcast the node rejected`: UNIT-TEST-GAS-USAGE-RECORDER-1-F2H4X8.P10, REQ-SDK-ARCH-6-8DE4ER.T1.P10
 - `leaves a deployment out of the table`: UNIT-TEST-GAS-USAGE-RECORDER-1-F2H4X8.P11
-- `records nothing it observes after its recorder was disposed`: UNIT-TEST-GAS-USAGE-RECORDER-1-F2H4X8.P12
 - `cannot create another nonce owner by reconnecting`: none
 - `recovers an indeterminate nonce lazily on the next send`: none
 - `a send after cut takes no nonce and never settles`: REQ-SDK-ARCH-2-QBZAT8.T1.P3

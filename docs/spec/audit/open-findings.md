@@ -800,6 +800,21 @@ socket closes and it sends and hears nothing ([`UNIT-TEST-PROFILE-DISPOSAL-1-HPX
 predicate, its loopback exemption and the local discovery checks that only guarded transport creation
 are deleted.
 
+**Update (2026-10-31, dispose cut-off slice 3, Luke: one dispose that makes the runtime implode):**
+[`P2pRuntimeHostRoot`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md)
+`dispose` is the one disposal: the cut, then each edge of the runtime that outlives it released
+once from the root (the custom RPC hook, the negotiation and lobby answers, the handshake barrier,
+the spectate chain-head waits, the timeout manager, the abort flush before the children; the gas
+report, the provider, the event listener's node subscriptions and the network close after them).
+`StateManager.stop`/`dispose`, `StateChannelEventListener.stop`, `EventSyncService.stop`, the
+gas recorder's and diamond's `dispose`, the executor service's `dispose` and the base
+`MainRpcService.dispose` body are deleted, and the SDK services are no longer reached through the
+consumer hook. A disposed inline runtime whose provider the Clock keeps gets no timer, chain log or
+double-signature callback afterwards
+([`REQ-RUNTIME-3-VQXW59.T1.P92`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p92)).
+Still open: a disposed manager's local discovery sessions are released only by the realm cleanup in
+worker mode, so the discovery late-link checks stay.
+
 <a id="find-join-2-ek5dww"></a>
 
 ### FIND-JOIN-2-EK5DWW

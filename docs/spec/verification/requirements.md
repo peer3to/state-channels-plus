@@ -801,7 +801,7 @@ Specification cases tested: 5/12. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T
 Specification cases tested: 1/5. Untested: T1.P2, T1.P3, T1.P4, T1.P5.
 
 [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59)
-Specification cases tested: 88/92. Untested: T1.P2, T1.P3, T1.P4, T1.P6.
+Specification cases tested: 89/93. Untested: T1.P2, T1.P3, T1.P4, T1.P6.
 
 [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../specification/runtime/execution.md#req-runtime-4-b0n70y)
 Specification cases tested: 2/6. Untested: T1.P1, T1.P2, T1.P3, T1.P4.

@@ -18,7 +18,6 @@ Mode-specific channel-listener ownership
 
 - [ ] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P1` — retained same-target subscription and event delivery
 - [ ] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P2` — ordinary clear removes the filter
-- [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P3` — A real subscribed log delivered after stop is dropped before scheduling; unsubscribe has not yet run, and stop drains nothing
 - [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P4` — one subscription on every node socket
 - [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P5` — a node that first connects after startup is subscribed and caught up as reopened
 - [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P6` — a reopened socket's live logs held until its catch-up scheduled what it read
@@ -39,4 +38,3 @@ Mode-specific channel-listener ownership
 - [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P21` — a clear that runs while a select still removes the previous subscription wins: the late select subscribes nothing
 - [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P22` — a select that starts while an older select is still removing live subscriptions wins; the older select subscribes nothing
 - [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P23` — a select started while a clear is still removing live subscriptions keeps its key and subscription
-- [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P24` — after stop no log is dispatched, also one a recovery query still running delivers late, so no dispatch needs a dependency the disposal closes next

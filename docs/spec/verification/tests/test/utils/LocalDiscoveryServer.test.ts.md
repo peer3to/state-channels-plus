@@ -13,7 +13,7 @@ transport or precomputed result boolean stands in for discovery.
 
 The late-ready case holds a real accepted socket, disposes its manager, then sends the valid wire frame. It asserts socket closure with no acknowledgement and no remaining transports.
 
-The pending-dial shutdown case delays every handshake reply on both inline peers, waits until one runtime has a real dial in flight, and runs that runtime's `StateManager.stop`, the first half of shutdown that settles its handshake wait with `false` while its P2P manager and discovery session are still alive. It asserts the manager is not yet disposed and that no peer retry count was written, which is where a retry records itself together with its warning and timer.
+The pending-dial shutdown case delays every handshake reply on both inline peers, waits until one runtime has a real dial in flight, and disposes that peer's runtime, whose release settles the dial's handshake wait with `false`. It asserts that no peer retry was scheduled, which is where a retry records itself together with its warning and timer.
 
 The pending-close rejoin case stops the acceptor reading its accepted sockets, so the dialer's closed socket stays closing; the dialer leaves, closes its transport and rejoins the topic, and must authenticate a different transport while exactly one held peer-dial socket is still closing. A variant holds both handshakes across the rejoin, lets the old socket finish closing, then joins a second topic and requires the single held handshake per peer and no extra connection. Another holds handshakes before the first join, so the leave closes a pending, unauthenticated dial; the rejoin must authenticate a transport while that socket is still closing.
 

@@ -525,11 +525,10 @@ no host error is recorded, and a sibling keeps serving, so it now covers the wor
 this repository.
 
 The handshake-wait disposal fix has unit evidence for the service itself: `HandshakeCompletedGuard >
-settles a pending handshake wait and every later wait as not completed once the service is disposed`
-covers [`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19`](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md#unit-test-init-handshake-service-1-6n4c7r) and [`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P9`](../implementation/source/src/rpc/network/MainRpcService.ts.md#unit-test-main-rpc-service-1-awn39m): its probe awaits the runtime RPC root's real
-`dispose()` shutdown hook with a pending wait, then waits again, and both waits return `false` long before
-their timeout. The indentation fix in that suite moved no declaration line. It does not read the order of negotiation and lobby cleanup or a logger error directly;
-immediate settlement is what keeps any wait timer from outliving the logger.
+settles a pending handshake wait as not completed once the handshake service is released`
+covers [`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19`](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md#unit-test-init-handshake-service-1-6n4c7r): its probe runs the release the host root's
+disposal calls with a pending wait, and the wait returns `false` long before its timeout. It does not
+read a logger error directly; immediate settlement is what keeps any wait timer from outliving the logger.
 
 ## Application host root — 2026-10-16
 

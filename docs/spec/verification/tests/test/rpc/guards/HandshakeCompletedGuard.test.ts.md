@@ -10,8 +10,8 @@ transports, profiles, a real service, controlled exact-transport handshake compl
 grace overlap, retirement, late dispatch after close, timeout, and manager disposal. The closed-
 transport case proves local retirement cannot execute the frame or punish a healthy replacement.
 The real-shutdown case defers a guarded call on a negotiating transport onto the real handshake wait, then
-runs the host root's disposal order inside the runtime (the network cut, then `StateManager.stop`, which
-settles that wait with `false`); it asserts the call never ran, the cut's single close is the only close
+runs the host root's disposal order inside the runtime (the network cut, then the handshake service's
+release, which settles that wait with `false`); it asserts the call never ran, the cut's single close is the only close
 (no disconnect), and no blacklist or retry-bound strike was recorded. It is the one probe that stops a
 runtime by hand: disposing the peer from the test would close the control port before the guard's
 records could be read.
@@ -39,7 +39,7 @@ cleanup.
 - `drops queued calls when their transport retires before authentication completes`: UNIT-TEST-HANDSHAKE-GUARD-1-XHFSXX.P11, REQ-RPC-7-9CBSHK.T1.P6
 - `drops queued calls when a disposed owner receives late authentication success`: UNIT-TEST-HANDSHAKE-GUARD-1-XHFSXX.P12, REQ-RPC-7-9CBSHK.T1.P7
 - `does not punish after a disposed owner's authentication waiter fails`: UNIT-TEST-HANDSHAKE-GUARD-1-XHFSXX.P13, REQ-RPC-7-9CBSHK.T1.P8
-- `settles a pending handshake wait and every later wait as not completed once the runtime RPC root is disposed`: UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19, UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P9
+- `settles a pending handshake wait as not completed once the handshake service is released`: UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19
 - `does not revive a timed-out queue after late authentication`: UNIT-TEST-HANDSHAKE-GUARD-1-XHFSXX.P14, REQ-RPC-7-9CBSHK.T1.P9
 - `allows guarded RPCs on an authenticated transport during replacement grace`: UNIT-TEST-HANDSHAKE-GUARD-1-XHFSXX.P15, REQ-RPC-7-9CBSHK.T1.P10, REQ-UPG-2-WH7BC7.T1.P5
 - `releases a queued RPC only when its exact transport authenticates`: UNIT-TEST-HANDSHAKE-GUARD-1-XHFSXX.P16, REQ-RPC-7-9CBSHK.T1.P11

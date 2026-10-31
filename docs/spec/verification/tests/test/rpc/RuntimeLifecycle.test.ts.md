@@ -48,8 +48,6 @@ disposal check removed, both build cases fail with the runtime neither cut nor s
 
 The two root diagnostic cases retain service and method metadata without contract calldata fields, for both slow completion and pending requests on failure.
 
-- `disposes the worker custom RPC before its manager`: UNIT-TEST-RUNTIME-LIFECYCLE-1-GRZ48T.P13
-- `finishes worker manager cleanup after custom RPC disposal rejects`: UNIT-TEST-RUNTIME-LIFECYCLE-1-GRZ48T.P14
 - `automatically disposes root and application logger descendants and crash listeners`: UNIT-TEST-ROOT-DISPOSAL-1-NMS66W.P8, REQ-LOG-1-H2VQ8X.T2.P6
 - `collects new host errors after an earlier inline drain`: UNIT-TEST-RUNTIME-LIFECYCLE-1-GRZ48T.P11
 - `collects new host errors after an earlier worker drain`: UNIT-TEST-RUNTIME-LIFECYCLE-1-GRZ48T.P12

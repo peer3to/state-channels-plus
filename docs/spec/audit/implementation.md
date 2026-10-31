@@ -1430,17 +1430,17 @@ unexpectedly leaves its hidden parent live until the handle is disposed, which t
 A pre-existing shutdown defect is fixed in the same change: `InitHandshakeService` never settled pending
 `waitForHandshakeCompleted` waits at shutdown, so a wait timer could fire after its logger was disposed and
 surface as an unhandled `Logger InitHandshakeService has been disposed` error, contrary to the
-detached-work rule of [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59). The service now has a `dispose()` that marks it disposed and
-clears the completion barrier, so every pending and later wait settles as not completed at once, and
-`MainRpcService.dispose()` calls it first; the handshake guard suite reaches it through that runtime
-shutdown hook. The [InitHandshakeService](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md) and
-[MainRpcService](../implementation/source/src/rpc/network/MainRpcService.ts.md) reports record it with
-[`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19`](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md#unit-test-init-handshake-service-1-6n4c7r) and [`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P9`](../implementation/source/src/rpc/network/MainRpcService.ts.md#unit-test-main-rpc-service-1-awn39m).
+detached-work rule of [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59). The service now has a `dispose()` that
+clears the completion barrier, so every pending wait settles as not completed at once, and the host
+root's disposal calls it after the cut (2026-10-31, slice 3: no longer through `MainRpcService.dispose()`;
+a later wait is unreachable once the cut closed every transport). The
+[InitHandshakeService](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md) report records it with
+[`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19`](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md#unit-test-init-handshake-service-1-6n4c7r).
 
 The first implementation review asked whether this settlement at runtime shutdown makes a
 `DeferredAdmissionGuard` queue expire as a peer timeout, with a warning and an `allowRetry` disconnect
 against a peer that was only mid-handshake. It does not, and no code change was made: at real runtime
-shutdown `StateManager.stop()` sets `isDisposed` before `localRpc.dispose()` runs, and
+shutdown the cut sets `isDisposed` before the handshake service's release runs, and
 `HandshakeAdmissionPolicy.onExpired` returns early when the state manager is disposed. The settled
 handshake wait therefore never leads to an expiry warning or a retry disconnect.
 

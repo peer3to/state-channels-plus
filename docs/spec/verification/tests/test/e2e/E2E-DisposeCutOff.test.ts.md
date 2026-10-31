@@ -18,6 +18,15 @@ that the session sees no unhandled failure, and that a fresh runtime for the sam
 an engaged status. With the network cut removed from the cut-off, both `commit` cases fail on the
 frame oracle.
 
+The inline leak case starts three inline participants with two blocks, hands the realm's `Clock`
+the first peer's provider and disposes that peer, so its provider outlives the runtime. Before the disposal it
+arms a `TimeoutManager` task and counts streamed chain logs and double-signature callbacks on the
+disposed peer and on a live sibling. After it, the third peer requests a dispute (a chain log on
+the channel), and the test recovers two different signatures by one fresh wallet over one message
+through the realm's signer recovery cache. Once the sibling saw the log and its timer fired, and
+one more second passed, the sibling counts one double-signature callback and the disposed peer
+counts no timer run, no chain log and no double-signature callback.
+
 The sibling case disposes one inline peer, then has a live sibling's ingest of the writer's next
 block collect work that rejects after the disposed peer's grace period: the session drain must
 report that rejection. It covers the harness's per-peer execution context, so it maps no ID.
@@ -30,4 +39,5 @@ report that rejection. It covers the harness's per-peer execution context, so it
 - `dispose during block production broadcasts nothing (worker)`: REQ-SDK-ARCH-2-QBZAT8.T1.P3, REQ-SDK-ARCH-2-QBZAT8.T1.P5
 - `dispose during a dispute upload held at the nonce mutex sends no transaction (inline)`: REQ-SDK-ARCH-2-QBZAT8.T1.P3
 - `dispose during a dispute upload held at the nonce mutex sends no transaction (worker)`: REQ-SDK-ARCH-2-QBZAT8.T1.P3
+- `a disposed inline runtime's timer, chain logs and double-signature listener fire nothing afterwards`: REQ-RUNTIME-3-VQXW59.T1.P92
 - `an inline sibling's failure after a peer's cut still surfaces in the drain`: none

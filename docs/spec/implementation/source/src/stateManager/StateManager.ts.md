@@ -102,10 +102,10 @@ Timeout detection
 
 Custom RPC disposal ordering
 
-- Setup: Dispose a live state manager with a normal and a rejecting custom RPC root
-- Oracle: Root disposal runs while P2P dependencies are available; teardown always completes; root rejection surfaces after cleanup
+- Setup: Dispose a live runtime's host root with a normal and a rejecting custom RPC root
+- Oracle: The root's dispose hook runs after the network cut closed every connection; teardown always completes; root rejection surfaces after cleanup
 
-- [x] `UNIT-TEST-STATE-MANAGER-4-ECGP8V.P1` — custom RPC root disposes before P2P teardown
+- [x] `UNIT-TEST-STATE-MANAGER-4-ECGP8V.P1` — custom RPC root's dispose hook runs after the network cut
 - [x] `UNIT-TEST-STATE-MANAGER-4-ECGP8V.P2` — root rejection surfaces after runtime teardown
 
 ## UNIT-TEST-STATE-MANAGER-5-D8GDWH

@@ -20,11 +20,10 @@ requested while the entry is parked above the head, and after one honest block i
 restored entry is judged in the same context and the request appears. Timeout scheduling itself is
 recorded rather than run, so no dispute is submitted by either case.
 
-Two shutdown cases run host-side on a live peer with a future queued block. In the first, `stop()`
-cancels the block's armed queue timeout: past its deadline the timer has not run. In the second, the
-peer aborts with its teardown held after the disposal cut-off and before the producers stop; the real
+A shutdown case runs host-side on a live peer with a future queued block. The
+peer aborts with its teardown held after the disposal cut-off and before the runtime's releases; the real
 queue timeout then fires and probes its source in the aborted runtime (one `syncBlockSource` call), and
-the source's spectate request count stays at zero one second later. Any detached failure fails either
+the source's spectate request count stays at zero one second later. Any detached failure fails the
 test through the session teardown.
 
 A drain case holds a fresh spectator's sync with the channel tip in its payload, suppresses its
@@ -71,7 +70,6 @@ the still-absent spectator is blacklisted.
 
 ## Tests
 
-- `stopping the runtime cancels a future queued block's armed timeout`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P37
 - `a queue timeout firing after the runtime aborted sends its source no probe`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P43
 - `a junk supplier answering a source probe through a window the chain has not reduced is asked again once the chain reduces it, then excluded`: REQ-SYNC-4-AWHFPA.T1.P8
 - `evidence posted into the window while a source probe waits extends the kill period and changes nothing: the supplier is asked again after the reduction, then excluded`: REQ-SYNC-4-AWHFPA.T1.P10
