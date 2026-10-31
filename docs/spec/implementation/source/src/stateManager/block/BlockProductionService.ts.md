@@ -37,3 +37,4 @@ Local block authoring
 - [x] `UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P17` — the restore after the candidate's failed assembly fails: the runtime aborts, the candidate throws its own error, nothing is stored, and the mutex is released
 - [x] `UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P18` — an aborted runtime: the app's next transaction rejects with RootDisposedError and no peer receives a block
 - [x] `UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P19` — a post-commit step throws once after the block is stored: the candidate throws, the block stays stored, and the live VM state equals the stored state, not the pre-assembly state
+- [x] `UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P20` — a candidate parked on the state mutex when the runtime is disposed: no block leaves the runtime once the mutex frees and the nonce is unchanged

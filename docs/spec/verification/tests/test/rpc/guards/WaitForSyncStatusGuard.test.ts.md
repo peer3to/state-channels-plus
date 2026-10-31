@@ -13,7 +13,9 @@ install, authors the next block so it reaches the observer only as live gossip, 
 no intake and one spectate request, then releases the install and proves the block's first intake is the
 guard's re-run after `SYNCED` and the observer reaches it with no further block authored and no second sync.
 The second case sends a stale copy (the served head) and a wrong-fork block from a participant during the hold
-and proves both reach intake only after `SYNCED` while the head and the adopted fork stay unchanged. The third
+and proves both reach intake only after `SYNCED` while the head and the adopted fork stay unchanged. The abort case holds the
+responders' answer, releases it as a failure and holds the abort's disposal: read through the control RPC, the
+observer has no retained RPC left and none ran again. The third
 case sends the stale
 copy as a request during the hold and proves the observer sent no response for it (no guard rejection) and the
 sender still waits, then that after `SYNCED` the re-run sends exactly one `ok` response and the sender's request
@@ -27,3 +29,4 @@ engaged, and the install moves it straight to `PARTICIPATING`, which releases th
 - `a retained stale block and a retained wrong-fork block go through normal validation after SYNCED and are not applied`: UNIT-TEST-WAIT-FOR-SYNC-GUARD-1-5ST9WK.P2, REQ-GOSSIP-5-2EQ7P6.T1.P2
 - `a retained block sent as a request gets no failure response while held and exactly one response after SYNCED`: UNIT-TEST-WAIT-FOR-SYNC-GUARD-1-5ST9WK.P4, REQ-GOSSIP-5-2EQ7P6.T1.P4
 - `a live block retained while a founder's genesis install is held is released by the direct move to PARTICIPATING and applied`: UNIT-TEST-WAIT-FOR-SYNC-GUARD-1-5ST9WK.P5, REQ-GOSSIP-5-2EQ7P6.T1.P5
+- `an abort during the initial sync drops the retained live blocks without running them`: UNIT-TEST-WAIT-FOR-SYNC-GUARD-1-5ST9WK.P3, REQ-GOSSIP-5-2EQ7P6.T1.P3

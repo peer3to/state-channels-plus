@@ -1404,9 +1404,9 @@ view record these; new component families are the local-only guard family (remov
 [`UNIT-TEST-P2P-RUNTIME-HOST-34-517JAX`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-34-517jax); the root-creation family replaced its parentless-rejection
 permutation with six parentless-worker permutations. No contradiction is demonstrated. The executor
 drain is bounded by the engineer decision [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/open-questions.md#oq-impl-executor-drain-1-5d71ym): `closeAdmission` races the admitted set against the exported
-`IN_FLIGHT_REPLY_DRAIN_MS`, logs and abandons work still admitted at the limit, and lets disposal proceed.
+`ADMISSION_DRAIN_MS`, logs and abandons work still admitted at the limit, and lets disposal proceed.
 The second implementation review showed that `admit` returned the operation's own promise, so a call that
-completed after the limit, during the later in-flight reply drain, still returned its success to a caller
+completed after the limit, during the rest of the disposal, still returned its success to a caller
 the executor had declared abandoned. By the engineer's decision (option a) `admit` now returns a
 caller-facing promise behind a settle-once latch; at the limit `closeAdmission` rejects every caller still
 waiting with `Contract executor shut down before the operation finished`, and the operation's later

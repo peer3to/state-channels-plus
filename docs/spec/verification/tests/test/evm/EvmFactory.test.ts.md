@@ -36,12 +36,12 @@ and its child serves. The disposal cases hold the child's real echo reply with `
 `executeCall` stays admitted while executor disposal begins, then observe settlement order, the late-call
 rejection text of a late call, deploy, and simulation, the precompile call count, the failure of an admitted deploy with invalid init code, the
 identity of repeated disposal promises, and the child's closed state. The stuck-call case never releases
-the held reply before disposal: it measures that disposal takes at least `IN_FLIGHT_REPLY_DRAIN_MS` (less
+the held reply before disposal: it measures that disposal takes at least `ADMISSION_DRAIN_MS` (less
 100 ms of timer slack) and under three times that limit, then reads the child's closed state, the call's
 rejection, the precompile call count, and the executor errors the SDK fixture collected for the host,
 which must be empty. The three late-completion cases load
 [workerAnswerPrecompile](../../../../../../test/fixtures/workerAnswerPrecompile.ts) in a real inline
-executor with a call delay of `IN_FLIGHT_REPLY_DRAIN_MS` plus 1.2 seconds, succeeding or (with
+executor with a call delay of `ADMISSION_DRAIN_MS` plus 1.2 seconds, succeeding or (with
 `failAfterDelay`) throwing after it. They dispose the executor right after sending the calls, which the
 ordered connection admits first; for the queued case a deploy and a simulation wait on the executor mutex
 behind the delayed call. The test takes the real executor root from the owner the SDK handed the

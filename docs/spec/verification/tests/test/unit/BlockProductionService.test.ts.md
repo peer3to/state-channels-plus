@@ -23,7 +23,9 @@ runtime abort it triggers: the candidate rejects with the refusal, the snapshot 
 one "failed to restore … aborting" error, one abort is held, the height is unchanged and a state-mutex
 hold enters; once the abort is released the writer's `onAbort` fires. The aborted-runtime case aborts the writer
 for real, waits for its `onAbort` and its client root to close, then calls `add(1)`: the call rejects
-with RootDisposedError and the other peers' next height stays unchanged. The two skipped defensive cases
+with RootDisposedError and the other peers' next height stays unchanged. The parked-candidate case parks an `add(1)` on the writer's held state mutex, disposes the writer
+with its disposal held and then frees the mutex: no block frame reaches the other peers, the writer's
+nonce is unchanged and a rebuilt runtime engages. The two skipped defensive cases
 remain unassigned gaps.
 Spectator spawns in this suite go through the shared `addSpectatorAuthoring` helper (`test/harness/JoinActions.test.ts.md`): the spawn runs unawaited while the named participants keep authoring, bounded by literal minimum and maximum block counts, so no spawn or promotion sits inside an idle authoring window.
 
@@ -46,3 +48,4 @@ Spectator spawns in this suite go through the shared `addSpectatorAuthoring` hel
 - `authored promptly → timestamp is the local clock, one second ahead`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P9
 - `authored after the window closed → timestamp clamped back below the local clock`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P11
 - `height 0 links to the fork genesis snapshot; height 1 links to block 0`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P12
+- `a candidate parked on the state mutex when the runtime is disposed → no block leaves the runtime once the mutex frees`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P20

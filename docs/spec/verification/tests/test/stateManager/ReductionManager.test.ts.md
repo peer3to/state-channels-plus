@@ -40,6 +40,10 @@ during it. It then records membership reads. The zero-read oracle and the zero-s
 oracle (no reduce entered the held send and the leaver sent no multicall at all) remain;
 sibling uploads cannot exhaust the evidence window first.
 
+The held-send disposal case (staging in `test/fixtures/ReductionDisposalStaging.ts`) holds the reduce
+send after the local install, aborts the runtime with its disposal held and then releases the send:
+the peer's chain nonce is unchanged.
+
 ## Tests
 
 - `direct completion returns false and removes the operation when the fork changes inside its mutex wait`: UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P11
@@ -63,3 +67,4 @@ sibling uploads cannot exhaust the evidence window first.
 - `rejects a reject outcome at setState without installing a wrapper`: none
 - `rejects an unknown location without installing a wrapper`: none
 - `rejects an unknown outcome and extra keys without installing a wrapper`: none
+- `an abort while the reduce send is held after the local install sends no transaction once the send is released`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P20, REQ-DISPUTE-PIPE-3-PHE3SQ.T1.P25

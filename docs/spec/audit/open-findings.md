@@ -719,11 +719,9 @@ the races around them are handled piecemeal in each component instead of in one 
 component that owns or uses child roots has to reason about lifecycle ordering itself. Current
 instances:
 [`AInternalRpcRoot.disposeRoot`](../implementation/source/src/rpc/internal/AInternalRpcRoot.ts.md)
-orders an optional `prepare` step, child disposal, local cleanup and a bounded in-flight reply drain
-(`IN_FLIGHT_REPLY_DRAIN_MS`).
+orders an optional `prepare` step, child disposal and local cleanup.
 [`ContractExecutorService`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md)
-adds its own admission gate, a per-caller settle-once latch and a second bounded drain (the same
-constant), plugged in through `prepare`, because its in-flight EVM work can call into its own
+adds its own admission gate, a per-caller settle-once latch and a bounded drain (`ADMISSION_DRAIN_MS`), plugged in through `prepare`, because its in-flight EVM work can call into its own
 children (custom precompile roots).
 [`createRoot`](../implementation/source/src/rpc/internal/createRoot.ts.md) chains hidden-parent
 cleanup after child cleanup for parentless workers. `StateManager.stop` orders custom-RPC disposal,
@@ -822,6 +820,13 @@ handshake-result check are deleted.
 Still open: a request already parked on the state mutex at an abort can finish in memory after the cut
 and answer the application before the connection closes, and a peer connection created after the
 release closes only when its data channel arrives or ICE fails.
+
+**Update (2026-10-31, dispose cut-off slice 6, Luke):** the parent reply drain is deleted for every
+root: a request whose handler has not answered when the connection closes rejects with the
+runtime-disposed error, and only the disposal's own acknowledgement still leaves. The root flushes its
+logs before the connection closes, so the disposal-time gas report reaches the upload in worker mode.
+Inline mode is marked deprecated; the disposal tests deleted as inline-only run in worker mode, except
+the three that need inline mode's shared realm.
 
 <a id="find-join-2-ek5dww"></a>
 

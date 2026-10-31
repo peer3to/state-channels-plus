@@ -688,7 +688,7 @@ that imports it runs in the same process as the SDK, so the residual risk is loc
 could reach an SDK host it could already affect in-process, but no remote peer gains anything.
 
 Executor disposal now closes admission and waits for admitted work before children close. By engineer
-decision [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/open-questions.md#oq-impl-executor-drain-1-5d71ym) the wait is bounded by the same five-second limit as the in-flight reply drain, so a precompile
+decision [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/open-questions.md#oq-impl-executor-drain-1-5d71ym) the wait is bounded by a five-second limit (`ADMISSION_DRAIN_MS`), so a precompile
 call that never returns delays that executor's disposal only that long. Work still admitted at the limit is
 abandoned without a host error. By the engineer's later decision (option a after the second
 implementation review), every caller still waiting at the limit receives the disposal rejection, and the

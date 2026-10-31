@@ -538,11 +538,9 @@ The [ApplicationHostRoot report](../verification/tests/test/rpc/ApplicationHostR
 [E2E report](../verification/tests/test/e2e/E2E-ApplicationHostRoot.test.ts.md) maps
 [`REQ-RPC-9-8FFE6S.T1.P13`](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s.t1.p13) and [`REQ-RPC-9-8FFE6S.T1.P14`](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s.t1.p14). Every unit case starts a real runtime through the public setup,
 isolated in the production SDK worker entry or inline, and calls the test application's probe service
-through the typed host connection; no root, router or transport is replaced. In the drain case the
-probe call replies only once the root's disposal reaches its in-flight reply drain, and a record-only
-wrapper on the probe root's own router reports whether that drain was still waiting one task later; a
-disposal that skipped the drain fails the case every time, either by the reported flag or by rejecting
-the call. The event cases assert
+through the typed host connection; no root, router or transport is replaced. In the disposal case a
+probe call that never replies rejects with the runtime-disposed error when the client disposes, and a
+later call rejects the same way; a disposal that waited for the call would never settle. The event cases assert
 the listener ran by the time the emitting call replied, which the ordered runtime channel guarantees.
 The E2E network case uses a new byzantine control that sends a real request over the authenticated
 transport and returns how it settled. The removed host-only guard's test

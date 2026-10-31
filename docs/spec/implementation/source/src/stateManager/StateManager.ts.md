@@ -46,6 +46,8 @@ Full root abort
 
 - [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P1` — Inline abort closes the host and executor endpoints, rejects late queries, preserves a sibling SDK and tolerates repeated disposal
 - [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P2` — Worker abort closes the host and executor endpoints, rejects late queries and preserves a sibling SDK
+- [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P3` — Abort cancels a scheduled task before its due time, drops status to OPENED and disconnects peers
+- [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P4` — Inline disposal of a runtime whose provider the Clock does not read through stops host work, then destroys the provider and removes its listeners
 - [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P5` — Abort of a worker host with a dedicated VM worker uploads the abort log line and the VM worker's logs before disposal ends the worker, and an upload that never answers holds disposal no longer than the abort flush bound
 
 ## UNIT-TEST-STATE-MANAGER-1-GFPTJF

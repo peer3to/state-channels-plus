@@ -378,7 +378,7 @@ Specification cases tested: 3/8. Untested: T1.P1, T1.P2, T1.P3, T1.P7, T1.P8.
 Specification cases tested: 3/11. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8.
 
 [`REQ-DISPUTE-PIPE-3-PHE3SQ` (Deterministic reduction)](../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq)
-Specification cases tested: 6/17. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P25.
+Specification cases tested: 7/17. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10.
 
 [`REQ-DISPUTE-PIPE-4-3YVDSA` (Atomic recovery)](../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa)
 Specification cases tested: 6/16. Untested: T1.P1, T1.P3, T1.P4, T1.P6, T1.P7, T1.P8, T1.P9, T1.P13, T1.P14, T1.P15.
@@ -399,7 +399,7 @@ Specification cases tested: 9/9.
 Specification cases tested: 38/40. Untested: T1.P37, T1.P39.
 
 [`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar)
-Specification cases tested: 21/23. Untested: T1.P5, T1.P14.
+Specification cases tested: 23/23.
 
 [`REQ-DISPUTE-PIPE-11-HRGJ43` (Release a timeout refused for posted calldata)](../specification/disputes/dispute-processing.md#req-dispute-pipe-11-hrgj43)
 Specification cases tested: 5/5.
@@ -534,7 +534,7 @@ Specification cases tested: 7/10. Untested: T1.P1, T1.P2, T1.P3.
 Specification cases tested: 37/38. Untested: T1.P37.
 
 [`REQ-GOSSIP-5-2EQ7P6` (Live gossip waits for the initial sync)](../specification/peer-communication/block-gossip.md#req-gossip-5-2eq7p6)
-Specification cases tested: 4/5. Untested: T1.P3.
+Specification cases tested: 5/5.
 
 [`REQ-ID-1-3Q2KB9` (Recoverable signatures over canonical targets)](../specification/protocol-model/identity.md#req-id-1-3q2kb9)
 Specification cases tested: 0/9.
@@ -675,7 +675,7 @@ Specification cases tested: 0/4.
 Specification cases tested: 4/7. Untested: T1.P1, T1.P2, T1.P3.
 
 [`REQ-LOG-11-F5TJQC` (An aborting runtime uploads its logs before it disposes)](../specification/runtime/log-collection.md#req-log-11-f5tjqc)
-Specification cases tested: 14/18. Untested: T1.P6, T1.P11, T1.P16, T1.P17.
+Specification cases tested: 15/18. Untested: T1.P11, T1.P16, T1.P17.
 
 [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
 Specification cases tested: 1/10. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T2.P2.
@@ -762,7 +762,7 @@ Specification cases tested: 1/5. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
 Specification cases tested: 9/11. Untested: T1.P6, T1.P11.
 
 [`REQ-RPC-2-SZDTTM` (Request lifecycle)](../specification/peer-communication/rpc.md#req-rpc-2-szdttm)
-Specification cases tested: 14/21. Untested: T1.P8, T1.P9, T1.P11, T1.P14, T1.P16, T1.P18, T1.P21.
+Specification cases tested: 15/21. Untested: T1.P8, T1.P9, T1.P11, T1.P14, T1.P16, T1.P18.
 
 [`REQ-RPC-3-ZM9WR5` (Service authorization)](../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5)
 Specification cases tested: 1/6. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P6.
@@ -801,7 +801,7 @@ Specification cases tested: 5/12. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T
 Specification cases tested: 1/5. Untested: T1.P2, T1.P3, T1.P4, T1.P5.
 
 [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59)
-Specification cases tested: 87/95. Untested: T1.P2, T1.P3, T1.P4, T1.P6, T1.P61, T1.P62, T1.P63, T1.P92.
+Specification cases tested: 91/95. Untested: T1.P2, T1.P3, T1.P4, T1.P6.
 
 [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../specification/runtime/execution.md#req-runtime-4-b0n70y)
 Specification cases tested: 2/6. Untested: T1.P1, T1.P2, T1.P3, T1.P4.

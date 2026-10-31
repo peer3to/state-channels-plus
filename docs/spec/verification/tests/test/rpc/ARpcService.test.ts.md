@@ -10,6 +10,10 @@ transports. It covers guard and endpoint ordering, real loopback bypass, both de
 request-ID presence, method binding and shadowing, captured invocation, and one-attempt response-send
 failure cleanup.
 
+The disposed-responder case ([DisposedResponderStaging](../../../../../../test/fixtures/DisposedResponderStaging.ts))
+starts a worker responder, holds its join-signature handler for a joiner's request, disposes the
+responder's runtime and releases the handler after the cut: nothing surfaces in the session drain.
+
 ## Tests
 
 - `settles a guarded request without resolving its endpoint`: UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P1, REQ-RPC-7-9CBSHK.T1.P2
@@ -39,3 +43,4 @@ failure cleanup.
 - `treats an empty request id as a request`: UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P25
 - `disconnects after one failed handler-response send without retrying`: UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P26, REQ-RPC-2-SZDTTM.T1.P20
 - `disconnects after one failed guard-response send without retrying`: UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P27
+- `a handler that ends after its runtime's cut answers nobody and surfaces no error`: UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P28, REQ-RPC-2-SZDTTM.T1.P21

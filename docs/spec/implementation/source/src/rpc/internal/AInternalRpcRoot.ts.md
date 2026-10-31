@@ -24,6 +24,8 @@ Recursive root ownership and disposal
 - [x] `UNIT-TEST-ROOT-DISPOSAL-1-NMS66W.P6` — A concrete class without disposal fails typechecking; category and endpoint typing remain intact
 - [x] `UNIT-TEST-ROOT-DISPOSAL-1-NMS66W.P7` — a real standalone root has its logger and service before start, uses its constructor component name, and preserves cleanup on startup failure
 - [x] `UNIT-TEST-ROOT-DISPOSAL-1-NMS66W.P8` — Root disposal automatically cascades its logger descendants and releases crash listeners
+- [x] `UNIT-TEST-ROOT-DISPOSAL-1-NMS66W.P9` — detached work in flight at a worker runtime's disposal that fails afterwards settles as the disposal outcome and is absent from the drain
+- [x] `UNIT-TEST-ROOT-DISPOSAL-1-NMS66W.P10` — a detached failure before a worker runtime's disposal stays a rejection in the drain
 
 ## UNIT-TEST-RUNTIME-SERVICE-1-WH4SSY
 

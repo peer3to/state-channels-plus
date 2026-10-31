@@ -20,6 +20,7 @@
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P5` — zero reported difference → retains a one-second minimum delay
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P6` — verified sync replaces the fork → queued retry and later schedules do nothing
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P7` — the writer block arrives before retry → no second submission
+- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P8` — runtime disposed before retry → no second submission
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P9` — composes the task label from the reason, fork, height and participant
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P10` — next writer stays silent past its deadline → stored timeout names it, not forced
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P11` — the target is me → returns without disputing
@@ -38,6 +39,7 @@
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P33` — a timeout check for the current fork, fired while a sync install of its successor fork is held, waits on the state mutex for that install; after the install the check stores no timeout for the old fork and submits no dispute
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P25` — receipt mismatch rolls back and commits the retry
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P26` — consecutive mismatches each rearm and then commit
+- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P28` — disposed runtime obsoletes mismatch retry
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P29` — writer block before retry obsoletes mismatch retry; the refused claim is not stored and a later dispute carries no timeout
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P31` — a check waiting on the predecessor's on-chain validation re-arms after one second
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P34` — a failed predecessor commitment read re-arms the check and the timeout still commits

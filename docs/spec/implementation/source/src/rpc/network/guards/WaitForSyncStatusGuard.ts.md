@@ -16,5 +16,6 @@ Live block RPCs wait for the initial sync and then run through the whole guard c
 
 - [x] `UNIT-TEST-WAIT-FOR-SYNC-GUARD-1-5ST9WK.P1` — the next live block during a held initial sync is retained with no intake and no second sync; after `SYNCED` the first intake of that block is the guard's re-run, and the observer reaches it without a resend
 - [x] `UNIT-TEST-WAIT-FOR-SYNC-GUARD-1-5ST9WK.P2` — a retained stale copy and a retained wrong-fork block reach intake only after `SYNCED` and are not applied
+- [x] `UNIT-TEST-WAIT-FOR-SYNC-GUARD-1-5ST9WK.P3` — an abort after a failed initial sync drops the retained RPCs without running them
 - [x] `UNIT-TEST-WAIT-FOR-SYNC-GUARD-1-5ST9WK.P4` — a retained `onBlockConfirmation` sent as a request gets no failure response while held and exactly one `ok` response after `SYNCED`
 - [x] `UNIT-TEST-WAIT-FOR-SYNC-GUARD-1-5ST9WK.P5` — a live block retained before a founder installs its genesis is released by the direct move to `PARTICIPATING`, reaches intake from the re-run and is applied
