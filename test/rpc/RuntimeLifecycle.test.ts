@@ -27,6 +27,10 @@ import {
     assertRepeatedHostQuiescence,
     assertLifecycleParentDirection
 } from "@test/fixtures/RuntimeLifecycleFixture";
+import {
+    assertDisposalDuringBuild,
+    assertDisposalDuringChainReads
+} from "@test/fixtures/SetupDisposalFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 
 describe("RuntimeLifecycle", () => {
@@ -142,5 +146,17 @@ describe("RuntimeLifecycle", () => {
     });
     it("completes worker SDK disposal after the drain bound when the host leaks a referenced timer", async () => {
         await assertWorkerSdkLeakEndsAfterDrainBound();
+    });
+    it("disposes a worker runtime whose setup is held at its chain reads, and a fresh runtime for its signer works", async () => {
+        await assertDisposalDuringChainReads(true);
+    });
+    it("disposes an inline runtime whose setup is held at its chain reads, and a fresh runtime for its signer works", async () => {
+        await assertDisposalDuringChainReads(false);
+    });
+    it("cuts and disposes the runtime a worker setup builds after its disposal began, and a fresh runtime for its signer works", async () => {
+        await assertDisposalDuringBuild(true);
+    });
+    it("cuts and disposes the runtime an inline setup builds after its disposal ended, and a fresh runtime for its signer works", async () => {
+        await assertDisposalDuringBuild(false);
     });
 });

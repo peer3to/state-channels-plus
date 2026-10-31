@@ -13,6 +13,20 @@ The report-during-disposal case raises a host error report while the client disp
 is logged at error on the client logger and reaches no `onHostError` listener; a report raised
 before the disposal still reaches the listener.
 
+The setup-disposal cases ([SetupDisposalFixture](../../../../../../test/fixtures/SetupDisposalFixture.ts)) dispose the client
+root, observed as soon as it exists, while the public setup is held, in worker and inline
+placement. The chain-read cases hold every `eth_call` of the host at a proxy in front of the node
+and release the reads after the disposal began (for a worker, once the host's port closed): the
+disposal settles within the reply drain bound of the release. The build cases load
+[HeldBuildHostRoot](../../../../../../test/fixtures/hostRoot/HeldBuildHostRoot.ts) by manifest; it holds the result of the
+local diamond deployment, the build's last executor call before the runtime is constructed. The
+disposal settles within the reply drain bound while the build is held. A worker host lets the
+build through at its own cut, an inline host only after the disposal settled; the host then
+reports, when the setup request settles, that the runtime the build constructed is cut and
+stopped. Every case asserts that the setup rejects, no host error is raised, the signer's chain
+nonce is unchanged, and a fresh runtime for the same signer sets up and answers. With the build's
+disposal check removed, both build cases fail with the runtime neither cut nor stopped.
+
 ## Tests
 
 - `remembers a child readiness signal received before awaiting`: UNIT-TEST-RUNTIME-LIFECYCLE-1-GRZ48T.P1, REQ-RUNTIME-3-VQXW59.T1.P18
@@ -54,3 +68,7 @@ The two root diagnostic cases retain service and method metadata without contrac
 - `settles detached work that fails after root disposal as the disposal outcome`: UNIT-TEST-ROOT-DISPOSAL-1-NMS66W.P9, REQ-RUNTIME-3-VQXW59.T1.P62
 - `keeps a detached failure before root disposal visible in the drain`: UNIT-TEST-ROOT-DISPOSAL-1-NMS66W.P10, REQ-RUNTIME-3-VQXW59.T1.P63
 - `logs a report raised while its root disposes and raises it to nobody`: REQ-RUNTIME-3-VQXW59.T1.P87
+- `disposes a worker runtime whose setup is held at its chain reads, and a fresh runtime for its signer works`: REQ-RUNTIME-3-VQXW59.T1.P88
+- `disposes an inline runtime whose setup is held at its chain reads, and a fresh runtime for its signer works`: REQ-RUNTIME-3-VQXW59.T1.P89
+- `cuts and disposes the runtime a worker setup builds after its disposal began, and a fresh runtime for its signer works`: REQ-RUNTIME-3-VQXW59.T1.P90
+- `cuts and disposes the runtime an inline setup builds after its disposal ended, and a fresh runtime for its signer works`: REQ-RUNTIME-3-VQXW59.T1.P91

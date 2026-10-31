@@ -26,6 +26,7 @@ import HostNonceManager from "@/evm/signer/HostNonceManager";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
 import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
 import { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
+import { RootDisposedError } from "@/rpc/internal/RemoteRoot";
 import MainRpcService, {
     type ApplicationEventsOf
 } from "@/rpc/network/MainRpcService";
@@ -564,6 +565,13 @@ export class P2pRuntimeHostRoot<
         }
 
         this.runtimeHandle = { stateManager, evmDiamondStateMachine };
+        // a disposal that began during the build missed this runtime: cut
+        // and dispose it here (both repeat safely), and fail the setup
+        if (this.isDisposing) {
+            this.cutOff();
+            await stateManager.dispose();
+            throw new RootDisposedError("Runtime disposed during setup");
+        }
         steps.mark("stateManager");
         await stateManager.p2pManager.localRpc.ready();
         steps.mark("applicationReady");
