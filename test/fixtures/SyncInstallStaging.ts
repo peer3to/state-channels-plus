@@ -1,8 +1,8 @@
 // @spec-test-coverage-ignore: staged sync install staging exercised by explicit SpectateService declarations
+import { disposeAndRelease } from "./DisposeCutOffStaging";
 import { runtimeEndpointFor } from "./RuntimeRootObservation";
 import { stageSpectatorBehindUnfinalizedTail } from "./SyncReplayBaseStaging";
 import { Block } from "@/models";
-import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import type { SyncPayload } from "@/types";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
@@ -171,10 +171,10 @@ export async function assertConflictWhileHoldingBase(
 }
 
 /**
- * The spectator's sync is held at its install entry; its runtime stops in
- * that window (parked before the custom RPC root disposes). After the
- * release the install commits nothing, the VM is restored, and the sync
- * returns false with no verdict on the responder.
+ * The spectator's sync is held at its install entry when its runtime is
+ * disposed; the install is released after the cut. Nothing the released
+ * install does reaches the responder or any other peer, and the disposal is
+ * not held by the sync (see `disposeAndRelease`).
  */
 export async function assertDisposalDuringSyncInstall(
     h: MathPeerTestHarness
@@ -184,46 +184,18 @@ export async function assertDisposalDuringSyncInstall(
             finalBlocksWhileCutOff: 1,
             inline: true
         });
-    const { host, sm, stub, query } = runtimeEndpointFor(spectator.p2pInstance);
-    const state = async () => ({
-        vmState: await sm.diamondStateMachine.getState(),
-        stateHash: query.getLatestStateMachineStateHash(forkId),
-        latestHeight: query.getLatestBlockHeight(forkId),
-        forkId: sm.forkId
-    });
-    const before = await state();
-    const localRpc = sm.p2pManager.localRpc;
-    const disposeLocalRpc = localRpc.dispose;
-    let releaseTeardown!: () => void;
-    const teardown = new Promise<void>((resolve) => {
-        releaseTeardown = resolve;
-    });
-    localRpc.dispose = async () => {
-        await teardown;
-        return disposeLocalRpc.call(localRpc);
-    };
+    const { sm, stub } = runtimeEndpointFor(spectator.p2pInstance);
     stub.holdSyncInstall();
-    try {
-        const sync = localRpc.spectateService.requestSync(
-            responder.address,
-            sm.channelId,
-            forkId,
-            tip
-        );
-        await waitFor(async () => stub.getSyncInstallEntered() === 1);
-        const stopping = sm.stop();
-        stub.releaseSyncInstall();
-        expect(await sync).not.to.equal(SyncResult.Synced);
-        expect(await state()).to.deep.equal(before);
-        expect(sm.p2pManager.isBlacklisted(responder.address)).to.equal(false);
-        releaseTeardown();
-        await stopping;
-    } finally {
-        stub.releaseSyncInstall();
-        releaseTeardown();
-        localRpc.dispose = disposeLocalRpc;
-    }
-    await host.dispose();
+    // the released install runs on in the disposed runtime; its outcome
+    // is nobody's
+    void sm.p2pManager.localRpc.spectateService
+        .requestSync(responder.address, sm.channelId, forkId, tip)
+        .catch(() => undefined);
+    await waitFor(async () => stub.getSyncInstallEntered() === 1);
+    await disposeAndRelease(h, spectator, true, {
+        releaseInline: (endpointStub) => endpointStub.releaseSyncInstall(),
+        release: async () => stub.releaseSyncInstall()
+    });
 }
 
 /**

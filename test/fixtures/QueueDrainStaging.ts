@@ -3,76 +3,11 @@ import * as factory from "../factory";
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { QueueIntakeFixture } from "./QueueIntakeFixture";
 import { BlockOrigin } from "@/storage/QueueStorage";
-import type { ForkId, Hash } from "@/types/types";
+import type { Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { reduceWindowOnChain } from "@test/fixtures/PinnedSyncStaging";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-
-/**
- * A fork recovery whose timer was armed before `stop()` and fires after it
- * began, and one scheduled after it began, never enter `runForkRecovery`.
- */
-export async function scheduleForkRecoveryAroundStop() {
-    const f = new QueueIntakeFixture();
-    await f.start();
-    return await f.h.execOnHost(
-        f.h.getPeer(0),
-        async (sm, args) => {
-            const queue = sm.blockQueueManager;
-            const runForkRecovery = queue["runForkRecovery"];
-            let entered = 0;
-            queue["runForkRecovery"] = (forkId: ForkId) => {
-                entered++;
-                return runForkRecovery.call(queue, forkId);
-            };
-            const timeoutManager = sm.timeoutManager;
-            const schedule = timeoutManager.scheduleTask;
-            const recoveries: (() => void | Promise<void>)[] = [];
-            timeoutManager.scheduleTask = (task, delay, name) => {
-                if (!name?.startsWith("BlockQueueManager.runForkRecovery"))
-                    return schedule.call(timeoutManager, task, delay, name);
-                recoveries.push(task);
-                return {} as ReturnType<typeof setTimeout>;
-            };
-            // stop() parks on the custom RPC disposal, after it set
-            // isDisposed and before the timeout manager disposes
-            const localRpc = sm.p2pManager.localRpc;
-            const disposeLocalRpc = localRpc.dispose;
-            let release!: () => void;
-            const gate = new Promise<void>((resolve) => {
-                release = resolve;
-            });
-            localRpc.dispose = async () => {
-                await gate;
-                return disposeLocalRpc.call(localRpc);
-            };
-            try {
-                queue["scheduleForkRecovery"](sm.forkId);
-                const scheduledBeforeStop = recoveries.length;
-                const stopping = sm.stop();
-                queue["scheduleForkRecovery"](args.otherForkId);
-                const scheduledAfterStop =
-                    recoveries.length - scheduledBeforeStop;
-                // the timer armed before stop fires now
-                for (const recovery of recoveries) await recovery();
-                release();
-                await stopping;
-                return {
-                    scheduledBeforeStop,
-                    scheduledAfterStop,
-                    entered
-                };
-            } finally {
-                release();
-                queue["runForkRecovery"] = runForkRecovery;
-                timeoutManager.scheduleTask = schedule;
-                localRpc.dispose = disposeLocalRpc;
-            }
-        },
-        { otherForkId: factory.hash() as ForkId }
-    );
-}
 
 /**
  * A spectator's sync is held with the channel tip in its payload while a
@@ -219,7 +154,8 @@ export async function probeJunkSourceAcrossUnreducedWindow(
             senderAddress: h.getPeer(1).address
         })
         .request();
-    const killPeriod = () => h.query.killPeriod(forkId);
+    // read on peer 1: `during` may dispose peer 0
+    const killPeriod = () => h.query.killPeriod(forkId, 1);
     await waitFor(
         async () =>
             (await supplier.stub.getSpectateRequestCount().request()) === 1,
@@ -233,7 +169,7 @@ export async function probeJunkSourceAcrossUnreducedWindow(
         h.event.protocolEventTimeoutMs() * 2
     );
     const reducedBeforeRelease = await h.query.reducedForkOnChain(forkId);
-    // peer 1 reduces: `during` may have stopped peer 0
+    // peer 1 reduces: `during` may have disposed peer 0
     await reduceWindowOnChain(h, 1, forkId);
     return {
         killPeriodEndBefore,

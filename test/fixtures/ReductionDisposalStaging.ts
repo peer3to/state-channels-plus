@@ -10,63 +10,47 @@ import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 /**
- * Stage a reducible disputed fork on peer 0, hold the reduction genesis
- * application at `at`, abort while it is held, and prove the attempt settles
- * as cancelled while the hold is still closed and that nothing was committed.
+ * Stage a reducible disputed fork on peer 0, hold its reduction at `point`
+ * (the attempt, or the genesis application's `setState`), abort while it is
+ * held, and release it after the cut: the attempt runs on in the aborted
+ * runtime and sends no transaction from peer 0.
  */
-export async function assertDisposalDuringGenesisApplication(
+export async function assertAbortedReductionSendsNothing(
     h: MathPeerTestHarness,
-    at: "setState" | "getParticipants" | "getNextToWrite"
+    point: "attempt" | "setState"
 ): Promise<void> {
     const { sourceForkId } = await stageDisposalFork(h);
     const target = h.getPeer(0);
-    const host = inlineHostFor(target.p2pInstance);
-    const manager = host.hostRpc.requireManager();
-    const rpc = manager.localRpc;
-    if (!(rpc instanceof HarnessControlRpc))
-        throw new Error("Expected the real harness RPC root");
-    const stub = rpc.stub.createRPCMethods(manager.loopbackTransport);
-    const query = rpc.query.createRPCMethods(manager.loopbackTransport);
-    const setStateCalls = h.event.getEventCallCount(0, "onSetState");
-    const outboundHead = await h
-        .control(target)
-        .query.getOutboundHead()
-        .request();
-    const hold = await h.rpcStub.holdReductionGenesisApplication(0, {
-        outcome: "hold",
-        at
-    });
-    try {
-        await h.control(target).stub.startTryReduce(sourceForkId).request();
-        await waitFor(async () => (await hold.entered()) === 1);
-        await h.control(target).stub.abortDetached().request();
-        await waitFor(async () => manager.stateManager.isDisposed);
-        // Disposal settles the caller while the VM call is still held: the
-        // shared completion is the boundary, not the executor's return.
-        await waitFor(async () => stub.getTryReduceOutcome()?.settled === true);
-        expect(stub.getTryReduceOutcome()).to.deep.equal({
-            settled: true,
-            result: null,
-            rejected: null
-        });
-    } finally {
-        stub.restoreReductionGenesisApplication();
-    }
-
-    expect(query.getForkId()).to.equal(sourceForkId);
-    expect(query.getStatus()).to.equal(Status.OPENED);
-    expect(h.event.getEventCallCount(0, "onSetState")).to.equal(setStateCalls);
-    expect(query.getCompletedReductionForkId(sourceForkId)).to.equal(null);
-    // The terminal outbound block persisted during candidate preparation may
-    // remain readable by hash, but the outbound head never moved.
-    expect(query.getOutboundHead()).to.deep.equal(outboundHead);
+    const { host, sm, stub } = runtimeEndpointFor(target.p2pInstance);
+    const hold =
+        point === "attempt"
+            ? await h.rpcStub.holdReductionAttempt(0, "attempt")
+            : await h.rpcStub.holdReductionGenesisApplication(0, {
+                  outcome: "hold",
+                  at: "setState"
+              });
+    // through the control port, so the attempt is this peer's work
+    await h.control(target).stub.startTryReduce(sourceForkId).request();
+    await waitFor(
+        async () => (await hold.entered()) === 1,
+        h.event.protocolEventTimeoutMs()
+    );
+    const nonce = await h.provider.getTransactionCount(target.address);
+    stub.abortDetached();
+    await waitFor(async () => sm.isDisposed);
+    if (point === "attempt") stub.restoreReductionAttempt();
+    else stub.restoreReductionGenesisApplication();
+    await sleep(1_000);
+    expect(await h.provider.getTransactionCount(target.address)).to.equal(
+        nonce
+    );
     await host.dispose();
 }
 
 /**
  * Stage a reducible disputed fork on peer 0 and make the selected read
  * reject after the canonical `setState`; the application aborts the runtime
- * without committing and the caller settles as cancelled.
+ * without committing and the caller sees no rejection.
  */
 export async function assertReadFailureDuringGenesisApplication(
     h: MathPeerTestHarness,
@@ -91,18 +75,13 @@ export async function assertReadFailureDuringGenesisApplication(
         at
     });
     await h.control(target).stub.startTryReduce(sourceForkId).request();
-    await waitFor(async () => stub.getTryReduceOutcome()?.settled === true);
+    await waitFor(async () => manager.stateManager.isDisposed);
     expect(stub.getHeldReductionGenesisApplicationCount()).to.equal(1);
     stub.restoreReductionGenesisApplication();
 
     // The application handles the failed read itself: it aborts the state
-    // manager and commits nothing, and disposal settles the caller as a
-    // cancellation; the read error is not the caller's error.
-    expect(stub.getTryReduceOutcome()).to.deep.equal({
-        settled: true,
-        result: null,
-        rejected: null
-    });
+    // manager and commits nothing; the read error is not the caller's error.
+    expect(stub.getTryReduceOutcome()?.rejected ?? null).to.equal(null);
     expect(query.getForkId()).to.equal(sourceForkId);
     expect(query.getStatus()).to.equal(Status.OPENED);
     expect(h.event.getEventCallCount(0, "onSetState")).to.equal(setStateCalls);

@@ -129,8 +129,7 @@ class StateManager<
     readonly membershipService: MembershipService;
     readonly channelJoinService: ChannelJoinService;
     readonly leaveChannelService: LeaveChannelService;
-    private disposalPromise?: Promise<void>;
-    private stoppingPromise?: Promise<void>;
+    private stopping?: Promise<void>;
     /** An abort's flush of every reachable realm's logs, which disposal waits for. */
     private abortFlush?: Promise<void>;
 
@@ -337,48 +336,39 @@ class StateManager<
     }
 
     public isActiveFork(forkId: ForkId): boolean {
-        return !this.isDisposed && this.forkId === forkId;
+        return this.forkId === forkId;
     }
 
     // Mark resources for garbage collection; the root releases the loggers.
-    public dispose(): Promise<void> {
-        return (this.disposalPromise ??= (async () => {
-            try {
-                await this.stop();
-            } finally {
-                await Promise.all([
-                    this.stateChannelEventListener.dispose(),
-                    this.p2pManager.dispose(),
-                    this.diamondStateMachine.dispose()
-                ]);
-            }
-        })());
+    public async dispose(): Promise<void> {
+        try {
+            await this.stop();
+        } finally {
+            await Promise.all([
+                this.stateChannelEventListener.dispose(),
+                this.p2pManager.dispose(),
+                this.diamondStateMachine.dispose()
+            ]);
+        }
     }
     /** Stop producers while the executor is still available; drain nothing. */
     public stop(): Promise<void> {
-        if (this.stoppingPromise) {
-            return this.stoppingPromise;
-        }
-
+        if (this.stopping) return this.stopping;
         this.isDisposed = true;
         this.membershipService.resetEligibility();
-        this.channelJoinService.dispose();
-        this.leaveChannelService.dispose();
-        this.reductionManager.dispose();
 
         // Event handlers may still need the local EVM while draining already
         // scheduled contract logs. Dispose their dependencies only afterward.
         // Every step runs even when an earlier one fails; the first failure
         // is rethrown after the rest of the teardown.
-        this.stoppingPromise = runCleanup(
+        this.stopping = runCleanup(
             // The custom RPC root disposes first so it can settle waits that
             // depend on the timeout manager and p2p below.
             () => this.p2pManager.localRpc.dispose(),
             () => this.stateChannelEventListener.stop(),
-            // `isDisposed` above already stops the block queue from starting
-            // probes or recoveries. Its work in flight is not drained: the
-            // disposal cut-off froze its sends, so a drain could wait on a
-            // send forever; whatever it does next leaves the runtime no more.
+            // The block queue's work in flight is not drained: the disposal
+            // cut-off froze its sends, so a drain could wait on a send
+            // forever; whatever it does next leaves the runtime no more.
             // The timeout manager cancels its timers, and with them the
             // queue's timeouts; a task already running is not waited for.
             () => this.timeoutManager.dispose(),
@@ -387,7 +377,7 @@ class StateManager<
             // own flush failures).
             () => this.abortFlush
         );
-        return this.stoppingPromise;
+        return this.stopping;
     }
     public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {
         this.appP2pEventHooks = p2pEventHooks;

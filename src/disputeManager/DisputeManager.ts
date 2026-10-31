@@ -394,7 +394,7 @@ class DisputeManager {
             );
         }
         // our marker dropped any posted block at ingest -> hand it back once
-        if (uploadFailed && !this.stateManager.isDisposed) {
+        if (uploadFailed) {
             const posted = postedTimeout
                 ? this.storage.blockCalldata.getBlockCalldata(
                       forkId,
@@ -416,22 +416,14 @@ class DisputeManager {
                 );
         }
         if (rethrow !== undefined) throw rethrow;
-        if (
-            refreshSlashes &&
-            !this.stateManager.isDisposed &&
-            this.stateManager.forkId === forkId
-        ) {
+        if (refreshSlashes && this.stateManager.forkId === forkId) {
             const changed = await this.eventSyncService.recoverOnChainSlashes(
                 this.channelId,
                 observedOnChainSlashes
             );
             if (changed) return this.dispute(forkId);
         }
-        if (
-            inboundRetry &&
-            !this.stateManager.isDisposed &&
-            this.stateManager.forkId === forkId
-        ) {
+        if (inboundRetry && this.stateManager.forkId === forkId) {
             const run = await this.eventSyncService.loadSynchronizedInboundRun(
                 inboundRetry.chainHead,
                 inboundRetry.anchor,

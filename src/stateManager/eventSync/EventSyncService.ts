@@ -149,8 +149,8 @@ export default class EventSyncService {
     private readonly logger: Logger;
     private channelId: ChannelId;
 
-    /** Set by `stop`: no log is dispatched after it. */
-    private isStopped = false;
+    /** Set by `stop`: no log is dispatched and no channel subscribed after it. */
+    isStopped = false;
 
     constructor(
         channelId: ChannelId,

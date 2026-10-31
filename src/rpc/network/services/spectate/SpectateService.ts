@@ -361,7 +361,6 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         syncRequest: SyncRequest,
         encodedSyncPayload: Bytes
     ): Promise<SyncOutcome> {
-        if (this.p2pManager.stateManager.isDisposed) return { synced: false };
         const channelId = syncRequest.channelId;
 
         // A malicious/broken peer can return bytes that aren't a valid
@@ -909,13 +908,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     selfReducedForkIds: reducedByThisSync
                 }
             );
-            if (shouldAbort) {
-                if (stateManager.isDisposed) return { synced: false };
+            if (shouldAbort)
                 return this.rejectSync(
                     peerAddress,
                     "payload persistence aborted"
                 );
-            }
 
             // 5) replay the last run from the installed point
             // from the base on, every block is decoded and linked
@@ -1367,8 +1364,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
      * view), then installs the replay base unless this peer's height on the
      * base's fork is already at or above it. Existing data is never
      * overwritten. The history is stored in the same synchronous step that installs the base,
-     * so no task sees it before the fork swap. A runtime disposed before that
-     * step persists and installs nothing (abort).
+     * so no task sees it before the fork swap.
      */
     public async persistSyncPayload(
         syncPayload: SyncPayload,
@@ -1378,7 +1374,6 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         const { walk, evidence, base } = verified;
         return await stateManager.withMutex(
             async () => {
-                if (stateManager.isDisposed) return { shouldAbort: true };
                 this.logger.debug(`Persisting sync payload`, syncPayload);
                 const storage = stateManager.storage;
                 const forkId = base.snapshot.forkID;
@@ -1392,8 +1387,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     );
                 if (!persistProof) return { shouldAbort: true };
                 const persistHistory = () => {
-                    if (stateManager.isDisposed || !persistProof())
-                        return false;
+                    if (!persistProof()) return false;
                     for (const dw of syncPayload.disputeWindows) {
                         // no reduction checks a confirmation's signatures, so the
                         // window's disputes come from chain logs only. only this

@@ -54,7 +54,7 @@ import { expect } from "chai";
 import { ZeroAddress } from "ethers";
 
 describe("Unit: DisputeManager", function () {
-    it("dispute admission refuses disposal while waiting for the state mutex", async function () {
+    it("an abort while a dispute waits for the state mutex sends no dispute transaction", async function () {
         await assertDisputeAdmissionRefuses(
             TestSession.getHarness(),
             "dispose"
@@ -116,7 +116,7 @@ describe("Unit: DisputeManager", function () {
     it("an unrelated upload error does not enter slash recovery", async function () {
         await assertDisputeRefreshPolicy(TestSession.getHarness(), "unrelated");
     });
-    it("disposal during a refused upload prevents slash recovery and re-entry", async function () {
+    it("an abort during a refused upload sends no further dispute transaction", async function () {
         await assertDisputeRefreshPolicy(TestSession.getHarness(), "disposed");
     });
 

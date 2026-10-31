@@ -139,7 +139,7 @@ export async function assertInlineSiblingFailureAfterCutSurfaces(
  * in-memory endpoint; in a worker, it follows the dispose request on the
  * host's port.
  */
-async function disposeAndRelease(
+export async function disposeAndRelease(
     h: MathPeerTestHarness,
     peer: Peer,
     inline: boolean,

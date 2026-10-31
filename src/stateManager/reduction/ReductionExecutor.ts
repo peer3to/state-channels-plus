@@ -96,10 +96,6 @@ export default class ReductionExecutor {
         );
     }
 
-    public dispose(): void {
-        this.killPeriodExpiryCache.clear();
-    }
-
     public async getSyncedForkDisputes(
         forkId: ForkId
     ): Promise<DisputeStruct[] | undefined> {
@@ -274,8 +270,8 @@ export default class ReductionExecutor {
 
     /**
      * One guard for every stage of an attempt: the fork moved on (a final
-     * dispute or another reduction completed first) or the runtime is
-     * disposed. Either way this attempt stands down without writing anything.
+     * dispute or another reduction completed first). The attempt stands
+     * down without writing anything.
      */
     private isStale(forkId: ForkId): boolean {
         return !this.stateManager.isActiveFork(forkId);
@@ -301,16 +297,10 @@ export default class ReductionExecutor {
                     outboundMessageBlock: candidate.reducedOutboundMessageBlock
                 }
             );
-        // After an install the active fork is the reduced one, so only
-        // disposal can make the submission stale here. A member the install
-        // dropped to SYNCED left the channel and submits nothing.
+        // After an install the active fork is the reduced one. A member the
+        // install dropped to SYNCED left the channel and submits nothing.
         const hasLeft = wasMember && this.stateManager.status === Status.SYNCED;
-        if (
-            installed &&
-            !this.stateManager.isDisposed &&
-            submissionStatus === "submit" &&
-            !hasLeft
-        ) {
+        if (installed && submissionStatus === "submit" && !hasLeft) {
             this.submitDetached(forkId, candidate, submission);
         }
     }
@@ -387,8 +377,7 @@ export default class ReductionExecutor {
                         });
                         return;
                     }
-                    if (retries === 0 || this.stateManager.isDisposed)
-                        throw error;
+                    if (retries === 0) throw error;
                     this.logger.warn(
                         "Fork adoption post failed, retrying once",
                         {
@@ -444,16 +433,11 @@ export default class ReductionExecutor {
         });
         let txResponse: TransactionResponse | undefined;
         // the reduce is mined -> adopt the latest undisputed fork
-        const onMined = () => {
-            if (!this.stateManager.isDisposed)
-                this.adoptReducedFork(candidate.reducedForkId, 1);
-        };
+        const onMined = () => this.adoptReducedFork(candidate.reducedForkId, 1);
         // Gas comes from the signer's estimate: the dispute execution limit
         // bounds one dispute computation, not the reduce transaction, whose
         // calldata and on-chain checks grow with the disputes it carries.
-        // The disposal check in `complete` runs before the send starts; a
-        // disposal during the send does not stop the broadcast, only the
-        // adoption after it.
+        // A disposal freezes the send at the signer's cut.
         const transaction = this.stateManager.stateChannelManagerContract
             .multicall(submission.calldata)
             .then(async (tx) => {

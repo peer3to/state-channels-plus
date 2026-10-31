@@ -43,6 +43,27 @@ describe("Unit: TimeoutManager", function () {
         }
     });
 
+    it("a task scheduled after dispose never runs and arms no timer", async function () {
+        const clock = sinon.useFakeTimers();
+        try {
+            const manager = new TimeoutManager(logger);
+            manager.dispose();
+            let hasRun = false;
+            manager.scheduleTask(
+                () => {
+                    hasRun = true;
+                },
+                0,
+                "late task"
+            );
+            expect(clock.countTimers()).to.equal(0);
+            await clock.tickAsync(1_000);
+            expect(hasRun).to.equal(false);
+        } finally {
+            clock.restore();
+        }
+    });
+
     it("logs a failing task once at error with its name and cause", async function () {
         const clock = sinon.useFakeTimers();
         const error = sinon.spy(Logger.prototype, "error");

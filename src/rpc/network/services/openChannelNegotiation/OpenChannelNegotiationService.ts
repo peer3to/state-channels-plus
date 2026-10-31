@@ -840,14 +840,11 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         this.detachAttempt(attempt);
         if (attempt.mode === "ordinary") {
             await this.p2pManager.stateManager.clearChannelId();
-            if (!this.p2pManager.stateManager.isDisposed) {
-                this.p2pManager.stateManager.setStatus(
-                    this.p2pManager.localRpc.lobbyMatchingService
-                        .rendezvousTopic
-                        ? Status.DISCOVERING
-                        : Status.NOT_OPENED
-                );
-            }
+            this.p2pManager.stateManager.setStatus(
+                this.p2pManager.localRpc.lobbyMatchingService.rendezvousTopic
+                    ? Status.DISCOVERING
+                    : Status.NOT_OPENED
+            );
         }
         attempt.resolveOutcome({ status: outcome });
     }

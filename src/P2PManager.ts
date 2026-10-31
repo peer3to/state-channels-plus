@@ -28,7 +28,12 @@ import {
 import { isNetworkTransport } from "@/transport/NetworkTransport";
 import { Status } from "@/types";
 import { isEngagedStatus } from "@/types/flags";
-import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
+import {
+    DebugProxy,
+    DetachedPromises,
+    getChecksumAddress,
+    LocalDiscoveryServer
+} from "@/utils";
 import type { Logger } from "@/utils";
 import { addressesEqual } from "@/utils/address";
 import { requireBytes32 } from "@/utils/bytes32";
@@ -164,9 +169,8 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         this.unsubscribeHandshakeCompleted = this.stateManager.events.on(
             "p2pEventHooks",
             "handshakeCompleted",
-            (peerAddress) => {
-                void this.onHandshakeCompleted(peerAddress);
-            }
+            (peerAddress) =>
+                DetachedPromises.collect(this.onHandshakeCompleted(peerAddress))
         );
         this.unsubscribeDoubleSignature = onDoubleSignature((report) =>
             this.onDoubleSignature(report)
@@ -250,8 +254,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
 
     private async onHandshakeCompleted(peerAddress: Address): Promise<void> {
         const stateManager = this.stateManager;
-        if (stateManager.isDisposed) return;
-
         const transport =
             this.profileManager.getTransportByEvmAddress(peerAddress);
         if (!transport || transport.isClosed) return;
@@ -286,7 +288,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         if (isChannelOpened) {
             await this.syncIfParticipant(peerAddress, transport);
             // a check cut by teardown reports no connection
-            if (stateManager.isDisposed || transport.isClosed) return;
+            if (transport.isClosed) return;
         }
 
         stateManager.p2pEventHooks.onConnection?.(peerAddress, isChannelOpened);
@@ -308,7 +310,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
                     stateManager.channelId,
                     peerAddress
                 );
-            if (stateManager.isDisposed || transport.isClosed) return;
+            if (transport.isClosed) return;
             if (isPeerParticipant) {
                 await this.syncConnectedParticipant(peerAddress);
             } else {
@@ -319,7 +321,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         } catch (error) {
             // a read or sync cut by teardown is no failure; any other is
             // fatal: the protocol assumes a working RPC connection
-            if (stateManager.isDisposed || transport.isClosed) return;
+            if (transport.isClosed) return;
             this.logger.error(
                 "Participant read or sync after handshake failed",
                 {
@@ -361,9 +363,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
             this.settleInitialSync(success);
             return;
         }
-        if (!success && !stateManager.isDisposed) {
-            stateManager.abort();
-        }
+        if (!success) stateManager.abort();
         this.settleInitialSync(success);
     }
 
@@ -377,13 +377,8 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     private onResponderSyncing(peerAddress: Address): void {
         this.initialSyncStarted = false;
         const stateManager = this.stateManager;
-        if (
-            this.initialSyncSettled ||
-            stateManager.isDisposed ||
-            stateManager.status !== Status.OPENED
-        ) {
+        if (this.initialSyncSettled || stateManager.status !== Status.OPENED)
             return;
-        }
         const syncingPeer = getChecksumAddress(peerAddress);
         if (!this.syncingPeerRetries.has(syncingPeer)) {
             this.armInitialSyncDeadline();
@@ -404,17 +399,22 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
             if (participant === syncingPeer) continue;
             const transport =
                 this.profileManager.getTransportByEvmAddress(participant);
-            if (transport) void this.syncIfParticipant(participant, transport);
+            if (transport)
+                DetachedPromises.collect(
+                    this.syncIfParticipant(participant, transport)
+                );
         }
     }
 
     private askSyncingPeerAgain(syncingPeer: ChecksumAddress): void {
-        if (this.initialSyncSettled || this.stateManager.isDisposed) return;
+        if (this.initialSyncSettled) return;
         this.syncingPeerRetries.set(syncingPeer, undefined);
         const transport =
             this.profileManager.getTransportByEvmAddress(syncingPeer);
         if (!transport || transport.isClosed) return;
-        void this.syncIfParticipant(syncingPeer, transport);
+        DetachedPromises.collect(
+            this.syncIfParticipant(syncingPeer, transport)
+        );
     }
 
     private settleInitialSync(success: boolean): void {
@@ -499,7 +499,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         }
         for (const transport of [...this.openConnections]) {
             if (transport.peerAddress && !transport.isClosed) {
-                void this.onHandshakeCompleted(transport.peerAddress);
+                DetachedPromises.collect(
+                    this.onHandshakeCompleted(transport.peerAddress)
+                );
             }
         }
         this.armInitialSyncDeadline();
@@ -548,7 +550,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     private expireInitialSyncDeadline(): void {
         const stateManager = this.stateManager;
         this.isInitialSyncDeadlineHeld = false;
-        if (stateManager.isDisposed) return;
         if (stateManager.status !== Status.OPENED) {
             this.settleInitialSync(isEngagedStatus(this.stateManager.status));
             return;

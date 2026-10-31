@@ -132,8 +132,6 @@ export default class SnapshotAssemblyService {
         reason: string,
         block?: Block
     ): Promise<void> {
-        // a stopping runtime discards its VM; its executor may already be gone
-        if (this.stateManager.isDisposed) return;
         try {
             await this.stateManager.diamondStateMachine.setState(encodedState);
             this.logger.debug(

@@ -424,8 +424,6 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
         if (!verifiedPeerAddress) return;
         if (!this.didReceiveAck(transport)) return;
         if (remotePreferred === undefined) return;
-        const stateManager = this.p2pManager.stateManager;
-        if (stateManager.isDisposed) return;
 
         const profile = this.p2pManager.profileManager.authenticateTransport(
             transport,

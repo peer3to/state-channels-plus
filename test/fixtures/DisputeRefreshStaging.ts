@@ -9,7 +9,7 @@ import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { runtimeEndpointFor } from "./RuntimeRootObservation";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type { ForkId } from "@/types/types";
-import { Codec, Type } from "@/utils";
+import { Codec, sleep, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -29,7 +29,8 @@ export async function assertDisputeRefreshPolicy(
         await h.lifecycle.start(3, 0, {
             configOverrides: { RUN_SDK_IN_THREAD: false }
         });
-        const { host, sm, stub } = runtimeEndpointFor(h.getPeer(0).p2pInstance);
+        const peer = h.getPeer(0);
+        const { host, sm, stub } = runtimeEndpointFor(peer.p2pInstance);
         stub.stubRecordDisputeSubmissions(
             true,
             {
@@ -38,22 +39,25 @@ export async function assertDisputeRefreshPolicy(
             },
             false
         );
-        stub.recordSlashRecoveries();
         try {
-            const attempt = sm.disputeManager.dispute(sm.forkId);
+            // the attempt runs on in the aborted runtime; its outcome is nobody's
+            void sm.disputeManager.dispute(sm.forkId).catch(() => undefined);
             await waitFor(() => stub.getRecordedDisputeSubmissions().held > 0);
+            const nonce = await h.provider.getTransactionCount(peer.address);
             sm.abort();
             stub.releaseDisputeSubmissions();
-            await attempt;
-            expect(sm.storage.disputes.didIDispute(sm.forkId)).to.equal(false);
-            expect(stub.getSlashRecoveryCount()).to.equal(0);
+            await sleep(1_000);
+            expect(await h.provider.getTransactionCount(peer.address)).to.equal(
+                nonce
+            );
             expect(
-                stub.getRecordedDisputeSubmissions().submissions
-            ).to.have.length(1);
+                await h.channelManager.queryFilter(
+                    h.channelManager.filters.DisputeCommitted(h.channelId)
+                )
+            ).to.have.length(0);
         } finally {
             stub.releaseDisputeSubmissions();
             stub.restoreDisputeSubmissions();
-            stub.restoreSlashRecoveries();
             await host.dispose();
         }
         return;

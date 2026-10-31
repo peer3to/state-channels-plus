@@ -817,9 +817,9 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
     }
 
     /**
-     * The real shutdown order settles a deferred guarded RPC's handshake wait
-     * with false while the P2P manager is still alive: the RPC is dropped with
-     * no disconnect, no verdict and no retry-bound strike.
+     * The root's disposal order: the cut closes the network, then stopping
+     * the producers settles a deferred guarded RPC's handshake wait with
+     * false. The RPC is dropped with no verdict and no retry-bound strike.
      */
     public async probeShutdownDropsDeferredRpc(): Promise<ShutdownDeferredRpcProbe> {
         const address = "0xA000000000000000000000000000000000000015";
@@ -832,8 +832,10 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
         init.isNegotiating = () => true;
         try {
             target.runRPC(this.rpc("shutdown-deferred"), transport);
+            const networkCut = this.p2pManager.dispose();
             await this.p2pManager.stateManager.stop();
             const p2pManagerDisposedAtExpiry = this.p2pManager.isDisposed;
+            await networkCut;
             await this.flush();
             return {
                 invocations: [...target.invocations],

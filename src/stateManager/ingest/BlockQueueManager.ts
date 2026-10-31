@@ -429,7 +429,6 @@ export default class BlockQueueManager {
     }
 
     private scheduleForkRecovery(forkId: ForkId): void {
-        if (this.stateManager.isDisposed) return;
         if (this.recoveryScheduledForFork.has(forkId)) return; // coalesce
         const suppressedUntil = this.recoverySuppressedUntil.get(forkId);
         if (
@@ -440,7 +439,7 @@ export default class BlockQueueManager {
         }
         this.recoveryScheduledForFork.add(forkId);
         this.timeoutManager.scheduleTask(
-            () => this.track(() => this.runForkRecovery(forkId)),
+            () => DetachedPromises.collect(this.runForkRecovery(forkId)),
             0,
             `BlockQueueManager.runForkRecovery - fork ${forkId}`
         );
@@ -483,7 +482,6 @@ export default class BlockQueueManager {
 
     private async queueTimeout(blockHash: Hash): Promise<void> {
         this.timeoutHandles.delete(blockHash);
-        if (this.stateManager.isDisposed) return;
         // Dequeue first: the timeout owns the entry it sees - no race with
         // other tasks. Copies arriving from here on pool into a fresh entry
         // that converges on its own.
@@ -682,15 +680,6 @@ export default class BlockQueueManager {
         }
     }
 
-    /**
-     * Start detached work. Nothing starts after disposal; work in flight is
-     * not drained, since the disposal cut-off may have frozen its sends.
-     */
-    private track(work: () => Promise<void>): void {
-        if (this.stateManager.isDisposed) return;
-        DetachedPromises.collect(work());
-    }
-
     private cancelQueueTimeout(blockHash: Hash): void {
         const timeout = this.timeoutHandles.get(blockHash);
         if (!timeout) return;
@@ -714,7 +703,7 @@ export default class BlockQueueManager {
      */
     private probeSources(entry: QueuedBlockEntry): void {
         for (const peer of getSourcePeers(entry)) {
-            this.track(() => this.probeSource(peer, entry));
+            DetachedPromises.collect(this.probeSource(peer, entry));
         }
     }
 
@@ -734,7 +723,7 @@ export default class BlockQueueManager {
                 block.forkId,
                 block.height
             );
-        if (!synced || this.stateManager.isDisposed) return;
+        if (!synced) return;
         if (!this.isBlockUnbackedByLineage(block)) return;
         this.logger.verbose(
             "queueTimeout - source proved a lineage that does not carry the block, excluding",

@@ -38,7 +38,6 @@ import type {
     SnapshotPostHoldPoint,
     SpectateSyncSettle,
     StateMutexStateHold,
-    StopDuringAssemblyRecord,
     FailedRestoreRecord
 } from "./StubService";
 
@@ -301,45 +300,17 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /**
-     * Make this peer's state machine refuse every inbound message and start
-     * the runtime's real stop while it refuses, as a shutdown that overtakes
-     * an assembly in flight. Record-only from then on: local state writes and
-     * the snapshot assembly's error logs still run unchanged. No restore: the
-     * runtime is stopping and dies with the peer.
+     * Make this peer's state machine refuse every inbound message and abort
+     * the runtime while it refuses, as a shutdown that overtakes an assembly
+     * in flight. No restore: the runtime is aborting and dies with the peer.
      */
-    public stubRefuseInboundAndStartStop(): boolean {
+    public stubRefuseInboundAndAbort(): boolean {
         const sm = this.service.sm;
-        const stateMachine = sm.diamondStateMachine;
-        const record: StopDuringAssemblyRecord = {
-            restoreAttempts: 0,
-            restoreErrors: []
-        };
-        this.service.stopDuringAssembly = record;
-        const setState = stateMachine.setState.bind(stateMachine);
-        stateMachine.setState = async (serializedState) => {
-            if (sm.isDisposed) record.restoreAttempts += 1;
-            return setState(serializedState);
-        };
-        const logger = sm.snapshotAssemblyService["logger"];
-        const logError = logger.error.bind(logger);
-        logger.error = (message, meta) => {
-            if (sm.isDisposed) record.restoreErrors.push(String(message));
-            return logError(message, meta);
-        };
-        stateMachine.processInboundMessage = async () => {
-            // The root's disposal awaits this same stop and surfaces its
-            // failure there.
-            sm.stop().catch(() => undefined);
+        sm.diamondStateMachine.processInboundMessage = async () => {
+            sm.abort();
             return false;
         };
         return true;
-    }
-
-    public getStopDuringAssembly(): StopDuringAssemblyRecord | null {
-        const record = this.service.stopDuringAssembly;
-        return record
-            ? { ...record, restoreErrors: [...record.restoreErrors] }
-            : null;
     }
 
     /**
@@ -2118,21 +2089,19 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /**
-     * Hold the runtime disposal that a real abort starts, so the control RPC
-     * stays reachable after the abort. Release with `releaseRuntimeDisposal`.
+     * Hold the runtime disposal that a real abort starts right after its
+     * cut, before the producers stop, so the control RPC stays reachable
+     * after the abort. Release with `releaseRuntimeDisposal`.
      */
     public stubHoldRuntimeDisposal(): boolean {
-        // the state manager's private disposal callback
-        const host = this.service.sm as unknown as {
-            disposeRuntime: () => Promise<void>;
-        };
-        const dispose = host.disposeRuntime;
+        const sm = this.service.sm;
+        const stop = sm.stop.bind(sm);
         const gate = this.service.createGate();
         this.service.runtimeDisposalGate = gate;
-        host.disposeRuntime = async () => {
+        sm.stop = async () => {
             gate.entered += 1;
             await gate.gate;
-            return dispose();
+            return stop();
         };
         return true;
     }
@@ -2452,7 +2421,11 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     public cancelScheduledReductions(): boolean {
-        this.service.sm.reductionManager["cancelScheduledReductions"]();
+        const sm = this.service.sm;
+        const timeouts = sm.reductionManager["timeouts"];
+        for (const timeout of timeouts.values())
+            sm.timeoutManager.cancelTask(timeout.handle);
+        timeouts.clear();
         return true;
     }
 

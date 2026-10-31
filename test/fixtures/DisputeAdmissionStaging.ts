@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: real dispute admission held behind the state mutex
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { runtimeEndpointFor } from "./RuntimeRootObservation";
+import { sleep } from "@/utils";
 import type {
     ConstructDisputeHold,
     StateMutexHold
@@ -16,19 +17,27 @@ export async function assertDisputeAdmissionRefuses(
         await h.lifecycle.start(3, 0, {
             configOverrides: { RUN_SDK_IN_THREAD: false }
         });
-        const { host, sm, stub } = runtimeEndpointFor(h.getPeer(2).p2pInstance);
+        const peer = h.getPeer(2);
+        const { host, sm, stub } = runtimeEndpointFor(peer.p2pInstance);
         const forkId = sm.forkId;
-        stub.stubPauseConstructDisputeAtStateProof(forkId);
         stub.holdStateMutex();
         try {
             await waitFor(() => stub.getStateMutexHeldCount() === 1);
-            const attempt = sm.disputeManager.dispute(forkId);
+            // the attempt runs on in the aborted runtime; its outcome is nobody's
+            void sm.disputeManager.dispute(forkId).catch(() => undefined);
             await waitFor(() => stub.getStateMutexWaiterCount() >= 1);
+            const nonce = await h.provider.getTransactionCount(peer.address);
             sm.abort();
             stub.releaseStateMutex();
-            await attempt;
-            expect(sm.storage.disputes.didIDispute(forkId)).to.equal(false);
-            expect(stub.getPausedConstructDisputeStatus().entered).to.equal(0);
+            await sleep(1_000);
+            expect(await h.provider.getTransactionCount(peer.address)).to.equal(
+                nonce
+            );
+            expect(
+                await h.channelManager.queryFilter(
+                    h.channelManager.filters.DisputeCommitted(h.channelId)
+                )
+            ).to.have.length(0);
         } finally {
             stub.releaseStateMutex();
             stub.restorePausedConstructDispute();

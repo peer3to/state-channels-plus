@@ -428,14 +428,6 @@ export type DisputeSubmissionHold = {
     held: number;
 };
 
-/** What a local state restore did once the runtime had started stopping. */
-export type StopDuringAssemblyRecord = {
-    /** Local state writes made after the stop started. */
-    restoreAttempts: number;
-    /** Error logs of the snapshot assembly after the stop started. */
-    restoreErrors: string[];
-};
-
 /** What `stubFailNextRestoreAndHoldAbort` saw until its abort is released. */
 export type FailedRestoreRecord = {
     /** Error logs of the snapshot assembly. */
@@ -580,8 +572,6 @@ export class StubService extends ANetworkRpcService<
     private restoreClockOffset?: () => void;
     /** Reasons passed to the real sync rejection handler. */
     private syncRejectionReasons: string[] = [];
-    /** Record of `stubRefuseInboundAndStartStop`, once installed. */
-    public stopDuringAssembly?: StopDuringAssemblyRecord;
     /** Record of `stubFailNextRestoreAndHoldAbort`, once installed. */
     public failedRestore?: FailedRestoreRecord;
     /** The real runtime abort that `stubFailNextRestoreAndHoldAbort` held. */

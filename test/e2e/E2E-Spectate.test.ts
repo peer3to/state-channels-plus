@@ -1,5 +1,4 @@
 import { Block, StateSnapshot } from "@/models";
-import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
@@ -1969,7 +1968,7 @@ describe("E2E: Spectate Service", function () {
             }
         });
 
-        it("stopping a joiner during the wait ends it: stop resolves, no further request, no abort", async function () {
+        it("disposing a joiner during the wait ends it: disposal resolves, no further request, no abort", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 0);
             await h.transition.advanceState({ count: 2 });
@@ -1977,40 +1976,12 @@ describe("E2E: Spectate Service", function () {
             const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
                 connectAfterKillPeriod: true
             });
-            expect(
-                await h.execOnHost(
-                    h.getPeer(staged.joiner.index),
-                    async (sm) => {
-                        await sm.stop();
-                        return sm.isDisposed;
-                    }
-                )
-            ).to.equal(true);
+            await staged.joiner.p2pInstance.dispose();
             await staged.reduce();
             expect(
                 (await staged.requestCounts()).reduce((a, b) => a + b, 0)
             ).to.equal(1);
             expect(staged.aborts()).to.equal(0);
-            // the initial load's sync settled: a new sync to the same
-            // responder does not join it, and the stopped runtime syncs nothing
-            expect(
-                await h.execOnHost(
-                    h.getPeer(staged.joiner.index),
-                    (sm, { responder }) =>
-                        sm.p2pManager.localRpc.spectateService.requestSync(
-                            responder,
-                            sm.channelId,
-                            undefined,
-                            undefined,
-                            1000
-                        ),
-                    { responder: staged.responder.address }
-                )
-            ).not.to.equal(SyncResult.Synced);
-            // the stopped runtime's connect resolves false
-            await TestSession.settleDetached({
-                expectedErrorIncludes: "connectToChannel failed"
-            });
         });
 
         it("a joiner the chain moves out of OPENED during the wait settles engaged: the late repeated sync aborts nothing", async function () {

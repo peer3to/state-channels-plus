@@ -79,11 +79,15 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
         );
         const retries = observeLocalDialRetries();
 
-        // the first half of shutdown settles the dial's handshake wait with
-        // false while its P2P manager and discovery session are still alive
-        await dialer.stateManager.stop();
+        // the disposal settles the dial's handshake wait with false
+        await h.peers
+            .find(
+                (peer) =>
+                    runtimeEndpointFor(peer.p2pInstance).sm.p2pManager ===
+                    dialer
+            )!
+            .p2pInstance.dispose();
 
-        expect(dialer.isDisposed).to.equal(false);
         expect(retries.scheduledSince()).to.deep.equal([]);
     });
 

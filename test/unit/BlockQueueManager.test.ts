@@ -2,7 +2,7 @@ import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import { BlockConfirmationEthersType } from "@/types/ethers";
 import type { Address, Hash } from "@/types/types";
-import { Codec, Type } from "@/utils";
+import { Codec, sleep, Type } from "@/utils";
 import * as factory from "@test/factory";
 import { probeSyncingQueuedSource } from "@test/fixtures/MilestoneSyncStaging";
 import {
@@ -13,8 +13,7 @@ import {
 import { assertDeployedMaximum } from "@test/fixtures/QueueDeploymentFixture";
 import {
     assertStoredTipCopyDrainsNextBlock,
-    probeJunkSourceAcrossUnreducedWindow,
-    scheduleForkRecoveryAroundStop
+    probeJunkSourceAcrossUnreducedWindow
 } from "@test/fixtures/QueueDrainStaging";
 import {
     QueueIntakeFixture,
@@ -98,86 +97,75 @@ describe("Unit: BlockQueueManager", () => {
         });
     });
 
-    it("a fork recovery scheduled or firing after stop began never runs", async () => {
-        expect(await scheduleForkRecoveryAroundStop()).to.deep.equal({
-            scheduledBeforeStop: 1,
-            scheduledAfterStop: 0,
-            entered: 0
-        });
-    });
-
-    it("a queue timeout firing after stop began starts no source probe", async () => {
+    it("a queue timeout firing after the runtime aborted sends its source no probe", async () => {
         const f = new QueueIntakeFixture();
         await f.start();
-        const result = await f.h.execOnHost(
-            f.h.getPeer(0),
-            async (sm, args, { ethers }) => {
-                const spectate = sm.p2pManager.localRpc.spectateService;
-                const sync = spectate.syncBlockSource;
-                let syncCalls = 0;
-                spectate.syncBlockSource = (...parameters) => {
-                    syncCalls++;
-                    return sync.apply(spectate, parameters);
-                };
-                const schedule = sm.timeoutManager.scheduleTask.bind(
-                    sm.timeoutManager
-                );
-                let fired!: () => void;
-                const timeoutFired = new Promise<void>((resolve) => {
-                    fired = resolve;
-                });
-                sm.timeoutManager.scheduleTask = (task, delay, name) =>
-                    schedule(
-                        name?.startsWith("BlockQueueManager.queueTimeout -")
-                            ? async () => {
-                                  await task();
-                                  fired();
-                              }
-                            : task,
-                        delay,
-                        name
+        const supplier = f.h.control(f.h.getPeer(1));
+        await supplier.stub.stubCountSpectateRequests().request();
+        // the abort cuts the runtime and parks before its timers are cancelled
+        const releaseDisposal = await f.h.rpcStub.holdRuntimeDisposal(0);
+        try {
+            const syncCalls = await f.h.execOnHost(
+                f.h.getPeer(0),
+                async (sm, args, { ethers }) => {
+                    const spectate = sm.p2pManager.localRpc.spectateService;
+                    const sync = spectate.syncBlockSource;
+                    let calls = 0;
+                    spectate.syncBlockSource = (...parameters) => {
+                        calls++;
+                        return sync.apply(spectate, parameters);
+                    };
+                    const schedule = sm.timeoutManager.scheduleTask.bind(
+                        sm.timeoutManager
                     );
-                // stop() parks on the custom RPC disposal, after it set
-                // isDisposed and before the timeout manager disposes
-                const localRpc = sm.p2pManager.localRpc;
-                const disposeLocalRpc = localRpc.dispose;
-                let release!: () => void;
-                const gate = new Promise<void>((resolve) => {
-                    release = resolve;
-                });
-                localRpc.dispose = async () => {
-                    await gate;
-                    return disposeLocalRpc.call(localRpc);
-                };
-                try {
-                    const block = ethers.AbiCoder.defaultAbiCoder().decode(
-                        [args.blockType],
-                        args.encodedBlockConfirmation
-                    )[0];
-                    await sm.blockQueueManager.ingestBlockConfirmation(block, {
-                        origin: args.origin,
-                        senderAddress: args.source
+                    let fired!: () => void;
+                    const timeoutFired = new Promise<void>((resolve) => {
+                        fired = resolve;
                     });
-                    const stopping = sm.stop();
-                    await timeoutFired;
-                    release();
-                    await stopping;
-                    return { isDisposed: sm.isDisposed, syncCalls };
-                } finally {
-                    release();
-                    spectate.syncBlockSource = sync;
-                    sm.timeoutManager.scheduleTask = schedule;
-                    localRpc.dispose = disposeLocalRpc;
+                    sm.timeoutManager.scheduleTask = (task, delay, name) =>
+                        schedule(
+                            name?.startsWith("BlockQueueManager.queueTimeout -")
+                                ? async () => {
+                                      await task();
+                                      fired();
+                                  }
+                                : task,
+                            delay,
+                            name
+                        );
+                    try {
+                        const block = ethers.AbiCoder.defaultAbiCoder().decode(
+                            [args.blockType],
+                            args.encodedBlockConfirmation
+                        )[0];
+                        await sm.blockQueueManager.ingestBlockConfirmation(
+                            block,
+                            { origin: args.origin, senderAddress: args.source }
+                        );
+                        sm.abort();
+                        await timeoutFired;
+                        return calls;
+                    } finally {
+                        spectate.syncBlockSource = sync;
+                        sm.timeoutManager.scheduleTask = schedule;
+                    }
+                },
+                {
+                    blockType: BlockConfirmationEthersType,
+                    encodedBlockConfirmation: f.encodedBlockConfirmation,
+                    origin: BlockOrigin.NETWORK as const,
+                    source: f.h.getPeer(1).address
                 }
-            },
-            {
-                blockType: BlockConfirmationEthersType,
-                encodedBlockConfirmation: f.encodedBlockConfirmation,
-                origin: BlockOrigin.NETWORK as const,
-                source: f.h.getPeer(1).address
-            }
-        );
-        expect(result).to.deep.equal({ isDisposed: true, syncCalls: 0 });
+            );
+            // premise: the timeout probed its source in the aborted runtime
+            expect(syncCalls).to.equal(1);
+            await sleep(1_000);
+            expect(
+                await supplier.stub.getSpectateRequestCount().request()
+            ).to.equal(0);
+        } finally {
+            await releaseDisposal();
+        }
     });
 
     it("a drain that dequeues a stored copy still drains the queued next block", async () => {
@@ -221,29 +209,27 @@ describe("Unit: BlockQueueManager", () => {
         expect(await probe.supplierRequests()).to.equal(2);
     });
 
-    it("stopping the runtime while a source probe waits for the chain's reduction ends the wait: stop resolves and the supplier is not asked again", async () => {
+    it("disposing the runtime while a source probe waits for the chain's reduction ends the wait: disposal resolves and the supplier is not asked again", async () => {
         const f = new QueueIntakeFixture();
         await f.start();
-        let stopped = false;
+        let disposed = false;
         const probe = await probeJunkSourceAcrossUnreducedWindow(
             f,
             async () => {
-                // well after the first answer the probe is waiting; stop
-                // ends the wait through the spectate service's abort
-                // controller, and the supplier is not asked again
+                // well after the first answer the probe is waiting; the
+                // disposal ends the wait through the spectate service's
+                // abort controller, and the supplier is not asked again
                 await waitFor(
                     async () =>
                         (await f.h.query.killPeriod(f.h.activeForkId!))
                             .isExpired,
                     f.h.event.protocolEventTimeoutMs() * 2
                 );
-                stopped = await f.h.execOnHost(f.h.getPeer(0), async (sm) => {
-                    await sm.stop();
-                    return sm.isDisposed;
-                });
+                await f.h.getPeer(0).p2pInstance.dispose();
+                disposed = true;
             }
         );
-        expect(stopped).to.equal(true);
+        expect(disposed).to.equal(true);
         expect(await probe.supplierRequests()).to.equal(1);
     });
 

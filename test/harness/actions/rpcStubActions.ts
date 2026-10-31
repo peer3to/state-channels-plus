@@ -33,7 +33,6 @@ import type {
     ReductionAttemptResume,
     SnapshotPostHoldPoint,
     SpectateSyncSettle,
-    StopDuringAssemblyRecord,
     FailedRestoreRecord
 } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
@@ -246,8 +245,9 @@ export class RpcStubActions<
     }
 
     /**
-     * Hold the runtime disposal a real abort starts on this peer, so its
-     * control RPC stays reachable after the abort. Returns the release.
+     * Hold the runtime disposal a real abort starts on this peer right after
+     * its cut, so its control RPC stays reachable after the abort. Returns
+     * the release.
      */
     async holdRuntimeDisposal(peerIndex: number): Promise<() => Promise<void>> {
         await this.peerStub(peerIndex).stubHoldRuntimeDisposal().request();
@@ -735,23 +735,14 @@ export class RpcStubActions<
     }
 
     /**
-     * Make this peer's state machine refuse every inbound message and start
-     * the runtime's stop while it refuses. Returns a reader of what local
-     * state restores did once the stop had started.
+     * Make this peer's state machine refuse every inbound message and abort
+     * the runtime while it refuses.
      */
-    async refuseInboundAndStartStop(
-        peerIndex: number
-    ): Promise<() => Promise<StopDuringAssemblyRecord | null>> {
-        const peer = this.harness.getPeer(peerIndex);
+    async refuseInboundAndAbort(peerIndex: number): Promise<void> {
         await this.harness
-            .control(peer)
-            .stub.stubRefuseInboundAndStartStop()
+            .control(this.harness.getPeer(peerIndex))
+            .stub.stubRefuseInboundAndAbort()
             .request();
-        return async () =>
-            await this.harness
-                .control(peer)
-                .stub.getStopDuringAssembly()
-                .request();
     }
 
     /**

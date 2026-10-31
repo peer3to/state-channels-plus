@@ -635,25 +635,32 @@ describe("Unit: BlockProductionService", function () {
         });
     });
 
-    describe("playTransaction → rollback while stopping", function () {
-        it("an assembly that fails after the runtime started stopping → restores nothing, logs no restore error, rejects with its own error and releases the mutex", async function () {
+    describe("playTransaction → rollback while the runtime aborts", function () {
+        it("an assembly that fails after the runtime aborted → rejects with its own error and no peer receives a block", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1);
             const forkId = h.activeForkId!;
 
             const writer = await h.query.getNextPeerToWrite();
-            const control = h.control(writer);
-            const readRecord = await h.rpcStub.refuseInboundAndStartStop(
-                writer.index
+            const others = h.peers.filter(
+                (peer) => peer.index !== writer.index
             );
+            await h.rpcStub.refuseInboundAndAbort(writer.index);
             // a real top-up lands on chain -> the writer's next block must
-            // carry it; its refusal starts the runtime's stop mid-assembly
+            // carry it; its refusal aborts the runtime mid-assembly
             await h.join.forceInboundJoinWait({
                 participant: h.getPeer(0).address
             });
-            const heightBefore = await control.query
-                .getNextBlockHeight(forkId)
-                .request();
+            const heights = () =>
+                Promise.all(
+                    others.map((peer) =>
+                        h
+                            .control(peer)
+                            .query.getNextBlockHeight(forkId)
+                            .request()
+                    )
+                );
+            const heightsBefore = await heights();
 
             let message = "no throw";
             try {
@@ -665,23 +672,9 @@ describe("Unit: BlockProductionService", function () {
             }
 
             expect(message).to.contain("Failed to process inbound message");
-            expect(await readRecord()).to.deep.equal({
-                restoreAttempts: 0,
-                restoreErrors: []
-            });
-            expect(
-                await control.query.getNextBlockHeight(forkId).request()
-            ).to.equal(heightBefore);
-            // the failed assembly released the mutex: another task takes it
-            const hold = await h.rpcStub.holdStateMutex(writer.index);
-            try {
-                await waitFor(
-                    async () => (await hold.entered()) === 1,
-                    h.event.protocolEventTimeoutMs()
-                );
-            } finally {
-                await hold.release();
-            }
+            await h.event.waitForPeers("onAbort", [writer.index], 1);
+            await sleep(1_000);
+            expect(await heights()).to.deep.equal(heightsBefore);
         });
     });
 

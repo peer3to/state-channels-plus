@@ -455,65 +455,6 @@ export async function observeDisputeRequests(
     };
 }
 
-/** Join timer names `ChannelJoinService` schedules. */
-export const JOIN_TIMER_NAMES = [
-    "join authorization expiry",
-    "force join deadline"
-] as const;
-
-/**
- * Holds the participant-count read of the joiner's next force-join deadline
- * setup after the read answered; the setup continues once released. It
- * patches the retained inline host (see `runtimeEndpointFor`), so it can be
- * released after the runtime disposed.
- */
-export function holdForceJoinDeadlineParticipantRead(sm: StateManager) {
-    const joinService = sm.channelJoinService;
-    const diamond = sm.diamondStateMachine;
-    const armDeadline = Reflect.get(
-        joinService,
-        "armUntilForceJoinDeadline"
-    ) as (...args: unknown[]) => Promise<void>;
-    const readParticipants = diamond.getParticipants.bind(diamond);
-    let open!: () => void;
-    const gate = new Promise<void>((resolve) => {
-        open = resolve;
-    });
-    let isEntered = false;
-    let isDeadlineSetup = false;
-    Object.defineProperty(diamond, "getParticipants", {
-        configurable: true,
-        value: async () => {
-            const isHeld = isDeadlineSetup && !isEntered;
-            if (isHeld) isEntered = true;
-            const participants = await readParticipants();
-            if (isHeld) await gate;
-            return participants;
-        }
-    });
-    Reflect.set(
-        joinService,
-        "armUntilForceJoinDeadline",
-        (...args: unknown[]) => {
-            // the setup reads the participant count synchronously at its start
-            isDeadlineSetup = true;
-            try {
-                return armDeadline.apply(joinService, args);
-            } finally {
-                isDeadlineSetup = false;
-            }
-        }
-    );
-    return {
-        isEntered: () => isEntered,
-        release: () => {
-            Reflect.deleteProperty(diamond, "getParticipants");
-            Reflect.deleteProperty(joinService, "armUntilForceJoinDeadline");
-            open();
-        }
-    };
-}
-
 /** The joiner's host state right after it emitted `onLeftChannel`. */
 export type MembershipEndObservation = {
     status: Status;
