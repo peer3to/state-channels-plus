@@ -1,3 +1,4 @@
 {
-    "test/harness/actions/assert/expectDisputeInput.ts": "Removed unused assertion helper; no executable test declarations. Its callers were removed or migrated to assertions in the owning test/harness flow. This is not a deleted coverage obligation."
+    "test/harness/actions/assert/expectDisputeInput.ts": "Removed unused assertion helper; no executable test declarations. Its callers were removed or migrated to assertions in the owning test/harness flow. This is not a deleted coverage obligation.",
+    "test/fixtures/customRpc/RejectingDisposeRpcManifest.ts": "Removed fixture for the deleted MainRpcService.dispose consumer hook; no executable test declarations. The hook and its tests were deleted (Luke 2026-10-31, plan 27 slice 4). This is not a deleted coverage obligation."
 }
