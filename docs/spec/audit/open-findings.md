@@ -2674,6 +2674,30 @@ one when the last transport closes`
 ([`UNIT-TEST-ATRANSPORT-1-7DGX9R.P13`](../implementation/source/src/transport/NetworkTransport.ts.md#unit-test-atransport-1-7dgx9r),
 [`REQ-UPG-2-WH7BC7.T1.P6`](../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7.t1.p6)).
 
+<a id="find-rpc-8-59fks6"></a>
+
+### FIND-RPC-8-59FKS6
+
+**Defect:** Open (2026-10-31). The provider fails over only when a node's socket drops. A node that
+answers a request with a JSON-RPC error on a live socket hands that error to the caller, and no other
+node is asked
+([MultiRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md),
+[`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)).
+By Luka's provider rule (see
+[`FIND-RPC-3-FY8YV3`](open-findings.md#find-rpc-3-fy8yv3)) callers do not handle provider failures,
+so one node's transient internal error is fatal for the runtime.
+
+**Observed (2026-10-31, liquidity table game1, `bot2`):** at block confirmation the block validation
+read `getBlockCallDataCommitment` (`eth_call`). The node answered `-32603 Internal error`; ethers
+reported it as "missing revert data" (`CALL_EXCEPTION`). The runtime failed fatally and the bot
+stopped. Other nodes of the same set were connected.
+
+**Open design point:** which node errors are node faults that fail over to the next node (internal
+errors, rate limits, a node behind the requested block) and which are answers every node gives (a real
+revert, invalid parameters); and how a node fault is told apart from a revert without revert data.
+
+**Disposition:** Recorded, not addressed now (Luka, 2026-10-31).
+
 <a id="find-integrator-1-5mf8n9"></a>
 
 ### FIND-INTEGRATOR-1-5MF8N9

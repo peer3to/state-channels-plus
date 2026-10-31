@@ -238,6 +238,13 @@ Stopgap (2026-10-30): the poker web app reloads the page, instead of showing the
 the fatal failure is an event-loop delay above 3 s. Blocking effect: none while that stopgap is in
 place.
 
+Cost of the stopgap (2026-10-31): the reload takes about 5 s, not the about 1 s of the detection. The
+page reloads only after the poker client manager is disposed, and for a failed runtime that holds a
+seat the dispose first leaves the table: a fresh runtime setup, a spectate sync, and the terminal
+leave. The reloaded page cannot keep the seat, because its client has a fresh identity (the poker
+repository's open finding on session recovery: recovery state is not persisted), so the resume hook
+is also the place to keep the seat without a reload.
+
 Related: [`OQ-AUDIT-RUNTIME-1-HH601X`](open-questions.md#oq-audit-runtime-1-hh601x),
 [`OQ-AUDIT-RPC-2-4VVAT0`](open-questions.md#oq-audit-rpc-2-4vvat0).
 
