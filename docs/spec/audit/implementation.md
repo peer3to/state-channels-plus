@@ -170,8 +170,8 @@ or disposed) or was restarted; only an exit still pending after that check dispu
 `this.exit !== exit` return removed: "below its anchor"),
 [`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P54`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9) (the leaver received no chain event, so only the watchdog's own check
 sees the settlement; it times out waiting for `onLeftChannel` with the `this.requestCheck()` line removed), and
-[`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P55`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9) (disposal during the watchdog's own parked check; it fails when the exit
-return is weakened to a status check: the dispute starts on the disposed runtime).
+[`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P55`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9) (disposal during the watchdog's own parked check; the check resumes after the disposal cut-off and its
+dispute never reaches the chain).
 
 The window after that check is closed too. An exit snapshot that lands while the self-removal dispute is
 built moves the leaver's anchor past its latest block; in the

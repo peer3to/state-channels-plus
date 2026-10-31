@@ -130,10 +130,9 @@ Internal channel staging
 
 Active fork eligibility
 
-- Setup: Query the current fork before and after disposal or a real reduction
-- Oracle: Current live fork is accepted; disposed runtime and old fork are rejected
+- Setup: Query the current fork before and after a real reduction
+- Oracle: Current fork is accepted; old fork is rejected
 
-- [x] `UNIT-TEST-STATE-MANAGER-ACTIVE-FORK-1-NDTW9K.P1` — current fork before and after disposal
 - [x] `UNIT-TEST-STATE-MANAGER-ACTIVE-FORK-1-NDTW9K.P2` — current and old forks after a real reduction
 
 ## UNIT-TEST-STATE-MANAGER-7-YRC0N3

@@ -20,11 +20,7 @@ order of the second `onLeftChannel` before the abort. The disposal case holds a 
 check at its membership read (the runtime's disposal releases it), lets a counted block queue one more
 check, suppresses the founders' participant timeouts, disposes the joiner and, after an absence window
 of two agreement windows, finds no new dispute, status or `onLeftChannel` event and no dispute window on
-the fork. A second disposal case runs the joiner inline and keeps its host endpoint: a record-only probe
-records every scheduled task by name, and the participant-count read of the observed join's force-join
-deadline setup is held after it answered. The joiner is disposed, the read released and the join checks
-settled; no join timer (`join authorization expiry`, `force join deadline`) is recorded after the
-disposal. `U75f` makes a prepared first join's submission
+the fork. `U75f` makes a prepared first join's submission
 uncertain (its authorization stays open for 120 seconds), then a founder posts a snapshot that lists no
 pending join; after the joiner handled that snapshot event its status is still `PENDING_PARTICIPANT` and
 its join is still pending. `U75b` lets an uncertain join pass its authorization deadline on chain and
@@ -64,8 +60,9 @@ clears the leaver's channel event listener before the exit snapshot is posted, s
 check: once the chain drops the leaver, it still has no `onLeftChannel` and its local snapshot still lists
 it, and only the held watchdog's own check settles the leave, with the same oracles. The watchdog-disposal
 case runs the leaver inline, parks its chain membership reads, runs the held watchdog until its own check
-is parked, then disposes the runtime and releases the read; no self-removal dispute log or submission and no
-detached error follow. The build-race case lets the watchdog's own check find the exit pending, so the
+is parked, then aborts the runtime with its teardown held after the disposal cut-off and releases the read;
+the leaver's chain nonce is unchanged two seconds later, and after the teardown completes no detached error
+follows. The build-race case lets the watchdog's own check find the exit pending, so the
 self-removal dispute starts and its construction is parked at the state-proof read; the remaining participants
 then post the exit snapshot, which becomes the blind leaver's anchor and settles the leave, and the
 construction is released. Its oracles are no submission, the marker rolled back, one `onLeftChannel` and no
@@ -116,7 +113,7 @@ is timed out.
 - `U72: a leave watchdog that expires after the remaining participants' exit snapshot moved the leaver's local anchor past its latest block, while its membership check still reads the chain, starts no self-removal dispute; the check settles the leave once with no runtime error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P53, REQ-LIF-10-QR8NQ9.T1.P37
 - `U72: a leave watchdog whose membership check finds the exit pending starts the self-removal dispute; the remaining participants' exit snapshot moves the leaver's local anchor past its latest block while that dispute is built, so the dispute is a no-op: no submission, the dispute marker rolls back, one onLeftChannel and no runtime error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P56, REQ-LIF-10-QR8NQ9.T1.P38
 - `U72: a leave watchdog that expires after the chain dropped the leaver, while the leaver has not received the exit snapshot's chain events, runs its own membership check: the check settles the leave with no self-removal dispute and no runtime error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P54
-- `U72: disposing a leaver while its expired leave watchdog's own membership check reads the chain starts no self-removal dispute and raises no runtime error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P55
+- `U72: a leaver aborted while its expired leave watchdog's own membership check reads the chain sends no self-removal dispute and raises no runtime error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P55
 - `U72: disposing a leaver whose exit is blocked stops its posts: the block that consumes the join sends nothing from it`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P30
 - `U72: a dispute observed while the leave awaits its leave turn makes the leaver submit its self-removal dispute at once, with no evidence comparison and before the leave watchdog; the leave completes only on the reduced snapshot that drops it, and the leaver posts no snapshot of that reduced state, which keeps other participants`: REQ-LIF-10-QR8NQ9.T1.P18, REQ-LIF-10-QR8NQ9.T1.P30, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P46
 - `U72: a dispute observed after an exit block the application authored with no leave call makes the leaver submit its self-removal dispute at once, with no evidence comparison; the reduced snapshot drops it and its runtime is SYNCED with the self-removal still set`: REQ-LIF-10-QR8NQ9.T1.P19, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P37
@@ -138,7 +135,6 @@ is timed out.
 - `RO2: the block bound passing while the deadline awaits membership requests only one dispute`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P47
 - `RO2: reduction seats the pending join on a successor fork while its old deadline read is held`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P48
 - `disposing a joiner while its force-join check is held at its membership read and another check waits behind it submits no dispute and emits no membership event`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P83
-- `disposing a joiner while its force-join deadline setup is held at its participant-count read arms no join timer once the setup continues`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P84
 - `AO4: a force-join deadline reads a real expired evidence window and retains the pending join without submitting`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P49, INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P9, INV-TJOIN-2-H7JSQM.T1.P7, INV-TJOIN-2-H7JSQM.T2.P10, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P70
 - `U74: observing its own join arms the force-join deadline at once, one full turn window per pending turn, while the counting grace still runs`: INV-TJOIN-2-H7JSQM.T2.P1, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P35
 - `U74: a submitted join not yet observed on chain starts neither force-join bound while blocks arrive`: INV-TJOIN-2-H7JSQM.T2.P2, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P36

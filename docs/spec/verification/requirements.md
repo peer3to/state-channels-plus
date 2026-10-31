@@ -378,7 +378,7 @@ Specification cases tested: 3/8. Untested: T1.P1, T1.P2, T1.P3, T1.P7, T1.P8.
 Specification cases tested: 3/11. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8.
 
 [`REQ-DISPUTE-PIPE-3-PHE3SQ` (Deterministic reduction)](../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq)
-Specification cases tested: 14/24. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10.
+Specification cases tested: 7/17. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10.
 
 [`REQ-DISPUTE-PIPE-4-3YVDSA` (Atomic recovery)](../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa)
 Specification cases tested: 6/16. Untested: T1.P1, T1.P3, T1.P4, T1.P6, T1.P7, T1.P8, T1.P9, T1.P13, T1.P14, T1.P15.

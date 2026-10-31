@@ -16,7 +16,6 @@ one-peer initial sync, so it assigns no targeted-join permutation. The related r
 
 - `snapshot preparation preserves the complete previous cache for concurrent intake until publication`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P10
 - `successful reduction replaces the old-fork cache with its committed genesis participants`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P11
-- `cancelled reduction cannot publish its prepared participant set or fork`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P12
 - `successful same-fork snapshot replacement publishes its participant set atomically`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P13
 - `failed snapshot inspection restores the VM without publishing eligibility`: REQ-GOSSIP-4-J5Z4DF.T1.P21, UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P14
 - `applying a snapshot that lists me → PARTICIPATING recomputed from a wrong SYNCED`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P2

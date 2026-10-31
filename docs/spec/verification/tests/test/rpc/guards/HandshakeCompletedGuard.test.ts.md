@@ -42,4 +42,4 @@ cleanup.
 - `releases a queued RPC only when its exact transport authenticates`: UNIT-TEST-HANDSHAKE-GUARD-1-XHFSXX.P16, REQ-RPC-7-9CBSHK.T1.P11
 - `drops a late frame dispatched after its authenticated transport closes`: UNIT-TEST-HANDSHAKE-GUARD-1-XHFSXX.P17, REQ-RPC-7-9CBSHK.T1.P12
 - `suspends an identity on the expired waiter that reaches its retry bound`: UNIT-TEST-HANDSHAKE-GUARD-1-XHFSXX.P18
-- `drops a deferred guarded RPC without disconnect, verdict or strike when a real shutdown settles its handshake wait`: UNIT-TEST-HANDSHAKE-GUARD-1-XHFSXX.P19
+- `drops a deferred guarded RPC without verdict or strike when the shutdown after the network cut settles its handshake wait`: UNIT-TEST-HANDSHAKE-GUARD-1-XHFSXX.P19

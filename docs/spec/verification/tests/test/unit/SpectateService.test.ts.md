@@ -106,7 +106,7 @@ blacklist.
 - `dispute opens on the latest fork after the payload was served, its kill period over but the chain has not reduced it → not accepted, no verdict naming the window, responder not blacklisted`: REQ-SYNC-4-AWHFPA.T1.P17
 - `the chain reduces the served window between the finality read and the window fetch, the payload claiming another successor → local reduction reverts on the reduced window, rejected, served reduction reverts`: REQ-SYNC-4-AWHFPA.T1.P16
 - `the chain reduces the window after the sync read it but before the sync waits → the wait ends on its chain read, the same peer is asked again and the sync succeeds`: REQ-SYNC-4-AWHFPA.T1.P18
-- `the wait's chain read fails → the sync rejects with the read's error, the responder is neither blacklisted nor asked again, stop resolves`: REQ-SYNC-4-AWHFPA.T1.P20
+- `the wait's chain read fails → the sync rejects with the read's error, the responder is neither blacklisted nor asked again, disposal resolves`: REQ-SYNC-4-AWHFPA.T1.P20
 - `the service is disposed after the sync applied its answer but before it waits → the sync returns false without waiting, the responder is asked once and not blacklisted`: REQ-SYNC-4-AWHFPA.T1.P22
 - `reductions of another window and of another channel while the sync waits → ignored: the responder is asked again only after the chain reduces the served window`: REQ-SYNC-4-AWHFPA.T1.P21
 - `first dispute window not on the on-chain fork → rejected, dispute window not linked`: INV-SYNC-1-XCQZ28.T1.P7, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P36

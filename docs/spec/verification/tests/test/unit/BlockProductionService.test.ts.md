@@ -41,7 +41,7 @@ Spectator spawns in this suite go through the shared `addSpectatorAuthoring` hel
 - `the state machine refuses a pending inbound message → throws, turn and VM state unchanged, the same writer authors once the inbound is processable`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P15, UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P11
 - `a post-commit step throws once after the block is stored → throws, the block stays stored and the VM keeps the stored state`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P19, INV-BLOCK-PIPE-1-1AB2ME.T1.P7
 - `the restore after a refused pending inbound message fails → the runtime aborts, the candidate rejects with its own error and the mutex is released`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P17, UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P13, INV-BLOCK-PIPE-1-1AB2ME.T1.P13
-- `an assembly that fails after the runtime started stopping → restores nothing, logs no restore error, rejects with its own error and releases the mutex`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P16, UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P12
+- `an assembly that fails after the runtime aborted → rejects with its own error and no peer receives a block`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P16
 - `a candidate parked on the state mutex when the runtime aborts → rejects without authoring once the mutex frees`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P18, INV-BLOCK-PIPE-1-1AB2ME.T1.P14
 - `connected but never synced → throws Channel not open`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P7
 - `authored promptly → timestamp is the local clock, one second ahead`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P9

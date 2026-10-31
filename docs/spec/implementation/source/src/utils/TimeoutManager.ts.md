@@ -18,3 +18,4 @@ Scheduling lifecycle
 - [x] `UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK.P3` — dispose cancels every pending timer and does not wait for a running task, which a send frozen at the disposal cut-off would hold forever; no timer outlives the disposal
 - [ ] `UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK.P4` — reschedule patterns
 - [x] `UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK.P5` — a task that fails is logged once at error through the manager's logger with its name and cause
+- [x] `UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK.P6` — a task scheduled after dispose never runs and arms no timer, so work still running in a disposed runtime starts no timer

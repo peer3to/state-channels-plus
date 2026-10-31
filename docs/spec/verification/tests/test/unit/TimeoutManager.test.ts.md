@@ -11,9 +11,11 @@ pending when `dispose` runs. The oracles are that `dispose` returns without wait
 running task, that the pending task never runs, and that no timer is left pending, since a pending
 timer keeps a worker thread alive after disposal until it fires. A second case schedules a task
 that rejects and spies on the real logger's `error`: it is called once, with a message naming the
-task and the cause as its metadata. Scheduling, cancellation and rescheduling are out of scope here.
+task and the cause as its metadata. A third disposes first and then schedules a task: no timer is
+armed and the task never runs. Scheduling, cancellation and rescheduling are out of scope here.
 
 ## Tests
 
 - `dispose cancels pending timers and returns while a task still runs`: UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK.P3
+- `a task scheduled after dispose never runs and arms no timer`: UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK.P6
 - `logs a failing task once at error with its name and cause`: UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK.P5

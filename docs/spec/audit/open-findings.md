@@ -773,9 +773,15 @@ sends nor hears), chain sends ([`HostNonceManager`](../implementation/source/src
 `cut()`: a later or queued send never settles) and the parent event bus. `BlockQueueManager.dispose`
 and its drain, the `TimeoutManager` running-task wait and the `StateChannelEventListener` stop drain
 are deleted, so `StateManager.stop` no longer drains the block queue or running timer tasks, and a
-reduce send frozen at the cut no longer holds disposal. Still open: the executor admission latch and
-the consumer creation and disposal promises stay, and the per-component disposal guards remain
-until their pinning tests move onto the root's disposal.
+reduce send frozen at the cut no longer holds disposal.
+
+**Update (2026-10-31, dispose cut-off slice 2):** the per-component disposal guards behind the cut are
+deleted (block queue, reduction manager and executor, channel join, dispute manager, spectate, the
+P2P manager's handshake and initial-sync terms, the handshake guards, the negotiation and lobby status
+writes); `ReductionManager`, `ReductionExecutor`, `ChannelJoinService` and `LeaveChannelService` lose
+their `dispose`, and `StateManager.stop` is the one memoized producer stop. Their tests now dispose
+through the root and assert what leaves the runtime (no frame, no transaction). Still open: the
+executor admission latch and the consumer creation and disposal promises stay.
 
 <a id="find-join-2-ek5dww"></a>
 
