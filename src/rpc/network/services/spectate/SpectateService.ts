@@ -4,6 +4,7 @@ import type {
     StateProofEvidence
 } from "@/agreementManager/AgreementManager";
 import { DisconnectPolicy } from "@/DisconnectPolicy";
+import { END_OF_BLOCK_LOG_INDEX } from "@/eventHandlers/EventHandler";
 import { Block, StateSnapshot } from "@/models";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
@@ -1124,25 +1125,34 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     }
 
     /**
-     * Fetch latest on-chain snapshot
+     * The chain's state snapshot persisted to the local diamond, and the one
+     * the local diamond then holds: the newest this peer knows. The read is
+     * pinned to one chain block and applied as that block's last log. Logs
+     * arrive from every RPC node but the read goes to one, which can be behind
+     * a snapshot log already applied; its older answer then loses the event
+     * ordering, so the local anchor never moves back.
      */
     public async fetchAndPersistOnChainSnapshot(
         channelId: ChannelId
     ): Promise<StateSnapshot> {
-        // Fetch the latest on-chain snapshot from RPC node
-        // Assume it's true since it's on-chain
-        const currentOnChainSnapshot = StateSnapshot.from(
-            await this.p2pManager.stateManager.stateChannelManagerContract.getStateSnapshot(
+        const stateManager = this.p2pManager.stateManager;
+        const { blockNumber, value: read } =
+            await stateManager.eventSyncService.readAtHead((blockTag) =>
+                stateManager.stateChannelManagerContract.getStateSnapshot(
+                    channelId,
+                    { blockTag }
+                )
+            );
+        await stateManager.eventHandler.onStateSnapshotUpdated(
+            channelId,
+            read,
+            { blockNumber, logIndex: END_OF_BLOCK_LOG_INDEX }
+        );
+        return StateSnapshot.from(
+            await stateManager.diamondStateMachine.localDiamondContract.getStateSnapshot(
                 channelId
             )
         );
-        // sync our local EVM to it
-        await this.p2pManager.stateManager.eventHandler.onStateSnapshotUpdated(
-            channelId,
-            currentOnChainSnapshot.toStruct(),
-            { blockNumber: 0, logIndex: 0 }
-        );
-        return currentOnChainSnapshot;
     }
 
     /**

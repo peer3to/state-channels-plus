@@ -161,3 +161,102 @@ export async function stageOutboundAroundAnchor(
         heldPost
     };
 }
+
+/**
+ * `stageOutboundAroundAnchor`, then the held exit post lands: the chain anchor
+ * and the remaining peers' local diamonds move to the second exit's snapshot.
+ * Returns the chain block just before that post, where the chain still holds
+ * the first exit's anchor.
+ */
+export async function stageAnchorAdvancedPastFirstExit(
+    h: MathPeerTestHarness,
+    options: { finalBlocks: number }
+) {
+    const staged = await stageOutboundAroundAnchor(h, options);
+    await staged.heldPost.waitUntilHeld();
+    expect(await staged.heldPost.release()).to.equal(null);
+    await waitFor(
+        async () =>
+            (await chainSnapshot(h)).latestOutboundMessageBlockHeight === 2,
+        h.event.protocolEventTimeoutMs()
+    );
+    const posts = await h.channelManager.queryFilter(
+        h.channelManager.filters.StateSnapshotUpdated(h.channelId)
+    );
+    const blockBeforePost = posts.at(-1)!.blockNumber - 1;
+    for (const index of staged.remaining)
+        await waitFor(
+            async () =>
+                (await h.execOnHost(
+                    h.getPeer(index),
+                    async (sm, args) =>
+                        Number(
+                            (
+                                await sm.diamondStateMachine.localDiamondContract.getStateSnapshot(
+                                    args.channelId
+                                )
+                            ).snapshotData.latestOutboundMessageBlockHeight
+                        ),
+                    { channelId: h.channelId }
+                )) === 2,
+            h.event.protocolEventTimeoutMs()
+        );
+    return { ...staged, blockBeforePost };
+}
+
+/**
+ * `peer`'s RPC node lags the chain at `blockTag`: it reports that block as its
+ * head and answers the channel's snapshot reads (`getStateSnapshot`,
+ * `isChannelOpen`) as of that block at the latest, while the chain's logs keep
+ * reaching the peer.
+ */
+export async function lagChainSnapshotReads(
+    h: MathPeerTestHarness,
+    peer: { index: number },
+    blockTag: number
+): Promise<void> {
+    await h.execOnHost(
+        h.getPeer(peer.index),
+        (sm, args) => {
+            const contract = sm.stateChannelManagerContract;
+            const provider = contract.runner!.provider!;
+            Object.defineProperty(provider, "getBlockNumber", {
+                value: async () => args.blockTag,
+                configurable: true,
+                writable: true
+            });
+            const atLag = (overrides?: { blockTag?: number }) => ({
+                blockTag: Math.min(
+                    Number(overrides?.blockTag ?? args.blockTag),
+                    args.blockTag
+                )
+            });
+            for (const name of ["getStateSnapshot", "isChannelOpen"]) {
+                const original = contract.getFunction(name);
+                // the real method's shape: the SDK's result proxy converts
+                // only methods with a `staticCall`
+                const lagged = (
+                    channelId: string,
+                    overrides?: { blockTag?: number }
+                ) => original(channelId, atLag(overrides));
+                const descriptors = Object.getOwnPropertyDescriptors(original);
+                Reflect.deleteProperty(descriptors, "staticCall");
+                Object.defineProperties(lagged, descriptors);
+                Object.defineProperty(lagged, "staticCall", {
+                    value: (
+                        channelId: string,
+                        overrides?: { blockTag?: number }
+                    ) => original.staticCall(channelId, atLag(overrides)),
+                    configurable: true,
+                    writable: true
+                });
+                Object.defineProperty(contract, name, {
+                    value: lagged,
+                    configurable: true,
+                    writable: true
+                });
+            }
+        },
+        { blockTag }
+    );
+}

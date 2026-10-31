@@ -1,5 +1,8 @@
 import Clock from "@/Clock";
-import { EventHandler } from "@/eventHandlers/EventHandler";
+import {
+    END_OF_BLOCK_LOG_INDEX,
+    EventHandler
+} from "@/eventHandlers/EventHandler";
 import { StateSnapshot } from "@/models";
 import Storage from "@/storage";
 import { TimeConfig, timeoutWaitTime } from "@/types";
@@ -77,9 +80,6 @@ const STATE_CHANNEL_MANAGER_EVENT_NAME_SET =
     );
 // widening getLogs spans a log recovery tries before giving up
 const LOG_RECOVERY_ATTEMPTS = 3;
-// a log index after every log of its block: a read pinned at a block holds
-// all of that block's logs
-const END_OF_BLOCK_LOG_INDEX = Number.MAX_SAFE_INTEGER;
 
 /** The window whose eth_getLogs read failed, and why. */
 export type LogPageReadFailure = { failedFrom: BlockNumber; error: unknown };
@@ -462,6 +462,19 @@ export default class EventSyncService {
             notBefore,
             await Clock.getBlockchainTime()
         );
+    }
+
+    /**
+     * `read` pinned to the chain's head block, with that block. Applied to the
+     * local diamond as the block's last log (`END_OF_BLOCK_LOG_INDEX`), an
+     * answer from an RPC node behind a log already applied loses the event
+     * ordering: logs arrive from every node, a read goes to one.
+     */
+    public async readAtHead<T>(
+        read: (blockTag: number) => Promise<T>
+    ): Promise<{ blockNumber: number; value: T }> {
+        const blockNumber = await this.getProvider().getBlockNumber();
+        return { blockNumber, value: await read(blockNumber) };
     }
 
     public async readPinnedChainMembership(

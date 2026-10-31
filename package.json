@@ -211,10 +211,22 @@
       "import": "./dist/src/internalRoot.js",
       "default": "./dist/src/internalRoot.js"
     },
+    "./host-root": {
+      "types": "./dist/src/hostRoot.d.ts",
+      "browser": "./dist/browser/src/hostRoot.js",
+      "node": "./dist/src/hostRoot.js",
+      "import": "./dist/src/hostRoot.js",
+      "default": "./dist/src/hostRoot.js"
+    },
     "./test-harness": {
       "types": "./dist/test-harness.d.ts",
       "import": "./dist/test-harness.js",
       "default": "./dist/test-harness.js"
+    },
+    "./test-harness/control": {
+      "types": "./dist/test-harness-control.d.ts",
+      "import": "./dist/test-harness-control.js",
+      "default": "./dist/test-harness-control.js"
     },
     "./browser-harness/chromium-launch": "./test/browser/chromiumLaunch.js",
     "./browser-harness/local-discovery-relay-hub": "./test/browser/localDiscoveryRelayHub.mjs",

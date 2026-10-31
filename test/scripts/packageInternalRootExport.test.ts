@@ -1,6 +1,6 @@
+import { loadedModules } from "@test/utils/loadedModules";
 import { repoRoot as findRepoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
-import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
 
@@ -14,21 +14,6 @@ const INTERNAL_ROOT_RUNTIME_EXPORTS = [
     "createRoot",
     "startRootWorker"
 ];
-
-/** The modules a fresh node process holds after requiring `specifier`. */
-function loadedModules(specifier: string): string[] {
-    const output = execFileSync(
-        process.execPath,
-        [
-            "--eval",
-            `require(${JSON.stringify(specifier)}); console.log(JSON.stringify(Object.keys(require.cache)));`
-        ],
-        { cwd: repoRoot, encoding: "utf8" }
-    );
-    return (JSON.parse(output.trim().split("\n").pop()!) as string[]).map(
-        (file) => file.split(path.sep).join("/")
-    );
-}
 
 /** The P2P runtime host, its relay, and the packages that create WASM at import. */
 function runtimeModules(modules: string[]): string[] {

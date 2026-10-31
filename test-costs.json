@@ -2966,9 +2966,9 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-OlderDisputeNewerState.test.ts|E2E: older dispute after sync to a newer finalized state E43: a fresh pending auditor answers a departed but chain-eligible participant's older dispute with its own newer state and posted auditing data, and the reduction selects it": {
-      "durationMs": 36742,
-      "avgCores": 0.749,
-      "peakRssGb": 1.219,
+      "durationMs": 28670,
+      "avgCores": 1.035,
+      "peakRssGb": 1.521,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path a late joiner's exit post that runs after its co-leavers' exits closed the channel posts nothing and does not fail, and its runtime stays alive and leaves": {
@@ -4226,9 +4226,9 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/E2E-MilestoneProofStart.test.ts|E2E: dispute validation / milestone proof start E10: auditors with different final points E10: posted data, the row of an earlier milestone above the chain anchor is the head's snapshot → the earlier-start auditor kills it on chain from the posted data; newer-start auditors accept": {
-      "durationMs": 37136,
-      "avgCores": 1.287,
-      "peakRssGb": 1.332,
+      "durationMs": 28543,
+      "avgCores": 0.884,
+      "peakRssGb": 1.26,
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/E2E-MilestoneProofStart.test.ts|E2E: dispute validation / milestone proof start E15: balance judged on the unfinalized latest state E15 control: the same blind pending auditor with the real final head and its correct tail (a good balance invariant), posted data → the tail replays on the head and every auditor accepts the dispute": {
@@ -4250,9 +4250,9 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/E2E-MilestoneProofStart.test.ts|E2E: dispute validation / milestone proof start E32: malformed material below the trusted anchor E32: the same skipped malformed prefix with a latest state that breaks the balance invariant, audited by a pending auditor without a final block at the forged head → the balance counter still kills the dispute, then DisputeConflictsWithFinalState kills the colluders' real-head disputes": {
-      "durationMs": 38021,
-      "avgCores": 1.196,
-      "peakRssGb": 1.613,
+      "durationMs": 29006,
+      "avgCores": 1.34,
+      "peakRssGb": 1.561,
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/E2E-MilestoneProofStart.test.ts|E2E: dispute validation / milestone proof start E36: malformed retained input through the full audit path E36: omitted data, an unrecoverable confirmation signature on the unfinalized block after the anchor → DisputeInvalidStateProof kills the dispute and slashes its submitter": {
@@ -7442,9 +7442,9 @@
       "measurementReason": null
     },
     "hardhat|test/rpc/ARpcService.test.ts|ANetworkRpcService bypasses guards through the real loopback transport": {
-      "durationMs": 7134,
-      "avgCores": 0.998,
-      "peakRssGb": 0.578,
+      "durationMs": 3402,
+      "avgCores": 1.33,
+      "peakRssGb": 0.591,
       "measurementReason": null
     },
     "hardhat|test/rpc/ARpcService.test.ts|ANetworkRpcService consumes a guarded one-way call without constructing or invoking its endpoint": {
@@ -14011,6 +14011,54 @@
       "peakRssGb": 0.081,
       "measurementReason": null
     },
+    "hardhat|test/scripts/packageHostRootExport.test.ts|package host-root export exports exactly the host root, as the same value as the package index": {
+      "durationMs": 799,
+      "avgCores": 1.039,
+      "peakRssGb": 0.163,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageHostRootExport.test.ts|package host-root export loads no EVM": {
+      "durationMs": 1368,
+      "avgCores": 0.577,
+      "peakRssGb": 0.177,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageHostRootExport.test.ts|package host-root export loads the EVM factory through the package index": {
+      "durationMs": 984,
+      "avgCores": 0.732,
+      "peakRssGb": 0.182,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageHostRootExport.test.ts|package host-root export mirrors the package index's export targets for every condition": {
+      "durationMs": 387,
+      "avgCores": 0.904,
+      "peakRssGb": 0.082,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageHostRootExport.test.ts|package host-root export resolves the host-root subpath to the built entry": {
+      "durationMs": 464,
+      "avgCores": 0.56,
+      "peakRssGb": 0.075,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageIndexLazyModules.test.ts|package index lazy modules loads no EVM until an EVM is created": {
+      "durationMs": 1876,
+      "avgCores": 0.661,
+      "peakRssGb": 0.193,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageIndexLazyModules.test.ts|package index lazy modules loads no axios": {
+      "durationMs": 1059,
+      "avgCores": 0.793,
+      "peakRssGb": 0.184,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageIndexLazyModules.test.ts|package index lazy modules recognizes an axios error exactly as axios does": {
+      "durationMs": 363,
+      "avgCores": 0.992,
+      "peakRssGb": 0.089,
+      "measurementReason": null
+    },
     "hardhat|test/scripts/packageInternalRootExport.test.ts|package internal-root export exports exactly the internal root API, as the same values as the package index": {
       "durationMs": 960,
       "avgCores": 0.719,
@@ -16940,9 +16988,9 @@
       "measurementReason": null
     },
     "hardhat|test/unit/AgreementManagerVerificationTiers.test.ts|Unit: AgreementManager verification tiers U30: the chain walk fails on the node RPC connection → verification throws instead of returning an invalid verdict": {
-      "durationMs": 18359,
-      "avgCores": 0.875,
-      "peakRssGb": 0.805,
+      "durationMs": 25659,
+      "avgCores": 1.346,
+      "peakRssGb": 0.965,
       "measurementReason": null
     },
     "hardhat|test/unit/AgreementManagerVerificationTiers.test.ts|Unit: AgreementManager verification tiers U30: the local finalized tier throws (storage lacks a required participant-change block) → verification throws, no later tier runs": {
@@ -17348,9 +17396,9 @@
       "measurementReason": null
     },
     "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager past blocks queue expiry: a queued block whose height became free below the next height → dropped: no sync probe, no queue entry or stored block, no source cut, no fraud proof": {
-      "durationMs": 10984,
-      "avgCores": 0.738,
-      "peakRssGb": 0.814,
+      "durationMs": 8325,
+      "avgCores": 1.477,
+      "peakRssGb": 1.224,
       "measurementReason": null
     },
     "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager past blocks restore: a dequeued entry whose height became free below the next height → settled as past: processed, not queued again, no new queue timeout": {
@@ -20162,9 +20210,9 @@
       "measurementReason": null
     },
     "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService a non-timeout dispute refused as early does not schedule a timeout retry": {
-      "durationMs": 11179,
-      "avgCores": 0.973,
-      "peakRssGb": 0.775,
+      "durationMs": 7379,
+      "avgCores": 1.268,
+      "peakRssGb": 0.909,
       "measurementReason": null
     },
     "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService early chain timestamp refusal receipt refused once → rolls back and commits the retry": {
@@ -20252,9 +20300,9 @@
       "measurementReason": null
     },
     "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService posted block → forced only on rejection a forced check for a height whose previous block is not stored → returns without disputing or rescheduling": {
-      "durationMs": 13990,
-      "avgCores": 1.047,
-      "peakRssGb": 0.781,
+      "durationMs": 8171,
+      "avgCores": 1.34,
+      "peakRssGb": 0.949,
       "measurementReason": null
     },
     "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService posted block → forced only on rejection a plain check meets a valid posted block still in confirmation → no dispute, then the block is stored": {
@@ -21008,9 +21056,9 @@
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateSyncProofStart.test.ts|Unit: SpectateService sync proof verification order U96/U116: a milestone wholly below the anchor with an undecodable inner block → skipped unchecked, accepted, none of its material stored": {
-      "durationMs": 18956,
-      "avgCores": 1.067,
-      "peakRssGb": 1.002,
+      "durationMs": 10494,
+      "avgCores": 1.397,
+      "peakRssGb": 1.218,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateSyncProofStart.test.ts|Unit: SpectateService sync proof verification order U96: a checked block whose author signature is another participant's real signature over it → rejected, milestones invalid, responder blacklisted, nothing of the proof stored": {
@@ -21023,6 +21071,18 @@
       "durationMs": 16265,
       "avgCores": 1.015,
       "peakRssGb": 1.004,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateSyncProofStart.test.ts|Unit: SpectateService sync proof verification order a fresh requester whose RPC node lags the second exit's snapshot that its local diamond already applied → the lagged reads do not move its local anchor back, the responder's run above that anchor links, the sync completes and nobody is blacklisted": {
+      "durationMs": 18942,
+      "avgCores": 1.339,
+      "peakRssGb": 1.119,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateSyncProofStart.test.ts|Unit: SpectateService sync proof verification order a peer whose RPC node lags the second exit's snapshot that its local diamond already applied refreshes its opened status → the lagged read does not move its local anchor back": {
+      "durationMs": 12028,
+      "avgCores": 0.928,
+      "peakRssGb": 0.988,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateSyncProofStart.test.ts|Unit: SpectateService sync proof verification order a spectator whose compact sync installs above a gossiped block still in its queue → that block is dropped: no abort, the honest sender is not blacklisted, it keeps following": {

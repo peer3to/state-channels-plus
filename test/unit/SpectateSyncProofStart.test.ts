@@ -3,6 +3,8 @@ import StateSnapshot from "@/models/StateSnapshot";
 import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
 import {
     forgedOutboundBlock,
+    lagChainSnapshotReads,
+    stageAnchorAdvancedPastFirstExit,
     stageAnchoredSyncPayload,
     stageOutboundAroundAnchor
 } from "@test/fixtures/HistoricSyncStaging";
@@ -214,6 +216,62 @@ describe("Unit: SpectateService sync proof verification order", function () {
                     auditingData
                 )
             ).to.equal(true);
+        });
+    });
+
+    it("a fresh requester whose RPC node lags the second exit's snapshot that its local diamond already applied → the lagged reads do not move its local anchor back, the responder's run above that anchor links, the sync completes and nobody is blacklisted", async function () {
+        const h = TestSession.getHarness();
+        const { forkId, remaining, blockBeforePost } =
+            await stageAnchorAdvancedPastFirstExit(h, { finalBlocks: 2 });
+        await withHeldFreshRequester(h, async (requester) => {
+            await lagChainSnapshotReads(h, requester, blockBeforePost);
+            const outcome = await applyPayloads(
+                h,
+                requester,
+                String(forkId),
+                ["served"],
+                { responderIndex: remaining[0] }
+            );
+            expect(outcome.rejections).to.deep.equal([]);
+            expect(outcome.outcomes[0]).to.deep.include({
+                accepted: true,
+                threw: ""
+            });
+        });
+    });
+
+    it("a peer whose RPC node lags the second exit's snapshot that its local diamond already applied refreshes its opened status → the lagged read does not move its local anchor back", async function () {
+        const h = TestSession.getHarness();
+        const { blockBeforePost } = await stageAnchorAdvancedPastFirstExit(h, {
+            finalBlocks: 2
+        });
+        await withHeldFreshRequester(h, async (requester) => {
+            const readAnchor = () =>
+                h.execOnHost(
+                    requester,
+                    async (sm, args) => {
+                        const snapshot =
+                            await sm.diamondStateMachine.localDiamondContract.getStateSnapshot(
+                                args.channelId
+                            );
+                        return Number(
+                            snapshot.snapshotData
+                                .latestOutboundMessageBlockHeight
+                        );
+                    },
+                    { channelId: h.channelId }
+                );
+            await waitFor(
+                async () => (await readAnchor()) === 2,
+                h.event.protocolEventTimeoutMs()
+            );
+            await lagChainSnapshotReads(h, requester, blockBeforePost);
+
+            await h.execOnHost(requester, async (sm) => {
+                await sm.refreshOpenedStatusFromChain();
+            });
+
+            expect(await readAnchor()).to.equal(2);
         });
     });
 

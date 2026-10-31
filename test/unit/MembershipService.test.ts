@@ -74,14 +74,18 @@ describe("Unit: MembershipService", function () {
                 const before = sources.map((source) =>
                     sm.membershipService.getCachedSourceEligibility(source)
                 );
-                const snapshot =
-                    await sm.stateChannelManagerContract.getStateSnapshot(
-                        sm.channelId
+                const { blockNumber, value: snapshot } =
+                    await sm.eventSyncService.readAtHead((blockTag) =>
+                        sm.stateChannelManagerContract.getStateSnapshot(
+                            sm.channelId,
+                            { blockTag }
+                        )
                     );
+                // applied as its block's last log (END_OF_BLOCK_LOG_INDEX)
                 await sm.eventHandler.onChannelStorageCleared(
                     sm.channelId,
                     snapshot.snapshotData.latestInboundMessageBlockHash,
-                    { blockNumber: 0, logIndex: 0 }
+                    { blockNumber, logIndex: Number.MAX_SAFE_INTEGER }
                 );
                 return {
                     before,

@@ -141,6 +141,8 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114` — a sync call with no explicit timeout gets a request deadline of two agreement windows: a responder that does not answer in time fails it only after two windows
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P115` — a responder that answers it is still in its own initial sync: `requestSync` returns `SyncResult.ResponderSyncing` at once, the requester keeps the connection with no strike, and neither side blacklists the other
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P116` — one still-syncing answer shared by a `requestSync` caller and three `syncBlockSource` callers: one request, `requestSync` returns `SyncResult.ResponderSyncing`, every `syncBlockSource` returns false, and the requester counts one strike with no blacklist
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P117` — a fresh requester whose RPC node lags one block behind the newer exit snapshot its local diamond already applied from the chain's log: the sync's pinned chain read at the lagged head loses the event ordering and leaves the local anchor, the responder's outbound run above that anchor links, and the sync completes with no rejection
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P118` — the same lagging node under the opened-status refresh (`StateManager.refreshOpenedStatusFromChain`): its pinned `isChannelOpen` read at the lagged head loses the event ordering and the local anchor keeps the newer exit snapshot
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 

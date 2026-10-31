@@ -677,6 +677,42 @@ backoff). Gaps seen in the code:
 
 **Disposition:** Open; engineer decision on the trigger needed before implementation.
 
+## Sync rejection blacklist
+
+<a id="find-sync-blacklist-1-63namv"></a>
+
+### FIND-SYNC-BLACKLIST-1-63NAMV
+
+**Defect:** _Open (2026-10-31, engineer reassessment requested; not implemented)._ Every rejected
+sync payload blacklists its responder for the rest of the runtime's life.
+`SpectateService.rejectSync`
+([SpectateService.ts](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md))
+calls `P2PManager.disconnectAndBlacklistPeerByEvmAddress` for each rejection reason, and nothing
+outside tests calls `ProfileManager.unblacklistPeer`
+([ProfileManager.ts](../implementation/source/src/ProfileManager.ts.md)). Every later handshake
+from that address fails with "response signer is blacklisted", including the handshakes of a new
+runtime of the same identity that joins again. So one false rejection of an honest responder locks
+it out until the rejecting runtime is disposed.
+
+**Observed (2026-10-31, liquidity table game1):** a runtime that joined right after the table was
+reopened rejected a seated peer's payload as "latest-fork outbound blocks invalid" in the same
+second the temporary opener posted a state snapshot. The responder went bust later, and every
+rejoin of the same identity failed for about 3 hours (about 400 attempts, "the join confirmation
+could not be collected") until the rejecting bot was restarted. The rejection itself is most likely
+the outbound-run anchor race (the responder trims the latest fork's outbound blocks at its own
+anchor while the requester checks them from its older chain anchor); that defect is tracked and
+fixed separately.
+
+**Engineer note (Luka, 2026-10-31):** a permanent blacklist is probably too harsh; take it easier
+and reassess whether blacklisting on a rejected sync is a good idea at all. No change now.
+
+**Open design point:** which rejections prove misbehavior (a payload that cannot be honest from any
+point of view) and which can follow from a timing difference between two honest views (anchors,
+snapshot posts, RPC node lag); whether a timing-dependent rejection should only disconnect, or
+blacklist for a bounded time; and whether a new runtime of the same identity should start clean.
+
+**Disposition:** Open; engineer decision needed before implementation.
+
 ## Implementation defects with a proposed direction
 
 Distinct from open questions: for these, the finding is verified in code and a reasonable
@@ -2062,6 +2098,36 @@ outcome. Related:
 [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed),
 [`FIND-SYNC-7-SHT5K7`](open-findings.md#find-sync-7-sht5k7), open question
 [`OQ-SPEC-SYNC-STALE-1-CJTJ6S` (Too-old sync and fork-adoption blacklist policy)](../specification/open-questions.md#oq-spec-sync-stale-1-cjtj6s).
+
+**Fixed variant (2026-10-31):** a lagging RPC node moved the requester's local anchor back. Chain
+logs reach a peer from every node, but a read goes to one node, which can be behind a snapshot log
+already applied. `fetchAndPersistOnChainSnapshot` and `StateManager.refreshOpenedStatusFromChain`
+wrote their reads to the local diamond as `(0, 0)`, which `LocalDiamond` applies without ordering, so
+the older answer replaced the newer anchor. The responder had served the latest-fork outbound run
+above that newer anchor, the check from the older one failed "latest-fork outbound blocks invalid",
+and the honest responder was blacklisted (seen on liquidity table game1; the lockout itself is
+[`FIND-SYNC-BLACKLIST-1-63NAMV`](open-findings.md#find-sync-blacklist-1-63namv)). Both reads now go
+through `EventSyncService.readAtHead`, pinned to one chain block, and are applied as that block's last
+log (`END_OF_BLOCK_LOG_INDEX`), so an older answer loses the event ordering; the sync checks from the
+snapshot the local diamond then holds. `LocalDiamond` no longer applies a `(0, 0)` coordinate
+unconditionally: no caller is left.
+Tests: [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P117`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct)
+(the sync) and [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P118`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct) (the opened-status refresh).
+
+**Remaining variants (code-traced, not executed):**
+
+1. The anchor now comes from the local diamond, which the fastest node's logs move, while the sync's
+   later chain reads (window finality, dispute windows, the chain proof tier, the balance invariant)
+   still go unpinned to one node. At a fork change (the window of F1 reduced to F2 and the F2 snapshot
+   posted), a requester that applied the F2 log but whose node is still before the reduction rejects an
+   honest responder anchored on F1 with "dispute window not linked". Directions: end such a sync with
+   no verdict when the pinned read is older than the mirror, or pin the later reads to the same block.
+2. A pinned read whose node fails over between the block-number read and the read reaches a node
+   behind that block, and the read fails: the sync throws, and the opened-status refresh keeps its
+   status (its catch). `readPinnedChainMembership` already takes the same risk.
+3. The ordering is per event family: a `ChannelStorageCleared` log does not move the snapshot family's
+   coordinate, so a pinned read from a node behind the clear block, but after the last snapshot log,
+   writes back the cleared snapshot. Not new: the old `(0, 0)` write did the same.
 
 **Candidate directions (not chosen; the fix must stay simple):**
 

@@ -270,11 +270,6 @@ contract LocalDiamond is StateChannelManagerProxy {
         private
         returns (bool)
     {
-        // (0, 0) is a trusted local reconciliation, not an observed event.
-        // Apply it unconditionally without changing the latest real event
-        // coordinate used for ordering and deduplication.
-        if (blockNumber == 0 && logIndex == 0) return true;
-
         bytes32 key = keccak256(abi.encode(family, scope));
         EventCoordinate storage latest = latestEventCoordinates[channelId][key];
         if (blockNumber < latest.blockNumber || (blockNumber == latest.blockNumber && logIndex <= latest.logIndex)) {

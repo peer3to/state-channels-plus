@@ -35,6 +35,12 @@ export type EventCoordinate = {
     logIndex: number;
 };
 
+/**
+ * A log index after every log of its block: a chain read pinned at a block
+ * holds all of that block's logs, so it orders as that block's last log.
+ */
+export const END_OF_BLOCK_LOG_INDEX = Number.MAX_SAFE_INTEGER;
+
 export class EventHandler {
     private logger: Logger;
     private disputeHandlingPromises = new Map<Hash, Promise<void>>();

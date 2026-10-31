@@ -14,7 +14,6 @@ import { LogStore } from "./logStore";
 import { config as globalConfig } from "../config";
 import { abortableSleep, retry } from "../retry";
 import { settleBy } from "../settleBy";
-import axios from "axios";
 import { ethers } from "ethers";
 
 export type LogUploaderOptions = {
@@ -300,6 +299,8 @@ export abstract class LogUploader {
             console.trace(
                 `Log uploading started. uploadId=${uploadId} channelId=${channelId} peerAddress=${peerAddress} Raw size: ${rawLogsSize / 1e6}MB, Compressed size: ${compressedLogsSize / 1e6}MB.`
             );
+            // Loaded on the first upload: most threads never upload.
+            const { default: axios } = await import("axios");
             const response = await retry(
                 () =>
                     axios.post(
