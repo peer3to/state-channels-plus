@@ -22,6 +22,10 @@ explicit black-box plan and permutation set; the newly added clock-boundary, sep
 and opened-non-participant permutations are planned but not yet covered by executable evidence;
 engineer disposition remains pending.
 
+## Storage diff service — 2026-10-31
+
+[storage-diff-service.md](../specification/runtime/storage-diff-service.md) is a new subject (the `REQ-SDS-*` requirements). It records the engineer's settled decisions: peers keep a local mirror fed by a shared service to cut RPC calls (target Polkadot Asset Hub, pallet-revive with its Ethereum RPC), phase 1 has no proofs and no gossip, and the snapshot statuses are `ready`, `syncing` and `lazy`. Its requirements are reverse-engineered from the service's behavior and tests and are not engineer-approved. Two limits are raised as questions instead of decided: whether an unauthenticated, loopback-by-default service is acceptable ([`OQ-SPEC-SDS-1-Q6T63H`](../specification/open-questions.md#oq-spec-sds-1-q6t63h)) and whether state changed outside a block's traced keys must be detected ([`OQ-SPEC-SDS-2-HJS9DY`](../specification/open-questions.md#oq-spec-sds-2-hjs9dy)). Engineer disposition remains pending.
+
 ## 2026-10-26 — Application chain access, local join-signature answers, closed-transport frames
 
 Luka decided these in the shared poker client manager plan (poker-contracts

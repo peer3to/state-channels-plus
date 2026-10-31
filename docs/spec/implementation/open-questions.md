@@ -38,6 +38,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-IMPL-CLOSE-RESIDUAL-1-W05638`](open-questions.md#oq-impl-close-residual-1-w05638)                 | Residual funds when a channel closes                                                                                              | Code                                          | [StateSnapshotFacet](source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md)                                                                                                          | Open                                                   |
 | [`OQ-IMPL-DISPUTE-CALLDATA-1-S2XEBS`](open-questions.md#oq-impl-dispute-calldata-1-s2xebs)             | Should a reused dispute omit auditing calldata that later becomes optional?                                                       | Luka, review 5 FY2                            | [DisputeBuilder](source/src/disputeManager/DisputeBuilder.ts.md), [data availability](../specification/security/data-availability.md)                                                                 | Future; non-blocking; low priority                     |
 | [`OQ-IMPL-SYNC-PROBE-1-1288ZV`](open-questions.md#oq-impl-sync-probe-1-1288zv)                         | Duplicate probe sync during a runtime's initial sync                                                                              | Shared poker client manager plan (2026-10-26) | [BlockQueueManager](source/src/stateManager/ingest/BlockQueueManager.ts.md), [synchronization.md](../specification/peer-communication/synchronization.md)                                             | Recorded (likely not a problem)                        |
+| [`OQ-IMPL-SDS-1-XP37Y4`](open-questions.md#oq-impl-sds-1-xp37y4)                                       | The child trie block source does not check that the chain stayed one chain between root reads                                     | Storage diff service lane (2026-10-31)        | [ChildTrieBlockSource.ts](source/src/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource.ts.md), [storage-diff-service.md](../specification/runtime/storage-diff-service.md)                   | Open                                                   |
 
 <a id="oq-impl-dispute-calldata-1-s2xebs"></a>
 
@@ -454,3 +455,11 @@ waits for a running initial sync. Blocking effect: none; the cost is repeated ch
 decision: only if it shows up as a cost, whether a probe sync should wait for a running initial sync.
 Owner: [implementation report](source/src/stateManager/ingest/BlockQueueManager.ts.md); affected:
 [synchronization](../specification/peer-communication/synchronization.md).
+
+<a id="oq-impl-sds-1-xp37y4"></a>
+
+## OQ-IMPL-SDS-1-XP37Y4 — The child trie block source does not check that the chain stayed one chain between root reads
+
+`ChildTrieBlockSource` bisects the child trie root of a contract on the Substrate node with many reads and checks only that the tip block did not change during the bisection. A reorganization between two root reads inside the range is not detected there. The completeness count of [`REQ-SDS-9-ZRPZZW` (A subscription is anchored by a complete snapshot, or told none is coming)](../specification/runtime/storage-diff-service.md#req-sds-9-zrpzzw) catches a wrong result only when it changes the number of entries.
+
+Owner: [implementation report](source/src/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource.ts.md). Requested engineer decision: whether the source must pin every read to the block hash it read at the tip, or the count check is the accepted guard.

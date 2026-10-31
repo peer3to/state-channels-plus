@@ -8,9 +8,11 @@
 
 ## UNIT-TEST-RETRY-1-19CEJ1
 
-An abort ends a pending retry delay at once and starts no further attempt.
+An abort ends a pending retry delay at once and starts no further attempt, and an error `shouldRetry` refuses is rethrown at once.
 
 - Setup: Call `retry` with a function that always rejects, `maxRetries: 3`, a 5 s `delayMs` and an abort signal; abort once `onRetry` reports the first failure, so the abort lands inside the delay.
-- Oracle: The call rejects with the function's own error within 1 s of the abort, well before the 5 s delay, and the function ran exactly once.
+- Oracle: The call rejects with the function's own error within 1 s of the abort, well before the 5 s delay, and the function ran exactly once. With `shouldRetry`, a refused error rejects after one attempt and an accepted one is retried until an attempt succeeds.
 
 - [x] `UNIT-TEST-RETRY-1-19CEJ1.P1` — an abort during the retry delay rejects at once with the last error, after one attempt
+- [x] `UNIT-TEST-RETRY-1-19CEJ1.P2` — an error `shouldRetry` refuses rejects at once, after one attempt
+- [x] `UNIT-TEST-RETRY-1-19CEJ1.P3` — an error `shouldRetry` accepts is retried until an attempt succeeds

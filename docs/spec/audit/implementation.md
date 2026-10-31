@@ -3,6 +3,10 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## Storage diff service — 2026-10-31
+
+Every file of the service has a file report under `implementation/source/src/utils/node/storageDiff/` and `implementation/source/src/utils/storageDiff/`. [ChildTrieBlockSource.ts](../implementation/source/src/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource.ts.md) records one `Partial` against [`REQ-SDS-9-ZRPZZW` (A subscription is anchored by a complete snapshot, or told none is coming)](../specification/runtime/storage-diff-service.md#req-sds-9-zrpzzw) (no chain-stays-one-chain check between root reads, [`OQ-IMPL-SDS-1-XP37Y4`](../implementation/open-questions.md#oq-impl-sds-1-xp37y4)). [StorageDiffService.ts](../implementation/source/src/utils/node/storageDiff/StorageDiffService.ts.md) records one `Partial` against [`REQ-SDS-4-ZZDEVF` (Reported values are the chain's own, not the tracer's)](../specification/runtime/storage-diff-service.md#req-sds-4-zzdevf) for state changed outside traced keys ([`OQ-SPEC-SDS-2-HJS9DY`](../specification/open-questions.md#oq-spec-sds-2-hjs9dy)). `retry` gained `shouldRetry`, with two new cases in [`UNIT-TEST-RETRY-1-19CEJ1`](../implementation/source/src/utils/retry.ts.md#unit-test-retry-1-19cej1). Two documentation drifts in the source were found while mirroring and are not fixed here: the doc comment above `scp_getBlock` in `StorageDiffRpcMethods` belongs to `scp_getState`, and `scripts/infra/README.md` lists `scp_getBlock` as `[block, full?]` and omits `scp_getHead` and the `minBlock` parameters the code accepts.
+
 ## Block intake: a still-syncing source takes a counted close — 2026-10-29
 
 What changed: commit `dd162f81` narrowed the 2026-10-26 rule "the requester does not count that as a

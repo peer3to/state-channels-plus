@@ -51,6 +51,8 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-SPEC-JOIN-REJOIN-1-D506RT`](open-questions.md#oq-spec-join-rejoin-1-d506rt)           | Rejoin after eviction collects against the disputed snapshot                                                                                                | Shared poker client manager plan (2026-10-26) | [peer-communication/join-authorization.md](./peer-communication/join-authorization.md)                                                                                                                                     | Open (later)                      |
 | [`OQ-SPEC-REDUCE-SPECTATOR-1-1YWDC5`](open-questions.md#oq-spec-reduce-spectator-1-1ywdc5) | Spectator reduction without the reduced latest state snapshot                                                                                               | Shared poker client manager plan (2026-10-26) | [disputes/dispute-processing.md](./disputes/dispute-processing.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md)                                                                       | Resolved                          |
 | [`OQ-SPEC-RELAY-1-SW2BKP`](open-questions.md#oq-spec-relay-1-sw2bkp)                       | Confirmation re-broadcast volume delays counter-signatures past the agreement window                                                                        | Six-player browser game (2026-10-27)          | [peer-communication/block-gossip.md](./peer-communication/block-gossip.md)                                                                                                                                                 | Open (later)                      |
+| [`OQ-SPEC-SDS-1-Q6T63H`](open-questions.md#oq-spec-sds-1-q6t63h)                           | Is an unauthenticated storage diff service acceptable beyond loopback in phase 1?                                                                           | Storage diff service lane (2026-10-31)        | [runtime/storage-diff-service.md](./runtime/storage-diff-service.md)                                                                                                                                                       | Open                              |
+| [`OQ-SPEC-SDS-2-HJS9DY`](open-questions.md#oq-spec-sds-2-hjs9dy)                           | State changed outside a block's traced transaction keys is not seen                                                                                         | Storage diff service lane (2026-10-31)        | [runtime/storage-diff-service.md](./runtime/storage-diff-service.md), [StorageDiffService.ts](../implementation/source/src/utils/node/storageDiff/StorageDiffService.ts.md)                                                | Open                              |
 
 ## Register assumptions and constraints
 
@@ -846,3 +848,19 @@ implementation
 ([BlockValidationStrategy](../implementation/source/src/stateManager/validationStrategy/BlockValidationStrategy.ts.md),
 [BlockQueueManager](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md),
 [CalldataPostingService](../implementation/source/src/stateManager/chainFallback/CalldataPostingService.ts.md)).
+
+<a id="oq-spec-sds-1-q6t63h"></a>
+
+## OQ-SPEC-SDS-1-Q6T63H — Is an unauthenticated storage diff service acceptable beyond loopback in phase 1?
+
+The service has no authentication, no proofs and no gossip: any connection may subscribe and read everything it retains, and peers trust its answers as they trust their RPC node. It binds to loopback by default and a wider binding is left to the operator. The recorded decision is that peers keep a local mirror fed by the service in phase 1, without proofs or gossip. It does not say whether the specification should require authentication, a binding restriction or peer-side checks before the service is reachable from a network, or whether the operator-responsibility wording is the accepted limit.
+
+Owner: [storage-diff-service.md](./runtime/storage-diff-service.md), assumptions and security sections ([`REQ-SDS-1-TXEY33` (A subscription receives one record per canonical block)](runtime/storage-diff-service.md#req-sds-1-txey33)). Requested engineer decision: accept the unauthenticated, loopback-by-default service as the phase 1 limit, or name the access rule the specification must require.
+
+<a id="oq-spec-sds-2-hjs9dy"></a>
+
+## OQ-SPEC-SDS-2-HJS9DY — State changed outside a block's traced transaction keys is not seen
+
+The service learns which slots and accounts a block changed from the transactions' traces. State a block changes outside them (system calls, withdrawals) is not seen, and the cache is never evicted, so a cached value can stay wrong until a reorganization clears it. The specification lists this as an assumption; nothing says whether a conforming service must detect it, and the entry-count check of [`REQ-SDS-9-ZRPZZW`](runtime/storage-diff-service.md#req-sds-9-zrpzzw) covers only storage written by traced transactions of a backfilled contract.
+
+Owner: [`REQ-SDS-4-ZZDEVF` (Reported values are the chain's own, not the tracer's)](runtime/storage-diff-service.md#req-sds-4-zzdevf) and [`REQ-SDS-7-PZCBQ9` (State reads come from one shared cache)](runtime/storage-diff-service.md#req-sds-7-pzcbq9). Requested engineer decision: accept this as a phase 1 limit, or require detection (for example a periodic recount or a cache expiry).
