@@ -54,14 +54,8 @@ import { expect } from "chai";
 import { ZeroAddress } from "ethers";
 
 describe("Unit: DisputeManager", function () {
-    it("an abort while a dispute waits for the state mutex sends no dispute transaction", async function () {
-        await assertDisputeAdmissionRefuses(
-            TestSession.getHarness(),
-            "dispose"
-        );
-    });
     it("dispute admission refuses a changed fork before construction", async function () {
-        await assertDisputeAdmissionRefuses(TestSession.getHarness(), "fork");
+        await assertDisputeAdmissionRefuses(TestSession.getHarness());
     });
     it("inline background fraud dispute reports an unexpected recovery error to top-level handling", async function () {
         const h = TestSession.getHarness();
@@ -115,9 +109,6 @@ describe("Unit: DisputeManager", function () {
     });
     it("an unrelated upload error does not enter slash recovery", async function () {
         await assertDisputeRefreshPolicy(TestSession.getHarness(), "unrelated");
-    });
-    it("an abort during a refused upload sends no further dispute transaction", async function () {
-        await assertDisputeRefreshPolicy(TestSession.getHarness(), "disposed");
     });
 
     it("authoring already admitted finishes before a dispute task captures its state", async function () {

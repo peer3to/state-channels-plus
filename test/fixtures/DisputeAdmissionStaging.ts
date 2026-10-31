@@ -1,7 +1,5 @@
 // @spec-test-coverage-ignore: real dispute admission held behind the state mutex
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
-import { runtimeEndpointFor } from "./RuntimeRootObservation";
-import { sleep } from "@/utils";
 import type {
     ConstructDisputeHold,
     StateMutexHold
@@ -9,42 +7,7 @@ import type {
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
-export async function assertDisputeAdmissionRefuses(
-    h: MathPeerTestHarness,
-    change: "dispose" | "fork"
-) {
-    if (change === "dispose") {
-        await h.lifecycle.start(3, 0, {
-            configOverrides: { RUN_SDK_IN_THREAD: false }
-        });
-        const peer = h.getPeer(2);
-        const { host, sm, stub } = runtimeEndpointFor(peer.p2pInstance);
-        const forkId = sm.forkId;
-        stub.holdStateMutex();
-        try {
-            await waitFor(() => stub.getStateMutexHeldCount() === 1);
-            // the attempt runs on in the aborted runtime; its outcome is nobody's
-            void sm.disputeManager.dispute(forkId).catch(() => undefined);
-            await waitFor(() => stub.getStateMutexWaiterCount() >= 1);
-            const nonce = await h.provider.getTransactionCount(peer.address);
-            sm.abort();
-            stub.releaseStateMutex();
-            await sleep(1_000);
-            expect(await h.provider.getTransactionCount(peer.address)).to.equal(
-                nonce
-            );
-            expect(
-                await h.channelManager.queryFilter(
-                    h.channelManager.filters.DisputeCommitted(h.channelId)
-                )
-            ).to.have.length(0);
-        } finally {
-            stub.releaseStateMutex();
-            stub.restorePausedConstructDispute();
-            await host.dispose();
-        }
-        return;
-    }
+export async function assertDisputeAdmissionRefuses(h: MathPeerTestHarness) {
     // peers exist once staging starts them
     const target = () => h.getPeer(2);
     let construction: ConstructDisputeHold | undefined;

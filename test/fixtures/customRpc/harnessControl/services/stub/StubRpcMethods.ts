@@ -2421,11 +2421,9 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     public cancelScheduledReductions(): boolean {
-        const sm = this.service.sm;
-        const timeouts = sm.reductionManager["timeouts"];
-        for (const timeout of timeouts.values())
-            sm.timeoutManager.cancelTask(timeout.handle);
-        timeouts.clear();
+        const reductionManager = this.service.sm.reductionManager;
+        for (const forkId of [...reductionManager["timeouts"].keys()])
+            reductionManager.settleForkLeft(forkId);
         return true;
     }
 

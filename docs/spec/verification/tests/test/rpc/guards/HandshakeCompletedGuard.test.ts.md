@@ -10,8 +10,11 @@ transports, profiles, a real service, controlled exact-transport handshake compl
 grace overlap, retirement, late dispatch after close, timeout, and manager disposal. The closed-
 transport case proves local retirement cannot execute the frame or punish a healthy replacement.
 The real-shutdown case defers a guarded call on a negotiating transport onto the real handshake wait, then
-runs `StateManager.stop`, which settles that wait with `false` before the P2P manager is disposed; it asserts
-the call never ran, the transport was not closed, and no blacklist or retry-bound strike was recorded.
+runs the host root's disposal order inside the runtime (the network cut, then `StateManager.stop`, which
+settles that wait with `false`); it asserts the call never ran, the cut's single close is the only close
+(no disconnect), and no blacklist or retry-bound strike was recorded. It is the one probe that stops a
+runtime by hand: disposing the peer from the test would close the control port before the guard's
+records could be read.
 The request-during-negotiation case uses the real pending-request correlation path and proves no
 premature guard response is sent: the caller settles only after the queued RPC replays once. The
 two waiter-expiry cases read the strike count and the suspension rather than the profile verdict, which is the oracle

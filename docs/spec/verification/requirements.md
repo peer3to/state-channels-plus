@@ -396,7 +396,7 @@ Specification cases tested: 3/3.
 Specification cases tested: 9/9.
 
 [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv)
-Specification cases tested: 39/41. Untested: T1.P37, T1.P39.
+Specification cases tested: 38/40. Untested: T1.P37, T1.P39.
 
 [`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar)
 Specification cases tested: 23/23.

@@ -820,6 +820,8 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
      * The root's disposal order: the cut closes the network, then stopping
      * the producers settles a deferred guarded RPC's handshake wait with
      * false. The RPC is dropped with no verdict and no retry-bound strike.
+     * Runs the order by hand: a real dispose would close the control port
+     * before these records could be read.
      */
     public async probeShutdownDropsDeferredRpc(): Promise<ShutdownDeferredRpcProbe> {
         const address = "0xA000000000000000000000000000000000000015";

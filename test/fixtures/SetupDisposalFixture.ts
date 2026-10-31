@@ -138,8 +138,9 @@ export async function assertDisposalDuringChainReads(
  * build constructs a runtime that it cuts and stops itself, and the setup
  * rejects. A worker host lets the build through at its own cut (its thread
  * ends with the disposal); the test releases an inline host after the
- * disposal settled. No host error is raised, the signer sent nothing, and a
- * fresh runtime for the signer works.
+ * disposal settled. No host error is raised, the signer sent nothing (a
+ * sanity check: the build itself sends no transaction), and a fresh runtime
+ * for the signer works.
  */
 export async function assertDisposalDuringBuild(
     runSdkInThread: boolean

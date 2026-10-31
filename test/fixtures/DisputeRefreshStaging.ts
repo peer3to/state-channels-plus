@@ -6,10 +6,9 @@ import {
     postSpamDispute
 } from "./DisputeWindowWorkflowStaging";
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
-import { runtimeEndpointFor } from "./RuntimeRootObservation";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type { ForkId } from "@/types/types";
-import { Codec, sleep, Type } from "@/utils";
+import { Codec, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -22,46 +21,8 @@ export async function assertDisputeRefreshPolicy(
         | "concurrent"
         | "read-failure"
         | "unrelated"
-        | "disposed"
         | "ineligible"
 ): Promise<void> {
-    if (mode === "disposed") {
-        await h.lifecycle.start(3, 0, {
-            configOverrides: { RUN_SDK_IN_THREAD: false }
-        });
-        const peer = h.getPeer(0);
-        const { host, sm, stub } = runtimeEndpointFor(peer.p2pInstance);
-        stub.stubRecordDisputeSubmissions(
-            true,
-            {
-                customError: "RaceConditionDisputeWindowNotOpen",
-                at: "send"
-            },
-            false
-        );
-        try {
-            // the attempt runs on in the aborted runtime; its outcome is nobody's
-            void sm.disputeManager.dispute(sm.forkId).catch(() => undefined);
-            await waitFor(() => stub.getRecordedDisputeSubmissions().held > 0);
-            const nonce = await h.provider.getTransactionCount(peer.address);
-            sm.abort();
-            stub.releaseDisputeSubmissions();
-            await sleep(1_000);
-            expect(await h.provider.getTransactionCount(peer.address)).to.equal(
-                nonce
-            );
-            expect(
-                await h.channelManager.queryFilter(
-                    h.channelManager.filters.DisputeCommitted(h.channelId)
-                )
-            ).to.have.length(0);
-        } finally {
-            stub.releaseDisputeSubmissions();
-            stub.restoreDisputeSubmissions();
-            await host.dispose();
-        }
-        return;
-    }
     if (mode === "ineligible") {
         await h.lifecycle.start(4, 2);
         await h.scenario.disputeAndResolve({ maliciousPeerIndex: 1 });

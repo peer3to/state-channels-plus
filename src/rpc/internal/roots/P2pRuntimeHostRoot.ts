@@ -566,10 +566,14 @@ export class P2pRuntimeHostRoot<
 
         this.runtimeHandle = { stateManager, evmDiamondStateMachine };
         // a disposal that began during the build missed this runtime: cut
-        // and dispose it here (both repeat safely), and fail the setup
+        // and dispose it here (both repeat safely), with any child root its
+        // custom RPC created after the children step, and fail the setup
         if (this.isDisposing) {
             this.cutOff();
             await stateManager.dispose();
+            await Promise.allSettled(
+                [...this.children].map((child) => child.dispose())
+            );
             throw new RootDisposedError("Runtime disposed during setup");
         }
         steps.mark("stateManager");

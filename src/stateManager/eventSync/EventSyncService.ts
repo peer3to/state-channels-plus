@@ -150,7 +150,7 @@ export default class EventSyncService {
     private channelId: ChannelId;
 
     /** Set by `stop`: no log is dispatched and no channel subscribed after it. */
-    isStopped = false;
+    private stopped = false;
 
     constructor(
         channelId: ChannelId,
@@ -165,6 +165,10 @@ export default class EventSyncService {
         this.logger = logger.child({ component: "EventSyncService" });
     }
 
+    get isStopped(): boolean {
+        return this.stopped;
+    }
+
     setChannelId(channelId: ChannelId): void {
         this.channelId = channelId;
     }
@@ -175,7 +179,7 @@ export default class EventSyncService {
      * a dependency the disposal closes next.
      */
     stop(): void {
-        this.isStopped = true;
+        this.stopped = true;
     }
 
     async waitForScheduled(timeoutMs: number): Promise<void> {
@@ -219,7 +223,7 @@ export default class EventSyncService {
         log: Log,
         scheduledChannelId: ChannelId = this.channelId
     ): Promise<void> {
-        if (this.isStopped) {
+        if (this.stopped) {
             this.logger.debug(
                 "Contract event after stop not dispatched",
                 LoggerUtils.getContractLogMetadata(log)

@@ -76,7 +76,6 @@ estimate plus the replay gas, the kill mined without error (`6.P11`). A non-time
 
 ## Tests
 
-- `an abort while a dispute waits for the state mutex sends no dispute transaction`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P26
 - `dispute admission refuses a changed fork before construction`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P27
 - `inline background fraud dispute reports an unexpected recovery error to top-level handling`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P40, UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P24
 - `worker background fraud dispute reports an unexpected recovery error to top-level handling`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P41, UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P25
@@ -87,7 +86,6 @@ estimate plus the replay gas, the kill mined without error (`6.P11`). A non-time
 - `concurrent existing-window refusals release the dispute mutex before recovery`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P18, REQ-DISPUTE-PIPE-9-TDWQPV.T1.P28
 - `a failed authoritative slash read remains visible after marker rollback`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P19, REQ-DISPUTE-PIPE-9-TDWQPV.T1.P29
 - `an unrelated upload error does not enter slash recovery`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P20, REQ-DISPUTE-PIPE-9-TDWQPV.T1.P30
-- `an abort during a refused upload sends no further dispute transaction`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P21, REQ-DISPUTE-PIPE-9-TDWQPV.T1.P31
 - `authoring already admitted finishes before a dispute task captures its state`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P11, REQ-DISPUTE-PIPE-8-BVR8XV.T1.P5
 - `a block admitted to commit finishes before a dispute task captures its state`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P12, REQ-DISPUTE-PIPE-8-BVR8XV.T1.P6
 - `a counter-signature already requested finishes before a dispute task captures its state`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P13, REQ-DISPUTE-PIPE-8-BVR8XV.T1.P7

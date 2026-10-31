@@ -36,15 +36,22 @@ export async function assertAbortedReductionSendsNothing(
         h.event.protocolEventTimeoutMs()
     );
     const nonce = await h.provider.getTransactionCount(target.address);
-    stub.abortDetached();
-    await waitFor(async () => sm.isDisposed);
-    if (point === "attempt") stub.restoreReductionAttempt();
-    else stub.restoreReductionGenesisApplication();
-    await sleep(1_000);
-    expect(await h.provider.getTransactionCount(target.address)).to.equal(
-        nonce
-    );
-    await host.dispose();
+    // the teardown parks after the cut, so the released attempt runs on a
+    // live executor and provider and only the signer cut stops its send
+    stub.stubHoldRuntimeDisposal();
+    try {
+        stub.abortDetached();
+        await waitFor(async () => sm.isDisposed);
+        if (point === "attempt") stub.restoreReductionAttempt();
+        else stub.restoreReductionGenesisApplication();
+        await sleep(1_000);
+        expect(await h.provider.getTransactionCount(target.address)).to.equal(
+            nonce
+        );
+    } finally {
+        stub.releaseRuntimeDisposal();
+        await host.dispose();
+    }
 }
 
 /**
@@ -81,7 +88,7 @@ export async function assertReadFailureDuringGenesisApplication(
 
     // The application handles the failed read itself: it aborts the state
     // manager and commits nothing; the read error is not the caller's error.
-    expect(stub.getTryReduceOutcome()?.rejected ?? null).to.equal(null);
+    expect(stub.getTryReduceOutcome()?.settled).to.equal(false);
     expect(query.getForkId()).to.equal(sourceForkId);
     expect(query.getStatus()).to.equal(Status.OPENED);
     expect(h.event.getEventCallCount(0, "onSetState")).to.equal(setStateCalls);
