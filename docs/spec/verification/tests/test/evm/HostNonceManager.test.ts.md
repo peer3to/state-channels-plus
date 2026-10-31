@@ -5,7 +5,7 @@ Exercises: [HostNonceManager.ts](../../../../implementation/source/src/evm/signe
 
 ## Overview
 
-The suite drives `HostNonceManager` against a live Hardhat node with fresh funded wallets,
+The suite drives `HostNonceManager` against a live anvil test node with fresh funded wallets,
 calling `sendTransaction`/`connect` directly and controlling mining via `evm_setAutomine`. The
 oracles are the final on-chain nonce sequence, rejection messages, and a stubbed `getNonce` call
 count. The cases prove: a failed middle send's nonce is reused without colliding with concurrent
@@ -25,7 +25,7 @@ recorded; a deployment of init code whose runtime is the single byte `STOP` must
 is read back — and leave the table empty; and a recorder disposed before a send must record
 nothing for it while the send itself still mines.
 
-The remaining seven each own a hardhat node for their whole lifetime, spawned on a free port and
+The remaining seven each own an anvil test node for their whole lifetime, spawned on a free port and
 killed in `finally`, because they need mining turned off or the provider destroyed. A call to a
 deployed always-reverting contract, broadcast with an explicit gas limit so ethers never estimates
 and with automine off so the node cannot throw the revert back at broadcast, must land in the

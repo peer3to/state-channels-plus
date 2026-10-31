@@ -6,7 +6,7 @@ Test file: [test/browser/run-p2p-webrtc-e2e.mjs](../../../../../../test/browser/
 
 The browser job in the CI workflow runs this gate inside the distributed runner image, under the environment's container limits (read-only root, no capabilities, a 256 MB `/tmp`), after installing and compiling in that same container, and reports the peak `/tmp` use. Local runs remain available through the package script. CI execution itself is established only after the workflow runs on a pull request.
 
-The runner behind package script `test:browser:webrtc` stands up a hardhat node (switched to
+The runner behind package script `test:browser:webrtc` stands up an anvil test node (switched to
 interval mining so the browser's parallel HTTP nonce ordering works), a local-discovery relay
 hub, and a Vite dev server with browser platform aliases plus a same-origin `/rpc` proxy, then
 drives `test/browser/p2p-webrtc-e2e.html` in headless Chromium via Playwright. The page runs two
