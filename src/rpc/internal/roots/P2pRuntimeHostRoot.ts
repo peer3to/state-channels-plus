@@ -328,10 +328,6 @@ export class P2pRuntimeHostRoot<
                             Clock.releaseProvider(provider);
                         }
                     },
-                    // after the provider: a provider the Clock keeps would
-                    // still push this runtime's logs and catch-up reads
-                    () =>
-                        this.runtimeHandle?.stateManager.stateChannelEventListener.dispose(),
                     // a close failure fails the disposal
                     () => this.networkClose,
                     () => this.closeChildConnections(),
@@ -408,6 +404,7 @@ export class P2pRuntimeHostRoot<
             // ends the chain-head waits (timer and block listener)
             () => localRpc.spectateService.dispose(),
             () => stateManager.timeoutManager.dispose(),
+            () => stateManager.stateChannelEventListener.dispose(),
             // An abort's log flush, already running: disposal ends the
             // workers only after it (it never fails; each realm reports its
             // own flush failures).
@@ -607,7 +604,6 @@ export class P2pRuntimeHostRoot<
             this.cutOff();
             await runCleanup(
                 () => this.releaseRuntime(),
-                () => stateManager.stateChannelEventListener.dispose(),
                 () => this.networkClose
             );
             await Promise.allSettled(

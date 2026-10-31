@@ -21,11 +21,14 @@ frame oracle.
 The inline leak case starts three inline participants with two blocks, hands the realm's `Clock`
 the first peer's provider and disposes that peer, so its provider outlives the runtime. Before the disposal it
 arms a `TimeoutManager` task and counts streamed chain logs and double-signature callbacks on the
-disposed peer and on a live sibling. After it, the third peer requests a dispute (a chain log on
+disposed peer and on a live sibling. The disposal is held at its gas report, which runs after the
+children step. While it is held, the third peer requests a dispute (a chain log on
 the channel), and the test recovers two different signatures by one fresh wallet over one message
 through the realm's signer recovery cache. Once the sibling saw the log and its timer fired, and
 one more second passed, the sibling counts one double-signature callback and the disposed peer
-counts no timer run, no chain log and no double-signature callback.
+counts no timer run, no chain log and no double-signature callback; the disposal is then released.
+With the event listener released after the children step, the disposed peer counts the chain log.
+It tests inline mode's shared realm and is kept while the SDK supports inline mode.
 
 The sibling case disposes one inline peer, then has a live sibling's ingest of the writer's next
 block collect work that rejects after the disposed peer's grace period: the session drain must

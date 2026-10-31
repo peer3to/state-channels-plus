@@ -4,6 +4,7 @@ import { signBlockVariant } from "./QueueAdmissionFixture";
 import { clientRootFor, runtimeEndpointFor } from "./RuntimeRootObservation";
 import { type DoubleSignatureReport, recoverSigner } from "@/cache";
 import Clock from "@/Clock";
+import type HostNonceManager from "@/evm/signer/HostNonceManager";
 import { IN_FLIGHT_REPLY_DRAIN_MS } from "@/rpc/internal/AInternalRpcRoot";
 import { isEngagedStatus } from "@/types/flags";
 import { DetachedPromises, sleep } from "@/utils";
@@ -137,9 +138,11 @@ export async function assertInlineSiblingFailureAfterCutSurfaces(
 /**
  * Inline peers share one realm with its static Clock and signer recovery
  * cache. The Clock is handed the disposed peer's provider, so that provider
- * outlives it. After the disposal, a timer it armed, the
- * channel's chain logs and a realm-wide double-signature report reach a
- * live sibling and never the disposed runtime.
+ * outlives it. While the disposal is held at its gas report (after its
+ * children are gone) and after it, a timer it armed, the channel's chain
+ * logs and a realm-wide double-signature report reach a live sibling and
+ * never the disposed runtime. A test of inline mode's shared realm, kept
+ * while the SDK supports inline mode.
  */
 export async function assertDisposedInlineRuntimeFiresNothing(
     h: MathPeerTestHarness
@@ -187,7 +190,24 @@ export async function assertDisposedInlineRuntimeFiresNothing(
     };
     const disposedCalls = observe(disposed.sm);
     const liveCalls = observe(live.sm);
-    await disposed.peer.p2pInstance.dispose();
+    // hold the disposal at its gas report, which runs after the children
+    const { gasUsage } = Reflect.get(
+        runtimeEndpointFor(disposed.peer.p2pInstance).host,
+        "managedSigner"
+    ) as HostNonceManager;
+    const settledSnapshot = gasUsage.settledSnapshot.bind(gasUsage);
+    let gasReportEntered = false;
+    let releaseGasReport!: () => void;
+    const gasReportHeld = new Promise<void>((resolve) => {
+        releaseGasReport = resolve;
+    });
+    gasUsage.settledSnapshot = async (timeoutMs) => {
+        gasReportEntered = true;
+        await gasReportHeld;
+        return settledSnapshot(timeoutMs);
+    };
+    const disposal = disposed.peer.p2pInstance.dispose();
+    await waitFor(() => gasReportEntered, h.event.protocolEventTimeoutMs());
 
     // a chain log on the channel, a timer deadline and a double signature
     await h.execOnHost(disputer.peer, (sm) => {
@@ -208,6 +228,8 @@ export async function assertDisposedInlineRuntimeFiresNothing(
         h.event.protocolEventTimeoutMs()
     );
     await sleep(AFTER_CUT_WINDOW_MS);
+    releaseGasReport();
+    await disposal;
 
     expect(liveCalls.doubleSignatures).to.equal(1);
     expect(disposedCalls).to.deep.equal({

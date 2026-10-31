@@ -129,7 +129,7 @@ class StateManager<
     readonly channelJoinService: ChannelJoinService;
     readonly leaveChannelService: LeaveChannelService;
     /** An abort's flush of every reachable realm's logs, which disposal waits for. */
-    abortFlush?: Promise<void>;
+    private _abortFlush?: Promise<void>;
 
     constructor(
         signer: HostNonceManager,
@@ -323,7 +323,7 @@ class StateManager<
         // every reachable realm uploads its logs first, within their bound. The
         // flush starts now, before an onAbort hook can dispose anything;
         // disposal waits for it before the children are disposed.
-        this.abortFlush = this.logger.flushLogs();
+        this._abortFlush = this.logger.flushLogs();
         this.p2pEventHooks.onAbort?.();
         this.setStatus(Status.OPENED);
         // The disposal is not detached domain work: the root settles what
@@ -414,6 +414,10 @@ class StateManager<
     }
     public get channelId(): ChannelId {
         return this._channelId;
+    }
+
+    public get abortFlush(): Promise<void> | undefined {
+        return this._abortFlush;
     }
 
     public async setChannelId(channelId: ChannelId): Promise<void> {
