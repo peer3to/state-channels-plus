@@ -14,13 +14,6 @@ export class P2pSignerService extends AInternalRpcService<P2pSignerRpcMethods> {
         super(router);
     }
 
-    // Overrides AInternalRpcService.awaitedByDisposalDrain: a channel call
-    // waits on the network and the chain the cut froze; one still running
-    // rejects with RootDisposedError when the port closes.
-    public override get awaitedByDisposalDrain(): boolean {
-        return false;
-    }
-
     public createRPCMethods(sender: InternalTransport) {
         return new P2pSignerRpcMethods(this, sender);
     }

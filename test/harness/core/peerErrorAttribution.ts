@@ -1,12 +1,14 @@
 // @spec-test-coverage-ignore: harness error attribution support; assertions belong to the calling test declarations
 import type { HostHandlerExecutionContext } from "@/evm/p2pRuntime/HostHandlerExecutionContext";
-import { IN_FLIGHT_REPLY_DRAIN_MS } from "@/rpc/internal/AInternalRpcRoot";
 import {
     DetachedPromises,
     maybeStampErrorWithPeerAddress,
     sleep
 } from "@/utils";
 import { AsyncLocalStorage } from "node:async_hooks";
+
+// How long a cut runtime's pending work still holds the session's drain.
+export const CUT_GRACE_MS = 5_000;
 
 /**
  * Tags all of one inline peer's work with its EVM address.
@@ -39,10 +41,10 @@ export class PeerIdentityExecutionContext
     private static detachedRejectionStampingInstalled = false;
 
     private markDisposed!: () => void;
-    // Resolves one reply-drain bound after the runtime's cut-off.
+    // Resolves CUT_GRACE_MS after the runtime's cut-off.
     private readonly disposal = new Promise<void>((resolve) => {
         this.markDisposed = resolve;
-    }).then(() => sleep(IN_FLIGHT_REPLY_DRAIN_MS));
+    }).then(() => sleep(CUT_GRACE_MS));
 
     constructor(private readonly peerAddress: string) {}
 

@@ -1,7 +1,9 @@
 // @spec-test-coverage-ignore: harness execution-context contract test; the context is test infrastructure with no specification or implementation IDs
-import { IN_FLIGHT_REPLY_DRAIN_MS } from "@/rpc/internal/AInternalRpcRoot";
 import { DetachedPromises } from "@/utils/DetachedPromises";
-import { PeerIdentityExecutionContext } from "@test/harness/core/peerErrorAttribution";
+import {
+    CUT_GRACE_MS,
+    PeerIdentityExecutionContext
+} from "@test/harness/core/peerErrorAttribution";
 import { deferred } from "@test/utils/deferred";
 import { expect } from "chai";
 import { Wallet } from "ethers";
@@ -29,7 +31,7 @@ describe("PeerIdentityExecutionContext", function () {
             []
         );
         const settled = await DetachedPromises.collectSettledAndClear(
-            IN_FLIGHT_REPLY_DRAIN_MS + 500
+            CUT_GRACE_MS + 500
         );
         expect(settled.map((result) => result.status)).to.deep.equal([
             "fulfilled"

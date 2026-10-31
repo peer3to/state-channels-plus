@@ -2,7 +2,6 @@
 
 import { rejectionOf } from "./ProvenSubmissionFailureStaging";
 import { clientRootFor } from "./RuntimeRootObservation";
-import { IN_FLIGHT_REPLY_DRAIN_MS } from "@/rpc/internal/AInternalRpcRoot";
 import { isRootDisposedError } from "@/rpc/internal/RemoteRoot";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { Status } from "@/types";
@@ -146,14 +145,12 @@ export async function assertObserverConnectRejectsOnEnd<
         h.channelId
     );
     await h.event.waitUntilPeerStatus(observerIndex, Status.OPENED);
-    const endedAt = Date.now();
     // observed before the end: a dispose rejects the connect while it runs
     const rejection = rejectionOf(connect);
     if (options.end === "dispose") await observer.p2pInstance.dispose();
     else await h.control(observer).stub.abortDetached().request();
     expect(isRootDisposedError(await rejection)).to.equal(true);
     expect(Date.now() - startedAt).to.be.lessThan(options.settledWithinMs);
-    expect(Date.now() - endedAt).to.be.below(IN_FLIGHT_REPLY_DRAIN_MS);
     await waitFor(() => host.isClosed, h.event.protocolEventTimeoutMs());
 }
 

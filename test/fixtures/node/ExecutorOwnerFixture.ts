@@ -7,9 +7,11 @@ import {
 import { getSimpleNumberStorageFactory } from "../SimpleNumberStorage.fixture";
 import type AContractExecutor from "@/evm/contractExecutor/AContractExecutor";
 import type ContractExecutor from "@/evm/contractExecutor/ContractExecutor";
-import { IN_FLIGHT_REPLY_DRAIN_MS } from "@/rpc/internal/AInternalRpcRoot";
 import { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
-import type { ContractExecutorService } from "@/rpc/internal/services/contractExecutor/ContractExecutorService";
+import {
+    ADMISSION_DRAIN_MS,
+    type ContractExecutorService
+} from "@/rpc/internal/services/contractExecutor/ContractExecutorService";
 import {
     runtimeValueChildren,
     type RuntimeValueChild
@@ -251,8 +253,8 @@ export async function assertDisposalAbandonsStuckAdmittedWork(): Promise<void> {
         await executor.dispose();
         const elapsed = Date.now() - started;
 
-        expect(elapsed).to.be.at.least(IN_FLIGHT_REPLY_DRAIN_MS - 100);
-        expect(elapsed).to.be.below(IN_FLIGHT_REPLY_DRAIN_MS * 3);
+        expect(elapsed).to.be.at.least(ADMISSION_DRAIN_MS - 100);
+        expect(elapsed).to.be.below(ADMISSION_DRAIN_MS * 3);
         expect(record!.child.isClosed).to.equal(true);
         expect((await call).ok).to.equal(false);
         expect(record!.calls).to.equal(1);
@@ -265,7 +267,7 @@ export async function assertDisposalAbandonsStuckAdmittedWork(): Promise<void> {
 
 const DELAYED_ADDRESS = "0x00000000000000000000000000000000000000ce";
 // Finishes after the admission drain limit, before the later reply drain ends.
-const LATE_COMPLETION_MS = IN_FLIGHT_REPLY_DRAIN_MS + 1_200;
+const LATE_COMPLETION_MS = ADMISSION_DRAIN_MS + 1_200;
 const ABANDONED_MESSAGE =
     "Contract executor shut down before the operation finished";
 

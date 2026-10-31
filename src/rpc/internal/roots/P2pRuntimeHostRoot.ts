@@ -332,7 +332,13 @@ export class P2pRuntimeHostRoot<
                     },
                     // a close failure fails the disposal
                     () => this.networkClose,
-                    () => this.closeChildConnections()
+                    () => this.closeChildConnections(),
+                    // the gas report and the release logs upload while a
+                    // worker thread still runs; an abort keeps its one
+                    // flush deadline
+                    () =>
+                        this.runtimeHandle?.stateManager.abortFlush ??
+                        this.rootLogger.flushLogs()
                 );
             },
             () => this.releaseRuntime()

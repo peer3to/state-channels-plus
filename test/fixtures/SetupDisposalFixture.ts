@@ -13,7 +13,6 @@ import {
 } from "./RuntimeTransportModesFixture";
 import { EvmStateMachine } from "@/evm";
 import type { P2pSetupOptions } from "@/evm/p2pRuntime/setupP2pRuntime";
-import { IN_FLIGHT_REPLY_DRAIN_MS } from "@/rpc/internal/AInternalRpcRoot";
 import { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";
@@ -87,8 +86,8 @@ async function assertFreshRuntimeWorks(setup: RuntimeSetup): Promise<void> {
 /**
  * The client disposes while the host's start is held at its chain reads (a
  * proxy in front of the node holds every `eth_call`), and the reads are
- * released after the disposal began: the disposal settles within the reply
- * drain bound of the release, the setup rejects, no host error is raised,
+ * released after the disposal began: the disposal settles within 5 s of the
+ * release, the setup rejects, no host error is raised,
  * the signer sent nothing, and a fresh runtime for the signer works.
  */
 export async function assertDisposalDuringChainReads(
@@ -118,7 +117,7 @@ export async function assertDisposalDuringChainReads(
         const releasedAt = Date.now();
         releaseReads();
         await disposal;
-        expect(Date.now() - releasedAt).to.be.below(IN_FLIGHT_REPLY_DRAIN_MS);
+        expect(Date.now() - releasedAt).to.be.below(5_000);
         expect(await started.outcome).to.be.instanceOf(Error);
         expect(started.hostErrors.map((error) => error.message)).to.deep.equal(
             []
@@ -134,7 +133,7 @@ export async function assertDisposalDuringChainReads(
 /**
  * The client disposes while the host's runtime build is held before the
  * runtime is constructed ({@link HeldBuildHostRoot}). The disposal settles
- * within the reply drain bound while the build is held; once released, the
+ * within 5 s while the build is held; once released, the
  * build constructs a runtime that it cuts and stops itself, and the setup
  * rejects. A worker host lets the build through at its own cut (its thread
  * ends with the disposal); the test releases an inline host after the
@@ -166,7 +165,7 @@ export async function assertDisposalDuringBuild(
         const disposedAt = Date.now();
         const disposal = started.client!.dispose();
         await disposal;
-        expect(Date.now() - disposedAt).to.be.below(IN_FLIGHT_REPLY_DRAIN_MS);
+        expect(Date.now() - disposedAt).to.be.below(5_000);
         if (!runSdkInThread) channel.postMessage({ type: "release" });
         await waitFor(() => received("built") !== undefined);
         expect(received("built")).to.deep.equal({

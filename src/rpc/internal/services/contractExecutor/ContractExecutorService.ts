@@ -5,11 +5,13 @@ import {
     resolveCustomPrecompiles,
     type EvmCustomPrecompileManifest
 } from "@/evm/EvmCustomPrecompiles";
-import { IN_FLIGHT_REPLY_DRAIN_MS } from "@/rpc/internal/AInternalRpcRoot";
 import { AInternalRpcService } from "@/rpc/internal/AInternalRpcService";
 import type { InternalRpcRouter } from "@/rpc/router/InternalRpcRouter";
 import type InternalTransport from "@/transport/InternalTransport";
 import type { Logger } from "@/utils";
+
+// The executor's wait for admitted work at shutdown ends after this long.
+export const ADMISSION_DRAIN_MS = 5_000;
 
 export type ContractExecutorInitialization = {
     customPrecompiles: Array<
@@ -135,7 +137,7 @@ export class ContractExecutorService extends AInternalRpcService<ContractExecuto
     /**
      * Stops admission and waits for every admitted operation, so children
      * those operations reach (custom precompiles) outlive them. A stuck
-     * operation holds shutdown open only for IN_FLIGHT_REPLY_DRAIN_MS; its
+     * operation holds shutdown open only for ADMISSION_DRAIN_MS; its
      * caller is then rejected and its later outcome is dropped internally,
      * since nothing uses its result after shutdown. Repeated calls share one
      * completion.
@@ -149,7 +151,7 @@ export class ContractExecutorService extends AInternalRpcService<ContractExecuto
                 new Promise<boolean>((resolve) => {
                     timeout = setTimeout(
                         () => resolve(false),
-                        IN_FLIGHT_REPLY_DRAIN_MS
+                        ADMISSION_DRAIN_MS
                     );
                 })
             ]).finally(() => clearTimeout(timeout));

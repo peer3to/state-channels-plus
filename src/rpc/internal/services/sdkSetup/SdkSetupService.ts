@@ -46,15 +46,6 @@ export class SdkSetupService extends AInternalRpcService<SdkSetupRpcMethods> {
         }
     }
 
-    // Overrides AInternalRpcService.awaitedByDisposalDrain: a failed build
-    // disposes the runtime inside deployComplete and replies only after that
-    // disposal drains the others, so waiting on it would wait on itself. A
-    // disposal from elsewhere during a build therefore does not wait for the
-    // build either: its caller gets the disposal's rejection, not the build.
-    public override get awaitedByDisposalDrain(): boolean {
-        return false;
-    }
-
     // Overrides AInternalRpcService.afterResponse so failed setup replies before closing its parent port.
     protected override afterResponse(
         _rpc: Rpc,
