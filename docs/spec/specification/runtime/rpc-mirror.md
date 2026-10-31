@@ -25,15 +25,15 @@ The client is a drop-in for the plain multi-endpoint provider ([chain-observatio
 
 **<a id="req-rpcmirror-2-1p38e2"></a>`REQ-RPCMIRROR-2-1P38E2` — Reads the copy cannot answer correctly go to the node whole.** A request the local copy cannot answer as the chain would MUST go to the node, whole. That covers transactions, `eth_estimateGas` (gas on the target chain is weight based), logs, reads at an older block, every read when no service is configured, and a call that carries an explicit gas limit: the local EVM charges no transaction gas (the base cost and calldata), so only the node can tell the least limit at which the call succeeds. A call that executes PolkaVM code, or reaches an address the chain serves with a precompile of its own that the local EVM does not reproduce (the chain's builtin range above the standard precompiles, its external ranges, and the point evaluation address), MUST go to the node whole; a call that reaches a standard precompile the chain implements runs locally. Reading the code of a PolkaVM contract is still answered locally.
 
-**<a id="req-rpcmirror-3-7mqh88"></a>`REQ-RPCMIRROR-3-7MQH88` — A snapshot is waited for only when the service says it is ready.** The client MUST follow an account it reads for the first time and act on the status the service gives it ([`REQ-SDS-9-ZRPZZW`](storage-diff-service.md#req-sds-9-zrpzzw)). For `ready` the read waits for the pushed snapshot, ends the wait when the snapshot arrives (including one that reaches the client before the reply of the subscription that asked for it, under any subscription id), and gives up after a safety ceiling of 5 s on an open connection. For `syncing` and `lazy` it MUST NOT wait: the missing fields are read at once from the service at the head block, and a syncing account answers locally once its snapshot has come. A notice that no snapshot is coming (the backfill ended without one or failed), or a lost connection, ends any wait at once. When the service later finds a complete account's entries short and announces it lazy, the client MUST drop the account to lazy reads.
+**<a id="req-rpcmirror-3-7mqh88"></a>`REQ-RPCMIRROR-3-7MQH88` — A snapshot is waited for only when the service says it is ready.** The client MUST follow an account it reads for the first time and act on the status the service gives it ([`REQ-SDS-9-ZRPZZW`](storage-diff-service.md#req-sds-9-zrpzzw)). For `ready` the read waits for the pushed snapshot, ends the wait when the snapshot arrives (including one that reaches the client before the reply of the subscription that asked for it, under any subscription id), and gives up after a safety ceiling on an open connection (bounded with the wait of [`REQ-RPCMIRROR-4-H35NFC`](rpc-mirror.md#req-rpcmirror-4-h35nfc) below the SDK's RPC deadline). For `syncing` and `lazy` it MUST NOT wait: the missing fields are read at once from the service at the head block, and a syncing account answers locally once its snapshot has come. A notice that no snapshot is coming (the backfill ended without one or failed), or a lost connection, ends any wait at once. When the service later finds a complete account's entries short and announces it lazy, the client MUST drop the account to lazy reads.
 
-**<a id="req-rpcmirror-4-h35nfc"></a>`REQ-RPCMIRROR-4-H35NFC` — A read is never older than a block the peer already saw.** A read MUST NOT be answered from a copy older than a block the peer has seen: its own transaction mined, a new head or a log notification a node pushed. The read waits until the copy has applied that block, and for at most a bounded time, after which it is answered by the node. When the service's latest block is behind a block a node announced, the latest-block request MUST go to the node.
+**<a id="req-rpcmirror-4-h35nfc"></a>`REQ-RPCMIRROR-4-H35NFC` — A read is never older than a block the peer already saw.** A read MUST NOT be answered from a copy older than a block the peer has seen: its own transaction mined, a new head or a log notification a node pushed. The read waits until the copy has applied that block, and for at most a bounded time, after which it is answered by the node. Both this wait and the snapshot ceiling of [`REQ-RPCMIRROR-3-7MQH88`](rpc-mirror.md#req-rpcmirror-3-7mqh88) are safety nets, not the normal path (the waits end on events), and they run one after the other within one read: their sum plus a node round trip for the fallback MUST stay below the 3 s deadline of the SDK's RPCs, so a bound that fires still leaves the caller an answer. When the service's latest block is behind a block a node announced, the latest-block request MUST go to the node.
 
 **<a id="req-rpcmirror-5-kdrwdz"></a>`REQ-RPCMIRROR-5-KDRWDZ` — The copy follows the chain through gaps and reorganizations.** The client MUST apply each pushed record on its parent block. After a reorganization it MUST hold the replacement branch's values and restore a slot the orphaned block wrote when the replacement does not write it. A record whose parent is not the head makes the client ask the service for the blocks from the next missing one; when the service no longer retains them the client MUST empty its copy and read from the service again. When the service does not retain the head block of a state read (the not-retained error of [`REQ-SDS-7-PZCBQ9` (State reads come from one shared cache)](storage-diff-service.md#req-sds-7-pzcbq9)), the client reads that block's state from the node, at that block's number, only for as long as the service gives that answer. The block environment of local calls comes from the service's records, not from block reads on the node.
 
 **<a id="req-rpcmirror-6-mhv1qd"></a>`REQ-RPCMIRROR-6-MHV1QD` — Chain data comes from the service when it holds it.** The client MUST answer the chain id from its first answer without asking a node again, and answer the block number, blocks, transactions and receipts from the service's retained data exactly as a node would, without asking a node. A transaction, receipt or block the service does not hold MUST be asked of the node. The client MUST record the newest included head the service reports, from a catch-up and from a push.
 
-**<a id="req-rpcmirror-7-4a6njn"></a>`REQ-RPCMIRROR-7-4A6NJN` — A fraction of local answers is checked against the node.** The client MUST re-ask the node, after replying and at the same block hash, a configured fraction of the reads it answered locally (`eth_call`, storage, balance, nonce and code), and compare. A match is counted. A mismatch is counted and logged with what was read, at which block and the call's selector but never the values, and the account MUST be dropped to lazy reads from then on, so its state is read from the node. A node that cannot answer leaves the sample skipped; sampling never delays or fails the peer's read. A fraction of 0 sends the node nothing.
+**<a id="req-rpcmirror-7-4a6njn"></a>`REQ-RPCMIRROR-7-4A6NJN` — A fraction of local answers is checked against the node.** The client MUST re-ask the node, after replying and at the same block hash, a configured fraction of the reads it answered locally (`eth_call`, storage, balance, nonce and code), and compare. A match is counted. A mismatch is counted and logged with what was read, at which block and the call's selector but never the values, and the account MUST be dropped to lazy reads from then on, so its state is read from the node. A node that cannot answer leaves the sample skipped; sampling never delays or fails the peer's read. A fraction of 0 sends the node nothing. The reaction to a mismatch is required behavior; the fraction is a tuning value. A client built without a configured fraction uses the configuration default of 1%.
 
 **<a id="req-rpcmirror-8-1pa83t"></a>`REQ-RPCMIRROR-8-1PA83T` — Trouble with the service degrades reads to the node, never fails them.** A failure of the storage diff service MUST NOT fail a peer's read: a read the copy cannot answer, or a state fill the service cannot complete, is answered by the node. A failed `scp_unsubscribe` of a superseded subscription costs only duplicate pushes the new subscription also carries, so it MUST be logged and MUST keep the service connection.
 
@@ -174,11 +174,11 @@ No read waits for a snapshot that is not ready; ready waits end by snapshot, not
 
 **Setup and stimulus:**
 
-Mine the peer's own transaction, or a block a node announces, while the service's pushes are held; read; release the pushes; and let the service stay behind a block the node announced.
+Mine the peer's own transaction, or a block a node announces, while the service's pushes are held; read; release the pushes; let the service stay behind a block the node announced; and let a block never reach the copy and a ready snapshot never come in the same read.
 
 **Expected result:**
 
-The read stays pending while the pushes are held and then returns the post-block value without a node call; a service that stays behind is bypassed by the node.
+The read stays pending while the pushes are held and then returns the post-block value without a node call; a service that stays behind is bypassed by the node; a read whose two waits both run out is answered before the SDK's RPC deadline.
 
 **Required permutations:**
 
@@ -189,6 +189,8 @@ The read stays pending while the pushes are held and then returns the post-block
 <a id="req-rpcmirror-4-h35nfc.t1.p3"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P3` — a read waits until the copy reaches the block of a log notification a node pushed first
 
 <a id="req-rpcmirror-4-h35nfc.t1.p4"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P4` — the node is asked for the latest block while the service is behind a block the node announced
+
+<a id="req-rpcmirror-4-h35nfc.t1.p8"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P8` — a read whose wait for a block and then for a ready snapshot both run out is answered before the SDK's RPC deadline
 
 #### <a id="req-rpcmirror-5-kdrwdz.t1"></a>`REQ-RPCMIRROR-5-KDRWDZ.T1`
 
@@ -250,7 +252,7 @@ Retained answers equal the node's and cost the node no request; unheld identitie
 
 **Setup and stimulus:**
 
-Set the sampling fraction to 1 and to 0; read storage, balance, nonce, code and call a view function; corrupt a cached value so it differs from the node's.
+Set the sampling fraction to 1 and to 0, and leave it unset; read storage, balance, nonce, code and call a view function; corrupt a cached value so it differs from the node's.
 
 **Expected result:**
 
@@ -267,6 +269,8 @@ Sampled reads reach the node after the reply with the cached block hash; counter
 <a id="req-rpcmirror-7-4a6njn.t1.p4"></a>`REQ-RPCMIRROR-7-4A6NJN.T1.P4` — a mismatch between a cached value and the node is counted and the account is read from the node from then on
 
 <a id="req-rpcmirror-7-4a6njn.t1.p5"></a>`REQ-RPCMIRROR-7-4A6NJN.T1.P5` — a sampled eth_call is checked against the node and the called account is dropped on a mismatch
+
+<a id="req-rpcmirror-7-4a6njn.t1.p6"></a>`REQ-RPCMIRROR-7-4A6NJN.T1.P6` — a client built without a sample rate samples a small fraction of its local answers
 
 #### <a id="req-rpcmirror-8-1pa83t.t1"></a>`REQ-RPCMIRROR-8-1PA83T.T1`
 

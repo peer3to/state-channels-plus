@@ -23,11 +23,13 @@ Each case builds a `MirrorRpcProvider` over an isolated anvil test chain with a 
 - `re-asks the node about a sampled read after replying, and counts the match`: REQ-RPCMIRROR-7-4A6NJN.T1.P1
 - `samples balance, nonce and code reads against the node too`: REQ-RPCMIRROR-7-4A6NJN.T1.P2
 - `sends nothing to the node at a sample rate of 0`: REQ-RPCMIRROR-7-4A6NJN.T1.P3
+- `samples a small fraction of local answers when the provider is built without a sample rate`: REQ-RPCMIRROR-7-4A6NJN.T1.P6
 - `counts a mismatch between a cached value and the node, and reads the account from the node from then on`: REQ-RPCMIRROR-7-4A6NJN.T1.P4
 - `checks a sampled eth_call against the node and drops the called account on a mismatch`: REQ-RPCMIRROR-7-4A6NJN.T1.P5
 - `drops a complete account to lazy reads when the service finds its cached entries short after a block, and reads the omitted slot`: REQ-RPCMIRROR-3-7MQH88.T1.P11
 - `answers a call that carries a gas limit from the node, which charges the transaction gas the local EVM does not`: REQ-RPCMIRROR-2-1P38E2.T1.P3
 - `asks the service for exactly the missing fields, at the head block, for an account that is syncing`: REQ-RPCMIRROR-3-7MQH88.T1.P10
+- `answers a read from the node when the service fails the state fill`: REQ-RPCMIRROR-8-1PA83T.T1.P2
 - `sends no scp_getState and no node read for a second read of the same slot`: REQ-RPCMIRROR-1-XQNZ4J.T1.P3
 - `reads a slot cleared on chain as zero without an eth_getStorageAt`: REQ-RPCMIRROR-1-XQNZ4J.T1.P4
 - `reads the replacement branch's value after a reorg`: REQ-RPCMIRROR-5-KDRWDZ.T1.P1
@@ -38,6 +40,7 @@ Each case builds a `MirrorRpcProvider` over an isolated anvil test chain with a 
 - `takes the block environment from the service without reading blocks from the node`: REQ-RPCMIRROR-5-KDRWDZ.T1.P6
 - `runs a custom precompile locally without an upstream request`: REQ-RPCMIRROR-1-XQNZ4J.T1.P8
 - `holds a call issued after the peer's own transaction is mined until the mirror has that block`: REQ-RPCMIRROR-4-H35NFC.T1.P1
+- `answers before the SDK's RPC deadline when a block never reaches the copy and then a ready snapshot never comes`: REQ-RPCMIRROR-4-H35NFC.T1.P8
 - `holds a call until the mirror reaches a block the node announced`: REQ-RPCMIRROR-4-H35NFC.T1.P2
 - `returns what the node returns at the same head for a call, a revert and a read of account state`: REQ-RPCMIRROR-1-XQNZ4J.T1.P5
 - `discards what a call wrote when it ends`: REQ-RPCMIRROR-1-XQNZ4J.T1.P6

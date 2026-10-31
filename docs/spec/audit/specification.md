@@ -24,7 +24,7 @@ engineer disposition remains pending.
 
 ## RPC mirror — 2026-10-31
 
-[rpc-mirror.md](../specification/runtime/rpc-mirror.md) is a new subject (the `REQ-RPCMIRROR-*` requirements). It records the engineer's settled decisions: gas-limited `eth_call`s go to the node, snapshot statuses are `ready`, `syncing` and `lazy` with event-driven snapshot waits, and a failed `scp_unsubscribe` is logged and keeps the connection. The requirements are reverse-engineered and not engineer-approved. The sampling fraction and reaction are raised as [`OQ-SPEC-RPCMIRROR-1-6TKG51` (Sampling fraction and reaction of the RPC mirror)](../specification/open-questions.md#oq-spec-rpcmirror-1-6tkg51). Engineer disposition remains pending.
+[rpc-mirror.md](../specification/runtime/rpc-mirror.md) is a new subject (the `REQ-RPCMIRROR-*` requirements). It records the engineer's settled decisions: gas-limited `eth_call`s go to the node, snapshot statuses are `ready`, `syncing` and `lazy` with event-driven snapshot waits, and a failed `scp_unsubscribe` is logged and keeps the connection. The requirements are reverse-engineered and not engineer-approved. The engineer decided [`OQ-SPEC-RPCMIRROR-1-6TKG51` (Sampling fraction and reaction of the RPC mirror)](../specification/open-questions.md#oq-spec-rpcmirror-1-6tkg51) (2026-10-31): a mismatch drops the account to lazy reads and is counted (required), and the fraction is tuning, defaulting to 1%. Engineer disposition remains pending.
 
 ## Storage diff service — 2026-11-02
 

@@ -795,7 +795,7 @@ Specification cases tested: 8/8.
 Specification cases tested: 11/11.
 
 [`REQ-RPCMIRROR-4-H35NFC` (A read is never older than a block the peer already saw)](../specification/runtime/rpc-mirror.md#req-rpcmirror-4-h35nfc)
-Specification cases tested: 4/4.
+Specification cases tested: 5/5.
 
 [`REQ-RPCMIRROR-5-KDRWDZ` (The copy follows the chain through gaps and reorganizations)](../specification/runtime/rpc-mirror.md#req-rpcmirror-5-kdrwdz)
 Specification cases tested: 6/6.
@@ -804,10 +804,10 @@ Specification cases tested: 6/6.
 Specification cases tested: 4/4.
 
 [`REQ-RPCMIRROR-7-4A6NJN` (A fraction of local answers is checked against the node)](../specification/runtime/rpc-mirror.md#req-rpcmirror-7-4a6njn)
-Specification cases tested: 5/5.
+Specification cases tested: 6/6.
 
 [`REQ-RPCMIRROR-8-1PA83T` (Trouble with the service degrades reads to the node, never fails them)](../specification/runtime/rpc-mirror.md#req-rpcmirror-8-1pa83t)
-Specification cases tested: 0/2.
+Specification cases tested: 1/2. Untested: T1.P1.
 
 [`REQ-RUN-2-GBCZ5B` (No shared mutable memory across contexts)](../specification/runtime/execution.md#req-run-2-gbcz5b)
 Specification cases tested: 0/1.
