@@ -157,17 +157,17 @@ export abstract class Logger {
 
     /**
      * Upload this realm's store and every realm reachable through the coordination service
-     * now; settles once all have, or within `CRASH_LOG_FLUSH_MS`. It never fails: each realm
-     * reports its own flush failures through its root.
+     * now; settles once all have, or at `deadlineMs` (default `CRASH_LOG_FLUSH_MS` from now).
+     * It never fails: each realm reports its own flush failures through its root.
      */
-    public flushLogs(): Promise<void> {
+    public flushLogs(deadlineMs?: number): Promise<void> {
         this.assertActive();
         const service = this.loggerService;
         if (!service)
             throw new Error(
                 "Logger has no coordination service to flush through"
             );
-        return service.startFlush();
+        return service.startFlush(deadlineMs);
     }
 
     /** upload only this realm's store */

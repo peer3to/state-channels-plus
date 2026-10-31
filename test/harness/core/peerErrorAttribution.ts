@@ -7,7 +7,8 @@ import {
 } from "@/utils";
 import { AsyncLocalStorage } from "node:async_hooks";
 
-// How long a cut runtime's pending work still holds the session's drain.
+// How long a cut runtime's pending work may still hold the session's drain
+// or a disposal.
 export const CUT_GRACE_MS = 5_000;
 
 /**

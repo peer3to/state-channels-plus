@@ -16,6 +16,7 @@ import type { P2pSetupOptions } from "@/evm/p2pRuntime/setupP2pRuntime";
 import { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";
+import { CUT_GRACE_MS } from "@test/harness/core/peerErrorAttribution";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -117,7 +118,7 @@ export async function assertDisposalDuringChainReads(
         const releasedAt = Date.now();
         releaseReads();
         await disposal;
-        expect(Date.now() - releasedAt).to.be.below(5_000);
+        expect(Date.now() - releasedAt).to.be.below(CUT_GRACE_MS);
         expect(await started.outcome).to.be.instanceOf(Error);
         expect(started.hostErrors.map((error) => error.message)).to.deep.equal(
             []
@@ -165,7 +166,7 @@ export async function assertDisposalDuringBuild(
         const disposedAt = Date.now();
         const disposal = started.client!.dispose();
         await disposal;
-        expect(Date.now() - disposedAt).to.be.below(5_000);
+        expect(Date.now() - disposedAt).to.be.below(CUT_GRACE_MS);
         if (!runSdkInThread) channel.postMessage({ type: "release" });
         await waitFor(() => received("built") !== undefined);
         expect(received("built")).to.deep.equal({

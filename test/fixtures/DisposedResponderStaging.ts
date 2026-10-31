@@ -3,12 +3,13 @@ import { runtimeIsClosed } from "./RuntimeRootObservation";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 /**
  * A responder holds the join-signature handler of a joiner's request, is
  * aborted, and releases the handler after the cut while its disposal is
  * held. The handler ends in the cut runtime: it answers nobody and no error
- * leaves the responder; the joiner's collection ends.
+ * leaves the responder; the joiner's collection fails naming the responder.
  */
 export async function releaseHeldHandlerIntoDisposedResponder(
     h: MathPeerTestHarness
@@ -30,7 +31,7 @@ export async function releaseHeldHandlerIntoDisposedResponder(
         })
         .then(
             () => undefined,
-            () => undefined
+            (error: Error) => error
         );
     await waitFor(
         async () =>
@@ -44,7 +45,12 @@ export async function releaseHeldHandlerIntoDisposedResponder(
         await stub.abortDetached().request();
         await h.event.waitForPeers("onAbort", [responder.index], 1);
         await stub.releaseJoinSignatureResponses().request();
-        await collecting;
+        // the joiner's collection names the responder as missing
+        const failure = await collecting;
+        expect(failure?.message).to.include("collection failed");
+        expect(failure!.message.toLowerCase()).to.include(
+            responder.address.toLowerCase()
+        );
         await TestSession.settleDetached();
     } finally {
         await releaseDisposal();

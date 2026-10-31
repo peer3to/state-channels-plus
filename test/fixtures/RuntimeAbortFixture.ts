@@ -38,6 +38,9 @@ const HOST_UPLOAD_HOLD_MS = 2_000;
 /** The line an aborting runtime logs before it flushes. */
 const ABORT_LINE = "Aborting channel participation";
 
+/** The chain-spending report the disposal logs before the provider closes. */
+const GAS_USAGE_LINE = "gas usage";
+
 /** Starts four peers whose realms upload their logs to the receiver; peer 0 is the one to abort. */
 async function startPeersUploadingTo(
     receiver: LogReceiver,
@@ -243,6 +246,34 @@ export async function assertWorkerHostAbortUploadsLogs(): Promise<void> {
         ).to.equal(true);
         // Every other upload answered at once, so the close did not wait for the bound.
         expect(elapsedMs).to.be.below(config.CRASH_LOG_FLUSH_MS / 2);
+        await peer.p2pInstance.dispose();
+    } finally {
+        await receiver.close();
+    }
+}
+
+/**
+ * An SDK host in a worker thread aborts with every upload answered at once:
+ * the gas report its disposal logs after the abort flush started reaches the
+ * receiver before the client closes.
+ */
+export async function assertWorkerHostAbortUploadsGasReport(): Promise<void> {
+    const receiver = await startLogReceiver();
+    try {
+        await startPeersUploadingTo(receiver, { RUN_SDK_IN_THREAD: true });
+        const peer = MathTestSession.getHarness().getPeer(0);
+
+        await abortFirstPeerUntilClosed();
+
+        expect(
+            receiver.requests.some(
+                (request) =>
+                    request.peerAddress === peer.address &&
+                    decodeUpload(request).some(
+                        (entry) => entry.message === GAS_USAGE_LINE
+                    )
+            )
+        ).to.equal(true);
         await peer.p2pInstance.dispose();
     } finally {
         await receiver.close();
@@ -464,7 +495,8 @@ export async function assertClockOwnedProviderReleasedOnDispose(): Promise<void>
 /**
  * A worker realm's Clock reads through the runtime's own provider. The
  * disposal, held after its children, has left that provider open for the
- * Clock with no listener on it, and its node does not reconnect.
+ * Clock with no listener on it, and its node does not reconnect. The hold
+ * sits after `removeAllListeners`, so reaching it is the listener oracle.
  */
 export async function assertWorkerClockProviderReleasedOnDispose(): Promise<void> {
     const h = MathTestSession.getHarness();

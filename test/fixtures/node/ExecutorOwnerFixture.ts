@@ -266,7 +266,7 @@ export async function assertDisposalAbandonsStuckAdmittedWork(): Promise<void> {
 }
 
 const DELAYED_ADDRESS = "0x00000000000000000000000000000000000000ce";
-// Finishes after the admission drain limit, before the later reply drain ends.
+// Finishes after the admission drain limit.
 const LATE_COMPLETION_MS = ADMISSION_DRAIN_MS + 1_200;
 const ABANDONED_MESSAGE =
     "Contract executor shut down before the operation finished";

@@ -8,6 +8,7 @@ import {
 import { isEngagedStatus } from "@/types/flags";
 import { DetachedPromises, sleep } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import { CUT_GRACE_MS } from "@test/harness/core/peerErrorAttribution";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
@@ -198,7 +199,8 @@ export async function assertDisposedRuntimeFiresNothing(
  * chain, the disposal is not held by the work, and a fresh runtime for the
  * same signer engages again; the session's `afterEach` checks that nothing
  * failed unhandled. The release follows the dispose request on the host's
- * port.
+ * port, and the disposal is held for `AFTER_CUT_WINDOW_MS` after it, so the
+ * released work runs before the port closes.
  */
 export async function disposeAndRelease(
     h: MathPeerTestHarness,
@@ -226,16 +228,20 @@ export async function disposeAndRelease(
     // the held peer sends nothing more until released
     const framesBeforeDisposal = await frameCounts();
 
+    // keeps the port open while the released work runs on
+    const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(peer.index);
     const startedAt = Date.now();
     const disposal = peer.p2pInstance.dispose();
     await waitFor(() => hostRemote.isDisposing);
     void release().catch(() => undefined);
+    await sleep(AFTER_CUT_WINDOW_MS);
+    await releaseDisposal();
     await disposal;
     const disposalMs = Date.now() - startedAt;
     await sleep(AFTER_CUT_WINDOW_MS);
 
     // not held by the work
-    expect(disposalMs).to.be.below(5_000);
+    expect(disposalMs).to.be.below(AFTER_CUT_WINDOW_MS + CUT_GRACE_MS);
     expect(await frameCounts()).to.deep.equal(framesBeforeDisposal);
     expect(await h.provider.getTransactionCount(peer.address)).to.equal(nonce);
     for (const other of others)

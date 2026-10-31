@@ -745,16 +745,7 @@ describe("Unit: BlockProductionService", function () {
                     )) === 1,
                 h.event.protocolEventTimeoutMs()
             );
-            // keeps the port open while the parked candidate runs on
-            const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
-                writer.index
-            );
-
-            await disposeAndRelease(h, writer, async () => {
-                await hold.release();
-                await sleep(1_000);
-                await releaseDisposal();
-            });
+            await disposeAndRelease(h, writer, () => hold.release());
             await parked;
         });
     });

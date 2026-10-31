@@ -24,6 +24,7 @@ import {
     probeHostRootManifest,
     probeRpcManifest
 } from "@test/fixtures/hostRoot/ProbeHostRootManifest";
+import { CUT_GRACE_MS } from "@test/harness/core/peerErrorAttribution";
 import type { MathStateMachine } from "@typechain-types";
 import { expect } from "chai";
 import type { Signer } from "ethers";
@@ -249,7 +250,7 @@ export async function assertFailedBuildRepliesPromptly(
                 .trim()
                 .split(/\s/)[0]
         );
-        expect(answeredAtMs - failedAtMs).to.be.below(2_500);
+        expect(answeredAtMs - failedAtMs).to.be.below(CUT_GRACE_MS / 2);
     } finally {
         await instance?.dispose();
         stopRuntimeTransportModesFixture();
@@ -292,6 +293,7 @@ export async function assertDisposalRejectsRunningCall(
 ): Promise<void> {
     let host: RuntimeConnection<ProbeHostRoot> | undefined;
     let running: Promise<Error> | undefined;
+    let disposalMs = 0;
     await withRuntime(
         runSdkInThread,
         probeHostRootManifest(),
@@ -299,9 +301,13 @@ export async function assertDisposalRejectsRunningCall(
             host = instance.host;
             await instance.host.probe.echo("ready").request();
             running = rejectionOf(instance.host.probe.hang().request());
+            const startedAt = Date.now();
             await instance.dispose();
+            disposalMs = Date.now() - startedAt;
         }
     );
+    // the disposal waits for no handler
+    expect(disposalMs).to.be.below(CUT_GRACE_MS);
     const failure = await running!;
     expect(isRootDisposedError(failure)).to.equal(true);
     expect(failure.message).to.equal(childDisposedError().message);

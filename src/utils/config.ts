@@ -24,7 +24,8 @@ export type Config = {
     VM_DEDICATED_THREAD: boolean;
     /**
      * true runs the SDK in a worker thread, the supported mode. Inline mode
-     * (false) is deprecated.
+     * (false) is deprecated; the default stays false until the mobile design
+     * decides its removal.
      */
     RUN_SDK_IN_THREAD: boolean;
     // >0 enables the logger event-loop monitor, which throws in its own thread

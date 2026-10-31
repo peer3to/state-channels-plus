@@ -2,7 +2,7 @@ import * as factory from "../factory";
 import { DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT } from "@/evm/contractExecutor/ContractExecutor";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type { Address, Bytes, Hash } from "@/types/types";
-import { Codec, sleep, Type } from "@/utils";
+import { Codec, Type } from "@/utils";
 import {
     encodeLinkedNextBlock,
     signEncodedBlock
@@ -757,16 +757,7 @@ describe("Unit: BlockIngestService", function () {
                     )) === 1,
                 h.event.protocolEventTimeoutMs()
             );
-            // keeps the port open while the parked delivery runs on
-            const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
-                observer.index
-            );
-
-            await disposeAndRelease(h, observer, async () => {
-                await hold.release();
-                await sleep(1_000);
-                await releaseDisposal();
-            });
+            await disposeAndRelease(h, observer, () => hold.release());
             await parked;
         });
     });

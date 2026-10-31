@@ -85,12 +85,11 @@ export class LoggerService extends AInternalRpcService<LoggerRpcMethods> {
      * With no upload endpoint there is nothing to flush: every realm runs with
      * its creator's configuration, so none of them can upload either.
      */
-    public startFlush(): Promise<void> {
+    public startFlush(
+        deadlineMs = Date.now() + config.CRASH_LOG_FLUSH_MS
+    ): Promise<void> {
         if (!config.CRASH_LOG_UPLOAD_ENDPOINT) return Promise.resolve();
-        return this.flush(
-            randomHexId(),
-            Date.now() + config.CRASH_LOG_FLUSH_MS
-        );
+        return this.flush(randomHexId(), deadlineMs);
     }
 
     /**

@@ -334,11 +334,14 @@ export class P2pRuntimeHostRoot<
                     () => this.networkClose,
                     () => this.closeChildConnections(),
                     // the gas report and the release logs upload while a
-                    // worker thread still runs; an abort keeps its one
-                    // flush deadline
+                    // worker thread still runs; after an abort this flush
+                    // ends at the abort flush's deadline. a plain dispose
+                    // waits up to CRASH_LOG_FLUSH_MS for a hanging endpoint
                     () =>
-                        this.runtimeHandle?.stateManager.abortFlush ??
-                        this.rootLogger.flushLogs()
+                        this.rootLogger.flushLogs(
+                            this.runtimeHandle?.stateManager
+                                .abortFlushDeadlineMs
+                        )
                 );
             },
             () => this.releaseRuntime()

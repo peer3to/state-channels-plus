@@ -7,6 +7,7 @@ import {
     assertProviderShutdownOrder,
     assertVmThreadEndCancelsHeldUpload,
     assertWorkerClockProviderReleasedOnDispose,
+    assertWorkerHostAbortUploadsGasReport,
     assertWorkerHostAbortUploadsLogs
 } from "@test/fixtures/RuntimeAbortFixture";
 
@@ -28,6 +29,9 @@ describe("StateManager abort", function () {
     });
     it("uploads the worker host's, main thread's and VM worker's logs before the client closes, without waiting for the bound", async function () {
         await assertWorkerHostAbortUploadsLogs();
+    });
+    it("uploads the worker host's gas report its disposal logs after the abort flush started, before the client closes", async function () {
+        await assertWorkerHostAbortUploadsGasReport();
     });
     it("sends the VM worker's upload an error started right before a dispose, before the worker ends", async function () {
         await assertDisposeAfterErrorUploadsVmLogs();
