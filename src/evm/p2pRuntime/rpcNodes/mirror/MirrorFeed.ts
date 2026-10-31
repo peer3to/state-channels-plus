@@ -7,6 +7,7 @@ import type {
     RpcBlock,
     StateRequestParams,
     StorageDiffCatchUp,
+    StorageDiffDelayNotice,
     StorageDiffSnapshot,
     StorageDiffState,
     SubscribeResult,
@@ -30,6 +31,8 @@ export type MirrorFeedHandlers = {
     ) => void;
     /** The included head advanced. */
     onIncludedHead: (head: IncludedHeadRecord) => void;
+    /** A block or snapshot a peer may be waiting for will not come soon. */
+    onDelayed: (notice: StorageDiffDelayNotice) => void;
     /** The feed ended; it is unusable. */
     onLost: (reason: Error) => void;
 };

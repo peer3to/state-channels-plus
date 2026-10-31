@@ -9,6 +9,11 @@ import type { MirrorStateManager } from "./MirrorStateManager";
 import { MirrorUnavailableError } from "./MirrorUnavailableError";
 import type { Logger } from "@/utils/logging/Logger";
 import { Mutex } from "@/utils/Mutex";
+import {
+    BACKSTOP_WINDOW_MS,
+    LearnedBackstop,
+    SDK_RPC_DEADLINE_MS
+} from "@/utils/storageDiff/LearnedBackstop";
 import type {
     AccountAddress,
     AccountDiffs,
@@ -17,6 +22,7 @@ import type {
     IncludedHeadRecord,
     StateRequestParams,
     StorageDiffCatchUp,
+    StorageDiffDelayNotice,
     StorageDiffSnapshot,
     SubscribeResult,
     SubscriptionId
@@ -28,43 +34,13 @@ import type {
  */
 const MAX_APPLIED_BLOCKS = 128;
 /**
- * Deadline of the SDK's own RPCs, which read through the mirror (for example
- * `dispute.constructDispute`): `NetworkRpcRouter` ends a request after the
- * channel's `agreementTime`, and 3 s is the value the mirror is held to. No
- * constant of that name exists in the SDK to import.
+ * The cap of the wait backstop: the deadline of the SDK's own RPCs, which
+ * read through the mirror. It is one constant here because the provider is
+ * built once per runtime host, before any channel exists, so the real value
+ * (`NetworkRpcRouter.defaultRequestTimeoutMs`, from a channel's
+ * `agreementTime`) cannot reach it without new architecture.
  */
-export const SDK_RPC_DEADLINE_MS = 3_000;
-/**
- * Left of the deadline for what follows a wait that ran out: a round trip to
- * the node for the fallback read, the local work, and a margin.
- */
-const FALLBACK_RESERVE_MS = 1_000;
-/**
- * What the two waits of one read may take together. They run one after the
- * other (the freshness wait first, then the snapshot wait), so their sum, not
- * each alone, has to leave {@link FALLBACK_RESERVE_MS} of the deadline.
- */
-const WAIT_BUDGET_MS = SDK_RPC_DEADLINE_MS - FALLBACK_RESERVE_MS;
-
-/**
- * Safety net only, not the normal path: the longest a read waits for the
- * mirror to reach a block the peer saw (its own transaction, or a block a
- * node announced) before it is answered without it. Over 1,430 waits in the
- * shadow runs (15 E2E files, inline) the head took 3 ms at the median, 18 ms
- * at the 99th percentile and 105 ms at most to arrive after the node's
- * announcement (371 waits in worker mode: 3, 23 and 28 ms). Half of
- * {@link WAIT_BUDGET_MS}: about nine times the longest wait measured.
- */
-const OWN_TRANSACTION_WAIT_MS = WAIT_BUDGET_MS / 2;
-
-/**
- * Safety net only, not the normal path: the longest the mirror waits for the
- * snapshot of an account the feed said is `ready` (complete, pushed at once)
- * on a socket that stays open. A snapshot the feed says is `syncing` or
- * `lazy` is not waited for at all, and a lost socket ends the wait at once.
- * The rest of {@link WAIT_BUDGET_MS} after the freshness wait.
- */
-export const SNAPSHOT_CEILING_MS = WAIT_BUDGET_MS - OWN_TRANSACTION_WAIT_MS;
+export { SDK_RPC_DEADLINE_MS };
 
 /**
  * Passes over one read the mirror makes before giving up on it: each pass
@@ -74,8 +50,14 @@ const MAX_DISCOVERY_PASSES = 256;
 /** A block number above any head: a catch-up from it answers the head alone. */
 const BEYOND_HEAD = 1n << 64n;
 
+/** A block's height. */
+type BlockNumber = bigint;
+
+/** Milliseconds since the epoch. */
+type EpochMs = number;
+
 /** A block of the chain as the mirror follows it. */
-type ChainBlock = { number: bigint; hash: string };
+type ChainBlock = { number: BlockNumber; hash: string };
 
 /** A block of the chain as the mirror follows it. */
 export type MirrorBlock = ChainBlock;
@@ -111,8 +93,16 @@ export interface MirrorChainStatistics {
     lazyFields: number;
     /** Snapshots applied. */
     snapshots: number;
-    /** Waits for a snapshot that ran out. */
+    /** Waits for a snapshot that ended at the backstop, a silent hang. */
     snapshotTimeouts: number;
+    /** Waits for a snapshot the service said was delayed. */
+    snapshotDelays: number;
+    /** Reads sent to the node because the copy did not reach a block the peer saw by the backstop. */
+    freshnessTimeouts: number;
+    /** Reads sent to the node because the service said a block is late, or the node moved on. */
+    behindNode: number;
+    /** The longest a wait lasts now when no event ends it. */
+    backstopMs: number;
     /** Accounts the feed said no snapshot is coming for. */
     lazyNotices: number;
     /** Accounts dropped to lazy reads after they were complete. */
@@ -165,17 +155,36 @@ export class MirrorChain {
     private requiredBlock?: ChainBlock;
     /** Newest block number the nodes announced; reads wait for the head to reach it. */
     private requiredNumber = 0n;
-    /** Accounts whose snapshot a fill is waiting for, and what ends the wait. */
-    private readonly awaitedSnapshots = new Map<AccountAddress, () => void>();
+    /**
+     * Accounts whose snapshot a fill is waiting for, and what ends the wait;
+     * it is told whether the service said the snapshot is delayed.
+     */
+    private readonly awaitedSnapshots = new Map<
+        AccountAddress,
+        (delayed?: boolean) => void
+    >();
+    /** When a node announced each block number the head has not reached yet. */
+    private readonly announcedAt = new Map<BlockNumber, EpochMs>();
+    /** How long a wait lasts when no event ends it, learned from how long records took. */
+    private readonly backstop = new LearnedBackstop(SDK_RPC_DEADLINE_MS);
+    /**
+     * A wait ended without the block it waited for (the service said it is
+     * late, the node moved on, or the backstop ran out): reads go to the node
+     * until the head holds the block the peer saw.
+     */
+    private behind = false;
     /** Accounts whose missing state is read from the node: the feed's copy was found wrong. */
     private readonly nodeRead = new Set<AccountAddress>();
     /** Snapshots from a block the head has not reached, by arrival. */
     private pendingSnapshots: StorageDiffSnapshot[] = [];
-    private readonly counters: MirrorChainStatistics = {
+    private readonly counters: Omit<MirrorChainStatistics, "backstopMs"> = {
         lazyReads: 0,
         lazyFields: 0,
         snapshots: 0,
         snapshotTimeouts: 0,
+        snapshotDelays: 0,
+        freshnessTimeouts: 0,
+        behindNode: 0,
         lazyNotices: 0,
         lazyDrops: 0,
         sampleChecks: 0,
@@ -211,12 +220,18 @@ export class MirrorChain {
      * the peer already saw.
      */
     requireNumber(number: bigint): void {
-        if (number > this.requiredNumber) this.requiredNumber = number;
+        if (number <= this.requiredNumber) return;
+        // the node moved on while the mirror still lacks the block it announced
+        // before: the service is a whole block behind, so reads go to the node
+        const lacking = !this.holds(this.requiredBlock);
+        this.requiredNumber = number;
+        this.noteAnnounced(number);
+        if (lacking) this.giveUpWaiting();
     }
 
     /** What the mirror's own state reads cost so far. */
     get statistics(): MirrorChainStatistics {
-        return { ...this.counters };
+        return { ...this.counters, backstopMs: this.backstop.boundMs };
     }
 
     /** The newest block number a node announced to this runtime. */
@@ -289,6 +304,7 @@ export class MirrorChain {
     requireBlock(block: ChainBlock): void {
         if (!this.requiredBlock || block.number >= this.requiredBlock.number)
             this.requiredBlock = block;
+        this.noteAnnounced(block.number);
     }
 
     /**
@@ -297,11 +313,16 @@ export class MirrorChain {
      * first, and the read runs again from the start, so one read sees one head.
      */
     async run<T>(read: (head: MirrorHead) => Promise<T>): Promise<T> {
-        await this.waitForOwnTransactions();
+        await this.waitForRequiredBlock();
         await this.lock.lock();
         try {
             for (let pass = 0; pass < MAX_DISCOVERY_PASSES; pass++) {
                 const head = await this.ensureFollowing();
+                // following again may have started from a service that is behind the peer
+                if (!this.holds(this.requiredBlock))
+                    throw new MirrorUnavailableError(
+                        "The mirror is behind the node"
+                    );
                 let outcome: { value: T } | { error: unknown };
                 try {
                     outcome = { value: await read(head) };
@@ -359,17 +380,36 @@ export class MirrorChain {
         return { number: BigInt(record.number), hash: record.hash };
     }
 
-    private async waitForOwnTransactions(): Promise<void> {
-        const deadline = Date.now() + OWN_TRANSACTION_WAIT_MS;
+    /**
+     * Waits until the mirror holds the block the peer saw. The wait ends at
+     * the first of: the block's record arriving (it then returns); the
+     * service saying the block is late, or the node announcing a later block
+     * while this one is still missing ({@link giveUpWaiting}); the connection
+     * dropping (the mirror then does not follow, and the read starts over
+     * from the service's head); and, for a service that hangs silently, the
+     * learned backstop. A wait that ends without the block throws, so the
+     * read goes to the node and never to an older head.
+     */
+    private async waitForRequiredBlock(): Promise<void> {
+        const deadline = Date.now() + this.backstop.boundMs;
         for (;;) {
-            const required = this.requiredBlock;
-            if (this.closed || this.holds(required)) return;
+            if (this.closed || this.holds(this.requiredBlock)) {
+                this.behind = false;
+                return;
+            }
+            if (this.behind) {
+                this.counters.behindNode++;
+                throw new MirrorUnavailableError(
+                    "The mirror is behind the node"
+                );
+            }
             const remaining = deadline - Date.now();
             if (remaining <= 0) {
-                // the block never reached the mirror: stop holding reads for it
-                if (this.requiredBlock === required)
-                    this.requiredBlock = undefined;
-                return;
+                this.behind = true;
+                this.counters.freshnessTimeouts++;
+                throw new MirrorUnavailableError(
+                    "The block never reached the mirror"
+                );
             }
             await new Promise<void>((resolve) => {
                 const wake = () => {
@@ -379,6 +419,35 @@ export class MirrorChain {
                 const timer = setTimeout(wake, remaining);
                 this.headWaiters.add(wake);
             });
+        }
+    }
+
+    /** Ends the waits for a block the head lacks: those reads go to the node. */
+    private giveUpWaiting(): void {
+        this.behind = true;
+        this.notifyHeadWaiters();
+    }
+
+    /** Notes when a node announced `number`, to time how long its record takes. */
+    private noteAnnounced(number: BlockNumber): void {
+        const head = this.head;
+        // not following, or already at the block: no wait to time
+        if (!head || head.number >= number || this.announcedAt.has(number))
+            return;
+        this.announcedAt.set(number, Date.now());
+    }
+
+    /** Records how long the announced blocks up to `number` took to reach the head. */
+    private noteArrived(number: BlockNumber): void {
+        const now = Date.now();
+        for (const [announced, at] of this.announcedAt) {
+            // a block never applied (orphaned) does not teach how long one takes
+            if (now - at > BACKSTOP_WINDOW_MS)
+                this.announcedAt.delete(announced);
+            else if (announced <= number) {
+                this.backstop.record(now - at);
+                this.announcedAt.delete(announced);
+            }
         }
     }
 
@@ -441,6 +510,7 @@ export class MirrorChain {
                 if (!this.closed) this.receiveSnapshot(snapshot);
             },
             onIncludedHead: (head) => this.noteIncludedHead(head),
+            onDelayed: (notice) => this.receiveDelay(notice),
             onLost: (reason) => void this.onFeedLost(feed, reason)
         });
         this.feed = feed;
@@ -528,7 +598,10 @@ export class MirrorChain {
     /**
      * Starts expecting the snapshots of `addresses`, before following them,
      * so one that arrives during that is applied at once. `settled` waits for
-     * all of them, or for the bound.
+     * all of them; it ends at the first of: they all arrive, the service says
+     * they are not coming (`lazy`: the read goes on and reads them as it
+     * needs; delayed: the read throws and goes to the node), the connection
+     * drops, or the learned backstop runs out (the read throws).
      */
     private expectSnapshots(addresses: AccountAddress[]): {
         release: (addresses: AccountAddress[]) => void;
@@ -538,11 +611,13 @@ export class MirrorChain {
             (address) => !this.state.isComplete(address)
         );
         let remaining = waiting.length;
+        let delayed = false;
         let resolveAll!: () => void;
         const all = new Promise<void>((resolve) => (resolveAll = resolve));
         if (remaining === 0) resolveAll();
         for (const address of waiting)
-            this.awaitedSnapshots.set(address, () => {
+            this.awaitedSnapshots.set(address, (wasDelayed) => {
+                if (wasDelayed) delayed = true;
                 if (--remaining === 0) resolveAll();
             });
         return {
@@ -556,18 +631,62 @@ export class MirrorChain {
             settled: async () => {
                 if (remaining === 0) return;
                 let timer: ReturnType<typeof setTimeout> | undefined;
+                let expiredAtBackstop = false;
                 const expired = new Promise<void>((resolve) => {
                     timer = setTimeout(() => {
-                        this.counters.snapshotTimeouts++;
+                        expiredAtBackstop = true;
                         resolve();
-                    }, SNAPSHOT_CEILING_MS);
+                    }, this.backstop.boundMs);
                 });
                 await Promise.race([all, expired]);
                 clearTimeout(timer);
                 for (const address of waiting)
                     this.awaitedSnapshots.delete(address);
+                // a snapshot that did not come sends the read to the node
+                if (expiredAtBackstop) {
+                    this.counters.snapshotTimeouts++;
+                    throw new MirrorUnavailableError(
+                        "The snapshot never reached the mirror"
+                    );
+                }
+                if (delayed) {
+                    this.counters.snapshotDelays++;
+                    throw new MirrorUnavailableError(
+                        "The service said the snapshot is delayed"
+                    );
+                }
             }
         };
+    }
+
+    /**
+     * The service says a block or snapshot a read may wait for will not come
+     * soon: the wait ends and the read goes to the node. A late block matters
+     * only to a wait for a block the head lacks, and for an `upstream-behind`
+     * notice only when that wait is for the requested block or later.
+     */
+    private receiveDelay(notice: StorageDiffDelayNotice): void {
+        if (this.closed) return;
+        this.log("debug", "Storage diff service reports a delay", {
+            reason: notice.reason
+        });
+        if (notice.reason === "snapshot-delayed") {
+            for (const address of notice.accounts)
+                this.awaitedSnapshots.get(address)?.(true);
+            return;
+        }
+        if (this.holds(this.requiredBlock)) return;
+        const wanted = this.requiredBlock
+            ? this.requiredBlock.number > this.requiredNumber
+                ? this.requiredBlock.number
+                : this.requiredNumber
+            : this.requiredNumber;
+        if (
+            notice.reason === "upstream-behind" &&
+            wanted < BigInt(notice.requested)
+        )
+            return;
+        this.giveUpWaiting();
     }
 
     /**
@@ -781,6 +900,7 @@ export class MirrorChain {
     private applyBlock(record: BlockStorageDiff): void {
         this.state.applyBlock(record);
         this.applied.push(record);
+        this.noteArrived(BigInt(record.number));
         if (this.pendingSnapshots.length > 0) {
             const waiting = this.pendingSnapshots;
             this.pendingSnapshots = [];

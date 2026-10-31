@@ -14,6 +14,7 @@ import {
     type IncludedHeadRecord,
     type RpcBlock,
     type StateRequestParams,
+    type StorageDiffDelayNotice,
     type StorageDiffSnapshot,
     type SubscribeResult,
     type StorageDiffCatchUp,
@@ -28,8 +29,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * The storage diff service's JSON-RPC WebSocket as the mirror uses it: the
- * three `scp_` requests, and the `scp_subscription` and `scp_includedHead`
- * pushes handed to the handlers. The socket never reconnects; its owner
+ * three `scp_` requests, and the `scp_subscription`, `scp_snapshot`,
+ * `scp_includedHead` and `scp_delayed` pushes handed to the handlers. The socket never reconnects; its owner
  * opens a new one after `onLost`.
  */
 export class StorageDiffSocket extends WebSocketProvider implements MirrorFeed {
@@ -180,6 +181,10 @@ export class StorageDiffSocket extends WebSocketProvider implements MirrorFeed {
                 this.handlers.onIncludedHead(
                     params as unknown as IncludedHeadRecord
                 );
+                return;
+            }
+            if (method === "scp_delayed" && isRecord(params)) {
+                this.handlers.onDelayed(params as StorageDiffDelayNotice);
                 return;
             }
             // scp_disconnect: the close that follows reports the loss
