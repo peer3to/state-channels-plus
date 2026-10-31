@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: scripted Substrate node staging; executable evidence belongs to its calling test declarations
 import { reviveAccountInfoKey } from "@/utils/node/storageDiff/assetHubStateCheck";
 import { WebSocketServer, type AddressInfo } from "ws";
 
