@@ -286,11 +286,13 @@ function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
  * {@link MultiRpcProvider} that answers `eth_call`, `eth_getStorageAt`,
  * `eth_getCode`, `eth_getBalance` and the latest `eth_getTransactionCount`
  * at the latest block from a local EVM kept current by the storage diff
- * service, instead of asking a node. Everything else, and every read the
- * mirror cannot answer, goes to the nodes as before: transactions,
- * `eth_estimateGas` (Asset Hub gas is weight based), logs, receipts, reads at
- * an older block and a pending nonce. Without a storage diff URL it is a
- * plain {@link MultiRpcProvider}.
+ * service, instead of asking a node. It answers `eth_blockNumber`, blocks,
+ * transactions and receipts from the service's retained data, and the chain
+ * id from the first answer. Everything else, and every read the mirror cannot
+ * answer, goes to the nodes as before: sent transactions, `eth_estimateGas`
+ * (Asset Hub gas is weight based), logs, reads at an older block, a pending
+ * nonce, and a block, transaction or receipt the service does not hold.
+ * Without a storage diff URL it is a plain {@link MultiRpcProvider}.
  */
 export default class MirrorRpcProvider extends MultiRpcProvider {
     private readonly mirror?: Mirror;
