@@ -17,6 +17,7 @@ import {
     type StorageDiffCatchUp,
     type StorageDiffState
 } from "@/utils/node/storageDiff/StorageDiffService";
+import type { StorageDiffDelayNotice } from "@/utils/storageDiff/storageDiffWire";
 import {
     SimpleNumberStorage__factory,
     type SimpleNumberStorage
@@ -87,6 +88,9 @@ export class StorageDiffClient {
     // `scp_includedHead` params not yet read, in arrival order.
     private readonly includedHeads: IncludedHeadRecord[] = [];
     private includedHeadWaiter?: Waiter<IncludedHeadRecord>;
+    // `scp_delayed` notices not yet read, in arrival order.
+    private readonly delays: StorageDiffDelayNotice[] = [];
+    private delayWaiter?: Waiter<StorageDiffDelayNotice>;
     // `scp_disconnect` notification params, in arrival order.
     private readonly disconnectNotices: unknown[] = [];
     private readonly socketClosed: Promise<{ code: number; reason: string }>;
@@ -243,6 +247,18 @@ export class StorageDiffClient {
         }
     }
 
+    /** The next `scp_delayed` notice, in push order. */
+    nextDelay(): Promise<StorageDiffDelayNotice> {
+        const queued = this.delays.shift();
+        if (queued) return Promise.resolve(queued);
+        return new Promise((resolve) => (this.delayWaiter = resolve));
+    }
+
+    /** `scp_delayed` notices pushed and not read yet. */
+    unreadDelays(): StorageDiffDelayNotice[] {
+        return [...this.delays];
+    }
+
     /** Stops reading from the socket, so the service's sends pile up. */
     pause(): void {
         this.socket.pause();
@@ -270,6 +286,13 @@ export class StorageDiffClient {
         const message = JSON.parse(raw);
         if (message.method === "scp_disconnect") {
             this.disconnectNotices.push(message.params);
+            return;
+        }
+        if (message.method === "scp_delayed") {
+            const waiter = this.delayWaiter;
+            this.delayWaiter = undefined;
+            if (waiter) waiter(message.params);
+            else this.delays.push(message.params);
             return;
         }
         if (message.method === "scp_includedHead") {

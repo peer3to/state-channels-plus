@@ -17,7 +17,7 @@ import {
 import { UPSTREAM_FAULT } from "../../fixtures/node/UpstreamRelay";
 import { sleep } from "@/utils";
 import { NOT_RETAINED_ERROR_CODE } from "@/utils/node/storageDiff/blockStorageDiff";
-import { HEAD_WAIT_MS } from "@/utils/node/storageDiff/StorageDiffService";
+import { SDK_RPC_DEADLINE_MS } from "@/utils/storageDiff/LearnedBackstop";
 import { expect } from "chai";
 import { Wallet, toQuantity } from "ethers";
 
@@ -258,49 +258,133 @@ describe("StorageDiffService blocks", function () {
     });
 
     it("holds a read that names the block its caller saw until the head reaches it", async function () {
+        await withStorageDiffSession(async ({ client, provider, relay }) => {
+            await client.subscribe([]);
+            const held = relay.holdNext("eth_getBlockByNumber", "latest");
+
+            await provider.send("evm_mine", []);
+            await held.arrived;
+            const mined = await provider.send("eth_blockNumber", []);
+            let settled = false;
+            const read = client
+                .request("scp_getBlock", ["latest", false, mined])
+                .finally(() => (settled = true));
+            await sleep(ABSENCE_WINDOW_MS);
+            expect(settled, "the service has not reached the block").to.equal(
+                false
+            );
+            const released = Date.now();
+            held.release();
+
+            const block = (await read) as { number: string };
+            expect(block.number).to.equal(mined);
+            // the head reaching the block ends the wait, not the backstop
+            expect(Date.now() - released).to.be.lessThan(
+                SDK_RPC_DEADLINE_MS / 2
+            );
+        });
+    });
+
+    it("answers at once with what it holds, and tells subscribers, when its upstream has not seen the block", async function () {
+        await withStorageDiffSession(async ({ client }) => {
+            await client.subscribe([]);
+            const head = (await client.request("scp_getHead", [])) as {
+                number: string;
+                hash: string;
+            };
+            const asked = toQuantity(BigInt(head.number) + 100n);
+            const started = Date.now();
+
+            const answer = (await client.request("scp_getHead", [asked])) as {
+                number: string;
+            };
+
+            expect(answer.number).to.equal(head.number);
+            expect(Date.now() - started).to.be.lessThan(
+                SDK_RPC_DEADLINE_MS / 2
+            );
+            expect(await client.nextDelay()).to.deep.equal({
+                reason: "upstream-behind",
+                requested: asked,
+                head: { number: head.number, hash: head.hash }
+            });
+        });
+    });
+
+    it("answers at once with what it holds, and tells subscribers, when tracing the awaited block fails", async function () {
         await withStorageDiffSession(
             async ({ client, provider, relay, signer }) => {
+                const subscription = await client.subscribe([]);
                 const storage = await deployNumberStorage(signer);
-                await client.subscribe([]);
+                const deployed = Number(
+                    await provider.send("eth_blockNumber", [])
+                );
+                const before = await client.recordAt(subscription, deployed);
+                relay.failNext("debug_traceBlockByNumber", 1);
                 const held = relay.holdNext("eth_getBlockByNumber", "latest");
-
-                await provider.send("evm_mine", []);
+                const mined = await setValue(storage, 3n);
                 await held.arrived;
-                const mined = await provider.send("eth_blockNumber", []);
-                let settled = false;
-                const read = client
-                    .request("scp_getBlock", ["latest", false, mined])
-                    .finally(() => (settled = true));
-                await sleep(ABSENCE_WINDOW_MS);
-                expect(
-                    settled,
-                    "the service has not reached the block"
-                ).to.equal(false);
-                const released = Date.now();
+                const started = Date.now();
+                const read = client.request("scp_getHead", [
+                    toQuantity(mined.blockNumber)
+                ]);
+                await sleep(50);
                 held.release();
 
-                const block = (await read) as { number: string };
-                expect(block.number).to.equal(mined);
-                // the head reaching the block ends the wait, not the bound
-                expect(Date.now() - released).to.be.lessThan(HEAD_WAIT_MS / 2);
-                void storage;
+                const answer = (await read) as { number: string };
+
+                expect(answer.number).to.equal(before.number);
+                expect(Date.now() - started).to.be.lessThan(
+                    SDK_RPC_DEADLINE_MS / 2
+                );
+                const notice = await client.nextDelay();
+                expect(notice.reason).to.equal("trace-failed");
+                expect(
+                    notice.reason === "trace-failed" && notice.block.number
+                ).to.equal(toQuantity(mined.blockNumber));
             }
         );
     });
 
-    it("answers with what it holds after the head wait, when the head never gets there", async function () {
-        await withStorageDiffSession(async ({ client }) => {
-            const head = (await client.request("scp_getHead", [])) as {
-                number: string;
-            };
-            const started = Date.now();
+    it("answers with what it holds when a silent hang outlasts the learned backstop", async function () {
+        await withStorageDiffSession(
+            async ({ client, provider, relay, service, signer }) => {
+                const subscription = await client.subscribe([]);
+                const storage = await deployNumberStorage(signer);
+                await setValue(storage, 1n);
+                await setValue(storage, 2n);
+                const settledAt = Number(
+                    await provider.send("eth_blockNumber", [])
+                );
+                const before = await client.recordAt(subscription, settledAt);
+                // the heads so far arrived fast, so the backstop is shorter than its cap
+                expect(service.headWaitBackstopMs).to.be.lessThan(
+                    SDK_RPC_DEADLINE_MS
+                );
+                const held = relay.holdNext("eth_getBlockByNumber", "latest");
+                await provider.send("evm_mine", []);
+                await held.arrived;
+                const mined = await provider.send("eth_blockNumber", []);
+                const started = Date.now();
 
-            const answer = (await client.request("scp_getHead", [
-                toQuantity(BigInt(head.number) + 100n)
-            ])) as { number: string };
+                const answer = (await client.request("scp_getHead", [
+                    mined
+                ])) as { number: string };
 
-            expect(answer.number).to.equal(head.number);
-            expect(Date.now() - started).to.be.at.least(HEAD_WAIT_MS - 100);
+                expect(answer.number).to.equal(before.number);
+                expect(Date.now() - started).to.be.lessThan(
+                    SDK_RPC_DEADLINE_MS
+                );
+                // a hang is silent: the service had nothing to tell
+                expect(client.unreadDelays()).to.deep.equal([]);
+                held.release();
+            }
+        );
+    });
+
+    it("waits as long as the SDK deadline for a silent hang until a head has been committed", async function () {
+        await withStorageDiffSession(async ({ service }) => {
+            expect(service.headWaitBackstopMs).to.equal(SDK_RPC_DEADLINE_MS);
         });
     });
 });

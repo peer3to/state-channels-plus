@@ -187,8 +187,15 @@ transactions), so a peer can read chain data from it instead of the node:
 
 `minBlock` (a hex quantity, optional on these four calls) makes the service
 wait until its head reaches that block before it answers, for a caller that has
-seen a newer block on the node. The wait is bounded; after it the service
-answers with what it holds.
+seen a newer block on the node. The wait ends at the first of: the head reaching
+`minBlock`; a failed (or retried) trace of a block it is processing, which holds
+back every block after it; the upstream not yet having seen `minBlock` (asked
+once with `eth_blockNumber` when the wait starts); and, for a service that hangs
+silently, a backstop learned from how long a new head took to commit after the
+upstream announced it (four times the slowest of the last 30 s, never more than
+3 s, and 3 s until a head has been committed). The first two causes are also
+pushed as `scp_delayed` (below). After the wait the service answers with what it
+holds, so a caller compares the answer's number with the one it asked for.
 
 A `null` does not mean the chain lacks the block or transaction: it may be newer
 than the service's head or older than its window, so a caller asks the node then.
@@ -303,6 +310,20 @@ that nest and re-enter" checks this on nested and re-entered frames against
   follow it, at once and again to each later subscriber, so the subscriber
   stops waiting for a snapshot and reads the account lazily. This also covers
   an account that flips to lazy after it was `syncing` or `ready`.
+- **Delay notices.** When something a peer may be waiting for will not come
+  soon, the service pushes `{"jsonrpc":"2.0","method":"scp_delayed","params":N}`
+  to the sockets that hold a subscription, so the peer need not wait out a bound
+  (a notice is an early "no", never a promise). `N` is one of
+  `{"reason":"trace-failed","block":{"number","hash"}}` (tracing that block
+  failed or is being retried, so its record is late),
+  `{"reason":"upstream-behind","requested":"0x..","head":{"number","hash"}}`
+  (a caller asked for block `requested` through `minBlock` and the service's
+  upstream has not seen it; `head` is the service's best head) and
+  `{"reason":"snapshot-delayed","subscription","block":{"number","hash"},"accounts":[addresses]}`
+  (a snapshot that was promised or sent as `ready` for those accounts is not
+  coming at once, because a reorg past the retained window cleared the cache;
+  it follows after the rebuild, or `lazy` is told). Snapshots that will never
+  come are still told by `lazy` in `scp_snapshot`, not by this notice.
 - **Lazy path.** A read of anything not held still goes through `scp_getState`
   (which reads the upstream once); the peer falls back to its node on `-32002`.
 - **Persistence.** With `--cache-dir` the service writes `state.json`

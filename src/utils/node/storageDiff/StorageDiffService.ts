@@ -60,8 +60,13 @@ import {
     UpstreamRpcClient,
     UpstreamTimeoutError
 } from "./UpstreamRpcClient";
+import {
+    LearnedBackstop,
+    SDK_RPC_DEADLINE_MS
+} from "../../storageDiff/LearnedBackstop";
 import type {
     StorageDiffCatchUp,
+    StorageDiffDelayNotice,
     StorageDiffState
 } from "../../storageDiff/storageDiffWire";
 import type { Logger } from "@/utils";
@@ -85,13 +90,6 @@ export const SEND_BUFFER_OVERFLOW = "send-buffer-overflow";
 /** WebSocket close code for that cut: policy violation. */
 export const SEND_BUFFER_OVERFLOW_CLOSE_CODE = 1008;
 
-/**
- * Longest a read that names the block its caller saw waits for the service's
- * head to reach it. The service learns of a block from the same node
- * notification as the caller, then fetches and traces it, so a wait is a few
- * tens of milliseconds; the bound is for a service that is stuck.
- */
-export const HEAD_WAIT_MS = 2_000;
 /** Quiet time before the cache is written to disk, so a burst of blocks is one write. */
 export const SAVE_DEBOUNCE_MS = 500;
 /** Newest blocks the file keeps, to undo them if the saved head is orphaned. */
@@ -187,8 +185,16 @@ export interface StorageDiffPeer {
     closing: boolean;
     /** Accounts whose snapshot this peer has been sent. */
     snapshotted: Set<AccountAddress>;
+    /** Accounts a subscription reply promised as `ready` whose snapshot is not sent yet. */
+    promisedReady: Set<AccountAddress>;
     /** Run once the reply to the request in hand is sent. */
     afterReply: (() => void)[];
+}
+
+/** A read held until the best head reaches `minBlock`; `end` lets it go. */
+interface HeadWaiter {
+    minBlock: bigint;
+    end: () => void;
 }
 
 /** Identifies one state fetch in flight: a `StateField` as text. */
@@ -279,7 +285,10 @@ export class StorageDiffService {
         snapshotsSent: 0
     };
     // Reads waiting for the best head to reach the block their caller saw.
-    private readonly headWaiters = new Set<() => void>();
+    private readonly headWaiters = new Set<HeadWaiter>();
+    // How long such a read may wait when no event ends it: learned from how
+    // long a new head took to commit after the upstream announced it.
+    private readonly headBackstop = new LearnedBackstop(SDK_RPC_DEADLINE_MS);
     // Whether the upstream answers eth_getBlockReceipts; one failed call turns it off.
     private blockReceiptsSupported = true;
     // The upstream dropped while the service was starting.
@@ -366,6 +375,11 @@ export class StorageDiffService {
         return `ws://${bound}:${address.port}`;
     }
 
+    /** How long a read that names a block the head lacks may wait if no event ends it. */
+    get headWaitBackstopMs(): number {
+        return this.headBackstop.boundMs;
+    }
+
     /** The counters of lazy state reads and backfills so far. */
     get statistics(): StorageDiffStatistics {
         return {
@@ -397,21 +411,20 @@ export class StorageDiffService {
             });
             // the records keep these accounts' values from the next block on
             for (const address of addresses) void this.watch(address);
-            return {
-                subscription: id,
-                accounts: Object.fromEntries(
-                    addresses.map(
-                        (address): [AccountAddress, SnapshotStatus] => [
-                            address,
-                            this.lazyAccounts.has(address)
-                                ? "lazy"
-                                : this.stateCache.isComplete(address)
-                                  ? "ready"
-                                  : "syncing"
-                        ]
-                    )
-                )
-            };
+            const accounts = Object.fromEntries(
+                addresses.map((address): [AccountAddress, SnapshotStatus] => [
+                    address,
+                    this.lazyAccounts.has(address)
+                        ? "lazy"
+                        : this.stateCache.isComplete(address)
+                          ? "ready"
+                          : "syncing"
+                ])
+            );
+            for (const [address, status] of Object.entries(accounts))
+                if (status === "ready" && !peer.snapshotted.has(address))
+                    peer.promisedReady.add(address);
+            return { subscription: id, accounts };
         });
     }
 
@@ -566,28 +579,86 @@ export class StorageDiffService {
     }
 
     /**
-     * Resolves once the best head is at `minBlock` or higher, or after
-     * {@link HEAD_WAIT_MS}; a caller then answers with what the service holds.
+     * Resolves once the best head is at `minBlock` or higher, or at the first
+     * of: the service saying the block is late ({@link noteDelay}: its
+     * tracing failed or is retried, or the upstream has not seen the block),
+     * the service closing, or the learned backstop for a service that hangs
+     * silently. A caller then answers with what the service holds.
      */
-    private reachHead(minBlock: bigint | undefined): Promise<void> {
-        const reached = () =>
-            minBlock === undefined ||
-            BigInt(this.canonical[this.canonical.length - 1].number) >=
-                minBlock;
-        if (reached()) return Promise.resolve();
-        return new Promise<void>((resolve) => {
-            const waiter = () => {
-                if (!reached()) return;
-                this.headWaiters.delete(waiter);
-                clearTimeout(timer);
-                resolve();
+    private async reachHead(minBlock: bigint | undefined): Promise<void> {
+        if (minBlock === undefined || this.headNumber() >= minBlock) return;
+        await new Promise<void>((resolve) => {
+            const waiter: HeadWaiter = {
+                minBlock,
+                end: () => {
+                    clearTimeout(timer);
+                    this.headWaiters.delete(waiter);
+                    resolve();
+                }
             };
-            const timer = setTimeout(() => {
-                this.headWaiters.delete(waiter);
-                resolve();
-            }, HEAD_WAIT_MS);
+            const timer = setTimeout(waiter.end, this.headBackstop.boundMs);
             this.headWaiters.add(waiter);
+            void this.checkUpstreamHas(waiter);
         });
+    }
+
+    /** The number of the best head. */
+    private headNumber(): bigint {
+        return BigInt(this.canonical[this.canonical.length - 1].number);
+    }
+
+    /**
+     * Asks the upstream for its newest block number; when it has not seen the
+     * block `waiter` waits for, that block cannot arrive soon. A failed ask
+     * leaves the wait to the backstop.
+     */
+    private async checkUpstreamHas(waiter: HeadWaiter): Promise<void> {
+        try {
+            const answer = await this.request("eth_blockNumber", []);
+            if (!this.headWaiters.has(waiter) || typeof answer !== "string")
+                return;
+            if (BigInt(answer) >= waiter.minBlock) return;
+            const head = this.canonical[this.canonical.length - 1];
+            this.noteDelay({
+                reason: "upstream-behind",
+                requested: toQuantity(waiter.minBlock),
+                head: { number: head.number, hash: head.hash }
+            });
+        } catch {
+            // the backstop ends the wait
+        }
+    }
+
+    /**
+     * Ends the waits the notice makes pointless and pushes it to the
+     * subscribed peers. A block that fails to trace holds back every block
+     * after it, so it ends every wait; an upstream that has not seen block N
+     * ends the waits for N or later.
+     */
+    private noteDelay(notice: StorageDiffDelayNotice): void {
+        if (notice.reason === "trace-failed") {
+            for (const waiter of [...this.headWaiters]) waiter.end();
+        } else if (notice.reason === "upstream-behind") {
+            const requested = BigInt(notice.requested);
+            for (const waiter of [...this.headWaiters])
+                if (waiter.minBlock >= requested) waiter.end();
+        }
+        for (const peer of this.peers.values()) {
+            if (peer.closing || peer.subscriptions.size === 0) continue;
+            this.pushDelay(peer, notice);
+        }
+    }
+
+    private pushDelay(
+        peer: StorageDiffPeer,
+        notice: StorageDiffDelayNotice
+    ): void {
+        this.send(peer.socket, {
+            jsonrpc: "2.0",
+            method: "scp_delayed",
+            params: notice
+        });
+        this.dropIfLagging(peer);
     }
 
     /**
@@ -760,6 +831,7 @@ export class StorageDiffService {
             nextSubscription: 0,
             closing: false,
             snapshotted: new Set(),
+            promisedReady: new Set(),
             afterReply: []
         };
         const methods = new StorageDiffRpcMethods(this, peer);
@@ -883,10 +955,34 @@ export class StorageDiffService {
         headers: BlockHeader[],
         preFrom: "cache" | "chain"
     ): Promise<StagedBlock[]> {
+        const progress: { header?: BlockHeader } = {};
+        try {
+            return await this.stageHeaders(headers, preFrom, progress);
+        } catch (error) {
+            // the peers waiting for this block, or one after it, need not wait for it
+            const { header } = progress;
+            if (header)
+                this.noteDelay({
+                    reason: "trace-failed",
+                    block: {
+                        number: toQuantity(header.number),
+                        hash: header.hash
+                    }
+                });
+            throw error;
+        }
+    }
+
+    private async stageHeaders(
+        headers: BlockHeader[],
+        preFrom: "cache" | "chain",
+        progress: { header?: BlockHeader }
+    ): Promise<StagedBlock[]> {
         const records: StagedBlock[] = [];
         // the value each field has after the blocks staged so far
         const running = new Map<string, StateValue>();
         for (const header of headers) {
+            progress.header = header;
             let touches: BlockTouches = {};
             // the trace's values stand for a block in which no call frame failed
             let trusted: { pre: AccountDiffs; post: AccountDiffs } | undefined;
@@ -1218,7 +1314,13 @@ export class StorageDiffService {
             this.stateCache.clear();
             this.lazyAccounts.clear();
             // nothing is complete now: peers get new snapshots after new backfills
-            for (const peer of this.peers.values()) peer.snapshotted.clear();
+            for (const peer of this.peers.values()) {
+                this.noteSnapshotsDelayed(peer, [
+                    ...peer.snapshotted,
+                    ...peer.promisedReady
+                ]);
+                peer.snapshotted.clear();
+            }
             for (const address of this.subscribedAddresses())
                 this.startBackfill(address);
         } else {
@@ -1246,7 +1348,8 @@ export class StorageDiffService {
         }
         canonical.splice(0, Math.max(0, canonical.length - this.retention));
         for (const record of staged.slice(below ? 1 : 0)) this.publish(record);
-        for (const waiter of [...this.headWaiters]) waiter();
+        for (const waiter of [...this.headWaiters])
+            if (waiter.minBlock <= this.headNumber()) waiter.end();
         this.scheduleSave();
         void this.verifyEntryCounts(written);
         const head = canonical[canonical.length - 1];
@@ -1672,6 +1775,16 @@ export class StorageDiffService {
         lazy: ReadonlySet<AccountAddress> = this.lazyAccounts
     ): void {
         const head = this.canonical[this.canonical.length - 1];
+        // a ready account the cache no longer holds complete is late
+        this.noteSnapshotsDelayed(
+            peer,
+            addresses.filter(
+                (address) =>
+                    peer.promisedReady.has(address) &&
+                    !lazy.has(address) &&
+                    !this.stateCache.isComplete(address)
+            )
+        );
         for (const [subscription, subscribed] of peer.subscriptions) {
             const accounts: AccountDiffs = {};
             // accounts no snapshot is coming for: the peer reads them as needed
@@ -1686,6 +1799,7 @@ export class StorageDiffService {
                     continue;
                 accounts[address] = this.stateCache.accountOf(address);
                 peer.snapshotted.add(address);
+                peer.promisedReady.delete(address);
             }
             if (Object.keys(accounts).length === 0 && noSnapshot.length === 0)
                 continue;
@@ -1704,6 +1818,32 @@ export class StorageDiffService {
             });
             this.dropIfLagging(peer);
         }
+    }
+
+    /**
+     * Tells `peer` that the snapshots it was promised or sent as `ready` for
+     * those of `addresses` it follows are late, one notice per subscription.
+     * An account is told once: it is no longer promised.
+     */
+    private noteSnapshotsDelayed(
+        peer: StorageDiffPeer,
+        addresses: AccountAddress[]
+    ): void {
+        if (peer.closing || addresses.length === 0) return;
+        const head = this.canonical[this.canonical.length - 1];
+        for (const [subscription, subscribed] of peer.subscriptions) {
+            const accounts = [...new Set(addresses)].filter((address) =>
+                subscribed.includes(address)
+            );
+            if (accounts.length === 0) continue;
+            this.pushDelay(peer, {
+                reason: "snapshot-delayed",
+                subscription,
+                block: { number: head.number, hash: head.hash },
+                accounts
+            });
+        }
+        for (const address of addresses) peer.promisedReady.delete(address);
     }
 
     /** The cache and its newest blocks, as the file keeps them. */
@@ -2034,12 +2174,14 @@ export class StorageDiffService {
         }
         if (this.wakeQueued || this.stopping.signal.aborted) return;
         this.wakeQueued = true;
+        const woke = Date.now();
         this.enqueue(async () => {
             this.wakeQueued = false;
             await this.retryTransient(
                 () => this.reconcileHead(),
                 "Retrying head reconciliation"
             );
+            this.headBackstop.record(Date.now() - woke);
         }).catch((error) => {
             // A lost upstream is reconnected; the reconnect wakes again.
             if (error instanceof UpstreamLostError) return;
@@ -2064,6 +2206,7 @@ export class StorageDiffService {
     private teardown(reason?: Error): Promise<void> {
         this.shutdown ??= (async () => {
             this.stopping.abort();
+            for (const waiter of [...this.headWaiters]) waiter.end();
             if (this.saveTimer) clearTimeout(this.saveTimer);
             await this.saveNow();
             this.includedStrategy?.close();

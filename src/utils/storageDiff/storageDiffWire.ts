@@ -103,6 +103,27 @@ export interface StorageDiffSnapshot {
     lazy?: AccountAddress[];
 }
 
+/**
+ * What the service pushes (`scp_delayed`) when something a peer may be
+ * waiting for will not come soon, so the peer need not wait out a bound:
+ * `trace-failed`, tracing `block` failed or is being retried, so its record
+ * is late; `upstream-behind`, a caller asked for block `requested` (a
+ * quantity) that the service's upstream has not seen, `head` being the
+ * service's best head; `snapshot-delayed`, the snapshot of `accounts`, which
+ * the subscription's reply promised as `ready`, is not coming at once. An
+ * account no snapshot will ever come for is told by `lazy` in the snapshot
+ * message instead.
+ */
+export type StorageDiffDelayNotice =
+    | { reason: "trace-failed"; block: BlockAnchor }
+    | { reason: "upstream-behind"; requested: string; head: BlockAnchor }
+    | {
+          reason: "snapshot-delayed";
+          subscription: SubscriptionId;
+          block: BlockAnchor;
+          accounts: AccountAddress[];
+      };
+
 /** A block as the upstream's `eth_getBlockBy*` returns it, transactions as objects or hashes. */
 export type RpcBlock = Record<string, unknown> & {
     number: string;

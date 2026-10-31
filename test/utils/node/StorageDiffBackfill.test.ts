@@ -406,6 +406,47 @@ describe("StorageDiffService snapshot status of a subscription", function () {
         });
     });
 
+    it("tells a subscriber that a snapshot it was promised as ready is delayed when a reorg clears the cache", async function () {
+        await withStorageDiffSession(
+            async ({ client, provider, signer }) => {
+                const writer = await deploySlotWriter(signer);
+                await writeSlot(signer, writer, 1, 5n);
+                const first = await client.subscribeWithStatus([writer]);
+                await client.nextSnapshot(first.subscription);
+                const second = await client.subscribeWithStatus([writer]);
+                expect(second.accounts).to.deep.equal({ [writer]: "ready" });
+                await provider.send("anvil_mine", [4]);
+                const head = Number(await provider.send("eth_blockNumber", []));
+
+                // replaces the whole retained window: the cache is cleared and rebuilt
+                await provider.send("anvil_reorg", [2, []]);
+                await provider.send("evm_mine", []);
+                const notices = [
+                    await client.nextDelay(),
+                    await client.nextDelay()
+                ];
+
+                for (const notice of notices) {
+                    expect(notice.reason).to.equal("snapshot-delayed");
+                    expect(
+                        notice.reason === "snapshot-delayed" && notice.accounts
+                    ).to.deep.equal([writer]);
+                }
+                expect(
+                    notices.map(
+                        (notice) =>
+                            notice.reason === "snapshot-delayed" &&
+                            notice.subscription
+                    )
+                ).to.have.members([first.subscription, second.subscription]);
+                // the rebuilt account is pushed again
+                const rebuilt = await client.nextSnapshot(first.subscription);
+                expect(Number(rebuilt.block.number)).to.be.at.least(head);
+            },
+            { retention: 2 }
+        );
+    });
+
     it("says lazy for an account whose backfill found fewer entries than the chain holds", async function () {
         await withStorageDiffUpstream(async (session) => {
             const { provider, signer, start } = session;
