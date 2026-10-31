@@ -22,6 +22,10 @@ export type Config = {
     HOLEPUNCH_RELAYER_URLS: string[];
     LOCAL_DISCOVERY_REGISTRY_URL: string;
     VM_DEDICATED_THREAD: boolean;
+    /**
+     * true runs the SDK in a worker thread, the supported mode. Inline mode
+     * (false) is deprecated.
+     */
     RUN_SDK_IN_THREAD: boolean;
     // >0 enables the logger event-loop monitor, which throws in its own thread
     // past this many seconds. In the sdk and contract-executor workers that
