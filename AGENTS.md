@@ -349,6 +349,32 @@ limit, so it implements only what needs its own storage and composition (`open`,
   `yarn tsc --noEmit -p tsconfig.json` **and**
   `yarn tsc --noEmit -p tsconfig.browser.json`.
 
+### Disposal
+
+The contract is [`REQ-RUNTIME-3-VQXW59`](docs/spec/specification/runtime/execution.md#req-runtime-3-vqxw59);
+where this section and the requirement differ, the requirement wins.
+
+- The runtime has one dispose, `P2pRuntimeHostRoot.dispose()`. `cutOff()` first stops sends to
+  peers, chain transactions and the client bus in one synchronous step. `releaseRuntime()` then
+  releases timers, subscriptions, discovery sessions and peer connections, the child roots are
+  disposed, and the final cleanup releases the chain provider and flushes the logs. An abort ends
+  in the same dispose.
+- Do not add `dispose`/`stop` methods or disposed flags to components that hold only in-memory
+  state, and do not add disposed checks to in-memory work. In runtime components the only reads of
+  disposal state are admission points where outside work can start after the cut: a late connection
+  is closed where it registers (`ProfileManager`, `WebRTCTransport`, `LocalDiscoveryServer`), a late
+  chain subscription is refused (`StateManager.setChannelId`), and a late abort is ignored
+  (`StateManager.abort`). Root, bridge and logger lifecycle code (`createRoot`, the roots,
+  `RemoteRoot`, `RuntimeLifecycleService`, the logger family) keeps its own disposal state.
+- A component that holds something outside the runtime (a timer, a socket, a subscription to a
+  shared or static object, a child thread, a resource on the main thread) gets one small release
+  method, called from `releaseRuntime()`. Prefer the existing owners instead: timers through
+  `TimeoutManager`, chain subscriptions through `StateChannelEventListener`, transactions through
+  the managed signer, connections through `P2PManager`.
+- Disposal itself answers no pending application call: release code must not settle one with
+  `false`, `cancelled` or `undefined`. A call still running when the connection closes rejects with
+  `RootDisposedError`; a handler that finishes before that returns its own result.
+
 ### Type safety
 
 - **Primitive collection types need domain meaning.** Plain `string`, `number`,
