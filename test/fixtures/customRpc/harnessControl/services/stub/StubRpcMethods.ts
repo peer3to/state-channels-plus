@@ -2296,6 +2296,11 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public async leaveAllLocalDiscovery(): Promise<boolean> {
+        await this.service.leaveAllLocalDiscovery();
+        return true;
+    }
+
     public leaveAllDuringFailingLocalDiscoveryJoin(
         topic: string
     ): Promise<string> {

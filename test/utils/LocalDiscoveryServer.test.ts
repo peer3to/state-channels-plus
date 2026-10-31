@@ -33,6 +33,55 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
         ).to.equal(0);
     });
 
+    it("leaving every session of a runtime closes each topic's listener and a later join listens again", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topics = [
+            ethers.id("local-discovery-leave-all-first"),
+            ethers.id("local-discovery-leave-all-second")
+        ];
+        const peer = h.getPeer(0);
+        await h.execOnHost(
+            peer,
+            async (sm, args) => {
+                for (const topic of args.topics)
+                    await sm.p2pManager.joinDiscoveryKey(topic);
+                return true;
+            },
+            { topics }
+        );
+        expect(
+            await h
+                .control(peer)
+                .stub.getLocalDiscoveryListenerCount()
+                .request()
+        ).to.equal(2);
+
+        await h.control(peer).stub.leaveAllLocalDiscovery().request();
+        expect(
+            await h
+                .control(peer)
+                .stub.getLocalDiscoveryListenerCount()
+                .request()
+        ).to.equal(0);
+
+        // no session of a left topic remains to absorb the rejoin
+        await h.execOnHost(
+            peer,
+            async (sm, args) => {
+                await sm.p2pManager.joinDiscoveryKey(args.topic);
+                return true;
+            },
+            { topic: topics[0] }
+        );
+        expect(
+            await h
+                .control(peer)
+                .stub.getLocalDiscoveryListenerCount()
+                .request()
+        ).to.equal(1);
+    });
+
     it("retries the replacement endpoint announced while the old endpoint handshake is pending", async function () {
         await assertDiscoveryEndpointReplacement(
             TestSession.getHarness(),

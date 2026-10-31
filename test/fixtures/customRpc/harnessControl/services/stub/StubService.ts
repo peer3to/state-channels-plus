@@ -4308,6 +4308,11 @@ export class StubService extends ANetworkRpcService<
         ]);
     }
 
+    /** Leaves every local discovery session of this runtime. */
+    public async leaveAllLocalDiscovery(): Promise<void> {
+        await LocalDiscoveryServer.leave(undefined, this.p2pManager);
+    }
+
     /**
      * Starts a discovery join whose listener fails to bind, then leaves every
      * session of this runtime while the join is still starting. Answers how

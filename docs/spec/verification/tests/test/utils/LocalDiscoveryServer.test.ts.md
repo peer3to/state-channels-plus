@@ -11,6 +11,8 @@ then observe the same topic after leave or explicit blacklist. The tests
 exercise the production session, canonical dialer, retry timer, handshake, and blacklist checks; no synthetic
 transport or precomputed result boolean stands in for discovery.
 
+The leave-all case joins two topics on one runtime and leaves every session of that runtime: both listeners close, and a later join of one left topic binds a listener again, so no left session remains to absorb it.
+
 The late-ready case holds a real accepted socket, disposes its manager, then sends the valid wire frame. It asserts socket closure with no acknowledgement and no remaining transports.
 
 The pending-dial shutdown case delays every handshake reply on both inline peers, waits until one runtime has a real dial in flight, and disposes that peer's runtime, whose release settles the dial's handshake wait with `false`. It asserts that no peer retry was scheduled, which is where a retry records itself together with its warning and timer.
@@ -22,6 +24,7 @@ The replacement-endpoint cases use real listener leave/rejoin and registry adver
 ## Tests
 
 - `leaving every session of a runtime settles while one of its joins fails to bind its listener`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P20
+- `leaving every session of a runtime closes each topic's listener and a later join listens again`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P21
 - `redials an eligible disconnected peer no sooner than a second later while the topic remains observed and stops after leave`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P5, UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P6, REQ-LOBBY-9-N894C0.T1.P13, REQ-LOBBY-9-N894C0.T1.P18
 - `does not redial a peer blacklisted before its transport closes`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P7, REQ-LOBBY-9-N894C0.T1.P16
 - `deduplicates an in-flight dial across topics before authentication`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P10

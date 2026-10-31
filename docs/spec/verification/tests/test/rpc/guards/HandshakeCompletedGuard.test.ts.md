@@ -20,11 +20,9 @@ premature guard response is sent: the caller settles only after the queued RPC r
 two waiter-expiry cases read the strike count and the suspension rather than the profile verdict, which is the oracle
 separating an expired deadline from proven misconduct; the non-negotiating case still reads the
 recorded verdict. The disposal case starts a handshake wait on a fresh transport that never
-authenticates, with a 600-second timeout far beyond the test timeout, awaits the runtime RPC root's real
-shutdown hook `localRpc.dispose()` (the harness root's override only releases staged holds and then calls
-`MainRpcService.dispose()`), then waits again on the same transport; both waits must return `false`, so
-only disposal can have settled them in time. It does not read the order of the later negotiation and lobby
-cleanup.
+authenticates, with a 600-second timeout far beyond the test timeout, then runs the release the host
+root's disposal calls, `initHandshakeService.dispose()`; the pending wait must return `false`, so only
+that release can have settled it in time.
 
 ## Tests
 

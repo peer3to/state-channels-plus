@@ -35,7 +35,10 @@ class HostNonceManager extends AbstractSigner {
         );
     }
 
-    /** Later sends, and sends still waiting for the nonce, never settle. */
+    /**
+     * Later sends, sends still waiting for the nonce and a send not yet
+     * broadcast never settle; a broadcast already sent keeps its nonce.
+     */
     cut(): void {
         this.isCut = true;
     }
@@ -123,6 +126,9 @@ class HostNonceManager extends AbstractSigner {
             });
             const encodedTransaction =
                 await this.signer.signTransaction(populated);
+            // the cut may land while the nonce mutex is held: a send not yet
+            // broadcast freezes and leaves the nonce untaken
+            if (this.isCut) return new Promise<never>(() => undefined);
             // Where a recovered response starts scanning for a replacement.
             // Sent before the broadcast: the scan only walks forward, so a
             // later read could start past a replacement that already mined.

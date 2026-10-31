@@ -272,7 +272,7 @@ describe("HostNonceManager", () => {
         ).to.equal(0);
     });
 
-    it("a send queued on the nonce mutex at cut takes no nonce and never settles, while the one broadcasting keeps its nonce", async () => {
+    it("a send holding the nonce mutex before its broadcast at cut, and one queued behind it, take no nonce and never settle", async () => {
         const [funder, recipient] = await ethers.getSigners();
         const sender = ethers.Wallet.createRandom().connect(ethers.provider);
         await (
@@ -292,17 +292,25 @@ describe("HostNonceManager", () => {
         const held = new Promise<void>((resolve) => {
             entered = resolve;
         });
+        let signed!: () => void;
+        const isSigned = new Promise<void>((resolve) => {
+            signed = resolve;
+        });
         sender.signTransaction = async (tx) => {
             entered();
             await gate;
-            return sign(tx);
+            const encodedTransaction = await sign(tx);
+            signed();
+            return encodedTransaction;
         };
+        let isHeldSettled = false;
         let isQueuedSettled = false;
 
-        const first = manager.sendTransaction({
-            to: recipient.address,
-            value: 1n
-        });
+        void manager
+            .sendTransaction({ to: recipient.address, value: 1n })
+            .finally(() => {
+                isHeldSettled = true;
+            });
         await held;
         void manager
             .sendTransaction({ to: recipient.address, value: 2n })
@@ -311,15 +319,71 @@ describe("HostNonceManager", () => {
             });
         manager.cut();
         release();
-        await (await first).wait();
+        await isSigned;
+        // a later transaction of another signer mines meanwhile
         await (
             await funder.sendTransaction({ to: recipient.address, value: 1n })
         ).wait();
 
+        expect(isHeldSettled).to.equal(false);
         expect(isQueuedSettled).to.equal(false);
         expect(
             await ethers.provider.getTransactionCount(sender.address, "pending")
-        ).to.equal(1);
+        ).to.equal(0);
+    });
+
+    it("a broadcast already sent at cut settles and keeps its nonce", async () => {
+        const [funder, recipient] = await ethers.getSigners();
+        const sender = ethers.Wallet.createRandom().connect(ethers.provider);
+        await (
+            await funder.sendTransaction({
+                to: sender.address,
+                value: ethers.parseEther("1")
+            })
+        ).wait();
+        const manager = new HostNonceManager(sender);
+        // the broadcast reaches the node, then its answer is held
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        let sent!: () => void;
+        const isSent = new Promise<void>((resolve) => {
+            sent = resolve;
+        });
+        const broadcast = ethers.provider.broadcastTransaction.bind(
+            ethers.provider
+        );
+        const held = sinon
+            .stub(ethers.provider, "broadcastTransaction")
+            .callsFake(async (encodedTransaction) => {
+                const response = await broadcast(encodedTransaction);
+                sent();
+                await gate;
+                return response;
+            });
+
+        try {
+            const first = manager.sendTransaction({
+                to: recipient.address,
+                value: 1n
+            });
+            await isSent;
+            manager.cut();
+            release();
+            const response = await first;
+            await response.wait();
+
+            expect(response.nonce).to.equal(0);
+            expect(
+                await ethers.provider.getTransactionCount(
+                    sender.address,
+                    "pending"
+                )
+            ).to.equal(1);
+        } finally {
+            held.restore();
+        }
     });
 
     it("cannot create another nonce owner by reconnecting", async () => {

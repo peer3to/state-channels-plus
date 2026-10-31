@@ -61,6 +61,14 @@ cache of the failed read, the caller's `wait()` must see it mined, and the next 
 following nonce. A recovery that only reused the failed shared read, or read the start block again
 through a new `getBlockNumber()` answered from the cache, rejects with "could not be reconciled".
 
+Three cases drive the disposal cut on the shared node, each with a fresh funded wallet; the oracle
+is the wallet's pending nonce and whether each send settles while another signer's transaction
+mines. A send started after `cut()` never settles and takes no nonce. A send that holds the nonce
+mutex at its signature when `cut()` runs, and a send queued behind it, never settle once the
+signature is released, and the pending nonce stays 0: a send not yet broadcast at the cut sends
+nothing. A send whose broadcast already reached the node when `cut()` runs, with the node's
+answer held until after the cut, settles, mines and keeps nonce 0.
+
 ## Tests
 
 - `reuses a failed middle nonce without colliding with concurrent sends`: none
@@ -79,4 +87,5 @@ through a new `getBlockNumber()` answered from the cache, rejects with "could no
 - `cannot create another nonce owner by reconnecting`: none
 - `recovers an indeterminate nonce lazily on the next send`: none
 - `a send after cut takes no nonce and never settles`: REQ-SDK-ARCH-2-QBZAT8.T1.P3
-- `a send queued on the nonce mutex at cut takes no nonce and never settles, while the one broadcasting keeps its nonce`: REQ-SDK-ARCH-2-QBZAT8.T1.P3
+- `a send holding the nonce mutex before its broadcast at cut, and one queued behind it, take no nonce and never settle`: REQ-SDK-ARCH-2-QBZAT8.T1.P3
+- `a broadcast already sent at cut settles and keeps its nonce`: REQ-SDK-ARCH-2-QBZAT8.T1.P3
