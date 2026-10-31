@@ -789,7 +789,7 @@ Specification cases tested: 18/18.
 Specification cases tested: 0/1.
 
 [`REQ-RUN-13-27YE2T` (Isolated placement is the default)](../specification/runtime/execution.md#req-run-13-27ye2t)
-Specification cases tested: 0/1.
+Specification cases tested: 1/2. Untested: T1.P1.
 
 [`REQ-RUN-14-YAHYR4` (Mid-range mobile browser envelope)](../specification/runtime/execution.md#req-run-14-yahyr4)
 Specification cases tested: 0/1.

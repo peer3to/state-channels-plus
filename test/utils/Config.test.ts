@@ -5,7 +5,8 @@ import sinon from "sinon";
 const ENV_KEYS = [
     "HOLEPUNCH_RELAYER_URLS",
     "DEBUG_LOCAL_TRANSPORT",
-    "LOG_LEVEL"
+    "LOG_LEVEL",
+    "RUN_SDK_IN_THREAD"
 ] as const;
 
 describe("config env parsing", () => {
@@ -36,6 +37,13 @@ describe("config env parsing", () => {
 
         // Reset process-lifespan config back to baseline for other tests.
         createConfig({});
+    });
+
+    it("runs the sdk in a worker thread when nothing sets RUN_SDK_IN_THREAD", () => {
+        delete process.env.RUN_SDK_IN_THREAD;
+
+        const cfg = createConfig({}, {});
+        expect(cfg.RUN_SDK_IN_THREAD).to.equal(true);
     });
 
     it("applies peer3.config.ts as baseConfig", () => {

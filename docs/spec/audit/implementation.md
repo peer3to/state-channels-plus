@@ -1419,7 +1419,7 @@ disposal rejection holds even when the operation later succeeds or fails. The ad
 the limit; [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P2`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb) now names a late deploy and simulation beside the late call.
 Luke 2026-10-31 deleted the drain: `closeAdmission` is synchronous and rejects every admitted caller at
 once, `ADMISSION_DRAIN_MS` and the settle-once latch are gone, and [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59) now forbids
-waiting for admitted work; the admitted-failure case is deleted.
+waiting for admitted work; the admitted-failure case is deleted, and the late-success, late-failure and queued-work cases now finish after disposal instead of after a limit.
 
 The earlier record said an unidentified transport's "handle is barred". That was wrong:
 `ProfileManager.blacklistPeer(transport)` does nothing when the transport has no profile, so a transport

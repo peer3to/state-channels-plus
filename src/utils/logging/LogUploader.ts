@@ -138,7 +138,11 @@ export abstract class LogUploader {
             flushDeadlineMs ??
             (pendingDeadlineMs > Date.now() ? pendingDeadlineMs : Infinity);
         if (this.queuedUpload) {
-            this.queuedDeadlineMs = Math.max(this.queuedDeadlineMs, deadlineMs);
+            // a bounded flush also bounds a follow-up queued without one
+            this.queuedDeadlineMs =
+                this.queuedDeadlineMs === Infinity
+                    ? deadlineMs
+                    : Math.max(this.queuedDeadlineMs, deadlineMs);
             return this.queuedUpload;
         }
         LogUploader.busyUploaders.add(this);

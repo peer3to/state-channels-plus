@@ -44,3 +44,4 @@ Delta upload against a real receiver, and crash capture that never throws.
 - [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P22` — an upload an error queued behind an abort flush's upload is waited for after that flush's deadline
 - [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P23` — an upload queued during a running abort flush is waited for only until that flush's deadline
 - [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P24` — a request during an abort flush that is queued behind an earlier upload keeps that flush's deadline
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P26` — a later flush's deadline also bounds an upload queued earlier without one

@@ -148,8 +148,7 @@ export async function assertBundledHostRootAppliesPeerConfig(): Promise<void> {
     const bundle = await bundleProbeHostRoot();
     try {
         await withRuntime(true, bundle.manifest, async (instance) => {
-            // The setup sent the config it applied here as payload.config;
-            // the module default is false.
+            // The setup sent the config it applied here as payload.config.
             expect(config.RUN_SDK_IN_THREAD).to.equal(true);
             expect(
                 await instance.host.probe

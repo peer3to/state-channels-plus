@@ -119,6 +119,9 @@ export async function assertAbortUploadsLogsWithinBound(): Promise<void> {
     }
 }
 
+// far above a dispose without a flush, far below the abort flush bound
+const DISPOSE_FLUSH_MS = 4_000;
+
 /**
  * A plain dispose flushes its logs before the port closes, but an upload that
  * never answers holds it only for DISPOSE_LOG_FLUSH_MS, not the abort's bound.
@@ -134,16 +137,22 @@ export async function assertDisposeFlushWithinDisposeBound(): Promise<void> {
     try {
         await startPeersUploadingTo(receiver, {
             CRASH_LOG_FLUSH_MS: 30_000,
-            DISPOSE_LOG_FLUSH_MS: 1_000
+            DISPOSE_LOG_FLUSH_MS: DISPOSE_FLUSH_MS
         });
         const peer = MathTestSession.getHarness().getPeer(0);
         const started = Date.now();
         await peer.p2pInstance.dispose();
         const elapsedMs = Date.now() - started;
 
-        // the flush reached the endpoint, which never answers
-        expect(receiver.requests.length).to.be.above(0);
-        expect(elapsedMs).to.be.below(10_000);
+        // peer 0 reached the endpoint, which never answers
+        expect(
+            receiver.requests.some(
+                (request) => request.peerAddress === peer.address
+            )
+        ).to.equal(true);
+        // the disposal waited for its flush up to its own bound, not the abort's 30 s
+        expect(elapsedMs).to.be.at.least(DISPOSE_FLUSH_MS - 100);
+        expect(elapsedMs).to.be.below(DISPOSE_FLUSH_MS + 8_000);
     } finally {
         held.resolve();
         await receiver.close();
