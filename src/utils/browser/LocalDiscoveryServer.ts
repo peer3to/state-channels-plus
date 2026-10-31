@@ -154,12 +154,6 @@ export class LocalDiscoveryServer {
             if (links.get(key) === ws) links.delete(key);
         });
         ws.addEventListener("open", () => {
-            // A link that opens after its P2P manager was disposed gets no
-            // transport, as in the node discovery.
-            if (p2pManager.isDisposed) {
-                ws.close();
-                return;
-            }
             const transport = new BrowserLocalTransport(
                 ws,
                 p2pManager.rpcRouter

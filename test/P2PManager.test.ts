@@ -28,6 +28,14 @@ import { expect } from "chai";
 import { ethers, Wallet } from "ethers";
 import sinon from "sinon";
 
+const TRANSPORTS_CLOSED_AFTER_CUT = {
+    closed: [true, true],
+    socketsClosed: [true, true],
+    framesSent: 0,
+    dispatches: 0,
+    openConnections: 0
+};
+
 describe("P2PManager", function () {
     let fixture: P2PManagerFixture | undefined;
 
@@ -479,6 +487,30 @@ describe("P2PManager", function () {
 
         expect(result.connected).to.equal(false);
         expect(result.hookCount).to.equal(0);
+    });
+
+    it("closes a Holepunch connection and a WebRTC channel arriving after the network cut, which send and dispatch nothing (worker)", async function () {
+        await fixture!.cleanup();
+        fixture = new P2PManagerFixture();
+        await fixture.setup({ isolatedPeers: true });
+        expect(
+            await fixture
+                .control()
+                .p2pManagerProbe.probeTransportsAfterCut()
+                .request()
+        ).to.deep.equal(TRANSPORTS_CLOSED_AFTER_CUT);
+    });
+
+    it("closes a Holepunch connection and a WebRTC channel arriving after the network cut, which send and dispatch nothing (inline)", async function () {
+        await fixture!.cleanup();
+        fixture = new P2PManagerFixture();
+        await fixture.setup({ inlineHosts: true });
+        expect(
+            await fixture
+                .control()
+                .p2pManagerProbe.probeTransportsAfterCut()
+                .request()
+        ).to.deep.equal(TRANSPORTS_CLOSED_AFTER_CUT);
     });
 
     it("retires a replaced handshake transport and keeps one live connection", async function () {

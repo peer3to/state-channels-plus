@@ -725,7 +725,6 @@ export class LocalDiscoveryServer {
                     );
                     if (
                         this._cleanupRequested ||
-                        p2pManager.isDisposed ||
                         !session ||
                         session.server !== server ||
                         !dialerAddress ||
@@ -1270,7 +1269,6 @@ export class LocalDiscoveryServer {
             },
             onMessage: (ws, message) => {
                 if (
-                    p2pManager.isDisposed ||
                     this.getDiscoverySession(p2pManager, rendezvousKey) !==
                         session ||
                     transport ||
@@ -1287,6 +1285,7 @@ export class LocalDiscoveryServer {
                     lt,
                     new LocalPeerInfo(p2pManager, peerAddress)
                 );
+                if (lt.isClosed) return;
                 const handshakeService =
                     p2pManager.localRpc.initHandshakeService;
                 handshakeService.initHandshake(lt);

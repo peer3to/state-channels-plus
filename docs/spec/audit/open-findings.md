@@ -793,6 +793,13 @@ returns ([`REQ-RUNTIME-3-VQXW59.T1.P88`](../specification/runtime/execution.md#r
 that disposal is bounded by the start's own chain reads. A disposing runtime's warnings and errors are
 logged at info ([`REQ-LOG-1-H2VQ8X` (Logging cleanup preserves surviving owners)](../specification/runtime/log-collection.md#req-log-1-h2vq8x)).
 
+**Update (2026-10-31, late transports, Luke):** a wire transport that connects after the cut closes at
+registration ([`ProfileManager`](../implementation/source/src/ProfileManager.ts.md) `setBannablePeerInfo`
+for Holepunch and local discovery links, the `WebRTCTransport` constructor for a late channel), so its
+socket closes and it sends and hears nothing ([`UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P3`](../implementation/source/src/ProfileManager.ts.md#unit-test-profile-disposal-1-hpxawa)). The per-send cut
+predicate, its loopback exemption and the local discovery checks that only guarded transport creation
+are deleted.
+
 <a id="find-join-2-ek5dww"></a>
 
 ### FIND-JOIN-2-EK5DWW

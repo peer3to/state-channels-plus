@@ -48,6 +48,7 @@ import type {
     HolepunchSwarmProbe,
     LateHandshakeProbe,
     ReplacementHandshakeProbe,
+    TransportsAfterCutProbe,
     ProfileDisconnectLifecycleProbe,
     LobbyProtocolProbe,
     LobbyHandoffExit,
@@ -540,6 +541,10 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         address: string
     ): Promise<LateHandshakeProbe> {
         return this.service.probeDisposedHandshake(address);
+    }
+
+    public probeTransportsAfterCut(): Promise<TransportsAfterCutProbe> {
+        return this.service.probeTransportsAfterCut();
     }
 
     public probeReplacementHandshake(

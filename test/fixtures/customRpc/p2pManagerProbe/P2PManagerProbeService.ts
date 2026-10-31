@@ -743,6 +743,14 @@ export type LateHandshakeProbe = {
     hookCount: number;
 };
 
+export type TransportsAfterCutProbe = {
+    closed: boolean[];
+    socketsClosed: boolean[];
+    framesSent: number;
+    dispatches: number;
+    openConnections: number;
+};
+
 export type ReplacementHandshakeProbe = {
     connectedCount: number;
     replacementConnected: boolean;
@@ -3561,6 +3569,35 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         } finally {
             unsubscribeConnection();
         }
+    }
+
+    /**
+     * Cuts the network, then a Holepunch connection and an open WebRTC
+     * channel arrive through the real transport constructors, and each
+     * receives a dispatch frame.
+     */
+    public async probeTransportsAfterCut(): Promise<TransportsAfterCutProbe> {
+        await this.p2pManager.dispose();
+        const callsBefore = this.dispatchCalls;
+        const holepunch = this.holepunchTransport(`0x${"5c".repeat(32)}`);
+        const channel = new RecordingWebRTCDataChannel();
+        channel.readyState = "open";
+        const webRTC = new WebRTCTransport(channel, this.p2pManager.rpcRouter);
+        const frame = JSON.stringify({
+            service: "p2pManagerProbe",
+            method: "recordDispatch",
+            params: []
+        });
+        holepunch.socket.emit("data", Buffer.from(frame));
+        channel.onmessage?.({ data: frame });
+        await settleCallbacks();
+        return {
+            closed: [holepunch.transport.isClosed, webRTC.isClosed],
+            socketsClosed: [holepunch.socket.destroyed, channel.closed],
+            framesSent: holepunch.socket.writes.length + channel.sent.length,
+            dispatches: this.dispatchCalls - callsBefore,
+            openConnections: this.p2pManager.openConnections.length
+        };
     }
 
     public async probeReplacementHandshake(

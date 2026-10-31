@@ -23,7 +23,7 @@ describe("NetworkRpcRouter", () => {
     it("drops network frames on a closed transport before dispatch or logging", async () => {
         await assertNetworkClosedAdmission();
     });
-    it("a disposed manager drops a late transport's sends and inbound frames", async () => {
+    it("a disposed manager closes a late transport at registration and drops its inbound frames", async () => {
         await assertDisposedManagerLateTransport();
     });
 });

@@ -42,6 +42,10 @@ schedule none, leave the participant connected with no strike, and the restarted
 observer with connect `false` and no state set. The genesis-settle case holds
 the deadline task, checks that the settle cancelled it, then runs the held task and expects no abort.
 
+The after-cut probe disposes the manager, then builds a Holepunch transport and an open WebRTC
+channel through the real constructors over recording sockets and feeds each a dispatch frame; both
+must be closed with their sockets, with no frame written, no dispatch and no open connection.
+
 ## Tests
 
 - `prefers a transport address over its registered profile address`: UNIT-TEST-P2PMANAGER-32-RX8SQP.P1
@@ -71,6 +75,8 @@ the deadline task, checks that the settle cancelled it, then runs the held task 
 - `ignores a completed handshake with no registered transport`: UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P10, REQ-AUTH-5-BQG9AG.T1.P10
 - `does not promote a transport that closed before handshake dispatch`: UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P7, REQ-AUTH-5-BQG9AG.T1.P7
 - `does not promote a late handshake after manager disposal`: UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P8, REQ-AUTH-5-BQG9AG.T1.P8
+- `closes a Holepunch connection and a WebRTC channel arriving after the network cut, which send and dispatch nothing (worker)`: UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P3
+- `closes a Holepunch connection and a WebRTC channel arriving after the network cut, which send and dispatch nothing (inline)`: UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P3
 - `retires a replaced handshake transport and keeps one live connection`: UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P9, REQ-AUTH-5-BQG9AG.T1.P9
 - `emits profile loss only after the last live transport closes`: UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P7, REQ-LOBBY-8-31BE0F.T1.P1, REQ-LOBBY-8-31BE0F.T1.P2, REQ-LOBBY-8-31BE0F.T1.P4
 - `initial handshake starts one channel-load sync and reaches SYNCED`: none

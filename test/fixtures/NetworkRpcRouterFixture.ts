@@ -11,6 +11,7 @@ import type { WebRTCDataChannelLike } from "@/rpc/network/services/WebRTCSetup/c
 import { ARpcRouter } from "@/rpc/router/ARpcRouter";
 import { NetworkRpcRouter } from "@/rpc/router/NetworkRpcRouter";
 import { serializeRpc } from "@/rpc/Rpc";
+import LocalPeerInfo from "@/transport/LocalPeerInfo";
 import LocalTransport from "@/transport/LocalTransport";
 import WebRTCTransport from "@/transport/WebRTCTransport";
 import { Buffer } from "buffer";
@@ -405,23 +406,23 @@ export async function assertDisposedManagerLateTransport(): Promise<void> {
                 return originalRunRpc.call(this, rpc, sender);
             };
             try {
+                // registered as the local discovery registers a link
                 const transport = new LocalTransport(
                     serverSocket,
                     manager.rpcRouter
                 );
+                manager.profileManager.setBannablePeerInfo(
+                    transport,
+                    new LocalPeerInfo(manager, ethers.ZeroAddress)
+                );
+                expect(transport.isClosed).to.equal(true);
+                expect(serverSocket.readyState).to.not.equal(WebSocket.OPEN);
                 const frame = {
                     service: "initHandshakeService",
                     method: "onInitHandshakeRequest",
                     params: [ethers.ZeroHash, 0],
                     requestId: "late-link-request"
                 };
-                transport.send(frame);
-                transport.sendRpcResponse({
-                    rpcResponse: true,
-                    requestId: "late-link-response",
-                    ok: true,
-                    result: null
-                });
                 await manager.rpcRouter.onRpc(serializeRpc(frame), transport);
                 expect(sent.callCount).to.equal(0);
                 expect(dispatched).to.equal(0);
