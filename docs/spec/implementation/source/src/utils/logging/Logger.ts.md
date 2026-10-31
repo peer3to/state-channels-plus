@@ -29,3 +29,4 @@ The logger's own boundary: defaults, disposal, and what it lets through.
 - [x] `UNIT-TEST-LOGGER-1-4MNRMD.P10` — every log level and direct entry replay after disposal writes to the console without storing, uploading or failing, while repeated disposal is harmless
 - [x] `UNIT-TEST-LOGGER-1-4MNRMD.P11` — a logger without a coordination service refuses to flush
 - [x] `UNIT-TEST-LOGGER-1-4MNRMD.P12` — a disposed child whose parent still lives keeps storing its entries, under its own component, into the family's store
+- [x] `UNIT-TEST-LOGGER-1-4MNRMD.P13` — once its family is marked disposing, a logger writes and stores warnings and errors at info and starts no upload for them; before that they keep their level and an error starts its upload

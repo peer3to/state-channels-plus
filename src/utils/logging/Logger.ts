@@ -232,6 +232,12 @@ export abstract class Logger {
     }
 
     private log(level: LogLevel, message: string, meta: any[]): void {
+        // a disposing runtime's warnings and errors come from its teardown
+        if (
+            this.sharedContext.disposing &&
+            (level === "warn" || level === "error")
+        )
+            level = "info";
         if (!this.shouldProcessLevel(level)) return;
         const stack = new Error().stack!;
 
@@ -267,7 +273,7 @@ export abstract class Logger {
     }
     public error(message: any, ...meta: any[]): void {
         this.log("error", message, meta);
-        if (!this.destroyed)
+        if (!this.destroyed && !this.sharedContext.disposing)
             DetachedPromises.collect(this.upload(String(message)));
     }
     public verbose(message: any, ...meta: any[]): void {

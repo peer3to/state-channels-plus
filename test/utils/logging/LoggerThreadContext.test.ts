@@ -215,6 +215,37 @@ describe("Logger thread context", function () {
             logger.dispose();
         }
     });
+    it("writes a disposing runtime's warnings and errors at info and uploads nothing for them", function () {
+        const { logger, logStore } = createUploaderFixture({
+            uploadEndpoint: ""
+        });
+        try {
+            const child = logger.child({ component: "teardown" });
+            const pendingLive = DetachedPromises.size();
+            child.warn("live warning");
+            child.error("live error");
+            // a live error still starts its upload
+            expect(DetachedPromises.size()).to.equal(pendingLive + 1);
+            logger.updateSharedContext({ disposing: true });
+            const pendingDisposing = DetachedPromises.size();
+            child.warn("teardown warning");
+            child.error("teardown error");
+            expect(DetachedPromises.size()).to.equal(pendingDisposing);
+            expect(
+                logStore
+                    .getAllLogs()
+                    .map((entry) => [entry.message, entry.level])
+                    .slice(-4)
+            ).to.deep.equal([
+                ["live warning", "warn"],
+                ["live error", "error"],
+                ["teardown warning", "info"],
+                ["teardown error", "info"]
+            ]);
+        } finally {
+            logger.dispose({ cascadeChildren: true });
+        }
+    });
     it("logs on every level and replays after disposal without storing, uploading or failing", function () {
         const { logger, logStore } = createUploaderFixture({
             uploadEndpoint: ""
