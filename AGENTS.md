@@ -349,6 +349,23 @@ limit, so it implements only what needs its own storage and composition (`open`,
   `yarn tsc --noEmit -p tsconfig.json` **and**
   `yarn tsc --noEmit -p tsconfig.browser.json`.
 
+### Disposal
+
+- The runtime has one dispose, `P2pRuntimeHostRoot.dispose()`. It first cuts the runtime off
+  (`cutOff()`: transports, chain sends, client bus), then releases the runtime's external edges in
+  one flat list (`releaseRuntime()`), then disposes the child roots. An abort ends in the same
+  dispose.
+- Do not add `dispose`/`stop` methods or disposed flags to components that hold only in-memory
+  state, and do not check another component's `isDisposed`. After the cut, internal work cannot
+  reach the outside, and the runtime is dropped.
+- A component that holds something outside the runtime (a timer, a socket, a subscription to a
+  shared or static object, a child thread, a resource on the main thread) gets one small release
+  method, called from `releaseRuntime()`. Prefer the existing owners instead: timers through
+  `TimeoutManager`, chain subscriptions through `StateChannelEventListener`, transactions through
+  the managed signer, connections through `P2PManager`.
+- Calls still pending at dispose reject with `RootDisposedError`; do not answer them with
+  `false`, `cancelled` or `undefined`.
+
 ### Type safety
 
 - **Primitive collection types need domain meaning.** Plain `string`, `number`,
