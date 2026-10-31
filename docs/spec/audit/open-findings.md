@@ -833,6 +833,8 @@ for admitted work. `ContractExecutorService.closeAdmission` closes admission and
 caller at once with the disposal rejection; each operation's later outcome is dropped, and
 `ADMISSION_DRAIN_MS` and the settle-once latch are deleted.
 
+**Update (2026-11-01, nothing left open, Luke):** each earlier "Still open" item is settled. The executor admission latch is deleted (the update above), and so is the consumer disposal hook (`MainRpcService.dispose`, slice 4). A request already parked on the state mutex may still answer the application between the cut and the connection close; [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59) allows that answer. Luke accepted the peer connection that the factory creates after the release: it closes on its own when its data channel arrives or ICE fails, so it is not tracked as a separate finding.
+
 <a id="find-join-2-ek5dww"></a>
 
 ### FIND-JOIN-2-EK5DWW
