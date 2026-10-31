@@ -969,12 +969,16 @@ export class LocalDiscoveryServer {
                 ...(this.discoveryJoins.get(p2pManager)?.keys() ?? []),
                 ...(this.discoverySessions.get(p2pManager)?.keys() ?? [])
             ]);
-            await Promise.all(
+            await Promise.allSettled(
                 [...keys].map((key) => this.leave(key, p2pManager))
             );
             return;
         }
-        await this.discoveryJoins.get(p2pManager)?.get(rendezvousKey);
+        // a join still binding its listener finishes first; a failed join left no session
+        await this.discoveryJoins
+            .get(p2pManager)
+            ?.get(rendezvousKey)
+            ?.catch(() => undefined);
         const sessions = this.discoverySessions.get(p2pManager);
         const session = sessions?.get(rendezvousKey);
         if (!session) return;

@@ -461,7 +461,6 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
                 );
                 return outcome.result;
             }
-            if (outcome?.status === "cancelled") return undefined;
             // Unsigned failures start from a clean discovery session. The
             // matching service leaves the old topic and closes all lobby-owned
             // transports before rejoining this caller-owned topic.

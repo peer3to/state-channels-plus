@@ -35,3 +35,4 @@ Topic-owned local discovery lifecycle
 - [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P17` — after a topic leave, a rejoin dials the announced peer again while the left topic's closed dial socket has not finished closing
 - [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P18` — after the left topic's old dial socket finishes closing, the rejoined topic's pending dial still deduplicates a second topic's announcement of the same peer
 - [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P19` — a rejoin dials the announced peer again while the pending, unauthenticated dial its leave closed has not finished closing
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P20` — leaving every session of a runtime while one of its joins fails to bind its listener settles without the join's failure and leaves no listener

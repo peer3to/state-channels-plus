@@ -47,6 +47,7 @@ import {
     tryDecodeCustomError,
     Type
 } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
 import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
 import { Mutex } from "@/utils/Mutex";
 import type { TimeoutManager } from "@/utils/TimeoutManager";
@@ -4253,6 +4254,47 @@ export class StubService extends ANetworkRpcService<
             ),
             LocalDiscoveryServer.leave(topic, this.p2pManager)
         ]);
+    }
+
+    /**
+     * Starts a discovery join whose listener fails to bind, then leaves every
+     * session of this runtime while the join is still starting. Answers how
+     * the leave settled.
+     */
+    public async leaveAllDuringFailingLocalDiscoveryJoin(
+        topic: string
+    ): Promise<string> {
+        await LocalDiscoveryServer.tryStart();
+        const original = Reflect.get(
+            LocalDiscoveryServer,
+            "createServerWithRetry"
+        );
+        Reflect.set(LocalDiscoveryServer, "createServerWithRetry", async () => {
+            await sleep(50);
+            throw new Error("listener bind failed");
+        });
+        try {
+            const join = LocalDiscoveryServer.connectToPeers(
+                this.p2pManager,
+                topic,
+                this.sm.signerAddress.toString()
+            ).catch(() => undefined);
+            const leave = await LocalDiscoveryServer.leave(
+                undefined,
+                this.p2pManager
+            ).then(
+                () => "resolved",
+                (error: unknown) => `rejected: ${errorMessage(error)}`
+            );
+            await join;
+            return leave;
+        } finally {
+            Reflect.set(
+                LocalDiscoveryServer,
+                "createServerWithRetry",
+                original
+            );
+        }
     }
 
     /**

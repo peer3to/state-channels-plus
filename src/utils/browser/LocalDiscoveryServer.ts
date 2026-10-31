@@ -82,8 +82,8 @@ export class LocalDiscoveryServer {
     }
 
     /**
-     * Ends the topic membership, or every membership of `p2pManager` without
-     * a key; established peer links stay open.
+     * Ends the topic membership; established peer links stay open. Without
+     * a key it ends every membership of `p2pManager` and closes its links.
      */
     static async leave(
         rendezvousKey: string | undefined,
@@ -99,6 +99,9 @@ export class LocalDiscoveryServer {
             this.memberships.delete(membership);
             membership.ws.close();
         }
+        if (rendezvousKey !== undefined || !p2pManager) return;
+        for (const ws of this.links.get(p2pManager)?.values() ?? []) ws.close();
+        this.links.delete(p2pManager);
     }
 
     static async cleanup(): Promise<void> {

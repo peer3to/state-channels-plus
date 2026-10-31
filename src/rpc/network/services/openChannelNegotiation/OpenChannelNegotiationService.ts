@@ -71,7 +71,7 @@ type MatchedAttempt = LobbyMatch & {
 export type NegotiationOutcome =
     | { status: "opened"; result: LobbyJoinResult }
     | { status: "observed-target-open"; channelId: string }
-    | { status: "retry" | "targeted-failed" | "cancelled" };
+    | { status: "retry" | "targeted-failed" };
 
 export type NegotiationMode = "ordinary" | "targeted";
 
@@ -827,7 +827,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
     private async clearAttempt(
         attempt: MatchedAttempt,
         reason: string,
-        outcome: "retry" | "targeted-failed" | "cancelled"
+        outcome: "retry" | "targeted-failed"
     ): Promise<void> {
         if (this.state.attempt !== attempt) return;
         this.logger.info("Negotiation attempt cleared", { reason });

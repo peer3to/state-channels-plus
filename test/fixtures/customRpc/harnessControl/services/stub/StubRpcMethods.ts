@@ -2244,6 +2244,12 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public leaveAllDuringFailingLocalDiscoveryJoin(
+        topic: string
+    ): Promise<string> {
+        return this.service.leaveAllDuringFailingLocalDiscoveryJoin(topic);
+    }
+
     public async configureExecutorCallGas(
         callGasLimit: string,
         dedicatedThread: boolean

@@ -82,7 +82,7 @@ export type DerivationFailureProbe = {
 };
 
 export type StaleDerivationProbe = {
-    cancelledOutcome: string;
+    oldOutcome: string;
     staleResult: string;
     replacementCurrent: boolean;
     replacementChannelKept: boolean;
@@ -253,13 +253,13 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             () => service.takeHeldDerivation(),
             "old attempt derivation was not held"
         );
-        // the old attempt ends cancelled, as a cancelled match ends it
+        // the old attempt ends, as a failed match ends it
         await service["clearAttempt"](
             service.state.attempt!,
             "probe cancelled",
-            "cancelled"
+            "retry"
         );
-        const cancelledOutcome = (await old.outcome).status;
+        const oldOutcome = (await old.outcome).status;
 
         const replacement = await this.stageAttempt(service, role);
         if (role === "lower") {
@@ -314,7 +314,7 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             )
         ).map((participant) => getChecksumAddress(String(participant)));
         return {
-            cancelledOutcome,
+            oldOutcome,
             staleResult,
             replacementCurrent,
             replacementChannelKept,

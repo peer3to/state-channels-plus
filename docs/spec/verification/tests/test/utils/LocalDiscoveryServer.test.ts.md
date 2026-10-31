@@ -21,6 +21,7 @@ The replacement-endpoint cases use real listener leave/rejoin and registry adver
 
 ## Tests
 
+- `leaving every session of a runtime settles while one of its joins fails to bind its listener`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P20
 - `redials an eligible disconnected peer no sooner than a second later while the topic remains observed and stops after leave`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P5, UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P6, REQ-LOBBY-9-N894C0.T1.P13, REQ-LOBBY-9-N894C0.T1.P18
 - `does not redial a peer blacklisted before its transport closes`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P7, REQ-LOBBY-9-N894C0.T1.P16
 - `deduplicates an in-flight dial across topics before authentication`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P10

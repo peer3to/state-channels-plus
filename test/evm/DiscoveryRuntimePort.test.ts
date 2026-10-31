@@ -1822,9 +1822,10 @@ describe("discovery runtime port", function () {
                 );
             });
             h.contextApi.markAfkPeer({ afkPeerIndex: lowerIndex });
+            // consume the join before the dispose rejects it
+            const failure = rejectionOf(joins[lowerIndex]);
             await h.peers[lowerIndex].p2pInstance.dispose();
-            const failure = await rejectionOf(joins[lowerIndex]);
-            expect(isRootDisposedError(failure)).to.equal(true);
+            expect(isRootDisposedError(await failure)).to.equal(true);
         } finally {
             await release();
             void joins[higherIndex].catch(() => undefined);

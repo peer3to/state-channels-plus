@@ -14,6 +14,25 @@ import { expect } from "chai";
 import { ethers } from "ethers";
 
 describe("LocalDiscoveryServer topic lifecycle", function () {
+    it("leaving every session of a runtime settles while one of its joins fails to bind its listener", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("local-discovery-leave-all-failing-join");
+        const peer = h.getPeer(0);
+        expect(
+            await h
+                .control(peer)
+                .stub.leaveAllDuringFailingLocalDiscoveryJoin(topic)
+                .request()
+        ).to.equal("resolved");
+        expect(
+            await h
+                .control(peer)
+                .stub.getLocalDiscoveryListenerCount()
+                .request()
+        ).to.equal(0);
+    });
+
     it("retries the replacement endpoint announced while the old endpoint handshake is pending", async function () {
         await assertDiscoveryEndpointReplacement(
             TestSession.getHarness(),

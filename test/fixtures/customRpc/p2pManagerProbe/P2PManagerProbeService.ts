@@ -865,13 +865,13 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         return service["cleanup"]();
     }
 
-    /** Cancels a probe's negotiation attempt, as a cancelled match does. */
+    /** Ends a probe's negotiation attempt, as a failed match does. */
     private async endNegotiation(
         service: OpenChannelNegotiationService
     ): Promise<void> {
         const attempt = service.state.attempt;
         if (attempt)
-            await service["clearAttempt"](attempt, "probe ended", "cancelled");
+            await service["clearAttempt"](attempt, "probe ended", "retry");
     }
 
     private makeMatch(

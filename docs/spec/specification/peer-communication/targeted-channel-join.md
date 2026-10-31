@@ -169,7 +169,7 @@ The initial deadline aborts the observer only when no completed handshake's chai
 initial load is still running; a check that answers participant after the deadline still starts the
 initial load. Chain genesis observed during the discovery join or during an active initial
 load settles the observer's connect as a success; after that, a late failed load result or the initial
-deadline cannot abort the synced runtime, and abort or disposal while the wait is armed answers nothing: the connect rejects with the runtime-disposed error.
+deadline cannot abort the synced runtime, and abort or disposal while the wait is armed answers nothing itself: the connect rejects with the runtime-disposed error when the connection closes, unless a sync request the cut failed answers the connect `false` before that.
 
 **<a id="req-tjoin-4-sdpzjw"></a>`REQ-TJOIN-4-SDPZJW` — Direct response routing.** A request handler sends its
 response by authenticated peer address when the inbound transport has one and otherwise uses the inbound

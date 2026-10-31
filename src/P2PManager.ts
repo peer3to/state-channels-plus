@@ -166,6 +166,8 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     // discovery teardown runs after it.
     public dispose(): Promise<void> {
         if (this.disposalPromise) return this.disposalPromise;
+        // isDisposed holds while the first step closes the transports
+        this.disposalPromise = Promise.resolve();
         return (this.disposalPromise = runCleanup(
             () =>
                 runCleanupSync(
