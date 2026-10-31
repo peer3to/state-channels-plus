@@ -76,7 +76,6 @@ must be closed with their sockets, with no frame written, no dispatch and no ope
 - `does not promote a transport that closed before handshake dispatch`: UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P7, REQ-AUTH-5-BQG9AG.T1.P7
 - `does not promote a late handshake after manager disposal`: UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P8, REQ-AUTH-5-BQG9AG.T1.P8
 - `closes a Holepunch connection and a WebRTC channel arriving after the network cut, which send and dispatch nothing (worker)`: UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P3
-- `closes a Holepunch connection and a WebRTC channel arriving after the network cut, which send and dispatch nothing (inline)`: UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P3
 - `retires a replaced handshake transport and keeps one live connection`: UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P9, REQ-AUTH-5-BQG9AG.T1.P9
 - `emits profile loss only after the last live transport closes`: UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P7, REQ-LOBBY-8-31BE0F.T1.P1, REQ-LOBBY-8-31BE0F.T1.P2, REQ-LOBBY-8-31BE0F.T1.P4
 - `initial handshake starts one channel-load sync and reaches SYNCED`: none
@@ -100,9 +99,10 @@ must be closed with their sockets, with no frame written, no dispatch and no ope
 - `observer connect resolves true when chain genesis lands before any participant handshake`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P29, REQ-TJOIN-3-DCZKS6.T1.P7
 - `observer cancels the initial deadline when chain genesis settles the wait and stays synced if it still runs`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P32
 - `observer ignores a stale false sync result once chain genesis already synced it`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P30, REQ-TJOIN-3-DCZKS6.T1.P8
-- `observer connect resolves false when the runtime aborts while the initial wait is armed`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P31
-- `observer connect resolves false when the runtime aborts during the discovery join`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P35
-- `observer connect resolves false when the runtime aborts during the pre-join chain read`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P36, REQ-RUNTIME-3-VQXW59.T1.P61
+- `observer connect rejects with RootDisposedError when the runtime aborts while the initial wait is armed`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P31
+- `observer connect rejects with RootDisposedError when the runtime is disposed while the initial wait is armed, and the frozen connect does not hold the disposal`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P49, REQ-RUNTIME-3-VQXW59.T1.P93
+- `observer connect rejects with RootDisposedError when the runtime aborts during the discovery join`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P35
+- `observer connect rejects with RootDisposedError when the runtime aborts during the pre-join chain read`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P36
 - `a late sync success after the abort changes nothing`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P33
 - `a late sync failure after the abort changes nothing`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P34
 - `reports a failed participant read after an OPENED handshake to the runtime's top-level error handling, with no connection hook`: REQ-AUTH-5-BQG9AG.T2.P1, UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P11

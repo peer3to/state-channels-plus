@@ -29,7 +29,7 @@ Terminal leave state machine
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P11` — pending terminal leave rejects topUpBalance
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P12` — pending terminal leave rejects collectJoinChannelConfirmation
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P14` — a leave watchdog dispute that loses the evidence race keeps the leave waiting with no error
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P15` — disposal during a held watchdog upload stops the runtime at once; the late completion reports nothing
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P15` — disposal during a held watchdog upload stops the runtime at once, without waiting for the upload, and reports no leave
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P16` — an authored exit whose snapshot posts all fail falls back at the leave watchdog; a dispute submission that fails with no recognized chain refusal is a fatal runtime error and leaves no dispute marker
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P17` — an authored exit whose snapshot posts all fail falls back at the leave watchdog; an evidence-expired refusal waits for the window's reduction, and the reduced fork that drops the leaver emits `onLeftChannel`
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P23` — Both founders get `onLeftChannel` after the last exit closes the channel and status becomes NOT_OPENED

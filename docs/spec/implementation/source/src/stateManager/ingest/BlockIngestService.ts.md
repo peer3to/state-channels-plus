@@ -41,12 +41,3 @@ Carried inbound run storage
 
 - [x] `UNIT-TEST-BLOCK-INGEST-2-8ZE5Z8.P1` — a committed block's carried inbound run, anchored at the previous snapshot's inbound hash, moves the store tip with the snapshot when that hash is the store's tip
 - [x] `UNIT-TEST-BLOCK-INGEST-2-8ZE5Z8.P2` — a committed block's carried inbound run whose anchor is not the store's tip, first unheld and then held above a gap, is persisted each time and sets no tip
-
-## UNIT-TEST-BLOCK-INGEST-3-V70TFY
-
-Stopped runtime
-
-- Setup: Park a valid confirmation on the held state mutex, abort the runtime for real, then free the mutex
-- Oracle: The ingest returns true without judging or storing the block: no hook fires and the height is unchanged
-
-- [x] `UNIT-TEST-BLOCK-INGEST-3-V70TFY.P1` — a valid block parked on the state mutex when the runtime aborts returns true, fires no deviation hook and is not stored

@@ -15,6 +15,10 @@ service closed, which peers the service still tracks, and the setup service's wa
 messages. One case never hands the service a data channel, so the connection has no transport when it
 fails or closes.
 
+The dispose case opens one connection that never gets a data channel and cuts the network before the
+other's data channel arrives: the late transport closes its connection at once, and the root's
+release step then closes the negotiating one, leaving no tracked peer.
+
 ## Tests
 
 - `keeps the transport of a connection whose path recovers within the grace, and logs the loss and the recovery`: UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P1, REQ-UPG-9-60XCXK.T1.P1
@@ -26,3 +30,4 @@ fails or closes.
 - `gives each path loss its own full grace`: UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P7, REQ-UPG-9-60XCXK.T1.P7
 - `closes a replaced connection's transport when its replacement starts, without closing the replacement's connection`: UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P8, REQ-UPG-9-60XCXK.T1.P8
 - `closes and forgets a connection that fails or closes during a grace before it has a transport`: UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P9, REQ-UPG-9-60XCXK.T1.P15
+- `closes at dispose a connection still negotiating, and one whose data channel arrives after the network cut`: UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P10, REQ-RUNTIME-3-VQXW59.T1.P94

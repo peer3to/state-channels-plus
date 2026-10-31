@@ -26,7 +26,6 @@ for the old fork.
 - `zero reported difference → retains a one-second minimum delay`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P5
 - `verified sync replaces the fork → queued retry and later schedules do nothing`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P6, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P6
 - `the writer block arrives before retry → no second submission`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P7, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P4
-- `runtime disposed before retry → no second submission`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P8, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P5
 - `a plain check meets a valid posted block still in confirmation → no dispute, then the block is stored`: REQ-DISPUTE-PIPE-12-F85KF2.T1.P1, UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P17
 - `the pipeline rejects a bad-signature block posted by the writer in turn → a forced timeout names it after the deadline`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P18, UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P21
 - `a bad-signature block posted out of turn → the requested forced check never forces`: REQ-DISPUTE-PIPE-12-F85KF2.T1.P4, UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P19
@@ -50,7 +49,6 @@ for the old fork.
 - `M3 consecutive mismatches each rearm and then commit`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P26, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P12
 - `M4 an injected mismatch refusal before a verified fork replacement leaves its re-arm nothing to do`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P36, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P25
 - `M4 writer block obsoletes mismatch retry`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P29, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P15
-- `M4 disposal obsoletes mismatch retry`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P28, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P14
 - `a failed predecessor commitment read re-arms the check and the timeout still commits`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P34, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P22
 - `M5 a check waiting on the predecessor's on-chain validation re-arms after one second`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P31
 - `a writer that signed the predecessor gains no time from its post → the timeout is submitted at the block's own deadline`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P39

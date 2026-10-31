@@ -1519,9 +1519,11 @@ broadcast goes out and only the adoption after it is skipped
 decision 2026-10-08). The harness `holdReductionAttempt(..., "submit")` parks the reduce's own chain
 write (the multicall that carries `reduceAndFinalize`) and counts every chain write
 ([StubRpcMethods.ts](../../../test/fixtures/customRpc/harnessControl/services/stub/StubRpcMethods.ts#L1497)).
-The two `ReductionManager` cases that proved the removed guard were deleted with it; the
-`ReductionManager` case "disposal while the reduce send is held surfaces no rejection and reports no
-failure" replaces them
+The two `ReductionManager` cases that proved the removed guard were deleted with it. The inline
+case "disposal while the reduce send is held surfaces no rejection and reports no failure" that
+replaced them was deleted when every test moved to worker mode (Luke 2026-10-31); the worker
+`ReductionManager` cases that abort while the reduction is held prove the aborted peer's nonce is
+unchanged
 ([ReductionManager.test.ts.md](../verification/tests/test/stateManager/ReductionManager.test.ts.md)).
 Residual: a reduce send released after a full host teardown never settles (the destroyed ethers
 `WebSocketProvider` hangs at populate or estimate), so its detached promise stays pending until

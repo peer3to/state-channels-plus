@@ -40,12 +40,6 @@ during it. It then records membership reads. The zero-read oracle and the zero-s
 oracle (no reduce entered the held send and the leaver sent no multicall at all) remain;
 sibling uploads cannot exhaust the evidence window first.
 
-The held-send disposal case (staging in `test/fixtures/ReductionDisposalStaging.ts`) holds the reduce
-multicall through `holdReductionAttempt(0, "submit")`, waits until the send was entered and the detached
-caller's outcome settled with a result, aborts the runtime and waits for `isDisposed`, with the teardown
-parked before the chain provider closes. It then releases the send: the submission entered the send
-exactly once, does not settle within a second, and the executor reported no failure.
-
 ## Tests
 
 - `direct completion returns false and removes the operation when the fork changes inside its mutex wait`: UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P11
@@ -64,7 +58,6 @@ exactly once, does not settle within a second, and the executor reported no fail
 - `an abort while the reduction genesis application is held at setState sends no transaction once it is released`: UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P15, REQ-DISPUTE-PIPE-3-PHE3SQ.T1.P27
 - `a getParticipants failure after the canonical setState aborts without committing`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P7, REQ-DISPUTE-PIPE-3-PHE3SQ.T1.P17
 - `a getNextToWrite failure after the canonical setState aborts without committing`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P8, REQ-DISPUTE-PIPE-3-PHE3SQ.T1.P18
-- `disposal while the reduce send is held surfaces no rejection and reports no failure`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P20, REQ-DISPUTE-PIPE-3-PHE3SQ.T1.P25
 - `an ordinary attempt that completes a window the chain already finalized converges without a chain write`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P9
 - `a fatal attempt error rejects the caller once with the original error and aborts`: UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P7, REQ-DISPUTE-PIPE-3-PHE3SQ.T1.P21
 - `rejects a reject outcome at setState without installing a wrapper`: none

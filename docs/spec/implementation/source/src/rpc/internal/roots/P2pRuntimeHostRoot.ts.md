@@ -92,12 +92,3 @@ Exact local owner for the custom RPC
 - Oracle: Each constructor receives its own host instance, distinct from the other runtime's, before that host stored its runtime; each child is registered in its owner's children. Disposing the second runtime closes its child; the first child stays open and registered and the first runtime keeps serving. Forbidden: a shared or looked-up owner, an owner crossing a port.
 
 - [x] `UNIT-TEST-P2P-RUNTIME-HOST-34-517JAX.P1` — two inline peers: exact distinct owners before readiness, children attached to their own owner, one peer's disposal leaves the other peer and its child usable
-
-## UNIT-TEST-HOST-RELEASED-PROVIDER-1-H172F6
-
-Clock-owned provider on dispose
-
-- Setup: Dispose an inline runtime whose proxied provider the Clock reads through, cut and restore its node, then init the Clock with another provider
-- Oracle: The provider stays open, its node never reconnects, and it and its nodes are destroyed once the Clock replaces it
-
-- [x] `UNIT-TEST-HOST-RELEASED-PROVIDER-1-H172F6.P1` — kept open without reconnects, destroyed on Clock replacement

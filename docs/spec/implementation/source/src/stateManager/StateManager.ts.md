@@ -46,9 +46,7 @@ Full root abort
 
 - [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P1` — Inline abort closes the host and executor endpoints, rejects late queries, preserves a sibling SDK and tolerates repeated disposal
 - [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P2` — Worker abort closes the host and executor endpoints, rejects late queries and preserves a sibling SDK
-- [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P3` — Abort cancels a scheduled task before its due time, drops status to OPENED and disconnects peers
-- [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P4` — Stopping retains the live provider listener; root disposal then destroys the provider, removes listeners and permits repeated disposal
-- [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P5` — Abort of an inline host with a dedicated VM worker uploads the abort log line and the VM worker's logs before disposal ends the worker, the flush is the last step of `stop()`, after the producers stop, so a host timeout task due during the flush never runs, and an upload that never answers holds disposal no longer than the abort flush bound
+- [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P5` — Abort of a worker host with a dedicated VM worker uploads the abort log line and the VM worker's logs before disposal ends the worker, and an upload that never answers holds disposal no longer than the abort flush bound
 
 ## UNIT-TEST-STATE-MANAGER-1-GFPTJF
 
@@ -97,16 +95,6 @@ Timeout detection
 - [x] `UNIT-TEST-STATE-MANAGER-3-32QM46.P5` — self skip
 - [x] `UNIT-TEST-STATE-MANAGER-3-32QM46.P6` — forced claim on commitment-without-accepted-block
 - [ ] `UNIT-TEST-STATE-MANAGER-3-32QM46.P7` — non-participant skip
-
-## UNIT-TEST-STATE-MANAGER-4-ECGP8V
-
-Custom RPC disposal ordering
-
-- Setup: Dispose a live runtime's host root with a normal and a rejecting custom RPC root
-- Oracle: The root's dispose hook runs after the network cut closed every connection; teardown always completes; root rejection surfaces after cleanup
-
-- [x] `UNIT-TEST-STATE-MANAGER-4-ECGP8V.P1` — custom RPC root's dispose hook runs after the network cut
-- [x] `UNIT-TEST-STATE-MANAGER-4-ECGP8V.P2` — root rejection surfaces after runtime teardown
 
 ## UNIT-TEST-STATE-MANAGER-5-D8GDWH
 

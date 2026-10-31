@@ -809,11 +809,19 @@ abort flush before the children; the gas report, the provider and the network cl
 `StateManager.stop`/`dispose`, `StateChannelEventListener.stop`, `EventSyncService.stop`, the
 gas recorder's and diamond's `dispose`, the executor service's `dispose` and the base
 `MainRpcService.dispose` body are deleted, and the SDK services are no longer reached through the
-consumer hook. A disposed inline runtime whose provider the Clock keeps gets no timer, chain log or
-double-signature callback while its disposal is held after the children, or afterwards
-([`REQ-RUNTIME-3-VQXW59.T1.P92`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p92)).
-Still open: a disposed manager's local discovery sessions are released only by the realm cleanup in
-worker mode, so the discovery late-link checks stay.
+consumer hook.
+
+**Update (2026-10-31, dispose cut-off slices 4-5, Luke: as few sites as possible know about disposal):**
+the custom RPC hook, the negotiation and lobby answers, P2PManager's network-cut promise and the
+connect race are deleted; the application's pending channel calls reject with the runtime-disposed
+error when the connection closes and no longer hold the parent reply drain. An abort ends in the same
+root dispose. The root's release now also leaves every local discovery session of the manager, closes
+watched peer connections (one still negotiating included) and removes the listeners left on a provider
+the Clock keeps. The block-production, block-ingest and block-queue stop guards and the discovery
+handshake-result check are deleted.
+Still open: a request already parked on the state mutex at an abort can finish in memory after the cut
+and answer the application before the connection closes, and a peer connection created after the
+release closes only when its data channel arrives or ICE fails.
 
 <a id="find-join-2-ek5dww"></a>
 
