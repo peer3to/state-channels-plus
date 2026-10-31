@@ -9,6 +9,7 @@ import MultiRpcProvider from "./MultiRpcProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
+import { DEFAULT_MIRROR_SAMPLE_RATE } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 import {
@@ -55,7 +56,8 @@ export type MirrorProviderOptions = {
     owner?: AInternalRpcRoot;
     /**
      * Fraction (0 to 1) of the reads answered locally that are asked of the
-     * node as well, at the same block hash, and compared. Default 0.
+     * node as well, at the same block hash, and compared. Default
+     * {@link DEFAULT_MIRROR_SAMPLE_RATE}, the configuration's default.
      */
     sampleRate?: number;
 };
@@ -305,7 +307,7 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
         options: MirrorProviderOptions = {}
     ) {
         super(nodes, logger);
-        this.sampleRate = options.sampleRate ?? 0;
+        this.sampleRate = options.sampleRate ?? DEFAULT_MIRROR_SAMPLE_RATE;
         if (options.storageDiffUrl) {
             // an event a node announced at block N must find the mirror at N
             for (const node of nodes)

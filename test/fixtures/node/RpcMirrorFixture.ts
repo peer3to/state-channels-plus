@@ -52,7 +52,11 @@ export type MirrorSessionSettings = StorageDiffServiceSettings & {
     customPrecompiles?: EvmCustomPrecompileManifest[];
     /** Build the provider without a storage diff URL. */
     withoutService?: boolean;
-    /** Fraction of local answers the provider re-asks of the node; default 0. */
+    /**
+     * Fraction of local answers the provider re-asks of the node. Absent means
+     * 0, so a test is deterministic; `undefined` named explicitly leaves the
+     * provider's own default.
+     */
     sampleRate?: number;
 };
 
@@ -67,9 +71,10 @@ export async function withMirrorSession<T>(
     const {
         customPrecompiles,
         withoutService,
-        sampleRate,
+        sampleRate: named,
         ...serviceSettings
     } = settings;
+    const sampleRate = "sampleRate" in settings ? named : 0;
     return await withStorageDiffUpstream(
         async ({ provider: chain, relay, signer, start }) => {
             const storageDiff = await start(serviceSettings);

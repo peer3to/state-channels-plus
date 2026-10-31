@@ -72,12 +72,15 @@ export type Config = {
 /** Default lifetime of a prepared join authorization, in chain seconds. */
 export const DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS = 120;
 
+/** Default fraction of the mirror's local answers that are re-asked of the node. */
+export const DEFAULT_MIRROR_SAMPLE_RATE = 0.01;
+
 const DEFAULT_CONFIG: Config = {
     PROVIDER_URL: "http://localhost:8545",
     PROVIDER_URLS: [],
     LOG_QUERY_MAX_BLOCKS: 1000,
     STORAGE_DIFF_URL: "",
-    MIRROR_SAMPLE_RATE: 0.01,
+    MIRROR_SAMPLE_RATE: DEFAULT_MIRROR_SAMPLE_RATE,
     DEBUG_STATE_MANAGER: false,
     DEBUG_DISPUTE_HANDLER: false,
     DEBUG_P2P_MANAGER: false,

@@ -357,22 +357,57 @@ describe("MirrorRpcProvider", function () {
     });
 
     it("sends nothing to the node at a sample rate of 0", async function () {
-        await withMirrorSession(async (session) => {
-            const { storage, address } = await deployMirroredStorage(session);
-            await (await storage.setValue(5n)).wait();
+        await withMirrorSession(
+            async (session) => {
+                const { storage, address } =
+                    await deployMirroredStorage(session);
+                await (await storage.setValue(5n)).wait();
 
-            await session.provider.getStorage(address, 0);
-            await session.provider.getBalance(address);
-            await storage.getValue();
-            await sleep(300);
+                await session.provider.getStorage(address, 0);
+                await session.provider.getBalance(address);
+                await storage.getValue();
+                await sleep(300);
 
-            expect(nodeStateReads(session)).to.equal(0);
-            expect(nodeRequests(session, "eth_call")).to.have.length(0);
-            expect(session.provider.mirrorStatistics).to.include({
-                sampleChecks: 0,
-                sampleSkipped: 0
-            });
-        });
+                expect(nodeStateReads(session)).to.equal(0);
+                expect(nodeRequests(session, "eth_call")).to.have.length(0);
+                expect(session.provider.mirrorStatistics).to.include({
+                    sampleChecks: 0,
+                    sampleSkipped: 0
+                });
+            },
+            { sampleRate: 0 }
+        );
+    });
+
+    it("samples a small fraction of local answers when the provider is built without a sample rate", async function () {
+        await withMirrorSession(
+            async (session) => {
+                const { address } = await deployMirroredStorage(session);
+                await session.provider.getBalance(address);
+                const before = nodeRequests(session, "eth_getBalance").length;
+
+                const reads = 2_000;
+                for (let read = 0; read < reads; read++)
+                    await session.provider.getBalance(address);
+                await waitFor(
+                    () =>
+                        (session.provider.mirrorStatistics?.sampleChecks ?? 0) +
+                            (session.provider.mirrorStatistics?.sampleSkipped ??
+                                0) >
+                        0,
+                    5_000,
+                    20
+                );
+                await sleep(300);
+
+                // about one in a hundred (20 of 2,000 expected); always some, never most
+                const sampled =
+                    nodeRequests(session, "eth_getBalance").length - before;
+                expect(sampled).to.be.greaterThan(0);
+                expect(sampled).to.be.lessThan(reads / 10);
+            },
+            { sampleRate: undefined }
+        );
     });
 
     it("counts a mismatch between a cached value and the node, and reads the account from the node from then on", async function () {
