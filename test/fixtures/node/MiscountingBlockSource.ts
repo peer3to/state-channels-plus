@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: backfill block source staging; executable evidence belongs to its calling test declarations
 import { ListedBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ListedBlockSource";
 
 /**
