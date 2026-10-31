@@ -1,6 +1,7 @@
 import {
     assertDisposeCutsHeldBlockWork,
     assertDisposeCutsHeldDisputeUpload,
+    assertDisposedInlineRuntimeFiresNothing,
     assertInlineSiblingFailureAfterCutSurfaces
 } from "@test/fixtures/DisposeCutOffStaging";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -50,6 +51,10 @@ describe("E2E: dispose cut-off", function () {
             TestSession.getHarness(),
             false
         );
+    });
+
+    it("a disposed inline runtime's timer, chain logs and double-signature listener fire nothing afterwards", async function () {
+        await assertDisposedInlineRuntimeFiresNothing(TestSession.getHarness());
     });
 
     it("an inline sibling's failure after a peer's cut still surfaces in the drain", async function () {

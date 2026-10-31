@@ -1,12 +1,16 @@
 // @spec-test-coverage-ignore: shared staging for the mapped E2E-DisposeCutOff declarations
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
+import { signBlockVariant } from "./QueueAdmissionFixture";
 import { clientRootFor, runtimeEndpointFor } from "./RuntimeRootObservation";
+import { type DoubleSignatureReport, recoverSigner } from "@/cache";
+import Clock from "@/Clock";
 import { IN_FLIGHT_REPLY_DRAIN_MS } from "@/rpc/internal/AInternalRpcRoot";
 import { isEngagedStatus } from "@/types/flags";
 import { DetachedPromises, sleep } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
+import { getBytes, id, Wallet } from "ethers";
 
 /** Long enough for released work to run on and send what it would send. */
 const AFTER_CUT_WINDOW_MS = 1_000;
@@ -128,6 +132,89 @@ export async function assertInlineSiblingFailureAfterCutSurfaces(
         ingest.onBlockConfirmation = onBlockConfirmation;
     }
     await TestSession.settleDetached({ expectedErrorIncludes: message });
+}
+
+/**
+ * Inline peers share one realm with its static Clock and signer recovery
+ * cache. The Clock is handed the disposed peer's provider, so that provider
+ * outlives it. After the disposal, a timer it armed, the
+ * channel's chain logs and a realm-wide double-signature report reach a
+ * live sibling and never the disposed runtime.
+ */
+export async function assertDisposedInlineRuntimeFiresNothing(
+    h: MathPeerTestHarness
+): Promise<void> {
+    await h.lifecycle.start(3, 2, {
+        configOverrides: { RUN_SDK_IN_THREAD: false }
+    });
+    const endpoints = h.peers.map((peer) => ({
+        peer,
+        sm: runtimeEndpointFor(peer.p2pInstance).sm
+    }));
+    const [disposed, live, disputer] = endpoints;
+    // the realm's Clock reads through this peer's provider, as it keeps the
+    // first runtime's provider outside the harness
+    const provider = disposed.sm.stateChannelManagerContract.runner!.provider!;
+    await Clock.init(provider);
+    expect(Clock.ownsProvider(provider)).to.equal(true);
+    const observe = (sm: typeof live.sm) => {
+        const calls = { timer: 0, chainLogs: 0, doubleSignatures: 0 };
+        sm.timeoutManager.scheduleTask(
+            () => {
+                calls.timer += 1;
+            },
+            AFTER_CUT_WINDOW_MS / 2,
+            "dispose cut-off probe"
+        );
+        const sync = sm.eventSyncService;
+        const schedule = sync.scheduleStreamedLog.bind(sync);
+        sync.scheduleStreamedLog = (...args) => {
+            calls.chainLogs += 1;
+            return schedule(...args);
+        };
+        const p2pManager = sm.p2pManager;
+        const onDoubleSignature =
+            p2pManager["onDoubleSignature"].bind(p2pManager);
+        Reflect.set(
+            p2pManager,
+            "onDoubleSignature",
+            (report: DoubleSignatureReport) => {
+                calls.doubleSignatures += 1;
+                onDoubleSignature(report);
+            }
+        );
+        return calls;
+    };
+    const disposedCalls = observe(disposed.sm);
+    const liveCalls = observe(live.sm);
+    await disposed.peer.p2pInstance.dispose();
+
+    // a chain log on the channel, a timer deadline and a double signature
+    await h.execOnHost(disputer.peer, (sm) => {
+        sm.disputeManager.requestDispute(sm.forkId);
+        return true;
+    });
+    const wallet = Wallet.createRandom();
+    const blockHash = id("disposed runtime double signature");
+    for (const variant of [0, 1])
+        expect(
+            recoverSigner(
+                getBytes(blockHash),
+                signBlockVariant(wallet, blockHash, variant)
+            )
+        ).to.equal(wallet.address);
+    await waitFor(
+        () => liveCalls.chainLogs > 0 && liveCalls.timer > 0,
+        h.event.protocolEventTimeoutMs()
+    );
+    await sleep(AFTER_CUT_WINDOW_MS);
+
+    expect(liveCalls.doubleSignatures).to.equal(1);
+    expect(disposedCalls).to.deep.equal({
+        timer: 0,
+        chainLogs: 0,
+        doubleSignatures: 0
+    });
 }
 
 /**
