@@ -384,25 +384,19 @@ export class P2pRuntimeHostRoot<
     }
 
     /**
-     * Before the children: the runtime's timers, its pending app answers
-     * and the waits that hold timers or chain listeners end, and an abort's
-     * log flush completes while the workers can still upload. Runs once.
+     * Before the children: the runtime's timers and the waits that hold
+     * timers or chain listeners end, and an abort's log flush completes
+     * while the workers can still upload. Runs once.
      */
     private releaseRuntime(): Promise<void> | undefined {
         const stateManager = this.runtimeHandle?.stateManager;
         if (!stateManager) return;
         const localRpc = stateManager.p2pManager.localRpc;
         return (this.runtimeRelease ??= runCleanup(
-            // the custom RPC's own hook, before its child roots are disposed
-            () => localRpc.dispose(),
-            // the app's pending open-channel attempt answers cancelled
-            () => localRpc.openChannelNegotiationService.dispose(),
-            // a pending match answers undefined and leaves its discovery session
-            () => localRpc.lobbyMatchingService.dispose(),
-            // pending handshake waits settle and their timers clear
-            () => localRpc.initHandshakeService.dispose(),
             // ends the chain-head waits (timer and block listener)
             () => localRpc.spectateService.dispose(),
+            // pending handshake waits settle and their timers clear
+            () => localRpc.initHandshakeService.dispose(),
             () => stateManager.timeoutManager.dispose(),
             () => stateManager.stateChannelEventListener.dispose(),
             // An abort's log flush, already running: disposal ends the

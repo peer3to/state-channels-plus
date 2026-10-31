@@ -103,9 +103,9 @@ export async function assertLifecycleDisposal(
         const childDispose = childRoot.dispose.bind(childRoot);
         const logger = host.hostRpc.requireManager().stateManager.logger;
         const hostDispose = logger.dispose.bind(logger);
-        // the runtime's release opens with its custom RPC's dispose hook
-        const localRpc = host.hostRpc.requireManager().localRpc;
-        const prepare = localRpc.dispose.bind(localRpc);
+        // the runtime's release opens with its spectate release
+        const spectate = host.hostRpc.requireManager().localRpc.spectateService;
+        const prepare = spectate.dispose.bind(spectate);
         let preparationStarted = false;
         const preparationError = new Error("Host preparation failed");
         let entered!: () => void;
@@ -116,13 +116,13 @@ export async function assertLifecycleDisposal(
         const held = new Promise<void>((resolve) => {
             release = resolve;
         });
-        localRpc.dispose = async () => {
+        spectate.dispose = async () => {
             if (preparationStarted) return;
             preparationStarted = true;
             order.push("prepare");
             entered();
             if (preparation === "held") await held;
-            await prepare();
+            prepare();
             if (preparation === "failed") throw preparationError;
         };
         childRoot.dispose = () => {
@@ -429,9 +429,9 @@ export async function assertLostDisposalReply(): Promise<void> {
         );
         if (!host?.parent)
             throw new Error("Expected actual SDK host and parent");
-        // holds the runtime's release, which opens with this hook
-        const localRpc = host.hostRpc.requireManager().localRpc;
-        const dispose = localRpc.dispose.bind(localRpc);
+        // holds the runtime's release, which opens with the spectate release
+        const spectate = host.hostRpc.requireManager().localRpc.spectateService;
+        const dispose = spectate.dispose.bind(spectate);
         let release!: () => void;
         let entered!: () => void;
         const held = new Promise<void>((resolve) => {
@@ -440,10 +440,10 @@ export async function assertLostDisposalReply(): Promise<void> {
         const started = new Promise<void>((resolve) => {
             entered = resolve;
         });
-        localRpc.dispose = async () => {
+        spectate.dispose = async () => {
             entered();
             await held;
-            await dispose();
+            dispose();
         };
         const parentClosed = new Promise<void>((resolve) =>
             host.parent!.onClosed(resolve)

@@ -188,24 +188,7 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         channelId: Bytes,
         options: ConnectToChannelOptions | null = {}
     ): Promise<boolean> {
-        try {
-            // the network cut answers a connect still waiting, for example
-            // on a join send the cut froze
-            return await Promise.race([
-                this.runConnectToChannel(channelId, options ?? {}),
-                this.p2pManager.networkCut.then(() => false)
-            ]);
-        } catch (error) {
-            // An abort or disposal during the connect is the connect's
-            // outcome: the runtime is gone, so the answer is `false`, not the
-            // error a torn-down dependency raised on the way out.
-            if (!this.p2pManager.stateManager.isDisposed) throw error;
-            this.logger.debug("connectToChannel ended by runtime disposal", {
-                channelId: ethers.hexlify(channelId),
-                error: errorMessage(error)
-            });
-            return false;
-        }
+        return this.runConnectToChannel(channelId, options ?? {});
     }
 
     /**

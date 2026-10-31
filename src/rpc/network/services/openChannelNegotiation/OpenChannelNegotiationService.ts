@@ -272,12 +272,6 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         return attempt.outcomePromise;
     }
 
-    public async dispose(): Promise<void> {
-        const attempt = this.state.attempt;
-        if (!attempt) return;
-        await this.clearAttempt(attempt, "runtime disposed", "cancelled");
-    }
-
     private observeChannelOpened(channelId: string): void {
         const attempt = this.state.attempt;
         if (!attempt || attempt.channelId !== channelId) return;

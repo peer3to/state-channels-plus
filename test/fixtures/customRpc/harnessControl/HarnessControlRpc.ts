@@ -123,20 +123,19 @@ export function withHarnessControl<
             this.validation = new ValidationProbeService(p2pManager);
             this.runtimeRpc = new RuntimeRpcControlService(p2pManager);
             this.mirror = new MirrorService(p2pManager);
-        }
-
-        /**
-         * Release every paused host call staged by the stub service before the
-         * runtime tears down, so an abort during a staged hold never leaves a
-         * paused drain behind.
-         */
-        override async dispose(): Promise<void> {
-            this.stub.releaseReductionHolds();
-            // a join collection held mid-way continues into the disposed runtime
-            this.stub.releaseJoinThresholdRead();
-            this.stub.releaseJoinCollectionResult();
-            this.stub.restoreCollectAndJoinEntries();
-            await super.dispose();
+            // Release every paused host call staged by the stub service
+            // before the runtime tears down (its first release step), so an
+            // abort during a staged hold never leaves a paused drain behind.
+            const spectate = this.spectateService;
+            const releaseSpectate = spectate.dispose.bind(spectate);
+            spectate.dispose = () => {
+                this.stub.releaseReductionHolds();
+                // a join collection held mid-way continues into the disposed runtime
+                this.stub.releaseJoinThresholdRead();
+                this.stub.releaseJoinCollectionResult();
+                this.stub.restoreCollectAndJoinEntries();
+                releaseSpectate();
+            };
         }
     };
 }

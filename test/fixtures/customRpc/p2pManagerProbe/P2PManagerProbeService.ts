@@ -246,7 +246,7 @@ export type LobbyProtocolProbe = {
 };
 
 /** How a committed lobby handoff ends without an opened channel. */
-export type LobbyHandoffExit = "release" | "disconnect" | "dispose";
+export type LobbyHandoffExit = "release" | "disconnect";
 
 export type LobbyHandoffExitProbe = {
     selectedPromotedAtCommit: boolean;
@@ -326,12 +326,9 @@ export type LobbySessionCleanupProbe = {
     timeoutResolvedUndefined: boolean;
     timeoutClearedTopic: boolean;
     timeoutStatus: Status;
-    disposeResolvedUndefined: boolean;
-    disposeClearedTopic: boolean;
     replacementClosedOldTransport: boolean;
     leaveClosedSessionTransport: boolean;
     timeoutClosedSessionTransport: boolean;
-    disposeClosedSessionTransport: boolean;
     ordinaryCancellationSucceeded: boolean;
     targetedCancellationSucceeded: boolean;
     cancellationNoopAfterHandoff: boolean;
@@ -434,8 +431,6 @@ export type SignedAttemptObservationProbe = {
     lowerDidNotBlacklistHigherBeforeExpiry: boolean;
     lowerBlacklistedHigherAfterExpiry: boolean;
     expiredWindowStrikes: number;
-    signedDisposeOutcomeCancelled: boolean;
-    signedAttemptClearedOnDispose: boolean;
     signedPeerBlacklistedOnFinalLoss: boolean;
     signedAttemptRetainedAfterFinalLoss: boolean;
     signedAttemptClearedAfterExpiry: boolean;
@@ -852,6 +847,20 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         const profile = new PeerProfile(transport, address);
         this.p2pManager.profileManager.registerProfile(profile);
         return profile;
+    }
+
+    /** Ends a probe's lobby session through the service's own cleanup. */
+    private endLobbySession(service: LobbyMatchingService): Promise<void> {
+        return service["cleanup"]();
+    }
+
+    /** Cancels a probe's negotiation attempt, as a cancelled match does. */
+    private async endNegotiation(
+        service: OpenChannelNegotiationService
+    ): Promise<void> {
+        const attempt = service.state.attempt;
+        if (attempt)
+            await service["clearAttempt"](attempt, "probe ended", "cancelled");
     }
 
     private makeMatch(
@@ -1739,7 +1748,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 pick: pick.status
             };
         } finally {
-            await service.dispose();
+            await this.endLobbySession(service);
             await matching;
         }
     }
@@ -1785,7 +1794,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             }
             return { calls, sameError };
         } finally {
-            await service.dispose();
+            await this.endLobbySession(service);
             await matching;
         }
     }
@@ -1838,7 +1847,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 threw: false
             };
         } finally {
-            await service.dispose();
+            await this.endNegotiation(service);
             await outcome;
         }
     }
@@ -3955,10 +3964,8 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 reportedConnections.at(-1) ?? [];
             if (exit === "release") {
                 await service.releaseNegotiationHandoff(topic);
-            } else if (exit === "disconnect") {
-                service.disconnectLobbyTransports();
             } else {
-                await service.dispose();
+                service.disconnectLobbyTransports();
             }
             return {
                 selectedPromotedAtCommit,
@@ -4131,7 +4138,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             transportClosed: transport.isClosed,
             peerBlacklisted: profile.isBlackListed
         };
-        await service.dispose();
+        await this.endLobbySession(service);
         return result;
     }
 
@@ -4457,23 +4464,6 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         const timeoutStatus = this.p2pManager.stateManager.status;
         const timeoutClosedSessionTransport = timeoutTransport.isClosed;
 
-        const disposeService = new LobbyMatchingService(this.p2pManager);
-        const disposePromise = disposeService.match(`0x${"65".repeat(32)}`);
-        await Promise.resolve();
-        const disposeTransport = this.transport(
-            "0xcccccccccccccccccccccccccccccccccccccccc"
-        );
-        this.registerProfile(
-            disposeTransport,
-            getChecksumAddress(disposeTransport.peerAddress!)
-        );
-        disposeService.onAuthenticatedTransport(disposeTransport);
-        await disposeService.dispose();
-        const disposeResolvedUndefined = (await disposePromise) === undefined;
-        const disposeClearedTopic =
-            disposeService.getAvailability().topic === undefined;
-        const disposeClosedSessionTransport = disposeTransport.isClosed;
-
         const cancellationService = new LobbyMatchingService(this.p2pManager);
         const ordinaryTopic = `0x${"67".repeat(32)}`;
         const ordinaryMatch = cancellationService.match(ordinaryTopic);
@@ -4547,12 +4537,9 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             timeoutResolvedUndefined,
             timeoutClearedTopic,
             timeoutStatus,
-            disposeResolvedUndefined,
-            disposeClearedTopic,
             replacementClosedOldTransport,
             leaveClosedSessionTransport,
             timeoutClosedSessionTransport,
-            disposeClosedSessionTransport,
             ordinaryCancellationSucceeded,
             targetedCancellationSucceeded,
             cancellationNoopAfterHandoff,
@@ -4746,7 +4733,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             };
         } finally {
             timeoutManager.scheduleTask = originalScheduleTask;
-            await service.dispose();
+            await this.endLobbySession(service);
         }
     }
 
@@ -5071,7 +5058,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             };
         } finally {
             stub.releaseEventListenerRemoval();
-            await service.dispose();
+            await this.endNegotiation(service);
         }
     }
 
@@ -5117,7 +5104,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                     )
             };
         } finally {
-            await service.dispose();
+            await this.endNegotiation(service);
             this.p2pManager.profileManager.removeTransport(transport);
         }
     }
@@ -5234,7 +5221,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             );
             const wrongPeerBlacklisted = wrongProfile.isBlackListed;
             const wrongPeerLeftAttemptActive = !!wrongPeerService.state.attempt;
-            await wrongPeerService.dispose();
+            await this.endNegotiation(wrongPeerService);
             return { wrongPeerBlacklisted, wrongPeerLeftAttemptActive };
         }
 
@@ -5537,7 +5524,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         } else {
             // A signed attempt keeps observing the chain; end it here so the
             // probe leaves no attempt behind.
-            await service.dispose();
+            await this.endNegotiation(service);
             outcomeStatus = (await outcome).status;
         }
         await this.p2pManager.stateManager.clearChannelId();
@@ -5690,7 +5677,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         await Promise.resolve();
         const signedPeerBlacklistedOnFinalLoss = lossProfile.isBlackListed;
         const signedAttemptRetainedAfterFinalLoss = !!lossService.state.attempt;
-        await lossService.dispose();
+        await this.endNegotiation(lossService);
         await lossOutcome;
 
         await resetLifecycle();
@@ -5741,31 +5728,6 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         const expiredWindowStrikes = this.strikesOf(higherProfile);
         timeoutManager.scheduleTask = originalScheduleTask;
         await lowerOutcome;
-
-        await resetLifecycle();
-        const disposePeer = getChecksumAddress(lowerWallet().address);
-        const disposeTransport = this.transport(disposePeer);
-        this.registerProfile(disposeTransport, disposePeer);
-        const disposeService = new OpenChannelNegotiationService(
-            this.p2pManager
-        );
-        const disposeMatch = this.makeMatch(
-            disposePeer,
-            "85",
-            localAddress,
-            "c1",
-            "d1"
-        );
-        const { outcome: disposeOutcome } = await this.startNegotiation(
-            disposeService,
-            disposeMatch
-        );
-        const disposeAttempt = disposeService.state.attempt!;
-        disposeAttempt.localOpeningSignatureIssued = true;
-        await disposeService.dispose();
-        const signedDisposeOutcomeCancelled =
-            (await disposeOutcome).status === "cancelled";
-        const signedAttemptClearedOnDispose = !disposeService.state.attempt;
 
         await resetLifecycle();
         const openWallet = lowerWallet();
@@ -5854,8 +5816,6 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             lowerDidNotBlacklistHigherBeforeExpiry,
             lowerBlacklistedHigherAfterExpiry,
             expiredWindowStrikes,
-            signedDisposeOutcomeCancelled,
-            signedAttemptClearedOnDispose,
             signedPeerBlacklistedOnFinalLoss,
             signedAttemptRetainedAfterFinalLoss,
             signedAttemptClearedAfterExpiry,

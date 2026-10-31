@@ -1,9 +1,6 @@
 // @spec-test-coverage-ignore: force-join and join-check staging shared by the join unit and E2E cases
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
-import type { LeaveChannelState } from "@/stateManager/membership/LeaveChannelService";
-import type StateManager from "@/stateManager/StateManager";
 import type { JoinRecord } from "@/storage/ForceJoinStorage";
-import type { Status } from "@/types";
 import type { ForkId } from "@/types/types";
 import { waitFor } from "@test/utils/waitFor";
 
@@ -326,13 +323,12 @@ export async function holdForceJoinMembershipRead(
                 });
             });
             if (hostArgs.releaseOnDispose) {
-                // the custom RPC's dispose hook opens the runtime's release
-                const localRpc = sm.p2pManager.localRpc;
-                const dispose = localRpc.dispose.bind(localRpc);
-                localRpc.dispose = () => {
-                    const disposing = dispose();
+                // the spectate release opens the runtime's release
+                const spectate = sm.p2pManager.localRpc.spectateService;
+                const dispose = spectate.dispose.bind(spectate);
+                spectate.dispose = () => {
+                    dispose();
                     release();
-                    return disposing;
                 };
             }
             Object.defineProperties(owner, {
@@ -455,46 +451,4 @@ export async function observeDisputeRequests(
                 return true;
             })
     };
-}
-
-/** The joiner's host state right after it emitted `onLeftChannel`. */
-export type MembershipEndObservation = {
-    status: Status;
-    trackedJoin: TrackedJoin | null;
-    leaveState: LeaveChannelState | null;
-    /** Whether the last read of the installed local state before the event listed the signer; null without a read. */
-    isSignerInLocalState: boolean | null;
-};
-
-/**
- * Record-only: on the retained inline host (see `runtimeEndpointFor`),
- * records the answer of each real read of the installed local state's
- * participants (every membership drop decides on one) and, once the runtime
- * emits `onLeftChannel` and its synchronous subscribers ran, the host state.
- * The record stays readable after the runtime disposes itself.
- */
-export function observeMembershipEnd(sm: StateManager) {
-    const diamond = sm.diamondStateMachine;
-    const readParticipants = diamond.getParticipants.bind(diamond);
-    let isSignerInLocalState: boolean | null = null;
-    let atLeft: MembershipEndObservation | undefined;
-    Object.defineProperty(diamond, "getParticipants", {
-        configurable: true,
-        value: async () => {
-            const participants = await readParticipants();
-            isSignerInLocalState = participants.includes(sm.signerAddress);
-            return participants;
-        }
-    });
-    sm.events.on("p2pEventHooks", "onLeftChannel", () => {
-        queueMicrotask(() => {
-            atLeft ??= {
-                status: sm.status,
-                trackedJoin: sm.storage.forceJoin.getJoin() ?? null,
-                leaveState: sm.leaveChannelService.state ?? null,
-                isSignerInLocalState
-            };
-        });
-    });
-    return { atLeft: () => atLeft };
 }

@@ -253,7 +253,12 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             () => service.takeHeldDerivation(),
             "old attempt derivation was not held"
         );
-        await service.dispose();
+        // the old attempt ends cancelled, as a cancelled match ends it
+        await service["clearAttempt"](
+            service.state.attempt!,
+            "probe cancelled",
+            "cancelled"
+        );
         const cancelledOutcome = (await old.outcome).status;
 
         const replacement = await this.stageAttempt(service, role);

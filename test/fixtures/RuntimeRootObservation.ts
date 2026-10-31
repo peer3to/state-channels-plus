@@ -53,31 +53,6 @@ export function runtimeEndpointFor(instance: { events: EventBus }) {
     };
 }
 
-/** Observe the host root's real disposal, where its failure surfaces. */
-export async function observeRuntimeDisposal(instance: { events: EventBus }) {
-    const { host, sm } = runtimeEndpointFor(instance);
-    const root = sm.p2pManager.localRpc;
-    const originalDispose = root.dispose;
-    let connectionsAtRootDispose = -1;
-    root.dispose = async () => {
-        connectionsAtRootDispose = sm.p2pManager.getConnectedPeers().size;
-        await originalDispose.call(root);
-    };
-    let message = "";
-    try {
-        await host.dispose();
-    } catch (error) {
-        message = error instanceof Error ? error.message : String(error);
-    } finally {
-        root.dispose = originalDispose;
-    }
-    return {
-        connectionsAtRootDispose,
-        connectionsAfter: sm.p2pManager.getConnectedPeers().size,
-        message
-    };
-}
-
 /** Records the errors a root reports (instead of reporting them) and when; returns the restore. */
 export function recordReportedErrors(root: AInternalRpcRoot) {
     const errors: unknown[] = [];

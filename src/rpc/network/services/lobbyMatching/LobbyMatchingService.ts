@@ -259,10 +259,6 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         };
     }
 
-    public async dispose(): Promise<void> {
-        await this.cleanup();
-    }
-
     /** Disconnects every transport owned by matching or its selected handoff. */
     public disconnectLobbyTransports(): number {
         const count =

@@ -67,14 +67,6 @@ class MainRpcService<
     ready(): Promise<void> | void {}
 
     /**
-     * Runtime-shutdown hook for custom RPC roots. The host root awaits it
-     * after the disposal cut-off and before it disposes its child roots, so a
-     * root can release what it holds outside the runtime. The base holds
-     * nothing.
-     */
-    async dispose(): Promise<void> {}
-
-    /**
      * The runtime's one event bus, typed by this application's event map:
      * `applicationEvents.emit("application", name, args)` is checked
      * against `TEvents`.

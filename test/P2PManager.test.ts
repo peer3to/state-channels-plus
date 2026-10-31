@@ -5,7 +5,7 @@ import { channelIdToTargetedJoinTopic } from "@/utils";
 
 import {
     assertLateSyncResultAfterAbortChangesNothing,
-    assertObserverConnectSettlesFalseOnAbort,
+    assertObserverConnectRejectsOnEnd,
     INITIAL_SYNC_DEADLINE_TASK,
     withFreshInitialSyncObserver,
     withInitialDeadlineElapsedDuringHeldChecks
@@ -15,18 +15,19 @@ import {
     type SpectateSyncSettle
 } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { runHandshakeFailure } from "@test/fixtures/HandshakeFailureStaging";
+import {
+    crashLogUploadOverrides,
+    decodeUpload,
+    startLogReceiver
+} from "@test/fixtures/logging/LogUploader.fixture";
 import { withObserverOfSyncingParticipant } from "@test/fixtures/MilestoneSyncStaging";
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
-import {
-    clientRootFor,
-    inlineHostFor
-} from "@test/fixtures/RuntimeRootObservation";
+import { clientRootFor } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers, Wallet } from "ethers";
-import sinon from "sinon";
 
 const TRANSPORTS_CLOSED_AFTER_CUT = {
     closed: [true, true],
@@ -493,18 +494,6 @@ describe("P2PManager", function () {
         await fixture!.cleanup();
         fixture = new P2PManagerFixture();
         await fixture.setup({ isolatedPeers: true });
-        expect(
-            await fixture
-                .control()
-                .p2pManagerProbe.probeTransportsAfterCut()
-                .request()
-        ).to.deep.equal(TRANSPORTS_CLOSED_AFTER_CUT);
-    });
-
-    it("closes a Holepunch connection and a WebRTC channel arriving after the network cut, which send and dispatch nothing (inline)", async function () {
-        await fixture!.cleanup();
-        fixture = new P2PManagerFixture();
-        await fixture.setup({ inlineHosts: true });
         expect(
             await fixture
                 .control()
@@ -1284,28 +1273,24 @@ describe("P2PManager", function () {
 
         it("observer aborts and keeps the error log once a held participant check rejects after the initial deadline elapsed", async function () {
             await fixture!.cleanup();
-            fixture = new P2PManagerFixture();
-            await fixture.setup({
-                inlineHosts: true,
-                timeConfig: {
-                    agreementTime: 2,
-                    p2pTime: 2,
-                    chainFallbackTime: 2,
-                    evidenceTime: 2
-                }
-            });
-            const h = fixture.getHarness();
-            await withFreshInitialSyncObserver(h, async (observer) => {
-                // The inline host's P2PManager: its error lines are read after the abort.
-                const errorLog = sinon.spy(
-                    inlineHostFor(observer.p2pInstance).hostRpc.requireManager()
-                        .logger,
-                    "error"
-                );
-                const host = clientRootFor(
-                    observer.p2pInstance
-                ).p2pRuntimeHostRemoteRoot!;
-                try {
+            // the aborting observer uploads its logs: the error lines are read there
+            const receiver = await startLogReceiver();
+            try {
+                fixture = new P2PManagerFixture();
+                await fixture.setup({
+                    configOverrides: crashLogUploadOverrides(receiver.url),
+                    timeConfig: {
+                        agreementTime: 2,
+                        p2pTime: 2,
+                        chainFallbackTime: 2,
+                        evidenceTime: 2
+                    }
+                });
+                const h = fixture.getHarness();
+                await withFreshInitialSyncObserver(h, async (observer) => {
+                    const host = clientRootFor(
+                        observer.p2pInstance
+                    ).p2pRuntimeHostRemoteRoot!;
                     await withInitialDeadlineElapsedDuringHeldChecks(
                         h,
                         observer,
@@ -1328,20 +1313,30 @@ describe("P2PManager", function () {
                                 includes: PARTICIPANT_CHECK_STUB_FAILURE,
                                 timeoutMs: h.event.protocolEventTimeoutMs()
                             });
-                            expect(
-                                errorLog
-                                    .getCalls()
+                            // uploads carry each store's entries past its cursor once
+                            const failureLines = () =>
+                                receiver.requests
                                     .filter(
-                                        (call) =>
-                                            call.args[0] ===
+                                        (upload) =>
+                                            upload.peerAddress ===
+                                            observer.address
+                                    )
+                                    .flatMap(decodeUpload)
+                                    .filter(
+                                        (entry) =>
+                                            entry.message ===
                                             "Participant read or sync after handshake failed"
                                     )
                                     .map(
-                                        (call) =>
-                                            (call.args[1] as { error: string })
+                                        (entry) =>
+                                            (entry.meta[0] as { error: string })
                                                 .error
-                                    )
-                            ).to.deep.equal(
+                                    );
+                            await waitFor(
+                                () => failureLines().length >= rejected,
+                                h.event.protocolEventTimeoutMs()
+                            );
+                            expect(failureLines()).to.deep.equal(
                                 Array.from(
                                     { length: rejected },
                                     () => PARTICIPANT_CHECK_STUB_FAILURE
@@ -1349,10 +1344,10 @@ describe("P2PManager", function () {
                             );
                         }
                     );
-                } finally {
-                    errorLog.restore();
-                }
-            });
+                });
+            } finally {
+                await receiver.close();
+            }
         });
 
         it("observer holds the initial deadline until the last of two participant checks ends without a sync", async function () {
@@ -1674,7 +1669,7 @@ describe("P2PManager", function () {
             });
         });
 
-        it("observer connect resolves false when the runtime aborts while the initial wait is armed", async function () {
+        it("observer connect rejects with RootDisposedError when the runtime aborts while the initial wait is armed", async function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
@@ -1687,7 +1682,7 @@ describe("P2PManager", function () {
             });
             const h = fixture.getHarness();
             try {
-                await assertObserverConnectSettlesFalseOnAbort(h, {
+                await assertObserverConnectRejectsOnEnd(h, {
                     // Settled by the abort, well inside the two-window deadline.
                     settledWithinMs: 2 * 2 * 1000,
                     // participants never answer the handshake, so the connect
@@ -1717,7 +1712,50 @@ describe("P2PManager", function () {
             }
         });
 
-        it("observer connect resolves false when the runtime aborts during the discovery join", async function () {
+        it("observer connect rejects with RootDisposedError when the runtime is disposed while the initial wait is armed, and the frozen connect does not hold the disposal", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            const h = fixture.getHarness();
+            try {
+                await assertObserverConnectRejectsOnEnd(h, {
+                    end: "dispose",
+                    settledWithinMs: 2 * 2 * 1000,
+                    // participants never answer the handshake, so the connect
+                    // parks on the armed initial wait
+                    stage: async () => {
+                        await Promise.all(
+                            h.peers.map((peer) =>
+                                h
+                                    .control(peer)
+                                    .stub.stubBlockHandshakeAndRecordSpectateGuard()
+                                    .request()
+                            )
+                        );
+                    }
+                });
+            } finally {
+                await Promise.all(
+                    h.peers
+                        .filter((peer) => peer.index !== h.peers.length - 1)
+                        .map((peer) =>
+                            h
+                                .control(peer)
+                                .stub.restoreBlockedHandshake()
+                                .request()
+                        )
+                );
+            }
+        });
+
+        it("observer connect rejects with RootDisposedError when the runtime aborts during the discovery join", async function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
@@ -1730,24 +1768,21 @@ describe("P2PManager", function () {
             });
             // the join is held longer than the whole abort sequence, so the
             // abort lands while the connect handler is still inside it and
-            // the answer must come from the abort, not from the held join
+            // the rejection comes from the closed port, not from the held join
             const holdMs = 3000;
-            await assertObserverConnectSettlesFalseOnAbort(
-                fixture.getHarness(),
-                {
-                    settledWithinMs: holdMs,
-                    stage: (observer) =>
-                        fixture!
-                            .getHarness()
-                            .control(observer)
-                            .stub.stubHoldDiscoveryJoin(holdMs)
-                            .request()
-                            .then(() => undefined)
-                }
-            );
+            await assertObserverConnectRejectsOnEnd(fixture.getHarness(), {
+                settledWithinMs: holdMs,
+                stage: (observer) =>
+                    fixture!
+                        .getHarness()
+                        .control(observer)
+                        .stub.stubHoldDiscoveryJoin(holdMs)
+                        .request()
+                        .then(() => undefined)
+            });
         });
 
-        it("observer connect resolves false when the runtime aborts during the pre-join chain read", async function () {
+        it("observer connect rejects with RootDisposedError when the runtime aborts during the pre-join chain read", async function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
@@ -1762,19 +1797,16 @@ describe("P2PManager", function () {
             // parking the second read lets the abort land between OPENED and
             // the join, and the timer frees the read after the abort
             const holdMs = 1000;
-            await assertObserverConnectSettlesFalseOnAbort(
-                fixture.getHarness(),
-                {
-                    settledWithinMs: 2 * 2 * 1000,
-                    stage: (observer) =>
-                        fixture!
-                            .getHarness()
-                            .control(observer)
-                            .stub.holdOpenedStatusRefresh("second", holdMs)
-                            .request()
-                            .then(() => undefined)
-                }
-            );
+            await assertObserverConnectRejectsOnEnd(fixture.getHarness(), {
+                settledWithinMs: 2 * 2 * 1000,
+                stage: (observer) =>
+                    fixture!
+                        .getHarness()
+                        .control(observer)
+                        .stub.holdOpenedStatusRefresh("second", holdMs)
+                        .request()
+                        .then(() => undefined)
+            });
         });
 
         it("a late sync success after the abort changes nothing", async function () {

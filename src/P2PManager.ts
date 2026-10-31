@@ -59,20 +59,14 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     self = config.DEBUG_P2P_MANAGER ? DebugProxy.createProxy(this) : this;
     preferredTransport: TransportType = TransportType.HOLEPUNCH;
 
-    /** Dropped by `dispose`: the network is cut. */
-    private markNetworkCut?: () => void;
-    /** Resolves when `dispose` cuts the network. */
-    public readonly networkCut = new Promise<void>((resolve) => {
-        this.markNetworkCut = resolve;
-    });
     private disposalPromise?: Promise<void>;
     // Removes this manager's double-signature handler from the thread-wide
     // signer recovery cache on dispose.
     private readonly unsubscribeDoubleSignature: () => void;
     private initialSyncStarted = false;
     private initialSyncSettled = false;
-    // Remembered so a wait created after settlement (abort before the
-    // discovery join) resolves at once instead of never.
+    // Remembered so a wait created after settlement (the status left OPENED
+    // before the discovery join) resolves at once instead of never.
     private initialSyncOutcome = false;
     private initialSyncPromise?: Promise<boolean>;
     private resolveInitialSync?: (success: boolean) => void;
@@ -143,7 +137,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
 
         // Settle the initial-sync wait when the runtime leaves OPENED for any
         // reason other than the sync request itself: chain genesis moves the
-        // status, and an abort keeps OPENED but announces itself through its hook.
+        // status.
         this.stateManager.events.on(
             "p2pEventHooks",
             "onStatusChanged",
@@ -156,9 +150,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
                 }
                 this.settleInitialSync(isEngagedStatus(newStatus));
             }
-        );
-        this.stateManager.events.on("p2pEventHooks", "onAbort", () =>
-            this.settleInitialSync(false)
         );
         this.stateManager.events.on(
             "p2pEventHooks",
@@ -175,13 +166,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     // discovery teardown runs after it.
     public dispose(): Promise<void> {
         if (this.disposalPromise) return this.disposalPromise;
-        this.markNetworkCut?.();
-        this.markNetworkCut = undefined;
         return (this.disposalPromise = runCleanup(
             () =>
                 runCleanupSync(
                     () => this.unsubscribeDoubleSignature(),
-                    () => this.settleInitialSync(false),
                     () => this.profileManager.dispose()
                 ),
             () => this.holepunch.dispose()
@@ -189,7 +177,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     }
 
     public get isDisposed(): boolean {
-        return this.markNetworkCut === undefined;
+        return this.disposalPromise !== undefined;
     }
 
     /**
@@ -459,28 +447,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
             }
         })();
 
-        if (!initialSync) {
-            await join;
-            return;
-        }
-        // An abort during the join answers the pending connect now rather
-        // than when the join returns: the disposal the abort starts closes
-        // the port, and a reply that only leaves after that never arrives.
-        // The wait settles on abort and on disposal, so racing it is enough;
-        // the join finishes in the background under that disposal. Any other
-        // settlement keeps waiting for the join as before.
-        await Promise.race([join, initialSync]);
-        if (this.stateManager.isDisposed) {
-            this.settleInitialSync(false);
-            return;
-        }
         await join;
+        if (!initialSync) return;
         // The status may have left OPENED during the discovery join (chain
-        // genesis, abort). Nothing later would settle the wait, so settle now.
-        if (this.stateManager.isDisposed) {
-            this.settleInitialSync(false);
-            return;
-        }
+        // genesis). Nothing later would settle the wait, so settle now.
         if (this.stateManager.status !== Status.OPENED) {
             this.settleInitialSync(isEngagedStatus(this.stateManager.status));
             return;
@@ -498,7 +468,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
 
     /**
      * The outcome of this runtime's initial sync: resolves once it settles
-     * (success, abort, disposal, or the status leaving OPENED).
+     * (success, failure, or the status leaving OPENED).
      */
     public isInitialSyncSuccessfulWait(): Promise<boolean> {
         if (this.initialSyncSettled) {
