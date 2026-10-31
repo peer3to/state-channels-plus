@@ -246,7 +246,11 @@ export async function startRuntimeTransportModesFixture(): Promise<void> {
 }
 
 export function stopRuntimeTransportModesFixture(): void {
-    nodeHandle?.stop();
+    if (!nodeHandle) return;
+    nodeHandle.stop();
+    // the node is gone: the next fixture starts its own
+    nodeHandle = undefined;
+    hardhatNodeUrl = undefined;
 }
 
 export async function assertContractRoundTrip(

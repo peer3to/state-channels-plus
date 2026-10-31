@@ -12091,6 +12091,12 @@
       "peakRssGb": 0.395,
       "measurementReason": null
     },
+    "hardhat|test/scripts/e2eParallelIsolatedEnvironment.test.ts|distributed isolated environment ships the test chain module in the trusted runner archive and verifies its bytes": {
+      "durationMs": 490,
+      "avgCores": 0.633,
+      "peakRssGb": 0.09,
+      "measurementReason": null
+    },
     "hardhat|test/scripts/e2eParallelIsolatedEnvironment.test.ts|distributed isolated environment starts, stops, and restarts one retained identity environment": {
       "durationMs": 2316,
       "avgCores": 0.669,
@@ -12337,58 +12343,46 @@
       "peakRssGb": 0.237,
       "measurementReason": null
     },
-    "hardhat|test/scripts/e2eParallelMixedProtocolPool.test.ts|distributed mixed-protocol pool a pool of only protocol 13 hosts runs hardhat and forge and skips browser tasks with a notice, without failing": {
-      "durationMs": 15887,
-      "avgCores": 0.234,
-      "peakRssGb": 0.303,
+    "hardhat|test/scripts/e2eParallelMixedProtocolPool.test.ts|distributed worker protocol pool a pool of protocol 16 hosts runs every tier across the hosts and skips nothing": {
+      "durationMs": 4673,
+      "avgCores": 0.079,
+      "peakRssGb": 0.106,
       "measurementReason": null
     },
-    "hardhat|test/scripts/e2eParallelMixedProtocolPool.test.ts|distributed mixed-protocol pool a pool of only protocol 13 hosts skips Mocha tasks marked for the browser runner with a notice, without failing": {
-      "durationMs": 14989,
-      "avgCores": 0.186,
-      "peakRssGb": 0.233,
+    "hardhat|test/scripts/e2eParallelMixedProtocolPool.test.ts|distributed worker protocol pool a protocol 16 host runs Mocha tasks marked for the browser runner": {
+      "durationMs": 301,
+      "avgCores": 0.365,
+      "peakRssGb": 0.052,
       "measurementReason": null
     },
-    "hardhat|test/scripts/e2eParallelMixedProtocolPool.test.ts|distributed mixed-protocol pool a pool of only protocol 14 hosts runs every tier and skips nothing": {
-      "durationMs": 5900,
-      "avgCores": 0.341,
-      "peakRssGb": 0.249,
+    "hardhat|test/scripts/e2eParallelMixedProtocolPool.test.ts|distributed worker protocol pool fails the run when the only host is on protocol 15": {
+      "durationMs": 2283,
+      "avgCores": 0.145,
+      "peakRssGb": 0.107,
       "measurementReason": null
     },
-    "hardhat|test/scripts/e2eParallelMixedProtocolPool.test.ts|distributed mixed-protocol pool a pool of protocol 13 and 14 hosts hands Mocha tasks marked for the browser runner only to the 14 host": {
-      "durationMs": 15152,
-      "avgCores": 0.114,
-      "peakRssGb": 0.236,
+    "hardhat|test/scripts/e2eParallelMixedProtocolPool.test.ts|distributed worker protocol pool leases only the current protocol, with every runner": {
+      "durationMs": 260,
+      "avgCores": 0.423,
+      "peakRssGb": 0.055,
       "measurementReason": null
     },
-    "hardhat|test/scripts/e2eParallelMixedProtocolPool.test.ts|distributed mixed-protocol pool a pool of protocol 13 and 14 hosts runs browser tasks only on the 14 host and the rest on both": {
-      "durationMs": 14313,
-      "avgCores": 0.116,
-      "peakRssGb": 0.191,
+    "hardhat|test/scripts/e2eParallelMixedProtocolPool.test.ts|distributed worker protocol pool lets a worker run a task only when its runners list the task's runner and every runner the task requires": {
+      "durationMs": 268,
+      "avgCores": 0.41,
+      "peakRssGb": 0.054,
       "measurementReason": null
     },
-    "hardhat|test/scripts/e2eParallelMixedProtocolPool.test.ts|distributed mixed-protocol pool fails a marked Mocha task, rather than skipping it, when the only 14 host leaves mid-attempt": {
-      "durationMs": 21589,
-      "avgCores": 0.169,
-      "peakRssGb": 0.198,
+    "hardhat|test/scripts/e2eParallelMixedProtocolPool.test.ts|distributed worker protocol pool refuses a protocol 15 host in a pool and runs everything on the protocol 16 host": {
+      "durationMs": 2309,
+      "avgCores": 0.13,
+      "peakRssGb": 0.103,
       "measurementReason": null
     },
-    "hardhat|test/scripts/e2eParallelMixedProtocolPool.test.ts|distributed mixed-protocol pool lets a worker run a task only when its protocol lists the task's runner and every runner the task requires": {
-      "durationMs": 2948,
-      "avgCores": 0.98,
-      "peakRssGb": 0.26,
-      "measurementReason": null
-    },
-    "hardhat|test/scripts/e2eParallelMixedProtocolPool.test.ts|distributed mixed-protocol pool rejects a worker host older than the minimum or newer than the orchestrator": {
-      "durationMs": 2422,
-      "avgCores": 0.615,
-      "peakRssGb": 0.184,
-      "measurementReason": null
-    },
-    "hardhat|test/scripts/e2eParallelMixedProtocolPool.test.ts|distributed mixed-protocol pool waits out the discovery window for a 14 host that connects after the 13 host has finished its tasks": {
-      "durationMs": 12058,
-      "avgCores": 0.18,
-      "peakRssGb": 0.244,
+    "hardhat|test/scripts/e2eParallelMixedProtocolPool.test.ts|distributed worker protocol pool rejects a worker host older than the minimum or newer than the orchestrator": {
+      "durationMs": 239,
+      "avgCores": 0.46,
+      "peakRssGb": 0.055,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelOrchestratorLog.test.ts|distributed orchestrator logs acknowledges a successful attempt without waiting for a log": {
@@ -12401,12 +12395,6 @@
       "durationMs": 1764,
       "avgCores": 0.975,
       "peakRssGb": 0.3,
-      "measurementReason": null
-    },
-    "hardhat|test/scripts/e2eParallelOrchestratorLog.test.ts|distributed orchestrator logs annotates a task lost with its only capable worker": {
-      "durationMs": 2223,
-      "avgCores": 0.792,
-      "peakRssGb": 0.192,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelOrchestratorLog.test.ts|distributed orchestrator logs appends the runner failure reason to a signalled attempt log": {
@@ -12769,12 +12757,6 @@
       "peakRssGb": 0.333,
       "measurementReason": null
     },
-    "hardhat|test/scripts/e2eParallelRuntimeBundle.test.ts|distributed source workspace a manifest derived for an older worker protocol still builds a delta and keeps the local root off the wire": {
-      "durationMs": 2168,
-      "avgCores": 0.72,
-      "peakRssGb": 0.193,
-      "measurementReason": null
-    },
     "hardhat|test/scripts/e2eParallelRuntimeBundle.test.ts|distributed source workspace creates only requested deltas and delivers a valid bundle to concurrent peers": {
       "durationMs": 2055,
       "avgCores": 0.725,
@@ -12893,12 +12875,6 @@
       "durationMs": 1730,
       "avgCores": 1.029,
       "peakRssGb": 0.288,
-      "measurementReason": null
-    },
-    "hardhat|test/scripts/e2eParallelTaskCoordinator.test.ts|distributed task coordinator fails an unservable task whose attempt was lost with its worker instead of skipping it": {
-      "durationMs": 1707,
-      "avgCores": 1.002,
-      "peakRssGb": 0.325,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelTaskCoordinator.test.ts|distributed task coordinator fails immediately when the first speculative result fails": {
@@ -13051,18 +13027,6 @@
       "peakRssGb": 0.272,
       "measurementReason": null
     },
-    "hardhat|test/scripts/e2eParallelTaskCoordinator.test.ts|distributed task coordinator skips unservable tasks only after the grace period, restarting it when a capable worker registers": {
-      "durationMs": 1603,
-      "avgCores": 1.129,
-      "peakRssGb": 0.404,
-      "measurementReason": null
-    },
-    "hardhat|test/scripts/e2eParallelTaskCoordinator.test.ts|distributed task coordinator skips unservable tasks only once nothing else is queued or running and a worker is registered": {
-      "durationMs": 2509,
-      "avgCores": 0.622,
-      "peakRssGb": 0.182,
-      "measurementReason": null
-    },
     "hardhat|test/scripts/e2eParallelTaskCoordinator.test.ts|distributed task coordinator uses worker-reduced metadata when successful output is not uploaded": {
       "durationMs": 1511,
       "avgCores": 0.477,
@@ -13133,6 +13097,78 @@
       "durationMs": 1877,
       "avgCores": 1.023,
       "peakRssGb": 0.292,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelTestChain.test.ts|e2e parallel test chain a node started on an explicit port binds it and keeps its log until it exits": {
+      "durationMs": 850,
+      "avgCores": 0.576,
+      "peakRssGb": 0.118,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelTestChain.test.ts|e2e parallel test chain a node's anvil exits when the process that started it is SIGKILLed": {
+      "durationMs": 707,
+      "avgCores": 0.467,
+      "peakRssGb": 0.162,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelTestChain.test.ts|e2e parallel test chain a runner slot node serves prestateTracer diffMode for a transaction and for its block": {
+      "durationMs": 1623,
+      "avgCores": 0.456,
+      "peakRssGb": 0.175,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelTestChain.test.ts|e2e parallel test chain an automined node on the default chain id mines each transaction in its own block with a 30M gas limit": {
+      "durationMs": 631,
+      "avgCores": 0.507,
+      "peakRssGb": 0.119,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelTestChain.test.ts|e2e parallel test chain an interval-mined node honours hardhat_mine and the automine switch": {
+      "durationMs": 541,
+      "avgCores": 0.591,
+      "peakRssGb": 0.118,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelTestChain.test.ts|e2e parallel test chain an isolated node serves prestateTracer diffMode and pauses mining only on itself": {
+      "durationMs": 683,
+      "avgCores": 0.469,
+      "peakRssGb": 0.118,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelTestChain.test.ts|e2e parallel test chain hardhat's in-process network runs on a private anvil that serves prestateTracer diffMode": {
+      "durationMs": 581,
+      "avgCores": 0.568,
+      "peakRssGb": 0.121,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelTestChain.test.ts|e2e parallel test chain starting a node with no anvil on PATH rejects naming the missing anvil": {
+      "durationMs": 223,
+      "avgCores": 0.493,
+      "peakRssGb": 0.055,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelTestChain.test.ts|e2e parallel test chain the browser runtime server's node interval-mines and stops when the server closes": {
+      "durationMs": 1645,
+      "avgCores": 0.334,
+      "peakRssGb": 0.128,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelTestChain.test.ts|e2e parallel test chain the infra:hardhat-node launcher funds the 400 hardhat.config.ts accounts in order on the chain id it is given": {
+      "durationMs": 785,
+      "avgCores": 0.968,
+      "peakRssGb": 0.188,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelTestChain.test.ts|e2e parallel test chain the infra:hardhat-node launcher's anvil exits when the launcher is SIGKILLed": {
+      "durationMs": 633,
+      "avgCores": 0.521,
+      "peakRssGb": 0.14,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelTestChain.test.ts|e2e parallel test chain the launcher deploys code above the 24576-byte contract size limit": {
+      "durationMs": 711,
+      "avgCores": 0.478,
+      "peakRssGb": 0.161,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelTestTransport.test.ts|distributed test transport fixture fails on the taken port when the fallback is off": {
@@ -13469,12 +13505,6 @@
       "durationMs": 2430,
       "avgCores": 0.691,
       "peakRssGb": 0.194,
-      "measurementReason": null
-    },
-    "hardhat|test/scripts/e2eParallelWorkerScheduler.test.ts|distributed worker scheduler keeps protocol fourteen on legacy admission with cost selection": {
-      "durationMs": 5733,
-      "avgCores": 0.399,
-      "peakRssGb": 0.379,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelWorkerScheduler.test.ts|distributed worker scheduler keeps the host's target load as the cost CPU ceiling and reports the budget": {
@@ -20435,12 +20465,6 @@
       "durationMs": 31087,
       "avgCores": 1.035,
       "peakRssGb": 1.019,
-      "measurementReason": null
-    },
-    "hardhat|test/unit/ReductionExecutor.test.ts|Unit: ReductionExecutor reduce data unavailable no reduce data → the attempt reschedules, the peer keeps participating, a later attempt completes": {
-      "durationMs": 25078,
-      "avgCores": 0.696,
-      "peakRssGb": 1.013,
       "measurementReason": null
     },
     "hardhat|test/unit/ReductionExecutor.test.ts|Unit: ReductionExecutor reduce data unavailable someone else's reduction while the run is unavailable → not challenged, no throw": {
