@@ -684,7 +684,18 @@ export class MirrorChain {
             this.tracked.add(address);
             this.trackedSince.set(address, head.number);
         }
-        if (previous) await feed.unsubscribe(previous);
+        // the service keeping a superseded subscription costs only pushes the
+        // new one also carries, so a failed unsubscribe keeps the connection
+        if (previous)
+            await feed.unsubscribe(previous).catch((error) => {
+                this.log(
+                    "warn",
+                    "Mirror cannot drop its previous subscription",
+                    {
+                        error
+                    }
+                );
+            });
         await this.catchUp(head.number + 1n);
         return subscribed.accounts;
     }
