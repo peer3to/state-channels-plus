@@ -624,6 +624,23 @@ describe("MirrorRpcProvider", function () {
         });
     });
 
+    it("answers a read from the node when the service fails the state fill", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, address } = await deployMirroredStorage(session);
+            await (await storage.setValue(5n)).wait();
+            // the snapshot is held back, so the read has to ask the service for the field
+            const release = session.service.holdNotifications("scp_snapshot");
+            session.service.failNextRequest("scp_getState");
+
+            const word = await session.provider.getStorage(address, 0);
+            release();
+
+            expect(BigInt(word)).to.equal(5n);
+            expect(session.service.failedCount("scp_getState")).to.equal(1);
+            expect(nodeRequests(session, "eth_getStorageAt")).to.have.length(1);
+        });
+    });
+
     it("sends no scp_getState and no node read for a second read of the same slot", async function () {
         await withMirrorSession(async (session) => {
             const { storage, address } = await deployMirroredStorage(session);
