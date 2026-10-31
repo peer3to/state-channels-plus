@@ -51,7 +51,6 @@ import {
     stageLeavePostClosingBeforeAdoption
 } from "@test/fixtures/NonFinalZeroParticipantReductionStaging";
 import { postSnapshotFrom } from "@test/fixtures/ProofOwnerStaging";
-import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import { waitFor } from "@test/utils/waitFor";
@@ -685,36 +684,40 @@ describe("Unit: bot-connection fixes", function () {
             const h = TestSession.getHarness();
             const { leaver, expireWatchdog } = await stageInboundBlockedExit(
                 h,
-                { holdWatchdog: true, inlineSdk: true }
+                { holdWatchdog: true }
             );
             const leaverNonce = await chainNonceReader(h, leaver);
-            const endpoint = runtimeEndpointFor(leaver.p2pInstance);
-            endpoint.stub.recordChainMembershipReads(true);
+            const stub = h.control(leaver).stub;
+            await stub.recordChainMembershipReads(true).request();
+            // the abort cuts the runtime; its teardown is held so the
+            // check resumes on a live provider after the cut-off
+            const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
+                leaver.index
+            );
             try {
-                expect(endpoint.stub.getChainMembershipReadCount()).to.equal(0);
+                expect(
+                    await stub.getChainMembershipReadCount().request()
+                ).to.equal(0);
                 await expireWatchdog();
                 // the watchdog's own check is parked on its chain read
                 await waitFor(
-                    () => endpoint.stub.getChainMembershipReadCount() > 0,
+                    async () =>
+                        (await stub.getChainMembershipReadCount().request()) >
+                        0,
                     h.event.protocolEventTimeoutMs()
                 );
                 const nonceBefore = await leaverNonce();
-                // the abort cuts the runtime; its teardown is held so the
-                // check resumes on a live provider after the cut-off
-                endpoint.stub.stubHoldRuntimeDisposal();
-                endpoint.stub.abortDetached();
-                await waitFor(() => endpoint.host.isDisposing);
-                endpoint.stub.restoreChainMembershipReads();
+                await stub.abortDetached().request();
+                await h.event.waitForPeers("onAbort", [leaver.index], 1);
+                await stub.restoreChainMembershipReads().request();
                 // absence window: a late dispute would be mined by now
                 await sleep(2_000);
                 expect(await leaverNonce()).to.equal(nonceBefore);
-                endpoint.stub.releaseRuntimeDisposal();
-                await waitFor(() => endpoint.host.connections.size === 0);
-                h.contextApi.markAfkPeer({ afkPeerIndex: leaver.index });
-                await TestSession.settleDetached();
             } finally {
-                endpoint.stub.restoreChainMembershipReads();
+                await releaseDisposal();
             }
+            h.contextApi.markAfkPeer({ afkPeerIndex: leaver.index });
+            await TestSession.settleDetached();
         });
 
         it("U72: disposing a leaver whose exit is blocked stops its posts: the block that consumes the join sends nothing from it", async function () {

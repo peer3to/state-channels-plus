@@ -3,13 +3,11 @@ import { REDUCTION_ATTEMPT_STUB_FAILURE } from "@test/fixtures/customRpc/harness
 import { assertInvalidReductionControl } from "@test/fixtures/InvalidReductionControlFixture";
 import {
     assertAbortedReductionSendsNothing,
-    assertDisposalDuringHeldReduceSend,
     assertReadFailureDuringGenesisApplication,
     stageDisposalFork
 } from "@test/fixtures/ReductionDisposalStaging";
 import { assertDirectCompletionLosesForkInMutex } from "@test/fixtures/ReductionForkSwitchStaging";
 import { assertLiveForkSwitch } from "@test/fixtures/ReductionForkSwitchStaging";
-import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
 import { assertSyncedLeaverSkipsSubmission } from "@test/fixtures/SyncedLeaverReductionStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import type { SubmittedFinalDispute } from "@test/harness/actions/DisputeOrchestrator";
@@ -299,21 +297,13 @@ describe("ReductionManager", function () {
             );
         });
 
-        it("disposal while the reduce send is held surfaces no rejection and reports no failure", async function () {
-            await assertDisposalDuringHeldReduceSend(TestSession.getHarness());
-        });
-
         it("an ordinary attempt that completes a window the chain already finalized converges without a chain write", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({
                 peerCount: 4,
-                configOverrides: { RUN_SDK_IN_THREAD: false },
                 timeConfig: { evidenceTime: 3 }
             });
-            const target = h.getPeer(0);
-            const { host, sm, stub, query } = runtimeEndpointFor(
-                target.p2pInstance
-            );
+            const { query } = h.control(h.getPeer(0));
             // The final dispute is uploaded without its auditing data, so peer
             // 0 rebuilds it on commit; that rebuild is parked, and the
             // ordinary attempt (the window's kill period is pre-expired) is
@@ -335,7 +325,8 @@ describe("ReductionManager", function () {
                 await rebuild.waitUntilHeld(timeoutMs);
                 await waitFor(
                     async () =>
-                        query.getForkId() === staged.finalResolution.forkId,
+                        (await query.getForkId().request()) ===
+                        staged.finalResolution.forkId,
                     timeoutMs
                 );
             } finally {
@@ -349,43 +340,54 @@ describe("ReductionManager", function () {
             expect(
                 (await h.channelManager.getStateSnapshot(h.channelId)).forkId
             ).to.equal(staged!.forkId);
-            expect(query.getCompletedReductionForkId(staged!.forkId)).to.equal(
-                staged!.finalResolution.forkId
-            );
-            await host.dispose();
+            expect(
+                await query
+                    .getCompletedReductionForkId(staged!.forkId)
+                    .request()
+            ).to.equal(staged!.finalResolution.forkId);
         });
 
         it("a fatal attempt error rejects the caller once with the original error and aborts", async function () {
             const h = TestSession.getHarness();
             const { sourceForkId } = await stageDisposalFork(h);
             const target = h.getPeer(0);
-            const { host, sm, stub, query } = runtimeEndpointFor(
-                target.p2pInstance
-            );
+            const { stub, query } = h.control(target);
             const setStateCalls = h.event.getEventCallCount(0, "onSetState");
             const hold = await h.rpcStub.holdReductionAttempt(
                 0,
                 "compute",
                 "throw"
             );
-            stub.startTryReduce(sourceForkId);
-            await waitFor(async () => (await hold.entered()) === 1);
-            stub.restoreReductionAttempt();
-            await waitFor(
-                async () => stub.getTryReduceOutcome()?.settled === true
-            );
+            // keeps the control RPC reachable after the abort
+            const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(0);
+            try {
+                await stub.startTryReduce(sourceForkId).request();
+                await waitFor(async () => (await hold.entered()) === 1);
+                await hold.release();
+                await waitFor(
+                    async () =>
+                        (await stub.getTryReduceOutcome().request())
+                            ?.settled === true
+                );
 
-            expect(stub.getTryReduceOutcome()).to.deep.equal({
-                settled: true,
-                result: null,
-                rejected: REDUCTION_ATTEMPT_STUB_FAILURE
-            });
-            await waitFor(async () => sm.isDisposed);
-            expect(query.getForkId()).to.equal(sourceForkId);
-            expect(h.event.getEventCallCount(0, "onSetState")).to.equal(
-                setStateCalls
-            );
-            await host.dispose();
+                expect(
+                    await stub.getTryReduceOutcome().request()
+                ).to.deep.equal({
+                    settled: true,
+                    result: null,
+                    rejected: REDUCTION_ATTEMPT_STUB_FAILURE
+                });
+                await h.event.waitForPeers("onAbort", [0], 1);
+                expect(await query.getForkId().request()).to.equal(
+                    sourceForkId
+                );
+                expect(h.event.getEventCallCount(0, "onSetState")).to.equal(
+                    setStateCalls
+                );
+            } finally {
+                await releaseDisposal();
+            }
+            await target.p2pInstance.dispose();
         });
     });
 

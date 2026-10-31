@@ -1,6 +1,5 @@
 import { Status } from "@/types";
 import type { ForkId } from "@/types/types";
-import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
 import { clientRootFor } from "@test/fixtures/RuntimeRootObservation";
 import {
     MathTestSession as TestSession,
@@ -21,7 +20,6 @@ describe("E2E: ReductionManager", function () {
             h = TestSession.getHarness();
             ({ sourceForkId } = await h.scenario.stageReducibleDisputedFork({
                 peerCount: 4,
-                configOverrides: { RUN_SDK_IN_THREAD: false },
                 maliciousPeerIndex: 1,
                 timeConfig: { evidenceTime: 3 }
             }));
@@ -63,14 +61,27 @@ describe("E2E: ReductionManager", function () {
 
         it("RaceConditionReductionExpectationDoesntMatch aborts and rejects the operation", async function () {
             const targetPeer = h.getPeer(targetPeerIndex);
-            const { query } = runtimeEndpointFor(targetPeer.p2pInstance);
+            const { query } = h.control(targetPeer);
             const host = clientRootFor(
                 targetPeer.p2pInstance
             ).p2pRuntimeHostRemoteRoot!;
-            await h.rpcStub.releaseReductionWithSimulationError(
-                targetPeerIndex,
-                "RaceConditionReductionExpectationDoesntMatch"
-            );
+            // keeps the control RPC reachable after the abort
+            const releaseDisposal =
+                await h.rpcStub.holdRuntimeDisposal(targetPeerIndex);
+            try {
+                await h.rpcStub.releaseReductionWithSimulationError(
+                    targetPeerIndex,
+                    "RaceConditionReductionExpectationDoesntMatch"
+                );
+                await h.event.waitForPeers("onAbort", [targetPeerIndex], 1);
+                expect(
+                    await query
+                        .getCompletedReductionForkId(sourceForkId)
+                        .request()
+                ).to.equal(null);
+            } finally {
+                await releaseDisposal();
+            }
 
             await waitFor(
                 () => host.isClosed,
@@ -80,9 +91,6 @@ describe("E2E: ReductionManager", function () {
                 expectedErrorIncludes:
                     "RaceConditionReductionExpectationDoesntMatch"
             });
-            expect(query.getCompletedReductionForkId(sourceForkId)).to.equal(
-                null
-            );
         });
     });
 

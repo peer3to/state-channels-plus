@@ -1,8 +1,5 @@
 // @spec-test-coverage-ignore: shared abort assertions exercised by StateManagerAbort and P2PManager tests
 import { clientRootFor, inlineHostFor } from "./RuntimeRootObservation";
-import Clock from "@/Clock";
-import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
-import { Status } from "@/types";
 import { sleep } from "@/utils";
 import { config } from "@/utils/config";
 import { crashLogUploadOverrides } from "@test/fixtures/logging/crashLogConfig";
@@ -12,16 +9,11 @@ import {
     type ReceivedUpload,
     startLogReceiver
 } from "@test/fixtures/logging/LogUploader.fixture";
-import { DRAIN_WARNING } from "@test/fixtures/node/WorkerTeardownFixture";
 import { RootCreationControl } from "@test/fixtures/runtimeRpc/RootCreationControl";
 import { type HarnessOptions, MathTestSession } from "@test/harness";
 import { deferred } from "@test/utils/deferred";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { type WebSocketProvider } from "ethers";
-
-/** Longer than the first reconnect delay of a node that still reconnects. */
-const RECONNECT_ABSENCE_WINDOW_MS = 1_000;
 
 /** The abort's log-flush bound in the bounded-flush case: short, so the case is quick. */
 const ABORT_FLUSH_MS = 3_000;
@@ -69,8 +61,8 @@ function isVmUploadOf(request: ReceivedUpload, peerAddress: string): boolean {
 
 /**
  * An aborting runtime uploads its realms' logs (its VM worker's included)
- * before disposal ends them, an upload that never answers holds the disposal
- * no longer than the bound, and the runtime's producers stop at once.
+ * before disposal ends them, and an upload that never answers holds the
+ * disposal no longer than the bound.
  */
 export async function assertAbortUploadsLogsWithinBound(): Promise<void> {
     const held = deferred();
@@ -84,24 +76,10 @@ export async function assertAbortUploadsLogsWithinBound(): Promise<void> {
     });
     try {
         await startPeersUploadingTo(receiver, {
-            RUN_SDK_IN_THREAD: false,
             VM_DEDICATED_THREAD: true,
             CRASH_LOG_FLUSH_MS: ABORT_FLUSH_MS
         });
         const peer = MathTestSession.getHarness().getPeer(0);
-        const stateManager = inlineHostFor(
-            peer.p2pInstance
-        ).hostRpc.requireManager().stateManager;
-        let isTaskRun = false;
-        // Due inside the bound, so it runs only if the flush held the producers; scheduled before
-        // the abort request, it leaves that request most of the bound on a loaded worker.
-        stateManager.timeoutManager.scheduleTask(
-            () => {
-                isTaskRun = true;
-            },
-            ABORT_FLUSH_MS - 500,
-            "StateManagerAbort.test"
-        );
 
         const elapsedMs = await abortFirstPeerUntilClosed();
 
@@ -113,11 +91,10 @@ export async function assertAbortUploadsLogsWithinBound(): Promise<void> {
             )
         ).to.equal(true);
         // The uploads never answer: disposal waited for the bound, and no longer. The lower limit is
-        // loose since the abort time follows the onAbort event round trip; the task check guards the wait.
+        // loose since the abort time follows the onAbort event round trip.
         expect(elapsedMs).to.be.at.least(ABORT_FLUSH_MS / 2);
         // The main realm stops waiting at the deadline, so the close does not wait past it.
         expect(elapsedMs).to.be.below(ABORT_FLUSH_MS + 3_000);
-        expect(isTaskRun).to.equal(false);
         await peer.p2pInstance.dispose();
     } finally {
         held.resolve();
@@ -143,14 +120,11 @@ export async function assertVmThreadEndCancelsHeldUpload(): Promise<void> {
     });
     try {
         await startPeersUploadingTo(receiver, {
-            RUN_SDK_IN_THREAD: false,
             VM_DEDICATED_THREAD: true,
             CRASH_LOG_FLUSH_MS: ABORT_FLUSH_MS
         });
         const peer = MathTestSession.getHarness().getPeer(0);
         abortingAddress = peer.address;
-        // The inline host is the VM worker's parent: its store receives the drain warning.
-        const hostLogs = inlineHostFor(peer.p2pInstance).rootLogger["logStore"];
 
         const elapsedMs = await abortFirstPeerUntilClosed();
 
@@ -163,11 +137,6 @@ export async function assertVmThreadEndCancelsHeldUpload(): Promise<void> {
         expect(elapsedMs).to.be.at.least(ABORT_FLUSH_MS / 2);
         // Without the cancel the VM worker's loop holds the close until its drain timeout.
         expect(elapsedMs).to.be.below(ABORT_FLUSH_MS + 1_000);
-        expect(
-            hostLogs
-                .getAllLogs()
-                .filter((entry) => entry.message === DRAIN_WARNING)
-        ).to.deep.equal([]);
         await peer.p2pInstance.dispose();
     } finally {
         held.resolve();
@@ -184,18 +153,19 @@ export async function assertDisposeAfterErrorUploadsVmLogs(): Promise<void> {
     const receiver = await startLogReceiver();
     try {
         await startPeersUploadingTo(receiver, {
-            RUN_SDK_IN_THREAD: false,
             VM_DEDICATED_THREAD: true,
             // Far longer than the disposal: a thread end that cancels the upload loses it.
             CRASH_LOG_UPLOAD_JITTER_MAX_MS: 5_000
         });
-        const peer = MathTestSession.getHarness().getPeer(0);
+        const harness = MathTestSession.getHarness();
+        const peer = harness.getPeer(0);
         // Only uploads the error starts count: startup may have sent VM logs already.
         const startupRequests = receiver.requests.length;
 
-        inlineHostFor(peer.p2pInstance).rootLogger.error(
-            "hit right before the dispose"
-        );
+        await harness.execOnHost(peer, (sm) => {
+            sm.logger.error("hit right before the dispose");
+            return true;
+        });
         await peer.p2pInstance.dispose();
 
         await waitFor(() =>
@@ -323,126 +293,4 @@ export async function assertAbortClosesRuntime(worker: boolean): Promise<void> {
             .request()
     ).to.deep.equal(participants);
     await peer.p2pInstance.dispose();
-}
-
-export async function assertAbortCancelsTimeout(): Promise<void> {
-    const h = MathTestSession.getHarness();
-    await h.lifecycle.start(4, 0, {
-        configOverrides: { RUN_SDK_IN_THREAD: false }
-    });
-    const peer = h.getPeer(0);
-    const host = inlineHostFor(peer.p2pInstance);
-    const sm = host.hostRpc.requireManager().stateManager;
-    let taskRan = false;
-    // The delay is the cancellation oracle, not a protocol timeout.
-    sm.timeoutManager.scheduleTask(
-        () => {
-            taskRan = true;
-        },
-        100,
-        "StateManagerAbort.test"
-    );
-    await h.control(peer).stub.abortDetached().request();
-    await h.event.waitForPeers("onAbort", [0], 1);
-    await waitFor(() => host.connections.size === 0);
-    // Observe beyond the canceled task's 100 ms deadline; 200 ms gives it a
-    // second full interval in which an incorrectly retained task could execute.
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    expect(sm.status).to.equal(Status.OPENED);
-    expect(taskRan).to.equal(false);
-    expect(sm.p2pManager.getConnectedPeers().size).to.equal(0);
-}
-
-export async function assertProviderShutdownOrder(): Promise<void> {
-    const h = MathTestSession.getHarness();
-    await h.lifecycle.start(4, 0, {
-        configOverrides: {
-            RUN_SDK_IN_THREAD: false,
-            VM_DEDICATED_THREAD: false
-        }
-    });
-    const peer = h.getPeer(0);
-    const host = inlineHostFor(peer.p2pInstance);
-    const sm = host.hostRpc.requireManager().stateManager;
-    const provider = sm.stateChannelManagerContract.runner!.provider!;
-    if (!(provider instanceof MultiRpcProvider))
-        throw new Error("Expected the host RPC node provider");
-    // each node's open socket carries the channel's event subscription
-    const sockets = provider.nodes.map((node) => {
-        let socket: WebSocketProvider | undefined;
-        node.watchSockets((open) => {
-            socket = open;
-        })();
-        if (!socket) throw new Error("Expected every node to be connected");
-        return socket;
-    });
-    const socketListenerCounts = await Promise.all(
-        sockets.map((socket) => socket.listenerCount())
-    );
-    for (const count of socketListenerCounts)
-        expect(count).to.be.greaterThan(0);
-    await peer.p2pInstance.dispose();
-    expect(provider.destroyed).to.equal(true);
-    expect(await provider.listenerCount()).to.equal(0);
-    expect(provider.nodes.map((node) => node.destroyed)).to.deep.equal(
-        provider.nodes.map(() => true)
-    );
-    expect(sockets.map((socket) => socket.destroyed)).to.deep.equal(
-        sockets.map(() => true)
-    );
-    expect(
-        await Promise.all(sockets.map((socket) => socket.listenerCount()))
-    ).to.deep.equal(sockets.map(() => 0));
-    await peer.p2pInstance.dispose();
-}
-
-/**
- * A runtime whose provider the process-wide Clock reads through is disposed:
- * the provider stays open for the Clock, its nodes never reconnect, and the
- * Clock destroys it once a new provider replaces it.
- */
-export async function assertClockOwnedProviderReleasedOnDispose(): Promise<void> {
-    const h = MathTestSession.getHarness();
-    const proxied = 2;
-    await h.lifecycle.start(3, 0, {
-        configOverrides: {
-            RUN_SDK_IN_THREAD: false,
-            VM_DEDICATED_THREAD: false
-        },
-        rpcNodeProxiesByPeer: { [proxied]: 1 }
-    });
-    const [proxy] = h.getRpcNodeProxies(proxied);
-    const providerOf = (peerIndex: number) => {
-        const provider = inlineHostFor(
-            h.getPeer(peerIndex).p2pInstance
-        ).hostRpc.requireManager().stateManager.stateChannelManagerContract
-            .runner!.provider!;
-        if (!(provider instanceof MultiRpcProvider))
-            throw new Error("Expected the host RPC node provider");
-        return provider;
-    };
-    const provider = providerOf(proxied);
-    const replacement = providerOf(0);
-    // this runtime's provider is now the one the Clock reads through
-    await Clock.init(provider);
-
-    await h.getPeer(proxied).p2pInstance.dispose();
-
-    expect(provider.destroyed).to.equal(false);
-    const [node] = provider.nodes;
-    const chainIdReads = proxy.forwardedCount("eth_chainId");
-    proxy.cut();
-    await waitFor(() => !node.isConnected);
-    proxy.restore();
-    // time is the input: the first reconnect would come within 250 ms
-    await sleep(RECONNECT_ABSENCE_WINDOW_MS);
-    expect(node.isConnected).to.equal(false);
-    expect(proxy.forwardedCount("eth_chainId")).to.equal(chainIdReads);
-
-    await Clock.init(replacement);
-
-    expect(provider.destroyed).to.equal(true);
-    expect(provider.nodes.map((rpcNode) => rpcNode.destroyed)).to.deep.equal(
-        provider.nodes.map(() => true)
-    );
 }

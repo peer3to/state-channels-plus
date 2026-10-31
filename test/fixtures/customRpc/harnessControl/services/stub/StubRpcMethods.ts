@@ -2090,16 +2090,16 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     /**
      * Hold the runtime disposal that a real abort starts right after its
-     * cut, before the runtime's releases run (its custom RPC dispose hook is
-     * the first), so the control RPC stays reachable after the abort.
+     * cut, before the runtime's releases run (the spectate release is the
+     * first), so the control RPC stays reachable after the abort.
      * Release with `releaseRuntimeDisposal`.
      */
     public stubHoldRuntimeDisposal(): boolean {
-        const localRpc = this.service.sm.p2pManager.localRpc;
-        const dispose = localRpc.dispose.bind(localRpc);
+        const spectate = this.service.sm.p2pManager.localRpc.spectateService;
+        const dispose = spectate.dispose.bind(spectate);
         const gate = this.service.createGate();
         this.service.runtimeDisposalGate = gate;
-        localRpc.dispose = async () => {
+        spectate.dispose = async () => {
             gate.entered += 1;
             await gate.gate;
             return dispose();
@@ -2244,8 +2244,59 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public async configureExecutorCallGas(
+        callGasLimit: string,
+        dedicatedThread: boolean
+    ): Promise<boolean> {
+        await this.service.configureExecutorCallGas(
+            callGasLimit,
+            dedicatedThread
+        );
+        return true;
+    }
+
     public getLocalDiscoveryListenerCount(): number {
         return this.service.getLocalDiscoveryListenerCount();
+    }
+
+    public getLocalDiscoveryListenerPorts(): number[] {
+        return this.service.getLocalDiscoveryListenerPorts();
+    }
+
+    public holdAcceptedSocketReads(): number {
+        return this.service.holdAcceptedSocketReads();
+    }
+
+    public releaseAcceptedSocketReads(): boolean {
+        this.service.releaseAcceptedSocketReads();
+        return true;
+    }
+
+    public getClosingLocalDialCount(listenerPorts: number[]): number {
+        return this.service.getClosingLocalDialCount(listenerPorts);
+    }
+
+    public hasPendingLocalDial(): boolean {
+        return this.service.hasPendingLocalDial();
+    }
+
+    public observeLocalDiscoveryAnnouncements(peerAddress: string): boolean {
+        this.service.observeLocalDiscoveryAnnouncements(peerAddress);
+        return true;
+    }
+
+    public getLocalDiscoveryAnnouncedPorts(): number[] {
+        return this.service.getLocalDiscoveryAnnouncedPorts();
+    }
+
+    public restoreLocalDiscoveryAnnouncements(): boolean {
+        this.service.restoreLocalDiscoveryAnnouncements();
+        return true;
+    }
+
+    public terminateLocalDiscoveryListenerClients(port: number): boolean {
+        this.service.terminateLocalDiscoveryListenerClients(port);
+        return true;
     }
 
     /** Broadcast a real calldata post with an expired deadline; its receipt reverts. */

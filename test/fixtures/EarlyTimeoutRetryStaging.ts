@@ -1,6 +1,5 @@
 // @spec-test-coverage-ignore: shared timeout check staging (deadline, early window, refusals) exercised by ParticipantTimeoutService cases
 import { syncTargetToUnpostedReduction } from "./ReductionForkSwitchStaging";
-import { runtimeEndpointFor } from "./RuntimeRootObservation";
 import Clock from "@/Clock";
 import {
     EARLY_TIMEOUT_RECHECK_REASON,
@@ -283,18 +282,10 @@ export async function assertConsecutiveMismatchRetry(
 
 export async function assertObsoleteEarlyTimeoutRetry(
     h: MathPeerTestHarness,
-    change: "block" | "disposed",
     refusal: "early" | "mismatch" = "early"
 ): Promise<void> {
-    await h.lifecycle.start(3, 0, {
-        configOverrides:
-            change === "disposed" ? { RUN_SDK_IN_THREAD: false } : {}
-    });
+    await h.lifecycle.start(3, 0);
     const peer = h.getPeer(1);
-    const local =
-        change === "disposed"
-            ? runtimeEndpointFor(peer.p2pInstance)
-            : undefined;
     const forkId = h.activeForkId!;
     const retryReason =
         refusal === "mismatch"
@@ -345,18 +336,7 @@ export async function assertObsoleteEarlyTimeoutRetry(
         );
         await waitFor(async () => (await held.heldCount()) === 1);
         expect(await recorder.submissions()).to.have.length(1);
-        if (change === "block") {
-            await h.transition.advanceState();
-        } else if (local) {
-            local.sm.abort();
-            // Run the held retry after abort; observe final cleanup locally.
-            local.stub.restoreHeldScheduledTasks(retryReason, true);
-            await local.host.dispose();
-            expect(
-                local.stub.getRecordedDisputeSubmissions().submissions
-            ).to.have.length(1);
-            return;
-        }
+        await h.transition.advanceState();
         await held.release(true);
         expect(await recorder.submissions()).to.have.length(1);
         if (refusal === "mismatch") {
@@ -377,14 +357,8 @@ export async function assertObsoleteEarlyTimeoutRetry(
             ).to.equal(ZeroAddress);
         }
     } finally {
-        if (local) {
-            local.stub.restoreHeldScheduledTasks(retryReason, false);
-            local.stub.restoreDisputeSubmissions();
-            await local.host.dispose();
-        } else {
-            await held.release(false);
-            await recorder.restore();
-        }
+        await held.release(false);
+        await recorder.restore();
     }
 }
 

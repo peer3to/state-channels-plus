@@ -3,6 +3,7 @@ import { EvidenceComparisonRecorder } from "./node/EvidenceComparisonRecorder";
 import { LiveBlockRetentionRecorder } from "./node/LiveBlockRetentionRecorder";
 import StubRpcMethods from "./StubRpcMethods";
 import type { HarnessControlRpcShape } from "../../HarnessControlRpc";
+import { localExecutorConnection } from "../mirror/MirrorService";
 import Clock from "@/Clock";
 import type DisputeBuilder from "@/disputeManager/DisputeBuilder";
 import { Block } from "@/models";
@@ -68,7 +69,7 @@ import {
     ZeroAddress
 } from "ethers";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { WebSocketServer } from "ws";
+import WebSocket, { WebSocketServer } from "ws";
 
 // `NetworkTransport` is used both for `createRPCMethods` and the captured transport.
 
@@ -367,6 +368,18 @@ export type RefusedUploadKind =
 /** A decoded custom-error revert: its name and its arguments as strings. */
 export type RecordedRevert = { name: string; args: string[] };
 
+/** A real private socket registry of this realm's discovery server; read only. */
+export function localDiscoverySockets<
+    K extends "peerServers" | "activeClientConnections"
+>(field: K): Set<K extends "peerServers" ? WebSocketServer : WebSocket> {
+    const sockets: unknown = Reflect.get(LocalDiscoveryServer, field);
+    if (!(sockets instanceof Set))
+        throw new Error(`LocalDiscoveryServer.${field} is not a Set`);
+    return sockets as Set<
+        K extends "peerServers" ? WebSocketServer : WebSocket
+    >;
+}
+
 function recordedRevert(error: unknown): RecordedRevert | null {
     const decoded = tryDecodeCustomError(error);
     return (
@@ -595,6 +608,13 @@ export class StubService extends ANetworkRpcService<
     private syncWindowHold?: HeldRpcReply;
     private restoreSyncWindow?: () => void;
     private syncInstallHold?: HeldRpcReply;
+    // accepted discovery sockets this realm's listeners stopped reading
+    private heldAcceptedSockets: WebSocket[] = [];
+    // listener port -> the listener read at that port; a closed listener
+    // has no address left to match
+    private readonly listenersByPort = new Map<number, WebSocketServer>();
+    // listener ports one peer's registry announcements carried while observed
+    private discoveryAnnouncements?: { ports: number[]; restore: () => void };
     private restoreSyncInstall?: () => void;
     private restoreSyncReductionRecorder?: () => void;
     private syncReductionWindows: {
@@ -4233,6 +4253,108 @@ export class StubService extends ANetworkRpcService<
             ),
             LocalDiscoveryServer.leave(topic, this.p2pManager)
         ]);
+    }
+
+    /**
+     * Grants every later local EVM call `callGasLimit`, configured the way
+     * the executor factory configures it from the chain reads.
+     */
+    public async configureExecutorCallGas(
+        callGasLimit: string,
+        dedicatedThread: boolean
+    ): Promise<void> {
+        await localExecutorConnection(this.sm)
+            .rpc.executor.configure({
+                callGasLimit,
+                clockAdjustmentSeconds:
+                    dedicatedThread && Clock.isInitialized()
+                        ? Clock.getClockAdjustmentSeconds()
+                        : undefined
+            })
+            .request();
+    }
+
+    public getLocalDiscoveryListenerPorts(): number[] {
+        return [...localDiscoverySockets("peerServers")].flatMap((server) => {
+            const address = server.address();
+            if (!address || typeof address === "string") return [];
+            this.listenersByPort.set(address.port, server);
+            return [address.port];
+        });
+    }
+
+    /** Pauses the real accepted sockets of this realm's listeners; returns how many. */
+    public holdAcceptedSocketReads(): number {
+        const held = [...localDiscoverySockets("peerServers")].flatMap(
+            (server) => [...server.clients]
+        );
+        for (const socket of held) socket.pause();
+        this.heldAcceptedSockets.push(...held);
+        return held.length;
+    }
+
+    public releaseAcceptedSocketReads(): void {
+        for (const socket of this.heldAcceptedSockets.splice(0))
+            socket.resume();
+    }
+
+    /** This realm's dial sockets to one of `listenerPorts` still closing. */
+    public getClosingLocalDialCount(listenerPorts: number[]): number {
+        return [...localDiscoverySockets("activeClientConnections")].filter(
+            (socket) =>
+                listenerPorts.includes(Number(new URL(socket.url).port)) &&
+                socket.readyState === WebSocket.CLOSING
+        ).length;
+    }
+
+    /** Whether this runtime's topic sessions have a local dial in flight. */
+    public hasPendingLocalDial(): boolean {
+        // Read the real private topic sessions; do not replace their behavior.
+        // Each runtime's sessions are keyed by rendezvous key (hex topic).
+        const sessions = Reflect.get(
+            LocalDiscoveryServer,
+            "discoverySessions"
+        ) as WeakMap<P2PManager, Map<string, { dialingPeers: Set<Address> }>>;
+        return [...(sessions.get(this.p2pManager)?.values() ?? [])].some(
+            (session) => session.dialingPeers.size > 0
+        );
+    }
+
+    /** Records the listener ports the registry announces for `peerAddress` on this realm's sockets. */
+    public observeLocalDiscoveryAnnouncements(peerAddress: string): void {
+        this.restoreLocalDiscoveryAnnouncements();
+        const ports: number[] = [];
+        const observe = (data: WebSocket.RawData) => {
+            const announcement = JSON.parse(data.toString());
+            if (announcement.peerAddress === peerAddress)
+                ports.push(announcement.port);
+        };
+        const sockets = [...localDiscoverySockets("activeClientConnections")];
+        for (const socket of sockets) socket.on("message", observe);
+        this.discoveryAnnouncements = {
+            ports,
+            restore: () => {
+                for (const socket of sockets) socket.off("message", observe);
+            }
+        };
+    }
+
+    public getLocalDiscoveryAnnouncedPorts(): number[] {
+        return [...(this.discoveryAnnouncements?.ports ?? [])];
+    }
+
+    public restoreLocalDiscoveryAnnouncements(): void {
+        this.discoveryAnnouncements?.restore();
+        this.discoveryAnnouncements = undefined;
+    }
+
+    /**
+     * Terminates the accepted sockets of the listener `getLocalDiscoveryListenerPorts`
+     * read on `port`; a left topic's closed listener keeps them.
+     */
+    public terminateLocalDiscoveryListenerClients(port: number): void {
+        for (const socket of this.listenersByPort.get(port)?.clients ?? [])
+            socket.terminate();
     }
 
     public getLocalDiscoveryListenerCount(): number {
