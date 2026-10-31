@@ -38,7 +38,7 @@ import Storage from "@/storage";
 import { TimeConfig } from "@/types";
 import { DebugProxy } from "@/utils";
 import { LocalDiscoveryServer } from "@/utils";
-import { config, createConfig, isNodeRuntime } from "@/utils/config";
+import { config, createConfig } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { runCleanup } from "@/utils/runCleanup";
 
@@ -300,7 +300,6 @@ export class P2pRuntimeHostRoot<
         const disposal = this.disposeRoot(
             () => {
                 const provider = this.chainContext?.provider;
-                const ctx = this.context;
                 return runCleanup(
                     // Reported before the provider closes; the settle is bounded
                     // so disposal never hangs on the chain.
@@ -325,24 +324,15 @@ export class P2pRuntimeHostRoot<
                         // the Clock destroys it once a new provider replaces it.
                         else if (provider) {
                             provider.stopReconnecting();
+                            // the Clock registers no listener: every one
+                            // left is this runtime's
+                            await provider.removeAllListeners();
                             Clock.releaseProvider(provider);
                         }
                     },
                     // a close failure fails the disposal
                     () => this.networkClose,
-                    () => this.closeChildConnections(),
-                    async () => {
-                        // TODO: Delegate cleanup through the shared Holepunch/local
-                        // discovery lifecycle API once the backend is injected.
-                        if (
-                            ctx.threadLabel &&
-                            config.DEBUG_LOCAL_TRANSPORT &&
-                            isNodeRuntime() &&
-                            config.LOCAL_DISCOVERY_REGISTRY_URL
-                        ) {
-                            await LocalDiscoveryServer.cleanup();
-                        }
-                    }
+                    () => this.closeChildConnections()
                 );
             },
             () => this.releaseRuntime()
@@ -384,9 +374,9 @@ export class P2pRuntimeHostRoot<
     }
 
     /**
-     * Before the children: the runtime's timers and the waits that hold
-     * timers or chain listeners end, and an abort's log flush completes
-     * while the workers can still upload. Runs once.
+     * Before the children: the runtime's timers, discovery sessions and the
+     * waits that hold timers or chain listeners end, and an abort's log
+     * flush completes while the workers can still upload. Runs once.
      */
     private releaseRuntime(): Promise<void> | undefined {
         const stateManager = this.runtimeHandle?.stateManager;
@@ -397,6 +387,11 @@ export class P2pRuntimeHostRoot<
             () => localRpc.spectateService.dispose(),
             // pending handshake waits settle and their timers clear
             () => localRpc.initHandshakeService.dispose(),
+            // every local discovery session of this runtime
+            () =>
+                LocalDiscoveryServer.leave(undefined, stateManager.p2pManager),
+            // watched peer connections close, a negotiating one included
+            () => localRpc.webRTCSetupService.dispose(),
             () => stateManager.timeoutManager.dispose(),
             () => stateManager.stateChannelEventListener.dispose(),
             // An abort's log flush, already running: disposal ends the

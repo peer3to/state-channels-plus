@@ -81,13 +81,20 @@ export class LocalDiscoveryServer {
         });
     }
 
-    /** Ends the topic membership; established peer links stay open. */
+    /**
+     * Ends the topic membership, or every membership of `p2pManager` without
+     * a key; established peer links stay open.
+     */
     static async leave(
-        rendezvousKey: string,
+        rendezvousKey: string | undefined,
         p2pManager?: P2PManager
     ): Promise<void> {
         for (const membership of [...this.memberships]) {
-            if (membership.rendezvousKey !== rendezvousKey) continue;
+            if (
+                rendezvousKey !== undefined &&
+                membership.rendezvousKey !== rendezvousKey
+            )
+                continue;
             if (p2pManager && membership.p2pManager !== p2pManager) continue;
             this.memberships.delete(membership);
             membership.ws.close();

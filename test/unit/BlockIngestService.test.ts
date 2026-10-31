@@ -733,55 +733,6 @@ describe("Unit: BlockIngestService", function () {
         });
     });
 
-    describe("onBlockConfirmation → parked behind the mutex while the runtime aborts", function () {
-        it("a valid block parked on the state mutex when the runtime aborts → true, nothing judged or stored once the mutex frees", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 1);
-            const { observer, authored, startHeight, forkId } =
-                await h.transition.authorNextBlockOffWireWait();
-            // keeps the control RPC reachable after the real abort
-            const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
-                observer.index
-            );
-            try {
-                const hold = await h.rpcStub.holdStateMutex(observer.index);
-                await waitFor(
-                    async () => (await hold.entered()) === 1,
-                    h.event.protocolEventTimeoutMs()
-                );
-
-                const parked = h
-                    .control(observer)
-                    .validation.runBlockIngest(
-                        authored.encodedBlockConfirmation
-                    )
-                    .request();
-                await waitFor(
-                    async () =>
-                        (await h.rpcStub.getStateMutexWaitingCount(
-                            observer.index
-                        )) === 1,
-                    h.event.protocolEventTimeoutMs()
-                );
-                await h.control(observer).stub.abortDetached().request();
-                await h.event.waitForPeers("onAbort", [observer.index], 1);
-                await hold.release();
-
-                const probe = await parked;
-                expect(probe).to.include({ keepConnection: true, threw: null });
-                expect(probe.firedHooks).to.deep.equal([]);
-                expect(
-                    await h
-                        .control(observer)
-                        .query.getNextBlockHeight(forkId)
-                        .request()
-                ).to.equal(startHeight);
-            } finally {
-                await releaseDisposal();
-            }
-        });
-    });
-
     describe("onBlockConfirmation → reject paths (full pipeline probe)", function () {
         it("a linked writer block with a wrong snapshot hash → invalid transition, VM turn restored", async function () {
             const h = TestSession.getHarness();

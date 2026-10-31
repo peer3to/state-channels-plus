@@ -958,11 +958,22 @@ export class LocalDiscoveryServer {
         connectRegistry(1);
     }
 
+    /** Leaves `rendezvousKey`, or every session of `p2pManager` without one. */
     public static async leave(
-        rendezvousKey: string,
+        rendezvousKey: string | undefined,
         p2pManager?: P2PManager
     ): Promise<void> {
         if (!p2pManager) return;
+        if (rendezvousKey === undefined) {
+            const keys = new Set([
+                ...(this.discoveryJoins.get(p2pManager)?.keys() ?? []),
+                ...(this.discoverySessions.get(p2pManager)?.keys() ?? [])
+            ]);
+            await Promise.all(
+                [...keys].map((key) => this.leave(key, p2pManager))
+            );
+            return;
+        }
         await this.discoveryJoins.get(p2pManager)?.get(rendezvousKey);
         const sessions = this.discoverySessions.get(p2pManager);
         const session = sessions?.get(rendezvousKey);
@@ -1295,11 +1306,6 @@ export class LocalDiscoveryServer {
                         p2pManager.stateManager.timeConfig.agreementTime * 1000
                     )
                     .then((completed) => {
-                        // Shutdown settles every pending handshake wait with
-                        // false before the P2P manager itself is disposed; that
-                        // is not a failed handshake, so nothing is retried.
-                        if (!completed && p2pManager.stateManager.isDisposed)
-                            return;
                         if (!completed) {
                             p2pManager.disconnectConnection(
                                 lt,

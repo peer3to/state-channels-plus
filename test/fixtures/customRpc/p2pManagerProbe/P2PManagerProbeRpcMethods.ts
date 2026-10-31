@@ -38,6 +38,7 @@ import type {
     UpgradeBanPolicyProbe,
     WebRTCConnectionStatesProbe,
     WebRTCConnectionStatesScenario,
+    WebRTCNegotiatingAtDisposeProbe,
     UnblacklistBanPolicyProbe,
     UnblacklistBanPolicyScenario,
     HolepunchTopicProbe,
@@ -396,6 +397,13 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         scenario: WebRTCConnectionStatesScenario
     ): Promise<WebRTCConnectionStatesProbe> {
         return this.service.probeWebRTCConnectionStates(address, scenario);
+    }
+
+    public probeWebRTCNegotiatingAtDispose(
+        negotiating: string,
+        late: string
+    ): Promise<WebRTCNegotiatingAtDisposeProbe> {
+        return this.service.probeWebRTCNegotiatingAtDispose(negotiating, late);
     }
 
     public probeExplicitBlacklist(address: string): BanPolicyProbe {

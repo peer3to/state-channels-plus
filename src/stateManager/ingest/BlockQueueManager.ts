@@ -67,7 +67,6 @@ export default class BlockQueueManager {
         options: IngestBlockConfirmationOptions
     ): Promise<boolean> {
         try {
-            if (this.stateManager.isDisposed) return true;
             const strategy =
                 options.validationStrategy ||
                 this.stateManager.getActiveValidationStrategy(options);

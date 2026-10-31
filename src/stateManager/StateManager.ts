@@ -312,9 +312,9 @@ class StateManager<
      * rather than SYNCED or NOT_OPENED.
      */
     public abort() {
+        // after the cut an abort would upload a second abort log and flush
+        // through a logger the disposal releases
         if (this.isDisposed) return;
-        this.isDisposed = true;
-        this.membershipService.resetEligibility();
         this.logger.warn("Aborting channel participation", {
             channelId: this.channelId,
             status: Status[this.status]

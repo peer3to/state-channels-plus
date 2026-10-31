@@ -627,6 +627,17 @@ export type WebRTCConnectionStatesScenario = {
     hasDataChannel?: boolean;
 };
 
+export type WebRTCNegotiatingAtDisposeProbe = {
+    /** Factory closes after a data channel arrived for the second peer after the cut. */
+    factoryClosesAfterCut: string[];
+    /** Factory closes after the setup service's release. */
+    factoryClosesAfterRelease: string[];
+    /** Whether the late data channel is closed. */
+    lateChannelClosed: boolean;
+    /** The peers whose connection the service still tracks. */
+    trackedPeers: string[];
+};
+
 export type WebRTCConnectionStatesProbe = {
     /** Whether the WebRTC transport is open after the steps and the wait; false without one. */
     transportOpen: boolean;
@@ -2714,6 +2725,55 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             warn.restore();
             info.restore();
         }
+    }
+
+    /**
+     * Two connections negotiate without a data channel; the network cut
+     * runs, the second one's data channel arrives, then the setup
+     * service's release runs as the root's disposal does.
+     */
+    public async probeWebRTCNegotiatingAtDispose(
+        negotiating: string,
+        late: string
+    ): Promise<WebRTCNegotiatingAtDisposeProbe> {
+        const service = this.p2pManager.localRpc.webRTCSetupService;
+        const callbacksByPeer = new Map<string, WebRTCConnectionCallbacks>();
+        const factoryCloses: string[] = [];
+        service.setConnectionFactory({
+            createOffer: async () => ({}),
+            acceptOffer: async (peer, _offer, callbacks) => {
+                callbacksByPeer.set(getChecksumAddress(peer), callbacks);
+                return {};
+            },
+            applyAnswer: async () => undefined,
+            addIceCandidate: async () => undefined,
+            close: async (peer) => {
+                factoryCloses.push(String(peer));
+            },
+            getState: () => UNKNOWN_STATE
+        });
+        await service.acceptWebRTCOffer(negotiating, {});
+        await service.acceptWebRTCOffer(late, {});
+        await this.p2pManager.dispose();
+        const lateChannel = new RecordingWebRTCDataChannel();
+        callbacksByPeer
+            .get(getChecksumAddress(late))!
+            .onDataChannel(lateChannel);
+        const factoryClosesAfterCut = [...factoryCloses];
+        service.dispose();
+        return {
+            factoryClosesAfterCut,
+            factoryClosesAfterRelease: [...factoryCloses],
+            lateChannelClosed: lateChannel.closed,
+            trackedPeers: [
+                ...(
+                    Reflect.get(service, "currentWatches") as Map<
+                        string,
+                        unknown
+                    >
+                ).keys()
+            ]
+        };
     }
 
     public probeExplicitBlacklist(address: string): BanPolicyProbe {
