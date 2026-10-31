@@ -351,20 +351,27 @@ limit, so it implements only what needs its own storage and composition (`open`,
 
 ### Disposal
 
-- The runtime has one dispose, `P2pRuntimeHostRoot.dispose()`. It first cuts the runtime off
-  (`cutOff()`: transports, chain sends, client bus), then releases the runtime's external edges in
-  one flat list (`releaseRuntime()`), then disposes the child roots. An abort ends in the same
-  dispose.
+The contract is [`REQ-RUNTIME-3-VQXW59`](docs/spec/specification/runtime/execution.md#req-runtime-3-vqxw59);
+where this section and the requirement differ, the requirement wins.
+
+- The runtime has one dispose, `P2pRuntimeHostRoot.dispose()`. `cutOff()` first stops sends to
+  peers, chain transactions and the client bus in one synchronous step. `releaseRuntime()` then
+  releases timers, subscriptions, discovery sessions and peer connections, the child roots are
+  disposed, and the final cleanup releases the chain provider and flushes the logs. An abort ends
+  in the same dispose.
 - Do not add `dispose`/`stop` methods or disposed flags to components that hold only in-memory
-  state, and do not check another component's `isDisposed`. After the cut, internal work cannot
-  reach the outside, and the runtime is dropped.
+  state, and do not add disposed checks to in-memory work. The only reads of disposal state are
+  admission points where outside work can start after the cut: a late connection is closed where it
+  registers (`ProfileManager`, `WebRTCTransport`, `LocalDiscoveryServer`), and a late chain
+  subscription is refused (`StateManager.setChannelId`).
 - A component that holds something outside the runtime (a timer, a socket, a subscription to a
   shared or static object, a child thread, a resource on the main thread) gets one small release
   method, called from `releaseRuntime()`. Prefer the existing owners instead: timers through
   `TimeoutManager`, chain subscriptions through `StateChannelEventListener`, transactions through
   the managed signer, connections through `P2PManager`.
-- Calls still pending at dispose reject with `RootDisposedError`; do not answer them with
-  `false`, `cancelled` or `undefined`.
+- Disposal itself answers no pending application call: release code must not settle one with
+  `false`, `cancelled` or `undefined`. A call still running when the connection closes rejects with
+  `RootDisposedError`; a handler that finishes before that returns its own result.
 
 ### Type safety
 
