@@ -828,6 +828,11 @@ logs before the connection closes, so the disposal-time gas report reaches the u
 Inline mode is marked deprecated; the disposal tests deleted as inline-only run in worker mode, except
 the three that need inline mode's shared realm.
 
+**Update (2026-10-31, executor admission drain, Luke: deleted):** the contract executor no longer waits
+for admitted work. `ContractExecutorService.closeAdmission` closes admission and rejects every admitted
+caller at once with the disposal rejection; each operation's later outcome is dropped, and
+`ADMISSION_DRAIN_MS` and the settle-once latch are deleted.
+
 <a id="find-join-2-ek5dww"></a>
 
 ### FIND-JOIN-2-EK5DWW

@@ -11,6 +11,7 @@ Real SDK abort closes the host and executor in inline and worker placement, reje
 
 - `disposes the inline host and executor roots on abort`: UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P1, REQ-RUNTIME-3-VQXW59.T1.P48
 - `disposes the worker host and executor roots on abort`: UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P2, REQ-RUNTIME-3-VQXW59.T1.P49
+- `a plain dispose waits for a log endpoint that never answers no longer than its own short bound`: REQ-RUNTIME-3-VQXW59.T1.P96
 - `uploads its realms' logs before disposal, waiting for them no longer than its bound`: UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P5, REQ-LOG-11-F5TJQC.T1.P3, REQ-LOG-11-F5TJQC.T1.P4
 - `cancels a VM worker's held upload when the worker ends, so the client closes without the drain timeout`: REQ-LOG-11-F5TJQC.T1.P10
 - `uploads the worker host's, main thread's and VM worker's logs before the client closes, without waiting for the bound`: REQ-LOG-11-F5TJQC.T1.P15

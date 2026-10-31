@@ -501,7 +501,7 @@ case, and repairs the shifted declaration lines. The [EvmFactory report](../veri
 maps the owner-context and admission-drain cases and the existing bare-EVM composition case. The
 late-admission case now also sends a late deploy and a late simulation, and all three settle with the
 shutdown error without entering the EVM. Three new cases load a real precompile that answers, or fails,
-1.2 seconds after the drain limit. For a late success, a late failure, and a deploy and a simulation
+1.5 seconds after it is called. For a late success, a late failure, and a deploy and a simulation
 queued behind the late call, each reads that the caller settled with exactly `Contract executor shut down
 before the operation finished`. A record-only wrapper on the real executor root's
 `ContractExecutorService.admit`, restored in the same block, records each admitted operation's own
@@ -514,13 +514,18 @@ rejects, the handle closes while the hidden parent is still live, and disposing 
 leaves that parent disposing with no connections
 ([`UNIT-TEST-ROOT-CREATION-1-1NWN3V.P33`](../implementation/source/src/rpc/internal/createRoot.ts.md#unit-test-root-creation-1-1nwn3v), [`REQ-RUNTIME-3-VQXW59.T1.P82`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p82)).
 
-The bounded executor drain ([`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/open-questions.md#oq-impl-executor-drain-1-5d71ym)) has unit and system evidence. `EvmFactory > abandons an admitted call
-stuck past the drain limit, closes the child, and reports no error` never releases the held reply, measures
-disposal against the exported limit, and reads the closed child, the rejected call, the call count, and an
-empty host error list. `RuntimeLifecycle > disposes a worker SDK while its worker executor call is in
+The executor drain is deleted ([`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/open-questions.md#oq-impl-executor-drain-1-5d71ym), Luke 2026-10-31), with unit and system
+evidence. `EvmFactory > abandons an admitted call stuck on its precompile at once, closes the child, and
+reports no error` never releases the held reply, asserts disposal completes in under 2 seconds, and reads
+the closed child, the exact disposal rejection, the call count, and an empty host error list. `EvmFactory >
+rejects an admitted precompile call and its queued deploy and simulation at once and disposes the
+precompile child` reads the same rejection for all three callers. The late-admission case holds the
+child's dispose request so the late calls reach the executor after admission closes. The admitted-failure
+case and its permutations are deleted with their
+obligation, and the late-completion cases use a fixed 1.5-second precompile delay. `RuntimeLifecycle > disposes a worker SDK while its worker executor call is in
 flight` passes again: worker SDK disposal completes with the executor call still held, the SDK worker exits,
 no host error is recorded, and a sibling keeps serving, so it now covers the worker-placement permutation
-[`REQ-RUNTIME-3-VQXW59.T1.P78`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p78); it does not measure the limit, which the unit case does. Starting a consumer's own
+[`REQ-RUNTIME-3-VQXW59.T1.P78`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p78); Starting a consumer's own
 `.ts` worker entry from another package's working directory is exercised only by consumer suites, not in
 this repository.
 
