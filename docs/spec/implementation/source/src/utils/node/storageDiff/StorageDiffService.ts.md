@@ -8,7 +8,6 @@
 - [`REQ-SDS-2-R1RRCF` (Catch-up returns the retained history and the current levels)](../../../../../../specification/runtime/storage-diff-service.md#req-sds-2-r1rrcf)
 - [`REQ-SDS-3-5JW8AK` (Subscriptions belong to their connection and end on request)](../../../../../../specification/runtime/storage-diff-service.md#req-sds-3-5jw8ak)
 - [`REQ-SDS-4-ZZDEVF` (Reported values are the chain's own, not the tracer's)](../../../../../../specification/runtime/storage-diff-service.md#req-sds-4-zzdevf)
-  Partial: state a block changes outside its transactions' traced keys and accounts (system calls, withdrawals) is not seen ([`OQ-SPEC-SDS-2-HJS9DY`](../../../../../../specification/open-questions.md#oq-spec-sds-2-hjs9dy)).
 - [`REQ-SDS-5-B2V01N` (Logs of subscribed addresses travel with their block)](../../../../../../specification/runtime/storage-diff-service.md#req-sds-5-b2v01n)
 - [`REQ-SDS-6-SH7DKR` (The included head is a second, final level)](../../../../../../specification/runtime/storage-diff-service.md#req-sds-6-sh7dkr)
 - [`REQ-SDS-7-PZCBQ9` (State reads come from one shared cache)](../../../../../../specification/runtime/storage-diff-service.md#req-sds-7-pzcbq9)

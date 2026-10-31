@@ -460,6 +460,8 @@ Owner: [implementation report](source/src/stateManager/ingest/BlockQueueManager.
 
 ## OQ-IMPL-SDS-1-XP37Y4 — The child trie block source does not check that the chain stayed one chain between root reads
 
+Engineer decision (2026-10-31): pin every read of the source during a backfill to one block hash, the block being backfilled, instead of checking only the tip between reads. Not yet implemented: the bisection reads the child trie root of many different earlier blocks, so what pinning means for those reads is not settled (see the report of the implementing pass).
+
 `ChildTrieBlockSource` bisects the child trie root of a contract on the Substrate node with many reads and checks only that the tip block did not change during the bisection. A reorganization between two root reads inside the range is not detected there. The completeness count of [`REQ-SDS-9-ZRPZZW` (A subscription is anchored by a complete snapshot, or told none is coming)](../specification/runtime/storage-diff-service.md#req-sds-9-zrpzzw) catches a wrong result only when it changes the number of entries.
 
 Owner: [implementation report](source/src/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource.ts.md). Requested engineer decision: whether the source must pin every read to the block hash it read at the tip, or the count check is the accepted guard.
