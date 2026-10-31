@@ -1365,6 +1365,70 @@ describe("MirrorRpcProvider", function () {
         });
     });
 
+    it("asks the service once when a wait for a block starts, so a service whose upstream is behind sends the reads to the node at once", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, chainStorage } =
+                await deployMirroredStorage(session);
+            expect(await storage.getValue()).to.equal(0n);
+            await session.provider.on("block", () => undefined);
+            const older = await headNumber(session);
+            const held = session.relay.holdNext(
+                "eth_getBlockByNumber",
+                "latest"
+            );
+
+            await (await chainStorage.setValue(3n)).wait();
+            await held.arrived;
+            // time is the input: the node's announcement reaches the provider
+            await sleep(ABSENCE_WINDOW_MS);
+            // the service's upstream answers as if it had not reached the block
+            session.relay.tamper("eth_blockNumber", () => toQuantity(older));
+            const probes = serviceRequests(session, "scp_getHead").length;
+            const started = Date.now();
+            // three reads wait for the same block, and no read names it to the service
+            const values = await Promise.all([
+                storage.getValue(),
+                storage.getValue(),
+                storage.getValue()
+            ]);
+
+            expect(values).to.deep.equal([3n, 3n, 3n]);
+            expect(Date.now() - started).to.be.lessThan(
+                SDK_RPC_DEADLINE_MS / 2
+            );
+            expect(serviceRequests(session, "scp_getHead")).to.have.length(
+                probes + 1
+            );
+            expect(nodeRequests(session, "eth_call")).to.have.length(3);
+            expect(session.provider.mirrorStatistics).to.include({
+                freshnessTimeouts: 0
+            });
+            held.release();
+            // once the copy holds the block the next wait probes again
+            await waitFor(async () => {
+                const asked = nodeRequests(session, "eth_call").length;
+                await storage.getValue();
+                return nodeRequests(session, "eth_call").length === asked;
+            }, 5_000);
+            const heldAgain = session.relay.holdNext(
+                "eth_getBlockByNumber",
+                "latest"
+            );
+            await (await chainStorage.setValue(4n)).wait();
+            await heldAgain.arrived;
+            await sleep(ABSENCE_WINDOW_MS);
+            const secondStarted = Date.now();
+            expect(await storage.getValue()).to.equal(4n);
+            expect(Date.now() - secondStarted).to.be.lessThan(
+                SDK_RPC_DEADLINE_MS / 2
+            );
+            expect(serviceRequests(session, "scp_getHead")).to.have.length(
+                probes + 2
+            );
+            heldAgain.release();
+        });
+    });
+
     it("asks the node at once when the service says a snapshot it promised as ready is delayed", async function () {
         await withMirrorSession(
             async (session) => {

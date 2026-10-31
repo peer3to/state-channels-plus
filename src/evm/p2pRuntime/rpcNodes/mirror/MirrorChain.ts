@@ -27,6 +27,7 @@ import type {
     SubscribeResult,
     SubscriptionId
 } from "@/utils/storageDiff/storageDiffWire";
+import { toQuantity } from "ethers";
 
 /**
  * Applied blocks kept with their `pre` values for a rollback. A reorg
@@ -180,6 +181,8 @@ export class MirrorChain {
     private readonly snapshotBackstop = new LearnedBackstop(
         SDK_RPC_DEADLINE_MS
     );
+    /** The block the service was last asked about at the start of a wait; reset when the head holds what the peer saw. */
+    private probedNumber?: BlockNumber;
     /**
      * A wait ended without the block it waited for (the service said it is
      * late, the node moved on, or the backstop ran out): reads go to the node
@@ -415,6 +418,7 @@ export class MirrorChain {
         for (;;) {
             if (this.closed || this.holds(this.requiredBlock)) {
                 this.behind = false;
+                this.probedNumber = undefined;
                 return;
             }
             if (this.behind) {
@@ -431,6 +435,7 @@ export class MirrorChain {
                     "The block never reached the mirror"
                 );
             }
+            this.probeService();
             await new Promise<void>((resolve) => {
                 const wake = () => {
                     clearTimeout(timer);
@@ -440,6 +445,33 @@ export class MirrorChain {
                 this.headWaiters.add(wake);
             });
         }
+    }
+
+    /**
+     * Asks the service for its head at the block the wait is for, once per
+     * wait: a service whose upstream has not seen the block answers with an
+     * `upstream-behind` notice at once, which ends the wait; its answer, the
+     * head having reached the block, is no end of its own, the wait ends when
+     * the record is applied. A failed probe leaves the wait to its events.
+     */
+    private probeService(): void {
+        const wanted = this.wantedNumber();
+        if (!this.feed || this.probedNumber === wanted) return;
+        this.probedNumber = wanted;
+        this.feed.fetchHead(toQuantity(wanted)).catch((error) => {
+            this.log("debug", "Storage diff service head probe failed", {
+                error
+            });
+        });
+    }
+
+    /** The newest block number a wait for the head is for. */
+    private wantedNumber(): BlockNumber {
+        return this.requiredBlock
+            ? this.requiredBlock.number > this.requiredNumber
+                ? this.requiredBlock.number
+                : this.requiredNumber
+            : this.requiredNumber;
     }
 
     /** Ends the waits for a block the head lacks: those reads go to the node. */
@@ -700,11 +732,7 @@ export class MirrorChain {
             return;
         }
         if (this.holds(this.requiredBlock)) return;
-        const wanted = this.requiredBlock
-            ? this.requiredBlock.number > this.requiredNumber
-                ? this.requiredBlock.number
-                : this.requiredNumber
-            : this.requiredNumber;
+        const wanted = this.wantedNumber();
         if (
             notice.reason === "upstream-behind" &&
             wanted < BigInt(notice.requested)
