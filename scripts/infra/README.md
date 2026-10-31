@@ -171,17 +171,24 @@ address a peer asks about:
 The service keeps each retained block as the upstream returned it (full
 transactions), so a peer can read chain data from it instead of the node:
 
-- `scp_getBlock` with params `[block, full?]`, `block` being `"latest"`, a hex
-  quantity or a 32-byte hash, returns the block exactly as the upstream's
-  `eth_getBlockBy*` does, with full or hashed transactions (`full`, default
-  false). A block that is not retained answers `null`.
-- `scp_getTransaction` with `[hash]` returns a transaction of a retained block
+- `scp_getBlock` with params `[block, full?, minBlock?]`, `block` being
+  `"latest"`, a hex quantity or a 32-byte hash, returns the block exactly as the
+  upstream's `eth_getBlockBy*` does, with full or hashed transactions (`full`,
+  default false). A block that is not retained answers `null`.
+- `scp_getHead` with `[minBlock?]` returns the block environment of the best
+  head.
+- `scp_getTransaction` with `[hash, minBlock?]` returns a transaction of a retained block
   as `eth_getTransactionByHash` does, or `null`.
-- `scp_getTransactionReceipt` with `[hash]` returns its receipt as
+- `scp_getTransactionReceipt` with `[hash, minBlock?]` returns its receipt as
   `eth_getTransactionReceipt` does, or `null`. A block's receipts are fetched
   once, on the first read of any of them, with `eth_getBlockReceipts` (anvil and
   Asset Hub eth-rpc both serve it); an upstream that refuses it gets one batch
   of `eth_getTransactionReceipt`.
+
+`minBlock` (a hex quantity, optional on these four calls) makes the service
+wait until its head reaches that block before it answers, for a caller that has
+seen a newer block on the node. The wait is bounded; after it the service
+answers with what it holds.
 
 A `null` does not mean the chain lacks the block or transaction: it may be newer
 than the service's head or older than its window, so a caller asks the node then.

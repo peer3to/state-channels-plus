@@ -69,14 +69,9 @@ export class StorageDiffRpcMethods {
     }
 
     /**
-     * Account and storage values at a retained block, from the service's
-     * shared cache: `[blockHash, [{address, slots?, account?, code?}]]`.
-     * `account` asks for balance and nonce. An unretained block fails with
-     * code -32002.
-     */
-    /**
      * A retained block as the upstream returns it:
-     * `["latest" | quantity | hash, full?]`; null when it is not retained.
+     * `["latest" | quantity | hash, full?, minBlock?]`; null when it is not
+     * retained. With `minBlock` the answer waits for the head to reach it.
      */
     async scp_getBlock(params: unknown[]): Promise<RpcBlock | null> {
         if (params.length < 1 || params.length > 3) {
@@ -118,6 +113,12 @@ export class StorageDiffRpcMethods {
         );
     }
 
+    /**
+     * Account and storage values at a retained block, from the service's
+     * shared cache: `[blockHash, [{address, slots?, account?, code?}]]`.
+     * `account` asks for balance and nonce. An unretained block fails with
+     * code -32002.
+     */
     async scp_getState(params: unknown[]): Promise<StorageDiffState> {
         if (params.length !== 2) {
             throw invalidParams("Expected [blockHash, accounts]");
