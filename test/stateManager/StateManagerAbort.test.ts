@@ -4,6 +4,7 @@ import {
     assertAbortUploadsLogsWithinBound,
     assertClockOwnedProviderReleasedOnDispose,
     assertDisposeAfterErrorUploadsVmLogs,
+    assertDisposeFlushWithinDisposeBound,
     assertProviderShutdownOrder,
     assertVmThreadEndCancelsHeldUpload,
     assertWorkerClockProviderReleasedOnDispose,
@@ -23,6 +24,9 @@ describe("StateManager abort", function () {
     });
     it("uploads its realms' logs before disposal, waiting for them no longer than its bound", async function () {
         await assertAbortUploadsLogsWithinBound();
+    });
+    it("a plain dispose waits for a log endpoint that never answers no longer than its own short bound", async function () {
+        await assertDisposeFlushWithinDisposeBound();
     });
     it("cancels a VM worker's held upload when the worker ends, so the client closes without the drain timeout", async function () {
         await assertVmThreadEndCancelsHeldUpload();

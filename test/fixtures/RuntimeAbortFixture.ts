@@ -120,6 +120,37 @@ export async function assertAbortUploadsLogsWithinBound(): Promise<void> {
 }
 
 /**
+ * A plain dispose flushes its logs before the port closes, but an upload that
+ * never answers holds it only for DISPOSE_LOG_FLUSH_MS, not the abort's bound.
+ */
+export async function assertDisposeFlushWithinDisposeBound(): Promise<void> {
+    const held = deferred();
+    const receiver = await startLogReceiver({
+        respond: async () => {
+            await held.promise;
+            return 200;
+        }
+    });
+    try {
+        await startPeersUploadingTo(receiver, {
+            CRASH_LOG_FLUSH_MS: 30_000,
+            DISPOSE_LOG_FLUSH_MS: 1_000
+        });
+        const peer = MathTestSession.getHarness().getPeer(0);
+        const started = Date.now();
+        await peer.p2pInstance.dispose();
+        const elapsedMs = Date.now() - started;
+
+        // the flush reached the endpoint, which never answers
+        expect(receiver.requests.length).to.be.above(0);
+        expect(elapsedMs).to.be.below(10_000);
+    } finally {
+        held.resolve();
+        await receiver.close();
+    }
+}
+
+/**
  * The aborting runtime's VM worker ends while its upload is still held: the
  * thread end cancels that upload, so the worker drains at once and the client
  * closes soon after the bound, without the parent's drain-timeout warning.
