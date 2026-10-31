@@ -875,6 +875,9 @@ Specification cases tested: 3/3.
 [`REQ-SDS-11-QV2VPT` (Upstream trouble is retried, then fatal)](../specification/runtime/storage-diff-service.md#req-sds-11-qv2vpt)
 Specification cases tested: 11/11.
 
+[`REQ-SDS-12-N40MKR` (A wait for a late block or snapshot ends at the first event, not at a fixed time)](../specification/runtime/storage-diff-service.md#req-sds-12-n40mkr)
+Specification cases tested: 9/9.
+
 [`REQ-SEC-1-SNS1GA` (Before this specification is finalized, a dedicated security review of the full…)](../audit/security-assessment.md#req-sec-1-sns1ga)
 Specification cases tested: none planned.
 

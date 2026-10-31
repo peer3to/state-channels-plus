@@ -35,13 +35,15 @@ The service has two chain levels. The **latest** level is the upstream's best he
 
 **<a id="req-sds-7-pzcbq9"></a>`REQ-SDS-7-PZCBQ9` — State reads come from one shared cache.** `scp_getState` MUST answer storage slots, balance, nonce and code of any address from a cache shared by all peers. A field the cache lacks is read from the upstream once, pinned to the best head's block hash, concurrent misses for one field share one fetch, and the fields of one request go out as one batch. If a block is committed during a fetch its writes MUST be applied to the fetched value. Each committed block's `post` updates the cached fields already held, and a reorganization undoes the orphaned blocks with their `pre` values, newest first. A block hash that names a retained block MUST be answered as of that block, rolling the head value back over later `pre` values; a hash that is unknown, orphaned or older than the window MUST fail with the not-retained error (code `-32002`) so the caller can fall back. A malformed request fails as invalid params. Phase 1 limit: cached state is never evicted, so the cache grows without bound on a long-running service; eviction is follow-up work.
 
-**<a id="req-sds-8-fqfntv"></a>`REQ-SDS-8-FQFNTV` — Retained blocks, transactions and receipts are served from the service.** `scp_getBlock`, `scp_getTransaction` and `scp_getTransactionReceipt` MUST answer from the retained blocks exactly as the upstream's `eth_getBlockBy*`, `eth_getTransactionByHash` and `eth_getTransactionReceipt` do, with full or hashed transactions as asked; anything not retained answers `null`, which means only that the caller asks the node. A block's receipts are fetched once, on the first read of any of them, with `eth_getBlockReceipts`, or as one batch of receipt reads where the upstream lacks it. A read that names the block its caller already saw MUST wait for the head to reach that block, and answer with what the service holds when the head never gets there. The service's per-block upstream budget is one block fetch with full transactions, one more check after the trace of a block with transactions, no parent fetch inside the retained window, and no logs fetch unless [`REQ-SDS-5-B2V01N`](storage-diff-service.md#req-sds-5-b2v01n) requires one.
+**<a id="req-sds-8-fqfntv"></a>`REQ-SDS-8-FQFNTV` — Retained blocks, transactions and receipts are served from the service.** `scp_getBlock`, `scp_getTransaction` and `scp_getTransactionReceipt` MUST answer from the retained blocks exactly as the upstream's `eth_getBlockBy*`, `eth_getTransactionByHash` and `eth_getTransactionReceipt` do, with full or hashed transactions as asked; anything not retained answers `null`, which means only that the caller asks the node. A block's receipts are fetched once, on the first read of any of them, with `eth_getBlockReceipts`, or as one batch of receipt reads where the upstream lacks it. A read that names the block its caller already saw MUST wait for the head to reach that block, and answer with what the service holds when the wait ends without it ([`REQ-SDS-12-N40MKR`](storage-diff-service.md#req-sds-12-n40mkr)). The service's per-block upstream budget is one block fetch with full transactions, one more check after the trace of a block with transactions, no parent fetch inside the retained window, and no logs fetch unless [`REQ-SDS-5-B2V01N`](storage-diff-service.md#req-sds-5-b2v01n) requires one.
 
 **<a id="req-sds-9-zrpzzw"></a>`REQ-SDS-9-ZRPZZW` — A subscription is anchored by a complete snapshot, or told none is coming.** The first subscription to an address MUST make the service rebuild that account's complete state: the deploy block is found by bisecting `eth_getCode`, only blocks with transactions are traced since, the touched keys are unioned, and all their values are read pinned to one anchor block; blocks mined meanwhile are included by further rounds, and a reorganization that drops the anchor starts the backfill over. A backfilled account is complete, so a slot it does not hold reads zero without asking the upstream, and it is kept current from the records. `scp_subscribeContractStorage` MUST answer the status of each address: `ready`, the account is complete and its snapshot is pushed at once as `scp_snapshot`; `syncing`, a backfill is running or queued and the snapshot follows; `lazy`, no snapshot will come. A later subscription pushes snapshots only for addresses not already complete. An account without code is pushed with its balance and nonce. When the backfill fails, or the number of entries the chain holds for the account differs from what the history named (checked at the anchor and again after each block that writes it), the account MUST stay lazy, the service MUST warn with both counts, and every subscription following it, now and later, is told by an `scp_snapshot` carrying `lazy` so it stops waiting and reads the account on demand; a lazy account is not backfilled again until its cache is cleared.
 
 **<a id="req-sds-10-f01bma"></a>`REQ-SDS-10-F01BMA` — The cache survives a restart when a cache directory is configured.** With a cache directory the service MUST persist its head, its cache and the hashes of its last 64 blocks, written whole and renamed into place. On start it MUST load them, roll the cache back over `pre` values if the saved head is no longer canonical, and catch up the blocks mined while it was down. A complete contract MUST resume from disk without its history being read again. Without a cache directory the cache lives in memory only.
 
 **<a id="req-sds-11-qv2vpt"></a>`REQ-SDS-11-QV2VPT` — Upstream trouble is retried, then fatal; a lagging peer is told and cut.** A block that changes while it is traced, an upstream error answer and a request timeout MUST be retried, both while loading the initial history and while following the head. A lost upstream connection MUST be reopened with a bounded retry, the head subscription renewed and the chain reconciled from the last canonical record, so subscribers see a continuous chain or a replacement branch. Anything else, or a failure that outlasts its retries, including an upstream reset to a chain sharing no ancestor with the retained one, MUST be fatal: the service closes its peers and exits nonzero, and never invents an empty diff, so a supervisor restarts it. A peer whose unsent bytes pass the configured limit MUST be sent a notice naming the reason (`scp_disconnect`), pushed nothing more, and disconnected, so it recovers by catch-up inside the retention window instead of silently missing records.
+
+**<a id="req-sds-12-n40mkr"></a>`REQ-SDS-12-N40MKR` — A wait for a late block or snapshot ends at the first event, not at a fixed time.** A read that names a block the head lacks (`minBlock`) MUST wait for the head to reach that block and end at the first of: the head reaching it; the service's tracing of a block it is processing failing or being retried (which holds back every block after it); the service's upstream not having seen the block; the service closing; or a backstop for a silent hang, which is learned from how long new heads took to commit after the upstream announced them (a multiple of the slowest in a short recent window) and never exceeds the callers' RPC deadline, which is also its value until a head has been committed. A wait that ends without the head answers with what the service holds. The service MUST push a named-field notice (`scp_delayed`) to every connection holding a subscription when its tracing of a block fails or is retried (`trace-failed`, with the block's number and hash), and when a caller asked for a block its upstream has not seen (`upstream-behind`, with the requested number and the best head's number and hash); and MUST push to a connection, per subscription, when a snapshot it promised or sent as `ready` is no longer coming at once because the cache was cleared (`snapshot-delayed`, with the accounts and the best head's number and hash), after which the snapshot follows the rebuild. A notice is an early "no", never a promise that the block or snapshot will arrive. An account no snapshot will ever come for is told by `lazy` ([`REQ-SDS-9-ZRPZZW`](storage-diff-service.md#req-sds-9-zrpzzw)), not by this notice.
 
 ## Assumptions and constraints
 
@@ -448,6 +450,40 @@ Transient failures end in the canonical record being pushed; exhausted retries a
 <a id="req-sds-11-qv2vpt.t1.p10"></a>`REQ-SDS-11-QV2VPT.T1.P10` — an upstream reset to a chain sharing no ancestor stops the service so a supervisor restarts it
 
 <a id="req-sds-11-qv2vpt.t1.p11"></a>`REQ-SDS-11-QV2VPT.T1.P11` — a lagging subscriber is told why with scp_disconnect before its socket closes
+
+#### <a id="req-sds-12-n40mkr.t1"></a>`REQ-SDS-12-N40MKR.T1`
+
+**Requirements / invariants:**
+
+[`REQ-SDS-12-N40MKR`](storage-diff-service.md#req-sds-12-n40mkr)
+
+**Setup and stimulus:**
+
+Ask for blocks the head lacks while the upstream has not seen them, while the trace of the block fails, while the head update is held at the upstream, and while it arrives normally; subscribe, read the pushes, and rebuild a ready account's cache with a reorganization past the retained window; observe the backstop before any head was committed and after fast ones, with the clock moved by the test.
+
+**Expected result:**
+
+The wait ends at the head, or at once with the held state and the named notice, or, for a silent hang, at the learned backstop with nothing pushed; the backstop is the deadline until an arrival is observed, a multiple of the slowest recent arrival after, never above the deadline, and forgets arrivals outside its window.
+
+**Required permutations:**
+
+<a id="req-sds-12-n40mkr.t1.p1"></a>`REQ-SDS-12-N40MKR.T1.P1` — a read waits for a block the head lacks and is answered when the head reaches it
+
+<a id="req-sds-12-n40mkr.t1.p2"></a>`REQ-SDS-12-N40MKR.T1.P2` — a block the upstream has not seen ends the wait at once with the held head and an upstream-behind notice
+
+<a id="req-sds-12-n40mkr.t1.p3"></a>`REQ-SDS-12-N40MKR.T1.P3` — a failed trace of the awaited block ends the wait at once with the held head and a trace-failed notice
+
+<a id="req-sds-12-n40mkr.t1.p4"></a>`REQ-SDS-12-N40MKR.T1.P4` — a silent hang ends at the learned backstop with the held head and nothing pushed
+
+<a id="req-sds-12-n40mkr.t1.p5"></a>`REQ-SDS-12-N40MKR.T1.P5` — the backstop is the RPC deadline before any head was committed
+
+<a id="req-sds-12-n40mkr.t1.p6"></a>`REQ-SDS-12-N40MKR.T1.P6` — the backstop is shorter than the deadline after fast heads
+
+<a id="req-sds-12-n40mkr.t1.p7"></a>`REQ-SDS-12-N40MKR.T1.P7` — the backstop is a multiple of the slowest recent arrival and never above the deadline
+
+<a id="req-sds-12-n40mkr.t1.p8"></a>`REQ-SDS-12-N40MKR.T1.P8` — the backstop forgets arrivals older than its window and is the deadline again once all are forgotten
+
+<a id="req-sds-12-n40mkr.t1.p9"></a>`REQ-SDS-12-N40MKR.T1.P9` — a ready snapshot made late by a cache cleared past the retained window is announced per subscription as snapshot-delayed and follows the rebuild
 
 ### Coverage rule
 

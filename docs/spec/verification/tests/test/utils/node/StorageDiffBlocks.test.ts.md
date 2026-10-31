@@ -19,8 +19,11 @@ Cases run the service against an isolated anvil test chain through that relay, r
 - `sends the fields of one state read to the upstream as one batch`: REQ-SDS-7-PZCBQ9.T1.P17
 - `keeps answering a state read for an older retained block after the head moved`: REQ-SDS-7-PZCBQ9.T1.P16
 - `fails, so a supervisor restarts it, when the upstream is reset to a chain sharing no ancestor`: REQ-SDS-11-QV2VPT.T1.P10
-- `holds a read that names the block its caller saw until the head reaches it`: REQ-SDS-8-FQFNTV.T1.P8
-- `answers with what it holds after the head wait, when the head never gets there`: REQ-SDS-8-FQFNTV.T1.P9
+- `holds a read that names the block its caller saw until the head reaches it`: REQ-SDS-8-FQFNTV.T1.P8, REQ-SDS-12-N40MKR.T1.P1
+- `answers at once with what it holds, and tells subscribers, when its upstream has not seen the block`: REQ-SDS-8-FQFNTV.T1.P9, REQ-SDS-12-N40MKR.T1.P2
+- `answers at once with what it holds, and tells subscribers, when tracing the awaited block fails`: REQ-SDS-12-N40MKR.T1.P3
+- `answers with what it holds when a silent hang outlasts the learned backstop`: REQ-SDS-12-N40MKR.T1.P4, REQ-SDS-12-N40MKR.T1.P6
+- `waits as long as the SDK deadline for a silent hang until a head has been committed`: REQ-SDS-12-N40MKR.T1.P5
 - `leaves out the slot and the value transfer of a reverted sub-call that the trace reports`: REQ-SDS-4-ZZDEVF.T1.P1
 - `lists no slot a transaction wrote with the value it already had`: REQ-SDS-4-ZZDEVF.T1.P2
 - `misses no slot anvil holds after calls that nest and re-enter, and the diffs add up to its state`: REQ-SDS-4-ZZDEVF.T1.P3
