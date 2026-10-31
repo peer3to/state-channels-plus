@@ -43,7 +43,6 @@ class StateChannelEventListener {
      * later is subscribed too, and its missed logs are caught up.
      */
     async setChannelId(channelId: ChannelId): Promise<void> {
-        if (this.eventSyncService.isStopped) return;
         const channelKey = toChannelKey(channelId);
         if (channelKey === this.currentChannelKey && this.listener) return;
         // claimed before the await: a clear or newer set during it wins
@@ -163,22 +162,15 @@ class StateChannelEventListener {
     }
 
     /**
-     * Stop accepting logs without starting an unsubscribe. Work already
-     * dispatched is not drained: under the runtime's disposal cut-off a
-     * dispute or reduce it awaits never settles.
+     * Ends every callback and catch-up in flight and removes the node
+     * watchers and socket subscriptions. Work already dispatched is not
+     * drained: under the runtime's disposal cut-off a dispute or reduce it
+     * awaits never settles.
      */
-    async stop(): Promise<void> {
-        this.generation += 1;
-        this.eventSyncService.stop();
-    }
-
     async dispose(): Promise<void> {
-        try {
-            await this.stop();
-        } finally {
-            await this.removeListener();
-            this.currentChannelKey = undefined;
-        }
+        this.generation += 1;
+        await this.removeListener();
+        this.currentChannelKey = undefined;
     }
 
     /**

@@ -66,12 +66,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         this.markNetworkCut = resolve;
     });
     private disposalPromise?: Promise<void>;
-    private readonly unsubscribeHandshakeCompleted: () => void;
-    // Settle the initial-sync wait when the runtime leaves OPENED for any
-    // reason other than the sync request itself: chain genesis moves the
-    // status, and an abort keeps OPENED but announces itself through its hook.
-    private readonly unsubscribeStatusChanged: () => void;
-    private readonly unsubscribeAbort: () => void;
     // Removes this manager's double-signature handler from the thread-wide
     // signer recovery cache on dispose.
     private readonly unsubscribeDoubleSignature: () => void;
@@ -147,7 +141,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         this.loopbackTransport = new LoopbackTransport(this.self.rpcRouter);
         this.holepunch = new Holepunch(this.self);
 
-        this.unsubscribeStatusChanged = this.stateManager.events.on(
+        // Settle the initial-sync wait when the runtime leaves OPENED for any
+        // reason other than the sync request itself: chain genesis moves the
+        // status, and an abort keeps OPENED but announces itself through its hook.
+        this.stateManager.events.on(
             "p2pEventHooks",
             "onStatusChanged",
             (oldStatus, newStatus) => {
@@ -160,12 +157,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
                 this.settleInitialSync(isEngagedStatus(newStatus));
             }
         );
-        this.unsubscribeAbort = this.stateManager.events.on(
-            "p2pEventHooks",
-            "onAbort",
-            () => this.settleInitialSync(false)
+        this.stateManager.events.on("p2pEventHooks", "onAbort", () =>
+            this.settleInitialSync(false)
         );
-        this.unsubscribeHandshakeCompleted = this.stateManager.events.on(
+        this.stateManager.events.on(
             "p2pEventHooks",
             "handshakeCompleted",
             (peerAddress) =>
@@ -185,15 +180,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         return (this.disposalPromise = runCleanup(
             () =>
                 runCleanupSync(
-                    () => this.unsubscribeHandshakeCompleted(),
-                    () => this.unsubscribeStatusChanged(),
-                    () => this.unsubscribeAbort(),
                     () => this.unsubscribeDoubleSignature(),
                     () => this.settleInitialSync(false),
-                    () => this.profileManager.dispose(),
-                    () => {
-                        this.openConnections.length = 0;
-                    }
+                    () => this.profileManager.dispose()
                 ),
             () => this.holepunch.dispose()
         ));

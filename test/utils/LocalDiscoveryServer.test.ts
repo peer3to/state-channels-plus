@@ -43,7 +43,8 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
         const socket = await stageLocalDiscoveryReady();
         const discoveryLogger = observeDiscoveryLogger();
         try {
-            await sm.dispose();
+            // the network cut, which the host root's disposal starts with
+            await sm.p2pManager.dispose();
             discoveryLogger.assertActive();
             expect(await socket.sendReady()).to.equal(0);
             expect(sm.p2pManager.openConnections).to.have.length(0);

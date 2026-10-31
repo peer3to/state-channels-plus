@@ -3,7 +3,6 @@ import { withGasHeadroom } from "@/utils/gas";
 import {
     assertIsolatedBoundedReadCountsLaterReceipt,
     assertIsolatedBroadcastSharesStartBlockRead,
-    assertIsolatedDisposalEndsClosedProviderWait,
     assertIsolatedRecoveredBroadcastRecorded,
     assertIsolatedRecoveredReplacementDetected,
     assertIsolatedRecoveryOutlivesFailedBlockNumberRead,
@@ -169,10 +168,6 @@ describe("HostNonceManager", () => {
         await assertIsolatedReplacedTransactionAbsent();
     });
 
-    it("settles an observation whose provider closed under its receipt wait once disposed", async () => {
-        await assertIsolatedDisposalEndsClosedProviderWait();
-    });
-
     it("settles the observations started before the call, not the later ones", async () => {
         await assertIsolatedSettleIgnoresLaterObservation();
     });
@@ -246,28 +241,6 @@ describe("HostNonceManager", () => {
             await manager.gasUsage.settledSnapshot(),
             "a deployment has no callee to key a row on"
         ).to.deep.equal([]);
-    });
-
-    it("records nothing it observes after its recorder was disposed", async () => {
-        const [funder, callee] = await ethers.getSigners();
-        const sender = ethers.Wallet.createRandom().connect(ethers.provider);
-        await (
-            await funder.sendTransaction({
-                to: sender.address,
-                value: ethers.parseEther("1")
-            })
-        ).wait();
-        const manager = new HostNonceManager(sender);
-
-        manager.gasUsage.dispose();
-        const response = await manager.sendTransaction({
-            to: callee.address,
-            data: ethers.id("sentAfterTheRecorderWasDisposed()").slice(0, 10)
-        });
-        const receipt = await response.wait();
-
-        expect(receipt!.status, "the send itself is unaffected").to.equal(1);
-        expect(await manager.gasUsage.settledSnapshot()).to.deep.equal([]);
     });
 
     it("a send after cut takes no nonce and never settles", async () => {

@@ -67,18 +67,12 @@ class MainRpcService<
     ready(): Promise<void> | void {}
 
     /**
-     * Runtime-shutdown hook for custom RPC roots. `StateManager.dispose()`
-     * awaits it before tearing down the p2p manager, timeout manager, and EVM,
-     * so a root can settle waits and drain async work. Overrides must call
-     * `super.dispose()` so pending handshake and sync waits settle and active
-     * lobby and negotiation work is cancelled.
+     * Runtime-shutdown hook for custom RPC roots. The host root awaits it
+     * after the disposal cut-off and before it disposes its child roots, so a
+     * root can release what it holds outside the runtime. The base holds
+     * nothing.
      */
-    async dispose(): Promise<void> {
-        this.initHandshakeService.dispose();
-        this.spectateService.dispose();
-        await this.openChannelNegotiationService.dispose();
-        await this.lobbyMatchingService.dispose();
-    }
+    async dispose(): Promise<void> {}
 
     /**
      * The runtime's one event bus, typed by this application's event map:

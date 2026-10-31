@@ -34,69 +34,6 @@ import { id, ZeroHash } from "ethers";
 // deviations. Both tests read that routing off its two observable effects.
 
 describe("Unit: BlockQueueManager", () => {
-    it("stopping the runtime cancels a future queued block's armed timeout", async () => {
-        const f = new QueueIntakeFixture();
-        await f.start();
-        const result = await f.h.execOnHost(
-            f.h.getPeer(0),
-            async (sm, args, { ethers }) => {
-                const schedule = sm.timeoutManager.scheduleTask.bind(
-                    sm.timeoutManager
-                );
-                let armed = 0;
-                let delayMs = 0;
-                let runs = 0;
-                sm.timeoutManager.scheduleTask = (task, delay, name) => {
-                    if (!name?.startsWith("BlockQueueManager.queueTimeout -"))
-                        return schedule(task, delay, name);
-                    armed += 1;
-                    delayMs = delay;
-                    return schedule(
-                        () => {
-                            runs += 1;
-                            return task();
-                        },
-                        delay,
-                        name
-                    );
-                };
-                try {
-                    const block = ethers.AbiCoder.defaultAbiCoder().decode(
-                        [args.blockType],
-                        args.encodedBlockConfirmation
-                    )[0];
-                    await sm.blockQueueManager.ingestBlockConfirmation(block, {
-                        origin: args.origin,
-                        senderAddress: args.source
-                    });
-                    const queuedBefore = !!sm.storage.queues.getQueuedEntry(
-                        args.hash
-                    );
-                    await sm.stop();
-                    // past the armed deadline: a live timer would have fired
-                    await new Promise((resolve) =>
-                        setTimeout(resolve, delayMs + 500)
-                    );
-                    return { queuedBefore, armed, runs };
-                } finally {
-                    sm.timeoutManager.scheduleTask = schedule;
-                }
-            },
-            {
-                blockType: BlockConfirmationEthersType,
-                encodedBlockConfirmation: f.encodedBlockConfirmation,
-                origin: BlockOrigin.NETWORK as const,
-                source: f.h.getPeer(1).address,
-                hash: f.block.hash
-            }
-        );
-        expect(result).to.deep.equal({
-            queuedBefore: true,
-            armed: 1,
-            runs: 0
-        });
-    });
-
     it("a queue timeout firing after the runtime aborted sends its source no probe", async () => {
         const f = new QueueIntakeFixture();
         await f.start();

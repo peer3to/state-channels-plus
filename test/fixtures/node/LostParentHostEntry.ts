@@ -27,7 +27,9 @@ class LostParentHostRoot extends P2pRuntimeHostRoot {
             value: async (...args: Parameters<typeof build>) => {
                 await build(...args);
                 const manager = this.hostRpc.requireManager().stateManager;
-                const stop = manager.stop.bind(manager);
+                // the runtime's release opens with the custom RPC's hook
+                const localRpc = manager.p2pManager.localRpc;
+                const dispose = localRpc.dispose.bind(localRpc);
                 if (workerData.selfAbort) {
                     const transport = this.parent!["transport"];
                     const send = transport.send.bind(transport);
@@ -51,11 +53,11 @@ class LostParentHostRoot extends P2pRuntimeHostRoot {
                     };
                     return;
                 }
-                manager.stop = async () => {
+                localRpc.dispose = async () => {
                     channel.ref();
                     channel.postMessage("cleanup-held");
                     await held;
-                    await stop();
+                    await dispose();
                 };
                 if (workerData.failSetup)
                     throw new Error("Staged SDK setup failure");

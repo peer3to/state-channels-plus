@@ -1,6 +1,5 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
 import { startLogReceiver } from "./logging/LogUploader.fixture";
-import { createLoggerSdkFixture } from "./node/LoggerServiceFixture";
 import { withRuntimeRpc } from "./RpcRouterFixture";
 import { recordReportedErrors } from "./RuntimeRootObservation";
 import { RootCreationControl } from "./runtimeRpc/RootCreationControl";
@@ -104,8 +103,9 @@ export async function assertLifecycleDisposal(
         const childDispose = childRoot.dispose.bind(childRoot);
         const logger = host.hostRpc.requireManager().stateManager.logger;
         const hostDispose = logger.dispose.bind(logger);
-        const stateManager = host.hostRpc.requireManager().stateManager;
-        const prepare = stateManager.stop.bind(stateManager);
+        // the runtime's release opens with its custom RPC's dispose hook
+        const localRpc = host.hostRpc.requireManager().localRpc;
+        const prepare = localRpc.dispose.bind(localRpc);
         let preparationStarted = false;
         const preparationError = new Error("Host preparation failed");
         let entered!: () => void;
@@ -116,7 +116,7 @@ export async function assertLifecycleDisposal(
         const held = new Promise<void>((resolve) => {
             release = resolve;
         });
-        stateManager.stop = async () => {
+        localRpc.dispose = async () => {
             if (preparationStarted) return;
             preparationStarted = true;
             order.push("prepare");
@@ -300,9 +300,6 @@ export async function assertRootDisposalTree(
             const disposing = root.dispose();
             expect(root.dispose() === disposing).to.equal(true);
             await disposing;
-            expect(() => root.executor.getExecutor()).to.throw(
-                "has not been initialized"
-            );
             expect(closed[closed.length - 1]).to.equal("root");
             expect(root.children.size).to.equal(0);
             expect(root.connections.size).to.equal(0);
@@ -424,32 +421,6 @@ export async function assertRootLoggerCascade(): Promise<void> {
     });
 }
 
-export async function assertWorkerDomainDisposal(
-    reject: boolean
-): Promise<void> {
-    const receiver = await startLogReceiver();
-    const sdk = await createLoggerSdkFixture(receiver, {
-        inlineSdk: false,
-        rejectDomainDisposal: reject
-    });
-    try {
-        const result = await sdk.remote.runtimeProbe.disposeDomain().request();
-        expect(result).to.deep.equal({
-            calls: 1,
-            managerWasDisposed: false,
-            managerIsDisposed: true,
-            connectionsAfter: 0,
-            message: reject ? "root dispose boom" : ""
-        });
-    } finally {
-        try {
-            await sdk.dispose();
-        } finally {
-            await receiver.close();
-        }
-    }
-}
-
 export async function assertLostDisposalReply(): Promise<void> {
     await withRuntimeRpc(async (sdk) => {
         const host = [...sdk.roots].find(
@@ -458,8 +429,9 @@ export async function assertLostDisposalReply(): Promise<void> {
         );
         if (!host?.parent)
             throw new Error("Expected actual SDK host and parent");
-        const manager = host.hostRpc.requireManager().stateManager;
-        const stop = manager.stop.bind(manager);
+        // holds the runtime's release, which opens with this hook
+        const localRpc = host.hostRpc.requireManager().localRpc;
+        const dispose = localRpc.dispose.bind(localRpc);
         let release!: () => void;
         let entered!: () => void;
         const held = new Promise<void>((resolve) => {
@@ -468,10 +440,10 @@ export async function assertLostDisposalReply(): Promise<void> {
         const started = new Promise<void>((resolve) => {
             entered = resolve;
         });
-        manager.stop = async () => {
+        localRpc.dispose = async () => {
             entered();
             await held;
-            await stop();
+            await dispose();
         };
         const parentClosed = new Promise<void>((resolve) =>
             host.parent!.onClosed(resolve)

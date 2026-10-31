@@ -798,7 +798,7 @@ describe("EventBus (worker + main thread)", function () {
         }
     });
 
-    it("disposes the custom RPC root before runtime teardown", async function () {
+    it("runs the custom RPC root's dispose hook after the network cut", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(4, 0, {
             configOverrides: { RUN_SDK_IN_THREAD: false }
@@ -806,8 +806,8 @@ describe("EventBus (worker + main thread)", function () {
 
         const result = await observeRuntimeDisposal(h.getPeer(1).p2pInstance);
 
-        // The root ran while the p2p layer was still alive; teardown followed.
-        expect(result.connectionsAtRootDispose).to.be.greaterThan(0);
+        // the cut closed every connection before the hook ran
+        expect(result.connectionsAtRootDispose).to.equal(0);
         expect(result.connectionsAfter).to.equal(0);
     });
 

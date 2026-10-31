@@ -1343,8 +1343,8 @@ describe("discovery runtime port", function () {
         await leaver.p2pInstance.p2pSigner.leaveChannel();
         await recorder.waitUntilHeld();
         try {
-            // local shutdown does not wait for the held upload
-            await endpoint.sm.dispose();
+            // disposal does not wait for the held upload
+            await leaver.p2pInstance.dispose();
             expect(
                 endpoint.stub.getRecordedDisputeSubmissions().submissions[0]
                     .waited

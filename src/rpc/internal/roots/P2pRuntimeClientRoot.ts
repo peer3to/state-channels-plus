@@ -46,7 +46,6 @@ export class P2pRuntimeClientRoot<
     public readonly events: EventBus<HostEventsOf<THost>>;
     private readonly hostErrorListeners = new Set<(error: Error) => void>();
     private webRTCBridgeHandle?: WebRTCMainThreadBridgeHandle;
-    private disposed = false;
     private hostAborted = false;
     private readonly signerAddress: Address;
 
@@ -114,7 +113,8 @@ export class P2pRuntimeClientRoot<
     }
 
     private handlePortClosed(): void {
-        if (this.disposed || this.p2pRuntimeHostRemoteRoot?.isDisposing) return;
+        if (this.isDisposing || this.p2pRuntimeHostRemoteRoot?.isDisposing)
+            return;
         // Fatal child failures are delivered by RootErrorService with their original cause.
         if (!this.hostAborted && !this.p2pRuntimeHostRemoteRoot?.failure) {
             const error = new Error("P2P runtime host closed the connection");
@@ -164,8 +164,6 @@ export class P2pRuntimeClientRoot<
     }
 
     private disposeClient(): void {
-        if (this.disposed) return;
-        this.disposed = true;
         this.webRTCBridgeHandle?.dispose();
         this.webRTCBridgeHandle = undefined;
         // A parented root closes its reply connection after the acknowledgement.

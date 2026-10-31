@@ -2090,18 +2090,19 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     /**
      * Hold the runtime disposal that a real abort starts right after its
-     * cut, before the producers stop, so the control RPC stays reachable
-     * after the abort. Release with `releaseRuntimeDisposal`.
+     * cut, before the runtime's releases run (its custom RPC dispose hook is
+     * the first), so the control RPC stays reachable after the abort.
+     * Release with `releaseRuntimeDisposal`.
      */
     public stubHoldRuntimeDisposal(): boolean {
-        const sm = this.service.sm;
-        const stop = sm.stop.bind(sm);
+        const localRpc = this.service.sm.p2pManager.localRpc;
+        const dispose = localRpc.dispose.bind(localRpc);
         const gate = this.service.createGate();
         this.service.runtimeDisposalGate = gate;
-        sm.stop = async () => {
+        localRpc.dispose = async () => {
             gate.entered += 1;
             await gate.gate;
-            return stop();
+            return dispose();
         };
         return true;
     }

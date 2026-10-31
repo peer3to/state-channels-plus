@@ -62,8 +62,6 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
 
     private readonly handshakeBarrier: EventBarrier;
 
-    private isDisposed = false;
-
     /**
      * Canonical message both peers sign/verify for a given challenge. Uses
      * `hexlify` so requester (locally generated) and responder (wire) derive an
@@ -320,7 +318,6 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
         transport: NetworkTransport,
         timeoutMs: number
     ): Promise<boolean> {
-        if (this.isDisposed) return false;
         try {
             await this.handshakeBarrier.waitFor(
                 () => this.isHandshakeCompletedForTransport(transport),
@@ -345,11 +342,9 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
 
     /**
      * Runtime shutdown: every pending handshake wait settles as not completed
-     * now, so no wait timer outlives this service's logger, and later waits
-     * settle the same way at once.
+     * now, so no wait timer outlives this service's logger.
      */
     public dispose(): void {
-        this.isDisposed = true;
         this.handshakeBarrier.clear();
     }
 

@@ -12,10 +12,7 @@ import {
     assertRefusedHandleCloseStillDrains,
     assertWorkerSdkLeakEndsAfterDrainBound
 } from "@test/fixtures/node/WorkerTeardownFixture";
-import {
-    assertReportDuringDisposalIsLogged,
-    assertWorkerDomainDisposal
-} from "@test/fixtures/RuntimeLifecycleFixture";
+import { assertReportDuringDisposalIsLogged } from "@test/fixtures/RuntimeLifecycleFixture";
 import {
     assertLostDisposalReply,
     assertRootDisposalTree,
@@ -45,12 +42,6 @@ describe("RuntimeLifecycle", () => {
     });
     it("finishes final cleanup when the parent closes during an admitted disposal", async () => {
         await assertLostDisposalReply();
-    });
-    it("disposes the worker custom RPC before its manager", async () => {
-        await assertWorkerDomainDisposal(false);
-    });
-    it("finishes worker manager cleanup after custom RPC disposal rejects", async () => {
-        await assertWorkerDomainDisposal(true);
     });
     it("settles detached work that fails after root disposal as the disposal outcome", async () => {
         await assertDetachedFailureAfterRootDisposalIsSettled(

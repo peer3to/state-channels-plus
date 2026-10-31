@@ -166,12 +166,6 @@ export class ContractExecutorService extends AInternalRpcService<ContractExecuto
         })());
     }
 
-    public dispose() {
-        const executor = this.executor;
-        this.executor = undefined;
-        executor?.dispose();
-    }
-
     public getExecutor(): ContractExecutor {
         if (!this.executor)
             throw new Error(

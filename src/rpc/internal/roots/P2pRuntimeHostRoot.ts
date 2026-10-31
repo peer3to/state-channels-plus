@@ -146,6 +146,9 @@ export class P2pRuntimeHostRoot<
     private chainContext?: RuntimeChainContext;
     private contractExecutor?: AContractExecutor;
     private runtimeHandle?: RuntimeHostState;
+    /** The network teardown the cut started. */
+    private networkClose?: Promise<void>;
+    private runtimeRelease?: Promise<void>;
     private managedSigner!: HostNonceManager;
     private localDeploySigner?: LocalContractExecutorSigner;
     private stateMachineContract!: ethers.Contract;
@@ -289,7 +292,10 @@ export class P2pRuntimeHostRoot<
         });
     }
 
-    // Implements root cleanup through the shared recursive disposal contract.
+    /**
+     * The one disposal: the cut, then each edge of the runtime that outlives
+     * it released once, here. Everything else is in memory and dropped.
+     */
     public override dispose(): Promise<void> {
         const disposal = this.disposeRoot(
             () => {
@@ -308,9 +314,6 @@ export class P2pRuntimeHostRoot<
                                 )
                             )
                         );
-                        // The report is out; end the receipt waits still running
-                        // before the provider that would never end them closes.
-                        this.managedSigner.gasUsage.dispose();
                     },
                     async () => {
                         // Destroy first so ethers sends no eth_unsubscribe the destroy
@@ -325,9 +328,12 @@ export class P2pRuntimeHostRoot<
                             Clock.releaseProvider(provider);
                         }
                     },
-                    // also awaits the network teardown the cut started, so
+                    // after the provider: a provider the Clock keeps would
+                    // still push this runtime's logs and catch-up reads
+                    () =>
+                        this.runtimeHandle?.stateManager.stateChannelEventListener.dispose(),
                     // a close failure fails the disposal
-                    () => this.runtimeHandle?.stateManager.dispose(),
+                    () => this.networkClose,
                     () => this.closeChildConnections(),
                     async () => {
                         // TODO: Delegate cleanup through the shared Holepunch/local
@@ -343,7 +349,7 @@ export class P2pRuntimeHostRoot<
                     }
                 );
             },
-            () => this.runtimeHandle?.stateManager.stop()
+            () => this.releaseRuntime()
         );
         this.cutOff(); // before disposeRoot's first await
         return disposal;
@@ -372,12 +378,41 @@ export class P2pRuntimeHostRoot<
     private cutOff(): void {
         const stateManager = this.runtimeHandle?.stateManager;
         if (stateManager) stateManager.isDisposed = true;
-        // StateManager.dispose awaits the network teardown's outcome
-        stateManager?.p2pManager.dispose().catch(() => undefined);
+        // the cleanup awaits the network teardown's outcome
+        this.networkClose = stateManager?.p2pManager.dispose();
+        this.networkClose?.catch(() => undefined);
         this.managedSigner?.cut();
         stateManager?.events.setBridgeTap(undefined);
         this.handlerExecutionContext?.dispose?.();
         this.rootLogger.updateSharedContext({ disposing: true });
+    }
+
+    /**
+     * Before the children: the runtime's timers, its pending app answers
+     * and the waits that hold timers or chain listeners end, and an abort's
+     * log flush completes while the workers can still upload. Runs once.
+     */
+    private releaseRuntime(): Promise<void> | undefined {
+        const stateManager = this.runtimeHandle?.stateManager;
+        if (!stateManager) return;
+        const localRpc = stateManager.p2pManager.localRpc;
+        return (this.runtimeRelease ??= runCleanup(
+            // the custom RPC's own hook, before its child roots are disposed
+            () => localRpc.dispose(),
+            // the app's pending open-channel attempt answers cancelled
+            () => localRpc.openChannelNegotiationService.dispose(),
+            // a pending match answers undefined and leaves its discovery session
+            () => localRpc.lobbyMatchingService.dispose(),
+            // pending handshake waits settle and their timers clear
+            () => localRpc.initHandshakeService.dispose(),
+            // ends the chain-head waits (timer and block listener)
+            () => localRpc.spectateService.dispose(),
+            () => stateManager.timeoutManager.dispose(),
+            // An abort's log flush, already running: disposal ends the
+            // workers only after it (it never fails; each realm reports its
+            // own flush failures).
+            () => stateManager.abortFlush
+        ));
     }
 
     /**
@@ -570,7 +605,11 @@ export class P2pRuntimeHostRoot<
         // custom RPC created after the children step, and fail the setup
         if (this.isDisposing) {
             this.cutOff();
-            await stateManager.dispose();
+            await runCleanup(
+                () => this.releaseRuntime(),
+                () => stateManager.stateChannelEventListener.dispose(),
+                () => this.networkClose
+            );
             await Promise.allSettled(
                 [...this.children].map((child) => child.dispose())
             );

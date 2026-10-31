@@ -326,12 +326,14 @@ export async function holdForceJoinMembershipRead(
                 });
             });
             if (hostArgs.releaseOnDispose) {
-                const stop = sm.stop.bind(sm);
-                Reflect.set(sm, "stop", () => {
-                    const stopping = stop();
+                // the custom RPC's dispose hook opens the runtime's release
+                const localRpc = sm.p2pManager.localRpc;
+                const dispose = localRpc.dispose.bind(localRpc);
+                localRpc.dispose = () => {
+                    const disposing = dispose();
                     release();
-                    return stopping;
-                });
+                    return disposing;
+                };
             }
             Object.defineProperties(owner, {
                 forceJoinReadEntered: {

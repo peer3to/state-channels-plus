@@ -12,9 +12,6 @@ class InheritedRuntimeProbeRpcMethods extends AInternalRpcMethods<RuntimeProbeSe
 }
 
 export class RuntimeProbeRpcMethods extends InheritedRuntimeProbeRpcMethods {
-    public disposeDomain() {
-        return this.service.disposeDomain();
-    }
     public own(): string {
         return "own";
     }

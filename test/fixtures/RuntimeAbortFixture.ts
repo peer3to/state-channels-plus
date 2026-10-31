@@ -381,17 +381,6 @@ export async function assertProviderShutdownOrder(): Promise<void> {
     );
     for (const count of socketListenerCounts)
         expect(count).to.be.greaterThan(0);
-    await sm.stop();
-    expect(provider.destroyed).to.equal(false);
-    expect(provider.nodes.map((node) => node.destroyed)).to.deep.equal(
-        provider.nodes.map(() => false)
-    );
-    expect(sockets.map((socket) => socket.destroyed)).to.deep.equal(
-        sockets.map(() => false)
-    );
-    expect(
-        await Promise.all(sockets.map((socket) => socket.listenerCount()))
-    ).to.deep.equal(socketListenerCounts);
     await peer.p2pInstance.dispose();
     expect(provider.destroyed).to.equal(true);
     expect(await provider.listenerCount()).to.equal(0);

@@ -157,14 +157,13 @@ describe("HandshakeCompletedGuard", function () {
         expect(result.managerDisposed).to.equal(true);
     });
 
-    it("settles a pending handshake wait and every later wait as not completed once the runtime RPC root is disposed", async function () {
+    it("settles a pending handshake wait as not completed once the handshake service is released", async function () {
         const result = await fixture
             .control()
             .handshakeCompletedGuardProbe.probeHandshakeWaitDisposal()
             .request();
 
         expect(result.pendingCompleted).to.equal(false);
-        expect(result.laterCompleted).to.equal(false);
     });
 
     it("drops a deferred guarded RPC without verdict or strike when the shutdown after the network cut settles its handshake wait", async function () {

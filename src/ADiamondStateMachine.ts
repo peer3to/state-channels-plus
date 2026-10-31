@@ -81,8 +81,6 @@ abstract class ADiamondStateMachine {
         }
     }
 
-    public abstract dispose(): Promise<void> | void;
-
     /** The state machine's address in its executing EVM. */
     public abstract getStateMachineAddress(): Address;
 }
