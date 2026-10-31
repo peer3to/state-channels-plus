@@ -8,10 +8,7 @@ import { getSimpleNumberStorageFactory } from "../SimpleNumberStorage.fixture";
 import type AContractExecutor from "@/evm/contractExecutor/AContractExecutor";
 import type ContractExecutor from "@/evm/contractExecutor/ContractExecutor";
 import { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
-import {
-    ADMISSION_DRAIN_MS,
-    type ContractExecutorService
-} from "@/rpc/internal/services/contractExecutor/ContractExecutorService";
+import type { ContractExecutorService } from "@/rpc/internal/services/contractExecutor/ContractExecutorService";
 import {
     runtimeValueChildren,
     type RuntimeValueChild
@@ -65,6 +62,11 @@ async function expectPrecompileResult(
     });
 }
 
+const ABANDONED_MESSAGE =
+    "Contract executor shut down before the operation finished";
+// Disposal waits for no admitted work; the old wait was 5 s.
+const QUICK_DISPOSAL_MS = 2_000;
+
 /** Holds the child's next real echo reply until released. */
 function holdChildEcho(record: RuntimeValueChild) {
     const control = RuntimeRpcControl.attachTo(record.child);
@@ -111,54 +113,35 @@ export async function assertWorkerExecutorOwnerContext(): Promise<void> {
 /**
  * An admitted call is waiting on the child's held reply while the executor
  * disposes; a deploy and a simulation are queued behind it on the executor
- * mutex. All three finish with their real results before the child closes.
+ * mutex. Disposal waits for none of them: all three callers get the abandon
+ * rejection and the child closes without the held reply being released.
  */
-export async function assertDisposalWaitsForAdmittedWork(): Promise<void> {
+export async function assertDisposalAbandonsAdmittedWork(): Promise<void> {
     const { executor, record } = await createExecutorWithChild(false);
+    const { control, held } = holdChildEcho(record!);
     try {
         const storage = await getSimpleNumberStorageFactory(ethers);
-        const { control, held } = holdChildEcho(record!);
-        const order: string[] = [];
         const call = settled(executor.executeCall("0x", PRECOMPILE_ADDRESS));
         await held;
         const deploy = settled(
             executor.deploy((await storage.getDeployTransaction()).data!)
-        ).then((outcome) => {
-            order.push("deploy");
-            return outcome;
-        });
+        );
         const simulation = settled(
             executor.simulateCall("0x", PRECOMPILE_ADDRESS)
-        ).then((outcome) => {
-            order.push("simulation");
-            return outcome;
-        });
-        const disposal = Promise.resolve(executor.dispose()).then(() =>
-            order.push("disposed")
         );
-        // Absence window: disposal must stay parked on the admitted call, so
-        // neither the child closes nor any queued work finishes meanwhile.
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        expect(record!.child.isClosed).to.equal(false);
-        expect(order).to.deep.equal([]);
+        const started = Date.now();
+        await executor.dispose();
+        const elapsed = Date.now() - started;
 
-        control.release();
-        const called = await call;
-        order.push("call");
-        await disposal;
-
-        expect(called.ok).to.equal(true);
-        if (called.ok)
-            expect(decodeResult(called.value.returnValue).bytes).to.equal(
-                ethers.hexlify(PRECOMPILE_BYTES)
-            );
-        const deployed = await deploy;
-        expect(deployed.ok).to.equal(true);
-        const simulated = await simulation;
-        expect(simulated.ok).to.equal(true);
-        expect(order.at(-1)).to.equal("disposed");
+        expect(await Promise.all([call, deploy, simulation])).to.deep.equal([
+            { ok: false, error: ABANDONED_MESSAGE },
+            { ok: false, error: ABANDONED_MESSAGE },
+            { ok: false, error: ABANDONED_MESSAGE }
+        ]);
         expect(record!.child.isClosed).to.equal(true);
+        expect(elapsed).to.be.below(QUICK_DISPOSAL_MS);
     } finally {
+        control.release();
         await disposeSdkExecutorFixtures();
     }
 }
@@ -173,10 +156,11 @@ export async function assertDisposalRejectsLaterAdmission(): Promise<void> {
         const { control, held } = holdChildEcho(record!);
         const call = settled(executor.executeCall("0x", PRECOMPILE_ADDRESS));
         await held;
+        // Holding the child's dispose request keeps disposal open after
+        // admission closes, so the late calls reach the executor.
+        const childDisposal = control.holdNextPost("dispose");
         const disposal = Promise.resolve(executor.dispose());
-        // Scheduling delay: the disposal request reaches the executor and
-        // closes admission before the late calls are sent.
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await childDisposal;
         const storage = await getSimpleNumberStorageFactory(ethers);
         const late = await Promise.all([
             settled(executor.executeCall("0x", PRECOMPILE_ADDRESS)),
@@ -192,29 +176,11 @@ export async function assertDisposalRejectsLaterAdmission(): Promise<void> {
             });
         expect(record!.calls).to.equal(1);
         control.release();
-        expect((await call).ok).to.equal(true);
+        expect(await call).to.deep.equal({
+            ok: false,
+            error: ABANDONED_MESSAGE
+        });
         await disposal;
-    } finally {
-        await disposeSdkExecutorFixtures();
-    }
-}
-
-/** A failing admitted operation keeps its own error; disposal still waits for it. */
-export async function assertDisposalKeepsAdmittedFailure(): Promise<void> {
-    const { executor, record } = await createExecutorWithChild(false);
-    try {
-        const { control, held } = holdChildEcho(record!);
-        const call = settled(executor.executeCall("0x", PRECOMPILE_ADDRESS));
-        await held;
-        // Init code that hits INVALID: the deploy fails inside the EVM.
-        const failing = settled(executor.deploy("0xfe"));
-        const disposal = Promise.resolve(executor.dispose());
-        control.release();
-        expect((await call).ok).to.equal(true);
-        const failed = await failing;
-        await disposal;
-        expect(failed.ok).to.equal(false);
-        expect(record!.child.isClosed).to.equal(true);
     } finally {
         await disposeSdkExecutorFixtures();
     }
@@ -229,19 +195,22 @@ export async function assertRepeatedExecutorDisposalSharesCompletion(): Promise<
         const first = Promise.resolve(executor.dispose());
         const second = Promise.resolve(executor.dispose());
         expect(first === second).to.equal(true);
-        control.release();
         await Promise.all([first, second]);
-        expect((await call).ok).to.equal(true);
+        expect(await call).to.deep.equal({
+            ok: false,
+            error: ABANDONED_MESSAGE
+        });
         expect(record!.child.isClosed).to.equal(true);
+        control.release();
     } finally {
         await disposeSdkExecutorFixtures();
     }
 }
 
 /**
- * An admitted call stuck on a reply that never arrives holds disposal open
- * only for the drain limit. The executor then abandons it internally: the
- * child closes, the caller's request settles, and no error reaches the host.
+ * An admitted call stuck on a reply that never arrives does not hold
+ * disposal open: the child closes, the caller gets the abandon rejection,
+ * and no error reaches the host.
  */
 export async function assertDisposalAbandonsStuckAdmittedWork(): Promise<void> {
     const { executor, record } = await createExecutorWithChild(false);
@@ -253,10 +222,12 @@ export async function assertDisposalAbandonsStuckAdmittedWork(): Promise<void> {
         await executor.dispose();
         const elapsed = Date.now() - started;
 
-        expect(elapsed).to.be.at.least(ADMISSION_DRAIN_MS - 100);
-        expect(elapsed).to.be.below(ADMISSION_DRAIN_MS * 3);
+        expect(elapsed).to.be.below(QUICK_DISPOSAL_MS);
         expect(record!.child.isClosed).to.equal(true);
-        expect((await call).ok).to.equal(false);
+        expect(await call).to.deep.equal({
+            ok: false,
+            error: ABANDONED_MESSAGE
+        });
         expect(record!.calls).to.equal(1);
         expect(takeSdkExecutorErrors(executor)).to.deep.equal([]);
     } finally {
@@ -266,10 +237,8 @@ export async function assertDisposalAbandonsStuckAdmittedWork(): Promise<void> {
 }
 
 const DELAYED_ADDRESS = "0x00000000000000000000000000000000000000ce";
-// Finishes after the admission drain limit.
-const LATE_COMPLETION_MS = ADMISSION_DRAIN_MS + 1_200;
-const ABANDONED_MESSAGE =
-    "Contract executor shut down before the operation finished";
+// Finishes well after disposal has completed.
+const LATE_COMPLETION_MS = 1_500;
 
 async function createLateCompletingExecutor(failAfterDelay: boolean) {
     const before = workerAnswerPrecompileOwners.length;
@@ -335,10 +304,10 @@ async function disposeDuringLateWork(
 }
 
 /**
- * An admitted call that succeeds after the drain limit: its caller already
- * got the disposal rejection, and the late success reaches nobody.
+ * An admitted call that succeeds after disposal: its caller already got the
+ * disposal rejection, and the late success reaches nobody.
  */
-export async function assertLateSuccessAfterDrainLimitStaysRejected(): Promise<void> {
+export async function assertLateSuccessAfterDisposalStaysRejected(): Promise<void> {
     const { executor, service } = await createLateCompletingExecutor(false);
     try {
         const { settledOutcomes, admittedCount } = await disposeDuringLateWork(
@@ -357,10 +326,10 @@ export async function assertLateSuccessAfterDrainLimitStaysRejected(): Promise<v
 }
 
 /**
- * An admitted call that fails after the drain limit: its caller keeps the
- * disposal rejection, and the late failure is not reported to the host.
+ * An admitted call that fails after disposal: its caller keeps the disposal
+ * rejection, and the late failure is not reported to the host.
  */
-export async function assertLateFailureAfterDrainLimitStaysRejected(): Promise<void> {
+export async function assertLateFailureAfterDisposalStaysRejected(): Promise<void> {
     const { executor, service } = await createLateCompletingExecutor(true);
     try {
         const { settledOutcomes, admittedCount } = await disposeDuringLateWork(
@@ -380,10 +349,10 @@ export async function assertLateFailureAfterDrainLimitStaysRejected(): Promise<v
 
 /**
  * A deploy and a simulation queued on the executor mutex behind a call that
- * finishes after the drain limit: every caller gets the disposal rejection,
- * and the queued work, observed until it has finished, reaches nobody.
+ * finishes after disposal: every caller gets the disposal rejection, and the
+ * queued work, observed until it has finished, reaches nobody.
  */
-export async function assertQueuedWorkAfterDrainLimitStaysRejected(): Promise<void> {
+export async function assertQueuedWorkAfterDisposalStaysRejected(): Promise<void> {
     const { executor, service } = await createLateCompletingExecutor(false);
     try {
         const storage = await getSimpleNumberStorageFactory(ethers);

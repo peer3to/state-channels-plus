@@ -32,8 +32,7 @@ export class ContractExecutorRoot extends AInternalRpcRoot {
     public override dispose(): Promise<void> {
         return this.disposeRoot(
             () => undefined,
-            // Admitted EVM work may still call a child (a custom precompile),
-            // so it settles before children are disposed.
+            // Admitted EVM work is abandoned before children are disposed.
             () => this.executor.closeAdmission()
         );
     }
