@@ -56,6 +56,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-SPEC-SDS-3-AWN6WE`](open-questions.md#oq-spec-sds-3-awn6we)                           | Does the service roll records and its cache back on a reorganization while the SDK has no finality level?                                                   | Review of the storage diff service (2026-11-02) | [runtime/storage-diff-service.md](./runtime/storage-diff-service.md)                                                                                                                                                       | Resolved                          |
 | [`OQ-SPEC-SDS-4-3Q41FF`](open-questions.md#oq-spec-sds-4-3q41ff)                           | Should backfill reads yield to peer state reads inside the shared limit, and should backfills be capped?                                                    | Review of the storage diff service (2026-11-02) | [runtime/storage-diff-service.md](./runtime/storage-diff-service.md)                                                                                                                                                       | Resolved                          |
 | [`OQ-SPEC-SDS-5-84Z373`](open-questions.md#oq-spec-sds-5-84z373)                           | Is an `upstream-behind` notice identical to the last one at the same head pushed again?                                                                     | Review of the storage diff service (2026-11-02) | [runtime/storage-diff-service.md](./runtime/storage-diff-service.md)                                                                                                                                                       | Resolved                          |
+| [`OQ-SPEC-RPCMIRROR-1-6TKG51`](open-questions.md#oq-spec-rpcmirror-1-6tkg51)               | Sampling fraction and reaction of the RPC mirror                                                                                                            | RPC mirror lane (2026-10-31)                  | [runtime/rpc-mirror.md](./runtime/rpc-mirror.md)                                                                                                                                                                           | Open                              |
 
 ## Register assumptions and constraints
 
@@ -905,3 +906,11 @@ Resolved (engineer, 2026-11-02, "go with recommendations"): an `upstream-behind`
 Alternatives: push every notice, as now; do not push a notice identical to the last one while the head is unchanged; or bound the pushes another way, for example per peer.
 
 Owner: [`REQ-SDS-12-N40MKR`](runtime/storage-diff-service.md#req-sds-12-n40mkr). Requested engineer decision: whether an identical notice at an unchanged head is pushed again.
+
+<a id="oq-spec-rpcmirror-1-6tkg51"></a>
+
+## OQ-SPEC-RPCMIRROR-1-6TKG51 — Sampling fraction and reaction of the RPC mirror
+
+In phase 1 the only check on the storage diff service's answers is the sampled comparison with the node ([`REQ-RPCMIRROR-7-4A6NJN` (A fraction of local answers is checked against the node)](runtime/rpc-mirror.md#req-rpcmirror-7-4a6njn)). The specification states that a configured fraction of local reads is compared and that a mismatch drops the account to node reads. The configuration default is 1% (`MIRROR_SAMPLE_RATE`) while a provider built without that option samples nothing; nothing says whether the fraction, the default or the reaction to a mismatch (drop one account, drop all, stop mirroring) is required behavior or a tuning choice.
+
+Requested engineer decision: which of these the specification must fix, and the value or rule for each.

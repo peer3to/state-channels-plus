@@ -785,6 +785,30 @@ Specification cases tested: 0/3.
 [`REQ-RPC-9-8FFE6S` (Application host root)](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s)
 Specification cases tested: 18/18.
 
+[`REQ-RPCMIRROR-1-XQNZ4J` (Latest-block reads are answered from a local copy of the chain)](../specification/runtime/rpc-mirror.md#req-rpcmirror-1-xqnz4j)
+Specification cases tested: 9/9.
+
+[`REQ-RPCMIRROR-2-1P38E2` (Reads the copy cannot answer correctly go to the node whole)](../specification/runtime/rpc-mirror.md#req-rpcmirror-2-1p38e2)
+Specification cases tested: 8/8.
+
+[`REQ-RPCMIRROR-3-7MQH88` (A snapshot is waited for only when the service says it is ready)](../specification/runtime/rpc-mirror.md#req-rpcmirror-3-7mqh88)
+Specification cases tested: 11/11.
+
+[`REQ-RPCMIRROR-4-H35NFC` (A read is never older than a block the peer already saw)](../specification/runtime/rpc-mirror.md#req-rpcmirror-4-h35nfc)
+Specification cases tested: 4/4.
+
+[`REQ-RPCMIRROR-5-KDRWDZ` (The copy follows the chain through gaps and reorganizations)](../specification/runtime/rpc-mirror.md#req-rpcmirror-5-kdrwdz)
+Specification cases tested: 6/6.
+
+[`REQ-RPCMIRROR-6-MHV1QD` (Chain data comes from the service when it holds it)](../specification/runtime/rpc-mirror.md#req-rpcmirror-6-mhv1qd)
+Specification cases tested: 4/4.
+
+[`REQ-RPCMIRROR-7-4A6NJN` (A fraction of local answers is checked against the node)](../specification/runtime/rpc-mirror.md#req-rpcmirror-7-4a6njn)
+Specification cases tested: 5/5.
+
+[`REQ-RPCMIRROR-8-1PA83T` (Trouble with the service degrades reads to the node, never fails them)](../specification/runtime/rpc-mirror.md#req-rpcmirror-8-1pa83t)
+Specification cases tested: 0/2.
+
 [`REQ-RUN-2-GBCZ5B` (No shared mutable memory across contexts)](../specification/runtime/execution.md#req-run-2-gbcz5b)
 Specification cases tested: 0/1.
 

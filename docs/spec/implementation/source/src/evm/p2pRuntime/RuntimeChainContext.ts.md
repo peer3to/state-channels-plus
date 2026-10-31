@@ -7,6 +7,8 @@
 - [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz)
 - [`REQ-CHAINOBS-1-5JTHY8` (Ordered endpoint set)](../../../../../specification/runtime/chain-observation.md#req-chainobs-1-5jthy8)
 - [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../../../../../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)
+- [`REQ-RPCMIRROR-1-XQNZ4J` (Latest-block reads are answered from a local copy of the chain)](../../../../../specification/runtime/rpc-mirror.md#req-rpcmirror-1-xqnz4j)
+- [`REQ-RPCMIRROR-2-1P38E2` (Reads the copy cannot answer correctly go to the node whole)](../../../../../specification/runtime/rpc-mirror.md#req-rpcmirror-2-1p38e2)
 
 ## UNIT-TEST-RUNTIME-CHAIN-CLEANUP-1-3H7PT8
 
