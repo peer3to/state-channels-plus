@@ -148,7 +148,7 @@ describe("recorded Asset Hub traces", function () {
         expect(pre[CONTRACT].storage![CLEARED_SLOT]).to.not.equal(ZERO_WORD);
     });
 
-    // Mutation: a failure is looked for on the top frame only.
+    // Mutation: a frame without calls counts as failed.
     it("finds no failure in a recorded call tree with nested calls", function () {
         const [{ result }] = recordedTrace.call;
 
@@ -156,8 +156,9 @@ describe("recorded Asset Hub traces", function () {
         expect(hasRevertedFrame(recordedTrace.call, 1)).to.equal(false);
     });
 
-    // The recording holds no reverted sub-call (see its note): the error is
-    // injected into a nested frame of the recorded tree.
+    // Mutation: nested calls are not looked into. The recording holds no
+    // reverted sub-call (see its note): the error is injected into a nested
+    // frame of the recorded tree.
     it("finds a failure once a nested frame of the recorded call tree carries an error", function () {
         const reverted = structuredClone(recordedTrace.call);
         (reverted[0].result.calls as object[])[1] = {
