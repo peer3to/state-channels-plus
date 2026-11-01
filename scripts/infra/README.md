@@ -350,6 +350,8 @@ the child trie holds 320 entries. The 3 missing slots, 0x16, 0x1e and 0x1f
 (values 5, 25 and 100), are constructor writes: the deploy transaction's
 initcode stores them, and Asset Hub's `prestateTracer` trace of the deploy
 block leaves them out, so the trace named a key set that was not a superset.
+The tracer drops a created contract's slot that its constructor writes twice
+with the same value (paritytech/polkadot-sdk#13663).
 
 The service catches this itself. After a backfill with `ChildTrieBlockSource`
 it counts the contract's child trie entries at the anchor block
@@ -357,9 +359,9 @@ it counts the contract's child trie entries at the anchor block
 When they differ it logs a warning with both counts and does not mark the
 account complete: no snapshot is pushed, the slots it knows are cached, and
 any other slot is fetched from the node when asked for (`scp_getState`). It
-does not backfill that account again until its cache is cleared. A peer whose
-first read of such an account finds no snapshot waits its snapshot timeout,
-then reads lazily. `ListedBlockSource` cannot count and never refuses.
+does not backfill that account again until its cache is cleared. The subscribe
+answer names such an account `lazy`, so a peer reads it lazily at once instead
+of waiting for a snapshot. `ListedBlockSource` cannot count and never refuses.
 
 ### Reorgs and retention
 
