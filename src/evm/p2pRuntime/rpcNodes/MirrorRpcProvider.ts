@@ -1,5 +1,6 @@
+import type { MirrorBlock } from "./mirror/FollowedChain";
 import { Mirror, type MirrorCall } from "./mirror/Mirror";
-import type { MirrorBlock, MirrorUpstream } from "./mirror/MirrorChain";
+import type { MirrorUpstream } from "./mirror/MirrorChain";
 import { MirrorUnavailableError } from "./mirror/MirrorUnavailableError";
 import MultiRpcProvider from "./MultiRpcProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";

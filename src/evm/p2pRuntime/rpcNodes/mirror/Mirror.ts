@@ -1,8 +1,5 @@
-import {
-    MirrorChain,
-    type MirrorBlock,
-    type MirrorUpstream
-} from "./MirrorChain";
+import type { MirrorBlock } from "./FollowedChain";
+import { MirrorChain, type MirrorUpstream } from "./MirrorChain";
 import { MirrorStateManager } from "./MirrorStateManager";
 import { MirrorUnavailableError } from "./MirrorUnavailableError";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
