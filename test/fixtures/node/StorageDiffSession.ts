@@ -4,11 +4,9 @@ import { StorageDiffClient } from "./StorageDiffClient";
 import { UpstreamRelay } from "./UpstreamRelay";
 import { createLogger } from "@/utils";
 import type ABackfillBlockSource from "@/utils/node/storageDiff/backfillBlocks/ABackfillBlockSource";
+import type { BackfillRecord } from "@/utils/node/storageDiff/BackfillCoordinator";
 import type AIncludedHeadStrategy from "@/utils/node/storageDiff/includedHead/AIncludedHeadStrategy";
-import {
-    StorageDiffService,
-    type BackfillRecord
-} from "@/utils/node/storageDiff/StorageDiffService";
+import { StorageDiffService } from "@/utils/node/storageDiff/StorageDiffService";
 import { type JsonRpcProvider, type JsonRpcSigner } from "ethers";
 
 /** What `promise` rejected with, or undefined when it resolved. */
