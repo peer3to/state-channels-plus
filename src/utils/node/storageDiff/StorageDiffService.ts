@@ -24,7 +24,6 @@ import {
     type BlockEnvironment,
     type BlockHeader,
     type BlockTouches,
-    type BlockStorageDiff,
     type IncludedHeadRecord,
     type RpcBlock,
     type StagedBlock,
@@ -42,6 +41,7 @@ import {
 } from "./ContractBackfill";
 import type AIncludedHeadStrategy from "./includedHead/AIncludedHeadStrategy";
 import type { IncludedHead } from "./includedHead/AIncludedHeadStrategy";
+import { PersistedCache } from "./PersistedCache";
 import {
     fieldKey,
     normalizeBalance,
@@ -50,11 +50,7 @@ import {
     type StateField,
     type StateValue
 } from "./StateCache";
-import {
-    StateStore,
-    type PersistedBlock,
-    type PersistedState
-} from "./StateStore";
+import { StateStore } from "./StateStore";
 import { StorageDiffRpcMethods } from "./StorageDiffRpcMethods";
 import {
     UpstreamLostError,
@@ -93,10 +89,6 @@ export const SEND_BUFFER_OVERFLOW = "send-buffer-overflow";
 /** WebSocket close code for that cut: policy violation. */
 export const SEND_BUFFER_OVERFLOW_CLOSE_CODE = 1008;
 
-/** Quiet time before the cache is written to disk, so a burst of blocks is one write. */
-const SAVE_DEBOUNCE_MS = 500;
-/** Newest blocks the file keeps, to undo them if the saved head is orphaned. */
-const PERSISTED_BLOCKS = 64;
 /** Rounds a backfill may take to catch up with a head that keeps moving. */
 const BACKFILL_ROUNDS = 100;
 /** Times a backfill starts over after a reorg moved blocks under it. */
@@ -262,8 +254,7 @@ export class StorageDiffService {
     private readonly backfills = new Map<AccountAddress, Promise<void>>();
     // Accounts whose backfill found fewer entries than the chain holds: read lazily, not backfilled again.
     private readonly lazyAccounts = new Set<AccountAddress>();
-    private readonly store?: StateStore;
-    private saveTimer?: ReturnType<typeof setTimeout>;
+    private readonly persisted?: PersistedCache;
     // Reads waiting for the best head to reach the block their caller saw.
     private readonly headWaiters = new Set<HeadWaiter>();
     // How long such a read may wait when no event ends it: learned from how
@@ -293,7 +284,19 @@ export class StorageDiffService {
         this.logger = options.logger;
         this.includedStrategy = options.includedHead;
         this.backfillBlocks = options.backfillBlocks ?? new ListedBlockSource();
-        if (options.cacheDir) this.store = new StateStore(options.cacheDir);
+        if (options.cacheDir)
+            this.persisted = new PersistedCache({
+                store: new StateStore(options.cacheDir),
+                stateCache: this.stateCache,
+                watched: this.watched,
+                logger: this.logger,
+                stopping: this.stopping.signal,
+                canonical: () => this.canonical,
+                failureReason: (error) => this.failureReason(error),
+                retainedIndex: (blockHash) => this.retainedIndex(blockHash),
+                fetchHeader: (by) => this.fetchHeader(by),
+                stage: (headers, preFrom) => this.stage(headers, preFrom)
+            });
         this.upstreamUrl = options.upstreamUrl;
         this.upstreamEndpoint = upstreamEndpoint;
         this.host = options.host ?? "127.0.0.1";
@@ -654,7 +657,7 @@ export class StorageDiffService {
         try {
             // The upstream can drop during the load as well as after startup.
             let connected = false;
-            const saved = await this.restoreSavedCache();
+            const saved = await this.persisted?.restore();
             this.canonical = await retry(
                 async () => {
                     connected = false;
@@ -684,7 +687,7 @@ export class StorageDiffService {
                         )
                 }
             );
-            await this.alignSavedCache(saved);
+            await this.persisted?.align(saved);
             await this.includedStrategy?.start({
                 logger: this.logger,
                 request: (method, params) => this.request(method, params),
@@ -1326,7 +1329,7 @@ export class StorageDiffService {
         for (const record of staged.slice(below ? 1 : 0)) this.publish(record);
         for (const waiter of [...this.headWaiters])
             if (waiter.minBlock <= this.headNumber()) waiter.end();
-        this.scheduleSave();
+        this.persisted?.scheduleSave();
         void this.verifyEntryCounts(written);
         const head = canonical[canonical.length - 1];
         this.checkIncludedAncestry();
@@ -1736,7 +1739,7 @@ export class StorageDiffService {
         for (const peer of this.peers.values()) {
             if (!peer.closing) this.sendSnapshots(peer, [address]);
         }
-        this.scheduleSave();
+        this.persisted?.scheduleSave();
         return "done";
     }
 
@@ -1819,114 +1822,6 @@ export class StorageDiffService {
             });
         }
         for (const address of addresses) peer.promisedReady.delete(address);
-    }
-
-    /** The cache and its newest blocks, as the file keeps them. */
-    private async saveNow(): Promise<void> {
-        const store = this.store;
-        if (!store || this.canonical.length === 0) return;
-        const cached = this.stateCache.cachedAddresses();
-        const only = (diffs: AccountDiffs): AccountDiffs =>
-            Object.fromEntries(
-                Object.entries(diffs).filter(([address]) => cached.has(address))
-            );
-        const head = this.canonical[this.canonical.length - 1];
-        const recent: PersistedBlock[] = this.canonical
-            .slice(-PERSISTED_BLOCKS)
-            .map((record) => ({
-                number: record.number,
-                hash: record.hash,
-                parentHash: record.parentHash,
-                pre: only(record.pre),
-                post: only(record.post)
-            }));
-        try {
-            await store.save({
-                head: { number: head.number, hash: head.hash },
-                cache: this.stateCache.exportAll(),
-                recent
-            });
-        } catch (error) {
-            this.logger.warn("Cannot save the cache", {
-                reason: this.failureReason(error)
-            });
-        }
-    }
-
-    private scheduleSave(): void {
-        if (!this.store || this.saveTimer || this.stopping.signal.aborted)
-            return;
-        this.saveTimer = setTimeout(() => {
-            this.saveTimer = undefined;
-            void this.saveNow();
-        }, SAVE_DEBOUNCE_MS);
-        this.saveTimer.unref();
-    }
-
-    /**
-     * Loads the saved cache, before the history is staged, and watches its
-     * accounts so the staged records hold their values.
-     */
-    private async restoreSavedCache(): Promise<PersistedState | undefined> {
-        const saved = await this.store?.load();
-        if (!saved) return undefined;
-        this.stateCache.importAll(saved.cache);
-        for (const address of this.stateCache.cachedAddresses())
-            this.watched.set(address, Promise.resolve());
-        return saved;
-    }
-
-    /**
-     * Brings the restored cache to the best head: undo the saved blocks a
-     * reorg dropped, trace the blocks between the saved head and the retained
-     * window, then apply the window's records. A file that does not lead
-     * there is dropped.
-     */
-    private async alignSavedCache(
-        saved: PersistedState | undefined
-    ): Promise<void> {
-        if (!saved) return;
-        try {
-            const floor = BigInt(this.canonical[0].number);
-            let index = -1;
-            let below: { number: bigint } | undefined;
-            for (const block of [...saved.recent].reverse()) {
-                index = this.retainedIndex(block.hash);
-                if (index >= 0) break;
-                if (BigInt(block.number) < floor) {
-                    const current = await this.fetchHeader(
-                        BigInt(block.number)
-                    );
-                    if (current.hash === block.hash) {
-                        below = { number: BigInt(block.number) };
-                        break;
-                    }
-                }
-                // dropped by a reorg since it was saved
-                this.stateCache.applyBackward(block);
-            }
-            if (index < 0 && !below)
-                throw new Error("No saved block is on the chain");
-            if (below) {
-                const headers: BlockHeader[] = [];
-                for (let n = below.number + 1n; n < floor; n++)
-                    headers.push(await this.fetchHeader(n));
-                for (const record of await this.stage(headers, "chain"))
-                    this.stateCache.applyForward(record);
-            }
-            for (let i = index + 1; i < this.canonical.length; i++)
-                this.stateCache.applyForward(this.canonical[i]);
-            this.logger.info("Resumed the cache from disk", {
-                savedHead: saved.head.number,
-                head: this.canonical[this.canonical.length - 1].number
-            });
-        } catch (error) {
-            this.stateCache.clear();
-            this.watched.clear();
-            this.logger.warn("Dropped the saved cache", {
-                reason: this.failureReason(error)
-            });
-        }
     }
 
     private fieldsOf(request: StateRequest): StateField[] {
@@ -2182,8 +2077,7 @@ export class StorageDiffService {
         this.shutdown ??= (async () => {
             this.stopping.abort();
             for (const waiter of [...this.headWaiters]) waiter.end();
-            if (this.saveTimer) clearTimeout(this.saveTimer);
-            await this.saveNow();
+            await this.persisted?.flush();
             this.includedStrategy?.close();
             this.backfillBlocks.close();
             this.upstream?.close(
