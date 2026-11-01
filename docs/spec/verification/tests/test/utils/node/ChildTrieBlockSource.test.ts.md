@@ -5,10 +5,13 @@ Exercises: [ChildTrieBlockSource.ts](../../../../../implementation/source/src/ut
 
 ## Overview
 
-The source is driven against a scripted Substrate node that serves child trie roots, account info and key pages; the oracles are the listed blocks, the number of root reads, the chain-moved error and the entry counts.
+The first three cases replay answers recorded from the Asset Hub Substrate node for a mainnet contract (`assetHubChildTrie.recorded.json`); the others drive the source against a scripted Substrate node that serves child trie roots, account info and key pages, for sizes and faults the recording does not hold. The oracles are the listed blocks, the number of root reads, the chain-moved error and the entry counts.
 
 ## Tests
 
+- `lists the blocks of a mainnet contract's transactions as the Asset Hub node recorded its child trie roots`: UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P9
+- `lists nothing from the block after the last recorded change`: UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P10
+- `counts the entries of a mainnet contract's recorded child trie`: UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P11
 - `lists the blocks that changed the contract, reading far fewer roots than blocks`: UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P1
 - `lists nothing for a range in which the contract did not change`: UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P2
 - `fails with a chain move when the tip block changed during the bisection`: UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P3
