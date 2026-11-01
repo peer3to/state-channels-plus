@@ -5,7 +5,7 @@ Exercises: [blockStorageDiff.ts](../../../../../implementation/source/src/utils/
 
 ## Overview
 
-Direct calls to the two pure helpers with hand-built prestate and call-frame traces; the oracles are the returned key sets, flags and failure verdicts.
+Direct calls to the pure helpers with hand-built prestate and call-frame traces and with the traces Asset Hub eth-rpc answered for one recorded block (`assetHubTrace.recorded.json`); the oracles are the returned key sets, flags, cleared slots and failure verdicts.
 
 ## Tests
 
@@ -17,3 +17,7 @@ Direct calls to the two pure helpers with hand-built prestate and call-frame tra
 - `finds a failure on a nested frame two calls deep`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P6
 - `finds a failure in any transaction of the block`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P7
 - `counts an entry with an error of its own, a missing trace or a wrong length as failed`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P8
+- `names the accounts and storage keys of a recorded prestate diff and flags what its post shows`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P9
+- `reads a slot a recorded post omits as cleared to zero`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P10
+- `finds no failure in a recorded call tree with nested calls`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P11
+- `finds a failure once a nested frame of the recorded call tree carries an error`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P12

@@ -24,3 +24,7 @@
 - [x] `UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P6` — a failure on a nested frame two calls deep is found
 - [x] `UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P7` — a failure in any transaction of the block is found
 - [x] `UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P8` — an entry with an error of its own, a missing trace or a wrong length counts as failed
+- [x] `UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P9` — the accounts and storage keys of a recorded Asset Hub prestate diff are named and the scalars its post shows are flagged
+- [x] `UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P10` — a slot a recorded Asset Hub post omits is read as cleared to zero
+- [x] `UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P11` — a recorded Asset Hub call tree with nested calls shows no failure
+- [x] `UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P12` — an error injected into a nested frame of the recorded call tree is found
