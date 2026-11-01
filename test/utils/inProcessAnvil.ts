@@ -120,11 +120,9 @@ export function useAnvilForInProcessNetwork(hre: HardhatRuntimeEnvironment) {
     const accounts = hre.config.networks.hardhat.accounts;
     if (Array.isArray(accounts))
         throw new Error("in-process anvil needs HD accounts");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const {
         applyProviderWrappers
     } = require("hardhat/internal/core/providers/construction");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const {
         BackwardsCompatibilityProviderAdapter
     } = require("hardhat/internal/core/providers/backwards-compatibility");
