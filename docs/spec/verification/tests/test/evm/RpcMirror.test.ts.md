@@ -47,6 +47,7 @@ Each case builds a `MirrorRpcProvider` over an isolated anvil test chain with a 
 - `asks the node at once when the service says its tracing of the awaited block failed`: REQ-RPCMIRROR-4-H35NFC.T1.P9
 - `asks the node at once when the service says its upstream has not seen the awaited block`: REQ-RPCMIRROR-4-H35NFC.T1.P10
 - `asks the service once when a wait for a block starts, so a service whose upstream is behind sends the reads to the node at once`: REQ-RPCMIRROR-4-H35NFC.T1.P14
+- `asks the service again when a later wait is for the same block number, as after the node rolled back below the block the copy had reached`: REQ-RPCMIRROR-4-H35NFC.T1.P16
 - `asks the node at once when the service says a snapshot it promised as ready is delayed`: REQ-RPCMIRROR-3-7MQH88.T1.P12
 - `asks the node at once when the service connection drops while a call waits for a block`: REQ-RPCMIRROR-4-H35NFC.T1.P12
 - `asks the node at once when a node announces a later block while the copy still lacks the one before`: REQ-RPCMIRROR-4-H35NFC.T1.P11

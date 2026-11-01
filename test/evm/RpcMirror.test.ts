@@ -1417,6 +1417,54 @@ describe("MirrorRpcProvider", function () {
         });
     });
 
+    it("asks the service again when a later wait is for the same block number, as after the node rolled back below the block the copy had reached", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage } = await deployMirroredStorage(session);
+            expect(await storage.getValue()).to.equal(0n);
+            await session.provider.on("block", () => undefined);
+            // held, so no arrival teaches the backstop: the first wait lasts until its record comes
+            const releaseNode =
+                session.node.holdNotifications("eth_subscription");
+            await session.chain.send("evm_mine", []);
+            // time is the input: the mined block reaches the copy
+            await sleep(ABSENCE_WINDOW_MS);
+            const release =
+                session.service.holdNotifications("scp_subscription");
+
+            // the receipt of the provider's own transaction names the block the next read waits for
+            await (await storage.setValue(3n)).wait();
+            const probes = serviceRequests(session, "scp_getHead").length;
+            const first = storage.getValue();
+            await waitFor(
+                () =>
+                    serviceRequests(session, "scp_getHead").length ===
+                    probes + 1,
+                5_000,
+                20
+            );
+            release();
+            expect(await first).to.equal(3n);
+            // the node's announcements name the block a read waits for from here
+            releaseNode();
+
+            // the node rolls back below the block the next read waits for
+            await session.chain.send("anvil_rollback", [2]);
+            await session.chain.send("evm_mine", []);
+            // time is the input: the new head reaches the copy
+            await sleep(ABSENCE_WINDOW_MS);
+            const probesBefore = serviceRequests(session, "scp_getHead").length;
+            const second = storage.getValue();
+            // time is the input: how long a probe the wait would send is watched for
+            await sleep(ABSENCE_WINDOW_MS);
+
+            expect(serviceRequests(session, "scp_getHead")).to.have.length(
+                probesBefore + 1
+            );
+            // the block never reaches the copy again: the node answers
+            expect(await second).to.equal(0n);
+        });
+    });
+
     it("shortens the longest wait as the node's round trips grow, and a read that waits the whole cap still gets the node's answer inside the deadline", async function () {
         await withMirrorSession(async (session) => {
             const { storage } = await deployMirroredStorage(session);
@@ -1470,10 +1518,13 @@ describe("MirrorRpcProvider", function () {
                     await deployMirroredStorage(session);
                 await (await chainStorage.setValue(5n)).wait();
                 await backfillAtService(session, [address]);
-                await session.provider.getBalance(ZeroAddress);
                 await session.chain.send("anvil_mine", [3]);
                 session.service.dropNotifications("scp_snapshot");
+                // the node's announcements of the reorganized blocks would end the wait first
+                const releaseNode =
+                    session.node.holdNotifications("eth_subscription");
 
+                // no earlier read taught the snapshot backstop: it stays at its cap
                 const started = Date.now();
                 const read = session.provider.getStorage(address, 0);
                 await sleep(ABSENCE_WINDOW_MS);
@@ -1481,10 +1532,11 @@ describe("MirrorRpcProvider", function () {
                 await session.chain.send("anvil_reorg", [2, []]);
                 await session.chain.send("evm_mine", []);
                 const word = await read;
+                releaseNode();
 
                 expect(BigInt(word)).to.equal(5n);
                 expect(Date.now() - started).to.be.lessThan(
-                    SDK_RPC_DEADLINE_MS
+                    SDK_RPC_DEADLINE_MS / 2
                 );
                 expect(session.provider.mirrorStatistics).to.include({
                     snapshotDelays: 1,

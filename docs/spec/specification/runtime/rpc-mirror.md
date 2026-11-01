@@ -210,6 +210,8 @@ The read stays pending while the pushes are held and then returns the post-block
 
 <a id="req-rpcmirror-4-h35nfc.t1.p15"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P15` — the longest wait shrinks as the node's round trips grow, and a read that waits the whole of it still has the node's answer inside the deadline
 
+<a id="req-rpcmirror-4-h35nfc.t1.p16"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P16` — a later wait for the same block number, after the copy fell below it, asks the service for its head again
+
 #### <a id="req-rpcmirror-5-kdrwdz.t1"></a>`REQ-RPCMIRROR-5-KDRWDZ.T1`
 
 **Requirements / invariants:**
