@@ -11,7 +11,6 @@ import {
     closeSharedStorageDiff,
     sharedStorageDiffUrl
 } from "./HarnessStorageDiff";
-import { installMirrorShadowCheck } from "./MirrorShadowCheck";
 import { RpcNodeProxy } from "./node/RpcNodeProxy";
 import { RootCreationControl } from "./runtimeRpc/RootCreationControl";
 import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../scripts/V1/deploy";
@@ -441,11 +440,6 @@ export class PeerTestHarness<
             this.logger.debug(`Started harness discovery at ${discoveryUrl}`);
         }
 
-        // Diagnostic mode: compare every eth_call the mirror answers with the
-        // node's answer at the same block (inline runtimes only).
-        if (process.env.MIRROR_SHADOW_LOG)
-            installMirrorShadowCheck(nodeUrl, process.env.MIRROR_SHADOW_LOG);
-
         // The peers' providers answer latest-block reads from a local copy of
         // the chain that the process's service of this node keeps current:
         // it serves every peer of every test that runs on the node.
@@ -461,7 +455,7 @@ export class PeerTestHarness<
         this.harnessConfig.PROVIDER_URL = nodeUrl;
         this.harnessConfig.LOCAL_DISCOVERY_REGISTRY_URL = discoveryUrl;
         this.harnessConfig.STORAGE_DIFF_URL = storageDiffUrl;
-        // the shadow check covers the tests; no peer re-asks the nodes
+        // no peer re-asks the nodes
         this.harnessConfig.MIRROR_SAMPLE_RATE = 0;
         config.PROVIDER_URL = nodeUrl;
         config.LOCAL_DISCOVERY_REGISTRY_URL = discoveryUrl;
