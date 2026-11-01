@@ -18,3 +18,8 @@ Cases build a `LearnedBackstop` with a clock the test moves by hand, record arri
 - `is the deadline less a multiple of the slowest recent node round trip`: REQ-RPCMIRROR-4-H35NFC.T1.P15
 - `shrinks as node round trips grow, and is never below zero`: REQ-RPCMIRROR-4-H35NFC.T1.P15
 - `is the whole deadline again once the round trips are older than the window`: REQ-RPCMIRROR-4-H35NFC.T1.P15
+- `forgets announcements older than the window when another block is announced`: REQ-RPCMIRROR-4-H35NFC.T1.P17
+- `keeps announcements inside the window`: REQ-RPCMIRROR-4-H35NFC.T1.P17
+- `forgets every announcement on clear`: REQ-RPCMIRROR-4-H35NFC.T1.P17
+- `hands over how long each announced block up to the arrived one took, and keeps later ones`: REQ-RPCMIRROR-4-H35NFC.T1.P17
+- `does not hand over an announcement older than the window`: REQ-RPCMIRROR-4-H35NFC.T1.P17

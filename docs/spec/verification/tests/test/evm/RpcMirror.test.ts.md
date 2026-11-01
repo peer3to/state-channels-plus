@@ -38,6 +38,7 @@ Each case builds a `MirrorRpcProvider` over an isolated anvil test chain with a 
 - `asks the service for the blocks from the next missing one when a record's parent is not the head`: REQ-RPCMIRROR-5-KDRWDZ.T1.P3
 - `empties the cache when the service no longer retains the missing blocks, and the next read goes to the service again`: REQ-RPCMIRROR-5-KDRWDZ.T1.P4
 - `reads from the node at the head block number only while the service answers that the block is not retained`: REQ-RPCMIRROR-5-KDRWDZ.T1.P5
+- `keeps the service connection and the cache when the node fails a state read`: REQ-RPCMIRROR-8-1PA83T.T1.P3
 - `takes the block environment from the service without reading blocks from the node`: REQ-RPCMIRROR-5-KDRWDZ.T1.P6
 - `runs a custom precompile locally without an upstream request`: REQ-RPCMIRROR-1-XQNZ4J.T1.P8
 - `holds a call issued after the peer's own transaction is mined until the mirror has that block`: REQ-RPCMIRROR-4-H35NFC.T1.P1

@@ -212,6 +212,8 @@ The read stays pending while the pushes are held and then returns the post-block
 
 <a id="req-rpcmirror-4-h35nfc.t1.p16"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P16` — a later wait for the same block number, after the copy fell below it, asks the service for its head again
 
+<a id="req-rpcmirror-4-h35nfc.t1.p17"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P17` — a node announcement older than the learning window, or cleared with the cache, teaches the backstop nothing and is not kept
+
 #### <a id="req-rpcmirror-5-kdrwdz.t1"></a>`REQ-RPCMIRROR-5-KDRWDZ.T1`
 
 **Requirements / invariants:**
@@ -300,11 +302,11 @@ Sampled reads reach the node after the reply with the cached block hash; counter
 
 **Setup and stimulus:**
 
-Replace a subscription with one covering more accounts and make the old one's unsubscribe fail; make a state fill fail.
+Replace a subscription with one covering more accounts and make the old one's unsubscribe fail; make a state fill fail; make the node fail a state read the copy needed.
 
 **Expected result:**
 
-The connection stays open, a warning is logged, and reads continue from the copy; a failed fill is answered by the node.
+The connection stays open, a warning is logged, and reads continue from the copy; a failed fill is answered by the node; a node that fails a state read ends only that read.
 
 **Required permutations:**
 
@@ -312,10 +314,12 @@ The connection stays open, a warning is logged, and reads continue from the copy
 
 <a id="req-rpcmirror-8-1pa83t.t1.p2"></a>`REQ-RPCMIRROR-8-1PA83T.T1.P2` — a state fill the service cannot complete is answered by the node
 
+<a id="req-rpcmirror-8-1pa83t.t1.p3"></a>`REQ-RPCMIRROR-8-1PA83T.T1.P3` — a node that fails a state read ends only that read and keeps the service connection and the cache
+
 ### Coverage rule
 
 Every plan item is exercised through the provider's public JSON-RPC surface against a real node and a real service, observing both the answers and the requests each upstream receives. The pure address and code policy has unit cases in the implementation layer.
 
 ## Future Work
 
-_Non-normative._ A feed other than the service's socket (for example gossip between peers) behind the same feed interface, and proofs for mirrored state.
+_Non-normative._ A feed other than the service's socket (for example gossip between peers) and proofs for mirrored state.

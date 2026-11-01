@@ -270,7 +270,7 @@ Specification cases tested: 0/4.
 Specification cases tested: 0/4.
 
 [`REQ-CHAINOBS-1-5JTHY8` (Ordered endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-1-5jthy8)
-Specification cases tested: 11/11.
+Specification cases tested: 12/12.
 
 [`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)
 Specification cases tested: 12/12.
@@ -795,7 +795,7 @@ Specification cases tested: 8/8.
 Specification cases tested: 13/13.
 
 [`REQ-RPCMIRROR-4-H35NFC` (A read is never older than a block the peer already saw)](../specification/runtime/rpc-mirror.md#req-rpcmirror-4-h35nfc)
-Specification cases tested: 13/13.
+Specification cases tested: 14/14.
 
 [`REQ-RPCMIRROR-5-KDRWDZ` (The copy follows the chain through gaps and reorganizations)](../specification/runtime/rpc-mirror.md#req-rpcmirror-5-kdrwdz)
 Specification cases tested: 6/6.
@@ -807,7 +807,7 @@ Specification cases tested: 4/4.
 Specification cases tested: 6/6.
 
 [`REQ-RPCMIRROR-8-1PA83T` (Trouble with the service degrades reads to the node, never fails them)](../specification/runtime/rpc-mirror.md#req-rpcmirror-8-1pa83t)
-Specification cases tested: 1/2. Untested: T1.P1.
+Specification cases tested: 2/3. Untested: T1.P1.
 
 [`REQ-RUN-2-GBCZ5B` (No shared mutable memory across contexts)](../specification/runtime/execution.md#req-run-2-gbcz5b)
 Specification cases tested: 0/1.
