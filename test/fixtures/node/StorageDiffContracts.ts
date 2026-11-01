@@ -265,3 +265,12 @@ export function withFailedFrames(result: unknown): unknown {
         result: { ...entry.result, error: "execution reverted" }
     }));
 }
+
+/** The slots of `storage` that hold a value: a zero word and no entry are the same. */
+export function nonZero(storage: Record<string, string> | undefined) {
+    return Object.fromEntries(
+        Object.entries(storage ?? {})
+            .filter(([, word]) => BigInt(word) !== 0n)
+            .map(([slot, word]) => [slot, storageWord(BigInt(word))])
+    );
+}
