@@ -39,6 +39,7 @@ import {
     type BackfilledState,
     type BackfillCost
 } from "./ContractBackfill";
+import { HeadWaiters } from "./HeadWaiters";
 import type AIncludedHeadStrategy from "./includedHead/AIncludedHeadStrategy";
 import type { IncludedHead } from "./includedHead/AIncludedHeadStrategy";
 import { PersistedCache } from "./PersistedCache";
@@ -58,10 +59,6 @@ import {
     UpstreamRpcClient,
     UpstreamTimeoutError
 } from "./UpstreamRpcClient";
-import {
-    LearnedBackstop,
-    SDK_RPC_DEADLINE_MS
-} from "../../storageDiff/LearnedBackstop";
 import type {
     StorageDiffCatchUp,
     StorageDiffDelayNotice,
@@ -169,12 +166,6 @@ export interface StorageDiffPeer {
     afterReply: Map<SubscriptionId, () => void>;
 }
 
-/** A read held until the best head reaches `minBlock`; `end` lets it go. */
-interface HeadWaiter {
-    minBlock: bigint;
-    end: () => void;
-}
-
 /** Identifies one state fetch in flight: a `StateField` as text. */
 type FlightKey = string;
 
@@ -255,11 +246,7 @@ export class StorageDiffService {
     // Accounts whose backfill found fewer entries than the chain holds: read lazily, not backfilled again.
     private readonly lazyAccounts = new Set<AccountAddress>();
     private readonly persisted?: PersistedCache;
-    // Reads waiting for the best head to reach the block their caller saw.
-    private readonly headWaiters = new Set<HeadWaiter>();
-    // How long such a read may wait when no event ends it: learned from how
-    // long a new head took to commit after the upstream announced it.
-    private readonly headBackstop = new LearnedBackstop(SDK_RPC_DEADLINE_MS);
+    private readonly headWaiters: HeadWaiters;
     // Whether the upstream answers eth_getBlockReceipts; one failed call turns it off.
     private blockReceiptsSupported = true;
     // The upstream dropped while the service was starting.
@@ -304,6 +291,12 @@ export class StorageDiffService {
         this.retention = options.retention ?? DEFAULT_RETENTION_BLOCKS;
         this.maxPeerBufferedBytes =
             options.maxPeerBufferedBytes ?? DEFAULT_MAX_PEER_BUFFERED_BYTES;
+        this.headWaiters = new HeadWaiters({
+            headNumber: () => this.headNumber(),
+            bestHead: () => this.canonical[this.canonical.length - 1],
+            request: (method, params) => this.request(method, params),
+            noteDelay: (notice) => this.noteDelay(notice)
+        });
         this.closed = new Promise<void>((resolve, reject) => {
             this.settleClosed = { resolve, reject };
         });
@@ -491,7 +484,7 @@ export class StorageDiffService {
         full: boolean,
         minBlock?: bigint
     ): Promise<RpcBlock | null> {
-        await this.reachHead(minBlock);
+        await this.headWaiters.reach(minBlock);
         const record =
             selector.kind === "latest"
                 ? this.canonical[this.canonical.length - 1]
@@ -512,7 +505,7 @@ export class StorageDiffService {
 
     /** A transaction of a retained block, as the upstream returned it. */
     async getTransaction(hash: string, minBlock?: bigint): Promise<unknown> {
-        await this.reachHead(minBlock);
+        await this.headWaiters.reach(minBlock);
         return this.findTransaction(hash)?.transaction ?? null;
     }
 
@@ -524,7 +517,7 @@ export class StorageDiffService {
         hash: string,
         minBlock?: bigint
     ): Promise<unknown> {
-        await this.reachHead(minBlock);
+        await this.headWaiters.reach(minBlock);
         const found = this.findTransaction(hash);
         if (!found) return null;
         const { block, transaction } = found;
@@ -544,59 +537,13 @@ export class StorageDiffService {
 
     /** The environment of the best head, once it reaches `minBlock` if one is named. */
     async getHead(minBlock?: bigint): Promise<BlockEnvironment> {
-        await this.reachHead(minBlock);
+        await this.headWaiters.reach(minBlock);
         return environmentOf(this.canonical[this.canonical.length - 1]);
-    }
-
-    /**
-     * Resolves once the best head is at `minBlock` or higher, or at the first
-     * of: the service saying the block is late ({@link noteDelay}: its
-     * tracing failed or is retried, or the upstream has not seen the block),
-     * the service closing, or the learned backstop for a service that hangs
-     * silently. A caller then answers with what the service holds.
-     */
-    private async reachHead(minBlock: bigint | undefined): Promise<void> {
-        if (minBlock === undefined || this.headNumber() >= minBlock) return;
-        await new Promise<void>((resolve) => {
-            const waiter: HeadWaiter = {
-                minBlock,
-                end: () => {
-                    clearTimeout(timer);
-                    this.headWaiters.delete(waiter);
-                    resolve();
-                }
-            };
-            const timer = setTimeout(waiter.end, this.headBackstop.boundMs);
-            this.headWaiters.add(waiter);
-            void this.checkUpstreamHas(waiter);
-        });
     }
 
     /** The number of the best head. */
     private headNumber(): bigint {
         return BigInt(this.canonical[this.canonical.length - 1].number);
-    }
-
-    /**
-     * Asks the upstream for its newest block number; when it has not seen the
-     * block `waiter` waits for, that block cannot arrive soon. A failed ask
-     * leaves the wait to the backstop.
-     */
-    private async checkUpstreamHas(waiter: HeadWaiter): Promise<void> {
-        try {
-            const answer = await this.request("eth_blockNumber", []);
-            if (!this.headWaiters.has(waiter) || typeof answer !== "string")
-                return;
-            if (BigInt(answer) >= waiter.minBlock) return;
-            const head = this.canonical[this.canonical.length - 1];
-            this.noteDelay({
-                reason: "upstream-behind",
-                requested: toQuantity(waiter.minBlock),
-                head: { number: head.number, hash: head.hash }
-            });
-        } catch {
-            // the backstop ends the wait
-        }
     }
 
     /**
@@ -606,13 +553,7 @@ export class StorageDiffService {
      * ends the waits for N or later.
      */
     private noteDelay(notice: StorageDiffDelayNotice): void {
-        if (notice.reason === "trace-failed") {
-            for (const waiter of [...this.headWaiters]) waiter.end();
-        } else if (notice.reason === "upstream-behind") {
-            const requested = BigInt(notice.requested);
-            for (const waiter of [...this.headWaiters])
-                if (waiter.minBlock >= requested) waiter.end();
-        }
+        this.headWaiters.endForDelay(notice);
         for (const peer of this.peers.values()) {
             if (peer.closing || peer.subscriptions.size === 0) continue;
             this.pushDelay(peer, notice);
@@ -1327,8 +1268,7 @@ export class StorageDiffService {
         }
         canonical.splice(0, Math.max(0, canonical.length - this.retention));
         for (const record of staged.slice(below ? 1 : 0)) this.publish(record);
-        for (const waiter of [...this.headWaiters])
-            if (waiter.minBlock <= this.headNumber()) waiter.end();
+        this.headWaiters.endReached();
         this.persisted?.scheduleSave();
         void this.verifyEntryCounts(written);
         const head = canonical[canonical.length - 1];
@@ -2049,7 +1989,7 @@ export class StorageDiffService {
                 () => this.reconcileHead(),
                 "Retrying head reconciliation"
             );
-            this.headBackstop.record(Date.now() - woke);
+            this.headWaiters.recordArrival(Date.now() - woke);
         }).catch((error) => {
             // A lost upstream is reconnected; the reconnect wakes again.
             if (error instanceof UpstreamLostError) return;
@@ -2076,7 +2016,7 @@ export class StorageDiffService {
     private teardown(reason?: Error): Promise<void> {
         this.shutdown ??= (async () => {
             this.stopping.abort();
-            for (const waiter of [...this.headWaiters]) waiter.end();
+            this.headWaiters.endAll();
             await this.persisted?.flush();
             this.includedStrategy?.close();
             this.backfillBlocks.close();
