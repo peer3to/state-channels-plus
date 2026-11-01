@@ -1,23 +1,16 @@
 import type ABackfillBlockSource from "./backfillBlocks/ABackfillBlockSource";
 import { ListedBlockSource } from "./backfillBlocks/ListedBlockSource";
 import { BackfillCoordinator } from "./BackfillCoordinator";
+import { BlockStager } from "./BlockStager";
 import {
-    bloomContains,
     environmentOf,
     filterRecord,
-    hasRevertedFrame,
-    mergeTransactionDiffs,
-    touchesOf,
-    parseHeader,
-    parseLogs,
     type ParsedBlockSelector,
     PRUNED_ERROR_CODE,
     rpcError,
     type AccountAddress,
-    type AccountDiffs,
     type BlockEnvironment,
     type BlockHeader,
-    type BlockTouches,
     type IncludedHeadRecord,
     type RpcBlock,
     type StagedBlock,
@@ -32,20 +25,13 @@ import type { IncludedHead } from "./includedHead/AIncludedHeadStrategy";
 import { PeerHub, type StorageDiffPeer } from "./PeerHub";
 import { PersistedCache } from "./PersistedCache";
 import {
-    HeadChangedError,
     isTransient,
     RECONCILE_RETRY_BACKOFF_MS,
     RECONCILE_RETRY_LIMIT,
     UPSTREAM_RECONNECT_BACKOFF_MS,
     UPSTREAM_RECONNECT_LIMIT
 } from "./retryPolicy";
-import {
-    fieldKey,
-    StateCache,
-    type FieldKey,
-    type StateField,
-    type StateValue
-} from "./StateCache";
+import { StateCache } from "./StateCache";
 import { StateReader } from "./StateReader";
 import { StateStore } from "./StateStore";
 import { StorageDiffRpcMethods } from "./StorageDiffRpcMethods";
@@ -68,13 +54,6 @@ export type { StorageDiffCatchUp, StorageDiffState };
 
 const DEFAULT_MAX_PEER_BUFFERED_BYTES = 16 * 1024 * 1024;
 const DEFAULT_PORT = 19778;
-const TRACE_OPTIONS = {
-    tracer: "prestateTracer",
-    tracerConfig: { diffMode: true }
-};
-
-const CALL_TRACE_OPTIONS = { tracer: "callTracer" };
-
 export interface StorageDiffServiceOptions {
     /** `ws://` or `wss://` upstream that serves `newHeads` and tracing. */
     upstreamUrl: string;
@@ -161,6 +140,7 @@ export class StorageDiffService {
     private readonly lazyAccounts = new Set<AccountAddress>();
     private readonly persisted?: PersistedCache;
     private readonly peerHub: PeerHub;
+    private readonly blockStager: BlockStager;
     private readonly backfill: BackfillCoordinator;
     private readonly headWaiters: HeadWaiters;
     private readonly stateReader: StateReader;
@@ -198,8 +178,9 @@ export class StorageDiffService {
                 canonical: () => this.canonical,
                 failureReason: (error) => this.failureReason(error),
                 retainedIndex: (blockHash) => this.retainedIndex(blockHash),
-                fetchHeader: (by) => this.fetchHeader(by),
-                stage: (headers, preFrom) => this.stage(headers, preFrom)
+                fetchHeader: (by) => this.blockStager.fetchHeader(by),
+                stage: (headers, preFrom) =>
+                    this.blockStager.stage(headers, preFrom)
             });
         this.upstreamUrl = options.upstreamUrl;
         this.upstreamEndpoint = upstreamEndpoint;
@@ -219,7 +200,19 @@ export class StorageDiffService {
             request: (method, params) => this.request(method, params),
             retryTransient: (job, message) => this.retryTransient(job, message),
             retainedIndex: (blockHash) => this.retainedIndex(blockHash),
-            watch: (address) => this.watch(address)
+            watch: (address) => this.blockStager.watch(address)
+        });
+        this.blockStager = new BlockStager({
+            request: (method, params) => this.request(method, params),
+            upstream: () => this.upstream,
+            stateCache: this.stateCache,
+            watched: this.watched,
+            enqueue: (job) => this.enqueue(job),
+            canonical: () => this.canonical,
+            noteDelay: (notice) => this.noteDelay(notice),
+            retryTransient: (job, message) => this.retryTransient(job, message),
+            stateReader: this.stateReader,
+            peerHub: this.peerHub
         });
         this.backfill = new BackfillCoordinator({
             stopping: this.stopping.signal,
@@ -229,13 +222,13 @@ export class StorageDiffService {
             backfillBlocks: this.backfillBlocks,
             upstream: () => this.upstream,
             request: (method, params) => this.request(method, params),
-            watch: (address) => this.watch(address),
+            watch: (address) => this.blockStager.watch(address),
             logger: this.logger,
             failureReason: (error) => this.failureReason(error),
             enqueue: (job) => this.enqueue(job),
             peerHub: this.peerHub,
             retainedIndex: (blockHash) => this.retainedIndex(blockHash),
-            fetchHeader: (by) => this.fetchHeader(by),
+            fetchHeader: (by) => this.blockStager.fetchHeader(by),
             scheduleSave: () => this.persisted?.scheduleSave()
         });
         this.headWaiters = new HeadWaiters({
@@ -314,7 +307,8 @@ export class StorageDiffService {
                 });
             });
             // the records keep these accounts' values from the next block on
-            for (const address of addresses) void this.watch(address);
+            for (const address of addresses)
+                void this.blockStager.watch(address);
             const accounts = Object.fromEntries(
                 addresses.map((address): [AccountAddress, SnapshotStatus] => [
                     address,
@@ -342,7 +336,9 @@ export class StorageDiffService {
         fromBlock: bigint
     ): Promise<StorageDiffCatchUp> {
         // the records hold the requested accounts, filled in if need be
-        await Promise.all(addresses.map((address) => this.watch(address)));
+        await Promise.all(
+            addresses.map((address) => this.blockStager.watch(address))
+        );
         return await this.enqueue(async () => {
             const includedHead = this.includedRecord();
             const best = this.canonical[this.canonical.length - 1];
@@ -363,7 +359,7 @@ export class StorageDiffService {
             // Logs of blocks staged before anyone subscribed to these addresses.
             for (const block of blocks) {
                 await this.retryTransient(
-                    () => this.attachLogs(block, addresses),
+                    () => this.blockStager.attachLogs(block, addresses),
                     "Retrying the log fetch"
                 );
             }
@@ -552,16 +548,18 @@ export class StorageDiffService {
     /** The last `retention` canonical blocks, oldest first. */
     private async loadHistory(): Promise<StagedBlock[]> {
         // Newest first by parent hashes, then traced oldest first.
-        const headers = [await this.fetchHeader("latest")];
+        const headers = [await this.blockStager.fetchHeader("latest")];
         while (
             headers.length < this.retention &&
             headers[headers.length - 1].number > 0n
         ) {
             headers.push(
-                await this.fetchHeader(headers[headers.length - 1].parentHash)
+                await this.blockStager.fetchHeader(
+                    headers[headers.length - 1].parentHash
+                )
             );
         }
-        return await this.stage(headers.reverse(), "chain");
+        return await this.blockStager.stage(headers.reverse(), "chain");
     }
 
     /** Opens the upstream and its head subscription, with bounded retries. */
@@ -638,293 +636,10 @@ export class StorageDiffService {
         return this.upstream.request(method, params);
     }
 
-    private async fetchHeader(
-        by: "latest" | bigint | string
-    ): Promise<BlockHeader> {
-        const byHash = typeof by === "string" && by !== "latest";
-        const block = await this.request(
-            byHash ? "eth_getBlockByHash" : "eth_getBlockByNumber",
-            // full transactions: the service serves the block as the node does
-            [typeof by === "bigint" ? toQuantity(by) : by, true]
-        );
-        if (block === null) {
-            throw new HeadChangedError(`Block ${String(by)} is not known`);
-        }
-        return parseHeader(block);
-    }
-
-    private async assertCanonical(header: BlockHeader): Promise<void> {
-        const current = await this.fetchHeader(header.number);
-        if (current.hash !== header.hash) {
-            throw new HeadChangedError(
-                `Block ${header.number} changed while tracing`
-            );
-        }
-    }
-
-    /**
-     * Traces each header's block once, in order; empty blocks need no trace.
-     * The trace names what the block touched; the values of what the watched
-     * accounts touched are read from the node, never taken from the trace.
-     * `pre` values come from the cache when the cache is at the parent of the
-     * first block (`preFrom` "cache"), carried forward block by block over
-     * what the staged blocks read; from the node at the parent block otherwise.
-     */
-    private async stage(
-        headers: BlockHeader[],
-        preFrom: "cache" | "chain"
-    ): Promise<StagedBlock[]> {
-        const progress: { header?: BlockHeader } = {};
-        try {
-            return await this.stageHeaders(headers, preFrom, progress);
-        } catch (error) {
-            // the peers waiting for this block, or one after it, need not wait for it
-            const { header } = progress;
-            if (header)
-                this.noteDelay({
-                    reason: "trace-failed",
-                    block: {
-                        number: toQuantity(header.number),
-                        hash: header.hash
-                    }
-                });
-            throw error;
-        }
-    }
-
-    private async stageHeaders(
-        headers: BlockHeader[],
-        preFrom: "cache" | "chain",
-        progress: { header?: BlockHeader }
-    ): Promise<StagedBlock[]> {
-        const records: StagedBlock[] = [];
-        // the value each field has after the blocks staged so far
-        const running = new Map<FieldKey, StateValue>();
-        for (const header of headers) {
-            progress.header = header;
-            let touches: BlockTouches = {};
-            // the trace's values stand for a block in which no call frame failed
-            let trusted: { pre: AccountDiffs; post: AccountDiffs } | undefined;
-            if (header.txCount > 0) {
-                const { traces, calls } = await this.traceBlock(header.number);
-                // the trace is of this block only if it is still the one at its number
-                await this.assertCanonical(header);
-                if (
-                    !Array.isArray(traces) ||
-                    traces.length !== header.txCount
-                ) {
-                    throw new Error("Upstream trace does not cover the block");
-                }
-                touches = touchesOf(traces);
-                if (!hasRevertedFrame(calls, header.txCount))
-                    trusted = mergeTransactionDiffs(traces);
-            }
-            const record: StagedBlock = {
-                ...environmentOf({
-                    ...header,
-                    number: toQuantity(header.number)
-                }),
-                parentHash: header.parentHash,
-                pre: {},
-                post: {},
-                touches,
-                covered: new Set(),
-                raw: header.raw,
-                logs: [],
-                logsBloom: header.logsBloom,
-                loggedAddresses: new Set()
-            };
-            if (trusted) {
-                record.covered = "all";
-                this.takeTraceValues(record, trusted, running);
-            } else {
-                const addresses = [...this.watched.keys()];
-                for (const address of addresses)
-                    (record.covered as Set<AccountAddress>).add(address);
-                await this.readValues(record, addresses, preFrom, running);
-            }
-            await this.attachLogs(record, this.peerHub.subscribedAddresses());
-            records.push(record);
-        }
-        return records;
-    }
-
-    /**
-     * The block's `prestateTracer` diff and its `callTracer` frames, asked for
-     * in one batch. A `callTracer` answer that is an error is `undefined`: the
-     * caller then reads values from the node.
-     */
-    private async traceBlock(
-        number: bigint
-    ): Promise<{ traces: unknown; calls: unknown }> {
-        if (!this.upstream)
-            throw new UpstreamLostError("Upstream connection is not open");
-        const [traces, calls] = this.upstream.requestBatch([
-            {
-                method: "debug_traceBlockByNumber",
-                params: [toQuantity(number), TRACE_OPTIONS]
-            },
-            {
-                method: "debug_traceBlockByNumber",
-                params: [toQuantity(number), CALL_TRACE_OPTIONS]
-            }
-        ]);
-        const frames = calls.catch(() => undefined);
-        return { traces: await traces, calls: await frames };
-    }
-
-    /**
-     * Keeps the trace's own values of every account it names in `record`, for
-     * a block in which no call frame failed, so an account watched later finds
-     * its history in memory, and carries them into `running` for the blocks
-     * after it in the step.
-     */
-    private takeTraceValues(
-        record: StagedBlock,
-        trace: { pre: AccountDiffs; post: AccountDiffs },
-        running: Map<FieldKey, StateValue>
-    ): void {
-        record.pre = trace.pre;
-        record.post = trace.post;
-        for (const [address, post] of Object.entries(trace.post)) {
-            for (const kind of ["balance", "nonce", "code"] as const)
-                if (post[kind] !== undefined)
-                    running.set(fieldKey({ kind, address }), post[kind]!);
-            for (const [slot, word] of Object.entries(post.storage ?? {}))
-                running.set(fieldKey({ kind: "slot", address, slot }), word);
-        }
-    }
-
-    /**
-     * Reads, in one batch, the values `addresses` have at `record`'s block for
-     * what the block touched of them, and the values before it, and keeps what
-     * changed in `record.pre` and `record.post`.
-     */
-    private async readValues(
-        record: StagedBlock,
-        addresses: AccountAddress[],
-        preFrom: "cache" | "chain",
-        running = new Map<FieldKey, StateValue>()
-    ): Promise<void> {
-        const fields: StateField[] = [];
-        for (const address of addresses) {
-            const touched = record.touches[address];
-            if (!touched) continue;
-            for (const slot of touched.slots)
-                fields.push({ kind: "slot", address, slot });
-            for (const kind of ["balance", "nonce", "code"] as const)
-                if (touched.changed[kind]) fields.push({ kind, address });
-        }
-        if (fields.length === 0 || !this.upstream) return;
-        // a block before this one in the step read the field; else the cache is at the step's parent
-        const before = fields.map(
-            (field) =>
-                running.get(fieldKey(field)) ??
-                (preFrom === "cache" ? this.stateCache.get(field) : undefined)
-        );
-        const calls = fields.map((field) =>
-            this.stateReader.fieldCall(field, record.hash)
-        );
-        fields.forEach((field, i) => {
-            if (before[i] === undefined)
-                calls.push(
-                    this.stateReader.fieldCall(field, record.parentHash)
-                );
-        });
-        let answers: unknown[];
-        try {
-            answers = await this.retryTransient(
-                () => Promise.all(this.upstream!.requestBatch(calls)),
-                "Retrying the block's value reads"
-            );
-        } catch (error) {
-            // a block the node dropped cannot be read by hash: the head moved
-            if (error instanceof UpstreamRequestError)
-                throw new HeadChangedError(
-                    `Block ${record.number} could not be read`
-                );
-            throw error;
-        }
-        let next = fields.length;
-        fields.forEach((field, i) => {
-            const post = this.stateReader.parseField(field, answers[i]);
-            running.set(fieldKey(field), post);
-            const pre =
-                before[i] ??
-                this.stateReader.parseField(field, answers[next++ as number]);
-            if (post === pre) return;
-            for (const [side, value] of [
-                [record.pre, pre],
-                [record.post, post]
-            ] as const) {
-                const account = (side[field.address] ??= {});
-                if (field.kind === "slot")
-                    (account.storage ??= {})[field.slot] = value as string;
-                else if (field.kind === "nonce")
-                    account.nonce = value as number;
-                else account[field.kind] = value as string;
-            }
-        });
-    }
-
-    /**
-     * Starts keeping the values of `address` in every record, and fills the
-     * retained records staged before. Settles when they hold it; asking again
-     * returns the same promise.
-     */
-    private watch(address: AccountAddress): Promise<void> {
-        let filled = this.watched.get(address);
-        if (!filled) {
-            // later blocks cover it from here; the fill covers the earlier ones
-            filled = this.enqueue(() => this.fillHistory(address));
-            this.watched.set(address, filled);
-            filled.catch(() => this.watched.delete(address));
-        }
-        return filled;
-    }
-
-    /** Adds `address` to the retained records that were staged without it. */
-    private async fillHistory(address: AccountAddress): Promise<void> {
-        for (const record of this.canonical) {
-            if (record.covered === "all" || record.covered.has(address))
-                continue;
-            await this.readValues(record, [address], "chain");
-            record.covered.add(address);
-        }
-    }
-
-    /**
-     * Fetches the block's logs of the `addresses` its header bloom matches and
-     * that it holds none for yet: one `eth_getLogs` by block hash, none when
-     * nothing matches. The bloom comes with the header the service already
-     * fetched, so the test costs no request.
-     */
-    private async attachLogs(
-        block: StagedBlock,
-        addresses: AccountAddress[]
-    ): Promise<void> {
-        const missing = addresses.filter(
-            (address) =>
-                !block.loggedAddresses.has(address) &&
-                bloomContains(block.logsBloom, address)
-        );
-        if (missing.length === 0) return;
-        const answer = await this.request("eth_getLogs", [
-            { blockHash: block.hash, address: missing }
-        ]);
-        const fetched = parseLogs(answer).filter((log) =>
-            missing.includes(log.address)
-        );
-        for (const address of missing) block.loggedAddresses.add(address);
-        block.logs = [...block.logs, ...fetched].sort((a, b) =>
-            Number(BigInt(a.logIndex) - BigInt(b.logIndex))
-        );
-    }
-
     /** Moves the canonical history to the upstream's current best head. */
     private async reconcileHead(): Promise<void> {
         const canonical = this.canonical;
-        let cursor = await this.fetchHeader("latest");
+        let cursor = await this.blockStager.fetchHeader("latest");
         const branch: BlockHeader[] = [];
         const floor = BigInt(canonical[0].number);
         let ancestor = -1;
@@ -942,7 +657,7 @@ export class StorageDiffService {
                 (record) => record.hash === cursor.parentHash
             );
             if (ancestor >= 0) break;
-            cursor = await this.fetchHeader(cursor.parentHash);
+            cursor = await this.blockStager.fetchHeader(cursor.parentHash);
         }
         if (ancestor < 0 && cursor.number < floor) {
             // Walk the old chain down by hash, fetching only what it needs.
@@ -950,7 +665,8 @@ export class StorageDiffService {
             let oldHash = canonical[0].hash;
             let oldParent: string | undefined = canonical[0].parentHash;
             const stepOld = async () => {
-                oldParent ??= (await this.fetchHeader(oldHash)).parentHash;
+                oldParent ??= (await this.blockStager.fetchHeader(oldHash))
+                    .parentHash;
                 oldHash = oldParent;
                 oldParent = undefined;
                 oldNumber -= 1n;
@@ -959,7 +675,7 @@ export class StorageDiffService {
             while (oldHash !== cursor.hash) {
                 branch.push(cursor);
                 if (cursor.number === 0n) throw noAncestor();
-                cursor = await this.fetchHeader(cursor.parentHash);
+                cursor = await this.blockStager.fetchHeader(cursor.parentHash);
                 await stepOld();
             }
             below = cursor;
@@ -968,7 +684,7 @@ export class StorageDiffService {
         // An ancestor older than the window becomes the oldest retained record.
         // A traced block was checked after its trace; an empty tip is not
         // rechecked: a reorg during staging wakes a new reconciliation.
-        const staged = await this.stage(
+        const staged = await this.blockStager.stage(
             below ? [below, ...branch] : branch,
             // the cache is at the first block's parent when the branch extends the head
             !below && ancestor === canonical.length - 1 ? "cache" : "chain"
