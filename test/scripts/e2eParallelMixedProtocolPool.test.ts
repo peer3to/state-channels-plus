@@ -14,8 +14,7 @@ const {
 const {
     DISTRIBUTED_PROTOCOL_VERSION,
     MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL,
-    runnersForDistributedProtocol,
-    workerCanRunTask
+    runnersForDistributedProtocol
 } = require("../../scripts/e2e-parallel/distributed/protocol.js");
 
 describe("distributed worker protocol pool", function () {
@@ -121,27 +120,6 @@ describe("distributed worker protocol pool", function () {
         expect(run.warnings.join("\n")).to.include(
             "Ignoring worker host-15: Distributed worker protocol mismatch"
         );
-    });
-
-    it("lets a worker run a task only when its runners list the task's runner and every runner the task requires", function () {
-        const withoutBrowser = new Set(["hardhat", "forge"]);
-        const withBrowser = new Set(["hardhat", "forge", "browser"]);
-        const marked = { runner: "hardhat", requires: ["browser"] };
-        const plain = { label: "plain" };
-        const gate = { runner: "browser" };
-        expect({
-            markedWithout: workerCanRunTask(withoutBrowser, marked),
-            markedWith: workerCanRunTask(withBrowser, marked),
-            plainWithout: workerCanRunTask(withoutBrowser, plain),
-            gateWithout: workerCanRunTask(withoutBrowser, gate),
-            gateWith: workerCanRunTask(withBrowser, gate)
-        }).to.deep.equal({
-            markedWithout: false,
-            markedWith: true,
-            plainWithout: true,
-            gateWithout: false,
-            gateWith: true
-        });
     });
 
     it("leases only the current protocol, with every runner", function () {

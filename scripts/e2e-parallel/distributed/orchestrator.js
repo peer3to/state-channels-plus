@@ -13,7 +13,6 @@ const {
     MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL,
     ProtocolPeer,
     runnersForDistributedProtocol,
-    workerCanRunTask,
     waitForMessage
 } = require("./protocol");
 const { DISCOVERY_REFRESH_MS, createPool } = require("./poolTransport");
@@ -788,9 +787,7 @@ async function runDistributed(options) {
             console.log(
                 `Connected to worker ${workerName(worker)} (protocol ${worker.distributedProtocol}: ${[...runners].join(", ")}); requesting lease`
             );
-            coordinator.registerWorker(workerId, {
-                canRun: (task) => workerCanRunTask(runners, task)
-            });
+            coordinator.registerWorker(workerId);
             peer.on("message", (message) => {
                 worker.heartbeat.received();
                 handleMessage(worker, message).catch((error) =>

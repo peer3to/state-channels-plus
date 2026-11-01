@@ -11,10 +11,8 @@ const DISTRIBUTED_PROTOCOL_VERSION = 16;
 // The oldest worker host protocol the orchestrator still leases: exactly the
 // current protocol, so every accepted host runs every runner.
 const MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL = 16;
-// What each accepted worker protocol can execute. The orchestrator schedules a
-// task only on a worker whose protocol lists the task's runner.
+// Every accepted worker protocol executes every runner.
 const ALL_RUNNERS = new Set(Object.values(TASK_RUNNERS));
-const RUNNERS_BY_DISTRIBUTED_PROTOCOL = new Map([[16, ALL_RUNNERS]]);
 // A frame carries a whole source manifest; 2 MB fits about 10k files.
 const DEFAULT_MAX_FRAME = 2 * 1024 * 1024;
 const REVIEW_KINDS = new Set([
@@ -368,12 +366,7 @@ function runnersForDistributedProtocol(version) {
     ) {
         return null;
     }
-    return RUNNERS_BY_DISTRIBUTED_PROTOCOL.get(version) ?? null;
-}
-
-/** Whether a worker whose protocol lists `runners` can execute `task`. */
-function workerCanRunTask(runners, task) {
-    return runnersNeededByTask(task).every((runner) => runners.has(runner));
+    return ALL_RUNNERS;
 }
 
 function waitForMessage(peer, kind, timeoutMs = 10000) {
@@ -408,7 +401,6 @@ module.exports = {
     MESSAGE_KINDS,
     ProtocolPeer,
     runnersNeededByTask,
-    workerCanRunTask,
     runnersForDistributedProtocol,
     waitForMessage
 };
