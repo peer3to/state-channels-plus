@@ -1,4 +1,4 @@
-// @spec-test-coverage-ignore: private node, storage diff service and proxies for the RPC mirror cases; declarations live in RpcMirror.test.ts
+// @spec-test-coverage-ignore: private node, storage diff service and proxies for the RPC mirror cases; declarations live in the RpcMirror*.test.ts files
 import { RpcNodeProxy } from "./RpcNodeProxy";
 import {
     deployNumberStorage,
