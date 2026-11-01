@@ -1,4 +1,8 @@
 import {
+    recordedChildTrie,
+    withRecordedChildTrieNode
+} from "../../fixtures/node/RecordedAssetHubChildTrie";
+import {
     RECORDED_ACCOUNT_INFO,
     withSubstrateNode,
     type SubstrateContract,
@@ -46,6 +50,73 @@ async function withSource<T>(
 }
 
 describe("ChildTrieBlockSource", function () {
+    // The recorded tests replay real Asset Hub answers. The tests below them
+    // use a scripted node (SubstrateChildTrieNode) for what the recording
+    // cannot hold: a range of a million blocks, page sizes, and a chain that
+    // moves during the bisection.
+    // Mutation (the three recorded tests): a block that changed the trie is
+    // not listed, a key page is miscounted, or the range starts one block late.
+    it("lists the blocks of a mainnet contract's transactions as the Asset Hub node recorded its child trie roots", async function () {
+        await withRecordedChildTrieNode(async (node) => {
+            const source = new ChildTrieBlockSource(node.url);
+            try {
+                const listing = await source.listBlocks(
+                    NO_UPSTREAM,
+                    recordedChildTrie.address,
+                    BigInt(recordedChildTrie.from),
+                    { number: BigInt(recordedChildTrie.tip), hash: "0xeth" }
+                );
+
+                expect(listing.numbers).to.deep.equal(
+                    recordedChildTrie.changedBlocks.map(BigInt)
+                );
+                expect(listing.blocks).to.equal(
+                    recordedChildTrie.tip - recordedChildTrie.from + 1
+                );
+                expect(listing.rootReads).to.be.lessThan(listing.blocks / 4);
+                expect(node.unrecorded()).to.deep.equal([]);
+            } finally {
+                source.close();
+            }
+        });
+    });
+
+    it("lists nothing from the block after the last recorded change", async function () {
+        await withRecordedChildTrieNode(async (node) => {
+            const source = new ChildTrieBlockSource(node.url);
+            try {
+                const listing = await source.listBlocks(
+                    NO_UPSTREAM,
+                    recordedChildTrie.address,
+                    BigInt(recordedChildTrie.afterLastChange),
+                    { number: BigInt(recordedChildTrie.tip), hash: "0xeth" }
+                );
+
+                expect(listing.numbers).to.deep.equal([]);
+                expect(node.unrecorded()).to.deep.equal([]);
+            } finally {
+                source.close();
+            }
+        });
+    });
+
+    it("counts the entries of a mainnet contract's recorded child trie", async function () {
+        await withRecordedChildTrieNode(async (node) => {
+            const source = new ChildTrieBlockSource(node.url);
+            try {
+                expect(
+                    await source.countStorageEntries(
+                        recordedChildTrie.address,
+                        { number: BigInt(recordedChildTrie.tip) }
+                    )
+                ).to.equal(recordedChildTrie.entries);
+                expect(node.unrecorded()).to.deep.equal([]);
+            } finally {
+                source.close();
+            }
+        });
+    });
+
     it("lists the blocks that changed the contract, reading far fewer roots than blocks", async function () {
         const changes = [400, 401, 500_000, 999_999];
         await withSource(
