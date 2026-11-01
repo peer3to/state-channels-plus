@@ -71,15 +71,13 @@ type HoldFirstResultUntil = {
 /**
  * How a host answers the workspace offer of one lease: a need naming a file the
  * manifest does not offer, a need that is not a diff, a normal lease that
- * closes the connection after running one task, a lease that leaves the pool
- * for good on its first task without reporting a result, a host that refuses
- * the lease's resources, or a host that closes the connection unannounced.
+ * closes the connection after running one task, a host that refuses the
+ * lease's resources, or a host that closes the connection unannounced.
  */
 export type ProtocolWorkerLeaseStep =
     | "outside-manifest"
     | "invalid-diff"
     | "one-task-then-close"
-    | "leave-on-first-task"
     | "reject-allocation"
     | "close-after-offer";
 
@@ -100,9 +98,7 @@ async function startProtocolWorker(options: {
     // offers and been handed this many tasks, so a run cannot finish before
     // that host's setup failures land, or before it has run a task.
     holdFirstResultUntil?: HoldFirstResultUntil;
-    // Join the DHT only once another host has run this many tasks.
-    joinAfter?: { worker: string; labels: number };
-    // The records of every host in the run, for holdFirstResultUntil and joinAfter.
+    // The records of every host in the run, for holdFirstResultUntil.
     records?: () => ProtocolWorkerRecord[];
     // Fields merged into every attempt result, e.g. measurements.
     attemptResult?: Record<string, unknown>;
@@ -129,8 +125,6 @@ async function startProtocolWorker(options: {
             dht: options.dht,
             refreshIntervalMs: 25
         });
-        // The run ended while this host was still joining.
-        if (closed) return pool.close();
         pool.onConnection(serve);
     };
     const close = async () => {
@@ -212,12 +206,6 @@ async function startProtocolWorker(options: {
                 record.runners.push(assignment.task.runner);
                 record.labels.push(assignment.task.label);
                 record.costs.push(assignment.task.cost);
-                if (step === "leave-on-first-task") {
-                    // Gone mid-attempt, and not coming back to redial.
-                    peer.close("fixture host leaves mid-attempt");
-                    await close();
-                    return;
-                }
                 const hold = options.holdFirstResultUntil;
                 if (hold && record.labels.length === 1) {
                     const deadline = Date.now() + 30_000;
@@ -262,27 +250,7 @@ async function startProtocolWorker(options: {
             // The orchestrator closing the stream ends this worker's part.
         }
     };
-    const joinAfter = options.joinAfter;
-    if (!joinAfter) {
-        await join();
-    } else {
-        void (async () => {
-            const deadline = Date.now() + 30_000;
-            const ran = () =>
-                options
-                    .records?.()
-                    .find((entry) => entry.name === joinAfter.worker)?.labels
-                    .length ?? 0;
-            while (
-                !closed &&
-                ran() < joinAfter.labels &&
-                Date.now() < deadline
-            ) {
-                await new Promise((resolve) => setTimeout(resolve, 25));
-            }
-            if (!closed) await join();
-        })();
-    }
+    await join();
     return { record, close };
 }
 
@@ -331,7 +299,6 @@ export async function runAgainstProtocolWorkers(
         distributedProtocol: number;
         leaseSteps?: ProtocolWorkerLeaseStep[];
         holdFirstResultUntil?: HoldFirstResultUntil;
-        joinAfter?: { worker: string; labels: number };
         attemptResult?: Record<string, unknown>;
         workerStats?: Record<string, unknown>;
         afterRunComplete?: () => void;
