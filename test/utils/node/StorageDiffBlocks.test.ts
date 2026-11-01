@@ -343,4 +343,30 @@ describe("StorageDiffService blocks", function () {
             }
         );
     });
+
+    // Mutation: the service's backstop built with SDK_RPC_DEADLINE_MS / 2 ->
+    // the wait ends after about 1.5 s and the lower bound below fails.
+    it("waits about the full SDK deadline for a silent hang before any head has been committed", async function () {
+        await withStorageDiffSession(async ({ client, provider, relay }) => {
+            const before = (await client.request("scp_getHead", [])) as {
+                number: string;
+            };
+            const held = relay.holdNext("eth_getBlockByNumber", "latest");
+            await provider.send("evm_mine", []);
+            await held.arrived;
+            const mined = await provider.send("eth_blockNumber", []);
+            const started = Date.now();
+
+            const answer = (await client.request("scp_getHead", [mined])) as {
+                number: string;
+            };
+
+            const waited = Date.now() - started;
+            expect(answer.number).to.equal(before.number);
+            // 3000 ms is the SDK's own request deadline
+            expect(waited).to.be.at.least(2_700);
+            expect(waited).to.be.lessThan(3_000 + 2_000);
+            held.release();
+        });
+    });
 });

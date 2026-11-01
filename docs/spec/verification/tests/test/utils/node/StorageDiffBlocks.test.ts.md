@@ -22,3 +22,4 @@ Cases run the service against an isolated anvil test chain through a relay, read
 - `answers at once with what it holds, and tells subscribers, when its upstream has not seen the block`: REQ-SDS-8-FQFNTV.T1.P9, REQ-SDS-12-N40MKR.T1.P2
 - `answers at once with what it holds, and tells subscribers, when tracing the awaited block fails`: REQ-SDS-12-N40MKR.T1.P3
 - `answers with what it holds when a silent hang outlasts the learned backstop`: REQ-SDS-12-N40MKR.T1.P4, REQ-SDS-12-N40MKR.T1.P6
+- `waits about the full SDK deadline for a silent hang before any head has been committed`: REQ-SDS-12-N40MKR.T1.P5
