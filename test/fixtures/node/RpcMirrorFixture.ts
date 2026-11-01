@@ -2,7 +2,13 @@
 import { installMirrorShadowCheck } from "../MirrorShadowCheck";
 import { RpcNodeProxy } from "./RpcNodeProxy";
 import {
+    RECORDED_ACCOUNT_INFO,
+    withSubstrateNode,
+    type SubstrateContract
+} from "./SubstrateChildTrieNode";
+import {
     deployNumberStorage,
+    deployRuntimeCode,
     StorageDiffClient,
     withStorageDiffUpstream,
     type StorageDiffServiceSettings
@@ -12,6 +18,7 @@ import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
 import MirrorRpcProvider from "@/evm/p2pRuntime/rpcNodes/MirrorRpcProvider";
 import RpcNodeProvider from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import { createLogger } from "@/utils/logging";
+import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
 import type { StorageDiffService } from "@/utils/node/storageDiff/StorageDiffService";
 import {
     SimpleNumberStorage__factory,
@@ -120,6 +127,35 @@ export async function withMirrorSession<T>(
 }
 
 /**
+ * A mirror session whose backfill reads a scripted Substrate node about one
+ * contract. The caller names the contract (`address`, `deployed`, `changes`)
+ * once it is deployed; `entries` is how many child trie entries the node
+ * counts, which the service checks against the history it replayed.
+ */
+export async function withSubstrateMirrorSession<T>(
+    entries: SubstrateContract["entries"],
+    use: (session: MirrorSession, contract: SubstrateContract) => Promise<T>
+): Promise<T> {
+    const contract: SubstrateContract = {
+        address: "",
+        changes: [],
+        deployed: 0,
+        tipNumber: -1,
+        tipHash: () => "0xtip",
+        info: RECORDED_ACCOUNT_INFO,
+        entries
+    };
+    return await withSubstrateNode(
+        contract,
+        async (substrate) =>
+            await withMirrorSession(
+                async (session) => await use(session, contract),
+                { backfillBlocks: new ChildTrieBlockSource(substrate.url) }
+            )
+    );
+}
+
+/**
  * A deployed `SimpleNumberStorage`: `storage` reads and sends through the
  * mirror provider, `chainStorage` goes straight to the node.
  */
@@ -207,18 +243,7 @@ function commitProbeRuntime(): string {
 export async function deployCommitProbe(
     signer: JsonRpcSigner
 ): Promise<string> {
-    const runtime = commitProbeRuntime();
-    // initcode copies the runtime after its own 11 bytes and returns it
-    const initcode =
-        "0x60" +
-        (runtime.length / 2).toString(16).padStart(2, "0") +
-        "80600b6000396000f3" +
-        runtime;
-    const receipt = await (
-        await signer.sendTransaction({ data: initcode })
-    ).wait();
-    if (!receipt?.contractAddress) throw new Error("Probe not deployed");
-    return receipt.contractAddress;
+    return await deployRuntimeCode(signer, commitProbeRuntime());
 }
 
 /** Requests of `method` the provider sent to the storage diff service. */
@@ -257,48 +282,22 @@ export function nodeStateReads(session: MirrorSession): number {
 }
 
 /**
- * Runtime that returns the block environment a call sees: TIMESTAMP, NUMBER,
- * BASEFEE, PREVRANDAO, GASLIMIT and COINBASE as six words.
+ * Deploys a runtime that returns the block environment a call sees: TIMESTAMP,
+ * NUMBER, BASEFEE, PREVRANDAO, GASLIMIT and COINBASE as six words.
  */
 export async function deployEnvironmentProbe(
     signer: JsonRpcSigner
 ): Promise<string> {
     const opcodes = ["42", "43", "48", "44", "45", "41"];
-    const runtime =
+    return await deployRuntimeCode(
+        signer,
         opcodes
             .map(
                 (op, i) =>
                     op + "60" + (32 * i).toString(16).padStart(2, "0") + "52"
             )
-            .join("") + "60c06000f3";
-    const initcode =
-        "0x60" +
-        (runtime.length / 2).toString(16).padStart(2, "0") +
-        "80600b6000396000f3" +
-        runtime;
-    const receipt = await (
-        await signer.sendTransaction({ data: initcode })
-    ).wait();
-    if (!receipt?.contractAddress) throw new Error("Probe not deployed");
-    return receipt.contractAddress;
-}
-
-/** Deploys `runtime` (hex, no prefix) as a contract's code and returns its address. */
-export async function deployRuntime(
-    signer: JsonRpcSigner,
-    runtime: string
-): Promise<string> {
-    // initcode copies the runtime after its own 11 bytes and returns it
-    const initcode =
-        "0x60" +
-        (runtime.length / 2).toString(16).padStart(2, "0") +
-        "80600b6000396000f3" +
-        runtime;
-    const receipt = await (
-        await signer.sendTransaction({ data: initcode })
-    ).wait();
-    if (!receipt?.contractAddress) throw new Error("Runtime not deployed");
-    return receipt.contractAddress;
+            .join("") + "60c06000f3"
+    );
 }
 
 /** Runtime that calls `target` with no data and returns its success flag as a word. */

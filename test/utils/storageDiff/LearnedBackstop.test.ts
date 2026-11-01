@@ -1,6 +1,5 @@
 import {
     AnnouncedBlocks,
-    BACKSTOP_MULTIPLE,
     BACKSTOP_WINDOW_MS,
     capLeavingNodeRoundTrips,
     LearnedBackstop,
@@ -70,13 +69,13 @@ describe("LearnedBackstop", function () {
         const backstop = new LearnedBackstop(() => cap, manualClock().now);
         expect(backstop.boundMs, "no arrival yet: the cap").to.equal(CAP_MS);
         backstop.record(500);
-        expect(backstop.boundMs).to.equal(BACKSTOP_MULTIPLE * 500);
+        expect(backstop.boundMs).to.equal(2_000);
 
         cap = 800;
         expect(backstop.boundMs).to.equal(800);
 
         cap = 5_000;
-        expect(backstop.boundMs).to.equal(BACKSTOP_MULTIPLE * 500);
+        expect(backstop.boundMs).to.equal(2_000);
     });
 });
 
@@ -94,9 +93,7 @@ describe("capLeavingNodeRoundTrips", function () {
         roundTrips.record(120);
         roundTrips.record(80);
 
-        expect(capLeavingNodeRoundTrips(CAP_MS, roundTrips)).to.equal(
-            CAP_MS - BACKSTOP_MULTIPLE * 120
-        );
+        expect(capLeavingNodeRoundTrips(CAP_MS, roundTrips)).to.equal(2_520);
     });
 
     it("shrinks as node round trips grow, and is never below zero", function () {

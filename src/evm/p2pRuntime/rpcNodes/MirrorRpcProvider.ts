@@ -31,7 +31,13 @@ const REVERT_ERROR_CODE = 3;
 /** JSON-RPC error code of a call that failed without reverting. */
 const EXECUTION_ERROR_CODE = -32000;
 
-/** The `eth_call` fields the local EVM honours. */
+/**
+ * The `eth_call` fields the local EVM honours. `gas` is deliberately absent:
+ * a call that carries a gas limit runs whole on the node as well: the local
+ * EVM charges no transaction gas (21,000 and calldata), and the chain's gas
+ * accounting is the chain's own, so only the node can tell the least limit at
+ * which a call succeeds.
+ */
 const SUPPORTED_CALL_FIELDS: ReadonlySet<string> = new Set([
     "from",
     "to",
@@ -129,11 +135,6 @@ function parseCall(params: unknown[]): MirrorCall | undefined {
     if (!Object.keys(fields).every((name) => SUPPORTED_CALL_FIELDS.has(name)))
         return undefined;
     const data = fields.data ?? fields.input ?? "0x";
-    // A call that carries a gas limit runs whole on the node as well: the
-    // local EVM charges no transaction gas (21,000 and calldata), and the
-    // chain's gas accounting is the chain's own, so only the node can tell
-    // the least limit at which a call succeeds.
-    if (fields.gas !== undefined) return undefined;
     const { from, to, value, gasPrice } = fields;
     if (
         !isAddress(to) ||

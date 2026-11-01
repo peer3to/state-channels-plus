@@ -4,10 +4,10 @@ import {
 } from "@/evm/p2pRuntime/rpcNodes/mirror/LocalExecutionPolicy";
 import {
     callerRuntime,
-    deployRuntime,
     nodeRequests,
     withMirrorSession
 } from "@test/fixtures/node/RpcMirrorFixture";
+import { deployRuntimeCode } from "@test/fixtures/node/StorageDiffService.fixture";
 import { expect } from "chai";
 import { getBytes, zeroPadValue } from "ethers";
 import path from "node:path";
@@ -72,7 +72,7 @@ describe("Mirror local execution", function () {
 
     it("sends a call to PolkaVM code to the node whole", async function () {
         await withMirrorSession(async (session) => {
-            const pvm = await deployRuntime(session.signer, PVM_RUNTIME);
+            const pvm = await deployRuntimeCode(session.signer, PVM_RUNTIME);
             const asked = nodeRequests(session, "eth_call").length;
 
             await session.provider.call({ to: pvm }).catch(() => undefined);
@@ -84,7 +84,10 @@ describe("Mirror local execution", function () {
     it("still answers eth_getCode of PolkaVM code and runs the registered precompile that stands in for it", async function () {
         await withMirrorSession(
             async (session) => {
-                const pvm = await deployRuntime(session.signer, PVM_RUNTIME);
+                const pvm = await deployRuntimeCode(
+                    session.signer,
+                    PVM_RUNTIME
+                );
                 await session.chain.send("anvil_setCode", [
                     CUSTOM_ADDRESS,
                     "0x" + PVM_RUNTIME
@@ -108,7 +111,7 @@ describe("Mirror local execution", function () {
 
     it("sends a call that reaches a chain precompile the local EVM does not reproduce to the node whole", async function () {
         await withMirrorSession(async (session) => {
-            const caller = await deployRuntime(
+            const caller = await deployRuntimeCode(
                 session.signer,
                 callerRuntime("0x" + "00".repeat(18) + "0100")
             );
@@ -123,7 +126,7 @@ describe("Mirror local execution", function () {
 
     it("runs a call that reaches a standard precompile locally", async function () {
         await withMirrorSession(async (session) => {
-            const caller = await deployRuntime(
+            const caller = await deployRuntimeCode(
                 session.signer,
                 callerRuntime("0x" + "00".repeat(19) + "02")
             );

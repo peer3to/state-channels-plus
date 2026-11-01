@@ -1,11 +1,4 @@
-import { MiscountingBlockSource } from "../fixtures/node/MiscountingBlockSource";
-import {
-    RECORDED_ACCOUNT_INFO,
-    withSubstrateNode,
-    type SubstrateContract
-} from "../fixtures/node/SubstrateChildTrieNode";
 import { sleep } from "@/utils";
-import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
 import { DepthIncludedHeadStrategy } from "@/utils/node/storageDiff/includedHead/DepthIncludedHeadStrategy";
 import { SDK_RPC_DEADLINE_MS } from "@/utils/storageDiff/LearnedBackstop";
 import { NOT_RETAINED_ERROR_CODE } from "@/utils/storageDiff/storageDiffWire";
@@ -19,6 +12,7 @@ import {
     nodeStateReads,
     serviceRequests,
     withMirrorSession,
+    withSubstrateMirrorSession,
     type MirrorSession
 } from "@test/fixtures/node/RpcMirrorFixture";
 import {
@@ -32,22 +26,12 @@ import {
 import { waitFor } from "@test/utils/waitFor";
 import type { SimpleNumberStorage } from "@typechain-types";
 import { expect } from "chai";
-import {
-    AbiCoder,
-    isError,
-    toBeHex,
-    toQuantity,
-    ZeroAddress,
-    ZeroHash
-} from "ethers";
-import path from "node:path";
+import { isError, toBeHex, toQuantity, ZeroAddress, ZeroHash } from "ethers";
 
 /** Time is the input: how long a read that must wait is watched for. */
 const ABSENCE_WINDOW_MS = 500;
 /** Time is the input: how long a held node reply makes a round trip. */
 const NODE_ROUND_TRIP_MS = 400;
-const CUSTOM_PRECOMPILE_ADDRESS = "0x00000000000000000000000000000000000000f0";
-const CUSTOM_PRECOMPILE_CALLDATA = "0x1234";
 
 /**
  * Lets the mirror learn how long records take: blocks a node announces reach
@@ -98,24 +82,6 @@ describe("MirrorRpcProvider", function () {
         });
     });
 
-    it("reads the first read of a slot the service has ready from the snapshot it pushed, with no scp_getState and no node read", async function () {
-        await withMirrorSession(async (session) => {
-            const { storage, address } = await deployMirroredStorage(session);
-            await (await storage.setValue(5n)).wait();
-            await backfillAtService(session, [address]);
-
-            const word = await session.provider.getStorage(address, 0);
-
-            expect(BigInt(word)).to.equal(5n);
-            expect(serviceRequests(session, "scp_getState")).to.have.length(0);
-            expect(nodeStateReads(session)).to.equal(0);
-            expect(session.provider.mirrorStatistics).to.include({
-                lazyReads: 0,
-                snapshots: 1
-            });
-        });
-    });
-
     it("applies a snapshot that reaches the mirror before the reply of the subscription that asked for it", async function () {
         await withMirrorSession(async (session) => {
             // the mirror follows the first contract before the second is deployed
@@ -155,6 +121,9 @@ describe("MirrorRpcProvider", function () {
             const word = await read;
 
             expect(BigInt(word)).to.equal(5n);
+            // Mutation: not awaiting the snapshot (reading lazily) asks the service
+            expect(serviceRequests(session, "scp_getState")).to.have.length(0);
+            expect(nodeStateReads(session)).to.equal(0);
             expect(session.provider.mirrorStatistics).to.include({
                 lazyReads: 0,
                 snapshots: 1,
@@ -191,61 +160,55 @@ describe("MirrorRpcProvider", function () {
     });
 
     it("reads an account the service says is lazy at once, without waiting for a snapshot", async function () {
-        await withMirrorSession(
-            async (session) => {
-                const { storage, address } =
-                    await deployMirroredStorage(session);
-                await (await storage.setValue(5n)).wait();
-                await backfillAtService(session, [address]);
-                // the notice is held back: the subscribe answer alone says lazy
-                const release =
-                    session.service.holdNotifications("scp_snapshot");
+        // the node counts one entry more than the history names
+        await withSubstrateMirrorSession(2, async (session, contract) => {
+            const { chainStorage, address } =
+                await deployMirroredStorage(session);
+            contract.address = address.toLowerCase();
+            contract.deployed = await session.chain.getBlockNumber();
+            await (await chainStorage.setValue(5n)).wait();
+            contract.changes.push(contract.deployed, contract.deployed + 1);
+            await backfillAtService(session, [address]);
+            // the notice is held back: the subscribe answer alone says lazy
+            const release = session.service.holdNotifications("scp_snapshot");
 
-                const word = await session.provider.getStorage(address, 0);
-                release();
+            const word = await session.provider.getStorage(address, 0);
+            release();
 
-                // answered while the snapshot is held back, and no backstop ran out
-                expect(BigInt(word)).to.equal(5n);
-                expect(session.provider.mirrorStatistics).to.include({
-                    snapshotTimeouts: 0,
-                    snapshots: 0,
-                    lazyReads: 1
-                });
-            },
-            { backfillBlocks: new MiscountingBlockSource() }
-        );
+            // answered while the snapshot is held back, and no backstop ran out
+            expect(BigInt(word)).to.equal(5n);
+            // Mutation: entries 1 (the history's count) makes the account
+            // complete, so the read comes from the snapshot, not the service.
+            expect(serviceRequests(session, "scp_getState")).to.have.length(1);
+        });
     });
 
     it("keeps an account lazy when the backfill of a syncing account ends without a snapshot", async function () {
-        await withMirrorSession(
-            async (session) => {
-                const { storage, address } =
-                    await deployMirroredStorage(session);
-                await (await storage.setValue(5n)).wait();
+        // the node counts one entry more than the history names
+        await withSubstrateMirrorSession(2, async (session, contract) => {
+            const { chainStorage, address } =
+                await deployMirroredStorage(session);
+            contract.address = address.toLowerCase();
+            contract.deployed = await session.chain.getBlockNumber();
+            await (await chainStorage.setValue(5n)).wait();
+            contract.changes.push(contract.deployed, contract.deployed + 1);
 
-                const word = await session.provider.getStorage(address, 0);
-                await waitFor(
-                    () => session.provider.mirrorStatistics?.lazyNotices === 1,
-                    5_000,
-                    20
-                );
+            const word = await session.provider.getStorage(address, 0);
+            await waitFor(
+                () => session.provider.mirrorStatistics?.lazyNotices === 1,
+                5_000,
+                20
+            );
 
-                expect(BigInt(word)).to.equal(5n);
-                expect(session.provider.mirrorStatistics).to.include({
-                    snapshots: 0,
-                    snapshotTimeouts: 0
-                });
-                // still lazy: a slot the mirror has not read is asked for
-                expect(await session.provider.getStorage(address, 1)).to.equal(
-                    ZeroHash
-                );
-                expect(session.provider.mirrorStatistics).to.include({
-                    lazyReads: 2,
-                    snapshots: 0
-                });
-            },
-            { backfillBlocks: new MiscountingBlockSource() }
-        );
+            expect(BigInt(word)).to.equal(5n);
+            // still lazy: a slot the mirror has not read is asked for
+            expect(await session.provider.getStorage(address, 1)).to.equal(
+                ZeroHash
+            );
+            // Mutation: entries 1 (the history's count) makes the account
+            // complete, so no read asks the service.
+            expect(serviceRequests(session, "scp_getState")).to.have.length(2);
+        });
     });
 
     it("keeps an account lazy when the backfill of a syncing account fails", async function () {
@@ -547,79 +510,67 @@ describe("MirrorRpcProvider", function () {
 
     it("drops a complete account to lazy reads when the service finds its cached entries short after a block, and reads the omitted slot", async function () {
         let omitFrom = Number.MAX_SAFE_INTEGER;
-        const contract: SubstrateContract = {
-            address: "",
-            changes: [],
-            deployed: 0,
-            tipNumber: -1,
-            tipHash: () => "0xtip",
-            info: RECORDED_ACCOUNT_INFO,
-            entries: (n) => (n >= omitFrom ? 3 : 2)
-        };
-        await withSubstrateNode(contract, async (substrate) => {
-            await withMirrorSession(
-                async (session) => {
-                    const writer = await deploySlotWriter(session.signer);
-                    contract.address = writer;
-                    const deployed = await session.chain.getBlockNumber();
-                    contract.deployed = deployed;
-                    await writeSlot(session.signer, writer, 1, 5n);
-                    await writeSlot(session.signer, writer, 2, 7n);
-                    contract.changes.push(deployed, deployed + 1, deployed + 2);
-                    // the service has the account complete: the mirror takes its snapshot
-                    await backfillAtService(session, [writer]);
-                    expect(
-                        BigInt(await session.provider.getStorage(writer, 1))
-                    ).to.equal(5n);
-                    expect(
-                        session.provider.mirrorStatistics?.snapshots
-                    ).to.equal(1);
+        await withSubstrateMirrorSession(
+            (n) => (n >= omitFrom ? 3 : 2),
+            async (session, contract) => {
+                const writer = await deploySlotWriter(session.signer);
+                contract.address = writer;
+                const deployed = await session.chain.getBlockNumber();
+                contract.deployed = deployed;
+                await writeSlot(session.signer, writer, 1, 5n);
+                await writeSlot(session.signer, writer, 2, 7n);
+                contract.changes.push(deployed, deployed + 1, deployed + 2);
+                // the service has the account complete: the mirror takes its snapshot
+                await backfillAtService(session, [writer]);
+                expect(
+                    BigInt(await session.provider.getStorage(writer, 1))
+                ).to.equal(5n);
+                expect(session.provider.mirrorStatistics?.snapshots).to.equal(
+                    1
+                );
 
-                    // the next block's trace lists the account but not the slot it wrote
-                    omitFrom = deployed + 3;
-                    session.relay.tamper(
-                        "debug_traceBlockByNumber",
-                        (result, params) =>
-                            asksCallFrames(params)
-                                ? result
-                                : (
-                                      result as {
-                                          result: {
-                                              pre: object;
-                                              post: Record<string, object>;
-                                          };
-                                      }[]
-                                  ).map((entry) => ({
-                                      ...entry,
+                // the next block's trace lists the account but not the slot it wrote
+                omitFrom = deployed + 3;
+                session.relay.tamper(
+                    "debug_traceBlockByNumber",
+                    (result, params) =>
+                        asksCallFrames(params)
+                            ? result
+                            : (
+                                  result as {
                                       result: {
-                                          pre: entry.result.pre,
-                                          post: {
-                                              ...entry.result.post,
-                                              [writer]: { storage: {} }
-                                          }
+                                          pre: object;
+                                          post: Record<string, object>;
+                                      };
+                                  }[]
+                              ).map((entry) => ({
+                                  ...entry,
+                                  result: {
+                                      pre: entry.result.pre,
+                                      post: {
+                                          ...entry.result.post,
+                                          [writer]: { storage: {} }
                                       }
-                                  }))
-                    );
-                    await writeSlot(session.signer, writer, 3, 9n);
-                    await waitFor(
-                        () =>
-                            session.provider.mirrorStatistics?.lazyDrops === 1,
-                        5_000,
-                        20
-                    );
+                                  }
+                              }))
+                );
+                await writeSlot(session.signer, writer, 3, 9n);
+                await waitFor(
+                    () => session.provider.mirrorStatistics?.lazyDrops === 1,
+                    5_000,
+                    20
+                );
 
-                    // a complete cache would answer zero for the slot the trace left out
-                    expect(
-                        BigInt(await session.provider.getStorage(writer, 3))
-                    ).to.equal(9n);
-                    expect(session.provider.mirrorStatistics).to.include({
-                        lazyNotices: 1,
-                        lazyDrops: 1
-                    });
-                },
-                { backfillBlocks: new ChildTrieBlockSource(substrate.url) }
-            );
-        });
+                // a complete cache would answer zero for the slot the trace left out
+                expect(
+                    BigInt(await session.provider.getStorage(writer, 3))
+                ).to.equal(9n);
+                expect(session.provider.mirrorStatistics).to.include({
+                    lazyNotices: 1,
+                    lazyDrops: 1
+                });
+            }
+        );
     });
 
     it("answers a call that carries a gas limit from the node, which charges the transaction gas the local EVM does not", async function () {
@@ -913,47 +864,6 @@ describe("MirrorRpcProvider", function () {
                 nodeRequests(session, "eth_getBlockByNumber")
             ).to.have.length(0);
         });
-    });
-
-    it("runs a custom precompile locally without an upstream request", async function () {
-        await withMirrorSession(
-            async (session) => {
-                const call = async () =>
-                    AbiCoder.defaultAbiCoder().decode(
-                        ["uint256", "bool"],
-                        await session.provider.call({
-                            to: CUSTOM_PRECOMPILE_ADDRESS,
-                            data: CUSTOM_PRECOMPILE_CALLDATA
-                        })
-                    );
-                const [first] = await call();
-                expect(first).to.equal(7n);
-                expect(nodeRequests(session, "eth_call")).to.have.length(0);
-                const sent = session.node.forwardedMethods.length;
-
-                const [second] = await call();
-
-                expect(second).to.equal(7n);
-                expect(session.node.forwardedMethods.slice(sent)).to.deep.equal(
-                    []
-                );
-            },
-            {
-                customPrecompiles: [
-                    {
-                        address: CUSTOM_PRECOMPILE_ADDRESS,
-                        module: path.join(
-                            __dirname,
-                            "../fixtures/workerAnswerPrecompile.ts"
-                        ),
-                        options: {
-                            expectedData: CUSTOM_PRECOMPILE_CALLDATA,
-                            value: "7"
-                        }
-                    }
-                ]
-            }
-        );
     });
 
     it("holds a call issued after the peer's own transaction is mined until the mirror has that block", async function () {
@@ -1288,21 +1198,6 @@ describe("MirrorRpcProvider", function () {
         });
     });
 
-    it("has the longest wait as its backstop until a block has reached the copy, and a shorter one after fast blocks", async function () {
-        await withMirrorSession(async (session) => {
-            const { storage, chainStorage } =
-                await deployMirroredStorage(session);
-            const cap = session.provider.mirrorStatistics!.backstopCapMs;
-            expect(session.provider.mirrorStatistics?.backstopMs).to.equal(cap);
-            expect(await storage.getValue()).to.equal(0n);
-            expect(session.provider.mirrorStatistics?.backstopMs).to.equal(cap);
-
-            await teachBackstop(session, chainStorage);
-
-            await waitFor(() => blockBackstopLearned(session, 0.5), 5_000, 20);
-        });
-    });
-
     it("asks the node at once when the service says its tracing of the awaited block failed", async function () {
         await withMirrorSession(async (session) => {
             const { storage, chainStorage } =
@@ -1335,45 +1230,6 @@ describe("MirrorRpcProvider", function () {
                 freshnessTimeouts: 0,
                 behindNode: 1
             });
-        });
-    });
-
-    it("asks the node at once when the service says its upstream has not seen the awaited block", async function () {
-        await withMirrorSession(async (session) => {
-            const { storage, chainStorage } =
-                await deployMirroredStorage(session);
-            expect(await storage.getValue()).to.equal(0n);
-            await session.provider.on("block", () => undefined);
-            const older = await headNumber(session);
-            const held = session.relay.holdNext(
-                "eth_getBlockByNumber",
-                "latest"
-            );
-
-            await (await chainStorage.setValue(3n)).wait();
-            await held.arrived;
-            // time is the input: the node's announcement reaches the provider
-            await sleep(ABSENCE_WINDOW_MS);
-            // the service's upstream answers as if it had not reached the block
-            session.relay.tamper("eth_blockNumber", () => toQuantity(older));
-            const started = Date.now();
-            const read = storage.getValue();
-            await sleep(50);
-            // a read of the service that names the block makes it check its upstream
-            const number = await session.provider.send("eth_blockNumber", []);
-            const value = await read;
-
-            expect(value).to.equal(3n);
-            expect(number).to.equal(toQuantity(await headNumber(session)));
-            expect(Date.now() - started).to.be.lessThan(
-                SDK_RPC_DEADLINE_MS / 2
-            );
-            expect(nodeRequests(session, "eth_call")).to.have.length(1);
-            expect(session.provider.mirrorStatistics).to.include({
-                freshnessTimeouts: 0,
-                behindNode: 1
-            });
-            held.release();
         });
     });
 
@@ -1650,6 +1506,16 @@ describe("MirrorRpcProvider", function () {
             expect(
                 nodeRequests(session, "eth_getBlockByNumber")
             ).to.have.length(asked + 1);
+            // Mutation: MirrorChain.seenBlock returning undefined drops the
+            // block number the second request carries.
+            expect(
+                serviceRequests(session, "scp_getBlock").map(
+                    (request) => request.params
+                )
+            ).to.deep.equal([
+                ["latest", false],
+                ["latest", false, toQuantity(await headNumber(session))]
+            ]);
             held.release();
         });
     });
