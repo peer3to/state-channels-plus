@@ -1,22 +1,15 @@
-import type { StorageSlot, StorageWord } from "./blockStorageDiff";
-import {
-    blake2b256,
-    bytesToHex,
-    hexToBytes
-} from "./includedHead/assetHubInclusion";
+import { bytesToHex, hexToBytes } from "./includedHead/assetHubInclusion";
 
 /**
- * Pure helpers of the Asset Hub completeness check: where a contract's child
- * trie lives on the Substrate node, how its keys relate to EVM slots, and which
- * blocks changed it. The check reads the node only; it never writes.
+ * Pure helpers of the Asset Hub backfill: where a contract's child trie lives
+ * on the Substrate node and which blocks changed it. They read the node only;
+ * they never write.
  */
 
 /** `0x`-prefixed hex string. */
 type HexString = string;
 /** Id of a contract's child trie (`ContractInfo.trie_id`). */
 export type TrieId = HexString;
-/** Key of an entry in a contract's child trie: `blake2_256(slot)`. */
-export type ChildKey = HexString;
 /** A block number on the chain being checked. */
 type BlockNumber = number;
 
@@ -109,56 +102,6 @@ export function trieIdOf(accountInfo: HexString): TrieId | undefined {
  */
 export function childStorageKey(trieId: TrieId): HexString {
     return "0x" + CHILD_STORAGE_PREFIX + trieId.slice(2);
-}
-
-/** The child trie key of an EVM storage slot. */
-export function childKeyOfSlot(slot: StorageSlot): ChildKey {
-    return bytesToHex(blake2b256(hexToBytes(slot)));
-}
-
-/** How a contract's cached storage differs from its child trie. */
-export interface ChildTrieComparison {
-    /** Non-zero cached slots the child trie does not hold. */
-    missing: StorageSlot[];
-    /** Child trie keys no cached slot hashes to. */
-    extra: ChildKey[];
-    /** Non-zero cached slots whose value differs from the child trie's. */
-    differing: StorageSlot[];
-    /** Child trie entries, and non-zero cached slots, compared. */
-    nodeEntries: number;
-    cachedSlots: number;
-}
-
-/**
- * Compares the non-zero cached slots with the child trie entries (`values`:
- * child key to 32-byte word). The cache is complete exactly when `missing`,
- * `extra` and `differing` are all empty.
- */
-export function compareChildTrie(
-    cached: Record<StorageSlot, StorageWord>,
-    values: Map<ChildKey, StorageWord>
-): ChildTrieComparison {
-    const expected = new Map<ChildKey, StorageSlot>();
-    const missing: StorageSlot[] = [];
-    const differing: StorageSlot[] = [];
-    let cachedSlots = 0;
-    for (const [slot, word] of Object.entries(cached)) {
-        if (BigInt(word) === 0n) continue;
-        cachedSlots++;
-        const key = childKeyOfSlot(slot);
-        expected.set(key, slot);
-        const held = values.get(key);
-        if (held === undefined) missing.push(slot);
-        else if (BigInt(held) !== BigInt(word)) differing.push(slot);
-    }
-    const extra = [...values.keys()].filter((key) => !expected.has(key));
-    return {
-        missing,
-        extra,
-        differing,
-        nodeEntries: values.size,
-        cachedSlots
-    };
 }
 
 /**

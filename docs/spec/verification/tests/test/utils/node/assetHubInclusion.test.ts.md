@@ -13,6 +13,7 @@ Direct calls to the hashing, key and decoding helpers with reference digests and
 - `hashes the RFC 7693 input abc to its BLAKE2b-256 digest`: UNIT-TEST-SDS-INCLUSION-HELPERS-1-M6WJ8E.P2
 - `hashes inputs around the 128-byte block boundary to the reference digests`: UNIT-TEST-SDS-INCLUSION-HELPERS-1-M6WJ8E.P3
 - `hashes multi-block inputs to the reference digests`: UNIT-TEST-SDS-INCLUSION-HELPERS-1-M6WJ8E.P4
+- `hashes 32-byte slot keys and inputs around the block boundary like @noble/hashes`: UNIT-TEST-SDS-INCLUSION-HELPERS-1-M6WJ8E.P11
 - `derives the recorded Paras::Heads key of Asset Hub from its para id`: UNIT-TEST-SDS-INCLUSION-HELPERS-1-M6WJ8E.P5
 - `derives the recorded Paras::Heads keys of other parachains from their para ids`: UNIT-TEST-SDS-INCLUSION-HELPERS-1-M6WJ8E.P6
 - `derives the recorded Revive::BlockHash keys from the block numbers`: UNIT-TEST-SDS-INCLUSION-HELPERS-1-M6WJ8E.P7

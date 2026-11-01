@@ -23,3 +23,4 @@ The helpers compute BLAKE2b-256 and twox storage keys and decode a relay chain p
 - [x] `UNIT-TEST-SDS-INCLUSION-HELPERS-1-M6WJ8E.P8` — a recorded parachain head decodes to the included block number and Substrate hash
 - [x] `UNIT-TEST-SDS-INCLUSION-HELPERS-1-M6WJ8E.P9` — a parachain head shorter than its declared length is refused
 - [x] `UNIT-TEST-SDS-INCLUSION-HELPERS-1-M6WJ8E.P10` — a para id that is not a u32 is refused
+- [x] `UNIT-TEST-SDS-INCLUSION-HELPERS-1-M6WJ8E.P11` — inputs around the block boundary hash like the independent @noble/hashes BLAKE2b-256

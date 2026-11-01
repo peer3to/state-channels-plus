@@ -1607,6 +1607,7 @@ export class StorageDiffService {
                 );
                 spend(reader);
                 // a chain that holds other entries than the history named is not backfilled whole
+                // (Asset Hub's tracer can omit a constructor's repeated write: paritytech/polkadot-sdk#13663)
                 const held = await this.backfillBlocks.countStorageEntries(
                     address,
                     prepared.anchor

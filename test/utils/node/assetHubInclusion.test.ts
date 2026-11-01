@@ -6,6 +6,7 @@ import {
     paraHeadKey,
     reviveBlockHashKey
 } from "@/utils/node/storageDiff/includedHead/assetHubInclusion";
+import { blake2b } from "@noble/hashes/blake2b";
 import { expect } from "chai";
 
 /** Bytes (i * 7 + 3) mod 256; the digests below come from Python's hashlib. */
@@ -45,6 +46,18 @@ describe("assetHubInclusion", function () {
         expect(bytesToHex(blake2b256(pattern(300)))).to.equal(
             "0x3f712d8870a79a34ed4aed7b4e82123cea195af956e7ebef11d8a9d2f644734e"
         );
+    });
+
+    // Mutation: a wrong rotation constant in blake2b256 -> the digests differ.
+    it("hashes 32-byte slot keys and inputs around the block boundary like @noble/hashes", function () {
+        for (const length of [0, 1, 32, 64, 127, 128, 129, 255, 256, 300]) {
+            expect(bytesToHex(blake2b256(pattern(length)))).to.equal(
+                "0x" +
+                    Buffer.from(
+                        blake2b(pattern(length), { dkLen: 32 })
+                    ).toString("hex")
+            );
+        }
     });
 
     it("derives the recorded Paras::Heads key of Asset Hub from its para id", function () {

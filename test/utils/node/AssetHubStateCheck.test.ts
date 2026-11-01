@@ -1,14 +1,10 @@
 import {
-    childKeyOfSlot,
     childStorageKey,
-    compareChildTrie,
     findChangedBlocks,
     reviveAccountInfoKey,
     trieIdOf
 } from "@/utils/node/storageDiff/assetHubStateCheck";
-import { blake2b } from "@noble/hashes/blake2b";
 import { expect } from "chai";
-import { toBeHex } from "ethers";
 
 /** `Revive::AccountInfoOf` of a mainnet contract and the value Asset Hub held for it. */
 const RECORDED_ADDRESS = "0x99ee73298423dcf5da3059a5e48bda20bfbcd01b";
@@ -18,10 +14,6 @@ const RECORDED_INFO =
     "0x0080534cf48ba03bfd9aad907397c556b60630666df566b309489b078f1ea2462806df37580a5890e6391148efc9cbc03c58a4b737422ca66bb8a9ae1928f39bacb5406a0000a901000001e81fa200000000000000000000000001b5a3fa0100000000000000000000005084b5e80000000000000000000000000000000000000000";
 const RECORDED_TRIE_ID =
     "0x534cf48ba03bfd9aad907397c556b60630666df566b309489b078f1ea2462806";
-
-function word(value: bigint): string {
-    return toBeHex(value, 32);
-}
 
 describe("Asset Hub state check helpers", function () {
     it("derives the AccountInfoOf key of an address as the node holds it", function () {
@@ -50,48 +42,6 @@ describe("Asset Hub state check helpers", function () {
             "0x3a6368696c645f73746f726167653a64656661756c743a" +
                 RECORDED_TRIE_ID.slice(2)
         );
-    });
-
-    it("keys a slot in the child trie by the blake2-256 of its 32 bytes", function () {
-        const slot = word(7n);
-        expect(childKeyOfSlot(slot)).to.equal(
-            "0x" +
-                Buffer.from(
-                    blake2b(Buffer.from(slot.slice(2), "hex"), { dkLen: 32 })
-                ).toString("hex")
-        );
-    });
-
-    it("finds a cache equal to the child trie complete, and ignores zero words", function () {
-        const cached = { [word(1n)]: word(5n), [word(2n)]: word(0n) };
-        const values = new Map([[childKeyOfSlot(word(1n)), word(5n)]]);
-
-        const result = compareChildTrie(cached, values);
-
-        expect(result.missing).to.deep.equal([]);
-        expect(result.extra).to.deep.equal([]);
-        expect(result.differing).to.deep.equal([]);
-        expect(result.cachedSlots).to.equal(1);
-        expect(result.nodeEntries).to.equal(1);
-    });
-
-    it("reports a cached slot the child trie lacks", function () {
-        const result = compareChildTrie({ [word(1n)]: word(5n) }, new Map());
-        expect(result.missing).to.deep.equal([word(1n)]);
-    });
-
-    it("reports a child trie entry no cached slot has", function () {
-        const stray = childKeyOfSlot(word(9n));
-        const result = compareChildTrie({}, new Map([[stray, word(1n)]]));
-        expect(result.extra).to.deep.equal([stray]);
-    });
-
-    it("reports a cached slot whose value differs from the child trie's", function () {
-        const result = compareChildTrie(
-            { [word(1n)]: word(5n) },
-            new Map([[childKeyOfSlot(word(1n)), word(6n)]])
-        );
-        expect(result.differing).to.deep.equal([word(1n)]);
     });
 
     it("finds the blocks after which a trie root changes, in few reads", async function () {
