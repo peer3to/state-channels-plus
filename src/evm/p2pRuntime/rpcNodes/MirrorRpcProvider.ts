@@ -402,7 +402,7 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
 
     // Asks the node the read `request` was answered locally from `head`, at
     // that block hash, and compares. A node that cannot answer leaves the
-    // sample skipped; a difference is counted and logged, and the account
+    // sample skipped; a difference is logged, and the account
     // drops to lazy reads, fetched from the node from now on.
     private async checkSample(
         mirror: Mirror,
@@ -424,8 +424,7 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
             }
             const localFailed = "error" in local;
             // a reverted call fails on the node too; any other failure to ask is no sample
-            if (remoteFailed && !localFailed)
-                return mirror.noteSample("skipped");
+            if (remoteFailed && !localFailed) return;
             const same = localFailed
                 ? remoteFailed
                 : !remoteFailed &&
@@ -434,7 +433,6 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
                       (local as JsonRpcResult).result,
                       remote
                   );
-            mirror.noteSample(same ? "match" : "mismatch");
             if (same) return;
             this.logger.warn(
                 "A read the mirror answered locally differs from the node's",
@@ -448,7 +446,6 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
             await mirror.dropToLazy(target.account);
         } catch (error) {
             // sampling never disturbs a peer: a failed check is only a skipped one
-            mirror.noteSample("skipped");
             this.logger.debug("A mirror sample could not be checked", {
                 error
             });
@@ -485,11 +482,6 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
             number: BigInt(receipt.blockNumber),
             hash: receipt.blockHash.toLowerCase()
         });
-    }
-
-    /** What the mirror's own state reads cost so far. */
-    get mirrorStatistics() {
-        return this.mirror?.statistics;
     }
 
     /** The newest block the storage diff service reported as included. */

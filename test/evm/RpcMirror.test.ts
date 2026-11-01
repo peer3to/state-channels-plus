@@ -11,6 +11,7 @@ import {
     nodeRequests,
     nodeStateReads,
     serviceRequests,
+    waitUntilAnsweredLocally,
     withMirrorSession,
     withSubstrateMirrorSession,
     type MirrorSession
@@ -33,9 +34,13 @@ const ABSENCE_WINDOW_MS = 500;
 /** Time is the input: how long a held node reply makes a round trip. */
 const NODE_ROUND_TRIP_MS = 400;
 
+/** Time is the input: how long after its announcement the slowest taught block reaches the copy. */
+const SLOW_RECORD_MS = 100;
+
 /**
  * Lets the mirror learn how long records take: blocks a node announces reach
- * the copy a few milliseconds later, each arrival a sample for the backstop.
+ * the copy a few milliseconds later, and one of them SLOW_RECORD_MS later,
+ * each arrival a sample for the backstop.
  */
 async function teachBackstop(
     session: MirrorSession,
@@ -45,12 +50,11 @@ async function teachBackstop(
     await session.provider.on("block", () => undefined);
     for (let value = 1n; value <= 3n; value++)
         await (await chainStorage.setValue(value)).wait();
-}
-
-/** Whether the block backstop has learned a bound below the longest wait a node's round trips leave. */
-function blockBackstopLearned(session: MirrorSession, below = 1): boolean {
-    const stats = session.provider.mirrorStatistics;
-    return !!stats && stats.backstopMs < stats.backstopCapMs * below;
+    const slow = session.relay.holdNext("eth_getBlockByNumber", "latest");
+    await (await chainStorage.setValue(4n)).wait();
+    await slow.arrived;
+    await sleep(SLOW_RECORD_MS);
+    slow.release();
 }
 
 describe("MirrorRpcProvider", function () {
@@ -124,11 +128,6 @@ describe("MirrorRpcProvider", function () {
             // Mutation: not awaiting the snapshot (reading lazily) asks the service
             expect(serviceRequests(session, "scp_getState")).to.have.length(0);
             expect(nodeStateReads(session)).to.equal(0);
-            expect(session.provider.mirrorStatistics).to.include({
-                lazyReads: 0,
-                snapshots: 1,
-                snapshotTimeouts: 0
-            });
         });
     });
 
@@ -140,22 +139,17 @@ describe("MirrorRpcProvider", function () {
 
             const word = await session.provider.getStorage(address, 0);
 
-            // answered while the snapshot is held back, and no backstop ran out
+            // answered while the snapshot is held back: one state request
             expect(BigInt(word)).to.equal(5n);
-            expect(session.provider.mirrorStatistics).to.include({
-                lazyReads: 1,
-                snapshotTimeouts: 0,
-                snapshots: 0
-            });
+            expect(serviceRequests(session, "scp_getState")).to.have.length(1);
             release();
-            await waitFor(
-                () => session.provider.mirrorStatistics?.snapshots === 1,
-                5_000,
-                20
-            );
+            await waitUntilAnsweredLocally(session, address);
             // the code and the slot are local now: a contract call needs no lazy read
+            const asked = serviceRequests(session, "scp_getState").length;
             expect(await storage.getValue()).to.equal(5n);
-            expect(session.provider.mirrorStatistics?.lazyReads).to.equal(1);
+            expect(serviceRequests(session, "scp_getState")).to.have.length(
+                asked
+            );
         });
     });
 
@@ -194,8 +188,9 @@ describe("MirrorRpcProvider", function () {
             contract.changes.push(contract.deployed, contract.deployed + 1);
 
             const word = await session.provider.getStorage(address, 0);
+            // the notice that no snapshot is coming
             await waitFor(
-                () => session.provider.mirrorStatistics?.lazyNotices === 1,
+                () => session.service.deliveredCount("scp_snapshot") === 1,
                 5_000,
                 20
             );
@@ -220,8 +215,9 @@ describe("MirrorRpcProvider", function () {
             session.relay.failNext("eth_getBlockByNumber", 50);
 
             const word = await session.provider.getStorage(address, 0);
+            // the notice that no snapshot is coming
             await waitFor(
-                () => session.provider.mirrorStatistics?.lazyNotices === 1,
+                () => session.service.deliveredCount("scp_snapshot") === 1,
                 10_000,
                 20
             );
@@ -231,11 +227,9 @@ describe("MirrorRpcProvider", function () {
             expect(await session.provider.getStorage(address, 1)).to.equal(
                 ZeroHash
             );
-            expect(session.provider.mirrorStatistics).to.include({
-                lazyReads: 2,
-                snapshots: 0,
-                snapshotTimeouts: 0
-            });
+            // Mutation: a snapshot applied after the failed backfill would
+            // answer the second read locally.
+            expect(serviceRequests(session, "scp_getState")).to.have.length(2);
         });
     });
 
@@ -246,14 +240,8 @@ describe("MirrorRpcProvider", function () {
                 await deployMirroredStorage(session);
             await (await chainStorage.setValue(3n)).wait();
             await backfillAtService(session, [taught, address]);
-            expect(
-                session.provider.mirrorStatistics?.snapshotBackstopMs
-            ).to.equal(session.provider.mirrorStatistics?.backstopCapMs);
             // a snapshot that arrives teaches how long snapshots take
             await session.provider.getStorage(taught, 0);
-            expect(
-                session.provider.mirrorStatistics?.snapshotBackstopMs
-            ).to.be.lessThan(SDK_RPC_DEADLINE_MS / 2);
             session.service.dropNotifications("scp_snapshot");
 
             const started = Date.now();
@@ -261,11 +249,9 @@ describe("MirrorRpcProvider", function () {
             const elapsed = Date.now() - started;
 
             expect(BigInt(word)).to.equal(3n);
+            // Mutation: a snapshot backstop that stays at its cap makes the
+            // read wait past this bound.
             expect(elapsed).to.be.lessThan(SDK_RPC_DEADLINE_MS / 2);
-            expect(session.provider.mirrorStatistics).to.include({
-                snapshotTimeouts: 1,
-                snapshotDelays: 0
-            });
             expect(nodeRequests(session, "eth_getStorageAt")).to.have.length(1);
         });
     });
@@ -285,27 +271,19 @@ describe("MirrorRpcProvider", function () {
             await session.provider.on("block", () => undefined);
             for (let value = 1n; value <= 3n; value++)
                 await (await chainStorage.setValue(value)).wait();
-            await waitFor(() => blockBackstopLearned(session, 0.5), 5_000, 20);
-            const blockBackstopMs =
-                session.provider.mirrorStatistics!.backstopMs;
-            expect(
-                session.provider.mirrorStatistics?.snapshotBackstopMs,
-                "no snapshot has arrived: the cap"
-            ).to.equal(session.provider.mirrorStatistics?.backstopCapMs);
             releaseWarm();
             const release = session.service.holdNotifications("scp_snapshot");
 
             const read = session.provider.getStorage(address, 0);
-            // time is the input: longer than a block takes by the learned bound
-            await sleep(blockBackstopMs + ABSENCE_WINDOW_MS);
+            // time is the input: longer than the bound the blocks taught, shorter than the snapshot cap
+            await sleep(SDK_RPC_DEADLINE_MS * 0.6);
             release();
             const word = await read;
 
             // the last value teachBackstop wrote
             expect(BigInt(word)).to.equal(3n);
-            expect(
-                session.provider.mirrorStatistics?.snapshotTimeouts
-            ).to.equal(0);
+            // Mutation: a snapshot backstop learned from block arrivals sends
+            // the read to the node before the snapshot is released.
             expect(nodeRequests(session, "eth_getStorageAt")).to.have.length(0);
         });
     });
@@ -317,6 +295,7 @@ describe("MirrorRpcProvider", function () {
             await backfillAtService(session, [address]);
             session.service.dropNotifications("scp_snapshot");
 
+            const started = Date.now();
             const read = session.provider.getStorage(address, 0);
             await sleep(300);
             session.service.cut();
@@ -324,13 +303,15 @@ describe("MirrorRpcProvider", function () {
 
             // the node answers when the cut ends the wait, not the backstop
             expect(BigInt(word)).to.equal(5n);
-            expect(
-                session.provider.mirrorStatistics?.snapshotTimeouts
-            ).to.equal(0);
+            // Mutation: a cut that leaves the wait to the backstop (the cap,
+            // no snapshot having arrived) takes the whole cap.
+            expect(Date.now() - started).to.be.lessThan(
+                SDK_RPC_DEADLINE_MS / 2
+            );
         });
     });
 
-    it("re-asks the node about a sampled read after replying, and counts the match", async function () {
+    it("re-asks the node about a sampled read after replying, and keeps the account when the node agrees", async function () {
         await withMirrorSession(
             async (session) => {
                 const { storage, address } =
@@ -347,17 +328,20 @@ describe("MirrorRpcProvider", function () {
                 expect(BigInt(word)).to.equal(5n);
                 await waitFor(() => held.heldReplies() > 0, 5_000, 20);
                 held.release();
-                await waitFor(
-                    () => session.provider.mirrorStatistics?.sampleChecks === 1,
-                    5_000,
-                    20
-                );
-                expect(session.provider.mirrorStatistics).to.include({
-                    sampleChecks: 1,
-                    sampleMismatches: 0,
-                    lazyDrops: 0
-                });
                 expect(nodeStateReads(session)).to.equal(1);
+
+                // the next reads are sampled again and still answered by the copy
+                expect(
+                    BigInt(await session.provider.getStorage(address, 0))
+                ).to.equal(5n);
+                await waitFor(() => nodeStateReads(session) >= 2, 5_000, 20);
+                expect(
+                    BigInt(await session.provider.getStorage(address, 0))
+                ).to.equal(5n);
+                await waitFor(() => nodeStateReads(session) >= 3, 5_000, 20);
+                // Mutation: a match treated as a mismatch drops the account,
+                // and the third read then asks the node as well as sampling.
+                expect(nodeStateReads(session)).to.equal(3);
             },
             { sampleRate: 1 }
         );
@@ -373,16 +357,13 @@ describe("MirrorRpcProvider", function () {
                 await session.provider.getCode(address);
                 await session.provider.getTransactionCount(owner, "latest");
                 await waitFor(
-                    () => session.provider.mirrorStatistics?.sampleChecks === 3,
+                    () =>
+                        nodeRequests(session, "eth_getTransactionCount")
+                            .length === 1,
                     5_000,
                     20
                 );
 
-                expect(session.provider.mirrorStatistics).to.include({
-                    sampleChecks: 3,
-                    sampleMismatches: 0,
-                    sampleSkipped: 0
-                });
                 expect(nodeRequests(session, "eth_getBalance")).to.have.length(
                     1
                 );
@@ -406,10 +387,6 @@ describe("MirrorRpcProvider", function () {
 
                 expect(nodeStateReads(session)).to.equal(0);
                 expect(nodeRequests(session, "eth_call")).to.have.length(0);
-                expect(session.provider.mirrorStatistics).to.include({
-                    sampleChecks: 0,
-                    sampleSkipped: 0
-                });
             },
             { sampleRate: 0 }
         );
@@ -427,10 +404,7 @@ describe("MirrorRpcProvider", function () {
                     await session.provider.getBalance(address);
                 await waitFor(
                     () =>
-                        (session.provider.mirrorStatistics?.sampleChecks ?? 0) +
-                            (session.provider.mirrorStatistics?.sampleSkipped ??
-                                0) >
-                        0,
+                        nodeRequests(session, "eth_getBalance").length > before,
                     5_000,
                     20
                 );
@@ -458,21 +432,17 @@ describe("MirrorRpcProvider", function () {
                 await (await storage.setValue(5n)).wait();
 
                 const wrong = await session.provider.getStorage(address, 0);
+                // the mismatch drops the account: the read then comes from the node
                 await waitFor(
-                    () =>
-                        session.provider.mirrorStatistics?.sampleMismatches ===
-                        1,
+                    async () =>
+                        BigInt(
+                            await session.provider.getStorage(address, 0)
+                        ) === 5n,
                     5_000,
                     20
                 );
-                const right = await session.provider.getStorage(address, 0);
 
                 expect(BigInt(wrong)).to.equal(6n);
-                expect(BigInt(right)).to.equal(5n);
-                expect(session.provider.mirrorStatistics).to.include({
-                    sampleMismatches: 1,
-                    lazyDrops: 1
-                });
             },
             { sampleRate: 1 }
         );
@@ -489,20 +459,14 @@ describe("MirrorRpcProvider", function () {
                 await (await storage.setValue(5n)).wait();
 
                 const wrong = await storage.getValue();
+                // the mismatch drops the called account: the call then reads it from the node
                 await waitFor(
-                    () =>
-                        session.provider.mirrorStatistics?.sampleMismatches ===
-                        1,
+                    async () => (await storage.getValue()) === 5n,
                     5_000,
                     20
                 );
-                const right = await storage.getValue();
 
-                expect([wrong, right]).to.deep.equal([6n, 5n]);
-                expect(session.provider.mirrorStatistics).to.include({
-                    sampleChecks: 1,
-                    lazyDrops: 1
-                });
+                expect(wrong).to.equal(6n);
             },
             { sampleRate: 1 }
         );
@@ -525,9 +489,6 @@ describe("MirrorRpcProvider", function () {
                 expect(
                     BigInt(await session.provider.getStorage(writer, 1))
                 ).to.equal(5n);
-                expect(session.provider.mirrorStatistics?.snapshots).to.equal(
-                    1
-                );
 
                 // the next block's trace lists the account but not the slot it wrote
                 omitFrom = deployed + 3;
@@ -555,20 +516,14 @@ describe("MirrorRpcProvider", function () {
                               }))
                 );
                 await writeSlot(session.signer, writer, 3, 9n);
+                // a complete cache would answer zero for the slot the trace left out
                 await waitFor(
-                    () => session.provider.mirrorStatistics?.lazyDrops === 1,
+                    async () =>
+                        BigInt(await session.provider.getStorage(writer, 3)) ===
+                        9n,
                     5_000,
                     20
                 );
-
-                // a complete cache would answer zero for the slot the trace left out
-                expect(
-                    BigInt(await session.provider.getStorage(writer, 3))
-                ).to.equal(9n);
-                expect(session.provider.mirrorStatistics).to.include({
-                    lazyNotices: 1,
-                    lazyDrops: 1
-                });
             }
         );
     });
@@ -630,11 +585,6 @@ describe("MirrorRpcProvider", function () {
                 ]
             ]);
             expect(nodeStateReads(session)).to.equal(0);
-            expect(session.provider.mirrorStatistics).to.include({
-                lazyReads: 1,
-                lazyFields: 1,
-                snapshotTimeouts: 0
-            });
         });
     });
 
@@ -1023,9 +973,6 @@ describe("MirrorRpcProvider", function () {
                     (request) => (request.params as unknown[])[1]
                 )
             ).to.deep.equal(["pending"]);
-            expect(
-                session.provider.mirrorStatistics?.snapshots
-            ).to.be.greaterThan(0);
         });
     });
 
@@ -1162,7 +1109,6 @@ describe("MirrorRpcProvider", function () {
             await teachBackstop(session, chainStorage);
             await (await storage.setValue(2n)).wait();
             expect(await storage.getValue()).to.equal(2n);
-            await waitFor(() => blockBackstopLearned(session), 5_000, 20);
             const release =
                 session.service.holdNotifications("scp_subscription");
 
@@ -1174,19 +1120,19 @@ describe("MirrorRpcProvider", function () {
             expect(value, "the node's value, not the copy's older 2").to.equal(
                 7n
             );
-            expect(elapsed).to.be.lessThan(SDK_RPC_DEADLINE_MS);
+            // the wait is the learned bound, not the cap
+            expect(elapsed).to.be.greaterThan(SLOW_RECORD_MS);
+            // Mutation: a backstop that stays at the cap makes the read wait
+            // the whole deadline.
+            expect(elapsed).to.be.lessThan((SDK_RPC_DEADLINE_MS * 2) / 3);
             expect(nodeRequests(session, "eth_call")).to.have.length(1);
-            expect(session.provider.mirrorStatistics).to.include({
-                freshnessTimeouts: 1
-            });
 
             // the wait is not repeated for every read: the node answers at once
+            const repeated = Date.now();
             expect(await storage.getValue()).to.equal(7n);
             expect(nodeRequests(session, "eth_call")).to.have.length(2);
-            expect(session.provider.mirrorStatistics).to.include({
-                freshnessTimeouts: 1,
-                behindNode: 1
-            });
+            // Mutation: a flag that does not stay set repeats the whole wait.
+            expect(Date.now() - repeated).to.be.lessThan(elapsed / 2);
 
             // once the record arrives the copy answers again
             release();
@@ -1226,10 +1172,6 @@ describe("MirrorRpcProvider", function () {
                 SDK_RPC_DEADLINE_MS / 2
             );
             expect(nodeRequests(session, "eth_call")).to.have.length(1);
-            expect(session.provider.mirrorStatistics).to.include({
-                freshnessTimeouts: 0,
-                behindNode: 1
-            });
         });
     });
 
@@ -1268,9 +1210,6 @@ describe("MirrorRpcProvider", function () {
                 probes + 1
             );
             expect(nodeRequests(session, "eth_call")).to.have.length(3);
-            expect(session.provider.mirrorStatistics).to.include({
-                freshnessTimeouts: 0
-            });
             held.release();
             // once the copy holds the block the next wait probes again
             await waitFor(async () => {
@@ -1349,8 +1288,6 @@ describe("MirrorRpcProvider", function () {
         await withMirrorSession(async (session) => {
             const { storage } = await deployMirroredStorage(session);
             expect(await storage.getValue()).to.equal(0n);
-            const quickCapMs = session.provider.mirrorStatistics!.backstopCapMs;
-            expect(quickCapMs).to.be.lessThanOrEqual(SDK_RPC_DEADLINE_MS);
 
             // the node answers a forwarded request slowly: that is a round trip learned
             const slowReply = session.node.holdReplies("eth_gasPrice");
@@ -1360,11 +1297,6 @@ describe("MirrorRpcProvider", function () {
             await sleep(NODE_ROUND_TRIP_MS);
             slowReply.release();
             await forwarded;
-            const slowCapMs = session.provider.mirrorStatistics!.backstopCapMs;
-            expect(slowCapMs).to.be.lessThan(quickCapMs);
-            expect(slowCapMs).to.be.lessThanOrEqual(
-                SDK_RPC_DEADLINE_MS - 3 * NODE_ROUND_TRIP_MS
-            );
 
             // the service stays silent, so the read waits for the whole cap
             const release =
@@ -1382,11 +1314,11 @@ describe("MirrorRpcProvider", function () {
             expect(value, "the node's value, not the copy's older 0").to.equal(
                 7n
             );
-            expect(waited).to.be.greaterThan(slowCapMs / 2);
+            // the wait was not cut short, and the answer still came inside the deadline
+            expect(waited).to.be.greaterThan(1_000);
+            // Mutation: a cap that ignores the node's round trips lets the
+            // wait run the whole deadline, and the node's answer comes late.
             expect(Date.now() - started).to.be.lessThan(SDK_RPC_DEADLINE_MS);
-            expect(session.provider.mirrorStatistics).to.include({
-                freshnessTimeouts: 1
-            });
             release();
         });
     });
@@ -1418,10 +1350,6 @@ describe("MirrorRpcProvider", function () {
                 expect(Date.now() - started).to.be.lessThan(
                     SDK_RPC_DEADLINE_MS / 2
                 );
-                expect(session.provider.mirrorStatistics).to.include({
-                    snapshotDelays: 1,
-                    snapshotTimeouts: 0
-                });
             },
             { retention: 2 }
         );
@@ -1467,12 +1395,10 @@ describe("MirrorRpcProvider", function () {
             const value = await read;
 
             expect(value).to.equal(4n);
-            expect(Date.now() - started).to.be.lessThan(SDK_RPC_DEADLINE_MS);
+            expect(Date.now() - started).to.be.lessThan(
+                SDK_RPC_DEADLINE_MS / 2
+            );
             expect(nodeRequests(session, "eth_call")).to.have.length(1);
-            expect(session.provider.mirrorStatistics).to.include({
-                freshnessTimeouts: 0,
-                behindNode: 1
-            });
             release();
         });
     });

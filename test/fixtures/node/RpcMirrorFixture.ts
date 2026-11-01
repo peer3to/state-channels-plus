@@ -19,6 +19,7 @@ import RpcNodeProvider from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import { createLogger } from "@/utils/logging";
 import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
 import type { StorageDiffService } from "@/utils/node/storageDiff/StorageDiffService";
+import { waitFor } from "@test/utils/waitFor";
 import {
     SimpleNumberStorage__factory,
     type SimpleNumberStorage
@@ -263,6 +264,27 @@ export async function backfillAtService(
     } finally {
         client.close();
     }
+}
+
+/**
+ * Waits until the provider answers a read of a slot it never read without
+ * asking the service: the snapshot of `address` has been applied. Each probe
+ * reads a new slot, so a probe made too early only costs one state request.
+ */
+export async function waitUntilAnsweredLocally(
+    session: MirrorSession,
+    address: string
+): Promise<void> {
+    let slot = 1_000;
+    await waitFor(
+        async () => {
+            const asked = serviceRequests(session, "scp_getState").length;
+            await session.provider.getStorage(address, slot++);
+            return serviceRequests(session, "scp_getState").length === asked;
+        },
+        5_000,
+        20
+    );
 }
 
 /** State reads the provider sent to the node: slots, balances and code. */

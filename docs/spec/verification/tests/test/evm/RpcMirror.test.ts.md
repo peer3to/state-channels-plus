@@ -20,7 +20,7 @@ Each case builds a `MirrorRpcProvider` over an isolated anvil test chain with a 
 - `asks the node, after a backstop learned from snapshot arrivals, for a snapshot the service has ready and never delivers`: REQ-RPCMIRROR-3-7MQH88.T1.P8
 - `does not shorten the wait for a snapshot because blocks arrived fast`: REQ-RPCMIRROR-3-7MQH88.T1.P13
 - `stops waiting for a snapshot at once when the service connection drops`: REQ-RPCMIRROR-3-7MQH88.T1.P9
-- `re-asks the node about a sampled read after replying, and counts the match`: REQ-RPCMIRROR-7-4A6NJN.T1.P1
+- `re-asks the node about a sampled read after replying, and keeps the account when the node agrees`: REQ-RPCMIRROR-7-4A6NJN.T1.P1
 - `samples balance, nonce and code reads against the node too`: REQ-RPCMIRROR-7-4A6NJN.T1.P2
 - `sends nothing to the node at a sample rate of 0`: REQ-RPCMIRROR-7-4A6NJN.T1.P3
 - `samples a small fraction of local answers when the provider is built without a sample rate`: REQ-RPCMIRROR-7-4A6NJN.T1.P6

@@ -177,19 +177,9 @@ export class Mirror {
         });
     }
 
-    /** Counts a sampled answer; see {@link MirrorChain.noteSample}. */
-    noteSample(outcome: "match" | "mismatch" | "skipped"): void {
-        this.chain.noteSample(outcome);
-    }
-
     /** Drops `address` to lazy reads after its cached state was found wrong. */
     async dropToLazy(address: string): Promise<void> {
         await this.chain.dropToLazy(address.toLowerCase(), true);
-    }
-
-    /** What the mirror's own state reads cost so far. */
-    get statistics() {
-        return this.chain.statistics;
     }
 
     /** The number of the newest block the service follows. */

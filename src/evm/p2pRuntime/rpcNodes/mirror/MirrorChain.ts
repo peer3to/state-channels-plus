@@ -70,40 +70,6 @@ export interface MirrorUpstream {
     getCode(address: AccountAddress, block: bigint): Promise<string>;
 }
 
-/** What the mirror's own state reads cost, for measurement. */
-export interface MirrorChainStatistics {
-    /** Passes that had to ask for state the feed had not pushed. */
-    lazyReads: number;
-    /** Fields those passes asked for: slots, balances, nonces, codes. */
-    lazyFields: number;
-    /** Snapshots applied. */
-    snapshots: number;
-    /** Waits for a snapshot that ended at the backstop, a silent hang. */
-    snapshotTimeouts: number;
-    /** Waits for a snapshot the service said was delayed. */
-    snapshotDelays: number;
-    /** Reads sent to the node because the copy did not reach a block the peer saw by the backstop. */
-    freshnessTimeouts: number;
-    /** Reads sent to the node because the service said a block is late, or the node moved on. */
-    behindNode: number;
-    /** The longest a wait for a block lasts now when no event ends it. */
-    backstopMs: number;
-    /** The longest a wait for a snapshot lasts now when no event ends it. */
-    snapshotBackstopMs: number;
-    /** The most any wait may last now: the SDK's deadline less the node's round trips. */
-    backstopCapMs: number;
-    /** Accounts the feed said no snapshot is coming for. */
-    lazyNotices: number;
-    /** Accounts dropped to lazy reads after they were complete. */
-    lazyDrops: number;
-    /** Local answers re-asked of the node at the same block. */
-    sampleChecks: number;
-    /** Sampled answers the node answered differently. */
-    sampleMismatches: number;
-    /** Sampled answers the node could not be asked about, or declined. */
-    sampleSkipped: number;
-}
-
 export type MirrorChainOptions = {
     /** `ws://` URL of the storage diff service. */
     serviceUrl: string;
@@ -180,23 +146,6 @@ export class MirrorChain {
     private readonly nodeRead = new Set<AccountAddress>();
     /** Snapshots from a block the head has not reached, by arrival. */
     private pendingSnapshots: StorageDiffSnapshot[] = [];
-    private readonly counters: Omit<
-        MirrorChainStatistics,
-        "backstopMs" | "snapshotBackstopMs" | "backstopCapMs"
-    > = {
-        lazyReads: 0,
-        lazyFields: 0,
-        snapshots: 0,
-        snapshotTimeouts: 0,
-        snapshotDelays: 0,
-        freshnessTimeouts: 0,
-        behindNode: 0,
-        lazyNotices: 0,
-        lazyDrops: 0,
-        sampleChecks: 0,
-        sampleMismatches: 0,
-        sampleSkipped: 0
-    };
     private failedAttempts = 0;
     private retryAfterMs = 0;
     private closed = false;
@@ -234,16 +183,6 @@ export class MirrorChain {
         this.requiredNumber = number;
         this.noteAnnounced(number);
         if (lacking) this.giveUpWaiting();
-    }
-
-    /** What the mirror's own state reads cost so far. */
-    get statistics(): MirrorChainStatistics {
-        return {
-            ...this.counters,
-            backstopMs: this.backstop.boundMs,
-            snapshotBackstopMs: this.snapshotBackstop.boundMs,
-            backstopCapMs: this.waitCapMs
-        };
     }
 
     /**
@@ -303,18 +242,8 @@ export class MirrorChain {
             if (this.closed) return;
             this.state.dropToLazy(address);
             if (fromNode) this.nodeRead.add(address);
-            this.counters.lazyDrops++;
         } finally {
             this.lock.unlock();
-        }
-    }
-
-    /** Counts one sampled answer: checked and matching, mismatching, or skipped. */
-    noteSample(outcome: "match" | "mismatch" | "skipped"): void {
-        if (outcome === "skipped") this.counters.sampleSkipped++;
-        else {
-            this.counters.sampleChecks++;
-            if (outcome === "mismatch") this.counters.sampleMismatches++;
         }
     }
 
@@ -424,7 +353,6 @@ export class MirrorChain {
                 return;
             }
             if (this.behind) {
-                this.counters.behindNode++;
                 throw new MirrorUnavailableError(
                     "The mirror is behind the node"
                 );
@@ -432,7 +360,6 @@ export class MirrorChain {
             const remaining = deadline - Date.now();
             if (remaining <= 0) {
                 this.behind = true;
-                this.counters.freshnessTimeouts++;
                 throw new MirrorUnavailableError(
                     "The block never reached the mirror"
                 );
@@ -601,8 +528,7 @@ export class MirrorChain {
             if (!head) return;
             const lacking = this.state.stillMissing(misses);
             if (lacking.length === 0) return;
-            this.counters.lazyReads++;
-            this.counters.lazyFields += lacking.reduce(
+            const fields = lacking.reduce(
                 (sum, miss) =>
                     sum +
                     (miss.slots?.length ?? 0) +
@@ -612,7 +538,7 @@ export class MirrorChain {
             );
             this.log("debug", "Mirror reads state the feed did not push", {
                 accounts: lacking.map((miss) => miss.address),
-                fields: this.counters.lazyFields
+                fields
             });
             const fromNode = lacking.filter((miss) =>
                 this.nodeRead.has(miss.address)
@@ -694,13 +620,11 @@ export class MirrorChain {
                     this.awaitedSnapshots.delete(address);
                 // a snapshot that did not come sends the read to the node
                 if (expiredAtBackstop) {
-                    this.counters.snapshotTimeouts++;
                     throw new MirrorUnavailableError(
                         "The snapshot never reached the mirror"
                     );
                 }
                 if (delayed) {
-                    this.counters.snapshotDelays++;
                     throw new MirrorUnavailableError(
                         "The service said the snapshot is delayed"
                     );
@@ -743,7 +667,6 @@ export class MirrorChain {
     private receiveSnapshot(snapshot: StorageDiffSnapshot): void {
         // no snapshot is coming for these: stop waiting, the reads fetch them
         for (const address of snapshot.lazy ?? []) {
-            this.counters.lazyNotices++;
             const done = this.awaitedSnapshots.get(address);
             this.awaitedSnapshots.delete(address);
             done?.("not-coming");
@@ -810,7 +733,6 @@ export class MirrorChain {
             this.awaitedSnapshots.delete(address);
             done?.("arrived");
         }
-        this.counters.snapshots++;
     }
 
     private async readFromNode(

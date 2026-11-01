@@ -95,6 +95,8 @@ export class RpcNodeProxy {
     readonly forwardedMethods: JsonRpcMethod[] = [];
     /** The requests behind {@link forwardedMethods}, with their params. */
     readonly forwardedRequests: ForwardedRequest[] = [];
+    /** Methods of the node's pushes this proxy sent on to a client, in order. */
+    readonly deliveredNotifications: JsonRpcMethod[] = [];
     private readonly server: WebSocketServer;
     private readonly upstreamUrl: string;
     /** Each client socket and its upstream socket to the node. */
@@ -250,6 +252,12 @@ export class RpcNodeProxy {
     /** The [fromBlock, toBlock] of every eth_getLogs request, in order. */
     forwardedLogWindows(): [number, number][] {
         return toLogWindows(this.forwardedRequests);
+    }
+
+    /** How many pushes of `method` this proxy delivered to a client. */
+    deliveredCount(method: JsonRpcMethod): number {
+        return this.deliveredNotifications.filter((sent) => sent === method)
+            .length;
     }
 
     /** How many `method` requests clients sent through this proxy. */
@@ -471,8 +479,10 @@ export class RpcNodeProxy {
                 return;
             if (method && this.droppedNotifications.has(method)) return;
             const send = () => {
-                if (client.readyState === WebSocket.OPEN)
-                    client.send(data, { binary: isBinary });
+                if (client.readyState !== WebSocket.OPEN) return;
+                client.send(data, { binary: isBinary });
+                if (method && id === undefined)
+                    this.deliveredNotifications.push(method);
             };
             if (method === "eth_subscription" && this.withheldNotifications) {
                 this.withheldNotifications.push({
