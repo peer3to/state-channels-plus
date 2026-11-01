@@ -66,7 +66,8 @@ export function startDhtBootstrapper(
 export function startHardhatNode(opts?: StartInfraOptions): Promise<NodeHandle>;
 export function waitForHardhatNode(
     url: string,
-    timeoutMs?: number
+    timeoutMs?: number,
+    cancelled?: () => boolean
 ): Promise<void>;
 export function startDiscoveryRegistry(
     opts?: StartInfraOptions

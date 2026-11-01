@@ -3,7 +3,9 @@ import { jsonRpc } from "@test/utils/nodeInfra";
 import { repoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
 import { spawn } from "child_process";
+import { HDNodeWallet, Provider } from "ethers";
 import { once } from "node:events";
+import http from "node:http";
 import path from "path";
 
 export const LAUNCHER = "scripts/infra/start-hardhat-node.js";
@@ -145,4 +147,59 @@ export async function launchStandalone(env: NodeJS.ProcessEnv) {
         await exited;
     };
     return { url, rpc: call(url), stop, child };
+}
+
+/**
+ * Two signed one-wei transfers from `wallet` at its next two nonces, to be
+ * broadcast later nonce first: the order a signer whose signing finished out
+ * of order would send them.
+ */
+export async function outOfOrderTransfers(
+    wallet: HDNodeWallet,
+    provider: Provider,
+    to: string
+) {
+    const nonce = await provider.getTransactionCount(wallet.address, "pending");
+    const { chainId } = await provider.getNetwork();
+    const sign = (at: number) =>
+        wallet.signTransaction({
+            type: 2,
+            chainId,
+            nonce: at,
+            to,
+            value: 1n,
+            gasLimit: 21_000n,
+            maxFeePerGas: 10_000_000_000n,
+            maxPriorityFeePerGas: 0n
+        });
+    return { nonce, later: await sign(nonce + 1), earlier: await sign(nonce) };
+}
+
+/** An HTTP server on its own port that answers every request with `body`. */
+export async function answeringServer(body: string) {
+    const server = http.createServer((_request, response) => {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(body);
+    });
+    await new Promise<void>((resolve) =>
+        server.listen(0, "127.0.0.1", resolve)
+    );
+    const address = server.address();
+    if (!address || typeof address === "string")
+        throw new Error("answering server has no port");
+    return {
+        url: `http://127.0.0.1:${address.port}`,
+        close: () => new Promise((resolve) => server.close(resolve))
+    };
+}
+
+/** The wallet of the mnemonic's account at `address` (one of the 400). */
+export function walletOf(mnemonic: string, address: string) {
+    const root = HDNodeWallet.fromPhrase(mnemonic, undefined, "m/44'/60'/0'/0");
+    for (let index = 0; index < 400; index++) {
+        const wallet = root.deriveChild(index);
+        if (wallet.address.toLowerCase() === address.toLowerCase())
+            return wallet;
+    }
+    throw new Error(`${address} is not one of the mnemonic's 400 accounts`);
 }

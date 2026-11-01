@@ -9,22 +9,27 @@ import {
     expectStopped,
     expectStoppedSoon,
     launchStandalone,
+    answeringServer,
+    outOfOrderTransfers,
     Receipt,
     receiptOf,
     StateDiff,
-    transferOneWei
+    transferOneWei,
+    walletOf
 } from "../fixtures/node/TestChainFixture";
 import {
     provisionSlots,
     startHardhatNode,
-    teardownInfra
+    teardownInfra,
+    waitForHardhatNode
 } from "@test/utils/nodeInfra";
 import { repoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
 import { spawn } from "child_process";
-import { HDNodeWallet } from "ethers";
+import { HDNodeWallet, JsonRpcProvider } from "ethers";
 import fs from "fs";
 import { ethers, network } from "hardhat";
+import net from "node:net";
 import os from "os";
 import path from "path";
 
@@ -32,6 +37,20 @@ import path from "path";
 // scripts/infra/anvilNode.js; hardhat.config.ts requires it from there).
 const HARDHAT_MNEMONIC =
     "test test test test test test test test test test test junk";
+const { pinnedAnvilMismatch } = require("../../scripts/infra/anvilNode.js") as {
+    pinnedAnvilMismatch: (
+        root: string,
+        env: NodeJS.ProcessEnv
+    ) => string | null;
+};
+const { pinnedFoundryMismatch } =
+    require("../../scripts/e2e-parallel/shared/forgeConfig.js") as {
+        pinnedFoundryMismatch: (
+            binary: string,
+            root: string,
+            env: NodeJS.ProcessEnv
+        ) => string | null;
+    };
 
 describe("e2e parallel test chain", function () {
     it("a runner slot node serves prestateTracer diffMode for a transaction and for its block", async function () {
@@ -54,6 +73,46 @@ describe("e2e parallel test chain", function () {
         await expectStopped(slots[0].nodeUrl);
     });
 
+    // Mutation: the --block-time argument dropped from anvilArgs -> the slot node automines.
+    it("a runner slot node mines a block a second with automine off, and mines a later nonce sent first after the earlier one", async function () {
+        const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "chain-slot-"));
+        const { slots, infra } = await provisionSlots(1, logDir);
+        const node = infra.nodes[0];
+        const provider = new JsonRpcProvider(slots[0].nodeUrl);
+        try {
+            const rpc = call(slots[0].nodeUrl);
+            expect(await rpc("anvil_getAutomine")).to.equal(false);
+            const [sender, recipient] = await rpc<string[]>("eth_accounts");
+            const { later, earlier } = await outOfOrderTransfers(
+                walletOf(HARDHAT_MNEMONIC, sender),
+                provider,
+                recipient
+            );
+            const laterHash = await rpc<string>("eth_sendRawTransaction", [
+                later
+            ]);
+            const earlierHash = await rpc<string>("eth_sendRawTransaction", [
+                earlier
+            ]);
+            const first = await receiptOf(rpc, earlierHash);
+            const second = await receiptOf(rpc, laterHash);
+            expect([first.status, second.status]).to.deep.equal(["0x1", "0x1"]);
+            expect(Number(second.blockNumber)).to.be.at.least(
+                Number(first.blockNumber)
+            );
+            const start = BigInt(await rpc<string>("eth_blockNumber"));
+            await new Promise((resolve) => setTimeout(resolve, 2500));
+            const mined = BigInt(await rpc<string>("eth_blockNumber")) - start;
+            expect(Number(mined)).to.be.within(2, 3);
+        } finally {
+            provider.destroy();
+            teardownInfra(infra);
+            await node.exited;
+            fs.rmSync(logDir, { recursive: true, force: true });
+        }
+    });
+
+    // Mutation: startHardhatNode hands back the first live node -> the second node is the paused one and its transfer never mines.
     it("an isolated node serves prestateTracer diffMode and pauses mining only on itself", async function () {
         let url = "";
         await withIsolatedHardhatNode(
@@ -68,6 +127,17 @@ describe("e2e parallel test chain", function () {
                 const pending = await rpc<string>("eth_sendTransaction", [
                     { from: sender, to: recipient, value: "0x1", gas: "0x5208" }
                 ]);
+                expect(
+                    await rpc("eth_getTransactionReceipt", [pending])
+                ).to.equal(null);
+                const other = await startHardhatNode({ port: 0 });
+                try {
+                    const transfer = await transferOneWei(call(other.url));
+                    expect(transfer.receipt.status).to.equal("0x1");
+                } finally {
+                    other.stop();
+                    await other.exited;
+                }
                 expect(
                     await rpc("eth_getTransactionReceipt", [pending])
                 ).to.equal(null);
@@ -214,6 +284,85 @@ describe("e2e parallel test chain", function () {
         expect(failure?.message).to.include("Failed to start anvil");
     });
 
+    // Mutation: pinnedFoundryMismatch returns null for a differing version -> the 0.0.1 pin accepts this anvil.
+    // Mutation: the version regex no longer matches `--version` output -> the repository's own pin refuses its anvil.
+    // Mutation: an unreadable version accepted, as the forge check once did -> node's version passes.
+    it("the pinned-anvil check refuses another or an unreadable version, and accepts the pinned one or no pin", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "anvil-pin-"));
+        try {
+            expect(pinnedAnvilMismatch(root, process.env)).to.equal(null);
+            fs.writeFileSync(path.join(root, ".forge-version"), "v0.0.1\n");
+            expect(pinnedAnvilMismatch(root, process.env)).to.include(
+                "does not match .forge-version (0.0.1)"
+            );
+            expect(pinnedFoundryMismatch("node", root, process.env)).to.include(
+                "node (unknown version) does not match"
+            );
+            expect(pinnedAnvilMismatch(repoRoot(), process.env)).to.equal(null);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    // Mutation: the exit handler before ready removed -> the start waits out its 30 s budget instead.
+    it("starting a node on a port already in use rejects with anvil's exit and its address-in-use error", async function () {
+        const holder = net.createServer();
+        await new Promise<void>((resolve) =>
+            holder.listen(0, "127.0.0.1", resolve)
+        );
+        const address = holder.address();
+        try {
+            if (!address || typeof address === "string")
+                throw new Error("holder has no port");
+            let failure: Error | undefined;
+            try {
+                await startHardhatNode({ port: address.port });
+            } catch (error) {
+                failure = error as Error;
+            }
+            expect(failure?.message).to.include(
+                "exited with code 1 before ready"
+            );
+            expect(failure?.message).to.include("Address already in use");
+        } finally {
+            holder.close();
+        }
+    });
+
+    // Mutation: probeRpc counts any HTTP answer as ready -> both servers that are not nodes pass.
+    // Mutation: the cancelled check dropped -> the cancelled wait runs its whole timeout and rejects.
+    it("waitForHardhatNode waits for a hex JSON-RPC result, not any HTTP answer, and stops once cancelled", async function () {
+        const notJson = await answeringServer("ok");
+        const rpcError = await answeringServer(
+            JSON.stringify({
+                jsonrpc: "2.0",
+                id: 1,
+                error: { code: -32601, message: "method not found" }
+            })
+        );
+        const node = await startHardhatNode({ port: 0 });
+        try {
+            for (const server of [notJson, rpcError]) {
+                let refusal: Error | undefined;
+                try {
+                    await waitForHardhatNode(server.url, 1000);
+                } catch (error) {
+                    refusal = error as Error;
+                }
+                expect(refusal?.message).to.include("not ready");
+            }
+            await waitForHardhatNode(node.url, 1000);
+            const started = Date.now();
+            await waitForHardhatNode(notJson.url, 5000, () => true);
+            expect(Date.now() - started).to.be.below(1000);
+        } finally {
+            node.stop();
+            await node.exited;
+            await notJson.close();
+            await rpcError.close();
+        }
+    });
+
     it("a node's anvil exits when the process that started it is SIGKILLed", async function () {
         const owner = spawn(
             process.execPath,
@@ -268,6 +417,82 @@ describe("e2e parallel test chain", function () {
             after: await ethers.provider.getBalance(recipient.address)
         });
         expect(network.name).to.equal("hardhat");
+    });
+
+    // Mutation: the eth_accounts window sliced from initialIndex + 1 -> every address shifts by one.
+    it("hardhat's in-process network answers eth_accounts with the hardhat network's own account window", async function () {
+        const accounts = network.config.accounts;
+        if (typeof accounts === "string" || Array.isArray(accounts))
+            throw new Error("the hardhat network has HD accounts");
+        const root = HDNodeWallet.fromPhrase(
+            HARDHAT_MNEMONIC,
+            undefined,
+            "m/44'/60'/0'/0"
+        );
+        const expected = Array.from({ length: accounts.count }, (_, index) =>
+            root
+                .deriveChild(accounts.initialIndex + index)
+                .address.toLowerCase()
+        );
+        const answered: string[] = await network.provider.send("eth_accounts");
+        expect(answered.map((address) => address.toLowerCase())).to.deep.equal(
+            expected
+        );
+        expect(
+            (await ethers.getSigners()).map((signer) =>
+                signer.address.toLowerCase()
+            )
+        ).to.deep.equal(expected);
+    });
+
+    // Mutation: sends forwarded without the queue -> concurrent sends read one nonce and some are refused.
+    it("hardhat's in-process network gives eight concurrent sends from one account eight consecutive nonces", async function () {
+        const [sender, recipient] = await ethers.getSigners();
+        const nonce = await ethers.provider.getTransactionCount(sender.address);
+        const hashes: string[] = await Promise.all(
+            Array.from({ length: 8 }, () =>
+                network.provider.send("eth_sendTransaction", [
+                    {
+                        from: sender.address,
+                        to: recipient.address,
+                        value: "0x1",
+                        gas: "0x5208"
+                    }
+                ])
+            )
+        );
+        const nonces = await Promise.all(
+            hashes.map(
+                async (hash) =>
+                    (await ethers.provider.getTransaction(hash))!.nonce
+            )
+        );
+        expect(nonces.sort((a, b) => a - b)).to.deep.equal(
+            [0, 1, 2, 3, 4, 5, 6, 7].map((offset) => nonce + offset)
+        );
+    });
+
+    // Mutation: the automine receipt wait moved back inside the send queue -> the later nonce holds the earlier send for the whole ~2 s wait.
+    it("hardhat's in-process network mines a later nonce sent before the earlier one without holding the earlier send", async function () {
+        const [sender, recipient] = await ethers.getSigners();
+        const { later, earlier } = await outOfOrderTransfers(
+            walletOf(HARDHAT_MNEMONIC, sender.address),
+            ethers.provider,
+            recipient.address
+        );
+        const started = Date.now();
+        const hashes: string[] = await Promise.all([
+            network.provider.send("eth_sendRawTransaction", [later]),
+            network.provider.send("eth_sendRawTransaction", [earlier])
+        ]);
+        expect(Date.now() - started).to.be.below(1000);
+        for (const hash of hashes) {
+            const receipt = await network.provider.send(
+                "eth_getTransactionReceipt",
+                [hash]
+            );
+            expect(receipt?.status).to.equal("0x1");
+        }
     });
 
     it("the browser runtime server's node interval-mines and stops when the server closes", async function () {
