@@ -36,6 +36,8 @@ class RecordedNode {
     protected readonly sockets = new Set<WebSocket>();
     private readonly answer: Answer;
     private readonly seen: string[] = [];
+    // Params of every request seen, in arrival order.
+    private readonly seenParams: { method: string; params: unknown[] }[] = [];
     private connections = 0;
     private readonly reachWaiters: {
         method: string;
@@ -53,6 +55,7 @@ class RecordedNode {
             socket.on("message", (data) => {
                 const { id, method, params } = JSON.parse(data.toString());
                 this.seen.push(method);
+                this.seenParams.push({ method, params });
                 for (const waiter of [...this.reachWaiters]) {
                     if (this.requestCount(waiter.method) >= waiter.count) {
                         this.reachWaiters.splice(
@@ -95,6 +98,13 @@ class RecordedNode {
         return this.seen.filter((seen) => seen === method).length;
     }
 
+    /** Params of every `method` request seen, in arrival order. */
+    paramsOf(method: string): unknown[][] {
+        return this.seenParams
+            .filter((seen) => seen.method === method)
+            .map((seen) => seen.params);
+    }
+
     /** Resolves once `count` `method` requests arrived in all. */
     requestsReached(method: string, count: number): Promise<void> {
         if (this.requestCount(method) >= count) return Promise.resolve();
@@ -126,18 +136,25 @@ class RecordedNode {
 export class RecordedRelayNode extends RecordedNode {
     private announced = 0;
     private readonly subscribed = new Set<WebSocket>();
+    private readonly headKey?: string;
 
-    private constructor(server: WebSocketServer) {
+    private constructor(server: WebSocketServer, headKey?: string) {
         super(server, (method) => {
             if (method !== "state_subscribeStorage") {
                 throw new Error(`Unexpected relay request ${method}`);
             }
             return "recorded-subscription";
         });
+        this.headKey = headKey;
     }
 
-    static async start(): Promise<RecordedRelayNode> {
-        return new RecordedRelayNode(await RecordedNode.listen());
+    /**
+     * `headKey` names the `Paras::Heads` key the announcements carry, for a
+     * service that follows another para id than the recorded one; the head
+     * value is the recorded one.
+     */
+    static async start(headKey?: string): Promise<RecordedRelayNode> {
+        return new RecordedRelayNode(await RecordedNode.listen(), headKey);
     }
 
     /** Announces recorded inclusion `index` to every subscriber. */
@@ -155,13 +172,24 @@ export class RecordedRelayNode extends RecordedNode {
     }
 
     private notify(socket: WebSocket): void {
+        const notification =
+            recorded.fixtures[this.announced].relayNotification;
+        const result = this.headKey
+            ? {
+                  ...notification,
+                  changes: notification.changes.map(([, value]) => [
+                      this.headKey,
+                      value
+                  ])
+              }
+            : notification;
         socket.send(
             JSON.stringify({
                 jsonrpc: "2.0",
                 method: "state_storage",
                 params: {
                     subscription: "recorded-subscription",
-                    result: recorded.fixtures[this.announced].relayNotification
+                    result
                 }
             })
         );

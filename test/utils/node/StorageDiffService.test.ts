@@ -17,15 +17,20 @@ import {
     ZERO_WORD
 } from "@/utils/node/storageDiff/blockStorageDiff";
 import {
-    RECONCILE_RETRY_LIMIT,
     SEND_BUFFER_OVERFLOW,
-    SEND_BUFFER_OVERFLOW_CLOSE_CODE,
-    UPSTREAM_RECONNECT_LIMIT
+    SEND_BUFFER_OVERFLOW_CLOSE_CODE
 } from "@/utils/node/storageDiff/StorageDiffService";
 import { expect } from "chai";
 import { toQuantity } from "ethers";
 import { once } from "node:events";
 import WebSocket from "ws";
+
+/**
+ * The service retries a block's reads 3 times (4 attempts) and reconnects the
+ * upstream 5 times (6 attempts); a literal, so a changed limit is noticed.
+ */
+const RECONCILE_ATTEMPTS = 4;
+const RECONNECT_ATTEMPTS = 6;
 
 describe("StorageDiffService", function () {
     it("pushes the pre and post value of a slot a transaction wrote to a subscriber of that address", async function () {
@@ -418,10 +423,7 @@ describe("StorageDiffService", function () {
     it("fails the service once the retries of an upstream error are exhausted", async function () {
         await withStorageDiffSession(async ({ relay, service, signer }) => {
             const storage = await deployNumberStorage(signer);
-            relay.failNext(
-                "debug_traceBlockByNumber",
-                RECONCILE_RETRY_LIMIT + 1
-            );
+            relay.failNext("debug_traceBlockByNumber", RECONCILE_ATTEMPTS);
             // one attempt asks for the state diff and the call frames in one batch
             const attempts = () =>
                 relay
@@ -437,9 +439,7 @@ describe("StorageDiffService", function () {
             const failure = await rejectionOf(service.closed);
 
             expect(failure).to.be.instanceOf(Error);
-            expect(attempts() - tracesBefore).to.equal(
-                RECONCILE_RETRY_LIMIT + 1
-            );
+            expect(attempts() - tracesBefore).to.equal(RECONCILE_ATTEMPTS);
         });
     });
 
@@ -486,13 +486,13 @@ describe("StorageDiffService", function () {
 
     it("fails to start once the initial history load exhausts its retries", async function () {
         await withStorageDiffUpstream(async ({ relay, start }) => {
-            relay.failNext("eth_getBlockByNumber", RECONCILE_RETRY_LIMIT + 1);
+            relay.failNext("eth_getBlockByNumber", RECONCILE_ATTEMPTS);
 
             const failure = await rejectionOf(start());
 
             expect(failure).to.be.instanceOf(Error);
             expect(relay.requestCount("eth_getBlockByNumber")).to.equal(
-                RECONCILE_RETRY_LIMIT + 1
+                RECONCILE_ATTEMPTS
             );
         });
     });
@@ -525,14 +525,12 @@ describe("StorageDiffService", function () {
 
     it("fails to start once the upstream keeps dropping during the initial history load", async function () {
         await withStorageDiffUpstream(async ({ relay, start }) => {
-            relay.cutNext("eth_getBlockByNumber", UPSTREAM_RECONNECT_LIMIT + 1);
+            relay.cutNext("eth_getBlockByNumber", RECONNECT_ATTEMPTS);
 
             const failure = await rejectionOf(start());
 
             expect(failure).to.be.instanceOf(Error);
-            expect(relay.connectionCount).to.equal(
-                UPSTREAM_RECONNECT_LIMIT + 1
-            );
+            expect(relay.connectionCount).to.equal(RECONNECT_ATTEMPTS);
         });
     });
 
@@ -577,7 +575,7 @@ describe("StorageDiffService", function () {
 
             expect(failure).to.be.instanceOf(Error);
             expect(relay.connectionCount - connectionsBefore).to.equal(
-                UPSTREAM_RECONNECT_LIMIT + 1
+                RECONNECT_ATTEMPTS
             );
         });
     });

@@ -5,18 +5,17 @@ Exercises: [StorageDiffService.ts](../../../../../implementation/source/src/util
 
 ## Overview
 
-Cases read slots, balances, nonces and code with `scp_getState` through one or two clients, count upstream requests, mine and reorganize between reads, and ask for retained, unknown, orphaned and pruned block hashes. The oracles are the returned values and the JSON-RPC error codes.
+Cases read slots, balances, nonces and code with `scp_getState` through one or two clients, count the field reads that reach the upstream, mine and reorganize between reads, and ask for retained, unknown, orphaned and pruned block hashes. The oracles are the returned values and the JSON-RPC error codes.
 
 ## Tests
 
 - `reads a slot from the upstream on the first read, pinned to the best head's block hash`: REQ-SDS-7-PZCBQ9.T1.P1
-- `answers a second client from the cache without an upstream request`: REQ-SDS-7-PZCBQ9.T1.P2
-- `fetches a slot once for concurrent reads of it`: REQ-SDS-7-PZCBQ9.T1.P3
+- `fetches a slot once for concurrent reads of it`: REQ-SDS-7-PZCBQ9.T1.P2, REQ-SDS-7-PZCBQ9.T1.P3
 - `updates a cached slot from a block's write without an upstream request`: REQ-SDS-7-PZCBQ9.T1.P4
 - `reads a slot cleared to zero as the zero word`: REQ-SDS-7-PZCBQ9.T1.P5
 - `applies a block mined while the fetch of a slot was in flight`: REQ-SDS-7-PZCBQ9.T1.P6
 - `rolls a cached slot back to the value before an orphaned block after a reorg`: REQ-SDS-7-PZCBQ9.T1.P7
-- `reads a slot at an older retained block as that block's value`: REQ-SDS-7-PZCBQ9.T1.P8
+- `reads a slot at an older retained block as that block's value`: REQ-SDS-7-PZCBQ9.T1.P8, REQ-SDS-7-PZCBQ9.T1.P16
 - `fails with the not-retained error for a block older than the window`: REQ-SDS-7-PZCBQ9.T1.P9
 - `fails with the not-retained error for a block hash the service does not know`: REQ-SDS-7-PZCBQ9.T1.P10
 - `fails with the not-retained error for a block a reorg orphaned`: REQ-SDS-7-PZCBQ9.T1.P11

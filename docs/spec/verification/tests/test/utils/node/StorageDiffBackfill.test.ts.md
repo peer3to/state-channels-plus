@@ -22,8 +22,7 @@ Cases subscribe to contracts whose history the service must backfill, against an
 - `applies the blocks mined while the service was down`: REQ-SDS-10-F01BMA.T1.P3
 - `tells a subscriber that a snapshot it was promised as ready is delayed when a reorg clears the cache`: REQ-SDS-12-N40MKR.T1.P9
 - `says syncing for an account it still has to backfill, and ready once the account is complete`: REQ-SDS-9-ZRPZZW.T1.P9
-- `says lazy for an account whose backfill found fewer entries than the chain holds`: REQ-SDS-9-ZRPZZW.T1.P10
-- `keeps an account lazy and warns with both counts when the chain holds more entries than the history named`: REQ-SDS-9-ZRPZZW.T1.P11
+- `keeps an account lazy and warns with both counts when the chain holds more entries than the history named`: REQ-SDS-9-ZRPZZW.T1.P10, REQ-SDS-9-ZRPZZW.T1.P11
 - `tells a subscriber of a lazy account that no snapshot is coming also when it subscribes after the backfill`: REQ-SDS-9-ZRPZZW.T1.P12
 - `tells the subscriber at once when the backfill fails`: REQ-SDS-9-ZRPZZW.T1.P13
 - `does not backfill a lazy account again when it is subscribed again`: REQ-SDS-9-ZRPZZW.T1.P14

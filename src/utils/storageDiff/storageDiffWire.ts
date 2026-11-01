@@ -131,9 +131,6 @@ export type RpcBlock = Record<string, unknown> & {
     transactions: unknown[];
 };
 
-/** Which block `scp_getBlock` answers: the best head, or one by number or hash. */
-export type BlockSelector = "latest" | string;
-
 /** What a peer asks of one account: all of it, or only the listed parts. */
 export interface StateRequestParams {
     address: AccountAddress;

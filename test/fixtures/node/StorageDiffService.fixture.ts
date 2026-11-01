@@ -14,6 +14,7 @@ import type {
 import type AIncludedHeadStrategy from "@/utils/node/storageDiff/includedHead/AIncludedHeadStrategy";
 import {
     StorageDiffService,
+    type BackfillRecord,
     type StorageDiffCatchUp,
     type StorageDiffState
 } from "@/utils/node/storageDiff/StorageDiffService";
@@ -46,6 +47,19 @@ export async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
         () => undefined,
         (error: unknown) => error
     );
+}
+
+/**
+ * How many field reads (slot, balance, nonce, code) reached the upstream
+ * through `relay`: the observable count of the service's lazy fetches.
+ */
+export function fieldReads(relay: UpstreamRelay): number {
+    return [
+        "eth_getStorageAt",
+        "eth_getBalance",
+        "eth_getTransactionCount",
+        "eth_getCode"
+    ].reduce((sum, method) => sum + relay.requestCount(method), 0);
 }
 
 /** A JSON-RPC error answer, with its code, as the service sent it. */
@@ -362,6 +376,8 @@ export type StorageDiffUpstream = {
     signer: JsonRpcSigner;
     /** Warnings the services' loggers got, oldest first. */
     warnings: LoggedWarning[];
+    /** What each backfill the services finished cost and found, oldest first. */
+    backfills: BackfillRecord[];
     /** Starts a service on the relay; it is closed in `finally`. */
     start: (
         settings?: StorageDiffServiceSettings
@@ -389,6 +405,7 @@ export async function withStorageDiffUpstream<T>(
         );
         const services: StorageDiffService[] = [];
         const warnings: LoggedWarning[] = [];
+        const backfills: BackfillRecord[] = [];
         try {
             const signer = await provider.getSigner(0);
             const start = async (settings: StorageDiffServiceSettings = {}) => {
@@ -402,6 +419,13 @@ export async function withStorageDiffUpstream<T>(
                     warnings.push({ message: String(message), meta });
                     warn(message, ...meta);
                 };
+                // Records each finished backfill, then logs it as usual.
+                const info = logger.info.bind(logger);
+                logger.info = (message: unknown, ...meta: unknown[]) => {
+                    if (message === "Backfilled an account")
+                        backfills.push(meta[0] as BackfillRecord);
+                    info(message, ...meta);
+                };
                 const service = await StorageDiffService.start({
                     upstreamUrl: relay.url,
                     port: 0,
@@ -411,7 +435,14 @@ export async function withStorageDiffUpstream<T>(
                 services.push(service);
                 return service;
             };
-            return await use({ provider, relay, signer, warnings, start });
+            return await use({
+                provider,
+                relay,
+                signer,
+                warnings,
+                backfills,
+                start
+            });
         } finally {
             for (const service of services) await service.close();
             await relay.close();
@@ -465,16 +496,6 @@ export async function recordKey(
 /** `ValueSet(uint256)`, the event the log emitter fires. */
 export const VALUE_SET_TOPIC = id("ValueSet(uint256)");
 
-/** Initcode that copies the runtime after its own 11 bytes and returns it. */
-function deployableCode(runtime: string): string {
-    return (
-        "0x60" +
-        (runtime.length / 2).toString(16).padStart(2, "0") +
-        "80600b6000396000f3" +
-        runtime
-    );
-}
-
 const EMIT_VALUE_SET =
     "600052" + // MSTORE(0, word)
     "7f" +
@@ -483,13 +504,12 @@ const EMIT_VALUE_SET =
     "00"; // STOP
 
 // Runtime: slot 0 = calldata word; LOG1(topic ValueSet, data = that word).
-const LOG_EMITTER_INITCODE = deployableCode(
+const LOG_EMITTER_RUNTIME =
     "600035" + // CALLDATALOAD(0)
-        "80600055" + // DUP1, SSTORE(0, word)
-        EMIT_VALUE_SET
-);
+    "80600055" + // DUP1, SSTORE(0, word)
+    EMIT_VALUE_SET;
 // Runtime: LOG1(topic ValueSet, data = calldata word); no storage write.
-const EVENT_ONLY_INITCODE = deployableCode("600035" + EMIT_VALUE_SET);
+const EVENT_ONLY_RUNTIME = "600035" + EMIT_VALUE_SET;
 
 /**
  * Deploys a contract that stores its call's 32-byte word in slot 0 and emits
@@ -498,24 +518,14 @@ const EVENT_ONLY_INITCODE = deployableCode("600035" + EMIT_VALUE_SET);
 export async function deployLogEmitter(
     signer: JsonRpcSigner
 ): Promise<AccountAddress> {
-    return await deployCode(signer, LOG_EMITTER_INITCODE);
+    return await deployRuntimeCode(signer, LOG_EMITTER_RUNTIME);
 }
 
 /** Like the log emitter, but it never writes storage: its calls leave no diff. */
 export async function deployEventOnlyEmitter(
     signer: JsonRpcSigner
 ): Promise<AccountAddress> {
-    return await deployCode(signer, EVENT_ONLY_INITCODE);
-}
-
-async function deployCode(
-    signer: JsonRpcSigner,
-    data: string
-): Promise<AccountAddress> {
-    const response = await signer.sendTransaction({ data });
-    const receipt = await response.wait();
-    if (!receipt?.contractAddress) throw new Error("Emitter not deployed");
-    return receipt.contractAddress.toLowerCase();
+    return await deployRuntimeCode(signer, EVENT_ONLY_RUNTIME);
 }
 
 export async function emitValue(
@@ -534,21 +544,12 @@ export async function emitValue(
 
 // Runtime: SSTORE(calldata[0:32], calldata[32:64]); STOP.
 const SLOT_WRITER_RUNTIME = "6020356000355500";
-const SLOT_WRITER_INITCODE =
-    "0x60" +
-    (SLOT_WRITER_RUNTIME.length / 2).toString(16).padStart(2, "0") +
-    "80600b6000396000f3" +
-    SLOT_WRITER_RUNTIME;
 
 /** Deploys a contract that writes any slot to any value, from calldata. */
 export async function deploySlotWriter(
     signer: JsonRpcSigner
 ): Promise<AccountAddress> {
-    const receipt = await (
-        await signer.sendTransaction({ data: SLOT_WRITER_INITCODE })
-    ).wait();
-    if (!receipt?.contractAddress) throw new Error("Writer not deployed");
-    return receipt.contractAddress.toLowerCase();
+    return await deployRuntimeCode(signer, SLOT_WRITER_RUNTIME);
 }
 
 /** The 32-byte key of slot number `slot`. */

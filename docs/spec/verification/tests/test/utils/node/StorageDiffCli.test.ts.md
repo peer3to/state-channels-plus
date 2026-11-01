@@ -12,9 +12,8 @@ Direct calls to `parseStorageDiffArgs` with flag sets, and two runs of the real 
 - `passes --max-peer-buffered-bytes on as the peer buffer limit`: UNIT-TEST-SDS-CLI-1-8BN5XT.P1
 - `passes --cache-dir on as the cache directory, and leaves it unset without the flag`: UNIT-TEST-SDS-CLI-1-8BN5XT.P2
 - `leaves the peer buffer limit and the inclusion strategy unset without their flags`: UNIT-TEST-SDS-CLI-1-8BN5XT.P3
-- `lists backfill blocks through the Asset Hub child trie with the relay flags, and leaves the default without them`: UNIT-TEST-SDS-CLI-1-8BN5XT.P4
-- `builds the relay strategy from the relay flags`: UNIT-TEST-SDS-CLI-1-8BN5XT.P5
-- `builds the dev strategy from --included-dev-depth`: UNIT-TEST-SDS-CLI-1-8BN5XT.P6
+- `lists backfill blocks through the Asset Hub child trie with the relay flags, and leaves the default without them`: UNIT-TEST-SDS-CLI-1-8BN5XT.P4, UNIT-TEST-SDS-CLI-1-8BN5XT.P6
+- `builds the relay strategy for the para id of --included-para-id`: UNIT-TEST-SDS-CLI-1-8BN5XT.P5
 - `refuses a relay URL without an Asset Hub URL`: UNIT-TEST-SDS-CLI-1-8BN5XT.P7
 - `refuses the dev depth together with the relay flags`: UNIT-TEST-SDS-CLI-1-8BN5XT.P8
 - `refuses a flag value that is not a non-negative integer`: UNIT-TEST-SDS-CLI-1-8BN5XT.P9

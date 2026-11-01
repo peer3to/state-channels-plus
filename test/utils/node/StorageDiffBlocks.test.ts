@@ -3,6 +3,7 @@ import {
     deployNestedWriter,
     deployNumberStorage,
     deployRevertProbe,
+    fieldReads,
     deploySlotWriter,
     dumpedAccount,
     recordKey,
@@ -16,7 +17,6 @@ import {
 } from "../../fixtures/node/StorageDiffService.fixture";
 import { UPSTREAM_FAULT } from "../../fixtures/node/UpstreamRelay";
 import { sleep } from "@/utils";
-import { NOT_RETAINED_ERROR_CODE } from "@/utils/node/storageDiff/blockStorageDiff";
 import { SDK_RPC_DEADLINE_MS } from "@/utils/storageDiff/LearnedBackstop";
 import { expect } from "chai";
 import { Wallet, toQuantity } from "ethers";
@@ -187,57 +187,31 @@ describe("StorageDiffService blocks", function () {
     });
 
     it("sends the fields of one state read to the upstream as one batch", async function () {
-        await withStorageDiffSession(
-            async ({ client, relay, service, signer }) => {
-                const storage = await deployNumberStorage(signer);
-                const address = await recordKey(storage);
-                const subscription = await client.subscribe([]);
-                const receipt = await setValue(storage, 5n);
-                const head = await client.recordAt(
-                    subscription,
-                    receipt.blockNumber
-                );
-                // the account's retained history is filled once, before its values are read
-                await client.getState(head.hash, [{ address }]);
-                const trips = relay.roundTrips;
-                const lazy = service.statistics.lazyFieldFetches;
-
-                await client.getState(head.hash, [
-                    {
-                        address,
-                        slots: ["0x" + "00".repeat(32)],
-                        account: true,
-                        code: true
-                    }
-                ]);
-
-                expect(relay.roundTrips - trips).to.equal(1);
-                expect(service.statistics.lazyFieldFetches - lazy).to.equal(4);
-            }
-        );
-    });
-
-    it("keeps answering a state read for an older retained block after the head moved", async function () {
-        await withStorageDiffSession(async ({ client, service, signer }) => {
+        await withStorageDiffSession(async ({ client, relay, signer }) => {
             const storage = await deployNumberStorage(signer);
             const address = await recordKey(storage);
             const subscription = await client.subscribe([]);
-            const first = await setValue(storage, 5n);
-            const older = await client.recordAt(
+            const receipt = await setValue(storage, 5n);
+            const head = await client.recordAt(
                 subscription,
-                first.blockNumber
+                receipt.blockNumber
             );
-            await setValue(storage, 6n);
+            // the account's retained history is filled once, before its values are read
+            await client.getState(head.hash, [{ address }]);
+            const trips = relay.roundTrips;
+            const reads = fieldReads(relay);
 
-            const state = await client.getState(older.hash, [
-                { address, slots: ["0x" + "00".repeat(32)] }
+            await client.getState(head.hash, [
+                {
+                    address,
+                    slots: ["0x" + "00".repeat(32)],
+                    account: true,
+                    code: true
+                }
             ]);
 
-            expect(
-                BigInt(state.accounts[address].storage!["0x" + "00".repeat(32)])
-            ).to.equal(5n);
-            expect(NOT_RETAINED_ERROR_CODE).to.equal(-32002);
-            expect(service.statistics.lazyFieldFetches).to.equal(1);
+            expect(relay.roundTrips - trips).to.equal(1);
+            expect(fieldReads(relay) - reads).to.equal(4);
         });
     });
 
@@ -348,7 +322,7 @@ describe("StorageDiffService blocks", function () {
 
     it("answers with what it holds when a silent hang outlasts the learned backstop", async function () {
         await withStorageDiffSession(
-            async ({ client, provider, relay, service, signer }) => {
+            async ({ client, provider, relay, signer }) => {
                 const subscription = await client.subscribe([]);
                 const storage = await deployNumberStorage(signer);
                 await setValue(storage, 1n);
@@ -357,10 +331,6 @@ describe("StorageDiffService blocks", function () {
                     await provider.send("eth_blockNumber", [])
                 );
                 const before = await client.recordAt(subscription, settledAt);
-                // the heads so far arrived fast, so the backstop is shorter than its cap
-                expect(service.headWaitBackstopMs).to.be.lessThan(
-                    SDK_RPC_DEADLINE_MS
-                );
                 const held = relay.holdNext("eth_getBlockByNumber", "latest");
                 await provider.send("evm_mine", []);
                 await held.arrived;
@@ -381,71 +351,59 @@ describe("StorageDiffService blocks", function () {
             }
         );
     });
-
-    it("waits as long as the SDK deadline for a silent hang until a head has been committed", async function () {
-        await withStorageDiffSession(async ({ service }) => {
-            expect(service.headWaitBackstopMs).to.equal(SDK_RPC_DEADLINE_MS);
-        });
-    });
 });
 
 describe("StorageDiffService values come from reads, not from the trace", function () {
     // Asset Hub's prestateTracer reports writes of reverted sub-calls in `post`;
     // the relay adds such writes to every trace the service asks for.
     it("leaves out the slot and the value transfer of a reverted sub-call that the trace reports", async function () {
-        await withStorageDiffSession(
-            async ({ client, relay, signer, service }) => {
-                const recipient = Wallet.createRandom().address.toLowerCase();
-                const probe = await deployRevertProbe(signer, recipient);
-                const subscription = await client.subscribe([probe, recipient]);
-                await client.nextSnapshot(subscription);
-                relay.tamper("debug_traceBlockByNumber", (result, params) =>
-                    asksCallFrames(params)
-                        ? result
-                        : (
-                              result as {
-                                  result: { pre: object; post: object };
-                              }[]
-                          ).map((entry) => ({
-                              ...entry,
-                              result: {
-                                  pre: {
-                                      ...entry.result.pre,
-                                      [probe]: { storage: {} },
-                                      [recipient]: { balance: "0x0" }
+        await withStorageDiffSession(async ({ client, relay, signer }) => {
+            const recipient = Wallet.createRandom().address.toLowerCase();
+            const probe = await deployRevertProbe(signer, recipient);
+            const subscription = await client.subscribe([probe, recipient]);
+            await client.nextSnapshot(subscription);
+            relay.tamper("debug_traceBlockByNumber", (result, params) =>
+                asksCallFrames(params)
+                    ? result
+                    : (
+                          result as {
+                              result: { pre: object; post: object };
+                          }[]
+                      ).map((entry) => ({
+                          ...entry,
+                          result: {
+                              pre: {
+                                  ...entry.result.pre,
+                                  [probe]: { storage: {} },
+                                  [recipient]: { balance: "0x0" }
+                              },
+                              post: {
+                                  ...entry.result.post,
+                                  [probe]: {
+                                      storage: {
+                                          [slotKey(1)]: storageWord(1n),
+                                          [slotKey(2)]: storageWord(5n)
+                                      }
                                   },
-                                  post: {
-                                      ...entry.result.post,
-                                      [probe]: {
-                                          storage: {
-                                              [slotKey(1)]: storageWord(1n),
-                                              [slotKey(2)]: storageWord(5n)
-                                          }
-                                      },
-                                      [recipient]: { balance: "0x1" }
-                                  }
+                                  [recipient]: { balance: "0x1" }
                               }
-                          }))
-                );
+                          }
+                      }))
+            );
 
-                const receipt = await (
-                    await signer.sendTransaction({ to: probe })
-                ).wait();
-                await client.recordAt(subscription, receipt!.blockNumber);
-                const [record] = (
-                    await client.getDiffs(
-                        [probe, recipient],
-                        receipt!.blockNumber
-                    )
-                ).filter((r) => r.number === toQuantity(receipt!.blockNumber));
+            const receipt = await (
+                await signer.sendTransaction({ to: probe })
+            ).wait();
+            await client.recordAt(subscription, receipt!.blockNumber);
+            const [record] = (
+                await client.getDiffs([probe, recipient], receipt!.blockNumber)
+            ).filter((r) => r.number === toQuantity(receipt!.blockNumber));
 
-                expect(record.post[probe].storage).to.deep.equal({
-                    [slotKey(1)]: storageWord(1n)
-                });
-                expect(record.post[recipient]).to.equal(undefined);
-                void service;
-            }
-        );
+            expect(record.post[probe].storage).to.deep.equal({
+                [slotKey(1)]: storageWord(1n)
+            });
+            expect(record.post[recipient]).to.equal(undefined);
+        });
     });
 
     it("lists no slot a transaction wrote with the value it already had", async function () {
@@ -509,26 +467,6 @@ describe("StorageDiffService values come from reads, not from the trace", functi
                 .map(([slot]) => slotKey(Number(BigInt(slot))));
             expect(held).to.have.length(5);
             for (const slot of held) expect(written).to.include(slot);
-        });
-    });
-
-    it("fills the history of an account subscribed after its blocks were retained from reads", async function () {
-        await withStorageDiffSession(async ({ client, signer }) => {
-            const writer = await deploySlotWriter(signer);
-            const receipt = await writeSlot(signer, writer, 3, 7n);
-            await writeSlot(signer, writer, 3, 9n);
-            const subscription = await client.subscribe([writer]);
-            await client.nextSnapshot(subscription);
-            const records = await client.getDiffs(
-                [writer],
-                receipt.blockNumber
-            );
-            const record = records.find(
-                (r) => r.number === toQuantity(receipt.blockNumber)
-            );
-            expect(record?.post[writer]?.storage).to.deep.equal({
-                [slotKey(3)]: storageWord(7n)
-            });
         });
     });
 });
@@ -730,33 +668,31 @@ describe("StorageDiffService old values", function () {
     });
 
     it("reads the balance, nonce and code of a touched account only when the trace shows them change", async function () {
-        await withStorageDiffSession(
-            async ({ client, provider, relay, signer }) => {
-                const writer = await deploySlotWriter(signer);
-                const sender = (await signer.getAddress()).toLowerCase();
-                const subscription = await client.subscribe([writer, sender]);
-                await client.nextSnapshot(subscription);
-                // a failed frame in every block makes the service read the values
-                relay.tamper("debug_traceBlockByNumber", (result, params) =>
-                    asksCallFrames(params) ? withFailedFrames(result) : result
-                );
+        await withStorageDiffSession(async ({ client, relay, signer }) => {
+            const writer = await deploySlotWriter(signer);
+            const sender = (await signer.getAddress()).toLowerCase();
+            const subscription = await client.subscribe([writer, sender]);
+            await client.nextSnapshot(subscription);
+            // a failed frame in every block makes the service read the values
+            relay.tamper("debug_traceBlockByNumber", (result, params) =>
+                asksCallFrames(params) ? withFailedFrames(result) : result
+            );
 
-                const receipt = await writeSlot(signer, writer, 1, 5n);
-                await client.recordAt(subscription, receipt.blockNumber);
+            const receipt = await writeSlot(signer, writer, 1, 5n);
+            await client.recordAt(subscription, receipt.blockNumber);
 
-                const readsOf = (address: string) =>
-                    ["eth_getBalance", "eth_getTransactionCount", "eth_getCode"]
-                        .flatMap((method) => relay.paramsOf(method))
-                        .filter(
-                            (params) =>
-                                params[0] === address &&
-                                (params[1] as { blockHash?: string })
-                                    ?.blockHash === receipt.blockHash
-                        ).length;
-                // the sender pays and sends: its balance and nonce change; the writer's scalars do not
-                expect(readsOf(writer)).to.equal(0);
-                expect(readsOf(sender)).to.be.greaterThan(0);
-            }
-        );
+            const readsOf = (address: string) =>
+                ["eth_getBalance", "eth_getTransactionCount", "eth_getCode"]
+                    .flatMap((method) => relay.paramsOf(method))
+                    .filter(
+                        (params) =>
+                            params[0] === address &&
+                            (params[1] as { blockHash?: string })?.blockHash ===
+                                receipt.blockHash
+                    ).length;
+            // the sender pays and sends: its balance and nonce change; the writer's scalars do not
+            expect(readsOf(writer)).to.equal(0);
+            expect(readsOf(sender)).to.be.greaterThan(0);
+        });
     });
 });

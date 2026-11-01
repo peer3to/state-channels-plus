@@ -107,40 +107,35 @@ describe("StorageDiffService included head", function () {
     });
 
     it("logs a warning when the included head is not on the best chain after a reorg", async function () {
-        await withStorageDiffUpstream(
-            async ({ provider, signer, start, warnings }) => {
-                void signer;
-                const service = await start({
-                    includedHead: new DepthIncludedHeadStrategy(1)
+        await withStorageDiffUpstream(async ({ provider, start, warnings }) => {
+            const service = await start({
+                includedHead: new DepthIncludedHeadStrategy(1)
+            });
+            const client = await StorageDiffClient.connect(service.url);
+            try {
+                const subscription = await client.subscribe([]);
+                await provider.send("anvil_mine", [4]);
+                const head = Number(await provider.send("eth_blockNumber", []));
+                await client.includedHeadAt(head - 1);
+                expect(
+                    warnings.filter((w) => w.message === NOT_AN_ANCESTOR)
+                ).to.have.length(0);
+
+                await provider.send("anvil_reorg", [3, []]);
+                await provider.send("evm_mine", []);
+                await client.recordAt(subscription, head + 1);
+
+                const reported = warnings.filter(
+                    (w) => w.message === NOT_AN_ANCESTOR
+                );
+                expect(reported).to.have.length(1);
+                expect(reported[0].meta[0]).to.include({
+                    includedNumber: toQuantity(head - 1)
                 });
-                const client = await StorageDiffClient.connect(service.url);
-                try {
-                    const subscription = await client.subscribe([]);
-                    await provider.send("anvil_mine", [4]);
-                    const head = Number(
-                        await provider.send("eth_blockNumber", [])
-                    );
-                    await client.includedHeadAt(head - 1);
-                    expect(
-                        warnings.filter((w) => w.message === NOT_AN_ANCESTOR)
-                    ).to.have.length(0);
-
-                    await provider.send("anvil_reorg", [3, []]);
-                    await provider.send("evm_mine", []);
-                    await client.recordAt(subscription, head + 1);
-
-                    const reported = warnings.filter(
-                        (w) => w.message === NOT_AN_ANCESTOR
-                    );
-                    expect(reported).to.have.length(1);
-                    expect(reported[0].meta[0]).to.include({
-                        includedNumber: toQuantity(head - 1)
-                    });
-                } finally {
-                    client.close();
-                }
+            } finally {
+                client.close();
             }
-        );
+        });
     });
 
     it("logs no warning while the included head stays on the best chain through a shallow reorg", async function () {

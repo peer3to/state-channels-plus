@@ -1,6 +1,12 @@
+import {
+    RecordedAssetHubNode,
+    RecordedRelayNode,
+    recorded
+} from "../../fixtures/node/RecordedPolkadotNodes";
 import { ScriptProcess } from "../../fixtures/node/ScriptProcess";
 import {
     StorageDiffClient,
+    withStorageDiffSession,
     withStorageDiffUpstream
 } from "../../fixtures/node/StorageDiffService.fixture";
 import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
@@ -64,37 +70,41 @@ describe("storage diff service flags", function () {
         ]);
 
         expect(relay.backfillBlocks).to.be.instanceOf(ChildTrieBlockSource);
+        expect(relay.includedHead).to.be.instanceOf(RelayIncludedHeadStrategy);
         expect(dev.backfillBlocks).to.equal(undefined);
+        expect(dev.includedHead).to.be.instanceOf(DepthIncludedHeadStrategy);
     });
 
-    it("builds the relay strategy from the relay flags", function () {
-        const options = parseStorageDiffArgs([
-            "--upstream",
-            "ws://127.0.0.1:1",
-            "--included-relay-url",
-            "ws://127.0.0.1:2",
-            "--included-asset-hub-url",
-            "ws://127.0.0.1:3",
-            "--included-para-id",
-            "1004"
-        ]);
-
-        expect(options.includedHead).to.be.instanceOf(
-            RelayIncludedHeadStrategy
+    // Mutation: the parsed --included-para-id ignored (the default used) -> another head key.
+    it("builds the relay strategy for the para id of --included-para-id", async function () {
+        const relayNode = await RecordedRelayNode.start(
+            recorded.otherParaHeadKeys["2000"]
         );
-    });
+        const assetHub = await RecordedAssetHubNode.start();
+        try {
+            const options = parseStorageDiffArgs([
+                "--upstream",
+                "ws://127.0.0.1:1",
+                "--included-relay-url",
+                relayNode.url,
+                "--included-asset-hub-url",
+                assetHub.url,
+                "--included-para-id",
+                "2000"
+            ]);
 
-    it("builds the dev strategy from --included-dev-depth", function () {
-        const options = parseStorageDiffArgs([
-            "--upstream",
-            "ws://127.0.0.1:1",
-            "--included-dev-depth",
-            "2"
-        ]);
-
-        expect(options.includedHead).to.be.instanceOf(
-            DepthIncludedHeadStrategy
-        );
+            await withStorageDiffUpstream(async ({ start }) => {
+                const started = start({ includedHead: options.includedHead });
+                await relayNode.requestsReached("state_subscribeStorage", 1);
+                expect(
+                    relayNode.paramsOf("state_subscribeStorage")
+                ).to.deep.equal([[[recorded.otherParaHeadKeys["2000"]]]]);
+                await started;
+            });
+        } finally {
+            await relayNode.close();
+            await assetHub.close();
+        }
     });
 
     it("refuses a relay URL without an Asset Hub URL", function () {

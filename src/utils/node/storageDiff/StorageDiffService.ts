@@ -76,7 +76,7 @@ import { retry } from "@/utils/retry";
 import { toQuantity } from "ethers";
 import WebSocket, { WebSocketServer, type AddressInfo } from "ws";
 
-export const DEFAULT_RETENTION_BLOCKS = 128;
+const DEFAULT_RETENTION_BLOCKS = 128;
 export type { StorageDiffCatchUp, StorageDiffState };
 
 /** Retries of a failed head reconciliation before the service fails. */
@@ -87,14 +87,14 @@ export const RECONCILE_RETRY_BACKOFF_MS = 250;
 export const UPSTREAM_RECONNECT_LIMIT = 5;
 /** Delay before the first reconnect; each further one doubles it. */
 export const UPSTREAM_RECONNECT_BACKOFF_MS = 200;
-export const DEFAULT_MAX_PEER_BUFFERED_BYTES = 16 * 1024 * 1024;
+const DEFAULT_MAX_PEER_BUFFERED_BYTES = 16 * 1024 * 1024;
 /** `scp_disconnect` reason for a peer cut for falling behind. */
 export const SEND_BUFFER_OVERFLOW = "send-buffer-overflow";
 /** WebSocket close code for that cut: policy violation. */
 export const SEND_BUFFER_OVERFLOW_CLOSE_CODE = 1008;
 
 /** Quiet time before the cache is written to disk, so a burst of blocks is one write. */
-export const SAVE_DEBOUNCE_MS = 500;
+const SAVE_DEBOUNCE_MS = 500;
 /** Newest blocks the file keeps, to undo them if the saved head is orphaned. */
 const PERSISTED_BLOCKS = 64;
 /** Rounds a backfill may take to catch up with a head that keeps moving. */
@@ -160,16 +160,6 @@ export interface BackfillRecord extends BackfillCost {
     /** Requests of the final balance, nonce and code read. */
     stateReads: number;
     milliseconds: number;
-}
-
-/** Counters of the service's own upstream work for state, for measurement. */
-export interface StorageDiffStatistics {
-    /** Fields a read found neither cached nor in a complete account, fetched one by one. */
-    lazyFieldFetches: number;
-    /** Reads (`scp_getState` calls) that fetched at least one such field. */
-    lazyReads: number;
-    backfills: BackfillRecord[];
-    snapshotsSent: number;
 }
 
 /** One connected peer and the subscriptions it opened. */
@@ -274,12 +264,6 @@ export class StorageDiffService {
     private readonly lazyAccounts = new Set<AccountAddress>();
     private readonly store?: StateStore;
     private saveTimer?: ReturnType<typeof setTimeout>;
-    private readonly counters: StorageDiffStatistics = {
-        lazyFieldFetches: 0,
-        lazyReads: 0,
-        backfills: [],
-        snapshotsSent: 0
-    };
     // Reads waiting for the best head to reach the block their caller saw.
     private readonly headWaiters = new Set<HeadWaiter>();
     // How long such a read may wait when no event ends it: learned from how
@@ -369,19 +353,6 @@ export class StorageDiffService {
                 ? `[${address.address}]`
                 : address.address;
         return `ws://${bound}:${address.port}`;
-    }
-
-    /** How long a read that names a block the head lacks may wait if no event ends it. */
-    get headWaitBackstopMs(): number {
-        return this.headBackstop.boundMs;
-    }
-
-    /** The counters of lazy state reads and backfills so far. */
-    get statistics(): StorageDiffStatistics {
-        return {
-            ...this.counters,
-            backfills: [...this.counters.backfills]
-        };
     }
 
     /** Idempotent: closes peers, the upstream socket and pending work. */
@@ -1662,7 +1633,6 @@ export class StorageDiffService {
                 }
                 record!.slots = Object.keys(state.storage).length;
                 record!.milliseconds = Date.now() - started;
-                this.counters.backfills.push(record!);
                 this.logger.info("Backfilled an account", { ...record! });
                 return;
             } catch (error) {
@@ -1808,7 +1778,6 @@ export class StorageDiffService {
             }
             if (Object.keys(accounts).length === 0 && noSnapshot.length === 0)
                 continue;
-            this.counters.snapshotsSent++;
             this.send(peer.socket, {
                 jsonrpc: "2.0",
                 method: "scp_snapshot",
@@ -2017,8 +1986,6 @@ export class StorageDiffService {
                 missing.set(key, field);
         }
         if (missing.size === 0) return;
-        this.counters.lazyReads++;
-        this.counters.lazyFieldFetches += missing.size;
         const entries = [...missing];
         const answers = this.upstream
             ? this.upstream.requestBatch(

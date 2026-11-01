@@ -2,6 +2,7 @@ import {
     asksCallFrames,
     deploySlotWriter,
     dumpedAccount,
+    fieldReads,
     slotKey,
     storageWord,
     withStorageDiffSession,
@@ -17,7 +18,6 @@ import {
 import { sleep } from "@/utils";
 import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
 import { ZERO_WORD } from "@/utils/node/storageDiff/blockStorageDiff";
-import type { StorageDiffService } from "@/utils/node/storageDiff/StorageDiffService";
 import { expect } from "chai";
 import { Wallet, toQuantity } from "ethers";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -35,48 +35,43 @@ function nonZero(storage: Record<string, string> | undefined) {
 
 describe("StorageDiffService backfill", function () {
     it("pushes the complete storage of a contract at the head when it is first subscribed, as anvil dumps it", async function () {
-        await withStorageDiffSession(
-            async ({ client, provider, service, signer }) => {
-                const writer = await deploySlotWriter(signer);
-                await writeSlot(signer, writer, 1, 5n);
-                await writeSlot(signer, writer, 2, 7n);
-                await writeSlot(signer, writer, 1, 9n);
-                await writeSlot(signer, writer, 2, 0n);
-                await writeSlot(signer, writer, 40, 3n);
+        await withStorageDiffSession(async ({ client, provider, signer }) => {
+            const writer = await deploySlotWriter(signer);
+            await writeSlot(signer, writer, 1, 5n);
+            await writeSlot(signer, writer, 2, 7n);
+            await writeSlot(signer, writer, 1, 9n);
+            await writeSlot(signer, writer, 2, 0n);
+            await writeSlot(signer, writer, 40, 3n);
 
-                const subscription = await client.subscribe([writer]);
-                const snapshot = await client.nextSnapshot(subscription);
+            const subscription = await client.subscribe([writer]);
+            const snapshot = await client.nextSnapshot(subscription);
 
-                const dumped = await dumpedAccount(provider, writer);
-                const pushed = snapshot.accounts[writer];
-                expect(nonZero(pushed.storage)).to.deep.equal(
-                    nonZero(dumped.storage)
-                );
-                expect(nonZero(pushed.storage)).to.deep.equal({
-                    [slotKey(1)]: storageWord(9n),
-                    [slotKey(40)]: storageWord(3n)
-                });
-                expect(pushed.code).to.equal(dumped.code);
-                expect(BigInt(pushed.balance!)).to.equal(
-                    BigInt(dumped.balance)
-                );
-                expect(pushed.nonce).to.equal(dumped.nonce);
-                const head = await provider.send("eth_getBlockByNumber", [
-                    "latest",
-                    false
-                ]);
-                expect(snapshot.block).to.deep.equal({
-                    number: head.number,
-                    hash: head.hash
-                });
-                void service;
-            }
-        );
+            const dumped = await dumpedAccount(provider, writer);
+            const pushed = snapshot.accounts[writer];
+            expect(nonZero(pushed.storage)).to.deep.equal(
+                nonZero(dumped.storage)
+            );
+            expect(nonZero(pushed.storage)).to.deep.equal({
+                [slotKey(1)]: storageWord(9n),
+                [slotKey(40)]: storageWord(3n)
+            });
+            expect(pushed.code).to.equal(dumped.code);
+            expect(BigInt(pushed.balance!)).to.equal(BigInt(dumped.balance));
+            expect(pushed.nonce).to.equal(dumped.nonce);
+            const head = await provider.send("eth_getBlockByNumber", [
+                "latest",
+                false
+            ]);
+            expect(snapshot.block).to.deep.equal({
+                number: head.number,
+                hash: head.hash
+            });
+        });
     });
 
     it("finds the deploy block by bisection and traces only the blocks with transactions since", async function () {
         await withStorageDiffSession(
-            async ({ client, provider, service, signer }) => {
+            async ({ client, provider, backfills, signer }) => {
                 // blocks without transactions before the deploy, and between writes
                 for (let i = 0; i < 20; i++)
                     await provider.send("evm_mine", []);
@@ -100,7 +95,7 @@ describe("StorageDiffService backfill", function () {
                 const subscription = await client.subscribe([writer]);
                 await client.nextSnapshot(subscription);
 
-                const [cost] = service.statistics.backfills;
+                const [cost] = backfills;
                 expect(cost.deployBlock).to.equal(toQuantity(deployed));
                 // a probe at the head, then about log2(head) probes of the bisection
                 expect(cost.codeProbes).to.be.at.most(
@@ -115,63 +110,51 @@ describe("StorageDiffService backfill", function () {
     });
 
     it("answers a read of a never-written slot of a complete contract without asking the upstream", async function () {
-        await withStorageDiffSession(
-            async ({ client, relay, service, signer }) => {
-                const writer = await deploySlotWriter(signer);
-                const receipt = await writeSlot(signer, writer, 1, 5n);
-                const subscription = await client.subscribe([writer]);
-                await client.nextSnapshot(subscription);
-                const head = await client.getDiffs(
-                    [writer],
-                    receipt.blockNumber
-                );
+        await withStorageDiffSession(async ({ client, relay, signer }) => {
+            const writer = await deploySlotWriter(signer);
+            const receipt = await writeSlot(signer, writer, 1, 5n);
+            const subscription = await client.subscribe([writer]);
+            await client.nextSnapshot(subscription);
+            const head = await client.getDiffs([writer], receipt.blockNumber);
+            const reads = fieldReads(relay);
 
-                const state = await client.getState(head[0].hash, [
-                    { address: writer, slots: [slotKey(77), slotKey(1)] }
-                ]);
+            const state = await client.getState(head[0].hash, [
+                { address: writer, slots: [slotKey(77), slotKey(1)] }
+            ]);
 
-                expect(state.accounts[writer].storage).to.deep.equal({
-                    [slotKey(77)]: ZERO_WORD,
-                    [slotKey(1)]: storageWord(5n)
-                });
-                expect(service.statistics.lazyFieldFetches).to.equal(0);
-                expect(service.statistics.lazyFieldFetches).to.equal(0);
-            }
-        );
+            expect(state.accounts[writer].storage).to.deep.equal({
+                [slotKey(77)]: ZERO_WORD,
+                [slotKey(1)]: storageWord(5n)
+            });
+            expect(fieldReads(relay) - reads).to.equal(0);
+        });
     });
 
     it("keeps a complete contract current from the records and does not push its snapshot again", async function () {
-        await withStorageDiffSession(
-            async ({ client, provider, service, signer }) => {
-                const writer = await deploySlotWriter(signer);
-                await writeSlot(signer, writer, 1, 5n);
-                const subscription = await client.subscribe([writer]);
-                await client.nextSnapshot(subscription);
+        await withStorageDiffSession(async ({ client, signer }) => {
+            const writer = await deploySlotWriter(signer);
+            await writeSlot(signer, writer, 1, 5n);
+            const subscription = await client.subscribe([writer]);
+            await client.nextSnapshot(subscription);
 
-                const receipt = await writeSlot(signer, writer, 1, 8n);
-                await client.recordAt(subscription, receipt.blockNumber);
-                const again = await client.subscribe([
-                    writer,
-                    Wallet.createRandom().address.toLowerCase()
-                ]);
-                const second = await client.nextSnapshot(again);
+            const receipt = await writeSlot(signer, writer, 1, 8n);
+            await client.recordAt(subscription, receipt.blockNumber);
+            const again = await client.subscribe([
+                writer,
+                Wallet.createRandom().address.toLowerCase()
+            ]);
+            const second = await client.nextSnapshot(again);
 
-                const head = await client.getDiffs(
-                    [writer],
-                    receipt.blockNumber
-                );
-                const state = await client.getState(head[0].hash, [
-                    { address: writer, slots: [slotKey(1)] }
-                ]);
-                expect(state.accounts[writer].storage).to.deep.equal({
-                    [slotKey(1)]: storageWord(8n)
-                });
-                // the second subscription only carries the new account
-                expect(Object.keys(second.accounts)).to.not.include(writer);
-                void provider;
-                void service;
-            }
-        );
+            const head = await client.getDiffs([writer], receipt.blockNumber);
+            const state = await client.getState(head[0].hash, [
+                { address: writer, slots: [slotKey(1)] }
+            ]);
+            expect(state.accounts[writer].storage).to.deep.equal({
+                [slotKey(1)]: storageWord(8n)
+            });
+            // the second subscription only carries the new account
+            expect(Object.keys(second.accounts)).to.not.include(writer);
+        });
     });
 
     it("pushes an account without code with its balance and nonce", async function () {
@@ -247,7 +230,7 @@ describe("StorageDiffService backfill", function () {
 describe("StorageDiffService backfill beyond the window", function () {
     it("reads on, in more rounds, the blocks mined past the retained window while the history was being traced", async function () {
         await withStorageDiffSession(
-            async ({ client, relay, service, signer }) => {
+            async ({ client, relay, backfills, signer }) => {
                 const writer = await deploySlotWriter(signer);
                 const first = await writeSlot(signer, writer, 1, 5n);
                 const held = relay.holdNext(
@@ -269,9 +252,7 @@ describe("StorageDiffService backfill beyond the window", function () {
                     [slotKey(1)]: storageWord(6n),
                     [slotKey(2)]: storageWord(4n)
                 });
-                expect(
-                    service.statistics.backfills[0].roundTrips
-                ).to.be.greaterThan(4);
+                expect(backfills[0].roundTrips).to.be.greaterThan(4);
             },
             { retention: 2 }
         );
@@ -282,27 +263,30 @@ describe("StorageDiffService persisted cache", function () {
     it("resumes a complete contract from disk without reading its history again", async function () {
         const cacheDir = mkdtempSync(path.join(tmpdir(), "storage-diff-"));
         try {
-            await withStorageDiffUpstream(async ({ signer, start }) => {
-                const writer = await deploySlotWriter(signer);
-                await writeSlot(signer, writer, 1, 5n);
-                const first = await start({ cacheDir });
-                const client = await StorageDiffClient.connect(first.url);
-                const subscription = await client.subscribe([writer]);
-                await client.nextSnapshot(subscription);
-                client.close();
-                await first.close();
+            await withStorageDiffUpstream(
+                async ({ signer, start, backfills }) => {
+                    const writer = await deploySlotWriter(signer);
+                    await writeSlot(signer, writer, 1, 5n);
+                    const first = await start({ cacheDir });
+                    const client = await StorageDiffClient.connect(first.url);
+                    const subscription = await client.subscribe([writer]);
+                    await client.nextSnapshot(subscription);
+                    client.close();
+                    await first.close();
 
-                const second = await start({ cacheDir });
-                const again = await StorageDiffClient.connect(second.url);
-                const resumed = await again.subscribe([writer]);
-                const snapshot = await again.nextSnapshot(resumed);
-                again.close();
+                    const second = await start({ cacheDir });
+                    const again = await StorageDiffClient.connect(second.url);
+                    const resumed = await again.subscribe([writer]);
+                    const snapshot = await again.nextSnapshot(resumed);
+                    again.close();
 
-                expect(snapshot.accounts[writer].storage).to.deep.equal({
-                    [slotKey(1)]: storageWord(5n)
-                });
-                expect(second.statistics.backfills).to.have.length(0);
-            });
+                    expect(snapshot.accounts[writer].storage).to.deep.equal({
+                        [slotKey(1)]: storageWord(5n)
+                    });
+                    // Mutation: not restoring the saved cache -> the second service backfills.
+                    expect(backfills).to.have.length(1);
+                }
+            );
         } finally {
             rmSync(cacheDir, { recursive: true, force: true });
         }
@@ -312,7 +296,7 @@ describe("StorageDiffService persisted cache", function () {
         const cacheDir = mkdtempSync(path.join(tmpdir(), "storage-diff-"));
         try {
             await withStorageDiffUpstream(
-                async ({ provider, signer, start }) => {
+                async ({ provider, signer, start, backfills }) => {
                     const writer = await deploySlotWriter(signer);
                     await writeSlot(signer, writer, 1, 5n);
                     const checkpoint = await provider.send("evm_snapshot", []);
@@ -344,7 +328,8 @@ describe("StorageDiffService persisted cache", function () {
                         [slotKey(1)]: storageWord(5n),
                         [slotKey(2)]: storageWord(7n)
                     });
-                    expect(second.statistics.backfills).to.have.length(0);
+                    // only the first service's backfill
+                    expect(backfills).to.have.length(1);
                 }
             );
         } finally {
@@ -356,7 +341,7 @@ describe("StorageDiffService persisted cache", function () {
         const cacheDir = mkdtempSync(path.join(tmpdir(), "storage-diff-"));
         try {
             await withStorageDiffUpstream(
-                async ({ provider, signer, start }) => {
+                async ({ provider, signer, start, backfills }) => {
                     const writer = await deploySlotWriter(signer);
                     await writeSlot(signer, writer, 1, 5n);
                     const first = await start({ cacheDir });
@@ -382,7 +367,7 @@ describe("StorageDiffService persisted cache", function () {
                         [slotKey(1)]: storageWord(6n),
                         [slotKey(3)]: storageWord(8n)
                     });
-                    expect(second.statistics.backfills).to.have.length(0);
+                    expect(backfills).to.have.length(1);
                 }
             );
         } finally {
@@ -446,50 +431,6 @@ describe("StorageDiffService snapshot status of a subscription", function () {
             { retention: 2 }
         );
     });
-
-    it("says lazy for an account whose backfill found fewer entries than the chain holds", async function () {
-        await withStorageDiffUpstream(async (session) => {
-            const { provider, signer, start } = session;
-            const writer = await deploySlotWriter(signer);
-            await writeSlot(signer, writer, 1, 5n);
-            const block = (await provider.getBlock("latest"))!;
-            await withSubstrateNode(
-                {
-                    address: writer,
-                    changes: [block.number - 1, block.number],
-                    deployed: block.number - 1,
-                    tipNumber: block.number,
-                    tipHash: () => "0xtip",
-                    info: RECORDED_ACCOUNT_INFO,
-                    entries: 2
-                },
-                async (node) => {
-                    const service = await start({
-                        backfillBlocks: new ChildTrieBlockSource(node.url)
-                    });
-                    const client = await StorageDiffClient.connect(service.url);
-                    try {
-                        const first = await client.subscribeWithStatus([
-                            writer
-                        ]);
-                        await client.nextSnapshot(first.subscription);
-                        const later = await client.subscribeWithStatus([
-                            writer
-                        ]);
-
-                        expect(first.accounts).to.deep.equal({
-                            [writer]: "syncing"
-                        });
-                        expect(later.accounts).to.deep.equal({
-                            [writer]: "lazy"
-                        });
-                    } finally {
-                        client.close();
-                    }
-                }
-            );
-        });
-    });
 });
 
 describe("StorageDiffService backfill checked against the chain", function () {
@@ -503,7 +444,6 @@ describe("StorageDiffService backfill checked against the chain", function () {
             >[0];
             writer: string;
             client: StorageDiffClient;
-            service: StorageDiffService;
             head: { number: number; hash: string };
         }) => Promise<void>
     ): Promise<void> {
@@ -534,7 +474,6 @@ describe("StorageDiffService backfill checked against the chain", function () {
                             session,
                             writer,
                             client,
-                            service,
                             head: { number: block.number, hash: block.hash! }
                         });
                     } finally {
@@ -545,51 +484,53 @@ describe("StorageDiffService backfill checked against the chain", function () {
         });
     }
 
-    async function backfilled(service: StorageDiffService): Promise<void> {
-        while (service.statistics.backfills.length === 0) await sleep(20);
+    async function backfilled(
+        session: Parameters<Parameters<typeof withStorageDiffUpstream>[0]>[0]
+    ): Promise<void> {
+        while (session.backfills.length === 0) await sleep(20);
     }
 
     it("keeps an account lazy and warns with both counts when the chain holds more entries than the history named", async function () {
-        await backfillWith(
-            3,
-            async ({ session, writer, client, service, head }) => {
-                const subscription = await client.subscribe([writer]);
-                await backfilled(service);
-                await sleep(300);
+        await backfillWith(3, async ({ session, writer, client, head }) => {
+            const first = await client.subscribeWithStatus([writer]);
+            const subscription = first.subscription;
+            await backfilled(session);
+            await sleep(300);
 
-                // the service says at once that no snapshot is coming
-                const notice = await client.nextSnapshot(subscription);
-                expect(notice.accounts).to.deep.equal({});
-                expect(notice.lazy).to.deep.equal([writer]);
-                expect(notice.block.hash).to.equal(head.hash);
-                expect(client.unreadSnapshots(subscription)).to.deep.equal([]);
-                const warning = session.warnings.find(({ message }) =>
-                    message.includes("stays lazy")
-                );
-                expect(warning?.meta[0]).to.include({
-                    backfilled: 2,
-                    onChain: 3
-                });
-                // a slot the history never named is fetched when asked for
-                const fetched = service.statistics.lazyFieldFetches;
-                const state = await client.getState(head.hash, [
-                    { address: writer, slots: [slotKey(1), slotKey(9)] }
-                ]);
-                expect(state.accounts[writer].storage).to.deep.equal({
-                    [slotKey(1)]: storageWord(5n),
-                    [slotKey(9)]: storageWord(0n)
-                });
-                expect(service.statistics.lazyFieldFetches - fetched).to.equal(
-                    1
-                );
-            }
-        );
+            // the service says at once that no snapshot is coming
+            const notice = await client.nextSnapshot(subscription);
+            expect(notice.accounts).to.deep.equal({});
+            expect(notice.lazy).to.deep.equal([writer]);
+            expect(notice.block.hash).to.equal(head.hash);
+            expect(client.unreadSnapshots(subscription)).to.deep.equal([]);
+            const warning = session.warnings.find(({ message }) =>
+                message.includes("stays lazy")
+            );
+            expect(warning?.meta[0]).to.include({
+                backfilled: 2,
+                onChain: 3
+            });
+            // a later subscriber is told the account is lazy
+            const later = await client.subscribeWithStatus([writer]);
+            expect(first.accounts).to.deep.equal({ [writer]: "syncing" });
+            expect(later.accounts).to.deep.equal({ [writer]: "lazy" });
+            // a slot the history never named is fetched when asked for
+            const reads = fieldReads(session.relay);
+            const state = await client.getState(head.hash, [
+                { address: writer, slots: [slotKey(1), slotKey(9)] }
+            ]);
+            expect(state.accounts[writer].storage).to.deep.equal({
+                [slotKey(1)]: storageWord(5n),
+                [slotKey(9)]: storageWord(0n)
+            });
+            expect(fieldReads(session.relay) - reads).to.equal(1);
+        });
     });
 
     it("tells a subscriber of a lazy account that no snapshot is coming also when it subscribes after the backfill", async function () {
-        await backfillWith(3, async ({ writer, client, service }) => {
+        await backfillWith(3, async ({ session, writer, client }) => {
             await client.subscribe([writer]);
-            await backfilled(service);
+            await backfilled(session);
 
             const later = await client.subscribe([writer]);
             const notice = await client.nextSnapshot(later);
@@ -620,42 +561,37 @@ describe("StorageDiffService backfill checked against the chain", function () {
     });
 
     it("does not backfill a lazy account again when it is subscribed again", async function () {
-        await backfillWith(3, async ({ writer, client, service }) => {
+        await backfillWith(3, async ({ session, writer, client }) => {
             await client.subscribe([writer]);
-            await backfilled(service);
+            await backfilled(session);
 
             await client.subscribe([writer]);
             await sleep(300);
 
-            expect(service.statistics.backfills).to.have.length(1);
+            expect(session.backfills).to.have.length(1);
         });
     });
 
     it("pushes the snapshot and answers every slot from the cache when the chain holds just the entries the history named", async function () {
-        await backfillWith(
-            2,
-            async ({ session, writer, client, service, head }) => {
-                const subscription = await client.subscribe([writer]);
-                const snapshot = await client.nextSnapshot(subscription);
+        await backfillWith(2, async ({ session, writer, client, head }) => {
+            const subscription = await client.subscribe([writer]);
+            const snapshot = await client.nextSnapshot(subscription);
 
-                expect(
-                    nonZero(snapshot.accounts[writer].storage)
-                ).to.deep.equal({
-                    [slotKey(1)]: storageWord(5n),
-                    [slotKey(2)]: storageWord(7n)
-                });
-                const fetched = service.statistics.lazyFieldFetches;
-                await client.getState(head.hash, [
-                    { address: writer, slots: [slotKey(9)] }
-                ]);
-                expect(service.statistics.lazyFieldFetches).to.equal(fetched);
-                expect(
-                    session.warnings.filter(({ message }) =>
-                        message.includes("stays lazy")
-                    )
-                ).to.deep.equal([]);
-            }
-        );
+            expect(nonZero(snapshot.accounts[writer].storage)).to.deep.equal({
+                [slotKey(1)]: storageWord(5n),
+                [slotKey(2)]: storageWord(7n)
+            });
+            const reads = fieldReads(session.relay);
+            await client.getState(head.hash, [
+                { address: writer, slots: [slotKey(9)] }
+            ]);
+            expect(fieldReads(session.relay)).to.equal(reads);
+            expect(
+                session.warnings.filter(({ message }) =>
+                    message.includes("stays lazy")
+                )
+            ).to.deep.equal([]);
+        });
     });
 
     // the chain holds one more entry from the block of the write on
@@ -672,10 +608,10 @@ describe("StorageDiffService backfill checked against the chain", function () {
         let writeBlock = Number.MAX_SAFE_INTEGER;
         await backfillWith(
             WRITE_ADDS_ENTRY(() => writeBlock),
-            async ({ session, writer, client, service }) => {
+            async ({ session, writer, client }) => {
                 const subscription = await client.subscribe([writer]);
                 await client.nextSnapshot(subscription);
-                await backfilled(service);
+                await backfilled(session);
                 // the trace of the next block lists the account but not the slot it wrote
                 session.relay.tamper(
                     "debug_traceBlockByNumber",
@@ -720,14 +656,12 @@ describe("StorageDiffService backfill checked against the chain", function () {
                     onChain: 3
                 });
                 // lazy from now on: an unnamed slot is fetched when asked for
-                const fetched = service.statistics.lazyFieldFetches;
+                const reads = fieldReads(session.relay);
                 const head = await client.getDiffs([writer], writeBlock);
                 await client.getState(head[0].hash, [
                     { address: writer, slots: [slotKey(9)] }
                 ]);
-                expect(service.statistics.lazyFieldFetches - fetched).to.equal(
-                    1
-                );
+                expect(fieldReads(session.relay) - reads).to.equal(1);
             }
         );
     });
@@ -736,10 +670,10 @@ describe("StorageDiffService backfill checked against the chain", function () {
         let writeBlock = Number.MAX_SAFE_INTEGER;
         await backfillWith(
             WRITE_ADDS_ENTRY(() => writeBlock),
-            async ({ node, session, writer, client, service }) => {
+            async ({ node, session, writer, client }) => {
                 const subscription = await client.subscribe([writer]);
                 await client.nextSnapshot(subscription);
-                await backfilled(service);
+                await backfilled(session);
                 const before = node.requests();
 
                 // the chain holds the entry from the next block on

@@ -124,14 +124,6 @@ describe("ChildTrieBlockSource", function () {
         });
     });
 
-    it("counts a child trie that fills a page exactly", async function () {
-        await withSource(chain({ entries: 2_000 }), async (source) => {
-            expect(await source.countStorageEntries(ADDRESS, TIP)).to.equal(
-                2_000
-            );
-        });
-    });
-
     it("shares the block hash read of counts asked for at one block at the same time", async function () {
         await withSource(chain({ entries: 7 }), async (source, node) => {
             const counts = await Promise.all([

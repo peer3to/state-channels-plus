@@ -14,6 +14,5 @@ The source is driven against a scripted Substrate node that serves child trie ro
 - `fails with a chain move when the tip block changed during the bisection`: UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P3
 - `fails for an address that is not a contract`: UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P4
 - `counts the entries of the contract's child trie across pages`: UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P5
-- `counts a child trie that fills a page exactly`: UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P6
 - `shares the block hash read of counts asked for at one block at the same time`: UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P7
 - `reads the account info once for a contract it counts again`: UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P8

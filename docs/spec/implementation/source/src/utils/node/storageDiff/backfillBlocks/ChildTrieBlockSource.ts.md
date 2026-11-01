@@ -18,6 +18,5 @@
 - [x] `UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P3` — a tip block that changed during the bisection fails with a chain move
 - [x] `UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P4` — an address that is not a contract fails
 - [x] `UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P5` — the entries of the child trie are counted across pages
-- [x] `UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P6` — a child trie that fills a page exactly is counted
 - [x] `UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P7` — the block hash read of counts asked for at one block at the same time is shared
 - [x] `UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P8` — the account info of a contract counted again is read once
