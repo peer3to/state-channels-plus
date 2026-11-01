@@ -161,6 +161,8 @@ describe("MirrorRpcProvider freshness", function () {
 
             // the retry would deliver the record after its backoff: the notice came first
             expect(value).to.equal(3n);
+            // Mutation: ignoring the service's block-delay notice leaves the
+            // wait to the retry and the backstop, past this bound.
             expect(Date.now() - released).to.be.lessThan(
                 SDK_RPC_DEADLINE_MS / 2
             );
@@ -340,6 +342,8 @@ describe("MirrorRpcProvider freshness", function () {
                 releaseNode();
 
                 expect(BigInt(word)).to.equal(5n);
+                // Mutation: ignoring the snapshot-delayed notice leaves the read
+                // waiting for the snapshot backstop, past this bound.
                 expect(Date.now() - started).to.be.lessThan(
                     SDK_RPC_DEADLINE_MS / 2
                 );

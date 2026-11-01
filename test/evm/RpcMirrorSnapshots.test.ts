@@ -150,7 +150,8 @@ describe("MirrorRpcProvider snapshots", function () {
             session.relay.failNext("eth_getBlockByNumber", 50);
 
             const word = await session.provider.getStorage(address, 0);
-            // the notice that no snapshot is coming
+            // the notice that no snapshot is coming (Mutation: a service that sends no
+            // notice after a failed backfill never delivers it, and this wait times out)
             await waitFor(
                 () => session.service.deliveredCount("scp_snapshot") === 1,
                 10_000,
