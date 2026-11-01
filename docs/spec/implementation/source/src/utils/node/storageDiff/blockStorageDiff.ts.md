@@ -11,9 +11,9 @@
 
 ## UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS
 
-`touchesOf` names the storage keys and scalars a block's traced transactions touched, and `hasRevertedFrame` says whether the block's call frames hold an error at any depth.
+`touchesOf` names the storage keys and scalars a block's traced transactions touched, `mergeTransactionDiffs` reads a slot the post of a trace omits as cleared, and `hasRevertedFrame` says whether the block's call frames hold an error at any depth.
 
-- Setup: Call `touchesOf` with prestate-trace entries (pre and post maps, accounts left out of post) and `hasRevertedFrame` with call-frame traces (clean, failing on the top frame, nested two calls deep, failing in a later transaction, entries with errors of their own, missing, or of the wrong length).
+- Setup: Call `touchesOf` with prestate-trace entries (pre and post maps, accounts left out of post) and `hasRevertedFrame` with call-frame traces (clean, failing on the top frame, nested two calls deep, failing in a later transaction, entries with errors of their own, missing, or of the wrong length), and both helpers with the traces recorded from Asset Hub for one block.
 - Oracle: The returned key and scalar sets equal the touched ones with any transaction's flag kept; the failure flag is true exactly for a failed frame at any depth or an unusable trace.
 
 - [x] `UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P1` — the storage keys of pre and post are named and the scalars post shows are flagged
