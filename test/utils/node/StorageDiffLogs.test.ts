@@ -5,9 +5,9 @@ import {
     emitValue,
     setValue,
     storageWord,
-    VALUE_SET_TOPIC,
-    withStorageDiffSession
-} from "../../fixtures/node/StorageDiffService.fixture";
+    VALUE_SET_TOPIC
+} from "../../fixtures/node/StorageDiffContracts";
+import { withStorageDiffSession } from "../../fixtures/node/StorageDiffSession";
 import { expect } from "chai";
 
 describe("StorageDiffService logs", function () {

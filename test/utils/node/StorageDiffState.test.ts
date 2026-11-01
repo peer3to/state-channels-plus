@@ -1,15 +1,19 @@
 import {
-    deployNumberStorage,
-    fieldReads,
-    recordKey,
-    rejectionOf,
-    setValue,
     StorageDiffClient,
-    StorageDiffRpcError,
+    StorageDiffRpcError
+} from "../../fixtures/node/StorageDiffClient";
+import {
+    deployNumberStorage,
+    recordKey,
+    setValue,
     storageWord,
-    VALUE_SLOT,
+    VALUE_SLOT
+} from "../../fixtures/node/StorageDiffContracts";
+import {
+    fieldReads,
+    rejectionOf,
     withStorageDiffSession
-} from "../../fixtures/node/StorageDiffService.fixture";
+} from "../../fixtures/node/StorageDiffSession";
 import {
     INVALID_PARAMS,
     NOT_RETAINED_ERROR_CODE,

@@ -3,11 +3,11 @@ import {
     RecordedRelayNode,
     recorded
 } from "../../fixtures/node/RecordedPolkadotNodes";
+import { StorageDiffClient } from "../../fixtures/node/StorageDiffClient";
 import {
-    StorageDiffClient,
     withStorageDiffSession,
     withStorageDiffUpstream
-} from "../../fixtures/node/StorageDiffService.fixture";
+} from "../../fixtures/node/StorageDiffSession";
 import { DepthIncludedHeadStrategy } from "@/utils/node/storageDiff/includedHead/DepthIncludedHeadStrategy";
 import { RelayIncludedHeadStrategy } from "@/utils/node/storageDiff/includedHead/RelayIncludedHeadStrategy";
 import { expect } from "chai";

@@ -1,15 +1,19 @@
 import {
+    StorageDiffClient,
+    StorageDiffRpcError
+} from "../../fixtures/node/StorageDiffClient";
+import {
     deployNumberStorage,
     recordKey,
-    rejectionOf,
     setValue,
-    StorageDiffClient,
-    StorageDiffRpcError,
     storageWord,
-    VALUE_SLOT,
+    VALUE_SLOT
+} from "../../fixtures/node/StorageDiffContracts";
+import {
+    rejectionOf,
     withStorageDiffSession,
     withStorageDiffUpstream
-} from "../../fixtures/node/StorageDiffService.fixture";
+} from "../../fixtures/node/StorageDiffSession";
 import {
     INVALID_PARAMS,
     METHOD_NOT_FOUND,

@@ -4,11 +4,8 @@ import {
     recorded
 } from "../../fixtures/node/RecordedPolkadotNodes";
 import { ScriptProcess } from "../../fixtures/node/ScriptProcess";
-import {
-    StorageDiffClient,
-    withStorageDiffSession,
-    withStorageDiffUpstream
-} from "../../fixtures/node/StorageDiffService.fixture";
+import { StorageDiffClient } from "../../fixtures/node/StorageDiffClient";
+import { withStorageDiffUpstream } from "../../fixtures/node/StorageDiffSession";
 import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
 import { DepthIncludedHeadStrategy } from "@/utils/node/storageDiff/includedHead/DepthIncludedHeadStrategy";
 import { RelayIncludedHeadStrategy } from "@/utils/node/storageDiff/includedHead/RelayIncludedHeadStrategy";

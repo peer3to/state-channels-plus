@@ -3,18 +3,20 @@ import {
     deployNestedWriter,
     deployNumberStorage,
     deployRevertProbe,
-    fieldReads,
     deploySlotWriter,
     dumpedAccount,
     recordKey,
-    rejectionOf,
     setValue,
     slotKey,
     storageWord,
     withFailedFrames,
-    withStorageDiffSession,
     writeSlot
-} from "../../fixtures/node/StorageDiffService.fixture";
+} from "../../fixtures/node/StorageDiffContracts";
+import {
+    fieldReads,
+    rejectionOf,
+    withStorageDiffSession
+} from "../../fixtures/node/StorageDiffSession";
 import { UPSTREAM_FAULT } from "../../fixtures/node/UpstreamRelay";
 import { sleep } from "@/utils";
 import { SDK_RPC_DEADLINE_MS } from "@/utils/storageDiff/LearnedBackstop";

@@ -1,15 +1,17 @@
+import { StorageDiffClient } from "../../fixtures/node/StorageDiffClient";
 import {
     asksCallFrames,
     deploySlotWriter,
     dumpedAccount,
-    fieldReads,
     slotKey,
     storageWord,
-    withStorageDiffSession,
-    withStorageDiffUpstream,
-    StorageDiffClient,
     writeSlot
-} from "../../fixtures/node/StorageDiffService.fixture";
+} from "../../fixtures/node/StorageDiffContracts";
+import {
+    fieldReads,
+    withStorageDiffSession,
+    withStorageDiffUpstream
+} from "../../fixtures/node/StorageDiffSession";
 import {
     RECORDED_ACCOUNT_INFO,
     withSubstrateNode,
