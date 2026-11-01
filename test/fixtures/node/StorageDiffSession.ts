@@ -1,6 +1,11 @@
 // @spec-test-coverage-ignore: storage diff service staging; executable evidence belongs to its calling test declarations
 import { withIsolatedHardhatNode } from "./IsolatedHardhatNode";
 import { StorageDiffClient } from "./StorageDiffClient";
+import {
+    deployNumberStorage,
+    recordKey,
+    setValue
+} from "./StorageDiffContracts";
 import { UpstreamRelay } from "./UpstreamRelay";
 import { createLogger } from "@/utils";
 import type ABackfillBlockSource from "@/utils/node/storageDiff/backfillBlocks/ABackfillBlockSource";
@@ -139,4 +144,24 @@ export async function withStorageDiffSession<T>(
             client.close();
         }
     });
+}
+
+/**
+ * A deployed number storage, the key the service records it by, and a
+ * subscription to no address. `set` stores a number and waits for the
+ * service's record of the block that did.
+ */
+export async function openStorage(
+    client: StorageDiffClient,
+    signer: JsonRpcSigner
+) {
+    const storage = await deployNumberStorage(signer);
+    const address = await recordKey(storage);
+    const subscription = await client.subscribe([]);
+    const set = async (value: bigint) => {
+        const receipt = await setValue(storage, value);
+        const record = await client.recordAt(subscription, receipt.blockNumber);
+        return { receipt, record };
+    };
+    return { storage, address, subscription, set };
 }

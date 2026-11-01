@@ -11,6 +11,7 @@ import {
 } from "../../fixtures/node/StorageDiffContracts";
 import {
     fieldReads,
+    openStorage,
     rejectionOf,
     withStorageDiffSession
 } from "../../fixtures/node/StorageDiffSession";
@@ -27,14 +28,8 @@ const SLOT = { slots: [VALUE_SLOT] };
 describe("StorageDiffService state", function () {
     it("reads a slot from the upstream on the first read, pinned to the best head's block hash", async function () {
         await withStorageDiffSession(async ({ client, relay, signer }) => {
-            const storage = await deployNumberStorage(signer);
-            const address = await recordKey(storage);
-            const subscription = await client.subscribe([]);
-            const receipt = await setValue(storage, 5n);
-            const head = await client.recordAt(
-                subscription,
-                receipt.blockNumber
-            );
+            const { address, set } = await openStorage(client, signer);
+            const { record: head } = await set(5n);
 
             const state = await client.getState(head.hash, [
                 { address, ...SLOT }
@@ -53,14 +48,8 @@ describe("StorageDiffService state", function () {
     it("fetches a slot once for concurrent reads of it", async function () {
         await withStorageDiffSession(
             async ({ client, relay, service, signer }) => {
-                const storage = await deployNumberStorage(signer);
-                const address = await recordKey(storage);
-                const subscription = await client.subscribe([]);
-                const receipt = await setValue(storage, 5n);
-                const head = await client.recordAt(
-                    subscription,
-                    receipt.blockNumber
-                );
+                const { address, set } = await openStorage(client, signer);
+                const { record: head } = await set(5n);
                 const clients = await Promise.all(
                     Array.from({ length: 5 }, () =>
                         StorageDiffClient.connect(service.url)
@@ -88,18 +77,11 @@ describe("StorageDiffService state", function () {
 
     it("updates a cached slot from a block's write without an upstream request", async function () {
         await withStorageDiffSession(async ({ client, relay, signer }) => {
-            const storage = await deployNumberStorage(signer);
-            const address = await recordKey(storage);
-            const subscription = await client.subscribe([]);
-            const first = await setValue(storage, 5n);
-            const head = await client.recordAt(subscription, first.blockNumber);
+            const { address, set } = await openStorage(client, signer);
+            const { record: head } = await set(5n);
             await client.getState(head.hash, [{ address, ...SLOT }]);
 
-            const second = await setValue(storage, 9n);
-            const next = await client.recordAt(
-                subscription,
-                second.blockNumber
-            );
+            const { record: next } = await set(9n);
             const state = await client.getState(next.hash, [
                 { address, ...SLOT }
             ]);
@@ -113,18 +95,11 @@ describe("StorageDiffService state", function () {
 
     it("reads a slot cleared to zero as the zero word", async function () {
         await withStorageDiffSession(async ({ client, relay, signer }) => {
-            const storage = await deployNumberStorage(signer);
-            const address = await recordKey(storage);
-            const subscription = await client.subscribe([]);
-            const first = await setValue(storage, 5n);
-            const head = await client.recordAt(subscription, first.blockNumber);
+            const { address, set } = await openStorage(client, signer);
+            const { record: head } = await set(5n);
             await client.getState(head.hash, [{ address, ...SLOT }]);
 
-            const cleared = await setValue(storage, 0n);
-            const next = await client.recordAt(
-                subscription,
-                cleared.blockNumber
-            );
+            const { record: next } = await set(0n);
             const state = await client.getState(next.hash, [
                 { address, ...SLOT }
             ]);
@@ -138,20 +113,13 @@ describe("StorageDiffService state", function () {
 
     it("applies a block mined while the fetch of a slot was in flight", async function () {
         await withStorageDiffSession(async ({ client, relay, signer }) => {
-            const storage = await deployNumberStorage(signer);
-            const address = await recordKey(storage);
-            const subscription = await client.subscribe([]);
-            const first = await setValue(storage, 1n);
-            const head = await client.recordAt(subscription, first.blockNumber);
+            const { address, set } = await openStorage(client, signer);
+            const { record: head } = await set(1n);
             const held = relay.holdNext("eth_getStorageAt", address);
 
             const read = client.getState(head.hash, [{ address, ...SLOT }]);
             await held.arrived;
-            const second = await setValue(storage, 7n);
-            const next = await client.recordAt(
-                subscription,
-                second.blockNumber
-            );
+            const { record: next } = await set(7n);
             held.release();
             await read;
 
@@ -168,9 +136,10 @@ describe("StorageDiffService state", function () {
     it("rolls a cached slot back to the value before an orphaned block after a reorg", async function () {
         await withStorageDiffSession(
             async ({ client, provider, relay, signer }) => {
-                const storage = await deployNumberStorage(signer);
-                const address = await recordKey(storage);
-                const subscription = await client.subscribe([]);
+                const { storage, address, subscription } = await openStorage(
+                    client,
+                    signer
+                );
                 const kept = await setValue(storage, 1n);
                 const dropped = await setValue(storage, 2n);
                 await client.recordAt(subscription, kept.blockNumber);
@@ -202,9 +171,10 @@ describe("StorageDiffService state", function () {
 
     it("reads a slot at an older retained block as that block's value", async function () {
         await withStorageDiffSession(async ({ client, relay, signer }) => {
-            const storage = await deployNumberStorage(signer);
-            const address = await recordKey(storage);
-            const subscription = await client.subscribe([]);
+            const { storage, address, subscription } = await openStorage(
+                client,
+                signer
+            );
             const first = await setValue(storage, 1n);
             const second = await setValue(storage, 2n);
             const older = await client.recordAt(
@@ -237,14 +207,11 @@ describe("StorageDiffService state", function () {
     it("fails with the not-retained error for a block older than the window", async function () {
         await withStorageDiffSession(
             async ({ client, provider, signer }) => {
-                const storage = await deployNumberStorage(signer);
-                const address = await recordKey(storage);
-                const subscription = await client.subscribe([]);
-                const old = await setValue(storage, 1n);
-                const oldRecord = await client.recordAt(
-                    subscription,
-                    old.blockNumber
+                const { address, subscription, set } = await openStorage(
+                    client,
+                    signer
                 );
+                const { record: oldRecord } = await set(1n);
                 await provider.send("anvil_mine", [3]);
                 const head = Number(await provider.send("eth_blockNumber", []));
                 await client.recordAt(subscription, head);
@@ -280,14 +247,11 @@ describe("StorageDiffService state", function () {
 
     it("fails with the not-retained error for a block a reorg orphaned", async function () {
         await withStorageDiffSession(async ({ client, provider, signer }) => {
-            const storage = await deployNumberStorage(signer);
-            const address = await recordKey(storage);
-            const subscription = await client.subscribe([]);
-            const dropped = await setValue(storage, 2n);
-            const orphan = await client.recordAt(
-                subscription,
-                dropped.blockNumber
+            const { address, subscription, set } = await openStorage(
+                client,
+                signer
             );
+            const { record: orphan } = await set(2n);
             await provider.send("anvil_reorg", [1, []]);
             await provider.send("evm_mine", []);
             await client.nextRecord(subscription);
@@ -421,14 +385,8 @@ describe("StorageDiffService state", function () {
 
     it("carries the block environment on every pushed record and on the catch-up head", async function () {
         await withStorageDiffSession(async ({ client, provider, signer }) => {
-            const storage = await deployNumberStorage(signer);
-            const subscription = await client.subscribe([]);
-            const receipt = await setValue(storage, 3n);
-
-            const record = await client.recordAt(
-                subscription,
-                receipt.blockNumber
-            );
+            const { set } = await openStorage(client, signer);
+            const { receipt, record } = await set(3n);
 
             const raw = await provider.send("eth_getBlockByNumber", [
                 toQuantity(receipt.blockNumber),
