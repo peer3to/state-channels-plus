@@ -1,7 +1,6 @@
 const { spawnSync } = require("child_process");
-const fs = require("fs");
 const { BROWSER_TYPECHECK_COMMAND } = require("./browserConfig");
-const { FORGE_BIN } = require("./forgeConfig");
+const { FORGE_BIN, pinnedFoundryMismatch } = require("./forgeConfig");
 
 // Which tier a discovered task belongs to. Every task carries one. This is a
 // scheduling discriminator, not a spawn selector: every tier is spawned
@@ -94,17 +93,11 @@ function tierBuildFailure(command, args, { missing, failed, cwd }) {
 function forgeBuildFailure(tasks, distributed = false) {
     // workers run the forge pinned in .forge-version, and a build from any
     // other forge is stale there: every forge task would recompile it
-    if (distributed && fs.existsSync(".forge-version")) {
-        const pinned = fs
-            .readFileSync(".forge-version", "utf8")
-            .trim()
-            .replace(/^v/, "");
-        const local = spawnSync(FORGE_BIN, ["--version"], {
-            encoding: "utf8"
-        }).stdout?.match(/Version: (\d+\.\d+\.\d+)/)?.[1];
-        if (local && local !== pinned) {
+    if (distributed) {
+        const mismatch = pinnedFoundryMismatch(FORGE_BIN);
+        if (mismatch) {
             return new Error(
-                `forge ${local} does not match .forge-version (${pinned}), so the workers would rebuild it. ` +
+                `${mismatch}, so the workers would rebuild it. ` +
                     'Run: foundryup --install "$(cat .forge-version)"'
             );
         }

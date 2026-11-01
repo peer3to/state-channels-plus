@@ -1,9 +1,7 @@
 // The test chain: the pinned anvil, configured like the hardhat network in
 // hardhat.config.ts. Shared by the node launcher and test/utils/nodeInfra.js.
-const { spawnSync } = require("node:child_process");
-const fs = require("node:fs");
-const path = require("node:path");
 const { ACCOUNT_POOL_SIZE } = require("../e2e-parallel/shared/constants");
+const { pinnedFoundryMismatch } = require("../e2e-parallel/shared/forgeConfig");
 
 const ANVIL_BIN = "anvil";
 // The one owner of the mnemonic: hardhat.config.ts requires it from here, so
@@ -33,18 +31,10 @@ const ANVIL_WATCHDOG = [
  * the refusal, or null when the pinned anvil (or no pin) is found.
  */
 function pinnedAnvilMismatch(projectRoot = process.cwd(), env = process.env) {
-    const pinFile = path.join(projectRoot, ".forge-version");
-    if (!fs.existsSync(pinFile)) return null;
-    const pinned = fs.readFileSync(pinFile, "utf8").trim().replace(/^v/, "");
-    const found = spawnSync(ANVIL_BIN, ["--version"], {
-        encoding: "utf8",
-        env
-    });
-    if (found.error) return `Failed to start anvil: ${found.error.message}`;
-    const local = found.stdout?.match(/Version: (\d+\.\d+\.\d+)/)?.[1];
-    if (local === pinned) return null;
+    const mismatch = pinnedFoundryMismatch(ANVIL_BIN, projectRoot, env);
+    if (!mismatch) return null;
     return (
-        `anvil ${local ?? "(unknown version)"} does not match .forge-version (${pinned}). ` +
+        `${mismatch}. ` +
         'Run: foundryup --install "$(cat .forge-version)" and put ~/.foundry/bin first on PATH'
     );
 }
