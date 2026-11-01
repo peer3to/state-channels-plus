@@ -1,6 +1,9 @@
+import { recordedTrace } from "../../fixtures/node/RecordedAssetHubTrace";
 import {
     hasRevertedFrame,
-    touchesOf
+    mergeTransactionDiffs,
+    touchesOf,
+    ZERO_WORD
 } from "@/utils/node/storageDiff/blockStorageDiff";
 import { expect } from "chai";
 import { toBeHex } from "ethers";
@@ -103,5 +106,65 @@ describe("hasRevertedFrame", function () {
         expect(hasRevertedFrame([{ error: "x" }], 1)).to.equal(true);
         expect(hasRevertedFrame(undefined, 1)).to.equal(true);
         expect(hasRevertedFrame([{ result: ok }], 2)).to.equal(true);
+    });
+});
+
+// The frames below are the ones Asset Hub eth-rpc answered for a block with one
+// transaction to a mainnet contract (assetHubTrace.recorded.json); the tests
+// above build their frames by hand.
+describe("recorded Asset Hub traces", function () {
+    const CONTRACT = "0x99ee73298423dcf5da3059a5e48bda20bfbcd01b";
+    const SENDER = "0xaae3888b4f00d29293ff8aeaf79fb4020c2e5752";
+    const TOKEN = "0x6e33dd88e159b0239d049486494074cda1858bb4";
+    // the slot the transaction cleared: in the recorded `pre`, not in `post`
+    const CLEARED_SLOT =
+        "0x3b9baa3a8af4d06d8723f9c29d48b56ceba6d1db5ba46e8efdf4de17279e4b5f";
+
+    // Mutation: touchesOf reads `post` only -> the cleared slot is missing.
+    it("names the accounts and storage keys of a recorded prestate diff and flags what its post shows", function () {
+        const touches = touchesOf(recordedTrace.pre);
+
+        expect(Object.keys(touches).sort()).to.deep.equal(
+            [CONTRACT, SENDER, TOKEN].sort()
+        );
+        expect(touches[CONTRACT].slots).to.have.length(5);
+        expect(touches[CONTRACT].slots).to.include(CLEARED_SLOT);
+        expect(touches[CONTRACT].changed).to.deep.equal({
+            balance: true,
+            nonce: false,
+            code: false
+        });
+        expect(touches[SENDER]).to.deep.equal({
+            slots: [],
+            changed: { balance: true, nonce: true, code: false }
+        });
+    });
+
+    // Mutation: a slot `post` omits is dropped instead of read as zero.
+    it("reads a slot a recorded post omits as cleared to zero", function () {
+        const { pre, post } = mergeTransactionDiffs(recordedTrace.pre);
+
+        expect(post[CONTRACT].storage![CLEARED_SLOT]).to.equal(ZERO_WORD);
+        expect(pre[CONTRACT].storage![CLEARED_SLOT]).to.not.equal(ZERO_WORD);
+    });
+
+    // Mutation: a failure is looked for on the top frame only.
+    it("finds no failure in a recorded call tree with nested calls", function () {
+        const [{ result }] = recordedTrace.call;
+
+        expect(result.calls).to.have.length(2);
+        expect(hasRevertedFrame(recordedTrace.call, 1)).to.equal(false);
+    });
+
+    // The recording holds no reverted sub-call (see its note): the error is
+    // injected into a nested frame of the recorded tree.
+    it("finds a failure once a nested frame of the recorded call tree carries an error", function () {
+        const reverted = structuredClone(recordedTrace.call);
+        (reverted[0].result.calls as object[])[1] = {
+            ...(reverted[0].result.calls as object[])[1],
+            error: "execution reverted"
+        };
+
+        expect(hasRevertedFrame(reverted, 1)).to.equal(true);
     });
 });

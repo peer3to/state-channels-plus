@@ -355,7 +355,10 @@ describe("StorageDiffService blocks", function () {
 
 describe("StorageDiffService values come from reads, not from the trace", function () {
     // Asset Hub's prestateTracer reports writes of reverted sub-calls in `post`;
-    // the relay adds such writes to every trace the service asks for.
+    // the relay adds such writes to every trace the service asks for. This is
+    // a fault injection into anvil's real trace: no recorded Asset Hub block
+    // holds a reverted sub-call (see the note of assetHubTrace.recorded.json),
+    // and the real frames the service parses are pinned in BlockTouches.test.ts.
     it("leaves out the slot and the value transfer of a reverted sub-call that the trace reports", async function () {
         await withStorageDiffSession(async ({ client, relay, signer }) => {
             const recipient = Wallet.createRandom().address.toLowerCase();

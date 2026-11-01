@@ -604,6 +604,10 @@ describe("StorageDiffService backfill checked against the chain", function () {
         return done();
     }
 
+    // The scripted Substrate node (SubstrateChildTrieNode) and the trace that
+    // omits the write are fault injections: the recorded exchange is in
+    // assetHubChildTrie.recorded.json, and Asset Hub's omission is
+    // paritytech/polkadot-sdk#13663.
     it("keeps an account lazy and tells its subscriber when a block's trace omits a write the chain holds", async function () {
         let writeBlock = Number.MAX_SAFE_INTEGER;
         await backfillWith(

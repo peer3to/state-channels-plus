@@ -32,8 +32,11 @@ export type SubstrateNode = {
 };
 
 /**
- * A Substrate node, in the shape of recorded Asset Hub answers, serving the
- * reads the child trie sources make about one contract.
+ * A scripted Substrate node, in the shape of recorded Asset Hub answers,
+ * serving the reads the child trie sources make about one contract. It stands
+ * in for faults and sizes the recording does not hold (a trie that gains an
+ * entry the history lacks, a million blocks, a moving tip); the real exchange
+ * is replayed from RecordedAssetHubChildTrie.ts.
  */
 export async function withSubstrateNode<T>(
     contract: SubstrateContract,
