@@ -121,6 +121,17 @@ export function assertLogQueryMaxBlocks(maxBlocks: number): void {
         );
 }
 
+/**
+ * Rejects a mirror sampling fraction outside 0 to 1: NaN never samples and a
+ * value above 1 always does.
+ */
+export function assertMirrorSampleRate(rate: number): void {
+    if (!(rate >= 0 && rate <= 1))
+        throw new Error(
+            `MIRROR_SAMPLE_RATE must be a number from 0 to 1, got ${rate}`
+        );
+}
+
 export function isNodeRuntime() {
     return (
         typeof process !== "undefined" &&

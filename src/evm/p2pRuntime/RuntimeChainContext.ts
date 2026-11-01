@@ -1,11 +1,15 @@
-import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
-import MirrorRpcProvider from "@/evm/p2pRuntime/rpcNodes/MirrorRpcProvider";
+import MirrorRpcProvider, {
+    type MirrorProviderOptions
+} from "@/evm/p2pRuntime/rpcNodes/MirrorRpcProvider";
 import type MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import RpcNodeProvider, {
     type ExpectedChain
 } from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
-import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
-import { assertLogQueryMaxBlocks, type Config } from "@/utils/config";
+import {
+    assertLogQueryMaxBlocks,
+    assertMirrorSampleRate,
+    type Config
+} from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 import { Signer, Wallet } from "ethers";
@@ -85,11 +89,11 @@ export async function createRpcNodesProvider(
     config: Pick<Config, "PROVIDER_URL" | "PROVIDER_URLS"> &
         Partial<Pick<Config, "STORAGE_DIFF_URL" | "MIRROR_SAMPLE_RATE">>,
     logger: Logger,
-    mirror: {
-        customPrecompiles?: EvmCustomPrecompileManifest[];
-        owner?: AInternalRpcRoot;
-    } = {}
+    mirror: Pick<MirrorProviderOptions, "customPrecompiles" | "owner"> = {}
 ): Promise<MultiRpcProvider> {
+    // a bad fraction would only mis-sample reads
+    if (config.MIRROR_SAMPLE_RATE !== undefined)
+        assertMirrorSampleRate(config.MIRROR_SAMPLE_RATE);
     const expectedChain: ExpectedChain = {};
     const nodes = resolveProviderUrls(config).map(
         (url) => new RpcNodeProvider(url, logger, expectedChain)
@@ -123,10 +127,7 @@ export async function createRuntimeChainContext(
     config: Config,
     signerSecret: string,
     logger: Logger,
-    mirror: {
-        customPrecompiles?: EvmCustomPrecompileManifest[];
-        owner?: AInternalRpcRoot;
-    } = {}
+    mirror: Pick<MirrorProviderOptions, "customPrecompiles" | "owner"> = {}
 ): Promise<RuntimeChainContext> {
     // a bad window size would only surface at the first catch-up
     assertLogQueryMaxBlocks(config.LOG_QUERY_MAX_BLOCKS);

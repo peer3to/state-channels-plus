@@ -1,4 +1,5 @@
 import {
+    AnnouncedBlocks,
     BACKSTOP_MULTIPLE,
     BACKSTOP_WINDOW_MS,
     capLeavingNodeRoundTrips,
@@ -123,5 +124,65 @@ describe("capLeavingNodeRoundTrips", function () {
         clock.advance(BACKSTOP_WINDOW_MS + 1);
 
         expect(capLeavingNodeRoundTrips(CAP_MS, roundTrips)).to.equal(CAP_MS);
+    });
+});
+
+describe("AnnouncedBlocks", function () {
+    it("forgets announcements older than the window when another block is announced", function () {
+        const clock = manualClock();
+        const announced = new AnnouncedBlocks(clock.now);
+        for (let number = 1n; number <= 5n; number++)
+            announced.announce(number);
+        expect(announced.size).to.equal(5);
+
+        clock.advance(BACKSTOP_WINDOW_MS + 1);
+        announced.announce(6n);
+
+        expect(announced.size).to.equal(1);
+    });
+
+    it("keeps announcements inside the window", function () {
+        const clock = manualClock();
+        const announced = new AnnouncedBlocks(clock.now);
+        announced.announce(1n);
+
+        clock.advance(BACKSTOP_WINDOW_MS - 1);
+        announced.announce(2n);
+
+        expect(announced.size).to.equal(2);
+    });
+
+    it("forgets every announcement on clear", function () {
+        const announced = new AnnouncedBlocks(manualClock().now);
+        announced.announce(1n);
+        announced.announce(2n);
+
+        announced.clear();
+
+        expect(announced.size).to.equal(0);
+    });
+
+    it("hands over how long each announced block up to the arrived one took, and keeps later ones", function () {
+        const clock = manualClock();
+        const announced = new AnnouncedBlocks(clock.now);
+        announced.announce(1n);
+        clock.advance(40);
+        announced.announce(2n);
+        announced.announce(3n);
+        clock.advance(10);
+
+        const durations = announced.arrivedUpTo(2n);
+
+        expect(durations.sort()).to.deep.equal([10, 50]);
+        expect(announced.size).to.equal(1);
+    });
+
+    it("does not hand over an announcement older than the window", function () {
+        const clock = manualClock();
+        const announced = new AnnouncedBlocks(clock.now);
+        announced.announce(1n);
+        clock.advance(BACKSTOP_WINDOW_MS + 1);
+
+        expect(announced.arrivedUpTo(1n)).to.deep.equal([]);
     });
 });

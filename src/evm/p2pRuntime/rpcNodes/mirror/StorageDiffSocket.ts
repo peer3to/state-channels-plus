@@ -1,10 +1,4 @@
 import {
-    StorageDiffNotRetainedError,
-    StorageDiffPrunedError,
-    type MirrorFeed,
-    type MirrorFeedHandlers
-} from "./MirrorFeed";
-import {
     NOT_RETAINED_ERROR_CODE,
     PRUNED_ERROR_CODE,
     type AccountAddress,
@@ -23,8 +17,52 @@ import {
 } from "@/utils/storageDiff/storageDiffWire";
 import { Network, WebSocketProvider } from "ethers";
 
+/** The feed has no record of the requested blocks any more: they are older than its window. */
+export class StorageDiffPrunedError extends Error {}
+
+/** The feed does not retain the block of a state read: unknown, orphaned or too old. */
+export class StorageDiffNotRetainedError extends Error {}
+
+/** What a feed pushes. */
+export type MirrorFeedHandlers = {
+    /** A record pushed to `subscription`. */
+    onRecord: (subscription: SubscriptionId, record: BlockStorageDiff) => void;
+    /** The complete state of accounts, pushed once a subscription first covers them. */
+    onSnapshot: (
+        subscription: SubscriptionId,
+        snapshot: StorageDiffSnapshot
+    ) => void;
+    /** The included head advanced. */
+    onIncludedHead: (head: IncludedHeadRecord) => void;
+    /** A block or snapshot a peer may be waiting for will not come soon. */
+    onDelayed: (notice: StorageDiffDelayNotice) => void;
+    /** The feed ended; it is unusable. */
+    onLost: (reason: Error) => void;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
+}
+
+function isCatchUp(value: unknown): value is StorageDiffCatchUp {
+    return (
+        isRecord(value) &&
+        Array.isArray(value.records) &&
+        isRecord(value.head) &&
+        (value.includedHead === null || isRecord(value.includedHead))
+    );
+}
+
+function isState(value: unknown): value is StorageDiffState {
+    return isRecord(value) && isRecord(value.accounts);
+}
+
+function isBlockEnvironment(value: unknown): value is BlockEnvironment {
+    return isRecord(value);
+}
+
+function isIncludedHeadRecord(value: unknown): value is IncludedHeadRecord {
+    return isRecord(value);
 }
 
 /**
@@ -33,7 +71,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * `scp_includedHead` and `scp_delayed` pushes handed to the handlers. The socket never reconnects; its owner
  * opens a new one after `onLost`.
  */
-export class StorageDiffSocket extends WebSocketProvider implements MirrorFeed {
+export class StorageDiffSocket extends WebSocketProvider {
     private readonly handlers: MirrorFeedHandlers;
     /** Settles with the reason once the socket errors or closes. */
     private readonly ended: Promise<Error>;
@@ -65,7 +103,11 @@ export class StorageDiffSocket extends WebSocketProvider implements MirrorFeed {
         });
     }
 
-    /** Subscribes to every canonical block's record for `addresses`. */
+    /**
+     * Follows `addresses`: their snapshot, then each block's record. The
+     * answer says, per address, whether a snapshot is ready, to follow, or
+     * not coming. Subscribes to every canonical block's record for `addresses`.
+     */
     async subscribe(addresses: AccountAddress[]): Promise<SubscribeResult> {
         const result = (await this.request("scp_subscribeContractStorage", [
             addresses
@@ -82,7 +124,10 @@ export class StorageDiffSocket extends WebSocketProvider implements MirrorFeed {
         await this.request("scp_unsubscribe", [subscription]);
     }
 
-    /** The retained records from `fromBlock` to the head, and the included head. */
+    /**
+     * The retained records from `fromBlock` to the head, the included head
+     * and the head's environment.
+     */
     async catchUp(
         addresses: AccountAddress[],
         fromBlock: bigint
@@ -91,14 +136,9 @@ export class StorageDiffSocket extends WebSocketProvider implements MirrorFeed {
             addresses,
             "0x" + fromBlock.toString(16)
         ]);
-        if (
-            !isRecord(answer) ||
-            !Array.isArray(answer.records) ||
-            !isRecord(answer.head) ||
-            !(answer.includedHead === null || isRecord(answer.includedHead))
-        )
+        if (!isCatchUp(answer))
             throw new Error("Malformed storage diff catch-up");
-        return answer as unknown as StorageDiffCatchUp;
+        return answer;
     }
 
     /** The requested values at the retained block `blockHash`. */
@@ -110,9 +150,8 @@ export class StorageDiffSocket extends WebSocketProvider implements MirrorFeed {
             blockHash,
             requests
         ]);
-        if (!isRecord(answer) || !isRecord(answer.accounts))
-            throw new Error("Malformed storage diff state");
-        return answer as unknown as StorageDiffState;
+        if (!isState(answer)) throw new Error("Malformed storage diff state");
+        return answer;
     }
 
     /** A retained block as the upstream returns it, or null. */
@@ -153,8 +192,9 @@ export class StorageDiffSocket extends WebSocketProvider implements MirrorFeed {
             "scp_getHead",
             minBlock ? [minBlock] : []
         );
-        if (!isRecord(answer)) throw new Error("Malformed storage diff head");
-        return answer as unknown as BlockEnvironment;
+        if (!isBlockEnvironment(answer))
+            throw new Error("Malformed storage diff head");
+        return answer;
     }
 
     // Overrides SocketProvider._processMessage: the service's pushes are
@@ -177,10 +217,8 @@ export class StorageDiffSocket extends WebSocketProvider implements MirrorFeed {
                 );
                 return;
             }
-            if (method === "scp_includedHead" && isRecord(params)) {
-                this.handlers.onIncludedHead(
-                    params as unknown as IncludedHeadRecord
-                );
+            if (method === "scp_includedHead" && isIncludedHeadRecord(params)) {
+                this.handlers.onIncludedHead(params);
                 return;
             }
             if (method === "scp_delayed" && isRecord(params)) {

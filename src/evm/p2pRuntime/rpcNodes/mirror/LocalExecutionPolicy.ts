@@ -1,16 +1,8 @@
 /**
  * What the local EVM may run. The local EVM is an EVM: code the chain runs
  * on another machine, and addresses the chain answers with its own
- * precompiles, are not run here. A call that carries a gas limit runs whole
- * on the node as well: the local EVM charges no transaction gas (21,000 and
- * calldata), and the chain's gas accounting is the chain's own, so only the
- * node can tell the least limit at which a call succeeds.
+ * precompiles, are not run here.
  */
-
-/** Whether a call request carries an explicit gas limit, which the node answers. */
-export function carriesGasLimit(call: { gas?: unknown }): boolean {
-    return call.gas !== undefined;
-}
 
 /**
  * First bytes of a PolkaVM program blob: `b"PVM\0"`, 0x50 0x56 0x4d 0x00

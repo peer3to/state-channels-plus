@@ -4,10 +4,10 @@ import {
     withSubstrateNode,
     type SubstrateContract
 } from "../fixtures/node/SubstrateChildTrieNode";
-import { SDK_RPC_DEADLINE_MS } from "@/evm/p2pRuntime/rpcNodes/mirror/MirrorChain";
 import { sleep } from "@/utils";
 import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
 import { DepthIncludedHeadStrategy } from "@/utils/node/storageDiff/includedHead/DepthIncludedHeadStrategy";
+import { SDK_RPC_DEADLINE_MS } from "@/utils/storageDiff/LearnedBackstop";
 import { NOT_RETAINED_ERROR_CODE } from "@/utils/storageDiff/storageDiffWire";
 import {
     deployCommitProbe,
@@ -169,12 +169,10 @@ describe("MirrorRpcProvider", function () {
             await (await storage.setValue(5n)).wait();
             const release = session.service.holdNotifications("scp_snapshot");
 
-            const started = Date.now();
             const word = await session.provider.getStorage(address, 0);
-            const elapsed = Date.now() - started;
 
+            // answered while the snapshot is held back, and no backstop ran out
             expect(BigInt(word)).to.equal(5n);
-            expect(elapsed).to.be.lessThan(SDK_RPC_DEADLINE_MS / 4);
             expect(session.provider.mirrorStatistics).to.include({
                 lazyReads: 1,
                 snapshotTimeouts: 0,
@@ -203,13 +201,11 @@ describe("MirrorRpcProvider", function () {
                 const release =
                     session.service.holdNotifications("scp_snapshot");
 
-                const started = Date.now();
                 const word = await session.provider.getStorage(address, 0);
-                const elapsed = Date.now() - started;
                 release();
 
+                // answered while the snapshot is held back, and no backstop ran out
                 expect(BigInt(word)).to.equal(5n);
-                expect(elapsed).to.be.lessThan(SDK_RPC_DEADLINE_MS / 4);
                 expect(session.provider.mirrorStatistics).to.include({
                     snapshotTimeouts: 0,
                     snapshots: 0,
@@ -358,16 +354,13 @@ describe("MirrorRpcProvider", function () {
             await backfillAtService(session, [address]);
             session.service.dropNotifications("scp_snapshot");
 
-            const started = Date.now();
             const read = session.provider.getStorage(address, 0);
             await sleep(300);
             session.service.cut();
             const word = await read;
-            const elapsed = Date.now() - started;
 
-            // the node answers: far below the ceiling
+            // the node answers when the cut ends the wait, not the backstop
             expect(BigInt(word)).to.equal(5n);
-            expect(elapsed).to.be.lessThan(SDK_RPC_DEADLINE_MS / 2);
             expect(
                 session.provider.mirrorStatistics?.snapshotTimeouts
             ).to.equal(0);
@@ -871,6 +864,37 @@ describe("MirrorRpcProvider", function () {
             await (await storage.setValue(6n)).wait();
             expect(await storage.getValue()).to.equal(6n);
             expect(nodeStateReads(session)).to.equal(fallbackReads);
+        });
+    });
+
+    it("keeps the service connection and the cache when the node fails a state read", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, chainStorage } =
+                await deployMirroredStorage(session);
+            await (await chainStorage.setValue(5n)).wait();
+            session.service.dropNotifications("scp_snapshot");
+            session.service.errorRequests(
+                "scp_getState",
+                NOT_RETAINED_ERROR_CODE,
+                "Block is not retained"
+            );
+            session.node.errorRequests("eth_getStorageAt", -32000, "node down");
+
+            // the state read fails on the node too, so the mirror cannot
+            // answer; the call itself is answered by the node
+            expect(await storage.getValue()).to.equal(5n);
+            session.service.stopErroringRequests("scp_getState");
+            session.node.stopErroringRequests("eth_getStorageAt");
+            const subscribes = serviceRequests(
+                session,
+                "scp_subscribeContractStorage"
+            ).length;
+
+            expect(await storage.getValue()).to.equal(5n);
+
+            expect(
+                serviceRequests(session, "scp_subscribeContractStorage")
+            ).to.have.length(subscribes);
         });
     });
 

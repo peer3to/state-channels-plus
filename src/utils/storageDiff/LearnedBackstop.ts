@@ -56,6 +56,60 @@ export class RecentSlowest {
 }
 
 /**
+ * The block numbers a node announced that the head has not reached yet, and
+ * when each was announced; announcements older than {@link BACKSTOP_WINDOW_MS}
+ * are forgotten.
+ */
+export class AnnouncedBlocks {
+    private readonly now: () => number;
+    /** When each announced block number was first announced, in epoch milliseconds. */
+    private readonly announcedAt = new Map<bigint, number>();
+
+    constructor(now: () => number = Date.now) {
+        this.now = now;
+    }
+
+    /** How many announcements are held. */
+    get size(): number {
+        return this.announcedAt.size;
+    }
+
+    /** Notes that `number` was announced now, unless it already was. */
+    announce(number: bigint): void {
+        this.prune();
+        if (!this.announcedAt.has(number))
+            this.announcedAt.set(number, this.now());
+    }
+
+    /**
+     * Takes the announcements up to `number`, which the head reached: how
+     * long each took to arrive.
+     */
+    arrivedUpTo(number: bigint): number[] {
+        this.prune();
+        const now = this.now();
+        const durations: number[] = [];
+        for (const [announced, at] of this.announcedAt) {
+            if (announced > number) continue;
+            durations.push(now - at);
+            this.announcedAt.delete(announced);
+        }
+        return durations;
+    }
+
+    /** Forgets every announcement. */
+    clear(): void {
+        this.announcedAt.clear();
+    }
+
+    private prune(): void {
+        const oldest = this.now() - BACKSTOP_WINDOW_MS;
+        for (const [announced, at] of this.announcedAt)
+            if (at < oldest) this.announcedAt.delete(announced);
+    }
+}
+
+/**
  * The cap of a wait that ends in a read of a node, which must still answer
  * before `deadlineMs`: the deadline less {@link BACKSTOP_MULTIPLE} times the
  * slowest recent node round trip, never below zero. Until a round trip was

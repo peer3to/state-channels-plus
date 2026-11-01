@@ -456,7 +456,7 @@ export class PeerTestHarness<
             this.options.configOverrides?.STORAGE_DIFF_URL === ""
                 ? ""
                 : process.env.STORAGE_DIFF_URL ||
-                  (await sharedStorageDiffUrl(nodeUrl.replace(/^http/, "ws")));
+                  (await sharedStorageDiffUrl(this.nodeWsUrl));
 
         this.harnessConfig.PROVIDER_URL = nodeUrl;
         this.harnessConfig.LOCAL_DISCOVERY_REGISTRY_URL = discoveryUrl;

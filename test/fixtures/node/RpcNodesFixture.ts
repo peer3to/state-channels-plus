@@ -1481,3 +1481,42 @@ export async function assertInvalidLogWindowRejectsStartup(): Promise<void> {
         }
     });
 }
+
+export async function assertInvalidMirrorSampleRateRejectsStartup(): Promise<void> {
+    await withIsolatedHardhatNode(async (node) => {
+        const logger = quietLogger();
+        const reachable = await RpcNodeProxy.start(node._getConnection().url);
+        try {
+            const failures = await Promise.all(
+                [Number.NaN, -0.5, 5].map((sampleRate) =>
+                    createRuntimeChainContext(
+                        {
+                            ...config,
+                            PROVIDER_URLS: [reachable.url],
+                            MIRROR_SAMPLE_RATE: sampleRate
+                        },
+                        Wallet.createRandom().privateKey,
+                        logger
+                    ).then(
+                        () => undefined,
+                        (error: unknown) => error
+                    )
+                )
+            );
+            // time is the input: long enough for a node to connect
+            await sleep(ABSENCE_WINDOW_MS);
+
+            for (const failure of failures) {
+                if (!(failure instanceof Error))
+                    throw new Error("Expected startup to fail");
+                expect(failure.message).to.include(
+                    "MIRROR_SAMPLE_RATE must be a number from 0 to 1"
+                );
+            }
+            expect(reachable.forwardedMethods).to.deep.equal([]);
+        } finally {
+            await reachable.close();
+            logger.dispose();
+        }
+    });
+}

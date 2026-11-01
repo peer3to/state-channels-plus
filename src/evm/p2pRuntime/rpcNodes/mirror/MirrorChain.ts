@@ -1,16 +1,15 @@
 import { getReconnectDelayMs } from "../RpcNodeProvider";
+import type { MirrorStateManager } from "./MirrorStateManager";
+import { MirrorUnavailableError } from "./MirrorUnavailableError";
 import {
     StorageDiffNotRetainedError,
     StorageDiffPrunedError,
-    type MirrorFeed,
-    type MirrorFeedOpener
-} from "./MirrorFeed";
-import type { MirrorStateManager } from "./MirrorStateManager";
-import { MirrorUnavailableError } from "./MirrorUnavailableError";
+    StorageDiffSocket
+} from "./StorageDiffSocket";
 import type { Logger } from "@/utils/logging/Logger";
 import { Mutex } from "@/utils/Mutex";
 import {
-    BACKSTOP_WINDOW_MS,
+    AnnouncedBlocks,
     capLeavingNodeRoundTrips,
     LearnedBackstop,
     RecentSlowest,
@@ -37,16 +36,6 @@ import { toQuantity } from "ethers";
  */
 const MAX_APPLIED_BLOCKS = 128;
 /**
- * The deadline of the SDK's own RPCs, which read through the mirror; the cap
- * of the wait backstops is this less the time the node needs to answer the
- * read a wait that gave up falls back to. It is one constant here because the
- * provider is built once per runtime host, before any channel exists, so the
- * real value (`NetworkRpcRouter.defaultRequestTimeoutMs`, from a channel's
- * `agreementTime`) cannot reach it without new architecture.
- */
-export { SDK_RPC_DEADLINE_MS };
-
-/**
  * Passes over one read the mirror makes before giving up on it: each pass
  * fills what the one before found missing.
  */
@@ -57,20 +46,11 @@ const BEYOND_HEAD = 1n << 64n;
 /** A block's height. */
 type BlockNumber = bigint;
 
-/** Milliseconds since the epoch. */
-type EpochMs = number;
-
 /** How the wait for an account's snapshot ended for that account. */
 type SnapshotWaitEnd = "arrived" | "delayed" | "not-coming";
 
-/** A block of the chain as the mirror follows it. */
-type ChainBlock = { number: BlockNumber; hash: string };
-
-/** A block of the chain as the mirror follows it. */
-export type MirrorBlock = ChainBlock;
-
-/** The mirror's head: the block its cached state is at. */
-export type MirrorHead = ChainBlock;
+/** A block of the chain as the mirror follows it; the mirror's head is the one its cached state is at. */
+export type MirrorBlock = { number: BlockNumber; hash: string };
 
 /**
  * What the mirror reads from the RPC node when the service does not retain
@@ -89,8 +69,6 @@ export interface MirrorUpstream {
     ): Promise<string>;
     getCode(address: AccountAddress, block: bigint): Promise<string>;
 }
-
-export { MirrorUnavailableError };
 
 /** What the mirror's own state reads cost, for measurement. */
 export interface MirrorChainStatistics {
@@ -128,7 +106,7 @@ export interface MirrorChainStatistics {
 
 export type MirrorChainOptions = {
     /** `ws://` URL of the storage diff service. */
-    openFeed: MirrorFeedOpener;
+    serviceUrl: string;
     state: MirrorStateManager;
     upstream: MirrorUpstream;
     /** How long the nodes took lately to answer; the waits leave room for it. */
@@ -144,7 +122,7 @@ export type MirrorChainOptions = {
  * applied record.
  */
 export class MirrorChain {
-    private readonly openFeed: MirrorFeedOpener;
+    private readonly serviceUrl: string;
     private readonly state: MirrorStateManager;
     private readonly upstream: MirrorUpstream;
     private readonly logger: Logger;
@@ -157,17 +135,17 @@ export class MirrorChain {
     private readonly trackedSince = new Map<AccountAddress, bigint>();
     /** Reads waiting for the head to move or the mirror to go down. */
     private readonly headWaiters = new Set<() => void>();
-    private feed?: MirrorFeed;
+    private feed?: StorageDiffSocket;
     private subscription?: SubscriptionId;
     /** The block below `applied`; the head when nothing was applied yet. */
-    private base?: ChainBlock;
+    private base?: MirrorBlock;
     /** The environment of `base`. */
     private baseEnvironment?: BlockEnvironment;
     /** Blocks applied since `base`, oldest first. */
     private applied: BlockStorageDiff[] = [];
     private includedHeadRecord?: IncludedHeadRecord;
     /** Block of the peer's newest own transaction seen mined. */
-    private requiredBlock?: ChainBlock;
+    private requiredBlock?: MirrorBlock;
     /** Newest block number the nodes announced; reads wait for the head to reach it. */
     private requiredNumber = 0n;
     /**
@@ -179,7 +157,7 @@ export class MirrorChain {
         (end: SnapshotWaitEnd) => void
     >();
     /** When a node announced each block number the head has not reached yet. */
-    private readonly announcedAt = new Map<BlockNumber, EpochMs>();
+    private readonly announced = new AnnouncedBlocks();
     /** How long a wait for a block lasts when no event ends it, learned from how long records took. */
     private readonly backstop = new LearnedBackstop(() => this.waitCapMs);
     /**
@@ -224,7 +202,7 @@ export class MirrorChain {
     private closed = false;
 
     constructor(options: MirrorChainOptions) {
-        this.openFeed = options.openFeed;
+        this.serviceUrl = options.serviceUrl;
         this.state = options.state;
         this.upstream = options.upstream;
         this.nodeRoundTrips = options.nodeRoundTrips ?? new RecentSlowest();
@@ -237,7 +215,7 @@ export class MirrorChain {
     }
 
     /** The block the cached state is at, if the mirror is following. */
-    get head(): MirrorHead | undefined {
+    get head(): MirrorBlock | undefined {
         if (!this.base) return undefined;
         const newest = this.applied[this.applied.length - 1];
         return newest ? this.toBlock(newest) : this.base;
@@ -289,7 +267,9 @@ export class MirrorChain {
      * lock, no wait. The mirror opens the service connection first if it is
      * not open.
      */
-    async queryService<T>(ask: (feed: MirrorFeed) => Promise<T>): Promise<T> {
+    async queryService<T>(
+        ask: (feed: StorageDiffSocket) => Promise<T>
+    ): Promise<T> {
         if (!this.feed) {
             await this.lock.lock();
             try {
@@ -346,7 +326,7 @@ export class MirrorChain {
     }
 
     /** A read issued from now on waits until the mirror applied `block`. */
-    requireBlock(block: ChainBlock): void {
+    requireBlock(block: MirrorBlock): void {
         if (!this.requiredBlock || block.number >= this.requiredBlock.number)
             this.requiredBlock = block;
         this.noteAnnounced(block.number);
@@ -357,7 +337,7 @@ export class MirrorChain {
      * is read from the service in one request, tracking the new addresses
      * first, and the read runs again from the start, so one read sees one head.
      */
-    async run<T>(read: (head: MirrorHead) => Promise<T>): Promise<T> {
+    async run<T>(read: (head: MirrorBlock) => Promise<T>): Promise<T> {
         await this.waitForRequiredBlock();
         await this.lock.lock();
         try {
@@ -421,7 +401,7 @@ export class MirrorChain {
         }
     }
 
-    private toBlock(record: BlockStorageDiff): ChainBlock {
+    private toBlock(record: BlockStorageDiff): MirrorBlock {
         return { number: BigInt(record.number), hash: record.hash };
     }
 
@@ -506,30 +486,22 @@ export class MirrorChain {
     private noteAnnounced(number: BlockNumber): void {
         const head = this.head;
         // not following, or already at the block: no wait to time
-        if (!head || head.number >= number || this.announcedAt.has(number))
-            return;
-        this.announcedAt.set(number, Date.now());
+        if (!head || head.number >= number) return;
+        this.announced.announce(number);
     }
 
     /** Records how long the announced blocks up to `number` took to reach the head. */
     private noteArrived(number: BlockNumber): void {
-        const now = Date.now();
-        for (const [announced, at] of this.announcedAt) {
-            // a block never applied (orphaned) does not teach how long one takes
-            if (now - at > BACKSTOP_WINDOW_MS)
-                this.announcedAt.delete(announced);
-            else if (announced <= number) {
-                this.backstop.record(now - at);
-                this.announcedAt.delete(announced);
-            }
-        }
+        // a block never applied (orphaned) does not teach how long one takes
+        for (const durationMs of this.announced.arrivedUpTo(number))
+            this.backstop.record(durationMs);
     }
 
     /**
      * Whether the mirror's state includes `block`. Not following counts as
      * including it: the read then starts from the service's best head.
      */
-    private holds(block: ChainBlock | undefined): boolean {
+    private holds(block: MirrorBlock | undefined): boolean {
         if (!this.base || !this.head) return true;
         if (this.head.number < this.requiredNumber) return false;
         if (!block) return true;
@@ -544,7 +516,7 @@ export class MirrorChain {
         this.headWaiters.clear();
     }
 
-    private async ensureFollowing(): Promise<MirrorHead> {
+    private async ensureFollowing(): Promise<MirrorBlock> {
         if (this.closed) throw new MirrorUnavailableError("Mirror closed");
         if (this.feed && this.base) return this.head!;
         if (Date.now() < this.retryAfterMs)
@@ -573,7 +545,7 @@ export class MirrorChain {
     }
 
     private async connect(): Promise<void> {
-        const feed: MirrorFeed = this.openFeed({
+        const feed: StorageDiffSocket = new StorageDiffSocket(this.serviceUrl, {
             onRecord: (subscription, record) => {
                 if (subscription === this.subscription && !this.closed)
                     void this.applyPushed(record);
@@ -846,35 +818,46 @@ export class MirrorChain {
         misses: StateRequestParams[]
     ): Promise<AccountDiffs> {
         const accounts: AccountDiffs = {};
-        await Promise.all(
-            misses.map(async ({ address, slots, account, code }) => {
-                const read = (accounts[address] ??= {});
-                await Promise.all([
-                    ...(slots ?? []).map(async (slot) => {
-                        (read.storage ??= {})[slot] =
-                            await this.upstream.getStorageAt(
-                                address,
-                                slot,
-                                block
-                            );
-                    }),
-                    account &&
-                        this.upstream.getBalance(address, block).then((v) => {
-                            read.balance = v;
+        try {
+            await Promise.all(
+                misses.map(async ({ address, slots, account, code }) => {
+                    const read = (accounts[address] ??= {});
+                    await Promise.all([
+                        ...(slots ?? []).map(async (slot) => {
+                            (read.storage ??= {})[slot] =
+                                await this.upstream.getStorageAt(
+                                    address,
+                                    slot,
+                                    block
+                                );
                         }),
-                    account &&
-                        this.upstream
-                            .getTransactionCount(address, block)
-                            .then((v) => {
-                                read.nonce = Number(BigInt(v));
-                            }),
-                    code &&
-                        this.upstream.getCode(address, block).then((v) => {
-                            read.code = v;
-                        })
-                ]);
-            })
-        );
+                        account &&
+                            this.upstream
+                                .getBalance(address, block)
+                                .then((v) => {
+                                    read.balance = v;
+                                }),
+                        account &&
+                            this.upstream
+                                .getTransactionCount(address, block)
+                                .then((v) => {
+                                    read.nonce = Number(BigInt(v));
+                                }),
+                        code &&
+                            this.upstream.getCode(address, block).then((v) => {
+                                read.code = v;
+                            })
+                    ]);
+                })
+            );
+        } catch (error) {
+            // a node that fails a read ends that read only: the service's feed and the cache stay
+            this.log("warn", "The node cannot answer a state read", { error });
+            throw new MirrorUnavailableError(
+                "The node cannot answer the state read",
+                { cause: error }
+            );
+        }
         return accounts;
     }
 
@@ -972,7 +955,7 @@ export class MirrorChain {
     }
 
     private applyBlock(record: BlockStorageDiff): void {
-        this.state.applyBlock(record);
+        this.state.fill(record.post);
         this.applied.push(record);
         this.noteArrived(BigInt(record.number));
         if (this.pendingSnapshots.length > 0) {
@@ -999,7 +982,7 @@ export class MirrorChain {
         // an address followed from this block on has no diff to undo it
         for (const [address, since] of this.trackedSince) {
             if (since >= number) {
-                this.state.forget(address);
+                this.state.dropToLazy(address);
                 this.trackedSince.set(address, number - 1n);
             }
         }
@@ -1040,11 +1023,15 @@ export class MirrorChain {
         this.baseEnvironment = undefined;
         this.applied = [];
         this.trackedSince.clear();
+        this.announced.clear();
         this.pendingSnapshots = [];
         this.notifyHeadWaiters();
     }
 
-    private async onFeedLost(feed: MirrorFeed, reason: Error): Promise<void> {
+    private async onFeedLost(
+        feed: StorageDiffSocket,
+        reason: Error
+    ): Promise<void> {
         if (this.feed !== feed) return;
         this.log("warn", "Storage diff service connection lost", {
             error: reason

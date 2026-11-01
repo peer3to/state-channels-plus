@@ -7,6 +7,7 @@ import {
     assertFirstNodeErrorAnswerIsFinal,
     assertHeartbeatErrorAnswerKeepsNode,
     assertInvalidLogWindowRejectsStartup,
+    assertInvalidMirrorSampleRateRejectsStartup,
     assertInvalidSecretOpensNoNode,
     assertLogsComeOnceFromNodeSockets,
     assertLogsFailOverToNextNodeSocket,
@@ -163,6 +164,10 @@ describe("MultiRpcProvider", () => {
 
     it("rejects startup over a log window that is not a positive integer without opening a node", async () => {
         await assertInvalidLogWindowRejectsStartup();
+    });
+
+    it("rejects startup over a mirror sampling fraction outside 0 to 1 without opening a node", async () => {
+        await assertInvalidMirrorSampleRateRejectsStartup();
     });
 
     it("relays each new block once from the node sockets without polling", async () => {

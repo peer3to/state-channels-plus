@@ -6,9 +6,9 @@ import {
 } from "@/evm/p2pRuntime/rpcNodes/mirror/Mirror";
 import {
     MirrorChain,
-    MirrorUnavailableError,
-    type MirrorHead
+    type MirrorBlock
 } from "@/evm/p2pRuntime/rpcNodes/mirror/MirrorChain";
+import { MirrorUnavailableError } from "@/evm/p2pRuntime/rpcNodes/mirror/MirrorUnavailableError";
 import { JsonRpcProvider, toBeHex, toQuantity, zeroPadValue } from "ethers";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { appendFileSync } from "node:fs";
@@ -45,7 +45,7 @@ type MethodCounts = {
     nodeRaced: number;
 };
 
-type ShadowStore = { head?: MirrorHead };
+type ShadowStore = { head?: MirrorBlock };
 
 /** What a check found: the two answers, as text, when they differ. */
 type Verdict = { same: true } | { same: false; mirror: string; node: string };
@@ -55,7 +55,7 @@ type Check<A extends unknown[], R> = (
     node: JsonRpcProvider,
     args: A,
     result: R,
-    head: MirrorHead | undefined
+    head: MirrorBlock | undefined
 ) => Promise<Verdict | "unchecked">;
 
 const SAME: Verdict = { same: true };
@@ -133,7 +133,7 @@ async function nodeCall(
 /** Where a mismatch happened: the call's target and calldata prefix, and the block. */
 function describeRead(
     args: unknown[],
-    head: MirrorHead | undefined
+    head: MirrorBlock | undefined
 ): { to?: string; calldataPrefix?: string; block?: string } {
     const first = args[0] as
         | { to?: string; data?: string }
@@ -292,7 +292,7 @@ export function installMirrorShadowCheck(
     const run = MirrorChain.prototype.run;
     MirrorChain.prototype.run = function <T>(
         this: MirrorChain,
-        read: (head: MirrorHead) => Promise<T>
+        read: (head: MirrorBlock) => Promise<T>
     ): Promise<T> {
         return run.call(this, (head) => {
             const current = store.getStore();
@@ -303,10 +303,10 @@ export function installMirrorShadowCheck(
 
     // the wait for the head to reach a block the peer saw is a private step
     const waiting = MirrorChain.prototype as unknown as {
-        waitForOwnTransactions: () => Promise<void>;
+        waitForRequiredBlock: () => Promise<void>;
     };
-    const wait = waiting.waitForOwnTransactions;
-    waiting.waitForOwnTransactions = async function (this: MirrorChain) {
+    const wait = waiting.waitForRequiredBlock;
+    waiting.waitForRequiredBlock = async function (this: MirrorChain) {
         const started = performance.now();
         await wait.call(this);
         const elapsed = performance.now() - started;

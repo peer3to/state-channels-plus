@@ -1,14 +1,10 @@
-import { isNodeOnlyAddress } from "./LocalExecutionPolicy";
 import {
     MirrorChain,
-    MirrorUnavailableError,
     type MirrorBlock,
-    type MirrorHead,
     type MirrorUpstream
 } from "./MirrorChain";
 import { MirrorStateManager } from "./MirrorStateManager";
-import { NotLocalError } from "./MirrorUnavailableError";
-import { StorageDiffSocket } from "./StorageDiffSocket";
+import { MirrorUnavailableError } from "./MirrorUnavailableError";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
 import { createEvm } from "@/evm/EvmFactory";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
@@ -71,8 +67,7 @@ export class Mirror {
             isLocalOnly: (address) => this.precompileAddresses.has(address)
         });
         this.chain = new MirrorChain({
-            openFeed: (handlers) =>
-                new StorageDiffSocket(options.serviceUrl, handlers),
+            serviceUrl: options.serviceUrl,
             state: this.state,
             upstream: options.upstream,
             nodeRoundTrips: options.nodeRoundTrips,
@@ -278,7 +273,7 @@ export class Mirror {
         return evm;
     }
 
-    private blockOf(head: MirrorHead, environment: BlockEnvironment) {
+    private blockOf(head: MirrorBlock, environment: BlockEnvironment) {
         return {
             header: {
                 number: head.number,

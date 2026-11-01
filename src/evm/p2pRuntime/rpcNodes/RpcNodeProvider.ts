@@ -79,7 +79,9 @@ class NodeSocket extends WebSocketProvider {
     // Overrides SocketProvider._processMessage: also reports the block each
     // subscription notification belongs to.
     override async _processMessage(message: string): Promise<void> {
-        if (this.announced) this.reportAnnouncedBlock(message, this.announced);
+        // only subscription notifications are parsed here; RPC replies are not
+        if (this.announced && message.includes("eth_subscription"))
+            this.reportAnnouncedBlock(message, this.announced);
         await super._processMessage(message);
     }
 

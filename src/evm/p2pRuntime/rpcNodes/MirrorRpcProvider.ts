@@ -1,10 +1,6 @@
-import { carriesGasLimit } from "./mirror/LocalExecutionPolicy";
 import { Mirror, type MirrorCall } from "./mirror/Mirror";
-import {
-    MirrorUnavailableError,
-    type MirrorBlock,
-    type MirrorUpstream
-} from "./mirror/MirrorChain";
+import type { MirrorBlock, MirrorUpstream } from "./mirror/MirrorChain";
+import { MirrorUnavailableError } from "./mirror/MirrorUnavailableError";
 import MultiRpcProvider from "./MultiRpcProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
@@ -14,6 +10,7 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 import { RecentSlowest } from "@/utils/storageDiff/LearnedBackstop";
 import {
+    isHexString,
     toQuantity,
     type JsonRpcError,
     type JsonRpcPayload,
@@ -41,7 +38,6 @@ const SUPPORTED_CALL_FIELDS: ReadonlySet<string> = new Set([
     "data",
     "input",
     "value",
-    "gas",
     "gasPrice",
     "maxFeePerGas",
     "maxPriorityFeePerGas",
@@ -72,13 +68,16 @@ function sameAnswer(method: string, local: unknown, remote: unknown): boolean {
     return local.toLowerCase() === remote.toLowerCase();
 }
 
+/** The params of `request` as a list. */
+function paramsOf(request: JsonRpcPayload): unknown[] {
+    return Array.isArray(request.params) ? request.params : [request.params];
+}
+
 /** Where a sampled read's block tag sits in its params, and the account it reads. */
 function sampleTarget(
     request: JsonRpcPayload
 ): { tagIndex: number; account: string } | undefined {
-    const params = Array.isArray(request.params)
-        ? request.params
-        : [request.params];
+    const params = paramsOf(request);
     switch (request.method) {
         case "eth_call": {
             const to = (params[0] as { to?: unknown } | undefined)?.to;
@@ -117,10 +116,6 @@ function isQuantity(value: unknown): value is string {
     );
 }
 
-function isHash(value: unknown): value is string {
-    return typeof value === "string" && /^0x[0-9a-fA-F]{64}$/.test(value);
-}
-
 /** A block number as a canonical quantity; a 64-digit one would read as a hash. */
 function isBlockNumber(value: unknown): value is string {
     return isQuantity(value) && value.length <= 18;
@@ -134,7 +129,11 @@ function parseCall(params: unknown[]): MirrorCall | undefined {
     if (!Object.keys(fields).every((name) => SUPPORTED_CALL_FIELDS.has(name)))
         return undefined;
     const data = fields.data ?? fields.input ?? "0x";
-    if (carriesGasLimit(fields)) return undefined;
+    // A call that carries a gas limit runs whole on the node as well: the
+    // local EVM charges no transaction gas (21,000 and calldata), and the
+    // chain's gas accounting is the chain's own, so only the node can tell
+    // the least limit at which a call succeeds.
+    if (fields.gas !== undefined) return undefined;
     const { from, to, value, gasPrice } = fields;
     if (
         !isAddress(to) ||
@@ -156,9 +155,7 @@ function parseCall(params: unknown[]): MirrorCall | undefined {
 
 /** The local read for `request`, or undefined when the nodes must answer it. */
 function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
-    const params = Array.isArray(request.params)
-        ? request.params
-        : [request.params];
+    const params = paramsOf(request);
     switch (request.method) {
         case "eth_call": {
             const call = parseCall(params);
@@ -256,7 +253,7 @@ function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
             const [hash, full] = params;
             if (
                 params.length !== 2 ||
-                !isHash(hash) ||
+                !isHexString(hash, 32) ||
                 typeof full !== "boolean"
             )
                 return undefined;
@@ -266,14 +263,14 @@ function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
         }
         case "eth_getTransactionByHash": {
             const [hash] = params;
-            if (params.length !== 1 || !isHash(hash)) return undefined;
+            if (params.length !== 1 || !isHexString(hash, 32)) return undefined;
             return async (mirror) => ({
                 result: await mirror.getTransaction(hash)
             });
         }
         case "eth_getTransactionReceipt": {
             const [hash] = params;
-            if (params.length !== 1 || !isHash(hash)) return undefined;
+            if (params.length !== 1 || !isHexString(hash, 32)) return undefined;
             return async (mirror) => ({
                 result: await mirror.getTransactionReceipt(hash)
             });
@@ -376,14 +373,15 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
                     this.noteOwnTransaction(request, answer);
                 // after the reply: the caller never waits for a sample
                 if (head && Math.random() < this.sampleRate)
-                    setImmediate(
+                    setTimeout(
                         () =>
                             void this.checkSample(
                                 mirror,
                                 request,
                                 answer,
                                 head!
-                            )
+                            ),
+                        0
                     );
                 return answer;
             } catch (error) {
@@ -414,11 +412,7 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
         const target = sampleTarget(request);
         if (!target) return;
         try {
-            const params = [
-                ...(Array.isArray(request.params)
-                    ? request.params
-                    : [request.params])
-            ];
+            const params = [...paramsOf(request)];
             params[target.tagIndex] = { blockHash: head.hash };
             let remote: unknown;
             let remoteFailed = false;
@@ -473,7 +467,7 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
             return;
         }
         if (request.method !== "eth_getTransactionReceipt") return;
-        const params = Array.isArray(request.params) ? request.params : [];
+        const params = paramsOf(request);
         const hash = String(params[0]).toLowerCase();
         const receipt = response.result as {
             blockNumber?: unknown;

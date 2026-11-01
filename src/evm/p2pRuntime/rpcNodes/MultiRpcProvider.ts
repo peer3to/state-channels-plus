@@ -155,11 +155,11 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     private allNodesDownWarned = false;
     /** Requests sent so far; a slow setup's step timings count them. */
     private sentRequestCount = 0;
+    private nextNodeRequestId = 0;
 
     get requestCount(): number {
         return this.sentRequestCount;
     }
-    private nextNodeRequestId = 0;
 
     constructor(nodes: readonly RpcNodeProvider[], logger: Logger) {
         // cacheTimeout -1: ethers keeps a failed answer for 250 ms and would

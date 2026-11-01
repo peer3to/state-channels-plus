@@ -192,9 +192,7 @@ export class MirrorStateManager extends RPCStateManager {
                 storage: new Map()
             };
             this.accounts.set(address, account);
-            this.setFields(account, diff, diff);
-            for (const [slot, word] of Object.entries(diff.storage ?? {}))
-                account.storage.set(slot, getBytes(word));
+            this.writeAccount(account, diff);
         }
     }
 
@@ -203,10 +201,7 @@ export class MirrorStateManager extends RPCStateManager {
         for (const address of addresses) {
             const post = record.post[address];
             if (!post) continue;
-            const account = this.accountOf(address);
-            this.setFields(account, post, post);
-            for (const [slot, word] of Object.entries(post.storage ?? {}))
-                account.storage.set(slot, getBytes(word));
+            this.writeAccount(this.accountOf(address), post);
         }
     }
 
@@ -244,19 +239,13 @@ export class MirrorStateManager extends RPCStateManager {
         return this.accounts.get(address)?.complete === true;
     }
 
-    /** Stores values read for the misses: a service answer, shaped like a record's `post`. */
+    /**
+     * Stores values read for the misses: a service answer, shaped like a
+     * record's `post`. Applies one block's changes to the cached chain state.
+     */
     fill(accounts: AccountDiffs): void {
-        for (const [address, diff] of Object.entries(accounts)) {
-            const account = this.accountOf(address);
-            this.setFields(account, diff, diff);
-            for (const [slot, word] of Object.entries(diff.storage ?? {}))
-                account.storage.set(slot, getBytes(word));
-        }
-    }
-
-    /** Applies one block's changes to the cached chain state. */
-    applyBlock(record: BlockStorageDiff): void {
-        this.fill(record.post);
+        for (const [address, diff] of Object.entries(accounts))
+            this.writeAccount(this.accountOf(address), diff);
     }
 
     /**
@@ -295,9 +284,11 @@ export class MirrorStateManager extends RPCStateManager {
         this.originalStorageCache.clear();
     }
 
-    /** Forgets everything cached for `address`. */
-    forget(address: AccountAddress): void {
-        this.accounts.delete(address);
+    /** Sets `account`'s scalar fields and storage words from `diff`. */
+    private writeAccount(account: MirrorAccount, diff: AccountDiff): void {
+        this.setFields(account, diff, diff);
+        for (const [slot, word] of Object.entries(diff.storage ?? {}))
+            account.storage.set(slot, getBytes(word));
     }
 
     /**
