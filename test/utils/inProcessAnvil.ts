@@ -44,9 +44,9 @@ class LazyAnvilProvider extends EventEmitter implements EIP1193Provider {
         ) {
             // anvil reads the sender's nonce per request, so concurrent sends
             // from one account would share it; EDR handled them one by one
-            const sent = this.sends.then(() => this.send(chain, args));
+            const sent = this.sends.then(() => chain.request(args));
             this.sends = sent.catch(() => undefined);
-            return sent;
+            return this.minedUnderAutomine(chain, (await sent) as string);
         }
         const result = await chain.request(args);
         if (args.method !== "eth_accounts") return result;
@@ -55,12 +55,12 @@ class LazyAnvilProvider extends EventEmitter implements EIP1193Provider {
     }
 
     /**
-     * Sends, and under automine returns once the transaction is mined, as EDR
-     * did: anvil's automine mines just after the send returns. A transaction
-     * that cannot mine yet (a nonce gap) returns after the wait instead.
+     * Under automine returns once the sent transaction is mined, as EDR did:
+     * anvil's automine mines just after the send returns. A transaction that
+     * cannot mine yet (a nonce gap) returns after the wait instead. Runs after
+     * the send leaves the queue, so only its own caller waits.
      */
-    private async send(chain: EIP1193Provider, args: RequestArguments) {
-        const hash = (await chain.request(args)) as string;
+    private async minedUnderAutomine(chain: EIP1193Provider, hash: string) {
         if (!(await chain.request({ method: "anvil_getAutomine" })))
             return hash;
         for (let attempt = 0; attempt < AUTOMINE_RECEIPT_POLLS; attempt++) {
