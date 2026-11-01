@@ -14,11 +14,13 @@ import {
 
 // Keep in sync with test/harness/core/slotAccounts.ts (SLOT_STRIDE), the
 // pool cap in scripts/e2e-parallel/shared/constants.js (ACCOUNT_POOL_SIZE) and
-// the test chain's launcher, scripts/infra/start-hardhat-node.js (MNEMONIC).
+// the test chain's launcher, scripts/infra/start-hardhat-node.js.
 const SLOT_STRIDE = 10;
 const ACCOUNT_POOL_SIZE = 400;
-const HARDHAT_MNEMONIC =
-    "test test test test test test test test test test test junk";
+// One owner: the test chain's mnemonic, so account N derives the same address
+// on the node and in hardhat's own signers.
+const { MNEMONIC: HARDHAT_MNEMONIC } =
+    require("./scripts/infra/anvilNode.js") as { MNEMONIC: string };
 
 /**
  * The parallel runner injects E2E_SLOT_INDEX and a test process only ever

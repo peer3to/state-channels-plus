@@ -6,8 +6,8 @@ const path = require("node:path");
 const { ACCOUNT_POOL_SIZE } = require("../e2e-parallel/shared/constants");
 
 const ANVIL_BIN = "anvil";
-// Keep in sync with hardhat.config.ts (HARDHAT_MNEMONIC): account N derives
-// the same address on the node and in hardhat's own signers.
+// The one owner of the mnemonic: hardhat.config.ts requires it from here, so
+// account N derives the same address on the node and in hardhat's own signers.
 const MNEMONIC = "test test test test test test test test test test test junk";
 
 // A /bin/sh script that runs anvil ("$@") and stops it when its owner's end

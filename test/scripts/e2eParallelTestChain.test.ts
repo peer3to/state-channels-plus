@@ -17,10 +17,10 @@ import os from "os";
 import path from "path";
 
 const LAUNCHER = "scripts/infra/start-hardhat-node.js";
-const { MNEMONIC: HARDHAT_MNEMONIC } =
-    require("../../scripts/infra/anvilNode.js") as {
-        MNEMONIC: string;
-    };
+// A literal, so a changed launcher mnemonic is caught (the one owner is
+// scripts/infra/anvilNode.js; hardhat.config.ts requires it from there).
+const HARDHAT_MNEMONIC =
+    "test test test test test test test test test test test junk";
 const DIFF_TRACE = {
     tracer: "prestateTracer",
     tracerConfig: { diffMode: true }
@@ -206,6 +206,7 @@ describe("e2e parallel test chain", function () {
         await expectStopped(url);
     });
 
+    // Mutation: the launcher mnemonic changed to another phrase -> addresses differ.
     it("the infra:hardhat-node launcher funds the 400 hardhat.config.ts accounts in order on the chain id it is given", async function () {
         const node = await launchStandalone({ HARDHAT_CHAIN_ID: "31338" });
         try {
