@@ -1172,7 +1172,7 @@ granted)`, a refusal rather than a verdict. An upfront `gasleft() >= stipend` gu
 | hardhat 2.20 (peer3 fork, the runner's node)              | before                   | 11.5x          | 11.5x       | 11.6x       | 511k        |
 | hardhat 2.20, stock                                       | after                    | same as before |             |             | 511k        |
 | hardhat 2.20 with a `(used + refund) * 64/63` first probe | after                    | 2.6x           | 2.7x        | 2.7x        | 514k        |
-| hardhat 2.22 EDR (this repository's in-process network)   | before / after           | 4.7x / 4.8x    | 4.1x / 4.5x | 4.4x / 4.4x | 511k / 511k |
+| hardhat 2.22 EDR (the in-process network when measured)   | before / after           | 4.7x / 4.8x    | 4.1x / 4.5x | 4.4x / 4.4x | 511k / 511k |
 | hardhat 2.22 EDR                                          | upfront guard (rejected) | 4.3x           | 4.1x        | 5.3x        | 11.0M       |
 
 Gas used by the transaction: 443k. The block gas limit does not change the estimate cost in any

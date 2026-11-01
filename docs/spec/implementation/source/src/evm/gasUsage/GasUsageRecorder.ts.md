@@ -11,7 +11,7 @@
 
 Record only what mined, through the owning signer, without changing the caller's result.
 
-- Setup: A funded wallet on an exclusively owned hardhat node wrapped in `HostNonceManager` — the recorder has no chain of its own, and the signer that constructs it is its only real public entry, which is why this stays a `UNIT-TEST-*` family owned here rather than an interaction among this directory's files. Transactions are sent through the manager, then `settledSnapshot()` is read, bounded or not; the disposal cases call `dispose()` on the manager's recorder. The settle-window case needs two senders, so it drives the recorder's own constructor with the same real responses.
+- Setup: A funded wallet on an exclusively owned anvil test node wrapped in `HostNonceManager` — the recorder has no chain of its own, and the signer that constructs it is its only real public entry, which is why this stays a `UNIT-TEST-*` family owned here rather than an interaction among this directory's files. Transactions are sent through the manager, then `settledSnapshot()` is read, bounded or not; the disposal cases call `dispose()` on the manager's recorder. The settle-window case needs two senders, so it drives the recorder's own constructor with the same real responses.
 - Oracle: The snapshot rows and their gas against the real receipts; a bounded read resolves no earlier than its bound, and a disposed recorder's settle resolves before the event loop's next turn. The caller's own `wait()` and nonce sequence must be unchanged and no unhandled rejection may escape.
 
 - [x] `UNIT-TEST-GAS-USAGE-RECORDER-1-F2H4X8.P1` — mined transaction recorded with its real gas

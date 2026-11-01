@@ -5,7 +5,7 @@ Exercises: [Clock.ts](../../../implementation/source/src/Clock.ts.md)
 
 ## Overview
 
-The suite drives the `Clock` singleton against the real in-process Hardhat network — no mocks —
+The suite drives the `Clock` singleton against hardhat's in-process network, which runs on the pinned anvil — no mocks —
 through its public surface: `Clock.init`, `Clock.getBlockchainTime`,
 `Clock.getAverageOnChainBlockTime`, and `Clock.ownsProvider`, using `ethers.provider` plus extra
 `BrowserProvider` instances over the same node. It asserts four lifecycle properties: overlapping

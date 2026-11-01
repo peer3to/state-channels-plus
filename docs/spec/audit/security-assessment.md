@@ -492,8 +492,8 @@ hardhat fork used by the poker consumer) counts the gas the transition used, nev
 budget that must be free when the replay starts, and the work before the replay (proof checks,
 setting the machine's state) can exceed any fixed margin: on a poker dispute it was about 3.9M with a
 5.64M requirement, so about 9.5M was needed, while the larger of the estimate and the requirement ×
-1.3 gives 8.89M. The sum covers both parts. A searching estimator (geth, anvil, and the SDK's test
-node, hardhat 2.22 with EDR, where this was measured) already returns at least the requirement,
+1.3 gives 8.89M. The sum covers both parts. A searching estimator (geth, anvil, and hardhat 2.22
+EDR, the SDK's in-process network when this was measured) already returns at least the requirement,
 because the refusal makes every lower gas fail, so there the sum declares more than needed. That
 excess never changes a verdict, but it is not free: it reserves block space and must fit the block
 gas limit (below). The integrator `try/catch` assumption is no longer needed.

@@ -143,7 +143,8 @@ task(TASK_TEST)
             process.env.LOG_EXCLUDE_TAGS = taskArgs.excludeTags;
         }
         // Every test chain is anvil, the in-process network included. Only
-        // tests: `hardhat node` (still what pool hosts start) needs EDR.
+        // the test task: other hardhat tasks (and a manual `hardhat node`)
+        // keep EDR.
         useAnvilForInProcessNetwork(hre);
         return runSuper(taskArgs);
     });

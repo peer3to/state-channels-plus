@@ -5,7 +5,7 @@ Exercises: [RpcNodeProvider.ts](../../../../implementation/source/src/evm/p2pRun
 
 ## Overview
 
-Every case except the pure backoff check runs a private Hardhat node per test with one or two
+Every case except the pure backoff check runs a private anvil test node per test with one or two
 WebSocket proxies in front of it ([fixture](../../../../../../test/fixtures/node/RpcNodesFixture.ts)).
 A proxy stands in for a separate endpoint of the same chain: a test cuts its sockets, refuses new
 ones, restores it, or holds one method's requests, and the proxy records which methods reached it.

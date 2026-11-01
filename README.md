@@ -162,7 +162,7 @@ default. `--e2e-only` selects the Mocha end-to-end tier and drops the forge and
 browser tiers with it. Use `--mocha-test-pattern`, `--forge-test-pattern` or
 `--browser-test-pattern` when only one tier needs a filename filter.
 
-Forge tasks need no Hardhat node, so they take neither a warm slot nor a funded
+Forge tasks need no test chain, so they take neither a warm slot nor a funded
 account partition. Local and distributed runs build the contracts and the
 scheduled forge test files once before scheduling; unselected test files are
 not compiled.
@@ -202,7 +202,7 @@ yarn hardhat forge-test --match-contract '^UtilityFacetTest$'
 ### Browser tests
 
 Each `test/browser/run-*.mjs` gate is one task. A gate boots a Vite server, its
-own Hardhat node and one headless Chromium, then drives every scenario in that
+own anvil test node and one headless Chromium, then drives every scenario in that
 browser; a scenario may use several isolated pages (the transport gates open one
 browser context per peer). Splitting a gate per case would relaunch that stack
 per case.
@@ -674,7 +674,7 @@ and cleanup. Use repeatable `--forward-env
 orchestrator environment are never forwarded. Stop a server with SIGINT or
 SIGTERM. Canonical task and failure logs remain on the orchestrator under
 `logs/run-N/`, including `error_*.ansi` files and worker infrastructure
-diagnostics. If a discovery server, Hardhat node, or isolated worker fails,
+diagnostics. If a discovery server, test chain, or isolated worker fails,
 `logs/run-N/infra/` is retained with the process diagnostic and the affected
 worker's streamed output. Infrastructure output is collected and retained when
 any test fails. A fully successful run skips collection unless

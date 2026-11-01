@@ -2302,8 +2302,8 @@ when the replay starts, and the variable work before the replay (proof checks, s
 state, deleting the previous transition's outbound messages) can exceed any fixed margin; a poker
 dispute needed about 9.5M (about 3.9M before the replay, requirement 5.64M) while
 `max(estimate, requirement × 1.3)` gave 8.89M and failed the poker gate. The sum is needed there.
-(2) **Searching estimator** (geth, anvil, stock hardhat, and the SDK's in-process EDR test node,
-measured to search): the upfront refusal makes every lower gas fail, so the estimate already
+(2) **Searching estimator** (geth, anvil, stock hardhat, and hardhat 2.22 EDR, the SDK's in-process
+network when measured, which searched): the upfront refusal makes every lower gas fail, so the estimate already
 contains the requirement; the headroom applies to it and the requirement is added again, so the
 declared limit is at least about 2.5 × the requirement. The excess changes no verdict, but blocks
 are packed by declared limit, so it reserves block space and must fit the block gas limit. (3) **Block
