@@ -13,7 +13,7 @@ import {
     RECONCILE_RETRY_LIMIT,
     UPSTREAM_RECONNECT_BACKOFF_MS,
     UPSTREAM_RECONNECT_LIMIT
-} from "../StorageDiffService";
+} from "../retryPolicy";
 import {
     UpstreamLostError,
     UpstreamRequestError,
