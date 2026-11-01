@@ -112,11 +112,14 @@ class LazyAnvilProvider extends EventEmitter implements EIP1193Provider {
  */
 export function useAnvilForInProcessNetwork(hre: HardhatRuntimeEnvironment) {
     if (hre.network.name !== "hardhat") return;
-    const netConfig = hre.config.networks[
-        IN_PROCESS_NETWORK
-    ] as HttpNetworkConfig;
-    const accounts = hre.config.networks.hardhat
-        .accounts as HardhatNetworkHDAccountsConfig;
+    const netConfig = hre.config.networks[IN_PROCESS_NETWORK];
+    if (!netConfig || !("url" in netConfig))
+        throw new Error(
+            `in-process anvil needs the ${IN_PROCESS_NETWORK} network with a url`
+        );
+    const accounts = hre.config.networks.hardhat.accounts;
+    if (Array.isArray(accounts))
+        throw new Error("in-process anvil needs HD accounts");
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const {
         applyProviderWrappers
