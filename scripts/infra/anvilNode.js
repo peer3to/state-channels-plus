@@ -86,4 +86,10 @@ function anvilArgs(env = process.env) {
     return args;
 }
 
-module.exports = { ANVIL_BIN, ANVIL_WATCHDOG, anvilArgs, pinnedAnvilMismatch };
+module.exports = {
+    ANVIL_BIN,
+    ANVIL_WATCHDOG,
+    MNEMONIC,
+    anvilArgs,
+    pinnedAnvilMismatch
+};

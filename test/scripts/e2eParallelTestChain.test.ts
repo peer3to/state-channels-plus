@@ -17,8 +17,10 @@ import os from "os";
 import path from "path";
 
 const LAUNCHER = "scripts/infra/start-hardhat-node.js";
-const HARDHAT_MNEMONIC =
-    "test test test test test test test test test test test junk";
+const { MNEMONIC: HARDHAT_MNEMONIC } =
+    require("../../scripts/infra/anvilNode.js") as {
+        MNEMONIC: string;
+    };
 const DIFF_TRACE = {
     tracer: "prestateTracer",
     tracerConfig: { diffMode: true }

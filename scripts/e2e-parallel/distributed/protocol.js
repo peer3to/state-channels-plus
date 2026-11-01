@@ -8,8 +8,8 @@ const PROTOCOL_VERSION = 2;
 // 14 added the browser tier. Hosts below 16 are refused, since their slot
 // chains run hardhat from their own checkout.
 const DISTRIBUTED_PROTOCOL_VERSION = 16;
-// The oldest worker host protocol the orchestrator still leases. A host
-// between it and the current version runs only the runners it knows.
+// The oldest worker host protocol the orchestrator still leases: exactly the
+// current protocol, so every accepted host runs every runner.
 const MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL = 16;
 // What each accepted worker protocol can execute. The orchestrator schedules a
 // task only on a worker whose protocol lists the task's runner.
