@@ -8899,6 +8899,12 @@
       "peakRssGb": 0.098,
       "measurementReason": null
     },
+    "hardhat|test/rpc/WorkerMonitorStart.test.ts|Worker root event-loop monitor start starts a worker root's monitor with the root's monitor options and its thread label: a compute root's fatal delay is off": {
+      "durationMs": 572,
+      "avgCores": 0.49,
+      "peakRssGb": 0.108,
+      "measurementReason": null
+    },
     "hardhat|test/rpc/guards/DeferredAdmissionGuard.test.ts|DeferredAdmissionGuard passes ready work, replays one FIFO queue, and separates rejection from expiry": {
       "durationMs": 7433,
       "avgCores": 0.962,
@@ -19436,9 +19442,9 @@
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeValidationServiceLocalFirst.test.ts|Unit: DisputeValidationService local-first reads validateTimeoutCalldataPostedProof local revert -> the audit throws it, no chain read, no proof": {
-      "durationMs": 29295,
-      "avgCores": 0.829,
-      "peakRssGb": 1.017,
+      "durationMs": 27914,
+      "avgCores": 0.996,
+      "peakRssGb": 1.242,
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeValidationServiceLocalFirst.test.ts|Unit: DisputeValidationService local-first reads validateTimeoutCalldataPostedProof local valid, chain RPC refuses the connection -> the audit throws it, no proof": {
