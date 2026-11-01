@@ -8,9 +8,9 @@ import {
     parseStateRequests,
     type SubscribeResult
 } from "./blockStorageDiff";
+import type { StorageDiffPeer } from "./PeerHub";
 import type {
     StorageDiffCatchUp,
-    StorageDiffPeer,
     StorageDiffService,
     StorageDiffState
 } from "./StorageDiffService";

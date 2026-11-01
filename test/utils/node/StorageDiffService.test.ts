@@ -23,7 +23,7 @@ import {
 import {
     SEND_BUFFER_OVERFLOW,
     SEND_BUFFER_OVERFLOW_CLOSE_CODE
-} from "@/utils/node/storageDiff/StorageDiffService";
+} from "@/utils/node/storageDiff/PeerHub";
 import { expect } from "chai";
 import { toQuantity } from "ethers";
 import { once } from "node:events";

@@ -5,14 +5,8 @@ import {
     environmentOf,
     filterRecord,
     hasRevertedFrame,
-    INTERNAL_ERROR,
-    INVALID_PARAMS,
-    INVALID_REQUEST,
-    isObject,
     mergeTransactionDiffs,
     touchesOf,
-    METHOD_NOT_FOUND,
-    PARSE_ERROR,
     parseHeader,
     parseLogs,
     type ParsedBlockSelector,
@@ -41,6 +35,7 @@ import {
 import { HeadWaiters } from "./HeadWaiters";
 import type AIncludedHeadStrategy from "./includedHead/AIncludedHeadStrategy";
 import type { IncludedHead } from "./includedHead/AIncludedHeadStrategy";
+import { PeerHub, type StorageDiffPeer } from "./PeerHub";
 import { PersistedCache } from "./PersistedCache";
 import {
     HeadChangedError,
@@ -74,24 +69,15 @@ import type {
 import type { Logger } from "@/utils";
 import { retry } from "@/utils/retry";
 import { toQuantity } from "ethers";
-import WebSocket, { WebSocketServer, type AddressInfo } from "ws";
 
 const DEFAULT_RETENTION_BLOCKS = 128;
 export type { StorageDiffCatchUp, StorageDiffState };
 
 const DEFAULT_MAX_PEER_BUFFERED_BYTES = 16 * 1024 * 1024;
-/** `scp_disconnect` reason for a peer cut for falling behind. */
-export const SEND_BUFFER_OVERFLOW = "send-buffer-overflow";
-/** WebSocket close code for that cut: policy violation. */
-export const SEND_BUFFER_OVERFLOW_CLOSE_CODE = 1008;
-
 /** Rounds a backfill may take to catch up with a head that keeps moving. */
 const BACKFILL_ROUNDS = 100;
 /** Times a backfill starts over after a reorg moved blocks under it. */
 const BACKFILL_RESTARTS = 5;
-const MAX_PEER_PAYLOAD_BYTES = 1024 * 1024;
-/** How long a cut peer gets to drain the notice before the socket drops. */
-const PEER_CLOSE_GRACE_MS = 10_000;
 const DEFAULT_PORT = 19778;
 const TRACE_OPTIONS = {
     tracer: "prestateTracer",
@@ -99,13 +85,6 @@ const TRACE_OPTIONS = {
 };
 
 const CALL_TRACE_OPTIONS = { tracer: "callTracer" };
-
-/** Endpoint names a request may route to: the endpoint class's own methods. */
-const ENDPOINTS: ReadonlySet<string> = new Set(
-    Object.getOwnPropertyNames(StorageDiffRpcMethods.prototype).filter(
-        (name) => name !== "constructor"
-    )
-);
 
 export interface StorageDiffServiceOptions {
     /** `ws://` or `wss://` upstream that serves `newHeads` and tracing. */
@@ -150,21 +129,6 @@ export interface BackfillRecord extends BackfillCost {
     milliseconds: number;
 }
 
-/** One connected peer and the subscriptions it opened. */
-export interface StorageDiffPeer {
-    socket: WebSocket;
-    subscriptions: Map<SubscriptionId, AccountAddress[]>;
-    nextSubscription: number;
-    /** Cut for falling behind; gets nothing more. */
-    closing: boolean;
-    /** Accounts whose snapshot this peer has been sent. */
-    snapshotted: Set<AccountAddress>;
-    /** Accounts a subscription reply promised as `ready` whose snapshot is not sent yet. */
-    promisedReady: Set<AccountAddress>;
-    /** Per subscription, run once the reply that returned its id is sent. */
-    afterReply: Map<SubscriptionId, () => void>;
-}
-
 function describeError(error: unknown): string {
     if (error instanceof Error) {
         const code = (error as { code?: unknown }).code;
@@ -205,16 +169,11 @@ export class StorageDiffService {
     private readonly upstreamUrl: string;
     /** The upstream URL without path or credentials, for messages. */
     private readonly upstreamEndpoint: string;
-    private readonly host: string;
-    private readonly port: number;
     private readonly retention: number;
-    private readonly maxPeerBufferedBytes: number;
     private readonly includedStrategy?: AIncludedHeadStrategy;
     private readonly backfillBlocks: ABackfillBlockSource;
-    private readonly peers = new Map<WebSocket, StorageDiffPeer>();
     private readonly stopping = new AbortController();
     private upstream?: UpstreamRpcClient;
-    private server?: WebSocketServer;
     private canonical: StagedBlock[] = [];
     // Account and slot values at the best head; every upstream read fills it.
     private readonly stateCache = new StateCache();
@@ -229,6 +188,7 @@ export class StorageDiffService {
     // Accounts whose backfill found fewer entries than the chain holds: read lazily, not backfilled again.
     private readonly lazyAccounts = new Set<AccountAddress>();
     private readonly persisted?: PersistedCache;
+    private readonly peerHub: PeerHub;
     private readonly headWaiters: HeadWaiters;
     private readonly stateReader: StateReader;
     // Whether the upstream answers eth_getBlockReceipts; one failed call turns it off.
@@ -270,11 +230,15 @@ export class StorageDiffService {
             });
         this.upstreamUrl = options.upstreamUrl;
         this.upstreamEndpoint = upstreamEndpoint;
-        this.host = options.host ?? "127.0.0.1";
-        this.port = options.port ?? DEFAULT_PORT;
         this.retention = options.retention ?? DEFAULT_RETENTION_BLOCKS;
-        this.maxPeerBufferedBytes =
-            options.maxPeerBufferedBytes ?? DEFAULT_MAX_PEER_BUFFERED_BYTES;
+        this.peerHub = new PeerHub({
+            host: options.host ?? "127.0.0.1",
+            port: options.port ?? DEFAULT_PORT,
+            maxPeerBufferedBytes:
+                options.maxPeerBufferedBytes ?? DEFAULT_MAX_PEER_BUFFERED_BYTES,
+            createMethods: (peer) => new StorageDiffRpcMethods(this, peer),
+            fail: (error) => this.fail(error)
+        });
         this.stateReader = new StateReader({
             canonical: () => this.canonical,
             stateCache: this.stateCache,
@@ -334,14 +298,7 @@ export class StorageDiffService {
     }
 
     get url(): string {
-        if (!this.server)
-            throw new Error("StorageDiffService is not listening");
-        const address = this.server.address() as AddressInfo;
-        const bound =
-            address.family === "IPv6"
-                ? `[${address.address}]`
-                : address.address;
-        return `ws://${bound}:${address.port}`;
+        return this.peerHub.url;
     }
 
     /** Idempotent: closes peers, the upstream socket and pending work. */
@@ -354,7 +311,8 @@ export class StorageDiffService {
         addresses: AccountAddress[]
     ): Promise<SubscribeResult> {
         return await this.enqueue(async () => {
-            if (!this.peers.has(peer.socket)) throw new Error("Peer closed");
+            if (!this.peerHub.peers.has(peer.socket))
+                throw new Error("Peer closed");
             const id = "0x" + (++peer.nextSubscription).toString(16);
             peer.subscriptions.set(id, addresses);
             // after the reply: the peer learns the id before the snapshots
@@ -521,22 +479,10 @@ export class StorageDiffService {
      */
     private noteDelay(notice: StorageDiffDelayNotice): void {
         this.headWaiters.endForDelay(notice);
-        for (const peer of this.peers.values()) {
+        for (const peer of this.peerHub.peers.values()) {
             if (peer.closing || peer.subscriptions.size === 0) continue;
-            this.pushDelay(peer, notice);
+            this.peerHub.pushDelay(peer, notice);
         }
-    }
-
-    private pushDelay(
-        peer: StorageDiffPeer,
-        notice: StorageDiffDelayNotice
-    ): void {
-        this.send(peer.socket, {
-            jsonrpc: "2.0",
-            method: "scp_delayed",
-            params: notice
-        });
-        this.dropIfLagging(peer);
     }
 
     /**
@@ -549,14 +495,14 @@ export class StorageDiffService {
             this.included = head;
             this.checkIncludedAncestry();
             const record = this.includedRecord();
-            for (const peer of this.peers.values()) {
+            for (const peer of this.peerHub.peers.values()) {
                 if (peer.closing || peer.subscriptions.size === 0) continue;
-                this.send(peer.socket, {
+                this.peerHub.send(peer.socket, {
                     jsonrpc: "2.0",
                     method: "scp_includedHead",
                     params: record
                 });
-                this.dropIfLagging(peer);
+                this.peerHub.dropIfLagging(peer);
             }
         });
     }
@@ -602,7 +548,7 @@ export class StorageDiffService {
                 advance: (head) => this.advanceIncluded(head),
                 fail: (error) => this.fail(error)
             });
-            await this.listen();
+            await this.peerHub.listen();
         } catch (error) {
             const failure = new Error(this.failureReason(error));
             await this.teardown(failure).catch(() => undefined);
@@ -685,110 +631,6 @@ export class StorageDiffService {
             },
             (error) => this.fail(error)
         );
-    }
-
-    private async listen(): Promise<void> {
-        const server = new WebSocketServer({
-            host: this.host,
-            port: this.port,
-            maxPayload: MAX_PEER_PAYLOAD_BYTES
-        });
-        this.server = server;
-        await new Promise<void>((resolve, reject) => {
-            server.once("listening", resolve);
-            server.once("error", reject);
-        });
-        server.on("error", (error) => this.fail(error));
-        server.on("connection", (socket) => this.accept(socket));
-    }
-
-    private accept(socket: WebSocket): void {
-        const peer: StorageDiffPeer = {
-            socket,
-            subscriptions: new Map(),
-            nextSubscription: 0,
-            closing: false,
-            snapshotted: new Set(),
-            promisedReady: new Set(),
-            afterReply: new Map()
-        };
-        const methods = new StorageDiffRpcMethods(this, peer);
-        this.peers.set(socket, peer);
-        socket.on("error", () => socket.terminate());
-        socket.on("close", () => this.peers.delete(socket));
-        socket.on("message", (data, isBinary) => {
-            this.handleRpc(
-                socket,
-                methods,
-                isBinary ? "" : data.toString()
-            ).catch(() => socket.terminate());
-        });
-    }
-
-    private async handleRpc(
-        socket: WebSocket,
-        methods: StorageDiffRpcMethods,
-        raw: string
-    ): Promise<void> {
-        const reply = (id: unknown, code: number, message: string) =>
-            this.send(socket, { jsonrpc: "2.0", id, error: { code, message } });
-        let request: unknown;
-        try {
-            request = JSON.parse(raw);
-        } catch {
-            return reply(null, PARSE_ERROR, "Parse error");
-        }
-        if (Array.isArray(request)) {
-            return reply(
-                null,
-                INVALID_REQUEST,
-                "Batch requests are not supported"
-            );
-        }
-        const id = isObject(request) ? request.id : undefined;
-        if (
-            !isObject(request) ||
-            request.jsonrpc !== "2.0" ||
-            typeof request.method !== "string" ||
-            (id !== undefined &&
-                id !== null &&
-                typeof id !== "string" &&
-                typeof id !== "number")
-        ) {
-            return reply(null, INVALID_REQUEST, "Invalid Request");
-        }
-        const notification = !("id" in request);
-        try {
-            if (!ENDPOINTS.has(request.method)) {
-                throw rpcError(METHOD_NOT_FOUND, "Method not found");
-            }
-            if (!Array.isArray(request.params)) {
-                throw rpcError(INVALID_PARAMS, "params must be an array");
-            }
-            const endpoint = request.method as keyof StorageDiffRpcMethods;
-            const result = await methods[endpoint](request.params);
-            if (!notification)
-                this.send(socket, { jsonrpc: "2.0", id, result });
-            const peer = this.peers.get(socket);
-            // only the reply that carries the id may release its job; another
-            // request's reply could land before this one is sent
-            const subscription = isObject(result)
-                ? result.subscription
-                : undefined;
-            if (peer && typeof subscription === "string") {
-                const job = peer.afterReply.get(subscription);
-                peer.afterReply.delete(subscription);
-                job?.();
-            }
-        } catch (error) {
-            const code = (error as { code?: unknown }).code;
-            if (notification) return;
-            if (typeof code === "number") {
-                reply(id, code, (error as Error).message);
-            } else {
-                reply(id, INTERNAL_ERROR, "Internal error");
-            }
-        }
     }
 
     private enqueue<T>(job: () => Promise<T>): Promise<T> {
@@ -911,7 +753,7 @@ export class StorageDiffService {
                     (record.covered as Set<AccountAddress>).add(address);
                 await this.readValues(record, addresses, preFrom, running);
             }
-            await this.attachLogs(record, this.subscribedAddresses());
+            await this.attachLogs(record, this.peerHub.subscribedAddresses());
             records.push(record);
         }
         return records;
@@ -1061,17 +903,6 @@ export class StorageDiffService {
         }
     }
 
-    /** Every address some open subscription asks for. */
-    private subscribedAddresses(): AccountAddress[] {
-        const addresses = new Set<AccountAddress>();
-        for (const peer of this.peers.values()) {
-            for (const list of peer.subscriptions.values()) {
-                for (const address of list) addresses.add(address);
-            }
-        }
-        return [...addresses];
-    }
-
     /**
      * Fetches the block's logs of the `addresses` its header bloom matches and
      * that it holds none for yet: one `eth_getLogs` by block hash, none when
@@ -1098,55 +929,6 @@ export class StorageDiffService {
         block.logs = [...block.logs, ...fetched].sort((a, b) =>
             Number(BigInt(a.logIndex) - BigInt(b.logIndex))
         );
-    }
-
-    private send(socket: WebSocket, message: unknown): void {
-        if (socket.readyState !== WebSocket.OPEN) return;
-        socket.send(JSON.stringify(message));
-    }
-
-    private publish(record: StagedBlock): void {
-        for (const [socket, peer] of this.peers) {
-            if (peer.closing) continue;
-            for (const [subscription, addresses] of peer.subscriptions) {
-                this.send(socket, {
-                    jsonrpc: "2.0",
-                    method: "scp_subscription",
-                    params: {
-                        subscription,
-                        result: filterRecord(record, addresses)
-                    }
-                });
-            }
-            this.dropIfLagging(peer);
-        }
-    }
-
-    // The limit applies to the socket's aggregate buffered bytes, so a
-    // catch-up reply the peer has not drained counts as well.
-    // A peer that cannot keep up recovers with catch-up, not lost records.
-    private dropIfLagging(peer: StorageDiffPeer): void {
-        if (peer.socket.bufferedAmount > this.maxPeerBufferedBytes) {
-            this.dropLagging(peer);
-        }
-    }
-
-    /** Tells a peer it fell behind, then closes once the notice drains. */
-    private dropLagging(peer: StorageDiffPeer): void {
-        const { socket } = peer;
-        peer.closing = true;
-        this.send(socket, {
-            jsonrpc: "2.0",
-            method: "scp_disconnect",
-            params: {
-                reason: SEND_BUFFER_OVERFLOW,
-                bufferedBytes: socket.bufferedAmount,
-                limitBytes: this.maxPeerBufferedBytes
-            }
-        });
-        socket.close(SEND_BUFFER_OVERFLOW_CLOSE_CODE, SEND_BUFFER_OVERFLOW);
-        const grace = setTimeout(() => socket.terminate(), PEER_CLOSE_GRACE_MS);
-        socket.once("close", () => clearTimeout(grace));
     }
 
     /** Moves the canonical history to the upstream's current best head. */
@@ -1206,14 +988,14 @@ export class StorageDiffService {
             this.stateCache.clear();
             this.lazyAccounts.clear();
             // nothing is complete now: peers get new snapshots after new backfills
-            for (const peer of this.peers.values()) {
+            for (const peer of this.peerHub.peers.values()) {
                 this.noteSnapshotsDelayed(peer, [
                     ...peer.snapshotted,
                     ...peer.promisedReady
                 ]);
                 peer.snapshotted.clear();
             }
-            for (const address of this.subscribedAddresses())
+            for (const address of this.peerHub.subscribedAddresses())
                 this.startBackfill(address);
         } else {
             for (let i = canonical.length - 1; i > ancestor; i--) {
@@ -1239,7 +1021,8 @@ export class StorageDiffService {
                     });
         }
         canonical.splice(0, Math.max(0, canonical.length - this.retention));
-        for (const record of staged.slice(below ? 1 : 0)) this.publish(record);
+        for (const record of staged.slice(below ? 1 : 0))
+            this.peerHub.publish(record);
         this.headWaiters.endReached();
         this.persisted?.scheduleSave();
         void this.verifyEntryCounts(written);
@@ -1290,7 +1073,7 @@ export class StorageDiffService {
                         );
                         this.stateCache.markLazy(address);
                         this.lazyAccounts.add(address);
-                        for (const peer of this.peers.values()) {
+                        for (const peer of this.peerHub.peers.values()) {
                             peer.snapshotted.delete(address);
                             if (!peer.closing)
                                 this.sendSnapshots(peer, [address]);
@@ -1400,7 +1183,7 @@ export class StorageDiffService {
                 );
                 // tell the subscribers now, so they do not wait for a snapshot
                 return this.enqueue(async () => {
-                    for (const peer of this.peers.values())
+                    for (const peer of this.peerHub.peers.values())
                         if (!peer.closing)
                             this.sendSnapshots(
                                 peer,
@@ -1642,7 +1425,7 @@ export class StorageDiffService {
             for (const [slot, word] of Object.entries(account.storage ?? {}))
                 this.stateCache.set({ kind: "slot", address, slot }, word);
         }
-        for (const peer of this.peers.values()) {
+        for (const peer of this.peerHub.peers.values()) {
             if (!peer.closing) this.sendSnapshots(peer, [address]);
         }
         this.persisted?.scheduleSave();
@@ -1688,7 +1471,7 @@ export class StorageDiffService {
             }
             if (Object.keys(accounts).length === 0 && noSnapshot.length === 0)
                 continue;
-            this.send(peer.socket, {
+            this.peerHub.send(peer.socket, {
                 jsonrpc: "2.0",
                 method: "scp_snapshot",
                 params: {
@@ -1700,7 +1483,7 @@ export class StorageDiffService {
                     }
                 }
             });
-            this.dropIfLagging(peer);
+            this.peerHub.dropIfLagging(peer);
         }
     }
 
@@ -1720,7 +1503,7 @@ export class StorageDiffService {
                 subscribed.includes(address)
             );
             if (accounts.length === 0) continue;
-            this.pushDelay(peer, {
+            this.peerHub.pushDelay(peer, {
                 reason: "snapshot-delayed",
                 subscription,
                 block: { number: head.number, hash: head.hash },
@@ -1806,11 +1589,7 @@ export class StorageDiffService {
             this.upstream?.close(
                 reason ?? new Error("StorageDiffService closed")
             );
-            for (const socket of this.peers.keys()) socket.terminate();
-            await new Promise<void>((resolve) => {
-                if (!this.server) return resolve();
-                this.server.close(() => resolve());
-            });
+            await this.peerHub.close();
             if (reason) this.settleClosed.reject(reason);
             else this.settleClosed.resolve();
         })();
