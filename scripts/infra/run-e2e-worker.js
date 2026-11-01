@@ -14,9 +14,9 @@
  */
 const { spawn } = require("node:child_process");
 const path = require("node:path");
-const http = require("node:http");
 const fs = require("node:fs");
 const { globSync } = require("glob");
+const { waitForHardhatNode } = require("../../test/utils/nodeInfra");
 
 const NODE_HOST = process.env.HARDHAT_NODE_HOST || "127.0.0.1";
 const NODE_PORT = process.env.HARDHAT_NODE_PORT || "18545";
@@ -60,33 +60,6 @@ function shutdownServices() {
     for (const { child } of services) {
         if (!child.killed) child.kill("SIGTERM");
     }
-}
-
-function rpcReady(url) {
-    return new Promise((resolve) => {
-        const req = http.request(
-            url,
-            { method: "POST", headers: { "content-type": "application/json" } },
-            (res) => {
-                res.resume();
-                resolve(true);
-            }
-        );
-        req.on("error", () => resolve(false));
-        req.write(
-            '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}'
-        );
-        req.end();
-    });
-}
-
-async function waitForNode(url, timeoutMs = 30_000) {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-        if (await rpcReady(url)) return;
-        await new Promise((r) => setTimeout(r, 500));
-    }
-    throw new Error(`Hardhat node not ready at ${url} within ${timeoutMs}ms`);
 }
 
 function resolveTestFiles(args) {
@@ -272,7 +245,7 @@ async function main() {
     console.log(`infra logs → ${path.relative(repoRoot, INFRA_LOG_DIR)}/`);
     startService("hardhat-node", "scripts/infra/start-hardhat-node.js");
     startService("discovery", "scripts/infra/local-discovery-registry.js");
-    await waitForNode(NODE_URL);
+    await waitForHardhatNode(NODE_URL);
 
     const startMs = Date.now();
     const results = [];
