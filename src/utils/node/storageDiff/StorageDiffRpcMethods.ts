@@ -1,14 +1,13 @@
+import { invalidParams, type SubscribeResult } from "./blockStorageDiff";
+import type { StorageDiffPeer } from "./PeerHub";
 import {
-    invalidParams,
     parseAddresses,
     parseBlockHash,
     parseBlockSelector,
     parseMinBlock,
     parseFromBlock,
-    parseStateRequests,
-    type SubscribeResult
-} from "./blockStorageDiff";
-import type { StorageDiffPeer } from "./PeerHub";
+    parseStateRequests
+} from "./rpcParams";
 import type {
     StorageDiffCatchUp,
     StorageDiffService,

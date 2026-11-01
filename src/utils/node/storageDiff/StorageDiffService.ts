@@ -5,7 +5,6 @@ import { BlockStager } from "./BlockStager";
 import {
     environmentOf,
     filterRecord,
-    type ParsedBlockSelector,
     PRUNED_ERROR_CODE,
     rpcError,
     type AccountAddress,
@@ -14,7 +13,6 @@ import {
     type IncludedHeadRecord,
     type RpcBlock,
     type StagedBlock,
-    type StateRequest,
     type SnapshotStatus,
     type SubscribeResult,
     type SubscriptionId
@@ -31,6 +29,7 @@ import {
     UPSTREAM_RECONNECT_BACKOFF_MS,
     UPSTREAM_RECONNECT_LIMIT
 } from "./retryPolicy";
+import { type ParsedBlockSelector, type StateRequest } from "./rpcParams";
 import { StateCache } from "./StateCache";
 import { StateReader } from "./StateReader";
 import { StateStore } from "./StateStore";

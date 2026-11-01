@@ -1,15 +1,11 @@
 import {
     bloomContains,
     environmentOf,
-    hasRevertedFrame,
-    mergeTransactionDiffs,
-    touchesOf,
     parseHeader,
     parseLogs,
     type AccountAddress,
     type AccountDiffs,
     type BlockHeader,
-    type BlockTouches,
     type StagedBlock
 } from "./blockStorageDiff";
 import { PeerHub } from "./PeerHub";
@@ -22,6 +18,12 @@ import {
     type StateValue
 } from "./StateCache";
 import { StateReader } from "./StateReader";
+import {
+    hasRevertedFrame,
+    mergeTransactionDiffs,
+    touchesOf,
+    type BlockTouches
+} from "./traceDiffs";
 import {
     UpstreamLostError,
     UpstreamRequestError,

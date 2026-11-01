@@ -3,11 +3,11 @@ import ABackfillBlockSource, {
     type BackfillUpstream
 } from "./backfillBlocks/ABackfillBlockSource";
 import {
-    touchesOf,
     type AccountAddress,
     type StorageSlot,
     type StorageWord
 } from "./blockStorageDiff";
+import { touchesOf } from "./traceDiffs";
 import { UpstreamRequestError } from "./UpstreamRpcClient";
 import { toQuantity } from "ethers";
 

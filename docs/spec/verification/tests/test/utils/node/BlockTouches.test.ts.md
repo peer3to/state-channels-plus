@@ -1,7 +1,7 @@
 # BlockTouches.test.ts
 
 Test file: [test/utils/node/BlockTouches.test.ts](../../../../../../../test/utils/node/BlockTouches.test.ts)
-Exercises: [blockStorageDiff.ts](../../../../../implementation/source/src/utils/node/storageDiff/blockStorageDiff.ts.md)
+Exercises: [traceDiffs.ts](../../../../../implementation/source/src/utils/node/storageDiff/traceDiffs.ts.md)
 
 ## Overview
 

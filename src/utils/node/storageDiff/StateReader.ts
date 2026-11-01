@@ -2,10 +2,10 @@ import {
     NOT_RETAINED_ERROR_CODE,
     rpcError,
     type AccountDiffs,
-    type StagedBlock,
-    type StateRequest
+    type StagedBlock
 } from "./blockStorageDiff";
 import { HeadChangedError, RECONCILE_RETRY_LIMIT } from "./retryPolicy";
+import { type StateRequest } from "./rpcParams";
 import {
     normalizeBalance,
     StateCache,

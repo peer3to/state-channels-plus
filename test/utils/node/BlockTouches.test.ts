@@ -1,10 +1,10 @@
 import { recordedTrace } from "../../fixtures/node/RecordedAssetHubTrace";
+import { ZERO_WORD } from "@/utils/node/storageDiff/blockStorageDiff";
 import {
     hasRevertedFrame,
     mergeTransactionDiffs,
-    touchesOf,
-    ZERO_WORD
-} from "@/utils/node/storageDiff/blockStorageDiff";
+    touchesOf
+} from "@/utils/node/storageDiff/traceDiffs";
 import { expect } from "chai";
 import { toBeHex } from "ethers";
 
