@@ -867,7 +867,7 @@ Specification cases tested: 17/17.
 Specification cases tested: 9/9.
 
 [`REQ-SDS-9-ZRPZZW` (A subscription is anchored by a complete snapshot, or told none is coming)](../specification/runtime/storage-diff-service.md#req-sds-9-zrpzzw)
-Specification cases tested: 17/17.
+Specification cases tested: 18/18.
 
 [`REQ-SDS-10-F01BMA` (The cache survives a restart when a cache directory is configured)](../specification/runtime/storage-diff-service.md#req-sds-10-f01bma)
 Specification cases tested: 3/3.

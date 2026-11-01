@@ -1,4 +1,5 @@
 import { isObject } from "./blockStorageDiff";
+import { errorMessage } from "@/utils/errorMessage";
 import WebSocket from "ws";
 
 const UPSTREAM_REQUEST_TIMEOUT_MS = 10_000;
@@ -75,9 +76,7 @@ export class UpstreamRpcClient {
             });
         } catch (error) {
             socket.terminate();
-            throw new UpstreamLostError(
-                error instanceof Error ? error.message : String(error)
-            );
+            throw new UpstreamLostError(errorMessage(error));
         }
         return new UpstreamRpcClient(socket, handlers);
     }
@@ -108,16 +107,9 @@ export class UpstreamRpcClient {
                     new UpstreamLostError("Upstream connection is not open")
                 );
             }
-            const id = ++this.nextRequestId;
-            const timer = setTimeout(() => {
-                this.pending.delete(id);
-                reject(
-                    new UpstreamTimeoutError(`Upstream ${method} timed out`)
-                );
-            }, UPSTREAM_REQUEST_TIMEOUT_MS);
-            this.pending.set(id, { resolve, reject, timer });
+            const frame = this.register(method, params, resolve, reject);
             this.socket.send(
-                JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+                JSON.stringify(frame),
                 (error) => error && this.lose(error.message)
             );
         });
@@ -141,17 +133,7 @@ export class UpstreamRpcClient {
         const settled = calls.map(
             ({ method, params }) =>
                 new Promise<unknown>((resolve, reject) => {
-                    const id = ++this.nextRequestId;
-                    const timer = setTimeout(() => {
-                        this.pending.delete(id);
-                        reject(
-                            new UpstreamTimeoutError(
-                                `Upstream ${method} timed out`
-                            )
-                        );
-                    }, UPSTREAM_REQUEST_TIMEOUT_MS);
-                    this.pending.set(id, { resolve, reject, timer });
-                    frame.push({ jsonrpc: "2.0", id, method, params });
+                    frame.push(this.register(method, params, resolve, reject));
                 })
         );
         this.socket.send(
@@ -173,6 +155,22 @@ export class UpstreamRpcClient {
         this.socket.terminate();
     }
 
+    /** Tracks one request until its answer or timeout; returns its frame. */
+    private register(
+        method: string,
+        params: unknown[],
+        resolve: (value: unknown) => void,
+        reject: (error: Error) => void
+    ) {
+        const id = ++this.nextRequestId;
+        const timer = setTimeout(() => {
+            this.pending.delete(id);
+            reject(new UpstreamTimeoutError(`Upstream ${method} timed out`));
+        }, UPSTREAM_REQUEST_TIMEOUT_MS);
+        this.pending.set(id, { resolve, reject, timer });
+        return { jsonrpc: "2.0", id, method, params };
+    }
+
     private lose(reason: string): void {
         if (this.closed) return;
         const lost = new UpstreamLostError(reason);
@@ -190,7 +188,7 @@ export class UpstreamRpcClient {
             }
             this.onAnswer(parsed);
         } catch (error) {
-            this.lose(error instanceof Error ? error.message : String(error));
+            this.lose(errorMessage(error));
         }
     }
 
@@ -236,7 +234,7 @@ export class UpstreamRpcClient {
                 throw new Error("Malformed upstream response");
             }
         } catch (error) {
-            this.lose(error instanceof Error ? error.message : String(error));
+            this.lose(errorMessage(error));
         }
     }
 }

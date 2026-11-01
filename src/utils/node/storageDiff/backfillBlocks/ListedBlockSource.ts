@@ -1,13 +1,10 @@
-import {
-    parseHeader,
-    toQuantity,
-    type AccountAddress
-} from "../blockStorageDiff";
+import { parseHeader, type AccountAddress } from "../blockStorageDiff";
 import ABackfillBlockSource, {
     ChainMovedError,
     type BackfillUpstream,
     type BlockListing
 } from "./ABackfillBlockSource";
+import { toQuantity } from "ethers";
 
 /** Blocks asked for in one batch when listing which ones have transactions. */
 const BLOCK_BATCH = 100;

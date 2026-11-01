@@ -24,6 +24,8 @@ import {
 } from "@/utils/node/storageDiff/StorageDiffService";
 import { expect } from "chai";
 import { toQuantity } from "ethers";
+import { once } from "node:events";
+import WebSocket from "ws";
 
 describe("StorageDiffService", function () {
     it("pushes the pre and post value of a slot a transaction wrote to a subscriber of that address", async function () {
@@ -292,6 +294,53 @@ describe("StorageDiffService", function () {
                 ).to.deep.equal([]);
             } finally {
                 witness.close();
+            }
+        });
+    });
+
+    it("sends a subscription's snapshot after the reply that returned its id, not after a pipelined request's reply", async function () {
+        await withStorageDiffSession(async ({ client, service, signer }) => {
+            const storage = await deployNumberStorage(signer);
+            const address = await recordKey(storage);
+            // the first subscriber's snapshot shows the account is complete,
+            // so the next subscription is answered ready with a snapshot at once
+            const first = await client.subscribe([address]);
+            await client.nextSnapshot(first);
+            const socket = new WebSocket(service.url);
+            try {
+                await once(socket, "open");
+                const arrivals: { id?: number; method?: string }[] = [];
+                socket.on("message", (data) =>
+                    arrivals.push(JSON.parse(data.toString()))
+                );
+                socket.send(
+                    JSON.stringify({
+                        jsonrpc: "2.0",
+                        id: 1,
+                        method: "scp_subscribeContractStorage",
+                        params: [[address]]
+                    })
+                );
+                for (let id = 2; id < 40; id++)
+                    socket.send(
+                        JSON.stringify({
+                            jsonrpc: "2.0",
+                            id,
+                            method: "scp_unsubscribe",
+                            params: ["0xffff"]
+                        })
+                    );
+                while (!arrivals.some((m) => m.method === "scp_snapshot"))
+                    await new Promise((resolve) => setTimeout(resolve, 10));
+
+                expect(arrivals.findIndex((m) => m.id === 1)).to.be.greaterThan(
+                    -1
+                );
+                expect(arrivals.findIndex((m) => m.id === 1)).to.be.lessThan(
+                    arrivals.findIndex((m) => m.method === "scp_snapshot")
+                );
+            } finally {
+                socket.close();
             }
         });
     });

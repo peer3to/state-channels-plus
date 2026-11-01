@@ -21,6 +21,7 @@ Each case starts the service in front of an isolated anvil test chain reached th
 - `pushes a replacement record whose parentHash is the common ancestor after a reorg`: REQ-SDS-1-TXEY33.T1.P7
 - `refuses an address list that holds a malformed address with invalid params`: REQ-SDS-3-5JW8AK.T1.P4
 - `stops pushing to a subscription once scp_unsubscribe returns true`: REQ-SDS-3-5JW8AK.T1.P1
+- `sends a subscription's snapshot after the reply that returned its id, not after a pipelined request's reply`: REQ-SDS-9-ZRPZZW.T1.P18
 - `answers false to scp_unsubscribe for a subscription id the socket does not hold`: REQ-SDS-3-5JW8AK.T1.P2
 - `keeps pushing to the socket's other subscriptions after one is unsubscribed`: REQ-SDS-3-5JW8AK.T1.P3
 - `retries a block that changed while it was traced and pushes the canonical record`: REQ-SDS-11-QV2VPT.T1.P1

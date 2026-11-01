@@ -6,6 +6,7 @@ import {
     type StorageSlot,
     type StorageWord
 } from "./blockStorageDiff";
+import { toQuantity } from "ethers";
 
 /** `balance` and `nonce` and `code` of one account, or one storage slot. */
 export type StateField =
@@ -32,7 +33,17 @@ const EMPTY_ACCOUNT = { balance: "0x0", nonce: 0, code: "0x" } as const;
 
 /** Canonical form of a balance: no leading zeros, lower case. */
 export function normalizeBalance(value: string): string {
-    return "0x" + BigInt(value).toString(16);
+    return toQuantity(BigInt(value));
+}
+
+/** A field's identity in a map. */
+export type FieldKey = string;
+
+/** A field's identity in a map. */
+export function fieldKey(field: StateField): FieldKey {
+    return field.kind === "slot"
+        ? `slot:${field.address}:${field.slot}`
+        : scalarKey(field.kind, field.address);
 }
 
 function scalarKey(kind: string, address: AccountAddress): ScalarKey {

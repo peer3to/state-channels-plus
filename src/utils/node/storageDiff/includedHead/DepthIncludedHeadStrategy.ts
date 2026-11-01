@@ -2,7 +2,9 @@ import AIncludedHeadStrategy, {
     type IncludedHead,
     type IncludedHeadHost
 } from "./AIncludedHeadStrategy";
-import { parseHeader, toQuantity } from "../blockStorageDiff";
+import { parseHeader } from "../blockStorageDiff";
+import { errorMessage } from "@/utils/errorMessage";
+import { toQuantity } from "ethers";
 
 /**
  * Dev and test strategy: the block `depth` behind the best head counts as
@@ -42,7 +44,7 @@ export class DepthIncludedHeadStrategy extends AIncludedHeadStrategy {
             this.report(head.number).catch((error) =>
                 // The next best head asks again.
                 this.host?.logger.warn("Could not read the included head", {
-                    reason: error instanceof Error ? error.message : "unknown"
+                    reason: errorMessage(error)
                 })
             )
         );

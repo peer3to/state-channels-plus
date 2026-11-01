@@ -111,10 +111,6 @@ export function invalidParams(message: string): Error {
     return rpcError(INVALID_PARAMS, message);
 }
 
-export function toQuantity(value: bigint): string {
-    return "0x" + value.toString(16);
-}
-
 function normalizeWord(value: unknown, what: string): string {
     if (typeof value !== "string" || !HEX_WORD.test(value)) {
         throw new Error(`Malformed ${what} in upstream trace`);

@@ -19,7 +19,6 @@ import {
     type ParsedBlockSelector,
     PRUNED_ERROR_CODE,
     rpcError,
-    toQuantity,
     type AccountAddress,
     type AccountDiffs,
     type BlockEnvironment,
@@ -30,6 +29,7 @@ import {
     type RpcBlock,
     type StagedBlock,
     type StateRequest,
+    type StorageSlot,
     type SnapshotStatus,
     type SubscribeResult,
     type SubscriptionId
@@ -43,8 +43,10 @@ import {
 import type AIncludedHeadStrategy from "./includedHead/AIncludedHeadStrategy";
 import type { IncludedHead } from "./includedHead/AIncludedHeadStrategy";
 import {
+    fieldKey,
     normalizeBalance,
     StateCache,
+    type FieldKey,
     type StateField,
     type StateValue
 } from "./StateCache";
@@ -71,6 +73,7 @@ import type {
 } from "../../storageDiff/storageDiffWire";
 import type { Logger } from "@/utils";
 import { retry } from "@/utils/retry";
+import { toQuantity } from "ethers";
 import WebSocket, { WebSocketServer, type AddressInfo } from "ws";
 
 export const DEFAULT_RETENTION_BLOCKS = 128;
@@ -108,13 +111,6 @@ const TRACE_OPTIONS = {
 };
 
 const CALL_TRACE_OPTIONS = { tracer: "callTracer" };
-
-/** A field's identity in a map. */
-function fieldKey(field: StateField): string {
-    return field.kind === "slot"
-        ? `slot:${field.address}:${field.slot}`
-        : `${field.kind}:${field.address}`;
-}
 
 /** Endpoint names a request may route to: the endpoint class's own methods. */
 const ENDPOINTS: ReadonlySet<string> = new Set(
@@ -187,8 +183,8 @@ export interface StorageDiffPeer {
     snapshotted: Set<AccountAddress>;
     /** Accounts a subscription reply promised as `ready` whose snapshot is not sent yet. */
     promisedReady: Set<AccountAddress>;
-    /** Run once the reply to the request in hand is sent. */
-    afterReply: (() => void)[];
+    /** Per subscription, run once the reply that returned its id is sent. */
+    afterReply: Map<SubscriptionId, () => void>;
 }
 
 /** A read held until the best head reaches `minBlock`; `end` lets it go. */
@@ -402,7 +398,7 @@ export class StorageDiffService {
             const id = "0x" + (++peer.nextSubscription).toString(16);
             peer.subscriptions.set(id, addresses);
             // after the reply: the peer learns the id before the snapshots
-            peer.afterReply.push(() => {
+            peer.afterReply.set(id, () => {
                 void this.enqueue(async () => {
                     this.sendSnapshots(peer, addresses);
                     for (const address of addresses)
@@ -712,7 +708,7 @@ export class StorageDiffService {
                             "Retrying startup after the upstream dropped",
                             {
                                 attempt,
-                                reason: this.sanitize(describeError(error))
+                                reason: this.failureReason(error)
                             }
                         )
                 }
@@ -726,7 +722,7 @@ export class StorageDiffService {
             });
             await this.listen();
         } catch (error) {
-            const failure = new Error(this.sanitize(describeError(error)));
+            const failure = new Error(this.failureReason(error));
             await this.teardown(failure).catch(() => undefined);
             throw failure;
         }
@@ -783,7 +779,7 @@ export class StorageDiffService {
                 onRetry: (attempt, error) =>
                     this.logger.warn("Retrying the upstream connection", {
                         attempt,
-                        reason: this.sanitize(describeError(error))
+                        reason: this.failureReason(error)
                     })
             }
         );
@@ -832,7 +828,7 @@ export class StorageDiffService {
             closing: false,
             snapshotted: new Set(),
             promisedReady: new Set(),
-            afterReply: []
+            afterReply: new Map()
         };
         const methods = new StorageDiffRpcMethods(this, peer);
         this.peers.set(socket, peer);
@@ -892,7 +888,16 @@ export class StorageDiffService {
             if (!notification)
                 this.send(socket, { jsonrpc: "2.0", id, result });
             const peer = this.peers.get(socket);
-            for (const job of peer?.afterReply.splice(0) ?? []) job();
+            // only the reply that carries the id may release its job; another
+            // request's reply could land before this one is sent
+            const subscription = isObject(result)
+                ? result.subscription
+                : undefined;
+            if (peer && typeof subscription === "string") {
+                const job = peer.afterReply.get(subscription);
+                peer.afterReply.delete(subscription);
+                job?.();
+            }
         } catch (error) {
             const code = (error as { code?: unknown }).code;
             if (notification) return;
@@ -980,7 +985,7 @@ export class StorageDiffService {
     ): Promise<StagedBlock[]> {
         const records: StagedBlock[] = [];
         // the value each field has after the blocks staged so far
-        const running = new Map<string, StateValue>();
+        const running = new Map<FieldKey, StateValue>();
         for (const header of headers) {
             progress.header = header;
             let touches: BlockTouches = {};
@@ -1063,7 +1068,7 @@ export class StorageDiffService {
     private takeTraceValues(
         record: StagedBlock,
         trace: { pre: AccountDiffs; post: AccountDiffs },
-        running: Map<string, StateValue>
+        running: Map<FieldKey, StateValue>
     ): void {
         record.pre = trace.pre;
         record.post = trace.post;
@@ -1085,7 +1090,7 @@ export class StorageDiffService {
         record: StagedBlock,
         addresses: AccountAddress[],
         preFrom: "cache" | "chain",
-        running = new Map<string, StateValue>()
+        running = new Map<FieldKey, StateValue>()
     ): Promise<void> {
         const fields: StateField[] = [];
         for (const address of addresses) {
@@ -1409,7 +1414,7 @@ export class StorageDiffService {
                     if (!this.stopping.signal.aborted)
                         this.logger.warn("Cannot count an account's entries", {
                             address,
-                            reason: this.sanitize(describeError(error))
+                            reason: this.failureReason(error)
                         });
                 }
             })
@@ -1510,7 +1515,7 @@ export class StorageDiffService {
                     "Backfill failed; the account is read lazily",
                     {
                         address,
-                        reason: this.sanitize(describeError(error))
+                        reason: this.failureReason(error)
                     }
                 );
                 // tell the subscribers now, so they do not wait for a snapshot
@@ -1553,7 +1558,7 @@ export class StorageDiffService {
         await this.watch(address);
         let restarts = 0;
         let covered: { number: bigint; hash: string } | undefined;
-        let keys = new Set<string>();
+        let keys = new Set<StorageSlot>();
         let record: BackfillRecord | undefined;
         const spend = (backfill: ContractBackfill) => {
             const cost = backfill.spent;
@@ -1687,11 +1692,11 @@ export class StorageDiffService {
     private async prepareBackfill(
         address: AccountAddress,
         covered: { number: bigint; hash: string },
-        keys: Set<string>
+        keys: Set<StorageSlot>
     ): Promise<
         | "again"
         | "restart"
-        | { anchor: { number: bigint; hash: string }; keys: Set<string> }
+        | { anchor: { number: bigint; hash: string }; keys: Set<StorageSlot> }
     > {
         const index = this.retainedIndex(covered.hash);
         if (index < 0) {
@@ -1873,7 +1878,7 @@ export class StorageDiffService {
             });
         } catch (error) {
             this.logger.warn("Cannot save the cache", {
-                reason: this.sanitize(describeError(error))
+                reason: this.failureReason(error)
             });
         }
     }
@@ -1949,7 +1954,7 @@ export class StorageDiffService {
             this.stateCache.clear();
             this.watched.clear();
             this.logger.warn("Dropped the saved cache", {
-                reason: this.sanitize(describeError(error))
+                reason: this.failureReason(error)
             });
         }
     }
@@ -2162,7 +2167,7 @@ export class StorageDiffService {
             onRetry: (attempt, error) =>
                 this.logger.warn(message, {
                     attempt,
-                    reason: this.sanitize(describeError(error))
+                    reason: this.failureReason(error)
                 })
         });
     }
@@ -2190,13 +2195,15 @@ export class StorageDiffService {
     }
 
     // The upstream URL can carry credentials: nothing may echo it.
-    private sanitize(message: string): string {
-        return message.split(this.upstreamUrl).join(this.upstreamEndpoint);
+    private failureReason(error: unknown): string {
+        return describeError(error)
+            .split(this.upstreamUrl)
+            .join(this.upstreamEndpoint);
     }
 
     private fail(error: unknown): void {
         if (this.stopping.signal.aborted) return;
-        const failure = new Error(this.sanitize(describeError(error)));
+        const failure = new Error(this.failureReason(error));
         this.logger.error("Storage diff service failed", {
             reason: failure.message
         });

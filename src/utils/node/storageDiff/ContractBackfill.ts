@@ -4,12 +4,12 @@ import ABackfillBlockSource, {
 } from "./backfillBlocks/ABackfillBlockSource";
 import {
     touchesOf,
-    toQuantity,
     type AccountAddress,
     type StorageSlot,
     type StorageWord
 } from "./blockStorageDiff";
 import { UpstreamRequestError } from "./UpstreamRpcClient";
+import { toQuantity } from "ethers";
 
 /** Values read in one batch. */
 const STATE_BATCH = 200;

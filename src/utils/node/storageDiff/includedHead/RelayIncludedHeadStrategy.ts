@@ -20,6 +20,7 @@ import {
     UpstreamRpcClient,
     UpstreamTimeoutError
 } from "../UpstreamRpcClient";
+import { errorMessage } from "@/utils/errorMessage";
 import { retry } from "@/utils/retry";
 
 export interface RelayIncludedHeadOptions {
@@ -131,7 +132,7 @@ export class RelayIncludedHeadStrategy extends AIncludedHeadStrategy {
                 onRetry: (attempt, error) =>
                     this.host?.logger.warn("Retrying the inclusion nodes", {
                         attempt,
-                        reason: error instanceof Error ? error.message : ""
+                        reason: errorMessage(error)
                     })
             }
         );
@@ -230,7 +231,7 @@ export class RelayIncludedHeadStrategy extends AIncludedHeadStrategy {
                 onRetry: (attempt, error) =>
                     host.logger.warn("Retrying the included block mapping", {
                         attempt,
-                        reason: error instanceof Error ? error.message : ""
+                        reason: errorMessage(error)
                     })
             }
         );
