@@ -420,7 +420,8 @@ async function provisionSlots(slotCount, logDir) {
     const infra = { nodes: [], discoveries: [] };
     const infraPath = (name) => path.join(path.resolve(logDir), "infra", name);
 
-    // Don't hand the same just-freed ephemeral port to two concurrent boots.
+    // Don't hand the same just-freed ephemeral port to two concurrent
+    // discovery boots.
     const claimedPorts = new Set();
     const claimPort = async () => {
         for (let i = 0; i < 50; i++) {
@@ -433,11 +434,11 @@ async function provisionSlots(slotCount, logDir) {
         throw new Error("could not find a free unclaimed port");
     };
 
+    // The chain binds port 0 itself and reports the port it bound.
     const bootNode = async (id) => {
-        const port = await claimPort();
-        console.log(`Starting slot ${id} hardhat node on port ${port}...`);
+        console.log(`Starting slot ${id} hardhat node...`);
         const node = await startHardhatNode({
-            port,
+            port: 0,
             logPath: infraPath(`hardhat-node-slot${id}.log`),
             label: `slot ${id} hardhat node`,
             env: { E2E_INTERVAL_MINING: "1" }
