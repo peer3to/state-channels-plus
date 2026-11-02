@@ -68,10 +68,9 @@ export type P2pSetupOptions<
      */
     signerSecret?: string;
     /**
-     * Durable storage is enabled by default. Browsers use IndexedDB and
-     * Node uses an embedded LevelDB. One live runtime owns a channel
-     * partition, so local multi-peer setups must use distinct locations
-     * or pass `false`.
+     * Durable storage, off unless passed. Browsers use IndexedDB and Node
+     * uses an embedded LevelDB. One live runtime owns a channel partition,
+     * so local multi-peer setups must use distinct locations.
      */
     persistence?: boolean | PersistenceOptions;
     /**
@@ -117,15 +116,11 @@ export async function setupP2pRuntime<
     let runtimeSignerSecret =
         options?.signerSecret ?? ethers.Wallet.createRandom().privateKey;
     const persistence =
-        options?.persistence === false
-            ? undefined
-            : options?.persistence === true ||
-                options?.persistence === undefined
-              ? {}
-              : options.persistence;
+        options?.persistence === true ? {} : options?.persistence || undefined;
     // A manager without a provider fails the setup below.
-    const network =
-        await deployedStateChannelContractInstance.runner?.provider?.getNetwork();
+    const network = persistence
+        ? await deployedStateChannelContractInstance.runner?.provider?.getNetwork()
+        : undefined;
     const persistenceIdentity =
         persistence && network
             ? {

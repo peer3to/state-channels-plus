@@ -451,6 +451,8 @@ class StateManager<
      * deliberately never persisted), and the queue's timers.
      */
     public async restorePersistedState(): Promise<void> {
+        // memory-only storage has nothing loaded from disk to restore
+        if (!this.storage.getPersistenceLocation()) return;
         const persisted = validatePersistedRuntimeState(
             this.storage,
             this.channelId

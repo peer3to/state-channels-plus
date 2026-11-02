@@ -56,16 +56,8 @@ export class MessageBlockStorage {
             hash(Codec.encode(messageBlock, Type.MessageBlock));
 
         this.normalizeBlockHeight(messageBlock.blockHeight);
+        // a later store of a held hash keeps its first content
         this.blockMap.update(blockHash, (record) => {
-            if (
-                record &&
-                Codec.encode(record.block, Type.MessageBlock) !==
-                    Codec.encode(messageBlock, Type.MessageBlock)
-            ) {
-                throw new Error(
-                    `Incompatible message block for hash ${blockHash}`
-                );
-            }
             return {
                 block: record?.block ?? messageBlock,
                 advancesTip:

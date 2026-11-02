@@ -33,24 +33,10 @@ export class DisputeFraudProofStorage {
         const disputeHash = hash(
             Codec.encode(disputeFraudProof.dispute, Type.Dispute)
         );
-        this.disputeFraudProofs.update(disputeHash, (existing) => {
-            if (existing) {
-                if (
-                    String(existing.proofType) !==
-                        String(disputeFraudProof.proofType) ||
-                    String(existing.participant).toLowerCase() !==
-                        String(disputeFraudProof.participant).toLowerCase() ||
-                    String(existing.encodedProof) !==
-                        String(disputeFraudProof.encodedProof)
-                ) {
-                    throw new Error(
-                        `Incompatible dispute fraud proof for ${disputeHash}`
-                    );
-                }
-                return existing;
-            }
-            return disputeFraudProof;
-        });
+        this.disputeFraudProofs.update(
+            disputeHash,
+            (existing) => existing ?? disputeFraudProof
+        );
         return disputeHash;
     }
 

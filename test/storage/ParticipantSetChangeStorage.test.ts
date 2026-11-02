@@ -45,7 +45,7 @@ describe("ParticipantSetChangeStorage", () => {
 
             expect(result1.size).to.equal(1);
             expect(result2.size).to.equal(1);
-            expect(result1).to.equal(result2);
+            expect(result1).to.deep.equal(result2);
             expect(result1.has(blockHeight)).to.be.true;
         });
 

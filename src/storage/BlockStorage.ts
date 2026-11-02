@@ -76,7 +76,6 @@ export class BlockStorage {
 
             // They are equal => merge signatures
             record.block.mergeFrom(block);
-            if (!options?.justPersist) record.advancesTip = true;
             return record;
         });
         if (!compatible) return undefined;

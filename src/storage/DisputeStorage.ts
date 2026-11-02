@@ -72,22 +72,6 @@ export class DisputeStorage {
                 // If no existing dispute, store new dispute
                 return disputeConfirmation;
             }
-            if (
-                !ethers.isBytesLike(
-                    disputeConfirmation.signedDispute.encodedDispute
-                ) ||
-                ethers.hexlify(existing.signedDispute.encodedDispute) !==
-                    ethers.hexlify(
-                        disputeConfirmation.signedDispute.encodedDispute
-                    ) ||
-                ethers.hexlify(existing.signedDispute.signature) !==
-                    ethers.hexlify(disputeConfirmation.signedDispute.signature)
-            ) {
-                throw new Error(
-                    `Incompatible dispute confirmation for ${disputeHash}`
-                );
-            }
-
             // Merge signatures
             const signatures = new Set(existing.signatures.map(ethers.hexlify));
             for (const signature of disputeConfirmation.signatures) {
