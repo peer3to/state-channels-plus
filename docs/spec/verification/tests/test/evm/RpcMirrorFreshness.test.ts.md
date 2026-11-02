@@ -13,6 +13,7 @@ This file covers the waits for a block the peer saw or a node announced, their l
 
 - `holds a call issued after the peer's own transaction is mined until the mirror has that block`: REQ-RPCMIRROR-4-H35NFC.T1.P1
 - `holds a call until the mirror reaches a block the node announced`: REQ-RPCMIRROR-4-H35NFC.T1.P2
+- `waits the whole cap, then asks the node, for an announced block before any record has reached the copy`: REQ-RPCMIRROR-4-H35NFC.T1.P18
 - `answers with the node's value, not the older head's, when a block never reaches the copy within the learned backstop`: REQ-RPCMIRROR-4-H35NFC.T1.P8, REQ-RPCMIRROR-4-H35NFC.T1.P13
 - `asks the node at once when the service says its tracing of the awaited block failed`: REQ-RPCMIRROR-4-H35NFC.T1.P9
 - `asks the service once when a wait for a block starts, so a service whose upstream is behind sends the reads to the node at once`: REQ-RPCMIRROR-4-H35NFC.T1.P10, REQ-RPCMIRROR-4-H35NFC.T1.P14

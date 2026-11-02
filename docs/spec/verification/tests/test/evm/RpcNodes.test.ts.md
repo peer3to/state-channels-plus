@@ -96,3 +96,4 @@ within the one-second window (every node was destroyed).
 - `answers the failed window so a retry reads only from there`: UNIT-TEST-LOG-PAGES-1-39HC9S.P2, REQ-CHAINOBS-3-N137ZP.T1.P15
 - `rejects startup over a log window that is not a positive integer without opening a node`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P12, REQ-CHAINOBS-1-5JTHY8.T1.P11
 - `rejects startup over a mirror sampling fraction outside 0 to 1 without opening a node`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P14, REQ-CHAINOBS-1-5JTHY8.T1.P12
+- `starts with a mirror sample rate of 0 and of 1, the ends of the range`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P15, REQ-CHAINOBS-1-5JTHY8.T1.P13

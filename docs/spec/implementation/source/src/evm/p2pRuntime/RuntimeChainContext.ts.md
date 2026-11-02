@@ -41,3 +41,4 @@ Endpoint list resolution and startup
 - [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P12` — a `LOG_QUERY_MAX_BLOCKS` of zero or a fraction rejects startup and opens no node
 - [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P13` — `createRpcNodesProvider` called directly with no reachable endpoint rejects with `Chain access requires a reachable WebSocket provider at …`, naming every endpoint by scheme and host
 - [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P14` — a `MIRROR_SAMPLE_RATE` outside 0 to 1 or not a number rejects startup and opens no node
+- [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P15` — a `MIRROR_SAMPLE_RATE` of 0 or of 1 starts and reaches the node

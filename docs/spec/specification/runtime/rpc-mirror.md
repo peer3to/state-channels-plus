@@ -33,15 +33,15 @@ The client is a drop-in for the plain multi-endpoint provider ([chain-observatio
 
 **<a id="req-rpcmirror-6-mhv1qd"></a>`REQ-RPCMIRROR-6-MHV1QD` — Chain data comes from the service when it holds it.** The client MUST answer the chain id from its first answer without asking a node again, and answer the block number, blocks, transactions and receipts from the service's retained data exactly as a node would, without asking a node. A transaction, receipt or block the service does not hold MUST be asked of the node.
 
-**<a id="req-rpcmirror-7-4a6njn"></a>`REQ-RPCMIRROR-7-4A6NJN` — A fraction of local answers is checked against the node.** The client MUST re-ask the node, after replying and at the same block hash, a configured fraction of the reads it answered locally (`eth_call`, storage, balance, nonce and code), and compare. A match is counted. A mismatch is counted and logged with what was read, at which block and the call's selector but never the values, and the account MUST be dropped to lazy reads from then on, so its state is read from the node. A node that cannot answer leaves the sample skipped; sampling never delays or fails the peer's read. A fraction of 0 sends the node nothing. The reaction to a mismatch is required behavior; the fraction is a tuning value. A client built without a configured fraction uses the configuration default of 1%.
+**<a id="req-rpcmirror-7-4a6njn"></a>`REQ-RPCMIRROR-7-4A6NJN` — A fraction of local answers is checked against the node.** The client MUST re-ask the node, after replying and at the same block hash, a configured fraction of the reads it answered locally (`eth_call`, storage, balance, nonce and code), and compare. A match is counted. A mismatch is counted and logged with what was read, at which block and the call's selector but never the values, and the account MUST be dropped to lazy reads from then on, so its state is read from the node: what later records and snapshots of the service say of it is not kept. A node that cannot answer leaves the sample skipped; sampling never delays or fails the peer's read. A fraction of 0 sends the node nothing. The reaction to a mismatch is required behavior; the fraction is a tuning value. A client built without a configured fraction uses the configuration default of 1%.
 
-**<a id="req-rpcmirror-8-1pa83t"></a>`REQ-RPCMIRROR-8-1PA83T` — Trouble with the service degrades reads to the node, never fails them.** A failure of the storage diff service MUST NOT fail a peer's read: a read the copy cannot answer, or a state fill the service cannot complete, is answered by the node. A failed `scp_unsubscribe` of a superseded subscription costs only duplicate pushes the new subscription also carries, so it MUST be logged and MUST keep the service connection.
+**<a id="req-rpcmirror-8-1pa83t"></a>`REQ-RPCMIRROR-8-1PA83T` — Trouble with the service degrades reads to the node, never fails them.** A failure of the storage diff service MUST NOT fail a peer's read: a read the copy cannot answer, or a state fill the service cannot complete, is answered by the node. A failed `scp_unsubscribe` of a superseded subscription costs only duplicate pushes the new subscription also carries, so it MUST be logged and MUST keep the service connection. A service that is connected but silent MUST NOT stall a read: a read's wait for the copy and every request it makes of the service end within the longest wait of [`REQ-RPCMIRROR-4-H35NFC`](rpc-mirror.md#req-rpcmirror-4-h35nfc), after which the node answers it, and a request the copy's own following makes (a pushed record's catch-up) ends within the SDK's RPC deadline. A request that runs out of time while the copy is being changed drops the service connection; one that only reads the service's head, blocks, transactions or receipts does not.
 
 ## Assumptions and constraints
 
 - The storage diff service follows the same chain as the client's RPC nodes and implements [storage-diff-service.md](./storage-diff-service.md).
 - The local EVM is an Ethereum EVM. Code the chain runs on another machine (PolkaVM), the chain's own precompiles, and gas accounting beyond EVM execution are not reproduced.
-- Reads wait for the copy to reach a block the peer saw only until an event ends the wait, and for a service that hangs silently only until a backstop learned from recent arrivals and capped at the SDK's RPC deadline; the cap is the deadline, so a read that waits the whole cap can be answered by the node only after the deadline. The cap is one constant mirroring the deadline because the provider is built before any channel and its `agreementTime` exists.
+- Reads wait for the copy to reach a block the peer saw only until an event ends the wait, and for a service that hangs silently only until a backstop learned from recent arrivals and capped at the longest wait of [`REQ-RPCMIRROR-4-H35NFC`](rpc-mirror.md#req-rpcmirror-4-h35nfc): the SDK's RPC deadline less a multiple of the slowest recent node round trip, never below zero, and the whole deadline until a round trip has been observed. A read that waits the whole cap therefore still gets the node's answer inside the deadline. The deadline is one constant mirroring the SDK's because the provider is built before any channel and its `agreementTime` exists.
 - Phase 1 carries no proofs: a service or node that lies is detected only by sampling, and only for the reads sampled.
 - The service connection does not reconnect by itself: its owner opens a new one after a loss.
 - The copy keeps a bounded number of applied blocks for rollback; a reorganization deeper than that empties it.
@@ -52,7 +52,7 @@ The client is a drop-in for the plain multi-endpoint provider ([chain-observatio
 
 **Trust boundaries.** The service and the node are trusted equally; the mirror adds the service as a second source and the node as its cross-check. A divergence the sample finds drops the account to the node, and is logged without values.
 
-**Threats and defenses.** A wrong service answer is bounded by the sampling fraction and the node-only rules for code and addresses the local EVM would run differently (PolkaVM code, chain precompiles, gas-limited calls). A stuck or lost service cannot stall a peer: waits end on events or at a learned backstop, and reads fall back to the node.
+**Threats and defenses.** A wrong service answer is bounded by the sampling fraction and the node-only rules for code and addresses the local EVM would run differently (PolkaVM code, chain precompiles, gas-limited calls). A stuck or lost service cannot stall a peer: waits end on events or at a learned backstop, a read's requests to the service and its wait for the copy end within its share of the deadline, and reads fall back to the node.
 
 **Residual risk.** Between samples, a peer can act on a state the service got wrong. The default fraction and the reaction are tuning choices the engineer has not fixed (see the open questions of this layer).
 
@@ -178,7 +178,7 @@ No read waits for a snapshot that is not ready; ready waits end by snapshot, a l
 
 **Setup and stimulus:**
 
-Mine the peer's own transaction, or a block a node announces, while the service's pushes are held; read; release the pushes; let the service stay behind a block the node announced; announce a later block while the copy lacks the one before; make the service's tracing fail or its upstream lag, with several reads waiting for the same block; cut the service connection; make a node slow to answer a forwarded request; and let a block never reach the copy after fast arrivals.
+Mine the peer's own transaction, or a block a node announces, while the service's pushes are held; read; release the pushes; let the service stay behind a block the node announced; announce a later block while the copy lacks the one before; make the service's tracing fail or its upstream lag, with several reads waiting for the same block; cut the service connection; make a node slow to answer a forwarded request; and let a block never reach the copy after fast arrivals. Wait for an announced block before any record has arrived.
 
 **Expected result:**
 
@@ -204,7 +204,7 @@ The read stays pending while the pushes are held and then returns the post-block
 
 <a id="req-rpcmirror-4-h35nfc.t1.p12"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P12` — a service connection that drops while a call waits for a block sends the call to the node at once
 
-<a id="req-rpcmirror-4-h35nfc.t1.p13"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P13` — the backstop is the longest wait before any record has arrived and shorter after fast arrivals
+<a id="req-rpcmirror-4-h35nfc.t1.p13"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P13` — the backstop is shorter than the longest wait after fast arrivals
 
 <a id="req-rpcmirror-4-h35nfc.t1.p14"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P14` — the service is asked once for its head when a wait for a block starts, and a service whose upstream is behind sends the reads waiting for it to the node at once
 
@@ -213,6 +213,8 @@ The read stays pending while the pushes are held and then returns the post-block
 <a id="req-rpcmirror-4-h35nfc.t1.p16"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P16` — a later wait for the same block number, after the copy fell below it, asks the service for its head again
 
 <a id="req-rpcmirror-4-h35nfc.t1.p17"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P17` — a node announcement older than the learning window, or cleared with the cache, teaches the backstop nothing and is not kept
+
+<a id="req-rpcmirror-4-h35nfc.t1.p18"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P18` — before any record has arrived the backstop is the whole longest wait, and the node then answers inside the deadline
 
 #### <a id="req-rpcmirror-5-kdrwdz.t1"></a>`REQ-RPCMIRROR-5-KDRWDZ.T1`
 
@@ -272,7 +274,7 @@ Retained answers equal the node's and cost the node no request; unheld identitie
 
 **Setup and stimulus:**
 
-Set the sampling fraction to 1 and to 0, and leave it unset; read storage, balance, nonce, code and call a view function; corrupt a cached value so it differs from the node's.
+Set the sampling fraction to 1 and to 0, and leave it unset; read storage, balance, nonce, code and call a view function; corrupt a cached value so it differs from the node's. After a mismatch, write the account on chain and drop and restore the service connection; read the logged mismatch.
 
 **Expected result:**
 
@@ -292,6 +294,12 @@ Sampled reads reach the node after the reply with the cached block hash; counter
 
 <a id="req-rpcmirror-7-4a6njn.t1.p6"></a>`REQ-RPCMIRROR-7-4A6NJN.T1.P6` — a client built without a sample rate samples a small fraction of its local answers
 
+<a id="req-rpcmirror-7-4a6njn.t1.p7"></a>`REQ-RPCMIRROR-7-4A6NJN.T1.P7` — a dropped account is read from the node after a block writes it and after the service connection comes back
+
+<a id="req-rpcmirror-7-4a6njn.t1.p8"></a>`REQ-RPCMIRROR-7-4A6NJN.T1.P8` — a storage read's mismatch is logged with the method, the block hash, the account and the slot, and never with a value
+
+<a id="req-rpcmirror-7-4a6njn.t1.p9"></a>`REQ-RPCMIRROR-7-4A6NJN.T1.P9` — a call's mismatch is logged with the call's selector, and never with a value
+
 #### <a id="req-rpcmirror-8-1pa83t.t1"></a>`REQ-RPCMIRROR-8-1PA83T.T1`
 
 **Requirements / invariants:**
@@ -300,7 +308,7 @@ Sampled reads reach the node after the reply with the cached block hash; counter
 
 **Setup and stimulus:**
 
-Replace a subscription with one covering more accounts and make the old one's unsubscribe fail; make a state fill fail; make the node fail a state read the copy needed.
+Replace a subscription with one covering more accounts and make the old one's unsubscribe fail; make a state fill fail; make the node fail a state read the copy needed. Make the service swallow the replies to each kind of request a read makes, go silent while two reads run, and swallow a pushed record's catch-up while a read waits for the copy.
 
 **Expected result:**
 
@@ -313,6 +321,18 @@ The connection stays open, a warning is logged, and reads continue from the copy
 <a id="req-rpcmirror-8-1pa83t.t1.p2"></a>`REQ-RPCMIRROR-8-1PA83T.T1.P2` — a state fill the service cannot complete is answered by the node
 
 <a id="req-rpcmirror-8-1pa83t.t1.p3"></a>`REQ-RPCMIRROR-8-1PA83T.T1.P3` — a node that fails a state read ends only that read and keeps the service connection and the cache
+
+<a id="req-rpcmirror-8-1pa83t.t1.p4"></a>`REQ-RPCMIRROR-8-1PA83T.T1.P4` — a state read the service never answers is answered by the node within the deadline
+
+<a id="req-rpcmirror-8-1pa83t.t1.p5"></a>`REQ-RPCMIRROR-8-1PA83T.T1.P5` — a subscribe for a newly followed account the service never answers sends the read to the node within the deadline
+
+<a id="req-rpcmirror-8-1pa83t.t1.p6"></a>`REQ-RPCMIRROR-8-1PA83T.T1.P6` — a catch-up that starts following and the service never answers sends the read to the node within the deadline
+
+<a id="req-rpcmirror-8-1pa83t.t1.p7"></a>`REQ-RPCMIRROR-8-1PA83T.T1.P7` — a head read the service never answers is answered by the node within the deadline
+
+<a id="req-rpcmirror-8-1pa83t.t1.p8"></a>`REQ-RPCMIRROR-8-1PA83T.T1.P8` — two concurrent reads while the service is silent are both answered by the node within the deadline
+
+<a id="req-rpcmirror-8-1pa83t.t1.p9"></a>`REQ-RPCMIRROR-8-1PA83T.T1.P9` — a read while a pushed record's catch-up waits on a silent service is answered by the node within its own deadline
 
 ### Coverage rule
 

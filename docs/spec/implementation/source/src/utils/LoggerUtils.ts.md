@@ -2,7 +2,9 @@
 
 > **Source:** [src/utils/LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts)
 
-No specified behavior: Structured-log formatting helpers (dispute/auditing metadata projections, hash formatting).
+## Requirements
+
+- [`REQ-RPCMIRROR-7-4A6NJN` (A fraction of local answers is checked against the node)](../../../../specification/runtime/rpc-mirror.md#req-rpcmirror-7-4a6njn)
 
 ## UNIT-TEST-LOGGER-UTILS-32-WMBBZA
 
