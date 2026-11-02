@@ -150,3 +150,6 @@ export interface StorageDiffState {
     hash: string;
     accounts: AccountDiffs;
 }
+
+/** Which block `scp_getBlock` answers: the best head, or one by number or hash. */
+export type BlockSelector = "latest" | string;

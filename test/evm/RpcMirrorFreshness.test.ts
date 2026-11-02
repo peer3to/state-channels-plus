@@ -12,7 +12,7 @@ import {
 import {
     deployLogEmitter,
     emitValue
-} from "@test/fixtures/node/StorageDiffService.fixture";
+} from "@test/fixtures/node/StorageDiffContracts";
 import { waitFor } from "@test/utils/waitFor";
 import type { SimpleNumberStorage } from "@typechain-types";
 import { expect } from "chai";

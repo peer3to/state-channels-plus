@@ -7,7 +7,7 @@ import {
     nodeRequests,
     withMirrorSession
 } from "@test/fixtures/node/RpcMirrorFixture";
-import { deployRuntimeCode } from "@test/fixtures/node/StorageDiffService.fixture";
+import { deployRuntimeCode } from "@test/fixtures/node/StorageDiffContracts";
 import { expect } from "chai";
 import { getBytes, zeroPadValue } from "ethers";
 import path from "node:path";

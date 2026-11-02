@@ -1,6 +1,5 @@
 import {
     AnnouncedBlocks,
-    BACKSTOP_WINDOW_MS,
     capLeavingNodeRoundTrips,
     LearnedBackstop,
     RecentSlowest
@@ -118,7 +117,7 @@ describe("capLeavingNodeRoundTrips", function () {
             CAP_MS
         );
 
-        clock.advance(BACKSTOP_WINDOW_MS + 1);
+        clock.advance(WINDOW_MS + 1);
 
         expect(capLeavingNodeRoundTrips(CAP_MS, roundTrips)).to.equal(CAP_MS);
     });
@@ -132,7 +131,7 @@ describe("AnnouncedBlocks", function () {
             announced.announce(number);
         expect(announced.size).to.equal(5);
 
-        clock.advance(BACKSTOP_WINDOW_MS + 1);
+        clock.advance(WINDOW_MS + 1);
         announced.announce(6n);
 
         expect(announced.size).to.equal(1);
@@ -143,7 +142,7 @@ describe("AnnouncedBlocks", function () {
         const announced = new AnnouncedBlocks(clock.now);
         announced.announce(1n);
 
-        clock.advance(BACKSTOP_WINDOW_MS - 1);
+        clock.advance(WINDOW_MS - 1);
         announced.announce(2n);
 
         expect(announced.size).to.equal(2);
@@ -178,7 +177,7 @@ describe("AnnouncedBlocks", function () {
         const clock = manualClock();
         const announced = new AnnouncedBlocks(clock.now);
         announced.announce(1n);
-        clock.advance(BACKSTOP_WINDOW_MS + 1);
+        clock.advance(WINDOW_MS + 1);
 
         expect(announced.arrivedUpTo(1n)).to.deep.equal([]);
     });

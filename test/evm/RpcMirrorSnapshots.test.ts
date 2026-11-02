@@ -15,7 +15,7 @@ import {
     asksCallFrames,
     deploySlotWriter,
     writeSlot
-} from "@test/fixtures/node/StorageDiffService.fixture";
+} from "@test/fixtures/node/StorageDiffContracts";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ZeroHash } from "ethers";

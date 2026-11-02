@@ -6,7 +6,7 @@ import {
     nodeRequests,
     withMirrorSession
 } from "@test/fixtures/node/RpcMirrorFixture";
-import { rejectionOf } from "@test/fixtures/node/StorageDiffService.fixture";
+import { rejectionOf } from "@test/fixtures/node/StorageDiffSession";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { isError, toQuantity } from "ethers";
