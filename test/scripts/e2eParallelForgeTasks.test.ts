@@ -970,6 +970,7 @@ describe("parallel task runner classification", function () {
         const copiedScripts = [
             "scripts/e2e-parallel/shared/projectModules.js",
             "scripts/e2e-parallel/shared/constants.js",
+            "scripts/e2e-parallel/shared/forgeConfig.js",
             "scripts/infra/anvilNode.js"
         ];
         const discoveryScript = path.join(
