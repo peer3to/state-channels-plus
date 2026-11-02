@@ -123,8 +123,8 @@ export class Storage {
     }
 
     /**
-     * Lets the bound database go after its pending writes: a database with
-     * no record is deleted. Memory stays; `open` binds another one.
+     * Closes the bound database after its pending writes; it is never
+     * deleted. Memory stays; `open` binds another one.
      */
     public unbind(): Promise<void> {
         return this.controller.unbind();

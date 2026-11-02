@@ -166,8 +166,8 @@ export class PersistenceController {
     }
 
     /**
-     * Drains what is pending and lets the database go: destroyed when it
-     * holds no record, closed otherwise. Memory stays; `open` binds again.
+     * Drains what is pending and closes the database; it is never deleted.
+     * Memory stays; `open` binds again.
      */
     public async unbind(): Promise<void> {
         const databaseHandle = this.databaseHandle;
@@ -182,16 +182,7 @@ export class PersistenceController {
         this.pending.clear();
         this.persistedRevision = this.nextRevision;
         this.resolveWaiters();
-        const records = await databaseHandle.database
-            .keys({
-                gte: RECORD_PREFIX,
-                lt: `${RECORD_PREFIX}\uffff`,
-                limit: 1
-            })
-            .all();
-        await (records.length
-            ? databaseHandle.close()
-            : databaseHandle.destroy());
+        await databaseHandle.close();
     }
 
     /** Drains what is pending, then closes the database. */
