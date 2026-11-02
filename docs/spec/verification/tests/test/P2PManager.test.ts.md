@@ -46,6 +46,14 @@ The after-cut probe disposes the manager, then builds a Holepunch transport and 
 channel through the real constructors over recording sockets and feeds each a dispatch frame; both
 must be closed with their sockets, with no frame written, no dispatch and no open connection.
 
+The late-join dispose case holds the observer's discovery join until 200 ms after the network cut,
+past the root's release of the discovery sessions, disposes the runtime while the connect runs, and requires the connect's runtime-disposed rejection and the whole
+disposal inside four seconds: the join resumes after the cut, and a session it opened would hold the
+worker to its five-second drain bound. The Holepunch late-join probe cuts the network of a worker
+runtime that never created a swarm, then joins a topic: no swarm and no recorded topic. A second probe
+starts that first join and cuts the network in the same turn, while the join loads the swarm module:
+no swarm.
+
 ## Tests
 
 - `prefers a transport address over its registered profile address`: UNIT-TEST-P2PMANAGER-32-RX8SQP.P1
@@ -76,6 +84,8 @@ must be closed with their sockets, with no frame written, no dispatch and no ope
 - `does not promote a transport that closed before handshake dispatch`: UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P7, REQ-AUTH-5-BQG9AG.T1.P7
 - `does not promote a late handshake after manager disposal`: UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P8, REQ-AUTH-5-BQG9AG.T1.P8
 - `closes a Holepunch connection and a WebRTC channel arriving after the network cut, which send and dispatch nothing (worker)`: UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P3
+- `creates no Holepunch swarm and joins no topic for a discovery join after the network cut (worker)`: REQ-RUNTIME-3-VQXW59.T1.P99
+- `creates no Holepunch swarm when the network cut lands while the first join loads the swarm module (worker)`: REQ-RUNTIME-3-VQXW59.T1.P101
 - `retires a replaced handshake transport and keeps one live connection`: UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P9, REQ-AUTH-5-BQG9AG.T1.P9
 - `emits profile loss only after the last live transport closes`: UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P7, REQ-LOBBY-8-31BE0F.T1.P1, REQ-LOBBY-8-31BE0F.T1.P2, REQ-LOBBY-8-31BE0F.T1.P4
 - `initial handshake starts one channel-load sync and reaches SYNCED`: none
@@ -102,6 +112,7 @@ must be closed with their sockets, with no frame written, no dispatch and no ope
 - `observer connect rejects with RootDisposedError when the runtime aborts while the initial wait is armed`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P31
 - `observer connect rejects with RootDisposedError when the runtime is disposed while the initial wait is armed, and the frozen connect does not hold the disposal`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P49, REQ-RUNTIME-3-VQXW59.T1.P93
 - `observer connect rejects with RootDisposedError when the runtime aborts during the discovery join`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P35
+- `observer connect rejects with RootDisposedError when the runtime is disposed during the discovery join, and the join that resumes after the cut does not hold the disposal`: REQ-RUNTIME-3-VQXW59.T1.P98
 - `observer connect rejects with RootDisposedError when the runtime aborts during the pre-join chain read`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P36
 - `a late sync success after the abort changes nothing`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P33
 - `a late sync failure after the abort changes nothing`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P34

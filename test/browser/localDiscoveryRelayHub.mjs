@@ -21,7 +21,8 @@ import { WebSocketServer } from "ws";
  * `holdLinks()` holds the opening handshake of every later link socket, so
  * the peer's socket stays connecting, until `releaseLinks()` lets them open;
  * `heldLinks()` counts the held ones and `linkCloses(id)` counts the link
- * sockets of a link id that closed.
+ * sockets of a link id that closed. `members(topic)` counts a topic's
+ * membership sockets.
  */
 export async function startLocalDiscoveryRelayHub({
     host = "127.0.0.1",
@@ -118,6 +119,7 @@ export async function startLocalDiscoveryRelayHub({
     return {
         url: `ws://${host}:${address.port}`,
         pairings: (id) => pairCounts.get(id) ?? 0,
+        members: (topic) => topics.get(topic)?.size ?? 0,
         linkCloses: (id) => closeCounts.get(id) ?? 0,
         holdLinks: () => {
             isHoldingLinks = true;

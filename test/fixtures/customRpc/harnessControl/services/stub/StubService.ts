@@ -4316,17 +4316,19 @@ export class StubService extends ANetworkRpcService<
     }
 
     /**
-     * Delay this runtime's discovery join so an abort can land inside it. The
-     * test that uses it aborts the runtime, which disposes this worker, so
-     * there is nothing left to restore.
+     * Hold this runtime's discovery join until `afterCutMs` after the network
+     * cut, so the join always resumes after it; the poll timer keeps the
+     * worker's loop alive until then. The tests that use it end the runtime,
+     * which disposes this worker, so there is nothing left to restore.
      */
-    public installDiscoveryJoinHold(holdMs: number): void {
+    public installDiscoveryJoinHold(afterCutMs: number): void {
         if (this.stubOriginals.has("discoveryJoinHold")) return;
         const original =
             LocalDiscoveryServer.connectToPeers.bind(LocalDiscoveryServer);
         this.stubOriginals.set("discoveryJoinHold", original);
         LocalDiscoveryServer.connectToPeers = (async (...args) => {
-            await sleep(holdMs);
+            while (!this.p2pManager.isDisposed) await sleep(20);
+            await sleep(afterCutMs);
             return original(...args);
         }) as typeof LocalDiscoveryServer.connectToPeers;
     }
