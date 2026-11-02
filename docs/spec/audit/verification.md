@@ -11,9 +11,9 @@ scores are what they are** and which lever moves each one.
 
 The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
 
-## Storage diff service tests — 2026-10-31
+## Storage diff service tests — 2026-11-02
 
-Eleven reports under `verification/tests/test/utils/node/` map the service's black-box tests to the permutations of the `REQ-SDS-*` requirements and the pure-helper tests to five unit families. Mappings were made from the declarations' titles and a read of their setup and oracles, and every permutation maps to exactly one test. The new fixtures `test/fixtures/node/SubstrateChildTrieNode.ts` and `test/fixtures/node/assetHubInclusion.recorded.json` carry no coverage-ignore marker (a JSON file cannot carry one), so `yarn spec:impact --base` lists them as unmapped until the engineer decides how support files without a comment syntax are accounted for.
+Six reports under `verification/tests/test/utils/node/` map the service's black-box tests to the permutations of the `REQ-SDS-*` requirements and the pure-helper tests to three unit families. Mappings were made from the declarations' titles and a read of their setup and oracles, and every permutation maps to exactly one test. The reconnect cases follow `RpcNodeProvider`: a refused first connection, an outage that outlasts the request retries, and an account first watched during a reconnect replace the old reconnect-limit cases.
 
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 

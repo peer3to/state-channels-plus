@@ -81,7 +81,7 @@ operational limits. It hosts every other system without changing their observabl
 | [configuration.md](./configuration.md) | Deployment configuration semantics: timing windows, limits, and their validation. |
 | [chain-observation.md](./chain-observation.md) | Chain access through an ordered list of RPC endpoints: per-request failover, per-endpoint event streams with reconnect and catch-up, exactly-once event processing. |
 | [log-collection.md](./log-collection.md) | Gathering a session's logs from every execution context into one stored log: coverage, termination, truthful outcome, attribution, effectively-once delivery, bounded expansion. |
-| [storage-diff-service.md](./storage-diff-service.md) | A shared observer of one upstream chain that serves which storage slots changed, snapshots, state, blocks and the included level to peers keeping a local mirror: record content, catch-up, trusted values, logs, included head, shared state cache, snapshot statuses, persistence, failure policy. |
+| [storage-diff-service.md](./storage-diff-service.md) | A shared observer of one upstream chain that serves which storage slots changed and state at retained blocks to peers keeping a local mirror: record content, catch-up, trusted values, shared state cache, failure policy. |
 
 Durable storage and recovery were factored out into [System 9 — Storage](../storage/README.md),
 which nearly every system calls; this system consumes it like the others.

@@ -5,7 +5,7 @@ Exercises: [traceDiffs.ts](../../../../../implementation/source/src/utils/node/s
 
 ## Overview
 
-Direct calls to the pure helpers with hand-built prestate and call-frame traces and with the traces Asset Hub eth-rpc answered for one recorded block (`assetHubTrace.recorded.json`); the oracles are the returned key sets, flags, cleared slots and failure verdicts.
+Direct calls to the pure helpers with hand-built prestate, multi-transaction and call-frame traces and with the traces Asset Hub eth-rpc answered for one recorded block (`assetHubTrace.recorded.json`); the oracles are the returned key sets, flags, merged diffs, cleared slots and failure verdicts.
 
 ## Tests
 
@@ -17,6 +17,12 @@ Direct calls to the pure helpers with hand-built prestate and call-frame traces 
 - `finds a failure on a nested frame two calls deep`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P6
 - `finds a failure in any transaction of the block`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P7
 - `counts an entry with an error of its own, a missing trace or a wrong length as failed`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P8
+- `keeps the earliest pre and the latest post of a slot written by two transactions`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P13
+- `leaves out a slot and an account that later transactions of the block restore`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P14
+- `leaves out a balance that ends the block at the value it started with`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P15
+- `empties every field and cached slot of an account the trace's post leaves out`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P16
+- `keeps an account created in one transaction and written in a later one out of the block's pre`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P17
+- `reads a nonce and code that pre leaves out while post sets them as empty before`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P18
 - `names the accounts and storage keys of a recorded prestate diff and flags what its post shows`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P9
 - `reads a slot a recorded post omits as cleared to zero`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P10
 - `finds no failure in a recorded call tree with nested calls`: UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS.P11
