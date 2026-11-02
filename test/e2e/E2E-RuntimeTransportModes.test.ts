@@ -3,6 +3,7 @@ import {
     assertCorruptPartitionResetsOnRequest,
     assertCustomRootReadiness,
     assertGeneratedHostSigner,
+    assertPersistedPartitionRefusesAnotherSigner,
     assertPersistedSignerRecovered,
     assertRejectedCustomRootReadiness,
     assertDisposedSessionLeavesTheFlushTree,
@@ -69,6 +70,10 @@ describe("E2E: p2pSetup runtime modes", function () {
 
     it("recovers the persisted channel signer after a restart in worker mode", async function () {
         await assertPersistedSignerRecovered(true);
+    });
+
+    it("refuses a persisted channel restarted with another signer's key in worker mode", async function () {
+        await assertPersistedPartitionRefusesAnotherSigner(true);
     });
 
     it("fails a corrupt persisted partition with its location and resets it only on request in worker mode", async function () {

@@ -144,8 +144,16 @@ export async function setupP2pRuntime<
             signerSecret: runtimeSignerSecret,
             existingPartition: "allow"
         });
-        runtimeSignerSecret = preparedPartition.signerSecret;
         await preparedPartition.databaseHandle.close();
+        // a caller's own key never signs as the partition's stored signer
+        if (
+            options?.signerSecret !== undefined &&
+            preparedPartition.signerSecret !== options.signerSecret
+        )
+            throw new Error(
+                "The channel's persisted partition belongs to another signer"
+            );
+        runtimeSignerSecret = preparedPartition.signerSecret;
     }
 
     const trimmedSignerSecret = runtimeSignerSecret.trim();

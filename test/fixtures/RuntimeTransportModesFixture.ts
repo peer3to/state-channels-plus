@@ -461,33 +461,19 @@ export async function assertGeneratedHostSigner(): Promise<void> {
     }
 }
 
-/** a persisted runtime restarted with a new candidate secret keeps the channel's signer */
+/** a persisted runtime restarted with no secret signs as the channel's stored signer */
 export async function assertPersistedSignerRecovered(
     runSdkInThread: boolean
 ): Promise<void> {
-    const location = await mkdtemp(path.join(tmpdir(), "scp-persistence-"));
-    const { scm, deployedStateMachine, deployStateMachine, setupOptions } =
-        await prepareRuntimeSetup({ runSdkInThread, vmDedicatedThread: false });
-    const channelId = ethers.hexlify(ethers.randomBytes(32));
-    const startInChannel = () =>
-        EvmStateMachine.p2pSetup(
-            scm,
-            deployedStateMachine,
-            deployStateMachine,
-            {
-                ...setupOptions,
-                persistence: { location },
-                channelId,
-                signerSecret: ethers.Wallet.createRandom().privateKey
-            }
+    await withPersistedChannel(runSdkInThread, async (startInChannel) => {
+        const first = await startInChannel(
+            ethers.Wallet.createRandom().privateKey
         );
-    try {
-        const first = await startInChannel();
         const persistedAddress = await first.chainSigner
             .getAddress()
             .finally(() => first.dispose());
 
-        const second = await startInChannel();
+        const second = await startInChannel(undefined);
         try {
             expect(await second.chainSigner.getAddress()).to.equal(
                 persistedAddress
@@ -495,6 +481,62 @@ export async function assertPersistedSignerRecovered(
         } finally {
             await second.dispose();
         }
+    });
+}
+
+/** a persisted runtime restarted with another explicit secret is refused */
+export async function assertPersistedPartitionRefusesAnotherSigner(
+    runSdkInThread: boolean
+): Promise<void> {
+    await withPersistedChannel(runSdkInThread, async (startInChannel) => {
+        const first = await startInChannel(
+            ethers.Wallet.createRandom().privateKey
+        );
+        await first.dispose();
+
+        let refusal: unknown;
+        try {
+            const second = await startInChannel(
+                ethers.Wallet.createRandom().privateKey
+            );
+            await second.dispose();
+        } catch (error) {
+            refusal = error;
+        }
+        expect(refusal).to.be.instanceOf(Error);
+        expect((refusal as Error).message).to.contain(
+            "belongs to another signer"
+        );
+    });
+}
+
+/** runs `body` with a setup that starts a persistent runtime in one channel and location */
+async function withPersistedChannel(
+    runSdkInThread: boolean,
+    body: (
+        startInChannel: (
+            signerSecret: string | undefined
+        ) => ReturnType<typeof EvmStateMachine.p2pSetup>
+    ) => Promise<void>
+): Promise<void> {
+    const location = await mkdtemp(path.join(tmpdir(), "scp-persistence-"));
+    const { scm, deployedStateMachine, deployStateMachine, setupOptions } =
+        await prepareRuntimeSetup({ runSdkInThread, vmDedicatedThread: false });
+    const channelId = ethers.hexlify(ethers.randomBytes(32));
+    try {
+        await body((signerSecret) =>
+            EvmStateMachine.p2pSetup(
+                scm,
+                deployedStateMachine,
+                deployStateMachine,
+                {
+                    ...setupOptions,
+                    persistence: { location },
+                    channelId,
+                    signerSecret
+                }
+            )
+        );
     } finally {
         await rm(location, { recursive: true, force: true });
     }
