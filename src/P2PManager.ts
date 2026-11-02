@@ -530,14 +530,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
             this.isInitialSyncDeadlineHeld = true;
             return;
         }
-        // no participant present: a restored head goes on from local state
-        if (stateManager.stateApplicationService.holdsRestoredHead) {
-            this.logger.info(
-                "No participant served the restart sync within its window; resuming from the restored head"
-            );
-            this.settleInitialSync(true);
-            return;
-        }
         this.logger.warn(
             "No participant could serve the initial sync within its window; aborting"
         );

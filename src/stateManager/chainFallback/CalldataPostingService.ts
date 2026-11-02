@@ -1,5 +1,6 @@
 import type StateManager from "../StateManager";
 import Clock from "@/Clock";
+import type { Block } from "@/models";
 
 import { timeoutWaitTime } from "@/types";
 import { Hash } from "@/types/types";
@@ -23,6 +24,17 @@ export default class CalldataPostingService {
         logger: Logger
     ) {
         this.logger = logger.child({ component: "CalldataPosting" });
+    }
+
+    /** Runs `maybePostBlockOnChain` for my authored `block` in `delaySeconds`. */
+    public schedulePost(block: Block, delaySeconds: number): void {
+        this.stateManager.timeoutManager.scheduleTask(
+            () => {
+                this.maybePostBlockOnChain(block.hash);
+            },
+            delaySeconds * 1000,
+            `maybePostBlockOnChain - block ${block.height} - fork ${block.forkId}`
+        );
     }
 
     public maybePostBlockOnChain(blockHash: Hash) {

@@ -29,6 +29,7 @@ import BlockValidationStrategy from "./validationStrategy/BlockValidationStrateg
 import CalldataCommittedStrategy from "./validationStrategy/CalldataCommittedStrategy";
 import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidationStrategy";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
+import Clock from "@/Clock";
 import DisputeManager from "@/disputeManager";
 import { EventHandler } from "@/eventHandlers/EventHandler";
 import { createBusPublishingHooks, EventBus } from "@/events/EventBus";
@@ -455,7 +456,7 @@ class StateManager<
         this.disputeManager.setChannelId(NULL);
         this.eventSyncService.setChannelId(NULL);
         await this.stateChannelEventListener.clearChannelId();
-        // the attempt's partition goes; deleted when it holds no record
+        // the attempt's partition is closed, never deleted
         await this.bindPersistence(NULL);
     }
 
@@ -518,16 +519,16 @@ class StateManager<
     /**
      * Reinstalls the persisted head (the head fork's latest block, or its
      * genesis) through the normal install, held at `SYNCED` until the restart
-     * sync settles. Nothing persisted -> nothing to restore; a head this
-     * process already installed is live, not restored.
+     * sync settles, then reconciles it with the chain: refills the local
+     * mirror, clears a dispute marker whose dispute never landed and re-arms
+     * the calldata post of an own latest block. Nothing persisted -> nothing
+     * to restore; a head this process already installed is live, not restored.
      */
     private async restoreLocalHead(): Promise<void> {
         const forkId = this.storage.stateSnapshots.getHeadForkId();
         if (forkId === undefined || this.forkId !== NULL) return;
-        const head = this.storage.getPredecessor(
-            forkId,
-            this.storage.blocks.getLatestBlock(forkId)
-        );
+        const latestBlock = this.storage.blocks.getLatestBlock(forkId);
+        const head = this.storage.getPredecessor(forkId, latestBlock);
         if (!head)
             throw new Error(
                 `Persisted head fork ${forkId} has no snapshot and state`
@@ -544,6 +545,54 @@ class StateManager<
                 ),
             { taskName: "restoreLocalHead" }
         );
+
+        // the local mirror of the chain's snapshot and dispute windows is
+        // empty after a restart
+        const spectate = this.p2pManager.localRpc.spectateService;
+        await spectate.fetchAndPersistOnChainSnapshot(this.channelId);
+        const disputedForkIds = this.storage.disputes.getDisputedForkIds();
+        const forkIds = [...new Set([forkId, ...disputedForkIds])];
+        const disputeWindows =
+            await spectate.fetchAndPersistOnChainDisputeWindows(
+                this.channelId,
+                forkIds
+            );
+        // a marker whose dispute never landed goes, unless a sent, unmined
+        // transaction may still be that dispute's upload
+        if (
+            disputedForkIds.length &&
+            (await this.signer.getNonce("pending")) <=
+                (await this.signer.getNonce("latest"))
+        ) {
+            for (const [index, disputedForkId] of forkIds.entries()) {
+                const posted = disputeWindows[index].evidence.hasPosted.some(
+                    (address) =>
+                        getChecksumAddress(address) ===
+                        this.checksumSignerAddress
+                );
+                if (
+                    !this.storage.disputes.didIDispute(disputedForkId) ||
+                    posted
+                )
+                    continue;
+                this.logger.info(
+                    "Clearing a dispute marker that never landed",
+                    {
+                        forkId: disputedForkId
+                    }
+                );
+                this.storage.disputes.storeDisputedFork(disputedForkId, false);
+            }
+        }
+
+        // the calldata post of an own block died with the process
+        if (latestBlock?.author === this.signerAddress) {
+            const elapsed = Clock.getTimeInSeconds() - latestBlock.timestamp;
+            this.calldataPostingService.schedulePost(
+                latestBlock,
+                Math.max(0, this.timeConfig.agreementTime - elapsed)
+            );
+        }
     }
 }
 export default StateManager;

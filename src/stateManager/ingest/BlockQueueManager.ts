@@ -238,6 +238,9 @@ export default class BlockQueueManager {
     }
 
     public async tryExecuteFromQueue(forkId?: ForkId): Promise<void> {
+        // a held restored head executes and co-signs nothing; its release
+        // drains the queue through scheduleFollowUps
+        if (this.stateManager.stateApplicationService.holdsRestoredHead) return;
         const activeForkId = forkId ?? this.stateManager.forkId;
         // A scheduled forkId is not authority - a fork transition may have
         // landed since; the entries drain via the post-transition call.

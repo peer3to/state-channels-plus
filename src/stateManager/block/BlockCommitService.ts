@@ -168,12 +168,9 @@ export default class BlockCommitService {
 
         // step 11 - maybe post block on chain
         if (block.author === sm.signerAddress) {
-            sm.timeoutManager.scheduleTask(
-                () => {
-                    sm.calldataPostingService.maybePostBlockOnChain(block.hash);
-                },
-                sm.timeConfig.agreementTime * 1000,
-                `maybePostBlockOnChain - block ${block.height} - fork ${block.forkId}`
+            sm.calldataPostingService.schedulePost(
+                block,
+                sm.timeConfig.agreementTime
             );
         }
 

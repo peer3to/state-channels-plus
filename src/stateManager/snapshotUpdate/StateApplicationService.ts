@@ -178,8 +178,9 @@ export default class StateApplicationService {
 
     /**
      * Ends the restart hold: derives the status and arms the turn and the
-     * participant timeout from the restored head. A sync install or a block
-     * commit since the restore already did both, so it then does nothing.
+     * participant timeout from the restored head. A sync install since the
+     * restore already did both, so it then only drains the queue, whose
+     * drain the hold refused; an abort (`OPENED`) arms nothing.
      */
     public releaseRestoredHead(): void {
         const hold = this.restoredHold;
@@ -191,8 +192,15 @@ export default class StateApplicationService {
             sm.forkId !== hold.forkId ||
             sm.storage.blocks.getLatestBlockHeight(hold.forkId) !==
                 hold.latestBlockHeight
-        )
+        ) {
+            if (sm.status !== Status.OPENED)
+                sm.timeoutManager.scheduleTask(
+                    () => sm.blockQueueManager.tryExecuteFromQueue(sm.forkId),
+                    0,
+                    "tryExecuteFromQueue"
+                );
             return;
+        }
         this.applyParticipationStatus(
             hold.prepared.participants,
             hold.prepared.listedOnChain
