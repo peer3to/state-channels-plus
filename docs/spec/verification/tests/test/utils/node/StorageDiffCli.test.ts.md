@@ -5,12 +5,13 @@ Exercises: [storageDiffCli.ts](../../../../../implementation/source/src/utils/no
 
 ## Overview
 
-Direct calls to `parseStorageDiffArgs` with flag sets, and two runs of the real script as a child process against an isolated anvil test chain: one serves catch-up, one must fail at startup.
+Direct calls to `parseStorageDiffArgs` with flag sets (one with and one without the Asset Hub URL, checking the block source it builds), and two runs of the real script as a child process against an isolated anvil test chain: one serves catch-up, one must fail at startup.
 
 ## Tests
 
 - `passes --max-peer-buffered-bytes on as the peer buffer limit`: UNIT-TEST-SDS-CLI-1-8BN5XT.P1
 - `leaves the peer buffer limit unset without its flag`: UNIT-TEST-SDS-CLI-1-8BN5XT.P3
+- `lists backfill blocks through the Asset Hub child trie with --asset-hub-substrate-url, and leaves the default without it`: UNIT-TEST-SDS-CLI-1-8BN5XT.P19
 - `refuses a flag value that is not a non-negative integer`: UNIT-TEST-SDS-CLI-1-8BN5XT.P9
 - `passes each limit flag on as its service option`: UNIT-TEST-SDS-CLI-1-8BN5XT.P14
 - `passes every --allow-origin on as an allowed origin`: UNIT-TEST-SDS-CLI-1-8BN5XT.P15

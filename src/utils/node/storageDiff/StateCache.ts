@@ -55,10 +55,16 @@ export class StateCache {
         AccountAddress,
         Map<StorageSlot, StorageWord>
     >();
+    // Accounts whose every written slot is cached: a slot not in the map was
+    // never written, so it reads as zero.
+    private readonly complete = new Set<AccountAddress>();
 
     get(field: StateField): StateValue | undefined {
         if (field.kind === "slot") {
-            return this.slots.get(field.address)?.get(field.slot);
+            return (
+                this.slots.get(field.address)?.get(field.slot) ??
+                (this.complete.has(field.address) ? ZERO_WORD : undefined)
+            );
         }
         return this.scalars.get(scalarKey(field.kind, field.address));
     }
@@ -76,13 +82,62 @@ export class StateCache {
     clear(): void {
         this.scalars.clear();
         this.slots.clear();
+        this.complete.clear();
     }
 
-    /** Drops every cached field of `address`. */
+    isComplete(address: AccountAddress): boolean {
+        return this.complete.has(address);
+    }
+
+    /** How many cached slots of `address` hold a non-zero word. */
+    nonZeroSlots(address: AccountAddress): number {
+        let count = 0;
+        for (const word of this.slots.get(address)?.values() ?? [])
+            if (BigInt(word) !== 0n) count++;
+        return count;
+    }
+
+    /** Stops treating `address` as complete; what is cached stays. */
+    markLazy(address: AccountAddress): void {
+        this.complete.delete(address);
+    }
+
+    /**
+     * Makes `account` the complete state of `address`: every slot it ever
+     * wrote, and its balance, nonce and code. Replaces what was cached.
+     */
+    setComplete(
+        address: AccountAddress,
+        account: { balance: string; nonce: number; code: string },
+        storage: Record<StorageSlot, StorageWord>
+    ): void {
+        this.scalars.set(scalarKey("balance", address), account.balance);
+        this.scalars.set(scalarKey("nonce", address), account.nonce);
+        this.scalars.set(scalarKey("code", address), account.code);
+        this.slots.set(address, new Map(Object.entries(storage)));
+        this.complete.add(address);
+    }
+
+    /** What is cached of `address`, in the shape of a record's `post`. */
+    accountOf(address: AccountAddress): AccountDiff {
+        const account: AccountDiff = {};
+        const balance = this.scalars.get(scalarKey("balance", address));
+        const nonce = this.scalars.get(scalarKey("nonce", address));
+        const code = this.scalars.get(scalarKey("code", address));
+        if (balance !== undefined) account.balance = balance as string;
+        if (nonce !== undefined) account.nonce = nonce as number;
+        if (code !== undefined) account.code = code as string;
+        const slots = this.slots.get(address);
+        if (slots) account.storage = Object.fromEntries(slots);
+        return account;
+    }
+
+    /** Drops every cached field of `address`; it is no longer complete. */
     forget(address: AccountAddress): void {
         for (const kind of ["balance", "nonce", "code"])
             this.scalars.delete(scalarKey(kind, address));
         this.slots.delete(address);
+        this.complete.delete(address);
     }
 
     /** Moves cached fields to the state after `change`. */
@@ -103,7 +158,8 @@ export class StateCache {
             }
             for (const [slot, word] of Object.entries(account.storage ?? {})) {
                 const cached = this.slots.get(address);
-                if (cached?.has(slot)) cached.set(slot, word);
+                if (cached && (cached.has(slot) || this.complete.has(address)))
+                    cached.set(slot, word);
             }
         }
     }

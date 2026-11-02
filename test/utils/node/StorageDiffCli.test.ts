@@ -1,6 +1,7 @@
 import { ScriptProcess } from "../../fixtures/node/ScriptProcess";
 import { StorageDiffClient } from "../../fixtures/node/StorageDiffClient";
 import { withStorageDiffUpstream } from "../../fixtures/node/StorageDiffSession";
+import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
 import {
     parseStorageDiffArgs,
     UPSTREAM_URL_ENV
@@ -26,6 +27,20 @@ describe("storage diff service flags", function () {
         ]);
 
         expect(options.maxPeerBufferedBytes).to.equal(undefined);
+    });
+
+    it("lists backfill blocks through the Asset Hub child trie with --asset-hub-substrate-url, and leaves the default without it", function () {
+        const assetHub = parseStorageDiffArgs([
+            "--upstream",
+            "ws://127.0.0.1:1",
+            "--asset-hub-substrate-url",
+            "ws://127.0.0.1:2"
+        ]);
+        const plain = parseStorageDiffArgs(["--upstream", "ws://127.0.0.1:1"]);
+
+        expect(assetHub.backfillBlocks).to.be.instanceOf(ChildTrieBlockSource);
+        expect(plain.backfillBlocks).to.equal(undefined);
+        assetHub.backfillBlocks!.close();
     });
 
     it("refuses a flag value that is not a non-negative integer", function () {

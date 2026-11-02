@@ -13,6 +13,7 @@ import {
     type SubscriptionId
 } from "./blockStorageDiff";
 import { StorageDiffRpcMethods } from "./StorageDiffRpcMethods";
+import type { StorageDiffDelayNotice } from "../../storageDiff/storageDiffWire";
 import WebSocket, { WebSocketServer, type AddressInfo } from "ws";
 
 /** `scp_disconnect` reason for a peer cut for falling behind. */
@@ -46,6 +47,12 @@ export interface StorageDiffPeer {
     inFlight: number;
     /** Cut for falling behind; gets nothing more. */
     closing: boolean;
+    /** Accounts whose snapshot this peer has been sent. */
+    snapshotted: Set<AccountAddress>;
+    /** Accounts a subscription reply promised as `ready` whose snapshot is not sent yet. */
+    promisedReady: Set<AccountAddress>;
+    /** Per subscription, run once the reply that returned its id is sent. */
+    afterReply: Map<SubscriptionId, () => void>;
 }
 
 /** What the peer hub uses of the service whose peers it serves. */
@@ -179,7 +186,10 @@ export class PeerHub {
             nextSubscription: 0,
             held: new Map(),
             inFlight: 0,
-            closing: false
+            closing: false,
+            snapshotted: new Set(),
+            promisedReady: new Set(),
+            afterReply: new Map()
         };
         const methods = this.createMethods(peer);
         this.peers.set(socket, peer);
@@ -260,6 +270,16 @@ export class PeerHub {
                 peer.inFlight--;
             }
             if (!notification) answer({ jsonrpc: "2.0", id, result });
+            // only the reply that carries the id may release its job; another
+            // request's reply could land before this one is sent
+            const subscription = isObject(result)
+                ? result.subscription
+                : undefined;
+            if (this.peers.has(socket) && typeof subscription === "string") {
+                const job = peer.afterReply.get(subscription);
+                peer.afterReply.delete(subscription);
+                job?.();
+            }
         } catch (error) {
             const code = (error as { code?: unknown }).code;
             if (notification) return;
@@ -274,7 +294,7 @@ export class PeerHub {
     // The limit applies to the socket's aggregate buffered bytes, so a
     // catch-up reply the peer has not drained counts as well.
     // A peer that cannot keep up recovers with catch-up, not lost records.
-    private dropIfLagging(peer: StorageDiffPeer): void {
+    dropIfLagging(peer: StorageDiffPeer): void {
         if (peer.socket.bufferedAmount > this.maxPeerBufferedBytes) {
             this.dropLagging(peer);
         }
@@ -296,5 +316,25 @@ export class PeerHub {
         socket.close(SEND_BUFFER_OVERFLOW_CLOSE_CODE, SEND_BUFFER_OVERFLOW);
         const grace = setTimeout(() => socket.terminate(), PEER_CLOSE_GRACE_MS);
         socket.once("close", () => clearTimeout(grace));
+    }
+
+    pushDelay(peer: StorageDiffPeer, notice: StorageDiffDelayNotice): void {
+        this.send(peer.socket, {
+            jsonrpc: "2.0",
+            method: "scp_delayed",
+            params: notice
+        });
+        this.dropIfLagging(peer);
+    }
+
+    /** Every address some open subscription asks for. */
+    subscribedAddresses(): AccountAddress[] {
+        const addresses = new Set<AccountAddress>();
+        for (const peer of this.peers.values()) {
+            for (const list of peer.subscriptions.values()) {
+                for (const address of list) addresses.add(address);
+            }
+        }
+        return [...addresses];
     }
 }

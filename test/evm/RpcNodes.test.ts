@@ -19,6 +19,7 @@ import {
     assertDestroyRejectsInFlightRead,
     assertDestroyRejectsWaitingRead,
     assertNodeOnAnotherChainRefused,
+    assertNonEthereumNodeOpensWithoutChainId,
     assertSilentNodeMarkedDeadAndReadFailsOver,
     assertStartupDoesNotWaitForASilentNode,
     assertStopReconnectingRejectsWaitingRead,
@@ -86,6 +87,10 @@ describe("RpcNodeProvider", () => {
 
     it("refuses a node that serves another chain than the first connected node", async () => {
         await assertNodeOnAnotherChainRefused();
+    });
+
+    it("opens a socket to a node that serves no Ethereum RPC without asking its chain id", async () => {
+        await assertNonEthereumNodeOpensWithoutChainId();
     });
 });
 

@@ -1,6 +1,10 @@
 // @spec-test-coverage-ignore: private nodes behind cuttable proxies for the RPC node provider cases; declarations live in RpcNodes.test.ts
 import { withIsolatedHardhatNode } from "./IsolatedHardhatNode";
 import { RpcNodeProxy } from "./RpcNodeProxy";
+import {
+    RECORDED_ACCOUNT_INFO,
+    withSubstrateNode
+} from "./SubstrateChildTrieNode";
 import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import RpcNodeProvider from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import { createRuntimeChainContext } from "@/evm/p2pRuntime/RuntimeChainContext";
@@ -874,6 +878,46 @@ export async function assertNodeOnAnotherChainRefused(): Promise<void> {
             { chainId: OTHER_CHAIN_ID }
         );
     });
+}
+
+export async function assertNonEthereumNodeOpensWithoutChainId(): Promise<void> {
+    await withSubstrateNode(
+        {
+            address: "0x" + "11".repeat(20),
+            changes: [],
+            deployed: 0,
+            tipNumber: 7,
+            tipHash: () => "0xtip",
+            info: RECORDED_ACCOUNT_INFO,
+            entries: 0
+        },
+        async (substrate) => {
+            const logger = quietLogger();
+            const ethereumNode = new RpcNodeProvider(substrate.url, logger);
+            const node = new RpcNodeProvider(
+                substrate.url,
+                logger,
+                {},
+                { ethereum: false }
+            );
+            try {
+                expect(await node.firstAttempt).to.equal(undefined);
+                expect(await node.send("chain_getBlockHash", [7])).to.equal(
+                    "0xtip"
+                );
+                // an Ethereum node provider never opens to it: no chain id
+                await waitFor(
+                    () => (substrate.requests().eth_chainId ?? 0) > 0
+                );
+                expect(ethereumNode.isConnected).to.equal(false);
+                expect(node.isConnected).to.equal(true);
+            } finally {
+                node.destroy();
+                ethereumNode.destroy();
+                logger.dispose();
+            }
+        }
+    );
 }
 
 export async function assertDestroyRejectsInFlightRead(): Promise<void> {

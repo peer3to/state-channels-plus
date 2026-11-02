@@ -1,22 +1,32 @@
+import ABackfillBlockSource, {
+    ChainMovedError,
+    type BackfillUpstream
+} from "./backfillBlocks/ABackfillBlockSource";
+import { ListedBlockSource } from "./backfillBlocks/ListedBlockSource";
 import {
+    bloomContains,
     environmentOf,
     filterRecord,
     invalidParams,
     LIMIT_EXCEEDED_ERROR_CODE,
     NOT_RETAINED_ERROR_CODE,
     parseHeader,
+    parseLogs,
     PRUNED_ERROR_CODE,
     rpcError,
     type AccountAddress,
     type AccountDiffs,
     type BlockEnvironment,
     type BlockHeader,
+    type RpcBlock,
+    type SnapshotStatus,
     type StagedBlock,
+    type StorageSlot,
     type SubscribeResult,
     type SubscriptionId
 } from "./blockStorageDiff";
 import { PeerHub, type StorageDiffPeer } from "./PeerHub";
-import { type StateRequest } from "./rpcParams";
+import { type ParsedBlockSelector, type StateRequest } from "./rpcParams";
 import {
     fieldKey,
     normalizeBalance,
@@ -32,8 +42,13 @@ import {
     touchesOf,
     type BlockTouches
 } from "./traceDiffs";
+import {
+    LearnedBackstop,
+    SDK_RPC_DEADLINE_MS
+} from "../../storageDiff/LearnedBackstop";
 import type {
     StorageDiffCatchUp,
+    StorageDiffDelayNotice,
     StorageDiffState
 } from "../../storageDiff/storageDiffWire";
 import RpcNodeProvider from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
@@ -69,6 +84,20 @@ const TRACE_OPTIONS = {
 
 const CALL_TRACE_OPTIONS = { tracer: "callTracer" };
 
+/** Rounds a backfill may take to catch up with a head that keeps moving. */
+const BACKFILL_ROUNDS = 100;
+/** Times a backfill starts over after a reorg moved blocks under it. */
+const BACKFILL_RESTARTS = 5;
+/** Blocks one backfill traces at once. */
+const BACKFILL_TRACES_AT_ONCE = 8;
+/** JSON-RPC code of an upstream that does not know a method. */
+const METHOD_NOT_FOUND_CODE = -32601;
+/**
+ * What Asset Hub's eth-rpc answers a read below the block its contracts
+ * pallet arrived at: there is no code there.
+ */
+const NOT_SUPPORTED_AT_BLOCK = "is not supported at the queried block";
+
 /** Identifies one state fetch in flight: a `StateField` as text. */
 type FlightKey = string;
 
@@ -81,6 +110,50 @@ type WatchedAccount = {
     /** Subscriptions naming it and requests reading it now; it is never dropped while any are. */
     holders: number;
 };
+
+/** A read held until the best head reaches `minBlock`; `end` lets it go. */
+interface HeadWaiter {
+    minBlock: bigint;
+    end: () => void;
+}
+
+/** What one contract's backfill cost and found. */
+export interface BackfillRecord {
+    address: AccountAddress;
+    /** Block the contract's code first appears at; undefined for an account without code. */
+    deployBlock?: string;
+    /** `eth_getCode` calls of the search for the deploy block. */
+    codeProbes: number;
+    /** `eth_getBlockByNumber` calls that listed the blocks. */
+    blockReads: number;
+    /** Child trie root reads that found the changed blocks. */
+    rootReads: number;
+    /** `debug_traceBlockByNumber` calls. */
+    traces: number;
+    /** Reads of the final balance, nonce, code and slot values. */
+    stateReads: number;
+    /** Blocks listed, and how many of them were traced. */
+    blocks: number;
+    tracedBlocks: number;
+    /** Slots found written. */
+    slots: number;
+    milliseconds: number;
+}
+
+/** A contract's state as the node reports it at one block. */
+interface BackfilledState {
+    balance: string;
+    nonce: number;
+    code: string;
+    /** The slots read, zero words left out. */
+    storage: Record<StorageSlot, string>;
+}
+
+/** The entry recount of one complete account: one at a time, the newest next. */
+interface Recount {
+    /** The newest block written since the running count started. */
+    next?: { block: StagedBlock; cached: number };
+}
 
 export interface StorageDiffServiceOptions {
     /** `ws://` or `wss://` upstream that serves `newHeads` and tracing. */
@@ -108,11 +181,23 @@ export interface StorageDiffServiceOptions {
     maxWatchedAddressesPerConnection?: number;
     /** Browser origins that may connect; a connection without an `Origin` header always may. */
     allowedOrigins?: string[];
+    /**
+     * Where a backfill learns which blocks to trace. Defaults to listing every
+     * block of the range, which suits dev chains.
+     */
+    backfillBlocks?: ABackfillBlockSource;
     logger: Logger;
 }
 
-/** The upstream answered a request with an error. */
-class UpstreamRequestError extends Error {}
+/** The upstream answered a request with an error; `code` is its JSON-RPC code. */
+class UpstreamRequestError extends Error {
+    readonly code?: number;
+
+    constructor(message: string, code?: number) {
+        super(message);
+        this.code = code;
+    }
+}
 
 /** The upstream did not answer a request in time. */
 class UpstreamTimeoutError extends Error {}
@@ -127,6 +212,19 @@ function isTransient(error: unknown): boolean {
         error instanceof UpstreamRequestError ||
         error instanceof UpstreamTimeoutError
     );
+}
+
+/**
+ * The JSON-RPC code of an upstream's error answer: ethers keeps the answer as
+ * `error`, or as `info.error` for a method it reads as unsupported.
+ */
+function rpcErrorCode(error: unknown): number | undefined {
+    const shaped = error as {
+        error?: { code?: unknown };
+        info?: { error?: { code?: unknown } };
+    };
+    const code = shaped?.error?.code ?? shaped?.info?.error?.code;
+    return typeof code === "number" ? code : undefined;
 }
 
 function describeError(error: unknown): string {
@@ -150,7 +248,12 @@ const noAncestor = () => new Error("Upstream chain shares no ancestor");
  * records, `scp_getContractStorageDiffs` replays retained ones,
  * `scp_getState` reads account and storage values at a retained block and
  * `scp_unsubscribe` ends a subscription. Records follow the best head and
- * roll back with it on a reorg.
+ * roll back with it on a reorg, and carry the logs of the subscribed
+ * addresses their header bloom matches. The first subscription to an account
+ * backfills its complete state from its history and pushes it as
+ * `scp_snapshot`; `scp_getBlock`, `scp_getTransaction` and
+ * `scp_getTransactionReceipt` answer from the retained blocks, and a read
+ * that names a block the head lacks waits for it until a learned backstop.
  * The upstream is one `RpcNodeProvider`: a lost socket is reconnected and its
  * requests sent again, and each new socket reconciles from the last canonical
  * record. A reorg or an upstream error answer or timeout during startup or
@@ -186,6 +289,22 @@ export class StorageDiffService {
     // State reads at the upstream now, and the ones waiting for a free place.
     private stateFetchesInFlight = 0;
     private readonly stateFetchWaiters: (() => void)[] = [];
+    // Accounts whose backfill found fewer entries than the chain holds: read lazily, not backfilled again.
+    private readonly lazyAccounts = new Set<AccountAddress>();
+    // Backfills in flight, one per account.
+    private readonly backfills = new Map<AccountAddress, Promise<void>>();
+    // Entry recounts in flight, one per account.
+    private readonly recounts = new Map<AccountAddress, Recount>();
+    private readonly backfillBlocks: ABackfillBlockSource;
+    // What backfill reads go through: the state fetch limit and the request timeout.
+    private readonly backfillUpstream: BackfillUpstream;
+    // Whether the upstream answers eth_getBlockReceipts; a method-not-found answer turns it off.
+    private blockReceiptsSupported = true;
+    // Reads waiting for the best head to reach the block their caller saw.
+    private readonly headWaiters = new Set<HeadWaiter>();
+    // How long such a read may wait when no event ends it: learned from how
+    // long a new head took to commit after the upstream announced it.
+    private readonly backstop = new LearnedBackstop(SDK_RPC_DEADLINE_MS);
     private readonly peerHub: PeerHub;
     // One serialized queue: reconciliation commits branches in order, and
     // subscriptions and catch-up reads see a consistent canonical history.
@@ -221,6 +340,14 @@ export class StorageDiffService {
             options.maxWatchedAddressesPerConnection ??
             DEFAULT_MAX_WATCHED_ADDRESSES_PER_CONNECTION;
         this.upstream = new RpcNodeProvider(options.upstreamUrl, this.logger);
+        this.backfillBlocks = options.backfillBlocks ?? new ListedBlockSource();
+        this.backfillUpstream = {
+            request: (method, params) =>
+                this.limitStateFetch(() => this.request(method, params)),
+            requestOn: (node, method, params) =>
+                this.limitStateFetch(() => this.request(method, params, node)),
+            logger: this.logger
+        };
         this.peerHub = new PeerHub({
             host: options.host ?? "127.0.0.1",
             port: options.port ?? DEFAULT_PORT,
@@ -315,7 +442,28 @@ export class StorageDiffService {
             this.hold(peer, addresses).catch(() => undefined);
             const id = "0x" + (++peer.nextSubscription).toString(16);
             peer.subscriptions.set(id, addresses);
-            return { subscription: id };
+            // after the reply: the peer learns the id before the snapshots
+            peer.afterReply.set(id, () => {
+                void this.enqueue(async () => {
+                    this.sendSnapshots(peer, addresses);
+                    for (const address of addresses)
+                        this.startBackfill(address);
+                });
+            });
+            const accounts = Object.fromEntries(
+                addresses.map((address): [AccountAddress, SnapshotStatus] => [
+                    address,
+                    this.lazyAccounts.has(address)
+                        ? "lazy"
+                        : this.stateCache.isComplete(address)
+                          ? "ready"
+                          : "syncing"
+                ])
+            );
+            for (const [address, status] of Object.entries(accounts))
+                if (status === "ready" && !peer.snapshotted.has(address))
+                    peer.promisedReady.add(address);
+            return { subscription: id, accounts };
         });
     }
 
@@ -367,15 +515,26 @@ export class StorageDiffService {
         }
     }
 
-    /** The environment of the best head. */
-    getHead(): BlockEnvironment {
-        return environmentOf(this.canonical[this.canonical.length - 1]);
-    }
-
     private async readDiffs(
         addresses: AccountAddress[],
         fromBlock: bigint
     ): Promise<StorageDiffCatchUp> {
+        // Logs of blocks staged before anyone subscribed to these addresses,
+        // fetched outside the queue so a catch-up never holds back the head.
+        const selected = this.canonical.filter(
+            (record) => BigInt(record.number) >= fromBlock
+        );
+        await this.retryTransient(
+            () =>
+                Promise.all(
+                    selected.map((block) =>
+                        this.limitStateFetch(() =>
+                            this.attachLogs(block, addresses)
+                        )
+                    )
+                ),
+            "Retrying the log fetch"
+        );
         return await this.enqueue(async () => {
             const best = this.canonical[this.canonical.length - 1];
             const head = BigInt(best.number);
@@ -389,10 +548,21 @@ export class StorageDiffService {
                     "Requested block has been pruned"
                 );
             }
+            const blocks = this.canonical.filter(
+                (record) => BigInt(record.number) >= fromBlock
+            );
+            // a block staged since the fetch above holds only the logs of
+            // the addresses subscribed at its staging
+            for (const block of blocks) {
+                await this.retryTransient(
+                    () => this.attachLogs(block, addresses),
+                    "Retrying the log fetch"
+                );
+            }
             return {
-                records: this.canonical
-                    .filter((record) => BigInt(record.number) >= fromBlock)
-                    .map((record) => filterRecord(record, addresses)),
+                records: blocks.map((record) =>
+                    filterRecord(record, addresses)
+                ),
                 head: environment
             };
         });
@@ -426,6 +596,72 @@ export class StorageDiffService {
                 accounts: this.accountsOf(requests, fields, scratch)
             };
         });
+    }
+
+    /**
+     * A retained block as the upstream returned it, with full or hashed
+     * transactions; null when the block is not retained.
+     */
+    async getBlock(
+        selector: ParsedBlockSelector,
+        full: boolean,
+        minBlock?: bigint
+    ): Promise<RpcBlock | null> {
+        await this.reachHead(minBlock);
+        const record =
+            selector.kind === "latest"
+                ? this.canonical[this.canonical.length - 1]
+                : this.canonical.find((candidate) =>
+                      selector.kind === "hash"
+                          ? candidate.hash === selector.hash
+                          : BigInt(candidate.number) === selector.number
+                  );
+        if (!record) return null;
+        if (full) return record.raw;
+        return {
+            ...record.raw,
+            transactions: record.raw.transactions.map(
+                (transaction) => (transaction as { hash: string }).hash
+            )
+        };
+    }
+
+    /** A transaction of a retained block, as the upstream returned it. */
+    async getTransaction(hash: string, minBlock?: bigint): Promise<unknown> {
+        await this.reachHead(minBlock);
+        return this.findTransaction(hash)?.transaction ?? null;
+    }
+
+    /**
+     * The receipt of a transaction of a retained block. The block's receipts
+     * are fetched from the upstream once, on the first read of any of them.
+     */
+    async getTransactionReceipt(
+        hash: string,
+        minBlock?: bigint
+    ): Promise<unknown> {
+        await this.reachHead(minBlock);
+        const found = this.findTransaction(hash);
+        if (!found) return null;
+        const { block, transaction } = found;
+        block.receipts ??= this.fetchReceipts(block).catch((error) => {
+            block.receipts = undefined;
+            throw error;
+        });
+        const receipts = await block.receipts;
+        return (
+            receipts.find(
+                (receipt) =>
+                    (receipt as { transactionHash?: string })
+                        .transactionHash === transaction.hash
+            ) ?? null
+        );
+    }
+
+    /** The environment of the best head, once it reaches `minBlock` if one is named. */
+    async getHead(minBlock?: bigint): Promise<BlockEnvironment> {
+        await this.reachHead(minBlock);
+        return environmentOf(this.canonical[this.canonical.length - 1]);
     }
 
     private async open(): Promise<void> {
@@ -477,11 +713,15 @@ export class StorageDiffService {
     }
 
     /**
-     * One upstream request. An error answer becomes `UpstreamRequestError`,
-     * and an answer that takes longer than the request timeout (a reconnect
+     * One upstream request, or one to `node`. An error answer becomes
+     * `UpstreamRequestError`, and an answer that takes longer than the request timeout (a reconnect
      * included) `UpstreamTimeoutError`: both are retried.
      */
-    private async request(method: string, params: unknown[]): Promise<unknown> {
+    private async request(
+        method: string,
+        params: unknown[],
+        node: RpcNodeProvider = this.upstream
+    ): Promise<unknown> {
         let timer: ReturnType<typeof setTimeout> | undefined;
         const expired = new Promise<never>((_, reject) => {
             timer = setTimeout(
@@ -494,9 +734,12 @@ export class StorageDiffService {
         });
         try {
             return await Promise.race([
-                this.upstream.send(method, params).catch((error: unknown) => {
+                node.send(method, params).catch((error: unknown) => {
                     if (this.stopping.signal.aborted) throw error;
-                    throw new UpstreamRequestError(describeError(error));
+                    throw new UpstreamRequestError(
+                        describeError(error),
+                        rpcErrorCode(error)
+                    );
                 }),
                 expired
             ]);
@@ -567,6 +810,17 @@ export class StorageDiffService {
         // Cached values follow the chain: back over the orphans, then forward.
         if (below || restarts) {
             this.stateCache.clear();
+            this.lazyAccounts.clear();
+            // nothing is complete now: peers get new snapshots after new backfills
+            for (const peer of this.peerHub.peers.values()) {
+                this.noteSnapshotsDelayed(peer, [
+                    ...peer.snapshotted,
+                    ...peer.promisedReady
+                ]);
+                peer.snapshotted.clear();
+            }
+            for (const address of this.peerHub.subscribedAddresses())
+                this.startBackfill(address);
         } else {
             for (let i = canonical.length - 1; i > ancestor; i--) {
                 this.stateCache.applyBackward(canonical[i]);
@@ -575,9 +829,20 @@ export class StorageDiffService {
         canonical.splice(restarts ? 0 : ancestor + 1);
         canonical.push(...staged);
         const added = below && !restarts ? staged.slice(1) : staged;
-        for (const record of added) this.stateCache.applyForward(record);
+        for (const record of added) {
+            this.stateCache.applyForward(record);
+            // complete accounts the block's trace names, with the entries the
+            // cache holds after it: a trace can name an account yet omit its write
+            for (const address of Object.keys(record.touches))
+                if (this.stateCache.isComplete(address))
+                    this.recountEntries(address, {
+                        block: record,
+                        cached: this.stateCache.nonZeroSlots(address)
+                    });
+        }
         canonical.splice(0, Math.max(0, canonical.length - this.retention));
         for (const record of added) this.peerHub.publish(record);
+        this.endReachedWaits();
     }
 
     private wake(): void {
@@ -587,12 +852,15 @@ export class StorageDiffService {
         }
         if (this.wakeQueued || this.stopping.signal.aborted) return;
         this.wakeQueued = true;
+        const woke = Date.now();
         this.enqueue(async () => {
             this.wakeQueued = false;
             await this.retryTransient(
                 () => this.reconcileHead(),
                 "Retrying head reconciliation"
             );
+            // how long a new head took to commit after it was announced
+            this.backstop.record(Date.now() - woke);
         }).catch((error) => this.fail(error));
     }
 
@@ -602,7 +870,7 @@ export class StorageDiffService {
         const byHash = typeof by === "string" && by !== "latest";
         const block = await this.request(
             byHash ? "eth_getBlockByHash" : "eth_getBlockByNumber",
-            [typeof by === "bigint" ? toQuantity(by) : by, false]
+            [typeof by === "bigint" ? toQuantity(by) : by, true]
         );
         if (block === null) {
             throw new HeadChangedError(`Block ${String(by)} is not known`);
@@ -627,16 +895,43 @@ export class StorageDiffService {
      * Those reads take `pre` values from the cache when the cache is at the
      * parent of the first block (`preFrom` "cache"), carried forward block by
      * block over what the staged blocks read; from the node at the parent
-     * block otherwise.
+     * block otherwise. Each record gets the logs of the subscribed addresses
+     * its bloom matches. A block that fails to stage is pushed as
+     * `trace-failed`.
      */
     private async stage(
         headers: BlockHeader[],
         preFrom: "cache" | "chain"
     ): Promise<StagedBlock[]> {
+        const progress: { header?: BlockHeader } = {};
+        try {
+            return await this.stageHeaders(headers, preFrom, progress);
+        } catch (error) {
+            // the peers waiting for this block, or one after it, need not wait for it
+            const { header } = progress;
+            if (header)
+                this.noteDelay({
+                    reason: "trace-failed",
+                    block: {
+                        number: toQuantity(header.number),
+                        hash: header.hash
+                    }
+                });
+            throw error;
+        }
+    }
+
+    /** `stage`'s work; `progress` names the block being staged. */
+    private async stageHeaders(
+        headers: BlockHeader[],
+        preFrom: "cache" | "chain",
+        progress: { header?: BlockHeader }
+    ): Promise<StagedBlock[]> {
         const records: StagedBlock[] = [];
         // the value each field has after the blocks staged so far
         const running = new Map<FieldKey, StateValue>();
         for (const header of headers) {
+            progress.header = header;
             let touches: BlockTouches = {};
             // the trace's values stand for a block in which no call frame failed
             let trusted: { pre: AccountDiffs; post: AccountDiffs } | undefined;
@@ -663,7 +958,11 @@ export class StorageDiffService {
                 pre: {},
                 post: {},
                 touches,
-                covered: new Set()
+                covered: new Set(),
+                raw: header.raw,
+                logs: [],
+                logsBloom: header.logsBloom,
+                loggedAddresses: new Set()
             };
             if (trusted) {
                 record.covered = "all";
@@ -674,6 +973,7 @@ export class StorageDiffService {
                     (record.covered as Set<AccountAddress>).add(address);
                 await this.readValues(record, addresses, preFrom, running);
             }
+            await this.attachLogs(record, this.peerHub.subscribedAddresses());
             records.push(record);
         }
         return records;
@@ -803,17 +1103,21 @@ export class StorageDiffService {
      * before are filled. Settles when they hold them all. Past the watched
      * limit the least recently used accounts nobody holds are dropped, with
      * their cached values; when those are too few, or `peer` would hold more
-     * than its share, nothing is held.
+     * than its share, nothing is held. Without a peer the hold is the
+     * service's own, outside every connection's share.
      */
     private hold(
-        peer: StorageDiffPeer,
+        peer: StorageDiffPeer | undefined,
         addresses: AccountAddress[]
     ): Promise<void> {
         const wanted = new Set(addresses);
         const added = [...wanted].filter(
-            (address) => !peer.held.has(address)
+            (address) => !peer?.held.has(address)
         ).length;
-        if (peer.held.size + added > this.maxWatchedAddressesPerConnection)
+        if (
+            peer &&
+            peer.held.size + added > this.maxWatchedAddressesPerConnection
+        )
             throw rpcError(
                 LIMIT_EXCEEDED_ERROR_CODE,
                 `A connection may hold at most ${this.maxWatchedAddressesPerConnection} addresses`
@@ -837,6 +1141,8 @@ export class StorageDiffService {
         for (const address of dropped) {
             this.watched.delete(address);
             this.stateCache.forget(address);
+            // a later watch tries its backfill again
+            this.lazyAccounts.delete(address);
         }
         for (const address of wanted) {
             let account = this.watched.get(address);
@@ -852,7 +1158,7 @@ export class StorageDiffService {
                 });
             }
             account.holders++;
-            peer.held.set(address, (peer.held.get(address) ?? 0) + 1);
+            peer?.held.set(address, (peer.held.get(address) ?? 0) + 1);
             // most recently used last
             this.watched.delete(address);
             this.watched.set(address, account);
@@ -863,10 +1169,14 @@ export class StorageDiffService {
     }
 
     /** Ends one hold of each of `addresses`; they stay watched until dropped. */
-    private release(peer: StorageDiffPeer, addresses: AccountAddress[]): void {
+    private release(
+        peer: StorageDiffPeer | undefined,
+        addresses: AccountAddress[]
+    ): void {
         for (const address of new Set(addresses)) {
             const account = this.watched.get(address);
             if (account) account.holders--;
+            if (!peer) continue;
             const holds = peer.held.get(address)! - 1;
             if (holds === 0) peer.held.delete(address);
             else peer.held.set(address, holds);
@@ -1097,6 +1407,701 @@ export class StorageDiffService {
             : Number(BigInt(value));
     }
 
+    /**
+     * Resolves once the best head is at `minBlock` or higher, or at the first
+     * of: the service saying the block is late (`noteDelay`: its tracing
+     * failed or is retried, or the upstream has not seen the block), the
+     * service closing, or the learned backstop for a service that hangs
+     * silently. A caller then answers with what the service holds.
+     */
+    private async reachHead(minBlock: bigint | undefined): Promise<void> {
+        if (
+            minBlock === undefined ||
+            BigInt(this.canonical[this.canonical.length - 1].number) >=
+                minBlock ||
+            this.stopping.signal.aborted
+        )
+            return;
+        await new Promise<void>((resolve) => {
+            const waiter: HeadWaiter = {
+                minBlock,
+                end: () => {
+                    clearTimeout(timer);
+                    this.headWaiters.delete(waiter);
+                    resolve();
+                }
+            };
+            const timer = setTimeout(waiter.end, this.backstop.boundMs);
+            this.headWaiters.add(waiter);
+            void this.checkUpstreamHas(waiter);
+        });
+    }
+
+    /** Ends the waits the best head has reached. */
+    private endReachedWaits(): void {
+        const head = BigInt(this.canonical[this.canonical.length - 1].number);
+        for (const waiter of [...this.headWaiters])
+            if (waiter.minBlock <= head) waiter.end();
+    }
+
+    /**
+     * Asks the upstream for its newest block number; when it has not seen the
+     * block `waiter` waits for, that block cannot arrive soon. A failed ask
+     * leaves the wait to the backstop.
+     */
+    private async checkUpstreamHas(waiter: HeadWaiter): Promise<void> {
+        try {
+            const answer = await this.request("eth_blockNumber", []);
+            if (!this.headWaiters.has(waiter) || typeof answer !== "string")
+                return;
+            if (BigInt(answer) >= waiter.minBlock) return;
+            const head = this.canonical[this.canonical.length - 1];
+            this.noteDelay({
+                reason: "upstream-behind",
+                requested: toQuantity(waiter.minBlock),
+                head: { number: head.number, hash: head.hash }
+            });
+        } catch {
+            // the backstop ends the wait
+        }
+    }
+
+    /**
+     * Ends the waits the notice makes pointless and pushes it to the
+     * subscribed peers. A block that fails to trace holds back every block
+     * after it, so it ends every wait; an upstream that has not seen block N
+     * ends the waits for N or later.
+     */
+    private noteDelay(notice: StorageDiffDelayNotice): void {
+        for (const waiter of [...this.headWaiters]) {
+            if (
+                notice.reason === "trace-failed" ||
+                (notice.reason === "upstream-behind" &&
+                    waiter.minBlock >= BigInt(notice.requested))
+            )
+                waiter.end();
+        }
+        for (const peer of this.peerHub.peers.values()) {
+            if (peer.closing || peer.subscriptions.size === 0) continue;
+            this.peerHub.pushDelay(peer, notice);
+        }
+    }
+
+    /**
+     * Adds to `block` the logs of those of `addresses` its bloom matches and
+     * that it has none fetched for, with one `eth_getLogs` by block hash. An
+     * address another fetch logged meanwhile keeps the logs it got.
+     */
+    private async attachLogs(
+        block: StagedBlock,
+        addresses: AccountAddress[]
+    ): Promise<void> {
+        const missing = addresses.filter(
+            (address) =>
+                !block.loggedAddresses.has(address) &&
+                bloomContains(block.logsBloom, address)
+        );
+        if (missing.length === 0) return;
+        const answer = await this.request("eth_getLogs", [
+            { blockHash: block.hash, address: missing }
+        ]);
+        const fresh = missing.filter(
+            (address) => !block.loggedAddresses.has(address)
+        );
+        const fetched = parseLogs(answer).filter((log) =>
+            fresh.includes(log.address)
+        );
+        for (const address of fresh) block.loggedAddresses.add(address);
+        block.logs = [...block.logs, ...fetched].sort((a, b) =>
+            Number(BigInt(a.logIndex) - BigInt(b.logIndex))
+        );
+    }
+
+    private findTransaction(
+        hash: string
+    ): { block: StagedBlock; transaction: { hash: string } } | undefined {
+        for (let i = this.canonical.length - 1; i >= 0; i--) {
+            const block = this.canonical[i];
+            const transaction = (
+                block.raw.transactions as { hash: string }[]
+            ).find((candidate) => candidate.hash.toLowerCase() === hash);
+            if (transaction) return { block, transaction };
+        }
+        return undefined;
+    }
+
+    /**
+     * One `eth_getBlockReceipts`, or one receipt read per transaction where
+     * the node does not know that method.
+     */
+    private async fetchReceipts(block: StagedBlock): Promise<unknown[]> {
+        const transactions = block.raw.transactions as { hash: string }[];
+        if (this.blockReceiptsSupported) {
+            try {
+                const receipts = await this.limitStateFetch(() =>
+                    this.request("eth_getBlockReceipts", [block.hash])
+                );
+                if (
+                    !Array.isArray(receipts) ||
+                    receipts.length !== transactions.length
+                )
+                    throw new Error("Receipts do not cover the block");
+                return receipts;
+            } catch (error) {
+                if (
+                    !(error instanceof UpstreamRequestError) ||
+                    error.code !== METHOD_NOT_FOUND_CODE
+                )
+                    throw error;
+                this.blockReceiptsSupported = false;
+            }
+        }
+        return await Promise.all(
+            transactions.map((transaction) =>
+                this.limitStateFetch(() =>
+                    this.request("eth_getTransactionReceipt", [
+                        transaction.hash
+                    ])
+                )
+            )
+        );
+    }
+
+    /** Starts rebuilding `address` from its history, unless that is done or running. */
+    private startBackfill(address: AccountAddress): void {
+        if (
+            this.backfills.has(address) ||
+            this.lazyAccounts.has(address) ||
+            this.stateCache.isComplete(address) ||
+            this.stopping.signal.aborted
+        )
+            return;
+        // the records keep its values while it runs, so it is never dropped meanwhile
+        let filled: Promise<void>;
+        try {
+            filled = this.hold(undefined, [address]);
+        } catch {
+            // every watched account is held: no room to rebuild this one
+            return;
+        }
+        const job = this.runBackfill(address, filled)
+            .catch((error) => {
+                if (this.stopping.signal.aborted) return;
+                this.logger.warn(
+                    "Backfill failed; the account is read lazily",
+                    {
+                        address,
+                        reason: this.failureReason(error)
+                    }
+                );
+                // tell the subscribers now, so they do not wait for a snapshot
+                return this.enqueue(async () => {
+                    for (const peer of this.peerHub.peers.values())
+                        if (!peer.closing)
+                            this.sendSnapshots(
+                                peer,
+                                [address],
+                                new Set([address])
+                            );
+                });
+            })
+            .finally(() => {
+                this.backfills.delete(address);
+                this.release(undefined, [address]);
+            });
+        this.backfills.set(address, job);
+    }
+
+    /**
+     * Reads the contract's history up to the best head, in rounds: the keys
+     * its traces name (never their values) up to a block inside the retained
+     * window, where the window's own records add the rest. Then the values of
+     * all those keys are read at one block, the head, and the records after
+     * it are applied. A covered block that a reorg orphaned starts over.
+     */
+    private async runBackfill(
+        address: AccountAddress,
+        filled: Promise<void>
+    ): Promise<void> {
+        const started = Date.now();
+        await filled;
+        let restarts = 0;
+        let covered: { number: bigint; hash: string } | undefined;
+        let keys = new Set<StorageSlot>();
+        const fresh = (): BackfillRecord => ({
+            address,
+            codeProbes: 0,
+            blockReads: 0,
+            rootReads: 0,
+            traces: 0,
+            stateReads: 0,
+            blocks: 0,
+            tracedBlocks: 0,
+            slots: 0,
+            milliseconds: 0
+        });
+        let record = fresh();
+        for (let round = 0; round < BACKFILL_ROUNDS; round++) {
+            if (this.stopping.signal.aborted) return;
+            const tipRecord = this.canonical[this.canonical.length - 1];
+            const tip = {
+                number: BigInt(tipRecord.number),
+                hash: tipRecord.hash
+            };
+            try {
+                if (!covered) {
+                    const deploy = await this.findDeployBlock(
+                        address,
+                        tip.number,
+                        record
+                    );
+                    if (deploy !== undefined) {
+                        for (const slot of await this.backfillKeys(
+                            address,
+                            deploy,
+                            tip,
+                            record
+                        ))
+                            keys.add(slot);
+                        record.deployBlock = toQuantity(deploy);
+                    }
+                    covered = tip;
+                } else if (tip.number > covered.number) {
+                    for (const slot of await this.backfillKeys(
+                        address,
+                        covered.number + 1n,
+                        tip,
+                        record,
+                        covered.hash
+                    ))
+                        keys.add(slot);
+                    covered = tip;
+                }
+                const prepared = await this.enqueue(() =>
+                    this.prepareBackfill(address, covered!, keys)
+                );
+                if (prepared === "again") continue;
+                if (prepared === "restart")
+                    throw new ChainMovedError("Covered block dropped");
+                // the values at the head, read outside the queue
+                const state = await this.readBackfillState(
+                    address,
+                    prepared.anchor.hash,
+                    prepared.keys,
+                    record
+                );
+                // a chain that holds other entries than the history named is not backfilled whole
+                // (Asset Hub's tracer can omit a constructor's repeated write: paritytech/polkadot-sdk#13663)
+                const held = await this.backfillBlocks.countStorageEntries(
+                    this.backfillUpstream,
+                    address,
+                    prepared.anchor
+                );
+                const slots = Object.keys(state.storage).length;
+                const complete = held === undefined || held === slots;
+                if (!complete)
+                    this.logger.warn(
+                        "Backfill found fewer storage entries than the chain holds; the account stays lazy",
+                        { address, backfilled: slots, onChain: held }
+                    );
+                const outcome = await this.enqueue(() =>
+                    this.commitBackfill(
+                        address,
+                        prepared.anchor,
+                        state,
+                        complete
+                    )
+                );
+                if (outcome === "retry") {
+                    covered = prepared.anchor;
+                    keys = new Set(prepared.keys);
+                    continue;
+                }
+                record.slots = slots;
+                record.milliseconds = Date.now() - started;
+                this.logger.info("Backfilled an account", { ...record });
+                return;
+            } catch (error) {
+                // a reorg moved blocks under the read: read the range again
+                if (
+                    !(error instanceof ChainMovedError || isTransient(error)) ||
+                    ++restarts > BACKFILL_RESTARTS
+                )
+                    throw error;
+                covered = undefined;
+                keys = new Set();
+                record = fresh();
+            }
+        }
+        throw new Error("The chain kept moving under the backfill");
+    }
+
+    /**
+     * Once the covered block is inside the window, takes the head as the
+     * anchor and adds the keys the window's blocks after the covered one
+     * touched. "again" asks for one more round of traces, "restart" for a new
+     * backfill after a reorg dropped the block.
+     */
+    private async prepareBackfill(
+        address: AccountAddress,
+        covered: { number: bigint; hash: string },
+        keys: Set<StorageSlot>
+    ): Promise<
+        | "again"
+        | "restart"
+        | { anchor: { number: bigint; hash: string }; keys: Set<StorageSlot> }
+    > {
+        const index = this.retainedIndex(covered.hash);
+        if (index < 0) {
+            const floor = BigInt(this.canonical[0].number);
+            if (covered.number >= floor) return "restart";
+            // below the window: the blocks up to it are still to be read
+            const current = await this.fetchHeader(covered.number);
+            return current.hash === covered.hash ? "again" : "restart";
+        }
+        const all = new Set(keys);
+        for (let i = index + 1; i < this.canonical.length; i++)
+            for (const slot of this.canonical[i].touches[address]?.slots ?? [])
+                all.add(slot);
+        const head = this.canonical[this.canonical.length - 1];
+        return {
+            anchor: { number: BigInt(head.number), hash: head.hash },
+            keys: all
+        };
+    }
+
+    /**
+     * Makes the account complete from the values read at `anchor`, if that
+     * block is still on the chain: the records after it, which hold the
+     * account because it is watched, bring it to the head.
+     */
+    private async commitBackfill(
+        address: AccountAddress,
+        anchor: { number: bigint; hash: string },
+        state: BackfilledState,
+        complete: boolean
+    ): Promise<"done" | "retry"> {
+        const index = this.retainedIndex(anchor.hash);
+        if (index < 0) return "retry";
+        const scratch = new StateCache();
+        scratch.setComplete(
+            address,
+            { balance: state.balance, nonce: state.nonce, code: state.code },
+            state.storage
+        );
+        for (let i = index + 1; i < this.canonical.length; i++) {
+            scratch.applyForward(this.canonical[i]);
+        }
+        const account = scratch.accountOf(address);
+        if (complete)
+            this.stateCache.setComplete(
+                address,
+                {
+                    balance: account.balance!,
+                    nonce: account.nonce!,
+                    code: account.code!
+                },
+                account.storage ?? {}
+            );
+        else {
+            this.lazyAccounts.add(address);
+            // what is known is cached; any other slot is fetched when asked for
+            for (const kind of ["balance", "nonce", "code"] as const)
+                this.stateCache.set({ kind, address }, account[kind]!);
+            for (const [slot, word] of Object.entries(account.storage ?? {}))
+                this.stateCache.set({ kind: "slot", address, slot }, word);
+        }
+        for (const peer of this.peerHub.peers.values()) {
+            if (!peer.closing) this.sendSnapshots(peer, [address]);
+        }
+        return "done";
+    }
+
+    /**
+     * Sends `peer` the complete state of those of `addresses` it subscribed
+     * to and has no snapshot of yet, at the best head, one message per
+     * subscription.
+     */
+    private sendSnapshots(
+        peer: StorageDiffPeer,
+        addresses: AccountAddress[],
+        lazy: ReadonlySet<AccountAddress> = this.lazyAccounts
+    ): void {
+        const head = this.canonical[this.canonical.length - 1];
+        // a ready account the cache no longer holds complete is late
+        this.noteSnapshotsDelayed(
+            peer,
+            addresses.filter(
+                (address) =>
+                    peer.promisedReady.has(address) &&
+                    !lazy.has(address) &&
+                    !this.stateCache.isComplete(address)
+            )
+        );
+        for (const [subscription, subscribed] of peer.subscriptions) {
+            const accounts: AccountDiffs = {};
+            // accounts no snapshot is coming for: the peer reads them as needed
+            const noSnapshot: AccountAddress[] = [];
+            for (const address of addresses) {
+                if (!subscribed.includes(address)) continue;
+                if (lazy.has(address)) noSnapshot.push(address);
+                if (
+                    peer.snapshotted.has(address) ||
+                    !this.stateCache.isComplete(address)
+                )
+                    continue;
+                accounts[address] = this.stateCache.accountOf(address);
+                peer.snapshotted.add(address);
+                peer.promisedReady.delete(address);
+            }
+            if (Object.keys(accounts).length === 0 && noSnapshot.length === 0)
+                continue;
+            this.peerHub.send(peer.socket, {
+                jsonrpc: "2.0",
+                method: "scp_snapshot",
+                params: {
+                    subscription,
+                    result: {
+                        block: { number: head.number, hash: head.hash },
+                        accounts,
+                        ...(noSnapshot.length > 0 && { lazy: noSnapshot })
+                    }
+                }
+            });
+            this.peerHub.dropIfLagging(peer);
+        }
+    }
+
+    /**
+     * Tells `peer` that the snapshots it was promised or sent as `ready` for
+     * those of `addresses` it follows are late, one notice per subscription.
+     * An account is told once: it is no longer promised.
+     */
+    private noteSnapshotsDelayed(
+        peer: StorageDiffPeer,
+        addresses: AccountAddress[]
+    ): void {
+        if (peer.closing || addresses.length === 0) return;
+        const head = this.canonical[this.canonical.length - 1];
+        for (const [subscription, subscribed] of peer.subscriptions) {
+            const accounts = [...new Set(addresses)].filter((address) =>
+                subscribed.includes(address)
+            );
+            if (accounts.length === 0) continue;
+            this.peerHub.pushDelay(peer, {
+                reason: "snapshot-delayed",
+                subscription,
+                block: { number: head.number, hash: head.hash },
+                accounts
+            });
+        }
+        for (const address of addresses) peer.promisedReady.delete(address);
+    }
+
+    /**
+     * The first block of 0..`tip` whose state has the contract's code, or
+     * undefined when `tip` has none. One probe at `tip`, then a bisection.
+     */
+    private async findDeployBlock(
+        address: AccountAddress,
+        tip: bigint,
+        record: BackfillRecord
+    ): Promise<bigint | undefined> {
+        if (!(await this.hasCode(address, tip, record))) return undefined;
+        let low = 0n;
+        let high = tip;
+        while (low < high) {
+            const middle = (low + high) / 2n;
+            if (await this.hasCode(address, middle, record)) high = middle;
+            else low = middle + 1n;
+        }
+        return high;
+    }
+
+    private async hasCode(
+        address: AccountAddress,
+        block: bigint,
+        record: BackfillRecord
+    ): Promise<boolean> {
+        record.codeProbes++;
+        try {
+            const code = await this.backfillUpstream.request("eth_getCode", [
+                address,
+                toQuantity(block)
+            ]);
+            return typeof code === "string" && code !== "0x";
+        } catch (error) {
+            // Asset Hub answers this before its contracts pallet existed: no
+            // code there. Any other error is no answer and is retried.
+            if (
+                error instanceof UpstreamRequestError &&
+                error.message.includes(NOT_SUPPORTED_AT_BLOCK)
+            )
+                return false;
+            throw error;
+        }
+    }
+
+    /**
+     * The keys the traces of the blocks of `from`..`tip.number` that the
+     * backfill block source lists name for the contract. A trace is only
+     * used for which keys, never for what is in them.
+     */
+    private async backfillKeys(
+        address: AccountAddress,
+        from: bigint,
+        tip: { number: bigint; hash: string },
+        record: BackfillRecord,
+        parentHash?: string
+    ): Promise<Set<StorageSlot>> {
+        const listing = await this.backfillBlocks.listBlocks(
+            this.backfillUpstream,
+            address,
+            from,
+            tip,
+            parentHash
+        );
+        record.blockReads += listing.blockReads;
+        record.rootReads += listing.rootReads;
+        record.blocks += listing.blocks;
+        record.tracedBlocks += listing.numbers.length;
+        const keys = new Set<StorageSlot>();
+        for (
+            let i = 0;
+            i < listing.numbers.length;
+            i += BACKFILL_TRACES_AT_ONCE
+        ) {
+            const numbers = listing.numbers.slice(
+                i,
+                i + BACKFILL_TRACES_AT_ONCE
+            );
+            record.traces += numbers.length;
+            const traces = await Promise.all(
+                numbers.map((number) =>
+                    this.backfillUpstream.request("debug_traceBlockByNumber", [
+                        toQuantity(number),
+                        TRACE_OPTIONS
+                    ])
+                )
+            );
+            for (const trace of traces)
+                for (const slot of touchesOf(trace)[address]?.slots ?? [])
+                    keys.add(slot);
+        }
+        return keys;
+    }
+
+    /**
+     * The contract's balance, nonce and code, and the value of each of `keys`,
+     * at block `blockHash`, read and checked like every field the service
+     * reads. Never-touched slots are zero, so the result is complete.
+     */
+    private async readBackfillState(
+        address: AccountAddress,
+        blockHash: string,
+        keys: Iterable<StorageSlot>,
+        record: BackfillRecord
+    ): Promise<BackfilledState> {
+        const slots = [...keys];
+        const read = (field: StateField) => {
+            record.stateReads++;
+            return this.limitStateFetch(() =>
+                this.fetchField(field, blockHash)
+            );
+        };
+        const [balance, nonce, code, ...words] = await Promise.all([
+            read({ kind: "balance", address }),
+            read({ kind: "nonce", address }),
+            read({ kind: "code", address }),
+            ...slots.map((slot) => read({ kind: "slot", address, slot }))
+        ]);
+        const storage: Record<StorageSlot, string> = {};
+        slots.forEach((slot, i) => {
+            const word = words[i] as string;
+            if (BigInt(word) !== 0n) storage[slot] = word;
+        });
+        return {
+            balance: balance as string,
+            nonce: nonce as number,
+            code: code as string,
+            storage
+        };
+    }
+
+    /**
+     * Counts, on the chain, the storage entries of a complete account a
+     * block's trace names and compares them with what the cache holds after
+     * that block (a source that cannot count never refuses). One count runs
+     * per account at a time: blocks named meanwhile are counted once more, at
+     * the newest.
+     * An account that differs stays lazy from then on, as after a backfill
+     * that came up short.
+     */
+    private recountEntries(
+        address: AccountAddress,
+        written: { block: StagedBlock; cached: number }
+    ): void {
+        const running = this.recounts.get(address);
+        if (running) {
+            running.next = written;
+            return;
+        }
+        const recount: Recount = {};
+        this.recounts.set(address, recount);
+        void (async () => {
+            let next: typeof recount.next = written;
+            while (next && !this.stopping.signal.aborted) {
+                await this.recountAt(address, next);
+                next = recount.next;
+                recount.next = undefined;
+            }
+            this.recounts.delete(address);
+        })();
+    }
+
+    private async recountAt(
+        address: AccountAddress,
+        { block, cached }: { block: StagedBlock; cached: number }
+    ): Promise<void> {
+        try {
+            const held = await this.backfillBlocks.countStorageEntries(
+                this.backfillUpstream,
+                address,
+                { number: BigInt(block.number) }
+            );
+            if (held === undefined || held === cached) return;
+            await this.enqueue(async () => {
+                // a reorg may have dropped the block, or the account been demoted
+                if (
+                    this.retainedIndex(block.hash) < 0 ||
+                    !this.stateCache.isComplete(address)
+                )
+                    return;
+                this.logger.warn(
+                    "A block's write left fewer storage entries cached than the chain holds; the account stays lazy",
+                    {
+                        address,
+                        block: block.number,
+                        cached,
+                        onChain: held
+                    }
+                );
+                this.stateCache.markLazy(address);
+                this.lazyAccounts.add(address);
+                for (const peer of this.peerHub.peers.values()) {
+                    peer.snapshotted.delete(address);
+                    if (!peer.closing) this.sendSnapshots(peer, [address]);
+                }
+            });
+        } catch (error) {
+            if (!this.stopping.signal.aborted)
+                this.logger.warn("Cannot count an account's entries", {
+                    address,
+                    reason: this.failureReason(error)
+                });
+        }
+    }
+
     private retainedIndex(blockHash: string): number {
         return this.canonical.findIndex((record) => record.hash === blockHash);
     }
@@ -1148,7 +2153,9 @@ export class StorageDiffService {
     private teardown(reason?: Error): Promise<void> {
         this.shutdown ??= (async () => {
             this.stopping.abort();
+            for (const waiter of [...this.headWaiters]) waiter.end();
             this.upstream.destroy();
+            this.backfillBlocks.close();
             await this.peerHub.close();
             if (reason) this.settleClosed.reject(reason);
             else this.settleClosed.resolve();

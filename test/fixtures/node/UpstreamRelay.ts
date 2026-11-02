@@ -25,6 +25,18 @@ type Hold = {
     forward?: () => void;
 };
 
+/** A JSON-RPC error the relay answers in the node's place. */
+export type RelayError = { code: number; message: string };
+
+const RELAY_FAULT: RelayError = { code: -32000, message: "relay fault" };
+
+/** Whether a request's first param is the one `hold` waits for. */
+function matchesHold(hold: Hold, param: unknown): boolean {
+    return typeof hold.firstParam === "function"
+        ? (hold.firstParam as (param: unknown) => boolean)(param)
+        : param === hold.firstParam;
+}
+
 /**
  * Relays every WebSocket frame between the service and the real node, so a
  * test can hold a real request, answer one with an error frame on the actual
@@ -33,6 +45,15 @@ type Hold = {
  */
 /** What a tamper returns to answer that one request with an error frame. */
 export const UPSTREAM_FAULT = Symbol("upstream fault");
+
+/** What a tamper returns to answer that one request with `error`, as a particular upstream words it. */
+export class UpstreamErrorAnswer {
+    readonly error: RelayError;
+
+    constructor(error: RelayError) {
+        this.error = error;
+    }
+}
 
 export class UpstreamRelay {
     private readonly server: WebSocketServer;
@@ -55,7 +76,11 @@ export class UpstreamRelay {
     private connections = 0;
     private refusing = false;
     private hold?: Hold;
-    private failing?: { method: UpstreamMethod; remaining: number };
+    private failing?: {
+        method: UpstreamMethod;
+        remaining: number;
+        error: RelayError;
+    };
     private cutting?: { method: UpstreamMethod; remaining: number };
 
     private constructor(server: WebSocketServer, target: string) {
@@ -107,7 +132,10 @@ export class UpstreamRelay {
         this.refusing = refuse;
     }
 
-    /** Holds the next `method` request whose first param is `firstParam`. */
+    /**
+     * Holds the next `method` request whose first param is `firstParam`, or
+     * for which `firstParam`, a predicate, holds.
+     */
     holdNext(method: UpstreamMethod, firstParam: unknown): HeldRequest {
         let onArrive!: () => void;
         const arrived = new Promise<void>((resolve) => (onArrive = resolve));
@@ -133,9 +161,16 @@ export class UpstreamRelay {
         this.tampering.set(method, transform);
     }
 
-    /** Answers the next `count` `method` requests with an error frame. */
-    failNext(method: UpstreamMethod, count: number): void {
-        this.failing = { method, remaining: count };
+    /**
+     * Answers the next `count` `method` requests with an error frame: a
+     * generic fault, or `error` as a particular upstream words it.
+     */
+    failNext(
+        method: UpstreamMethod,
+        count: number,
+        error: RelayError = RELAY_FAULT
+    ): void {
+        this.failing = { method, remaining: count, error };
     }
 
     /** Cuts the connection the next `count` `method` requests arrive on. */
@@ -208,7 +243,10 @@ export class UpstreamRelay {
                     const result = transform(answer.result, request.params);
                     if (result === UPSTREAM_FAULT) {
                         delete answer.result;
-                        answer.error = { code: -32000, message: "relay fault" };
+                        answer.error = RELAY_FAULT;
+                    } else if (result instanceof UpstreamErrorAnswer) {
+                        delete answer.result;
+                        answer.error = result.error;
                     } else answer.result = result;
                 }
             }
@@ -229,6 +267,7 @@ export class UpstreamRelay {
                     this.failing &&
                     parsed.some((call) => call.method === this.failing!.method)
                 ) {
+                    const { error } = this.failing;
                     if (--this.failing.remaining === 0)
                         this.failing = undefined;
                     client.send(
@@ -236,7 +275,7 @@ export class UpstreamRelay {
                             parsed.map((call) => ({
                                 jsonrpc: "2.0",
                                 id: call.id,
-                                error: { code: -32000, message: "relay fault" }
+                                error
                             }))
                         )
                     );
@@ -250,7 +289,7 @@ export class UpstreamRelay {
                     parsed.some(
                         (call) =>
                             call.method === hold.method &&
-                            call.params[0] === hold.firstParam
+                            matchesHold(hold, call.params[0])
                     )
                 ) {
                     this.hold = undefined;
@@ -269,13 +308,10 @@ export class UpstreamRelay {
                 return;
             }
             if (this.failing?.method === request.method) {
+                const { error } = this.failing;
                 if (--this.failing.remaining === 0) this.failing = undefined;
                 client.send(
-                    JSON.stringify({
-                        jsonrpc: "2.0",
-                        id: request.id,
-                        error: { code: -32000, message: "relay fault" }
-                    })
+                    JSON.stringify({ jsonrpc: "2.0", id: request.id, error })
                 );
                 return;
             }
@@ -284,7 +320,7 @@ export class UpstreamRelay {
                 hold &&
                 !hold.forward &&
                 hold.method === request.method &&
-                request.params[0] === hold.firstParam
+                matchesHold(hold, request.params[0])
             ) {
                 this.hold = undefined;
                 hold.forward = () => forward(frame);

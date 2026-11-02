@@ -12,7 +12,7 @@ ones, restores it, or holds one method's requests, and the proxy records which m
 Oracles compare answers with the node's own HTTP answers and check which proxy saw
 `eth_getBalance`, `eth_sendRawTransaction` or `eth_subscribe`. Absence checks use a one-second
 window as the test input. Transaction receipts are read from the node directly; ethers' receipt
-wait is tested once, with two confirmations, after both sockets reconnected. Further cases blackhole a proxy (socket open, nothing forwarded) to prove the heartbeat ends a silent socket, swallow a forwarded transaction's reply before cutting the node, start a second private chain to prove a node on another chain is refused, and destroy or stop the provider with requests in flight or waiting.
+wait is tested once, with two confirmations, after both sockets reconnected. Further cases blackhole a proxy (socket open, nothing forwarded) to prove the heartbeat ends a silent socket, swallow a forwarded transaction's reply before cutting the node, start a second private chain to prove a node on another chain is refused, open a provider with `{ ethereum: false }` on a scripted Substrate node that answers every request but is no Ethereum node (the same node refuses a default provider), expecting the provider connected and its Substrate read answered, and destroy or stop the provider with requests in flight or waiting.
 
 Later cases check that a node destroyed during a pending attempt logs nothing and raises no
 unhandled rejection (a logger whose entries the test reads), that a heartbeat answered with an
@@ -59,6 +59,7 @@ within the one-second window (every node was destroyed).
 - `keeps reconnecting a node that refused its first connection`: UNIT-TEST-RPC-NODE-1-VTXH1M.P5, REQ-CHAINOBS-3-N137ZP.T1.P3
 - `never reconnects after stopReconnecting`: UNIT-TEST-RPC-NODE-1-VTXH1M.P6
 - `fails a request held for a reconnect when destroyed`: UNIT-TEST-RPC-NODE-1-VTXH1M.P7
+- `opens a socket to a node that serves no Ethereum RPC without asking its chain id`: UNIT-TEST-RPC-NODE-1-VTXH1M.P14, REQ-SDS-9-ZRPZZW.T1.P25
 - `sends a transaction to the first node only while it is connected`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P1, REQ-CHAINOBS-2-2NCSQ3.T1.P1
 - `fails a transaction over to the next node while the first is cut`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P2, REQ-CHAINOBS-2-2NCSQ3.T1.P2
 - `holds a transaction while no node is connected and sends it once one reconnects`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P3, REQ-CHAINOBS-2-2NCSQ3.T1.P5
