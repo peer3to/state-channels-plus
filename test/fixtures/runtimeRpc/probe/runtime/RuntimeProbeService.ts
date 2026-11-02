@@ -6,7 +6,6 @@ import type {
     RuntimeConnection
 } from "@/rpc/internal/AInternalRpcRoot";
 import { AInternalRpcService } from "@/rpc/internal/AInternalRpcService";
-import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type InternalTransport from "@/transport/InternalTransport";
 import type { RuntimePort } from "@/transport/RuntimePort";
 import { DetachedPromises } from "@/utils/DetachedPromises";
@@ -63,35 +62,6 @@ export class RuntimeProbeService extends AInternalRpcService<RuntimeProbeRpcMeth
                 return descriptor;
             }
         });
-    }
-    public async disposeDomain() {
-        if (!(this.root instanceof P2pRuntimeHostRoot))
-            throw new Error("Expected host root");
-        const manager = this.root.hostRpc.requireManager();
-        const domain = manager.localRpc;
-        const dispose = domain.dispose;
-        let calls = 0;
-        let managerWasDisposed = true;
-        domain.dispose = async () => {
-            calls++;
-            managerWasDisposed = manager.isDisposed;
-            await dispose.call(domain);
-        };
-        let message = "";
-        try {
-            await manager.stateManager.dispose();
-        } catch (error) {
-            message = error instanceof Error ? error.message : String(error);
-        } finally {
-            domain.dispose = dispose;
-        }
-        return {
-            calls,
-            managerWasDisposed,
-            managerIsDisposed: manager.isDisposed,
-            connectionsAfter: manager.getConnectedPeers().size,
-            message
-        };
     }
     public postFrame(sender: InternalTransport, frame: unknown): void {
         // Fault frames still cross the actual SDK port and its production listener.

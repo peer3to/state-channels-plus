@@ -100,6 +100,12 @@ class WebRTCSetupService extends ANetworkRpcService<WebRTCSetupRpcMethods> {
         }
     }
 
+    /** Closes every watched connection: a negotiating one has no transport. */
+    public dispose(): void {
+        for (const [peerAddress, watch] of this.currentWatches)
+            this.closeConnection(peerAddress, watch);
+    }
+
     public async acceptWebRTCOffer(
         peerAddress: WebRTCPeerAddress,
         offer: any
@@ -276,6 +282,10 @@ class WebRTCSetupService extends ANetworkRpcService<WebRTCSetupRpcMethods> {
                     channel,
                     this.p2pManager.rpcRouter
                 );
+                // a transport the cut closed in its constructor found no
+                // watch to close its connection through
+                if (watch.transport.isClosed)
+                    this.closeConnection(peerAddress, watch);
             },
             onConnectionStateChange: (state) => {
                 this.handleConnectionStateChange(peerAddress, watch, state);

@@ -162,20 +162,6 @@ describe("LobbyMatchingService", function () {
         expect(result.lastReportedConnections).to.not.include(handedOffPeer);
     });
 
-    it("removes the promoted peer from the connection set on handoff dispose", async function () {
-        const result = await fixture
-            .control()
-            .p2pManagerProbe.probeLobbyHandoffExit("dispose", false)
-            .request();
-
-        expect(result.selectedPromotedAtCommit).to.equal(true);
-        expect(result.ordinaryHookCountBeforeExit).to.equal(1);
-        expect(result.handedOffTransportsRemovedAfterExit).to.equal(true);
-        expect(result.reportedConnectionsAfterCommit).to.include(handedOffPeer);
-        expect(result.reportsDuringExit).to.be.greaterThan(0);
-        expect(result.lastReportedConnections).to.not.include(handedOffPeer);
-    });
-
     it("promotes a replacement transport once during the handoff and closes it on release", async function () {
         const result = await fixture
             .control()
@@ -282,7 +268,7 @@ describe("LobbyMatchingService", function () {
         );
     });
 
-    it("settles replacement, leave, timeout, and disposal through one cleanup path", async function () {
+    it("settles replacement, leave and timeout through one cleanup path", async function () {
         const result = await fixture
             .control()
             .p2pManagerProbe.probeLobbySessionCleanup()
@@ -297,12 +283,9 @@ describe("LobbyMatchingService", function () {
             timeoutResolvedUndefined: true,
             timeoutClearedTopic: true,
             timeoutStatus: Status.NOT_OPENED,
-            disposeResolvedUndefined: true,
-            disposeClearedTopic: true,
             replacementClosedOldTransport: true,
             leaveClosedSessionTransport: true,
             timeoutClosedSessionTransport: true,
-            disposeClosedSessionTransport: true,
             ordinaryCancellationSucceeded: true,
             targetedCancellationSucceeded: true,
             cancellationNoopAfterHandoff: true,

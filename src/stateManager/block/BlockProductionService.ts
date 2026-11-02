@@ -38,8 +38,6 @@ export default class BlockProductionService {
         // set while the VM is advanced past storage; finally restores it
         let stateBeforeAssembly: Bytes | undefined;
         try {
-            // a stopped runtime's VM may be dirty (a failed restore aborts)
-            if (sm.isDisposed) throw new Error("Channel participation stopped");
             const message = await this.logPlayTransaction(tx);
             if (!sm.validationService.isChannelOpen(sm.forkId)) {
                 throw new Error("Channel not open");

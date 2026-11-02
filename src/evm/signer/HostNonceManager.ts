@@ -21,6 +21,8 @@ class HostNonceManager extends AbstractSigner {
     private readonly mutex: Mutex;
     private nextNonce: number | null = null;
     private nonceStateIndeterminate = false;
+    // Set by the runtime's disposal cut-off: no transaction leaves after it.
+    private isCut = false;
 
     constructor(signer: Signer, logger?: Logger) {
         super(signer.provider);
@@ -31,6 +33,14 @@ class HostNonceManager extends AbstractSigner {
         this.mutex = new Mutex(
             logger?.child({ component: "HostNonceManager" })
         );
+    }
+
+    /**
+     * Later sends, sends still waiting for the nonce and a send not yet
+     * broadcast never settle; a broadcast already sent keeps its nonce.
+     */
+    cut(): void {
+        this.isCut = true;
     }
 
     connect(provider: Provider | null): HostNonceManager {
@@ -89,6 +99,10 @@ class HostNonceManager extends AbstractSigner {
         await this.mutex.lock({
             taskName: "HostNonceManager.sendTransaction"
         });
+        if (this.isCut) {
+            this.mutex.unlock();
+            return new Promise<never>(() => undefined);
+        }
         try {
             const provider = this.provider;
             assert(
@@ -112,6 +126,9 @@ class HostNonceManager extends AbstractSigner {
             });
             const encodedTransaction =
                 await this.signer.signTransaction(populated);
+            // the cut may land while the nonce mutex is held: a send not yet
+            // broadcast freezes and leaves the nonce untaken
+            if (this.isCut) return new Promise<never>(() => undefined);
             // Where a recovered response starts scanning for a replacement.
             // Sent before the broadcast: the scan only walks forward, so a
             // later read could start past a replacement that already mined.

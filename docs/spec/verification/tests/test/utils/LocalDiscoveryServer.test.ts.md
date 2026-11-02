@@ -11,9 +11,13 @@ then observe the same topic after leave or explicit blacklist. The tests
 exercise the production session, canonical dialer, retry timer, handshake, and blacklist checks; no synthetic
 transport or precomputed result boolean stands in for discovery.
 
+The leave-all case joins two topics on one runtime and leaves every session of that runtime: both listeners close, and a later join of one left topic binds a listener again, so no left session remains to absorb it.
+
+The late-join case disposes an inline runtime, then joins a discovery key through its manager; the live inline peer, which shares the discovery realm, reads no listener.
+
 The late-ready case holds a real accepted socket, disposes its manager, then sends the valid wire frame. It asserts socket closure with no acknowledgement and no remaining transports.
 
-The pending-dial shutdown case delays every handshake reply on both inline peers, waits until one runtime has a real dial in flight, and runs that runtime's `StateManager.stop`, the first half of shutdown that settles its handshake wait with `false` while its P2P manager and discovery session are still alive. It asserts the manager is not yet disposed and that no peer retry count was written, which is where a retry records itself together with its warning and timer.
+The pending-dial shutdown case delays every handshake reply on both inline peers, waits until one runtime has a real dial in flight, and disposes that peer's runtime, whose release settles the dial's handshake wait with `false`. It asserts that no peer retry was scheduled, which is where a retry records itself together with its warning and timer.
 
 The pending-close rejoin case stops the acceptor reading its accepted sockets, so the dialer's closed socket stays closing; the dialer leaves, closes its transport and rejoins the topic, and must authenticate a different transport while exactly one held peer-dial socket is still closing. A variant holds both handshakes across the rejoin, lets the old socket finish closing, then joins a second topic and requires the single held handshake per peer and no extra connection. Another holds handshakes before the first join, so the leave closes a pending, unauthenticated dial; the rejoin must authenticate a transport while that socket is still closing.
 
@@ -21,6 +25,8 @@ The replacement-endpoint cases use real listener leave/rejoin and registry adver
 
 ## Tests
 
+- `leaving every session of a runtime settles while one of its joins fails to bind its listener`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P20
+- `leaving every session of a runtime closes each topic's listener and a later join listens again`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P21
 - `redials an eligible disconnected peer no sooner than a second later while the topic remains observed and stops after leave`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P5, UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P6, REQ-LOBBY-9-N894C0.T1.P13, REQ-LOBBY-9-N894C0.T1.P18
 - `does not redial a peer blacklisted before its transport closes`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P7, REQ-LOBBY-9-N894C0.T1.P16
 - `deduplicates an in-flight dial across topics before authentication`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P10
@@ -31,6 +37,7 @@ The replacement-endpoint cases use real listener leave/rejoin and registry adver
 - `repeated and concurrent joins share one listener and a pending join can be left`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P9, REQ-LOBBY-9-N894C0.T1.P17
 - `closes an accepted socket whose ready frame arrives after manager disposal`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P11
 - `holds an inbound reconnect inside the cooldown after the previous transport closed and admits it once the cooldown has passed, without blacklisting`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P13, REQ-LOBBY-9-N894C0.T1.P19
+- `starts no listener for a join that enters after its runtime was disposed`: REQ-RUNTIME-3-VQXW59.T1.P97
 - `schedules no retry for a local dial whose handshake is pending when its runtime shuts down`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P14
 - `retries the replacement endpoint announced while the old endpoint handshake is pending`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P15, REQ-LOBBY-9-N894C0.T1.P24
 - `retries the replacement endpoint announced while the old authenticated transport is still connected`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P16, REQ-LOBBY-9-N894C0.T1.P25

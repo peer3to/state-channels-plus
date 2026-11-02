@@ -47,8 +47,8 @@ Full root abort
 - [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P1` — Inline abort closes the host and executor endpoints, rejects late queries, preserves a sibling SDK and tolerates repeated disposal
 - [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P2` — Worker abort closes the host and executor endpoints, rejects late queries and preserves a sibling SDK
 - [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P3` — Abort cancels a scheduled task before its due time, drops status to OPENED and disconnects peers
-- [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P4` — Stopping retains the live provider listener; root disposal then destroys the provider, removes listeners and permits repeated disposal
-- [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P5` — Abort of an inline host with a dedicated VM worker uploads the abort log line and the VM worker's logs before disposal ends the worker, the flush is the last step of `stop()`, after the producers stop, so a host timeout task due during the flush never runs, and an upload that never answers holds disposal no longer than the abort flush bound
+- [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P4` — Inline disposal of a runtime whose provider the Clock does not read through stops host work, then destroys the provider and removes its listeners
+- [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P5` — Abort of a worker host with a dedicated VM worker uploads the abort log line and the VM worker's logs before disposal ends the worker, and an upload that never answers holds disposal no longer than the abort flush bound
 
 ## UNIT-TEST-STATE-MANAGER-1-GFPTJF
 
@@ -98,16 +98,6 @@ Timeout detection
 - [x] `UNIT-TEST-STATE-MANAGER-3-32QM46.P6` — forced claim on commitment-without-accepted-block
 - [ ] `UNIT-TEST-STATE-MANAGER-3-32QM46.P7` — non-participant skip
 
-## UNIT-TEST-STATE-MANAGER-4-ECGP8V
-
-Custom RPC disposal ordering
-
-- Setup: Dispose a live state manager with a normal and a rejecting custom RPC root
-- Oracle: Root disposal runs while P2P dependencies are available; teardown always completes; root rejection surfaces after cleanup
-
-- [x] `UNIT-TEST-STATE-MANAGER-4-ECGP8V.P1` — custom RPC root disposes before P2P teardown
-- [x] `UNIT-TEST-STATE-MANAGER-4-ECGP8V.P2` — root rejection surfaces after runtime teardown
-
 ## UNIT-TEST-STATE-MANAGER-5-D8GDWH
 
 On-chain join eligibility adapter
@@ -130,10 +120,9 @@ Internal channel staging
 
 Active fork eligibility
 
-- Setup: Query the current fork before and after disposal or a real reduction
-- Oracle: Current live fork is accepted; disposed runtime and old fork are rejected
+- Setup: Query the current fork before and after a real reduction
+- Oracle: Current fork is accepted; old fork is rejected
 
-- [x] `UNIT-TEST-STATE-MANAGER-ACTIVE-FORK-1-NDTW9K.P1` — current fork before and after disposal
 - [x] `UNIT-TEST-STATE-MANAGER-ACTIVE-FORK-1-NDTW9K.P2` — current and old forks after a real reduction
 
 ## UNIT-TEST-STATE-MANAGER-7-YRC0N3

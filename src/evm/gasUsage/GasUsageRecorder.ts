@@ -15,22 +15,13 @@ class GasUsageRecorder {
     /** Receipt waits still running. Each one settles and never rejects. */
     private readonly inFlight = new Set<Promise<void>>();
     private readonly logger?: Logger;
-    /** Resolves with no receipt once `dispose()` ends the waits still running. */
-    private readonly disposal: Promise<null>;
-    private endReceiptWaits!: () => void;
-    private disposed = false;
 
     constructor(logger?: Logger) {
         this.logger = logger;
-        this.disposal = new Promise<null>((resolve) => {
-            this.endReceiptWaits = () => resolve(null);
-        });
     }
 
     /** Count `response` once it mines. Returns at once; never throws. */
     public observe(response: TransactionResponse): void {
-        // A disposed recorder starts no new wait on a chain that is going away.
-        if (this.disposed) return;
         const observation = this.recordWhenMined(response).catch((error) => {
             this.logger?.debug("Gas usage observation failed", {
                 hash: response.hash,
@@ -75,27 +66,13 @@ class GasUsageRecorder {
         return this.table.snapshot();
     }
 
-    /**
-     * Ends every receipt wait still running as not counted, so any `settle()`
-     * resolves at once, and makes every later `observe()` a no-op. The owner
-     * calls it when its chain connection goes away: a receipt wait has no
-     * bound of its own, and a destroyed provider never ends it.
-     */
-    public dispose(): void {
-        this.disposed = true;
-        this.endReceiptWaits();
-    }
-
     private async recordWhenMined(
         response: TransactionResponse
     ): Promise<void> {
         const contractAddress = response.to;
         // A deployment has no callee, and the table keys on the called contract.
         if (!contractAddress) return;
-        const receipt = await Promise.race([
-            this.resolveReceipt(response),
-            this.disposal
-        ]);
+        const receipt = await this.resolveReceipt(response);
         if (!receipt) return;
         const { functionSelector, functionName } =
             LoggerUtils.getContractCallMetadata(response.data);
@@ -114,8 +91,8 @@ class GasUsageRecorder {
         try {
             // No timeout: a transaction counts whenever it mines, for as long
             // as this recorder lives. An ethers timeout arms a global timer
-            // that destroying the provider never clears, and ethers never
-            // rejects a wait whose provider closed, so `dispose()` ends it.
+            // that destroying the provider never clears; a wait whose provider
+            // closed never settles and goes with the runtime.
             return await response.wait(1);
         } catch (error) {
             // A reverted transaction still mined and still burned its gas;
