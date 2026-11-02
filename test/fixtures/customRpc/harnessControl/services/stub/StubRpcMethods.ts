@@ -2283,9 +2283,9 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.waitForHeldAuditingDataRebuild();
     }
 
-    /** Hold the discovery join for `holdMs` so an abort can land inside it. */
-    public stubHoldDiscoveryJoin(holdMs: number): boolean {
-        this.service.installDiscoveryJoinHold(holdMs);
+    /** Hold the discovery join until `afterCutMs` after the network cut. */
+    public stubHoldDiscoveryJoin(afterCutMs: number): boolean {
+        this.service.installDiscoveryJoinHold(afterCutMs);
         return true;
     }
 

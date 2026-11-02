@@ -38,7 +38,8 @@ const BAN_WINDOW_MS = 10_000;
  *  (f) local only: a blacklisted peer that the hub announces again is not
  *      linked, and releasing the blacklist links it exactly once;
  *  (g) local only: a link socket that opens after its runtime was disposed
- *      is closed without a transport, so the disposed page logs no error.
+ *      is closed without a transport, so the disposed page logs no error;
+ *  (h) local only: a discovery join after the disposal opens no membership.
  */
 export async function runTransportPermutations(mode) {
     const resources = [];
@@ -470,7 +471,7 @@ async function runBanPermutation(mode, pages, scmAddress, hub) {
  * so each page has a link to the other still connecting. Page A disposes its
  * runtime, then the hub lets the sockets open: A's link opens after its
  * runtime is gone and must be closed without a transport (any error A logs
- * fails the gate).
+ * fails the gate). (h) A then joins a new topic: the hub gets no membership.
  */
 async function runLateLinkPermutation(mode, pages, scmAddress, hub) {
     const [disposed, other] = pages;
@@ -505,6 +506,13 @@ async function runLateLinkPermutation(mode, pages, scmAddress, hub) {
         () => hub.linkCloses(linkId) > 0,
         AGREEMENT_MS,
         "(g) the disposed page closes its late link"
+    );
+    const lateTopic = ethers.id(`transport-${mode}-late-join`);
+    await disposed.call("joinDiscoveryKey", lateTopic);
+    assert.equal(
+        hub.members(lateTopic),
+        0,
+        "(h) a join after the disposal opens no membership"
     );
     await other.call("dispose");
     return { linkCloses: hub.linkCloses(linkId) };
