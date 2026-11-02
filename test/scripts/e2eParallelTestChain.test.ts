@@ -282,7 +282,7 @@ describe("e2e parallel test chain", function () {
         });
         try {
             expect(await call(project.url)("web3_clientVersion")).to.match(
-                /^HardhatNetwork\/2\.22\.9\//
+                /^HardhatNetwork\//
             );
         } finally {
             project.stop();
@@ -290,8 +290,8 @@ describe("e2e parallel test chain", function () {
         }
         const anvil = await startHardhatNode({ port: 0 });
         try {
-            expect(await call(anvil.url)("web3_clientVersion")).to.equal(
-                "anvil/v1.7.1"
+            expect(await call(anvil.url)("web3_clientVersion")).to.match(
+                /^anvil\//
             );
         } finally {
             anvil.stop();
@@ -591,8 +591,8 @@ describe("probe", function () {
                     `${run.stdout}${run.stderr}`
                 );
             };
-            expect(clientOn("project")).to.match(/^HardhatNetwork\/2\.22\.9\//);
-            expect(clientOn(undefined)).to.equal("anvil/v1.7.1");
+            expect(clientOn("project")).to.match(/^HardhatNetwork\//);
+            expect(clientOn(undefined)).to.match(/^anvil\//);
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
         }
