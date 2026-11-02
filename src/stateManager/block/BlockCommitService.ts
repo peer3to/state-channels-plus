@@ -80,16 +80,6 @@ export default class BlockCommitService {
         sm.storage.blocks.storeBlock(block, {
             justPersist: isDisputeReplay
         });
-        if (!isDisputeReplay) {
-            // TODO(persistence): recover legal prefixes if the process crashes
-            // between snapshot, state, block, and metadata commits.
-            sm.storage.setRuntimeMetadata({
-                activeForkId: block.forkId,
-                headHash: block.hash,
-                snapshotHash: stateSnapshot.hash,
-                stateHash: stateSnapshot.stateMachineStateHash
-            });
-        }
         // step 5 - persist the outbound message blocks if any
         if (options?.outboundMessageBlock) {
             sm.storage.outboundMessages.store(options.outboundMessageBlock);
@@ -107,6 +97,7 @@ export default class BlockCommitService {
             );
         }
 
+        // our signature leaves the process only once the commit is on disk
         await sm.storage.flush();
 
         // Publish status only after all durable mutations for the transition

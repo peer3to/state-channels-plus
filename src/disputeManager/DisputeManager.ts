@@ -185,6 +185,7 @@ class DisputeManager {
                 fraudProofsToApply
             );
 
+            // the signed dispute and its marker are on disk before the upload
             await this.storage.flush();
 
             // Without fraud proofs no gas limit is passed: the chain signer

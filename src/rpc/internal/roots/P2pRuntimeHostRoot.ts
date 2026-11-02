@@ -40,6 +40,7 @@ import {
     type PersistenceDatabaseHandle
 } from "@/storage/persistence";
 import { TimeConfig } from "@/types";
+import type { ChannelId } from "@/types/types";
 import { DebugProxy } from "@/utils";
 import { LocalDiscoveryServer } from "@/utils";
 import { config, createConfig } from "@/utils/config";
@@ -200,7 +201,6 @@ export class P2pRuntimeHostRoot<
         );
         this.payload = payload;
         this.runtimeSignerSecret = payload.signerSecret;
-        this.boundChannelId = payload.persistence?.channelId;
         this.context = {
             ...local,
             threadLabel:
@@ -267,8 +267,7 @@ export class P2pRuntimeHostRoot<
         this.p2pSigner = new P2pSignerService(
             this.router,
             () => this.requireManager().p2pSigner,
-            signer,
-            (channelId) => this.bindPersistenceForChannel(channelId)
+            signer
         );
         this.hostRpc = new HostRpcService(this.router, () =>
             this.requireManager()
@@ -372,38 +371,46 @@ export class P2pRuntimeHostRoot<
         return this.requireManager().localRpc as TApplication;
     }
 
-    private async bindPersistenceForChannel(channelId: string): Promise<void> {
-        const payload = this.payload;
-        if (!payload.persistence) return;
+    /**
+     * `StateManager.setChannelId`'s partition bind: the partition a resumed
+     * channel opened before the signer was built, or the channel's partition
+     * opened now. A runtime binds one channel.
+     */
+    private async bindPersistence(
+        storage: Storage,
+        channelId: ChannelId,
+        onFailure: () => void
+    ): Promise<void> {
+        const persistence = this.payload.persistence;
+        if (!persistence) return;
         const normalizedChannelId = ethers.hexlify(channelId).toLowerCase();
-        if (this.boundChannelId) {
-            if (
-                ethers.hexlify(this.boundChannelId).toLowerCase() !==
-                normalizedChannelId
-            ) {
-                throw new Error(
-                    "A persistent runtime cannot be rebound to another channel"
-                );
-            }
-            return;
-        }
-        if (!this.runtimeHandle) throw new Error("Runtime is not ready");
-        const partition = await openPersistencePartition({
-            identity: {
-                ...payload.persistence.identity,
-                channelId: normalizedChannelId
-            },
-            persistence: payload.persistence.options,
-            signerSecret: this.runtimeSignerSecret,
-            existingPartition: "reject"
-        });
-        if (partition.signerSecret !== this.runtimeSignerSecret) {
-            await partition.databaseHandle.close();
+        if (this.boundChannelId !== undefined) {
+            if (this.boundChannelId === normalizedChannelId) return;
             throw new Error(
-                "Late channel binding cannot replace the runtime signer"
+                "A persistent runtime cannot be rebound to another channel"
             );
         }
-        await this.runtimeHandle.storage.bind(partition.databaseHandle);
+        let databaseHandle = this.persistenceDatabaseHandle;
+        this.persistenceDatabaseHandle = undefined;
+        if (!databaseHandle) {
+            const partition = await openPersistencePartition({
+                identity: {
+                    ...persistence.identity,
+                    channelId: normalizedChannelId
+                },
+                persistence: persistence.options,
+                signerSecret: this.runtimeSignerSecret
+            });
+            // another signer's partition for this channel
+            if (partition.signerSecret !== this.runtimeSignerSecret) {
+                await partition.databaseHandle.close();
+                throw new Error(
+                    "The channel's persisted partition belongs to another signer"
+                );
+            }
+            databaseHandle = partition.databaseHandle;
+        }
+        await storage.open(databaseHandle, onFailure);
         this.boundChannelId = normalizedChannelId;
     }
 
@@ -457,7 +464,9 @@ export class P2pRuntimeHostRoot<
             // own flush failures).
             () => stateManager.abortFlush,
             // pending disk writes drain; a write after the cut stays in memory
-            () => runtime.storage.close()
+            () => runtime.storage.close(),
+            // a resumed channel's partition the build never bound
+            () => this.persistenceDatabaseHandle?.close()
         ));
     }
 
@@ -476,8 +485,7 @@ export class P2pRuntimeHostRoot<
                     channelId: payload.persistence.channelId
                 },
                 persistence: payload.persistence.options,
-                signerSecret: payload.signerSecret,
-                existingPartition: "allow"
+                signerSecret: payload.signerSecret
             });
             this.persistenceDatabaseHandle = partition.databaseHandle;
             this.runtimeSignerSecret = partition.signerSecret;
@@ -610,10 +618,6 @@ export class P2pRuntimeHostRoot<
             logger,
             payload.persistence?.options
         );
-        if (this.persistenceDatabaseHandle) {
-            await storage.bind(this.persistenceDatabaseHandle);
-            this.persistenceDatabaseHandle = undefined;
-        }
 
         const stateManager = new StateManager<MainRpcService, unknown>(
             // Managed signer: becomes StateManager.signer → DisputeManager.signer,
@@ -631,12 +635,16 @@ export class P2pRuntimeHostRoot<
             storage,
             logger,
             () => this.dispose(),
+            // a disk batch that fails for good ends the runtime
+            (channelId) =>
+                this.bindPersistence(storage, channelId, () =>
+                    stateManager.abort()
+                ),
             // Local-only: consumer custom RPCs parent their child roots here.
             { owner: this },
             customRpcResolved?.customRpc,
             customRpcResolved?.customRpcOptions
         );
-        storage.setPersistenceFailureHandler(() => stateManager.abort());
 
         if (this.webRTCConnectionFactory)
             stateManager.p2pManager.localRpc.webRTCSetupService.setConnectionFactory(
@@ -683,9 +691,8 @@ export class P2pRuntimeHostRoot<
             throw new RootDisposedError("Runtime disposed during setup");
         }
         // after the handle: a failed restore still closes the partition
-        if (this.boundChannelId) {
-            await stateManager.setChannelId(this.boundChannelId);
-        }
+        const resumedChannelId = payload.persistence?.channelId;
+        if (resumedChannelId) await stateManager.setChannelId(resumedChannelId);
         steps.mark("stateManager");
         await stateManager.p2pManager.localRpc.ready();
         steps.mark("applicationReady");

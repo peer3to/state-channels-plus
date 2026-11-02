@@ -28,6 +28,13 @@ interface PreparedState {
  */
 export default class StateApplicationService {
     private readonly logger: Logger;
+    // the restored head and its install reads, held until the restart sync settles
+    private restoredHold?: {
+        forkId: ForkId;
+        latestBlockHeight: number;
+        timestamp: number;
+        prepared: PreparedState;
+    };
 
     constructor(
         private readonly stateManager: StateManager,
@@ -76,7 +83,6 @@ export default class StateApplicationService {
             outboundMessageBlock,
             prepared
         );
-        await sm.storage.flush();
         if (previousForkId !== stateSnapshot.forkId)
             sm.reductionManager.settleForkLeft(previousForkId);
         return true;
@@ -120,7 +126,6 @@ export default class StateApplicationService {
             outboundMessageBlock,
             prepared
         );
-        await sm.storage.flush();
         return true;
     }
 
@@ -155,6 +160,51 @@ export default class StateApplicationService {
     }
 
     /**
+     * Restart: installs the persisted local head and holds the runtime at
+     * `SYNCED` until `releaseRestoredHead` runs once the restart sync settled.
+     */
+    public async installRestoredHead(
+        stateSnapshot: StateSnapshotStruct,
+        encodedState: Bytes
+    ): Promise<void> {
+        const prepared = await this.prepare(encodedState);
+        this.commit(stateSnapshot, encodedState, undefined, prepared, true);
+    }
+
+    /** Whether a restored head waits for the restart sync. */
+    public get holdsRestoredHead(): boolean {
+        return this.restoredHold !== undefined;
+    }
+
+    /**
+     * Ends the restart hold: derives the status and arms the turn and the
+     * participant timeout from the restored head. A sync install or a block
+     * commit since the restore already did both, so it then does nothing.
+     */
+    public releaseRestoredHead(): void {
+        const hold = this.restoredHold;
+        if (!hold) return;
+        this.restoredHold = undefined;
+        const sm = this.stateManager;
+        if (
+            sm.status !== Status.SYNCED ||
+            sm.forkId !== hold.forkId ||
+            sm.storage.blocks.getLatestBlockHeight(hold.forkId) !==
+                hold.latestBlockHeight
+        )
+            return;
+        this.applyParticipationStatus(
+            hold.prepared.participants,
+            hold.prepared.listedOnChain
+        );
+        this.scheduleFollowUps(
+            hold.forkId,
+            hold.prepared.nextToWrite,
+            hold.timestamp
+        );
+    }
+
+    /**
      * Prepare: the canonical VM write and the derived VM and chain reads.
      * A failed read restores the previous VM state and throws.
      */
@@ -184,12 +234,14 @@ export default class StateApplicationService {
         stateSnapshot: StateSnapshotStruct,
         encodedState: Bytes,
         outboundMessageBlock: MessageBlockStruct | undefined,
-        prepared: PreparedState
+        prepared: PreparedState,
+        holdParticipation = false
     ): void {
         const sm = this.stateManager;
         // Persist state snapshot (as a model)
-        const latestSnapshot = StateSnapshot.from(stateSnapshot);
-        sm.storage.stateSnapshots.storeStateSnapshot(latestSnapshot);
+        sm.storage.stateSnapshots.storeStateSnapshot(
+            StateSnapshot.from(stateSnapshot)
+        );
         // Persist outbound message block if provided
         if (outboundMessageBlock)
             sm.storage.outboundMessages.store(outboundMessageBlock);
@@ -199,18 +251,25 @@ export default class StateApplicationService {
         });
         // Update the forkId to the new fork
         sm.forkId = stateSnapshot.forkId;
-        // TODO(persistence): recover legal prefixes if the process crashes
-        // between these individually durable records.
-        sm.storage.setRuntimeMetadata({
-            activeForkId: stateSnapshot.forkId,
-            headHash: sm.storage.blocks.getLatestBlock(stateSnapshot.forkId)
-                ?.hash,
-            snapshotHash: latestSnapshot.hash,
-            stateHash: latestSnapshot.stateMachineStateHash
-        });
+        // the fork a restart reinstalls
+        sm.storage.stateSnapshots.storeHeadForkId(stateSnapshot.forkId);
         sm.membershipService.publishOffChainEligibility(
             stateSnapshot.snapshotData.participants
         );
+        if (holdParticipation) {
+            // a restored head is stale until the restart sync settles: no
+            // participation, turn or participant timeout from it yet
+            this.restoredHold = {
+                forkId: stateSnapshot.forkId,
+                latestBlockHeight: sm.storage.blocks.getLatestBlockHeight(
+                    stateSnapshot.forkId
+                ),
+                timestamp: Number(stateSnapshot.timestamp),
+                prepared
+            };
+            sm.setStatus(Status.SYNCED);
+            return;
+        }
         this.applyParticipationStatus(
             prepared.participants,
             prepared.listedOnChain
