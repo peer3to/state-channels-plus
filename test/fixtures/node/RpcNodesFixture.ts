@@ -1482,6 +1482,37 @@ export async function assertInvalidLogWindowRejectsStartup(): Promise<void> {
     });
 }
 
+export async function assertBoundaryMirrorSampleRatesStart(): Promise<void> {
+    await withIsolatedHardhatNode(async (node) => {
+        const logger = quietLogger();
+        const reachable = await RpcNodeProxy.start(node._getConnection().url);
+        try {
+            // both ends of the range are legal: never sample, sample every read
+            for (const sampleRate of [0, 1]) {
+                const context = await createRuntimeChainContext(
+                    {
+                        ...config,
+                        PROVIDER_URLS: [reachable.url],
+                        MIRROR_SAMPLE_RATE: sampleRate
+                    },
+                    Wallet.createRandom().privateKey,
+                    logger
+                );
+                try {
+                    expect(await context.provider.getBlockNumber()).to.equal(
+                        await node.getBlockNumber()
+                    );
+                } finally {
+                    await context.provider.destroy();
+                }
+            }
+        } finally {
+            await reachable.close();
+            logger.dispose();
+        }
+    });
+}
+
 export async function assertInvalidMirrorSampleRateRejectsStartup(): Promise<void> {
     await withIsolatedHardhatNode(async (node) => {
         const logger = quietLogger();

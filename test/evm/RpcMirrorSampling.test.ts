@@ -1,13 +1,14 @@
 import { sleep } from "@/utils";
 import {
     deployMirroredStorage,
+    mismatchLog,
     nodeRequests,
     nodeStateReads,
     withMirrorSession
 } from "@test/fixtures/node/RpcMirrorFixture";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { toBeHex } from "ethers";
+import { toBeHex, ZeroHash } from "ethers";
 
 describe("MirrorRpcProvider sampling", function () {
     it("re-asks the node about a sampled read after replying, and keeps the account when the node agrees", async function () {
@@ -129,6 +130,7 @@ describe("MirrorRpcProvider sampling", function () {
                     toBeHex(BigInt(result as string) + 1n, 32)
                 );
                 await (await storage.setValue(5n)).wait();
+                const head = (await session.chain.getBlock("latest"))!;
 
                 const wrong = await session.provider.getStorage(address, 0);
                 // the mismatch drops the account: the read then comes from the node
@@ -142,6 +144,74 @@ describe("MirrorRpcProvider sampling", function () {
                 );
 
                 expect(BigInt(wrong)).to.equal(6n);
+                // Mutation: the mismatch is not logged, or its log carries a value.
+                const logged = mismatchLog(session);
+                expect(logged).to.include({
+                    method: "eth_getStorageAt",
+                    blockHash: head.hash,
+                    account: address.toLowerCase()
+                });
+                expect(BigInt(String(logged?.slot))).to.equal(0n);
+                expect(JSON.stringify(logged)).to.not.include(
+                    toBeHex(5n, 32).slice(2)
+                );
+                expect(JSON.stringify(logged)).to.not.include(
+                    toBeHex(6n, 32).slice(2)
+                );
+            },
+            { sampleRate: 1 }
+        );
+    });
+
+    // Mutation: a block's record or a snapshot puts the feed's values back for a dropped account.
+    it("keeps reading a dropped account from the node after a block writes it and after the service connection comes back", async function () {
+        await withMirrorSession(
+            async (session) => {
+                const { storage, address } =
+                    await deployMirroredStorage(session);
+                session.relay.tamper("eth_getStorageAt", (result) =>
+                    toBeHex(BigInt(result as string) + 1n, 32)
+                );
+                await (await storage.setValue(5n)).wait();
+                await session.provider.getStorage(address, 0);
+                await waitFor(
+                    async () =>
+                        BigInt(
+                            await session.provider.getStorage(address, 0)
+                        ) === 5n,
+                    5_000,
+                    20
+                );
+                // reads of the dropped account by block number; samples name a block hash
+                const nodeReads = (slot: bigint) =>
+                    nodeRequests(session, "eth_getStorageAt").filter(
+                        (request) => {
+                            const [, asked, block] =
+                                request.params as unknown[];
+                            return (
+                                typeof block === "string" &&
+                                BigInt(String(asked)) === slot
+                            );
+                        }
+                    ).length;
+
+                await (await storage.setValue(7n)).wait();
+                const beforeWrite = nodeReads(0n);
+                expect(
+                    BigInt(await session.provider.getStorage(address, 0))
+                ).to.equal(7n);
+                expect(nodeReads(0n)).to.be.greaterThan(beforeWrite);
+
+                session.service.cut();
+                session.service.restore();
+                // the first read follows again; its snapshot comes after it
+                await session.provider.getStorage(address, 9);
+                await sleep(300);
+                const beforeSlot = nodeReads(10n);
+                expect(await session.provider.getStorage(address, 10)).to.equal(
+                    ZeroHash
+                );
+                expect(nodeReads(10n)).to.be.greaterThan(beforeSlot);
             },
             { sampleRate: 1 }
         );
@@ -165,6 +235,17 @@ describe("MirrorRpcProvider sampling", function () {
                 );
 
                 expect(wrong).to.equal(6n);
+                // Mutation: the call's mismatch log lacks its selector, or carries a value.
+                const logged = mismatchLog(session);
+                expect(logged?.functionSelector).to.equal(
+                    storage.interface.getFunction("getValue")!.selector
+                );
+                expect(JSON.stringify(logged)).to.not.include(
+                    toBeHex(5n, 32).slice(2)
+                );
+                expect(JSON.stringify(logged)).to.not.include(
+                    toBeHex(6n, 32).slice(2)
+                );
             },
             { sampleRate: 1 }
         );

@@ -95,6 +95,37 @@ describe("MirrorRpcProvider freshness", function () {
         });
     });
 
+    // Mutation: a backstop seeded with a short default ends the first wait early.
+    it("waits the whole cap, then asks the node, for an announced block before any record has reached the copy", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, chainStorage } =
+                await deployMirroredStorage(session);
+            expect(await storage.getValue()).to.equal(0n);
+            // the runtime listens to blocks; the provider relays what it hears
+            await session.provider.on("block", () => undefined);
+            const release =
+                session.service.holdNotifications("scp_subscription");
+            await (await chainStorage.setValue(3n)).wait();
+            // time is the input: the node's announcement reaches the provider
+            await sleep(ABSENCE_WINDOW_MS);
+
+            let settled = false;
+            const started = Date.now();
+            const read = storage.getValue().finally(() => (settled = true));
+            await sleep(SDK_RPC_DEADLINE_MS / 2);
+            expect(settled, "no arrival yet: the wait is the cap").to.equal(
+                false
+            );
+            const value = await read;
+            const elapsed = Date.now() - started;
+            release();
+
+            expect(value).to.equal(3n);
+            expect(elapsed).to.be.lessThan(SDK_RPC_DEADLINE_MS);
+            expect(nodeRequests(session, "eth_call")).to.have.length(1);
+        });
+    });
+
     it("answers with the node's value, not the older head's, when a block never reaches the copy within the learned backstop", async function () {
         await withMirrorSession(async (session) => {
             const { storage, chainStorage } =

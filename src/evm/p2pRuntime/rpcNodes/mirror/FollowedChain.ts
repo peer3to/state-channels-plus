@@ -31,6 +31,8 @@ export interface FollowedChainHandlers {
     onCleared(): void;
     /** A snapshot made `address` what the feed said. */
     onSnapshotPlaced(address: AccountAddress): void;
+    /** Whether `address` is read from the node: the feed's values for it are not kept. */
+    isNodeRead(address: AccountAddress): boolean;
 }
 
 /**
@@ -93,10 +95,6 @@ export class FollowedChain {
         for (const address of addresses) this.trackedSince.set(address, number);
     }
 
-    private toBlock(record: BlockStorageDiff): MirrorBlock {
-        return { number: BigInt(record.number), hash: record.hash };
-    }
-
     hashAt(number: bigint): string | undefined {
         if (this.base!.number === number) return this.base!.hash;
         const record = this.applied[Number(number - this.base!.number) - 1];
@@ -120,6 +118,7 @@ export class FollowedChain {
 
     private applyBlock(record: BlockStorageDiff): void {
         this.state.fill(record.post);
+        this.forgetNodeRead(record);
         this.applied.push(record);
         this.handlers.onArrived(BigInt(record.number));
         if (this.pendingSnapshots.length > 0) {
@@ -139,6 +138,7 @@ export class FollowedChain {
         const record = this.applied.pop();
         if (!record) throw new Error("Cannot roll back below the first block");
         this.state.revertBlock(record);
+        this.forgetNodeRead(record);
         // a block rolled back is no longer the chain's: nothing to wait for
         this.handlers.onRolledBack(record.hash);
         const number = BigInt(record.number);
@@ -164,8 +164,18 @@ export class FollowedChain {
             return;
         }
         if (this.hashAt(number) !== snapshot.block.hash) return;
-        const addresses = Object.keys(snapshot.accounts);
-        this.state.applySnapshot(snapshot.accounts);
+        // an account read from the node takes no state from the feed
+        const addresses = Object.keys(snapshot.accounts).filter(
+            (address) => !this.handlers.isNodeRead(address)
+        );
+        this.state.applySnapshot(
+            Object.fromEntries(
+                addresses.map((address) => [
+                    address,
+                    snapshot.accounts[address]
+                ])
+            )
+        );
         for (const record of this.applied)
             if (BigInt(record.number) > number)
                 this.state.replay(record, addresses);
@@ -184,5 +194,19 @@ export class FollowedChain {
         this.trackedSince.clear();
         this.pendingSnapshots = [];
         this.handlers.onCleared();
+    }
+
+    private toBlock(record: BlockStorageDiff): MirrorBlock {
+        return { number: BigInt(record.number), hash: record.hash };
+    }
+
+    /**
+     * Forgets what `record` changed of the accounts read from the node, so a
+     * read of it goes to the node again rather than taking the feed's value.
+     */
+    private forgetNodeRead(record: BlockStorageDiff): void {
+        for (const [address, post] of Object.entries(record.post))
+            if (this.handlers.isNodeRead(address))
+                this.state.forget(address, post);
     }
 }

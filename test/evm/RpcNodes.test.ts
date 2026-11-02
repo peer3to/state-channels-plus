@@ -7,6 +7,7 @@ import {
     assertFirstNodeErrorAnswerIsFinal,
     assertHeartbeatErrorAnswerKeepsNode,
     assertInvalidLogWindowRejectsStartup,
+    assertBoundaryMirrorSampleRatesStart,
     assertInvalidMirrorSampleRateRejectsStartup,
     assertInvalidSecretOpensNoNode,
     assertLogsComeOnceFromNodeSockets,
@@ -168,6 +169,11 @@ describe("MultiRpcProvider", () => {
 
     it("rejects startup over a mirror sampling fraction outside 0 to 1 without opening a node", async () => {
         await assertInvalidMirrorSampleRateRejectsStartup();
+    });
+
+    // Mutation: the rate check excludes 0 or 1 (a strict bound).
+    it("starts with a mirror sample rate of 0 and of 1, the ends of the range", async () => {
+        await assertBoundaryMirrorSampleRatesStart();
     });
 
     it("relays each new block once from the node sockets without polling", async () => {

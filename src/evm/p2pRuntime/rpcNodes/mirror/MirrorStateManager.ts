@@ -234,6 +234,16 @@ export class MirrorStateManager extends RPCStateManager {
         this.accounts.delete(address);
     }
 
+    /** Forgets the fields and slots of `address` that `diff` names. */
+    forget(address: AccountAddress, diff: AccountDiff): void {
+        const account = this.accounts.get(address);
+        if (!account) return;
+        account.complete = false;
+        this.setFields(account, diff, {});
+        for (const slot of Object.keys(diff.storage ?? {}))
+            account.storage.delete(slot);
+    }
+
     /** Whether `address` has its complete state cached. */
     isComplete(address: AccountAddress): boolean {
         return this.accounts.get(address)?.complete === true;

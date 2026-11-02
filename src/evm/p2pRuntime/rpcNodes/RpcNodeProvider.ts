@@ -85,6 +85,25 @@ class NodeSocket extends WebSocketProvider {
         await super._processMessage(message);
     }
 
+    // Overrides JsonRpcApiProvider.send: ethers sends a removed subscription's
+    // eth_unsubscribe unawaited, so any failure (e.g. the socket destroyed
+    // before the answer) is settled here; the subscription ends with the socket.
+    // ethers also keeps an eth_subscribe answer unhandled: one cancelled by
+    // this socket's destroy never settles, as the subscription is gone with it.
+    override send(
+        method: string,
+        params: unknown[] | Record<string, unknown>
+    ): Promise<unknown> {
+        const answer = super.send(method, params);
+        if (method === "eth_unsubscribe") answer.catch(() => undefined);
+        if (method === "eth_subscribe")
+            return answer.catch((error: unknown) => {
+                if (this.destroyed) return new Promise<never>(() => undefined);
+                throw error;
+            });
+        return answer;
+    }
+
     private reportAnnouncedBlock(
         message: string,
         announced: (blockNumber: bigint) => void
@@ -105,25 +124,6 @@ class NodeSocket extends WebSocketProvider {
         } catch {
             // not a notification this hook understands: the socket handles it
         }
-    }
-
-    // Overrides JsonRpcApiProvider.send: ethers sends a removed subscription's
-    // eth_unsubscribe unawaited, so any failure (e.g. the socket destroyed
-    // before the answer) is settled here; the subscription ends with the socket.
-    // ethers also keeps an eth_subscribe answer unhandled: one cancelled by
-    // this socket's destroy never settles, as the subscription is gone with it.
-    override send(
-        method: string,
-        params: unknown[] | Record<string, unknown>
-    ): Promise<unknown> {
-        const answer = super.send(method, params);
-        if (method === "eth_unsubscribe") answer.catch(() => undefined);
-        if (method === "eth_subscribe")
-            return answer.catch((error: unknown) => {
-                if (this.destroyed) return new Promise<never>(() => undefined);
-                throw error;
-            });
-        return answer;
     }
 }
 

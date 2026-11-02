@@ -95,17 +95,17 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
         return Promise.all(requests.map((request) => this.answer(request)));
     }
 
-    // Overrides MultiRpcProvider.noteNodeAnswer: keeps the node round trips
-    // the mirror's waits leave room for.
-    protected override noteNodeAnswer(durationMs: number): void {
-        this.nodeRoundTrips.record(durationMs);
-    }
-
     // Overrides MultiRpcProvider.destroy: also closes the mirror.
     override destroy(): void {
         for (const unwatch of this.unwatchNodes.splice(0)) unwatch();
         void this.mirror?.close();
         super.destroy();
+    }
+
+    // Overrides MultiRpcProvider.noteNodeAnswer: keeps the node round trips
+    // the mirror's waits leave room for.
+    protected override noteNodeAnswer(durationMs: number): void {
+        this.nodeRoundTrips.record(durationMs);
     }
 
     private async answer(

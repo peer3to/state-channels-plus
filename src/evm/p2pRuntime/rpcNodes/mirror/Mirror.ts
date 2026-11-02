@@ -175,8 +175,8 @@ export class Mirror {
 
     /** The number of the newest block the service follows. */
     async blockNumber(): Promise<bigint> {
-        const head = await this.chain.queryService((socket) =>
-            socket.fetchHead(this.chain.seenBlock)
+        const head = await this.chain.queryService((socket, timeoutMs) =>
+            socket.fetchHead(this.chain.seenBlock, timeoutMs)
         );
         return this.fresh(BigInt(head.number));
     }
@@ -186,8 +186,8 @@ export class Mirror {
      * or a latest older than one the node announced, is declined.
      */
     async getBlock(selector: BlockSelector, full: boolean): Promise<RpcBlock> {
-        const block = await this.chain.queryService((socket) =>
-            socket.fetchBlock(selector, full, this.chain.seenBlock)
+        const block = await this.chain.queryService((socket, timeoutMs) =>
+            socket.fetchBlock(selector, full, this.chain.seenBlock, timeoutMs)
         );
         if (!block) throw new MirrorUnavailableError("Block not retained");
         if (selector === "latest") this.fresh(BigInt(block.number));
@@ -197,8 +197,8 @@ export class Mirror {
     /** A transaction of a block the service retains; declined if it holds none. */
     async getTransaction(hash: string): Promise<unknown> {
         return this.known(
-            await this.chain.queryService((socket) =>
-                socket.fetchTransaction(hash, this.chain.seenBlock)
+            await this.chain.queryService((socket, timeoutMs) =>
+                socket.fetchTransaction(hash, this.chain.seenBlock, timeoutMs)
             )
         );
     }
@@ -206,8 +206,8 @@ export class Mirror {
     /** A receipt of a block the service retains; declined if it holds none. */
     async getTransactionReceipt(hash: string): Promise<unknown> {
         return this.known(
-            await this.chain.queryService((socket) =>
-                socket.fetchReceipt(hash, this.chain.seenBlock)
+            await this.chain.queryService((socket, timeoutMs) =>
+                socket.fetchReceipt(hash, this.chain.seenBlock, timeoutMs)
             )
         );
     }

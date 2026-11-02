@@ -22,6 +22,9 @@ export class StorageDiffPrunedError extends Error {}
 /** The feed does not retain the block of a state read: unknown, orphaned or too old. */
 export class StorageDiffNotRetainedError extends Error {}
 
+/** The feed did not answer a request in the time its caller had. */
+export class StorageDiffTimeoutError extends Error {}
+
 /** What a feed pushes. */
 export type MirrorFeedHandlers = {
     /** A record pushed to `subscription`. */
@@ -98,10 +101,15 @@ export class StorageDiffSocket extends WebSocketProvider {
      * answer says, per address, whether a snapshot is ready, to follow, or
      * not coming. Subscribes to every canonical block's record for `addresses`.
      */
-    async subscribe(addresses: AccountAddress[]): Promise<SubscribeResult> {
-        const result = (await this.request("scp_subscribeContractStorage", [
-            addresses
-        ])) as SubscribeResult;
+    async subscribe(
+        addresses: AccountAddress[],
+        timeoutMs?: number
+    ): Promise<SubscribeResult> {
+        const result = (await this.request(
+            "scp_subscribeContractStorage",
+            [addresses],
+            timeoutMs
+        )) as SubscribeResult;
         if (
             typeof result?.subscription !== "string" ||
             typeof result.accounts !== "object"
@@ -110,8 +118,11 @@ export class StorageDiffSocket extends WebSocketProvider {
         return result;
     }
 
-    async unsubscribe(subscription: SubscriptionId): Promise<void> {
-        await this.request("scp_unsubscribe", [subscription]);
+    async unsubscribe(
+        subscription: SubscriptionId,
+        timeoutMs?: number
+    ): Promise<void> {
+        await this.request("scp_unsubscribe", [subscription], timeoutMs);
     }
 
     /**
@@ -120,12 +131,14 @@ export class StorageDiffSocket extends WebSocketProvider {
      */
     async catchUp(
         addresses: AccountAddress[],
-        fromBlock: bigint
+        fromBlock: bigint,
+        timeoutMs?: number
     ): Promise<StorageDiffCatchUp> {
-        const answer = await this.request("scp_getContractStorageDiffs", [
-            addresses,
-            "0x" + fromBlock.toString(16)
-        ]);
+        const answer = await this.request(
+            "scp_getContractStorageDiffs",
+            [addresses, "0x" + fromBlock.toString(16)],
+            timeoutMs
+        );
         if (!isCatchUp(answer))
             throw new Error("Malformed storage diff catch-up");
         return answer;
@@ -134,12 +147,14 @@ export class StorageDiffSocket extends WebSocketProvider {
     /** The requested values at the retained block `blockHash`. */
     async getState(
         blockHash: string,
-        requests: StateRequestParams[]
+        requests: StateRequestParams[],
+        timeoutMs?: number
     ): Promise<StorageDiffState> {
-        const answer = await this.request("scp_getState", [
-            blockHash,
-            requests
-        ]);
+        const answer = await this.request(
+            "scp_getState",
+            [blockHash, requests],
+            timeoutMs
+        );
         if (!isState(answer)) throw new Error("Malformed storage diff state");
         return answer;
     }
@@ -148,39 +163,54 @@ export class StorageDiffSocket extends WebSocketProvider {
     async fetchBlock(
         block: BlockSelector,
         full: boolean,
-        minBlock?: string
+        minBlock?: string,
+        timeoutMs?: number
     ): Promise<RpcBlock | null> {
-        const answer = await this.request("scp_getBlock", [
-            block,
-            full,
-            ...(minBlock ? [minBlock] : [])
-        ]);
+        const answer = await this.request(
+            "scp_getBlock",
+            [block, full, ...(minBlock ? [minBlock] : [])],
+            timeoutMs
+        );
         if (answer !== null && !isRecord(answer))
             throw new Error("Malformed storage diff block");
         return answer as RpcBlock | null;
     }
 
     /** A transaction of a retained block, or null. */
-    async fetchTransaction(hash: string, minBlock?: string): Promise<unknown> {
-        return await this.request("scp_getTransaction", [
-            hash,
-            ...(minBlock ? [minBlock] : [])
-        ]);
+    async fetchTransaction(
+        hash: string,
+        minBlock?: string,
+        timeoutMs?: number
+    ): Promise<unknown> {
+        return await this.request(
+            "scp_getTransaction",
+            [hash, ...(minBlock ? [minBlock] : [])],
+            timeoutMs
+        );
     }
 
     /** The receipt of a transaction of a retained block, or null. */
-    async fetchReceipt(hash: string, minBlock?: string): Promise<unknown> {
-        return await this.request("scp_getTransactionReceipt", [
-            hash,
-            ...(minBlock ? [minBlock] : [])
-        ]);
+    async fetchReceipt(
+        hash: string,
+        minBlock?: string,
+        timeoutMs?: number
+    ): Promise<unknown> {
+        return await this.request(
+            "scp_getTransactionReceipt",
+            [hash, ...(minBlock ? [minBlock] : [])],
+            timeoutMs
+        );
     }
 
     /** The environment of the service's best head, once it reaches `minBlock` if one is named. */
-    async fetchHead(minBlock?: string): Promise<BlockEnvironment> {
+    async fetchHead(
+        minBlock?: string,
+        timeoutMs?: number
+    ): Promise<BlockEnvironment> {
         const answer = await this.request(
             "scp_getHead",
-            minBlock ? [minBlock] : []
+            minBlock ? [minBlock] : [],
+            timeoutMs
         );
         if (!isBlockEnvironment(answer))
             throw new Error("Malformed storage diff head");
@@ -224,11 +254,37 @@ export class StorageDiffSocket extends WebSocketProvider {
         await super.destroy();
     }
 
-    private async request(method: string, params: unknown[]): Promise<unknown> {
+    /**
+     * One request, answered before the socket ends and, with `timeoutMs`,
+     * within that time; a request with no time left is not sent.
+     */
+    private async request(
+        method: string,
+        params: unknown[],
+        timeoutMs?: number
+    ): Promise<unknown> {
+        if (timeoutMs !== undefined && timeoutMs <= 0)
+            throw new StorageDiffTimeoutError(`No time left for ${method}`);
+        let timer: ReturnType<typeof setTimeout> | undefined;
         try {
             return await Promise.race([
                 this.send(method, params),
-                this.ended.then((reason) => Promise.reject(reason))
+                this.ended.then((reason) => Promise.reject(reason)),
+                ...(timeoutMs === undefined
+                    ? []
+                    : [
+                          new Promise<never>((_, reject) => {
+                              timer = setTimeout(
+                                  () =>
+                                      reject(
+                                          new StorageDiffTimeoutError(
+                                              `${method} timed out`
+                                          )
+                                      ),
+                                  timeoutMs
+                              );
+                          })
+                      ])
             ]);
         } catch (error) {
             if (isRecord(error) && isRecord(error.error)) {
@@ -242,6 +298,8 @@ export class StorageDiffSocket extends WebSocketProvider {
                     );
             }
             throw error;
+        } finally {
+            clearTimeout(timer);
         }
     }
 }

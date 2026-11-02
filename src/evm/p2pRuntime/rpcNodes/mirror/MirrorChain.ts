@@ -92,6 +92,11 @@ export class MirrorChain {
     private subscription?: SubscriptionId;
     /** Accounts whose missing state is read from the node: the feed's copy was found wrong. */
     private readonly nodeRead = new Set<AccountAddress>();
+    /**
+     * When the read holding the lock must have its answer, its wait for the
+     * service included; unset while a pushed record or snapshot holds it.
+     */
+    private readDeadline?: number;
     private failedAttempts = 0;
     private retryAfterMs = 0;
     private closed = false;
@@ -111,7 +116,8 @@ export class MirrorChain {
                 this.freshness.notifyHeadWaiters();
             },
             onSnapshotPlaced: (address) =>
-                this.snapshotWaits.end(address, "arrived")
+                this.snapshotWaits.end(address, "arrived"),
+            isNodeRead: (address) => this.nodeRead.has(address)
         });
         this.freshness = new HeadFreshness(
             this.followed,
@@ -126,11 +132,6 @@ export class MirrorChain {
         );
     }
 
-    /** The block the cached state is at, if the mirror is following. */
-    get head(): MirrorBlock | undefined {
-        return this.followed.head;
-    }
-
     /**
      * A read issued from now on waits until the head reaches the block
      * `number` a node announced, so it never answers from before an event
@@ -138,17 +139,6 @@ export class MirrorChain {
      */
     requireNumber(number: bigint): void {
         this.freshness.requireNumber(number);
-    }
-
-    /**
-     * The most any wait may last: the SDK's deadline less what the node
-     * needs to answer the read the wait falls back to.
-     */
-    private get waitCapMs(): number {
-        return capLeavingNodeRoundTrips(
-            SDK_RPC_DEADLINE_MS,
-            this.nodeRoundTrips
-        );
     }
 
     /** The newest block number a node announced to this runtime. */
@@ -162,20 +152,29 @@ export class MirrorChain {
      * not open.
      */
     async queryService<T>(
-        ask: (feed: StorageDiffSocket) => Promise<T>
+        ask: (feed: StorageDiffSocket, timeoutMs: number) => Promise<T>
     ): Promise<T> {
+        // the node answers in the time left when the service does not
+        const deadline = Date.now() + this.waitCapMs;
         if (!this.feed) {
-            await this.lock.lock();
+            await this.lockBy(deadline);
+            this.readDeadline = deadline;
             try {
                 await this.ensureFollowing();
             } finally {
+                this.readDeadline = undefined;
                 this.lock.unlock();
             }
         }
         const feed = this.feed;
         if (!feed) throw new MirrorUnavailableError("Mirror is not following");
+        const timeoutMs = deadline - Date.now();
+        if (timeoutMs <= 0)
+            throw new MirrorUnavailableError(
+                "No time is left to ask the storage diff service"
+            );
         try {
-            return await ask(feed);
+            return await ask(feed, timeoutMs);
         } catch (error) {
             this.log("warn", "Storage diff service query failed", { error });
             throw new MirrorUnavailableError(
@@ -218,8 +217,11 @@ export class MirrorChain {
      * first, and the read runs again from the start, so one read sees one head.
      */
     async run<T>(read: (head: MirrorBlock) => Promise<T>): Promise<T> {
+        // what the read may spend on the mirror, leaving the node room to answer
+        const deadline = Date.now() + this.waitCapMs;
         await this.freshness.waitForRequiredBlock();
-        await this.lock.lock();
+        await this.lockBy(deadline);
+        this.readDeadline = deadline;
         try {
             for (let pass = 0; pass < MAX_DISCOVERY_PASSES; pass++) {
                 const head = await this.ensureFollowing();
@@ -246,6 +248,7 @@ export class MirrorChain {
                 "The read keeps finding state missing"
             );
         } finally {
+            this.readDeadline = undefined;
             this.lock.unlock();
         }
     }
@@ -261,6 +264,57 @@ export class MirrorChain {
         const feed = this.feed;
         this.feed = undefined;
         await feed?.destroy();
+    }
+
+    /**
+     * The most any wait may last: the SDK's deadline less what the node
+     * needs to answer the read the wait falls back to.
+     */
+    private get waitCapMs(): number {
+        return capLeavingNodeRoundTrips(
+            SDK_RPC_DEADLINE_MS,
+            this.nodeRoundTrips
+        );
+    }
+
+    /**
+     * Takes the lock unless `deadline` passes first; a read that cannot have
+     * it in time goes to the node, and the lock it was queued for is handed on.
+     */
+    private async lockBy(deadline: number): Promise<void> {
+        const acquired = this.lock.lock();
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const late = new Promise<false>((resolve) => {
+            timer = setTimeout(
+                () => resolve(false),
+                Math.max(0, deadline - Date.now())
+            );
+        });
+        const inTime = await Promise.race([acquired.then(() => true), late]);
+        clearTimeout(timer);
+        if (inTime) return;
+        void acquired.then(() => this.lock.unlock());
+        throw new MirrorUnavailableError(
+            "The mirror is busy past the read's deadline"
+        );
+    }
+
+    /**
+     * How long a service request may take: what the read holding the lock
+     * has left, or the SDK's deadline for a pushed record or snapshot.
+     */
+    private serviceTimeoutMs(): number {
+        return this.readDeadline === undefined
+            ? SDK_RPC_DEADLINE_MS
+            : Math.max(0, this.readDeadline - Date.now());
+    }
+
+    /** A read with no time left for the service goes to the node, the feed untouched. */
+    private assertTimeLeft(): void {
+        if (this.serviceTimeoutMs() <= 0)
+            throw new MirrorUnavailableError(
+                "No time is left to ask the storage diff service"
+            );
     }
 
     // Nothing is logged once closed: the owner's logger may be disposed first.
@@ -284,6 +338,7 @@ export class MirrorChain {
             throw new MirrorUnavailableError(
                 "Storage diff service unavailable"
             );
+        this.assertTimeLeft();
         try {
             if (!this.feed) await this.connect();
             if (!this.followed.base) await this.startFromServiceHead();
@@ -321,13 +376,17 @@ export class MirrorChain {
         });
         this.feed = feed;
         this.subscription = (
-            await feed.subscribe([...this.tracked])
+            await feed.subscribe([...this.tracked], this.serviceTimeoutMs())
         ).subscription;
     }
 
     /** Takes the service's best head as the head. */
     private async startFromServiceHead(): Promise<void> {
-        const answer = await this.feed!.catchUp([...this.tracked], BEYOND_HEAD);
+        const answer = await this.feed!.catchUp(
+            [...this.tracked],
+            BEYOND_HEAD,
+            this.serviceTimeoutMs()
+        );
         const head = answer.head;
         this.followed.begin(head, this.tracked);
     }
@@ -338,12 +397,13 @@ export class MirrorChain {
      * the service does not retain that block.
      */
     private async fillMisses(misses: StateRequestParams[]): Promise<void> {
+        this.assertTimeLeft();
+        const added = misses
+            .map((miss) => miss.address)
+            .filter((address) => !this.tracked.has(address));
+        // registered before following, so a snapshot that comes during it is applied at once
+        const snapshots = this.snapshotWaits.expectSnapshots(added);
         try {
-            const added = misses
-                .map((miss) => miss.address)
-                .filter((address) => !this.tracked.has(address));
-            // registered before following, so a snapshot that comes during it is applied at once
-            const snapshots = this.snapshotWaits.expectSnapshots(added);
             const statuses = await this.track(added);
             // only a snapshot the feed has ready is waited for; a syncing
             // account is read lazily now and takes its snapshot when it comes
@@ -378,7 +438,11 @@ export class MirrorChain {
                 this.state.fill(await this.readFromNode(head.number, fromNode));
             if (fromFeed.length === 0) return;
             try {
-                const state = await this.feed!.getState(head.hash, fromFeed);
+                const state = await this.feed!.getState(
+                    head.hash,
+                    fromFeed,
+                    this.serviceTimeoutMs()
+                );
                 this.state.fill(state.accounts);
             } catch (error) {
                 if (!(error instanceof StorageDiffNotRetainedError))
@@ -392,6 +456,9 @@ export class MirrorChain {
             throw new MirrorUnavailableError(
                 "Storage diff service unavailable"
             );
+        } finally {
+            // a read that ends early waits for none of them any more
+            snapshots.forget();
         }
     }
 
@@ -431,9 +498,9 @@ export class MirrorChain {
         const awaited = Object.keys(snapshot.accounts).some((address) =>
             this.snapshotWaits.isAwaited(address)
         );
-        void (awaited
-            ? this.applyAwaited(snapshot)
-            : this.applyQueued(snapshot));
+        // the read waiting for it holds the lock until the snapshot is placed
+        if (awaited) this.snapshotWaits.holdWhile(this.applyAwaited(snapshot));
+        else void this.applyQueued(snapshot);
     }
 
     private async applyAwaited(snapshot: StorageDiffSnapshot): Promise<void> {
@@ -524,25 +591,27 @@ export class MirrorChain {
         if (!head || !feed)
             throw new MirrorUnavailableError("Mirror is not following");
         const previous = this.subscription;
-        const subscribed = await feed.subscribe([
-            ...this.tracked,
-            ...addresses
-        ]);
+        const subscribed = await feed.subscribe(
+            [...this.tracked, ...addresses],
+            this.serviceTimeoutMs()
+        );
         this.subscription = subscribed.subscription;
         for (const address of addresses) this.tracked.add(address);
         this.followed.trackFrom(addresses, head.number);
         // the service keeping a superseded subscription costs only pushes the
         // new one also carries, so a failed unsubscribe keeps the connection
         if (previous)
-            await feed.unsubscribe(previous).catch((error) => {
-                this.log(
-                    "warn",
-                    "Mirror cannot drop its previous subscription",
-                    {
-                        error
-                    }
-                );
-            });
+            await feed
+                .unsubscribe(previous, this.serviceTimeoutMs())
+                .catch((error) => {
+                    this.log(
+                        "warn",
+                        "Mirror cannot drop its previous subscription",
+                        {
+                            error
+                        }
+                    );
+                });
         await this.catchUp(head.number + 1n);
         return subscribed.accounts;
     }
@@ -582,7 +651,11 @@ export class MirrorChain {
     private async catchUp(from: bigint): Promise<void> {
         let answer: StorageDiffCatchUp;
         try {
-            answer = await this.feed!.catchUp([...this.tracked], from);
+            answer = await this.feed!.catchUp(
+                [...this.tracked],
+                from,
+                this.serviceTimeoutMs()
+            );
         } catch (error) {
             if (!(error instanceof StorageDiffPrunedError)) throw error;
             this.log(

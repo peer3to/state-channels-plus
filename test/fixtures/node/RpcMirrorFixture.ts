@@ -4,6 +4,7 @@ import { StorageDiffClient } from "./StorageDiffClient";
 import { deployNumberStorage, deployRuntimeCode } from "./StorageDiffContracts";
 import {
     withStorageDiffUpstream,
+    type LoggedWarning,
     type StorageDiffServiceSettings
 } from "./StorageDiffSession";
 import {
@@ -16,6 +17,7 @@ import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
 import MirrorRpcProvider from "@/evm/p2pRuntime/rpcNodes/MirrorRpcProvider";
 import RpcNodeProvider from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import { createLogger } from "@/utils/logging";
+import type { Logger } from "@/utils/logging/Logger";
 import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
 import type { StorageDiffService } from "@/utils/node/storageDiff/StorageDiffService";
 import { waitFor } from "@test/utils/waitFor";
@@ -52,6 +54,8 @@ export type MirrorSession = {
     signer: JsonRpcSigner;
     /** Node account 0, sending its transactions through the mirror provider. */
     wallet: HDNodeWallet;
+    /** Warnings the provider's logger got, oldest first. */
+    warnings: LoggedWarning[];
 };
 
 export type MirrorSessionSettings = StorageDiffServiceSettings & {
@@ -91,6 +95,22 @@ export async function withMirrorSession<T>(
                 {},
                 { level: "error", attachErrorListener: false }
             );
+            // Records each warning of the logger and its children, then logs it as usual.
+            const warnings: LoggedWarning[] = [];
+            const capture = (target: Logger) => {
+                const warn = target.warn.bind(target);
+                target.warn = (message: unknown, ...meta: unknown[]) => {
+                    warnings.push({ message: String(message), meta });
+                    warn(message, ...meta);
+                };
+                const child = target.child.bind(target);
+                target.child = (context) => {
+                    const made = child(context);
+                    capture(made);
+                    return made;
+                };
+            };
+            capture(logger);
             const rpcNode = new RpcNodeProvider(node.url, logger);
             const provider = new MirrorRpcProvider([rpcNode], logger, {
                 storageDiffUrl: withoutService ? undefined : service.url,
@@ -108,7 +128,8 @@ export async function withMirrorSession<T>(
                     storageDiff,
                     chain,
                     signer,
-                    wallet: Wallet.fromPhrase(ANVIL_MNEMONIC).connect(provider)
+                    wallet: Wallet.fromPhrase(ANVIL_MNEMONIC).connect(provider),
+                    warnings
                 });
             } finally {
                 provider.destroy();
@@ -237,6 +258,15 @@ export async function deployCommitProbe(
     signer: JsonRpcSigner
 ): Promise<string> {
     return await deployRuntimeCode(signer, commitProbeRuntime());
+}
+
+/** The metadata of the provider's first log of a sample that differed from the node, if any. */
+export function mismatchLog(
+    session: MirrorSession
+): Record<string, unknown> | undefined {
+    return session.warnings.find(({ message }) =>
+        message.includes("answered locally differs from the node's")
+    )?.meta[0] as Record<string, unknown> | undefined;
 }
 
 /** Requests of `method` the provider sent to the storage diff service. */

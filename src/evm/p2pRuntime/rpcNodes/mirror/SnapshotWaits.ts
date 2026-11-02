@@ -25,6 +25,11 @@ export class SnapshotWaits {
      * which a block's record does not need.
      */
     private readonly snapshotBackstop: LearnedBackstop;
+    /**
+     * Snapshots being placed for a waiting read, which holds the lock for
+     * them: the read ends only once they are placed.
+     */
+    private readonly placing = new Set<Promise<void>>();
 
     constructor(
         capMs: () => number,
@@ -51,6 +56,12 @@ export class SnapshotWaits {
         this.awaitedSnapshots.get(address)?.("delayed");
     }
 
+    /** A snapshot a read waits for is being placed by `placed`. */
+    holdWhile(placed: Promise<void>): void {
+        this.placing.add(placed);
+        void placed.finally(() => this.placing.delete(placed));
+    }
+
     /** Ends every wait for a snapshot. */
     releaseAwaited(): void {
         for (const done of [...this.awaitedSnapshots.values()])
@@ -69,6 +80,7 @@ export class SnapshotWaits {
     expectSnapshots(addresses: AccountAddress[]): {
         release: (addresses: AccountAddress[]) => void;
         settled: () => Promise<void>;
+        forget: () => void;
     } {
         const waiting = addresses.filter(
             (address) => !this.isComplete(address)
@@ -80,13 +92,23 @@ export class SnapshotWaits {
         let resolveAll!: () => void;
         const all = new Promise<void>((resolve) => (resolveAll = resolve));
         if (remaining === 0) resolveAll();
-        for (const address of waiting)
-            this.awaitedSnapshots.set(address, (end) => {
+        const ends = new Map<AccountAddress, (end: SnapshotWaitEnd) => void>();
+        for (const address of waiting) {
+            const done = (end: SnapshotWaitEnd) => {
                 if (end === "delayed") delayed = true;
                 if (end === "arrived")
                     this.snapshotBackstop.record(Date.now() - startedAt);
                 if (--remaining === 0) resolveAll();
-            });
+            };
+            ends.set(address, done);
+            this.awaitedSnapshots.set(address, done);
+        }
+        // drops this read's entries, and only its own
+        const forget = () => {
+            for (const [address, done] of ends)
+                if (this.awaitedSnapshots.get(address) === done)
+                    this.awaitedSnapshots.delete(address);
+        };
         return {
             release: (released) => {
                 for (const address of released) this.end(address, "not-coming");
@@ -103,8 +125,9 @@ export class SnapshotWaits {
                 });
                 await Promise.race([all, expired]);
                 clearTimeout(timer);
-                for (const address of waiting)
-                    this.awaitedSnapshots.delete(address);
+                forget();
+                // a snapshot still being placed moves the head under this read
+                await Promise.all([...this.placing]);
                 // a snapshot that did not come sends the read to the node
                 if (expiredAtBackstop) {
                     throw new MirrorUnavailableError(
@@ -116,7 +139,8 @@ export class SnapshotWaits {
                         "The service said the snapshot is delayed"
                     );
                 }
-            }
+            },
+            forget
         };
     }
 }
