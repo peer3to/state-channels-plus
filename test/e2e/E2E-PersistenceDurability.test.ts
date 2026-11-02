@@ -1,3 +1,4 @@
+import { Status } from "@/types";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -57,6 +58,43 @@ describe("E2E: persistence durability", function () {
         }
     });
 
+    it("a spectator signs nothing, so a disk that fails every flush never stops it from following the channel", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 1, {
+            persistentPeers: [2],
+            timeConfig: DURABILITY_TIME_CONFIG
+        });
+        const { peer: spectator } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1],
+            minimumBlocks: 1,
+            maximumBlocks: 20
+        });
+        await h.assert.sync.peersInSyncWait({ waitForFinalization: true });
+        expect(
+            await h.control(spectator).stub.failPersistenceFlushes().request()
+        ).to.equal(true);
+
+        await h.transition.increment(1, {
+            waitForPeers: [0, 1, spectator.index]
+        });
+        await h.transition.increment(1, {
+            waitForPeers: [0, 1, spectator.index]
+        });
+
+        const forkId = h.activeForkId!;
+        const height = await h
+            .control(h.getPeer(0))
+            .query.getLatestBlockHeight(forkId)
+            .request();
+        expect(
+            await h
+                .control(spectator)
+                .query.getLatestBlockHeight(forkId)
+                .request()
+        ).to.equal(height);
+        expect(spectator.eventSpies.onAbort?.callCount ?? 0).to.equal(0);
+    });
+
     it("a node restarted after a failed flush of its signed block authors that height again and the channel advances", async () => {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 1, {
@@ -65,9 +103,15 @@ describe("E2E: persistence durability", function () {
         });
         const { forkId, author, height } = await failNextWritersFlush(h);
 
-        await h.lifecycle.restartPeer(author.index);
+        const restarted = await h.lifecycle.restartPeer(author.index);
         await h.network.connectPeers([author.index]);
         await h.network.waitForP2PConnections();
+        // the restored head authors only once its restart sync settled
+        const query = h.control(restarted).query;
+        await waitFor(
+            async () =>
+                (await query.getStatus().request()) === Status.PARTICIPATING
+        );
         await h.transition.advanceState({ count: 2 });
 
         const hashes = await Promise.all(

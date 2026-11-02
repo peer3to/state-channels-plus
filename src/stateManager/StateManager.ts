@@ -143,7 +143,8 @@ class StateManager<
         storage: Storage,
         logger: Logger,
         private readonly disposeRuntime: () => Promise<void>,
-        // binds the channel's disk partition; a no-op when persistence is off
+        // binds the channel's disk partition (NULL lets it go); a no-op when
+        // persistence is off
         private readonly bindPersistence: (
             channelId: ChannelId
         ) => Promise<void>,
@@ -454,6 +455,8 @@ class StateManager<
         this.disputeManager.setChannelId(NULL);
         this.eventSyncService.setChannelId(NULL);
         await this.stateChannelEventListener.clearChannelId();
+        // the attempt's partition goes; deleted when it holds no record
+        await this.bindPersistence(NULL);
     }
 
     public get checksumSignerAddress(): string {

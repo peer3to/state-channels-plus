@@ -88,6 +88,8 @@ export class PersistenceController {
      * Loads every collection from disk in one all-or-nothing pass. An empty
      * disk keeps what memory holds and writes it; records on both sides are
      * refused. On failure the database is closed and memory is left as it was.
+     * Nothing writes a persisted collection while the load runs: the bind
+     * happens before the channel's first write.
      */
     public async open(
         databaseHandle: PersistenceDatabaseHandle,
@@ -163,6 +165,35 @@ export class PersistenceController {
         return this.flushThrough(this.nextRevision);
     }
 
+    /**
+     * Drains what is pending and lets the database go: destroyed when it
+     * holds no record, closed otherwise. Memory stays; `open` binds again.
+     */
+    public async unbind(): Promise<void> {
+        const databaseHandle = this.databaseHandle;
+        if (!databaseHandle || this.closePromise) return;
+        // a failed batch already reached the failure handler
+        await this.flushThrough(this.nextRevision).catch(() => undefined);
+        // a close started meanwhile owns the database
+        if (this.closePromise) return;
+        this.databaseHandle = undefined;
+        this.failureHandler = undefined;
+        this.clearFlushTimer();
+        this.pending.clear();
+        this.persistedRevision = this.nextRevision;
+        this.resolveWaiters();
+        const records = await databaseHandle.database
+            .keys({
+                gte: RECORD_PREFIX,
+                lt: `${RECORD_PREFIX}\uffff`,
+                limit: 1
+            })
+            .all();
+        await (records.length
+            ? databaseHandle.close()
+            : databaseHandle.destroy());
+    }
+
     /** Drains what is pending, then closes the database. */
     public close(): Promise<void> {
         if (this.closePromise) return this.closePromise;
@@ -170,11 +201,9 @@ export class PersistenceController {
         const drained = this.flushThrough(this.nextRevision);
         this.clearFlushTimer();
         this.closePromise = (async () => {
-            try {
-                await drained;
-            } finally {
-                await databaseHandle?.close();
-            }
+            // a failed batch already reached the failure handler
+            await drained.catch(() => undefined);
+            await databaseHandle?.close();
         })();
         return this.closePromise;
     }
@@ -317,7 +346,12 @@ export class PersistenceController {
     ): Error {
         const message = error instanceof Error ? error.message : String(error);
         return databaseHandle
-            ? new Error(`${message} (persistence: ${databaseHandle.location})`)
+            ? Object.assign(
+                  new Error(
+                      `${message} (persistence: ${databaseHandle.location})`
+                  ),
+                  { cause: error }
+              )
             : error instanceof Error
               ? error
               : new Error(message);

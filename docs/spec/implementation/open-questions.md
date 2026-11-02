@@ -201,8 +201,10 @@ stored is flushed after every signature whose loss could get the node slashed, b
 process ([`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](../specification/storage/durability.md#req-stor-8-25d06n)); the
 one disposal closes the medium ([`REQ-STOR-9-ZR8A92` (Closed by the one disposal)](../specification/storage/durability.md#req-stor-9-zr8a92)); a restarted
 participant installs its durable head, stays `SYNCED` until its first sync settles, and recovers lost
-writes through that sync and chain-event replay
-([`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../specification/storage/durability.md#req-stor-3-4rjger)). Strongest rejected
+peer writes through that sync
+([`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../specification/storage/durability.md#req-stor-3-4rjger)). The chain-event replay and the
+restart re-arms that requirement names are not built
+([`FIND-STORAGE-10-G3WFJ8`](../audit/open-findings.md#find-storage-10-g3wfj8)). Strongest rejected
 alternative: synchronous writes on every store operation (one disk commit per write on the state
 mutex path). Persistence is off by default until
 [`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../audit/open-findings.md#find-proof-persistence-1-hyc9ds) is fixed

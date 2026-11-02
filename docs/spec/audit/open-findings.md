@@ -1662,6 +1662,34 @@ player never notices that a chain is involved, so the follow-up adds no extra pa
 on each restore. Exit: the follow-up encrypts the stored secret under that policy and adds its tests
 under [`REQ-STOR-11-Q4AT07.T1`](../specification/storage/durability.md#req-stor-11-q4at07.t1).
 
+<a id="find-storage-10-g3wfj8"></a>
+
+### FIND-STORAGE-10-G3WFJ8
+
+**Defect:** _Open (2026-11-02, engineer decision pending)._ A restarted node recovers from its
+first synchronization only. [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../specification/storage/durability.md#req-stor-3-4rjger)
+requires more, and none of it is built: the first chain subscription after a restart is live only,
+so chain events after the durable observation cursor are not replayed (a dispute, snapshot update,
+slash or join made while the node was down is seen only if a synchronization covers it); a
+`disputedForks` marker that reached disk before a crash that kept its dispute from leaving is never
+cleared, so the node refuses to sign or dispute on that fork until it is timed out; the local copies
+of the chain's dispute windows and snapshot stay empty until a synchronization refetches them, so a
+dispute audit on the no-participant deadline path fails ("Timeout timestamp not found"); the
+on-chain posting of the node's own latest block and a pending join are not re-armed; and
+`onChannelOpened` is not gated against a restored head (harmless while nothing replays). When no
+participant serves the restart synchronization before its deadline, the node resumes from the
+restored head and arms the participant-timeout check from that head's timestamp, so it can raise a
+timeout dispute from a head it could not verify.
+
+**Disposition:** For Luke: build the five restart items per plan 26 (catch-up from the cursor with
+the `onChannelOpened` gate, marker reconciliation, mirror refetch, own-calldata re-arm, pending-join
+resume) with their tests under [`REQ-STOR-3-4RJGER.T1`](../specification/storage/durability.md#req-stor-3-4rjger.t1)
+(P8 to P12), or descope them and narrow the requirement to synchronization-only recovery; and for
+the deadline path, either arm no timeout until a live block or synchronization confirms the head, or
+abort as an observer does. Persistence is off by default
+([`REQ-STOR-10-XY96KG` (Persistence is opt-in)](../specification/storage/durability.md#req-stor-10-xy96kg)),
+so no default runtime reaches these cases.
+
 <a id="find-runtime-1-gapy72"></a>
 
 ### FIND-RUNTIME-1-GAPY72

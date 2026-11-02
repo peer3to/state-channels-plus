@@ -184,7 +184,7 @@ describe("PersistenceController", function () {
         await controller.close();
     });
 
-    it("fails after its retries: waiting flushes reject, the failure handler runs once and later writes stay in memory", async () => {
+    it("fails after its retries: waiting flushes reject, the failure handler runs once, later writes stay in memory and close still closes the database", async () => {
         const database = new GatedMemoryLevel();
         const { controller, states, failures, open } = build();
         await open(database);
@@ -201,7 +201,9 @@ describe("PersistenceController", function () {
         expect(database.batches).to.have.length(3);
         expect(states.get("b")).to.equal("0x02");
         expect(await database.get(`${RECORD}a`)).to.equal(undefined);
-        await controller.close().catch(() => undefined);
+        await controller.close();
+        expect(database.status).to.equal("closed");
+        expect(failures).to.have.length(1);
     });
 
     it("closes by draining pending writes, waiting for the last batch, then closing the database", async () => {
@@ -219,6 +221,26 @@ describe("PersistenceController", function () {
 
         expect(database.batches[0].committed).to.equal(true);
         expect(database.status).to.equal("closed");
+    });
+
+    it("keeps a write made after close started off the disk while the close's batch is held", async () => {
+        const database = new GatedMemoryLevel();
+        const { controller, states, open } = build();
+        await open(database);
+        database.hold();
+
+        states.set("a", "0x01");
+        const closed = controller.close();
+        states.set("late", "0x02");
+        database.release();
+        await closed;
+
+        expect(states.get("late")).to.equal("0x02");
+        expect(database.batches).to.have.length(1);
+        await database.open();
+        expect(await database.get(`${RECORD}a`)).to.not.equal(undefined);
+        expect(await database.get(`${RECORD}late`)).to.equal(undefined);
+        await database.close();
     });
 
     it("keeps a write after close in memory, raises no error and never writes it to disk", async () => {
@@ -347,5 +369,39 @@ describe("PersistenceController", function () {
 
         expect(error.message).to.include("already opened");
         await controller.close();
+    });
+
+    it("unbinds after draining pending writes, keeps a database that holds records and binds another one with what memory holds", async () => {
+        const first = new GatedMemoryLevel();
+        const second = new GatedMemoryLevel();
+        const { controller, states, open } = build();
+        await open(first);
+        states.set("a", "0x01");
+
+        await controller.unbind();
+        states.set("b", "0x02");
+        await open(second);
+        await controller.flush();
+
+        expect(first.status).to.equal("closed");
+        expect(first.batches).to.have.length(1);
+        await first.open();
+        expect(await first.get(`${RECORD}a`)).to.not.equal(undefined);
+        expect(await first.get(`${RECORD}b`)).to.equal(undefined);
+        await first.close();
+        expect(await second.get(`${RECORD}a`)).to.not.equal(undefined);
+        expect(await second.get(`${RECORD}b`)).to.not.equal(undefined);
+        await controller.close();
+    });
+
+    it("deletes an unbound database that holds no record", async () => {
+        const database = new GatedMemoryLevel();
+        const { controller, open } = build();
+        await open(database);
+        await database.put("metadata!identity", "channel");
+
+        await controller.unbind();
+
+        expect(await database.get("metadata!identity")).to.equal(undefined);
     });
 });

@@ -122,6 +122,14 @@ export class Storage {
         return this.controller.flush();
     }
 
+    /**
+     * Lets the bound database go after its pending writes: a database with
+     * no record is deleted. Memory stays; `open` binds another one.
+     */
+    public unbind(): Promise<void> {
+        return this.controller.unbind();
+    }
+
     /** Drains pending writes and closes the database; later writes stay in memory. */
     public close(): Promise<void> {
         return this.controller.close();

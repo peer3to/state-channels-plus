@@ -154,6 +154,8 @@ export class P2pRuntimeHostRoot<
     private runtimeHandle?: RuntimeHostState;
     /** The network teardown the cut started. */
     private networkClose?: Promise<void>;
+    /** The disk close the cut started: later writes stay in memory. */
+    private storageClose?: Promise<void>;
     private runtimeRelease?: Promise<void>;
     private managedSigner!: HostNonceManager;
     private localDeploySigner?: LocalContractExecutorSigner;
@@ -374,7 +376,8 @@ export class P2pRuntimeHostRoot<
     /**
      * `StateManager.setChannelId`'s partition bind: the partition a resumed
      * channel opened before the signer was built, or the channel's partition
-     * opened now. A runtime binds one channel.
+     * opened now. A runtime binds one channel at a time; the zero channel id
+     * (`clearChannelId`) lets the bound partition go.
      */
     private async bindPersistence(
         storage: Storage,
@@ -384,6 +387,12 @@ export class P2pRuntimeHostRoot<
         const persistence = this.payload.persistence;
         if (!persistence) return;
         const normalizedChannelId = ethers.hexlify(channelId).toLowerCase();
+        if (normalizedChannelId === ethers.ZeroHash) {
+            if (this.boundChannelId === undefined) return;
+            this.boundChannelId = undefined;
+            await storage.unbind();
+            return;
+        }
         if (this.boundChannelId !== undefined) {
             if (this.boundChannelId === normalizedChannelId) return;
             throw new Error(
@@ -430,6 +439,8 @@ export class P2pRuntimeHostRoot<
         // the cleanup awaits the network teardown's outcome
         this.networkClose = stateManager?.p2pManager.dispose();
         this.networkClose?.catch(() => undefined);
+        // pending disk writes drain; a write after the cut stays in memory
+        this.storageClose = this.runtimeHandle?.storage.close();
         this.managedSigner?.cut();
         stateManager?.events.setBridgeTap(undefined);
         this.handlerExecutionContext?.dispose?.();
@@ -463,8 +474,8 @@ export class P2pRuntimeHostRoot<
             // workers only after it (it never fails; each realm reports its
             // own flush failures).
             () => stateManager.abortFlush,
-            // pending disk writes drain; a write after the cut stays in memory
-            () => runtime.storage.close(),
+            // the disk close the cut started
+            () => this.storageClose,
             // a resumed channel's partition the build never bound
             () => this.persistenceDatabaseHandle?.close()
         ));
@@ -613,11 +624,9 @@ export class P2pRuntimeHostRoot<
             );
         steps.mark("stateMachine");
 
-        const storage = new Storage(
-            this.maxChannelParticipants,
-            logger,
-            payload.persistence?.options
-        );
+        const storage = new Storage(this.maxChannelParticipants, logger, {
+            flushIntervalMs: payload.persistence?.options.flushIntervalMs
+        });
 
         const stateManager = new StateManager<MainRpcService, unknown>(
             // Managed signer: becomes StateManager.signer → DisputeManager.signer,

@@ -1185,6 +1185,11 @@ export class StubService extends ANetworkRpcService<
         return true;
     }
 
+    public async setAndClearChannelId(channelId: string): Promise<void> {
+        await this.sm.setChannelId(channelId as ChannelId);
+        await this.sm.clearChannelId();
+    }
+
     public getDisputeParticipationObservation() {
         return {
             attempts: this.disputeParticipationObservation?.attempts ?? 0,

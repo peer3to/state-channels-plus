@@ -64,10 +64,10 @@ export default class BlockCommitService {
             );
 
         // step 3 - add my signature if appropriate
-        if (
+        const signs =
             (await this.shouldSignBlock(block, shouldPromoteToParticipant)) &&
-            !isDisputeReplay
-        ) {
+            !isDisputeReplay;
+        if (signs) {
             // Sign the block and add our signature to confirmation signatures
             const signature = await block.sign(sm.signer);
             this.logger.debug("Signing block", {
@@ -98,7 +98,8 @@ export default class BlockCommitService {
         }
 
         // our signature leaves the process only once the commit is on disk
-        await sm.storage.flush();
+        if (signs || block.author === sm.signerAddress)
+            await sm.storage.flush();
 
         // Publish status only after all durable mutations for the transition
         // have succeeded.
