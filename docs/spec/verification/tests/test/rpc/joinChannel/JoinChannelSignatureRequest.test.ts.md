@@ -43,6 +43,12 @@ The deadline case ([JoinSignatureDeadlineStaging](../../../../../../../test/fixt
 
 The held-chain case starts two founders with peer 1's chain RPC behind a proxy, adds a synced spectator, and holds every `eth_call` and `eth_getBlockByNumber` at that proxy. The spectator then collects a join confirmation; its signers must equal the on-chain threshold set, so peer 1 answered from its local clock and mirror. The mirror-miss case holds a member's mirror update, forces that member's join to land, and checks that the member's mirror does not list it while the chain does; a join signature request to that member must then return its signature.
 
+The restored-head case makes founder 1 persistent, adds a synced spectator, restarts founder 1 without
+connecting it, and calls the real `signJoinRequest` on its host over its loopback transport carrying the
+spectator's address. While the restored head is held at `SYNCED` the answer is the restart-sync refusal;
+after founder 1 connects and reaches `PARTICIPATING`, the same request returns founder 1's signature over
+the exact encoded join.
+
 The configured-lifetime case (staging in `test/fixtures/JoinDeadlineStaging.ts`) prepares a real first
 join on a session configured with `JOIN_CHANNEL_DEADLINE_SECONDS: 300` and asserts two collected
 signatures and a deadline equal to the chain timestamp read during preparation plus 300. After a session
@@ -52,6 +58,7 @@ reset, a runtime without the option gets the chain timestamp plus the default li
 
 - `a prepared first join's deadline is its chain time plus the configured lifetime; a later runtime gets the default`: UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P13
 - `rejects a signed zero balance and blacklists the requesting joiner`: UNIT-TEST-JOIN-CHANNEL-SERVICE-32-BQYC6G.P1
+- `a threshold member held at its restored head refuses to countersign a join until its restart sync settles, then signs it`: UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P20
 - `excludes an on-chain-slashed participant from collection`: REQ-JOINSIG-2-RR2G4Q.T1.P7, UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P8, UNIT-TEST-STATE-MANAGER-5-D8GDWH.P1
 - `collects every countersignature when a snapshot post lands between the joiner's pin read and the countersigners' replies`: REQ-JOINSIG-1-8X1A4V.T1.P2, UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P14
 - `rejects collector identity and deadline failures before requesting signatures`: REQ-JOINSIG-2-RR2G4Q.T1.P8, UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P5, UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P9

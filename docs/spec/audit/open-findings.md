@@ -1689,6 +1689,13 @@ as an observer does. Persistence is off by default
 ([`REQ-STOR-10-XY96KG` (Persistence is opt-in)](../specification/storage/durability.md#req-stor-10-xy96kg)),
 so no default runtime reaches these cases.
 
+Restart decisions, Luke 2026-11-02: a held head also countersigns no join request, so the hold
+covers every slashable signature; a chain RPC failure at the restore read fails the persistent start
+instead of resuming unreconciled; any failed restart-sync answer aborts, silence and a lost
+transport included; a dispute marker kept behind a pending transaction is not rechecked until the
+next restart (accepted); and the re-armed calldata post of an own latest block may land during the
+hold (safe: the block was signed before the crash, and the chain refuses a block it moved past).
+
 <a id="find-runtime-1-gapy72"></a>
 
 ### FIND-RUNTIME-1-GAPY72

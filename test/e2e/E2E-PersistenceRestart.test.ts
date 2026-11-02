@@ -152,6 +152,55 @@ describe("E2E: persistence restart", function () {
         ).to.equal(false);
     });
 
+    it("a spectator's join collection is refused by a threshold member held at its restored head while its restart sync is in flight, and the join lands once that sync settles", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 2, {
+            persistentPeers: [1],
+            timeConfig: RESTART_TIME_CONFIG
+        });
+        const joiner = await h.join.addSpectatorWait();
+
+        const restarted = await h.lifecycle.restartPeer(1);
+        const query = h.control(restarted).query;
+        // the restart sync reaches its responder and stays in flight
+        const sync = await h.rpcStub.holdSpectateSyncApplication(1);
+        const connecting = restarted.p2pInstance.p2pSigner
+            .connectToChannel(h.channelId)
+            .then(
+                (connected) => ({ connected }),
+                (error: unknown) => ({ error })
+            );
+        await waitFor(async () => (await sync.entered()) > 0);
+        expect(await query.getStatus().request()).to.equal(Status.SYNCED);
+
+        let collectionError: unknown;
+        try {
+            await h.join.joinChannelWait({ joiner });
+        } catch (error) {
+            collectionError = error;
+        }
+        expect(String(collectionError)).to.contain(restarted.address);
+        expect(String(collectionError)).to.contain(
+            "restored head waits for the restart sync"
+        );
+        expect(await h.control(joiner).query.getStatus().request()).to.equal(
+            Status.SYNCED
+        );
+
+        await sync.release();
+        expect(await connecting).to.deep.equal({ connected: true });
+        await waitFor(
+            async () =>
+                (await query.getStatus().request()) === Status.PARTICIPATING
+        );
+        await h.join.joinChannelWait({ joiner });
+        await waitFor(
+            async () =>
+                (await h.control(joiner).query.getStatus().request()) ===
+                Status.PENDING_PARTICIPANT
+        );
+    });
+
     it("a participant restarted with a dispute marker whose dispute never reached the chain signs the next blocks on that fork", async () => {
         const h = TestSession.getHarness();
         const forkId = await h.lifecycle.start(3, 3, {

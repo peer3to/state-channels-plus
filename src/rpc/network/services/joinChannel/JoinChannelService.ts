@@ -213,6 +213,12 @@ export default class JoinChannelService extends ANetworkRpcService<JoinChannelRp
             throw new Error("requestJoinSignature: join expired");
         }
 
+        // a restored head countersigns nothing until the restart sync settled
+        if (sm.stateApplicationService.holdsRestoredHead) {
+            throw new Error(
+                "requestJoinSignature: restored head waits for the restart sync"
+            );
+        }
         if (!(await sm.membershipService.isSignerInThresholdSet())) {
             throw new Error(
                 "requestJoinSignature: local signer not in threshold"
