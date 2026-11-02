@@ -598,14 +598,19 @@ describe("probe", function () {
         }
     });
 
-    // Mutation: the in-process chain started without forwardOutput -> the marker never reaches this process.
-    // Mutation: forwardChainOutput copies every line -> anvil's eth_call line reaches it too.
-    it("contract console.log on hardhat's in-process network reaches the test process's output without anvil's RPC method lines", async function () {
+    // Mutation: the in-process chain started without forwardOutput -> the markers never reach this process.
+    // Mutation: forwardChainOutput copies every line -> anvil's method, transaction, block and failure lines reach it too.
+    // Mutation: only method-name lines dropped, as first written -> the transaction and block summaries reach it.
+    it("contract console.log on hardhat's in-process network reaches the test process's output without anvil's own log lines", async function () {
         // console.sol's log(string) is this call to the console address
-        const data = new Interface(["function log(string)"]).encodeFunctionData(
-            "log",
-            ["in-process console.log marker"]
-        );
+        const log = (text: string) => ({
+            to: "0x000000000000000000636F6e736F6c652e6c6f67",
+            data: new Interface(["function log(string)"]).encodeFunctionData(
+                "log",
+                [text]
+            )
+        });
+        const [sender] = await ethers.getSigners();
         const written: string[] = [];
         const write = process.stdout.write;
         process.stdout.write = ((
@@ -616,13 +621,24 @@ describe("probe", function () {
             return write.call(process.stdout, chunk, ...rest);
         }) as typeof process.stdout.write;
         try {
+            // a failed request: anvil prints its header and request details
+            await network.provider
+                .send("eth_call", [{ data: "0x60006000fd" }, "latest"])
+                .catch(() => undefined);
+            // a mined transaction: anvil prints its and its block's summary
+            const sent = await sender.sendTransaction({
+                ...log("in-process console.log marker"),
+                gasLimit: 100000
+            });
+            await sent.wait();
+            // printed after everything above
             await network.provider.send("eth_call", [
-                { to: "0x000000000000000000636F6e736F6c652e6c6f67", data },
+                log("in-process console.log end"),
                 "latest"
             ]);
             const deadline = Date.now() + 5000;
             while (
-                !written.join("").includes("in-process console.log marker") &&
+                !written.join("").includes("in-process console.log end") &&
                 Date.now() < deadline
             )
                 await new Promise((resolve) => setTimeout(resolve, 50));
@@ -631,7 +647,15 @@ describe("probe", function () {
         }
         const lines = written.join("").split("\n");
         expect(lines).to.include("in-process console.log marker");
-        expect(lines).not.to.include("eth_call");
+        expect(lines).to.include("in-process console.log end");
+        for (const anvilLine of [
+            /^eth_(call|sendTransaction|getTransactionReceipt)$/,
+            /^RPC request failed:$/,
+            /^\s+(Request|Error|Transaction|Gas used|Block Number|Block Hash|Block Time):/
+        ])
+            expect(lines.filter((line) => anvilLine.test(line))).to.deep.equal(
+                []
+            );
     });
 
     it("the browser runtime server's node interval-mines and stops when the server closes", async function () {

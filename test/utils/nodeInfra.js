@@ -152,9 +152,12 @@ const ANSI_RE = /\u001b\[[0-9;]*[A-Za-z]/g;
 const BOUND_PORT_RE = /Listening on 127\.0\.0\.1:(\d+)\r?\n/;
 const HARDHAT_BOUND_PORT_RE =
     /JSON-RPC server at http:\/\/127\.0\.0\.1:(\d+)\//;
-// anvil prints the method of every RPC request on a line of its own
-const RPC_METHOD_LINE_RE =
-    /^(?:eth|net|web3|anvil|hardhat|evm|debug|trace|txpool|ots|erigon|personal)_\w+$/;
+// anvil's own log lines: each RPC request's method name, the indented summary
+// of each mined transaction and block, a failed request's header and indented
+// details, and the blank lines between them. Contract console.log lines are
+// printed unindented.
+const ANVIL_LOG_LINE_RE =
+    /^(?:(?:eth|net|web3|anvil|hardhat|evm|debug|trace|txpool|ots|erigon|personal)_\w+|RPC request failed:|\s.*|)$/;
 
 /**
  * The test chain E2E_TEST_CHAIN selects: "anvil", the pinned anvil (the
@@ -170,14 +173,14 @@ function testChain(env = process.env) {
     return chain;
 }
 
-/** Copy the chain's output after ready to this process's, without anvil's RPC method lines. */
+/** Copy the chain's output after ready to this process's, without anvil's own log lines. */
 function forwardChainOutput(proc) {
     for (const [source, target] of [
         [proc.stdout, process.stdout],
         [proc.stderr, process.stderr]
     ]) {
         readline.createInterface({ input: source }).on("line", (line) => {
-            if (!RPC_METHOD_LINE_RE.test(line)) target.write(`${line}\n`);
+            if (!ANVIL_LOG_LINE_RE.test(line)) target.write(`${line}\n`);
         });
     }
 }
