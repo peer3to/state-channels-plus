@@ -114,6 +114,10 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public failPersistenceFlushes(): boolean {
+        return this.service.failPersistenceFlushes();
+    }
+
     public observeDisputeParticipation(): boolean {
         this.service.observeDisputeParticipation();
         return true;

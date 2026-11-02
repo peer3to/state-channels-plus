@@ -29,6 +29,10 @@ import type MembershipService from "@/stateManager/membership/MembershipService"
 import type StateManager from "@/stateManager/StateManager";
 import type AValidationStrategy from "@/stateManager/validationStrategy/AValidationStrategy";
 import type { JoinRecord } from "@/storage/ForceJoinStorage";
+import type {
+    PersistenceBatchOperation,
+    PersistenceDatabaseHandle
+} from "@/storage/persistence";
 import { BlockOrigin, type QueuedBlockEntry } from "@/storage/QueueStorage";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type {
@@ -1151,6 +1155,34 @@ export class StubService extends ANetworkRpcService<
     public restoreBlacklistWriteFailure(): void {
         this.restoreBlacklistWrite?.();
         this.restoreBlacklistWrite = undefined;
+    }
+
+    /**
+     * Fail every disk batch a flush waits for (the runtime then aborts);
+     * timer batches still reach disk. False without a bound partition.
+     */
+    public failPersistenceFlushes(): boolean {
+        // private internals: the storage's controller and its live database
+        const controller = (
+            this.sm.storage as unknown as {
+                controller: { databaseHandle?: PersistenceDatabaseHandle };
+            }
+        ).controller;
+        const database = controller.databaseHandle?.database;
+        if (!database) return false;
+        const batch = database.batch.bind(database) as (
+            operations: PersistenceBatchOperation[],
+            options?: object
+        ) => Promise<void>;
+        // classic-level's `sync` option marks the batch a flush waits for
+        database.batch = ((
+            operations: PersistenceBatchOperation[],
+            options?: { sync?: boolean }
+        ) =>
+            options?.sync
+                ? Promise.reject(new Error("injected flush failure"))
+                : batch(operations, options)) as typeof database.batch;
+        return true;
     }
 
     public getDisputeParticipationObservation() {

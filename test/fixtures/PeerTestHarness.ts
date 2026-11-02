@@ -85,6 +85,8 @@ import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes"
 import * as dotenv from "dotenv";
 import { NonceManager, Signer, ethers } from "ethers";
 import { createHash } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { setImmediate } from "node:timers";
 import * as sinon from "sinon";
@@ -126,6 +128,8 @@ export class PeerTestHarness<
     private ownDiscovery?: { stop: () => void };
     /** Peer index -> the RPC node proxies its runtime connects through. */
     private readonly rpcNodeProxies = new Map<number, RpcNodeProxy[]>();
+    // peer index -> the directory its channel partition lives in
+    private readonly persistenceLocations = new Map<number, string>();
 
     /**
      * Test context for cross-block state sharing
@@ -320,7 +324,8 @@ export class PeerTestHarness<
             hostRootManifest: options?.hostRootManifest,
             executorCallGasLimitByPeer: options?.executorCallGasLimitByPeer,
             rpcNodeProxiesByPeer: options?.rpcNodeProxiesByPeer,
-            rpcNodeProxiesCutAtStart: options?.rpcNodeProxiesCutAtStart
+            rpcNodeProxiesCutAtStart: options?.rpcNodeProxiesCutAtStart,
+            persistentPeers: options?.persistentPeers
         };
         if (
             !this.options.timeConfig?.agreementTime ||
@@ -817,7 +822,9 @@ export class PeerTestHarness<
         }
 
         const rpcNodeProxies = await this.startRpcNodeProxies(index);
+        const persistence = await this.resolvePersistence(index);
         const setupOptions = {
+            ...persistence,
             peerId: index,
             peerLogger: peerLogger,
             customPrecompiles: this.options.customPrecompiles!,
@@ -879,6 +886,25 @@ export class PeerTestHarness<
         // order regardless of which createPeer resolves first.
         this.peers[index] = peer;
         this.logger.debug(`Peer ${index} created successfully`);
+    }
+
+    /**
+     * A persistent peer's partition directory; once the channel is set, a
+     * start resumes that channel from it.
+     */
+    private async resolvePersistence(
+        index: number
+    ): Promise<{ persistence?: { location: string }; channelId?: string }> {
+        if (!this.options.persistentPeers?.includes(index)) return {};
+        let location = this.persistenceLocations.get(index);
+        if (!location) {
+            location = await mkdtemp(path.join(tmpdir(), "scp-peer-"));
+            this.persistenceLocations.set(index, location);
+        }
+        return {
+            persistence: { location },
+            channelId: this.channelId ? String(this.channelId) : undefined
+        };
     }
 
     /** Start the proxies `rpcNodeProxiesByPeer` asks for in front of the test node. */
@@ -999,6 +1025,12 @@ export class PeerTestHarness<
         });
 
         await Promise.all(disposePromises);
+        await Promise.all(
+            [...this.persistenceLocations.values()].map((location) =>
+                rm(location, { recursive: true, force: true })
+            )
+        );
+        this.persistenceLocations.clear();
 
         await new Promise((resolve) => setImmediate(resolve));
 

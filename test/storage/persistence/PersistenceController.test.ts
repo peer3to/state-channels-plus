@@ -1,574 +1,351 @@
 import {
     PersistenceController,
-    PersistentCollection,
-    type PersistenceDatabaseHandle
+    PersistentCollection
 } from "@/storage/persistence";
-import { createStorageRecordCodec } from "@/storage/persistence/storageCodecs";
-import type { AbstractBatchOperation } from "abstract-level";
+import { GatedMemoryLevel } from "@test/fixtures/GatedMemoryLevel";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { MemoryLevel } from "memory-level";
-import sinon from "sinon";
 
-type Database = MemoryLevel<string, string>;
-type BatchOperation = AbstractBatchOperation<Database, string, string>;
+const RECORD = "records!v1!stateMachineStates!";
 
-function deferred(): {
-    promise: Promise<void>;
-    resolve: () => void;
-    reject: (error: Error) => void;
-} {
-    let resolve!: () => void;
-    let reject!: (error: Error) => void;
-    const promise = new Promise<void>((resolvePromise, rejectPromise) => {
-        resolve = resolvePromise;
-        reject = rejectPromise;
+type States = PersistentCollection<string, "stateMachineStates">;
+
+/** a controller with one collection over a gated memory database; the timer is off unless asked */
+function build(flushIntervalMs = 60_000, onLoad?: () => void) {
+    const controller = new PersistenceController({
+        flushIntervalMs,
+        maxRetries: 2
     });
-    return { promise, resolve, reject };
-}
-
-class BatchControl {
-    public readonly batches: BatchOperation[][] = [];
-    public maxActiveBatches = 0;
-    private readonly database: Database;
-    private readonly originalBatch: Database["batch"];
-    private readonly gates: ReturnType<typeof deferred>[] = [];
-    private readonly batchWaiters: Array<{
-        count: number;
-        resolve: () => void;
-    }> = [];
-    private activeBatches = 0;
-
-    constructor(database: Database) {
-        this.database = database;
-        this.originalBatch = database.batch.bind(database);
-        database.batch = ((operations: BatchOperation[]): Promise<void> =>
-            this.run(operations)) as Database["batch"];
-    }
-
-    public holdNext(): ReturnType<typeof deferred> {
-        const gate = deferred();
-        this.gates.push(gate);
-        return gate;
-    }
-
-    public waitForBatch(count: number): Promise<void> {
-        if (this.batches.length >= count) return Promise.resolve();
-        return new Promise((resolve) => {
-            this.batchWaiters.push({ count, resolve });
-        });
-    }
-
-    private async run(operations: BatchOperation[]): Promise<void> {
-        this.batches.push(operations);
-        this.activeBatches += 1;
-        this.maxActiveBatches = Math.max(
-            this.maxActiveBatches,
-            this.activeBatches
-        );
-        for (let index = this.batchWaiters.length - 1; index >= 0; index--) {
-            const waiter = this.batchWaiters[index];
-            if (this.batches.length < waiter.count) continue;
-            this.batchWaiters.splice(index, 1);
-            waiter.resolve();
-        }
-
-        try {
-            const gate = this.gates.shift();
-            if (gate) await gate.promise;
-            await this.originalBatch(operations);
-        } finally {
-            this.activeBatches -= 1;
-        }
-    }
-}
-
-function createDatabase(): Database {
-    return new MemoryLevel<string, string>({
-        keyEncoding: "utf8",
-        valueEncoding: "utf8"
-    });
-}
-
-function createHandle(database = createDatabase()): PersistenceDatabaseHandle {
-    return {
-        database,
-        location: "memory:persistence-controller",
-        close: () => database.close(),
-        destroy: () => database.clear()
-    };
-}
-
-async function createSubject(
-    options: {
-        database?: Database;
-        maxBatchOperations?: number;
-        flushIntervalMs?: number;
-        maxRetries?: number;
-    } = {}
-) {
-    const database = options.database ?? createDatabase();
-    const controller = new PersistenceController(createStorageRecordCodec(), {
-        databaseHandle: createHandle(database),
-        maxBatchOperations: options.maxBatchOperations,
-        flushIntervalMs: options.flushIntervalMs,
-        maxRetries: options.maxRetries
-    });
-    const values = new PersistentCollection<string, number>(
-        "eventSync",
-        controller
+    const states: States = new PersistentCollection(
+        "stateMachineStates",
+        controller,
+        onLoad
     );
-    await controller.bind();
-    return { controller, database, values };
+    const failures: Error[] = [];
+    const open = (database: GatedMemoryLevel) =>
+        controller.open(database.handle(), (error) => failures.push(error));
+    return { controller, states, failures, open };
 }
 
-async function expectCoalescedValue(
-    mutate: (values: PersistentCollection<string, number>) => void,
-    expected: number | undefined
-): Promise<void> {
-    const database = createDatabase();
-    const batches = new BatchControl(database);
-    const { controller, values } = await createSubject({
-        database,
-        flushIntervalMs: 60_000
-    });
+const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
 
-    mutate(values);
-    await controller.flush();
-
-    expect(batches.batches).to.have.length(1);
-    expect(batches.batches[0]).to.have.length(1);
-    expect(values.get("value")).to.equal(expected);
-    expect(await database.get("records!v1!eventSync!value")).to.equal(
-        expected === undefined
-            ? undefined
-            : `0x${expected.toString(16).padStart(64, "0")}`
-    );
-    await controller.close();
+async function rejection(promise: Promise<unknown>): Promise<Error> {
+    try {
+        await promise;
+    } catch (error) {
+        return error as Error;
+    }
+    throw new Error("expected a rejection");
 }
 
 describe("PersistenceController", function () {
-    it("makes a cache-first mutation visible before the backend settles", async () => {
-        const database = createDatabase();
-        const batches = new BatchControl(database);
-        const heldBatch = batches.holdNext();
-        const { controller, values } = await createSubject({
-            database,
-            maxBatchOperations: 1
-        });
+    it("writes one synchronous step of many writes, past the pending-size warning, as one batch with one operation per key", async () => {
+        const database = new GatedMemoryLevel();
+        const { controller, states, open } = build();
+        await open(database);
 
-        expect(values.set("value", 7)).to.equal(7);
-        expect(values.get("value")).to.equal(7);
-        await batches.waitForBatch(1);
-        expect(await database.get("records!v1!eventSync!value")).to.equal(
-            undefined
-        );
-
-        heldBatch.resolve();
-        await controller.flush();
-        expect(await database.get("records!v1!eventSync!value")).to.equal(
-            "0x0000000000000000000000000000000000000000000000000000000000000007"
-        );
-        await controller.close();
-    });
-
-    it("batches rapid writes and persists their final value", async () => {
-        const database = createDatabase();
-        const batches = new BatchControl(database);
-        const { controller, values } = await createSubject({
-            database,
-            flushIntervalMs: 60_000
-        });
-
-        for (let value = 1; value <= 10; value++) {
-            values.set("value", value);
+        for (let index = 0; index < 2_500; index++) {
+            states.set(`key-${index}`, "0x01");
+            states.set(`key-${index}`, "0x02");
         }
         await controller.flush();
 
-        expect(batches.batches).to.have.length(1);
-        expect(batches.batches[0]).to.have.length(1);
-        expect(values.get("value")).to.equal(10);
-        expect(await database.get("records!v1!eventSync!value")).to.equal(
-            "0x000000000000000000000000000000000000000000000000000000000000000a"
-        );
+        expect(database.batches).to.have.length(1);
+        expect(database.batches[0].operations).to.have.length(2_500);
         await controller.close();
     });
 
-    it("applies rapid updates synchronously from the latest cache value", async () => {
-        const { controller, database, values } = await createSubject();
+    it("replaces an earlier write to a key in the same window, and a set then delete is one delete", async () => {
+        const database = new GatedMemoryLevel();
+        const first = build();
+        await first.open(database);
+        first.states.set("kept", "0x01");
+        first.states.set("kept", "0x02");
+        first.states.set("dropped", "0x03");
+        first.states.delete("dropped");
+        await first.controller.close();
 
-        for (let index = 0; index < 20; index++) {
-            values.update("value", (current) => (current ?? 0) + 1);
-        }
+        expect(database.batches).to.have.length(1);
+        expect(
+            database.batches[0].operations.map(({ type, key }) => [type, key])
+        ).to.deep.equal([
+            ["put", `${RECORD}kept`],
+            ["del", `${RECORD}dropped`]
+        ]);
+        const second = build();
+        await second.open(database);
+        expect([...second.states.entries()]).to.deep.equal([["kept", "0x02"]]);
+        await second.controller.close();
+    });
 
-        expect(values.get("value")).to.equal(20);
+    it("writes pending state on flush without waiting for the timer, resolves only once the disk confirms, and resolves at once with nothing pending", async () => {
+        const database = new GatedMemoryLevel();
+        const { controller, states, open } = build();
+        await open(database);
+        database.hold();
+
+        states.set("a", "0x01");
+        let flushed = false;
+        const flush = controller.flush().then(() => {
+            flushed = true;
+        });
+        await tick();
+
+        expect(database.batches).to.have.length(1);
+        expect(database.batches[0].committed).to.equal(false);
+        expect(flushed).to.equal(false);
+        database.release();
+        await flush;
+        expect(database.batches[0].committed).to.equal(true);
+        expect(await database.get(`${RECORD}a`)).to.not.equal(undefined);
+        // nothing pending: no batch
         await controller.flush();
-        expect(await database.get("records!v1!eventSync!value")).to.equal(
-            "0x0000000000000000000000000000000000000000000000000000000000000014"
-        );
+        expect(database.batches).to.have.length(1);
         await controller.close();
     });
 
-    it("uses a revision watermark for an explicit flush", async () => {
-        const database = createDatabase();
-        const batches = new BatchControl(database);
-        const firstBatch = batches.holdNext();
-        const secondBatch = batches.holdNext();
-        const { controller, values } = await createSubject({
-            database,
-            maxBatchOperations: 1
-        });
-
-        values.set("first", 1);
-        await batches.waitForBatch(1);
-        const firstFlush = controller.flush();
-        let firstResolved = false;
-        void firstFlush.then(() => {
-            firstResolved = true;
-        });
-        values.set("second", 2);
-
-        firstBatch.resolve();
-        await firstFlush;
-        expect(firstResolved).to.be.true;
-        await batches.waitForBatch(2);
-        expect(await database.get("records!v1!eventSync!second")).to.equal(
-            undefined
-        );
-
-        secondBatch.resolve();
+    it("resolves a flush at once when nothing is pending, with or without a disk", async () => {
+        const database = new GatedMemoryLevel();
+        const { controller, states, open } = build();
+        states.set("memory-only", "0x01");
         await controller.flush();
-        expect(await database.get("records!v1!eventSync!second")).to.not.equal(
-            undefined
-        );
+        await open(database);
+        // the late bind writes what memory held
+        await controller.flush();
+        const batchesAfterBind = database.batches.length;
+
+        await controller.flush();
+
+        expect(batchesAfterBind).to.equal(1);
+        expect(database.batches).to.have.length(batchesAfterBind);
         await controller.close();
     });
 
-    it("settles concurrent barriers against their own target revisions", async () => {
-        const database = createDatabase();
-        const batches = new BatchControl(database);
-        const firstBatch = batches.holdNext();
-        const secondBatch = batches.holdNext();
-        const { controller, values } = await createSubject({
-            database,
-            maxBatchOperations: 1
-        });
-
-        values.set("first", 1);
-        await batches.waitForBatch(1);
+    it("resolves a flush issued while a batch is in flight only after the batch that covers its writes", async () => {
+        const database = new GatedMemoryLevel();
+        const { controller, states, open } = build();
+        await open(database);
+        database.hold();
+        states.set("a", "0x01");
         const firstFlush = controller.flush();
-        values.set("second", 2);
-        const secondFlush = controller.flush();
-        let secondResolved = false;
-        void secondFlush.then(() => {
-            secondResolved = true;
+        await tick();
+        states.set("b", "0x02");
+        let secondFlushed = false;
+        const secondFlush = controller.flush().then(() => {
+            secondFlushed = true;
         });
+        await tick();
+        expect(database.batches).to.have.length(1);
+        expect(secondFlushed).to.equal(false);
 
-        firstBatch.resolve();
+        database.release();
         await firstFlush;
-        expect(secondResolved).to.be.false;
-        await batches.waitForBatch(2);
-        secondBatch.resolve();
         await secondFlush;
-        expect(secondResolved).to.be.true;
+
+        expect(database.batches).to.have.length(2);
+        expect(database.batches[1].committed).to.equal(true);
+        expect(database.batches[1].operations[0].key).to.equal(`${RECORD}b`);
         await controller.close();
     });
 
-    it("flushes on the configured interval", async () => {
-        const clock = sinon.useFakeTimers();
-        try {
-            const database = createDatabase();
-            const batches = new BatchControl(database);
-            const { controller, values } = await createSubject({
-                database,
-                flushIntervalMs: 50
-            });
+    it("syncs the batch a flush waits for and not a timer batch", async () => {
+        const database = new GatedMemoryLevel();
+        const { controller, states, open } = build(5);
+        await open(database);
 
-            values.set("value", 1);
-            expect(batches.batches).to.have.length(0);
-            await clock.tickAsync(49);
-            expect(batches.batches).to.have.length(0);
-            await clock.tickAsync(1);
-            await batches.waitForBatch(1);
-            expect(batches.batches).to.have.length(1);
-            await controller.close();
-        } finally {
-            clock.restore();
-        }
-    });
-
-    it("flushes at the size threshold without parallel batches", async () => {
-        const database = createDatabase();
-        const batches = new BatchControl(database);
-        const firstBatch = batches.holdNext();
-        const { controller, values } = await createSubject({
-            database,
-            maxBatchOperations: 2,
-            flushIntervalMs: 60_000
-        });
-
-        values.set("one", 1);
-        values.set("two", 2);
-        await batches.waitForBatch(1);
-        values.set("three", 3);
-        values.set("four", 4);
-        expect(batches.batches).to.have.length(1);
-
-        firstBatch.resolve();
-        await batches.waitForBatch(2);
+        states.set("timer", "0x01");
+        await waitFor(
+            () => database.batches[0]?.committed === true,
+            undefined,
+            5
+        );
+        states.set("flushed", "0x02");
         await controller.flush();
-        expect(batches.maxActiveBatches).to.equal(1);
-        expect(batches.batches.map((batch) => batch.length)).to.deep.equal([
-            2, 2
+
+        expect(database.batches.map(({ sync }) => sync)).to.deep.equal([
+            false,
+            true
         ]);
         await controller.close();
     });
 
-    it("coalesces mutations for a blocked dirty record", async () => {
-        const database = createDatabase();
-        const batches = new BatchControl(database);
-        const firstBatch = batches.holdNext();
-        const { controller, values } = await createSubject({
-            database,
-            maxBatchOperations: 1
-        });
+    it("retries a failed batch and writes it", async () => {
+        const database = new GatedMemoryLevel();
+        const { controller, states, failures, open } = build();
+        await open(database);
+        database.failNext(1);
 
-        values.set("blocker", 1);
-        await batches.waitForBatch(1);
-        for (let value = 1; value <= 2_500; value++) {
-            values.set("dirty", value);
-        }
-
-        firstBatch.resolve();
+        states.set("a", "0x01");
         await controller.flush();
-        expect(batches.batches).to.have.length(2);
-        expect(batches.batches[1]).to.have.length(1);
-        expect(values.get("dirty")).to.equal(2_500);
+
+        expect(database.batches).to.have.length(2);
+        expect(await database.get(`${RECORD}a`)).to.not.equal(undefined);
+        expect(failures).to.have.length(0);
         await controller.close();
     });
 
-    it("preserves put then put ordering while coalescing", async () => {
-        await expectCoalescedValue((values) => {
-            values.set("value", 1);
-            values.set("value", 2);
-        }, 2);
+    it("fails after its retries: waiting flushes reject, the failure handler runs once and later writes stay in memory", async () => {
+        const database = new GatedMemoryLevel();
+        const { controller, states, failures, open } = build();
+        await open(database);
+        database.failNext(3);
+
+        states.set("a", "0x01");
+        const error = await rejection(controller.flush());
+        states.set("b", "0x02");
+        const laterError = await rejection(controller.flush());
+
+        expect(error.message).to.include("memory:gated");
+        expect(laterError).to.equal(error);
+        expect(failures).to.deep.equal([error]);
+        expect(database.batches).to.have.length(3);
+        expect(states.get("b")).to.equal("0x02");
+        expect(await database.get(`${RECORD}a`)).to.equal(undefined);
+        await controller.close().catch(() => undefined);
     });
 
-    it("preserves put then delete ordering while coalescing", async () => {
-        await expectCoalescedValue((values) => {
-            values.set("value", 1);
-            values.delete("value");
-        }, undefined);
+    it("closes by draining pending writes, waiting for the last batch, then closing the database", async () => {
+        const database = new GatedMemoryLevel();
+        const { controller, states, open } = build();
+        await open(database);
+        database.hold();
+
+        states.set("a", "0x01");
+        const closed = controller.close();
+        await tick();
+        expect(database.status).to.equal("open");
+        database.release();
+        await closed;
+
+        expect(database.batches[0].committed).to.equal(true);
+        expect(database.status).to.equal("closed");
     });
 
-    it("preserves delete then put ordering while coalescing", async () => {
-        await expectCoalescedValue((values) => {
-            values.set("value", 1);
-            values.delete("value");
-            values.set("value", 3);
-        }, 3);
-    });
-
-    it("preserves clear then put ordering while coalescing", async () => {
-        await expectCoalescedValue((values) => {
-            values.set("value", 1);
-            values.clear();
-            values.set("value", 4);
-        }, 4);
-    });
-
-    it("does not enqueue empty or missing deletes", async () => {
-        const database = createDatabase();
-        const batches = new BatchControl(database);
-        const { controller, values } = await createSubject({ database });
-
-        expect(values.delete("missing")).to.be.false;
-        expect(values.takeMany(["missing"])).to.deep.equal([]);
-        values.clear();
-        await controller.flush();
-
-        expect(batches.batches).to.have.length(0);
-        await controller.close();
-    });
-
-    it("deletes each key once in a multi-delete", async () => {
-        const database = createDatabase();
-        const batches = new BatchControl(database);
-        const { controller, values } = await createSubject({
-            database,
-            flushIntervalMs: 60_000
-        });
-        values.set("value", 1);
-        await controller.flush();
-
-        expect(values.takeMany(["value", "value"])).to.deep.equal([1]);
-        await controller.flush();
-
-        expect(batches.batches).to.have.length(2);
-        expect(batches.batches[1]).to.have.length(1);
-        expect(values.get("value")).to.equal(undefined);
-        await controller.close();
-    });
-
-    it("retries the same extracted batch", async () => {
-        const database = createDatabase();
-        const batches = new BatchControl(database);
-        const failedAttempt = batches.holdNext();
-        const { controller, values } = await createSubject({
-            database,
-            maxBatchOperations: 1,
-            maxRetries: 1
-        });
-
-        values.set("value", 7);
-        await batches.waitForBatch(1);
-        failedAttempt.reject(new Error("transient batch failure"));
-        await controller.flush();
-
-        expect(batches.batches).to.have.length(2);
-        expect(batches.batches[0]).to.deep.equal(batches.batches[1]);
-        expect(await database.get("records!v1!eventSync!value")).to.not.equal(
-            undefined
-        );
-        await controller.close();
-    });
-
-    it("keeps failed cache writes visible and poisons barriers once", async () => {
-        const database = createDatabase();
-        const batches = new BatchControl(database);
-        const failedBatch = batches.holdNext();
-        const { controller, values } = await createSubject({
-            database,
-            maxBatchOperations: 1,
-            maxRetries: 0
-        });
-        let failureCount = 0;
-        controller.setFailureHandler(() => {
-            failureCount += 1;
-        });
-
-        values.set("value", 2);
-        expect(values.get("value")).to.equal(2);
-        await batches.waitForBatch(1);
-        failedBatch.reject(new Error("terminal batch failure"));
-
-        let firstError: Error | undefined;
-        try {
-            await controller.flush();
-        } catch (error) {
-            firstError = error as Error;
-        }
-        expect(firstError?.message).to.include("terminal batch failure");
-        expect(failureCount).to.equal(1);
-
-        values.set("value", 3);
-        expect(values.get("value")).to.equal(3);
-        let laterError: Error | undefined;
-        try {
-            await controller.flush();
-        } catch (error) {
-            laterError = error as Error;
-        }
-        expect(laterError).to.equal(firstError);
-        expect(failureCount).to.equal(1);
-    });
-
-    it("separates close from scoped failure-handler cache cleanup", async () => {
-        const database = createDatabase();
-        const batches = new BatchControl(database);
-        const failedBatch = batches.holdNext();
-        const { controller, values } = await createSubject({
-            database,
-            maxBatchOperations: 1,
-            maxRetries: 0
-        });
-        let cleanupResult: number | undefined;
-        controller.setFailureHandler(() => {
-            cleanupResult = values.set("cleanup", 9);
-        });
-
-        values.set("value", 1);
-        await batches.waitForBatch(1);
-        const close = controller.close();
-        // a write after close starts stays in memory
-        expect(values.set("ordinary", 2)).to.equal(2);
-
-        failedBatch.reject(new Error("close batch failure"));
-        let closeError: Error | undefined;
-        try {
-            await close;
-        } catch (error) {
-            closeError = error as Error;
-        }
-        expect(closeError?.message).to.include("close batch failure");
-        expect(cleanupResult).to.equal(9);
-        expect(values.get("cleanup")).to.equal(9);
-        let repeatedCloseError: Error | undefined;
-        try {
-            await controller.close();
-        } catch (error) {
-            repeatedCloseError = error as Error;
-        }
-        expect(repeatedCloseError?.message).to.include("close batch failure");
-    });
-
-    it("keeps a write after close in memory and off disk", async () => {
-        const database = createDatabase();
-        const { controller, values } = await createSubject({ database });
-        values.set("before", 1);
+    it("keeps a write after close in memory, raises no error and never writes it to disk", async () => {
+        const database = new GatedMemoryLevel();
+        const { controller, states, open } = build();
+        await open(database);
         await controller.close();
 
-        expect(values.set("after", 2)).to.equal(2);
-        expect(values.get("after")).to.equal(2);
+        states.set("late", "0x01");
         await controller.flush();
 
+        expect(states.get("late")).to.equal("0x01");
+        expect(database.batches).to.have.length(0);
         await database.open();
-        expect(await database.get("records!v1!eventSync!before")).to.not.equal(
-            undefined
-        );
-        expect(await database.get("records!v1!eventSync!after")).to.equal(
-            undefined
-        );
+        expect(await database.get(`${RECORD}late`)).to.equal(undefined);
+        await database.close();
     });
 
-    it("keeps disabled persistence synchronous and flushes immediately", async () => {
-        const controller = new PersistenceController(
-            createStorageRecordCodec()
-        );
-        const values = new PersistentCollection<string, number>(
-            "eventSync",
-            controller
-        );
+    it("loads records in their stored order and runs the load callback once", async () => {
+        const database = new GatedMemoryLevel();
+        const first = build();
+        await first.open(database);
+        first.states.set("a", "0x01");
+        first.states.set("b", "0x02");
+        first.states.set("c", "0x03");
+        first.states.set("a", "0x0a");
+        first.states.delete("b");
+        first.states.set("b", "0x0b");
+        await first.controller.close();
 
-        expect(values.set("value", 1)).to.equal(1);
-        expect(values.get("value")).to.equal(1);
-        await controller.flush();
-        await controller.close();
+        let loads = 0;
+        const second = build(60_000, () => loads++);
+        await second.open(database);
+
+        expect([...second.states.keys()]).to.deep.equal(["a", "c", "b"]);
+        expect(second.states.get("a")).to.equal("0x0a");
+        expect(loads).to.equal(1);
+        await second.controller.close();
     });
 
-    it("includes the resolved location in hydration failures", async () => {
-        const database = createDatabase();
+    it("binds an empty disk late by keeping what memory holds and writing it", async () => {
+        const database = new GatedMemoryLevel();
+        const first = build();
+        first.states.set("before-bind", "0x01");
+        await first.open(database);
+        expect(first.states.get("before-bind")).to.equal("0x01");
+        await first.controller.close();
+
+        const second = build();
+        await second.open(database);
+        expect(second.states.get("before-bind")).to.equal("0x01");
+        await second.controller.close();
+    });
+
+    it("refuses a load when memory and disk both hold records, closes the database and leaves memory as it was", async () => {
+        const database = new GatedMemoryLevel();
+        const first = build();
+        await first.open(database);
+        first.states.set("on-disk", "0x01");
+        await first.controller.close();
+
+        const second = build();
+        second.states.set("in-memory", "0x02");
+        const error = await rejection(second.open(database));
+
+        expect(error.message).to.include("already holds records");
+        expect(error.message).to.include("memory:gated");
+        expect(database.status).to.equal("closed");
+        expect([...second.states.keys()]).to.deep.equal(["in-memory"]);
+    });
+
+    it("refuses an undecodable record naming its collection, key and location, closes the database and leaves memory empty", async () => {
+        const database = new GatedMemoryLevel();
         await database.open();
-        await database.put("records!v1!unknown!value", "corrupt");
-        const controller = new PersistenceController(
-            createStorageRecordCodec(),
-            {
-                databaseHandle: createHandle(database)
-            }
-        );
-        new PersistentCollection<string, number>("eventSync", controller);
+        await database.put(`${RECORD}broken`, "0x1234");
+        await database.close();
 
-        let bindError: Error | undefined;
-        try {
-            await controller.bind();
-        } catch (error) {
-            bindError = error as Error;
-        }
+        const { states, open } = build();
+        const error = await rejection(open(database));
 
-        expect(bindError?.message).to.include(
-            "Unknown persistence collection unknown"
+        expect(error.message).to.include("stateMachineStates record broken");
+        expect(error.message).to.include("memory:gated");
+        expect(database.status).to.equal("closed");
+        expect(states.size).to.equal(0);
+    });
+
+    it("refuses a record of an unknown collection", async () => {
+        const database = new GatedMemoryLevel();
+        await database.open();
+        await database.put("records!v1!unknown!key", "0x");
+        await database.close();
+
+        const { open } = build();
+        const error = await rejection(open(database));
+
+        expect(error.message).to.include(
+            "Unknown persisted collection unknown"
         );
-        expect(bindError?.message).to.include(
-            "(persistence: memory:persistence-controller)"
-        );
+        expect(database.status).to.equal("closed");
+    });
+
+    it("releases the database when close begins while the load is running", async () => {
+        const database = new GatedMemoryLevel();
+        const first = build();
+        await first.open(database);
+        first.states.set("a", "0x01");
+        await first.controller.close();
+
+        const second = build();
+        const opening = second.open(database);
+        const closing = second.controller.close();
+        const error = await rejection(opening);
+        await closing;
+
+        expect(error.message).to.include("closed while opening");
+        expect(database.status).to.equal("closed");
+        expect(second.states.size).to.equal(0);
+    });
+
+    it("refuses a second open", async () => {
+        const database = new GatedMemoryLevel();
+        const { controller, open } = build();
+        await open(database);
+
+        const error = await rejection(open(new GatedMemoryLevel()));
+
+        expect(error.message).to.include("already opened");
+        await controller.close();
     });
 });
