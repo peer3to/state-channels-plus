@@ -79,11 +79,13 @@ function trustedRunnerManifest(trustedRoot) {
             destination: "scripts/infra/local-discovery-registry.js"
         },
         {
-            source: path.join(
-                trustedRoot,
-                "scripts/infra/anvilNode.js"
-            ),
+            source: path.join(trustedRoot, "scripts/infra/anvilNode.js"),
             destination: "scripts/infra/anvilNode.js"
+        },
+        // the runner's anvil pin, for a project with none of its own
+        {
+            source: path.join(trustedRoot, ".forge-version"),
+            destination: ".forge-version"
         }
     ];
     const visit = (source, destination) => {
@@ -541,7 +543,8 @@ class DockerBackend {
             "scripts/e2e-parallel",
             "scripts/infra/local-discovery-registry.js",
             "scripts/infra/anvilNode.js",
-            "test/utils/nodeInfra.js"
+            "test/utils/nodeInfra.js",
+            ".forge-version"
         ]);
         await this.run(
             "docker",

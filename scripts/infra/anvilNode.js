@@ -7,10 +7,10 @@ const { pinnedFoundryMismatch } = require("../e2e-parallel/shared/forgeConfig");
 
 const ANVIL_BIN = "anvil";
 // The runner's own root, whose .forge-version pins anvil for a project with
-// none: this file's checkout or package, also when it runs from the compiled
-// tree (dist/scripts/infra).
+// none: this file's checkout, package, compiled tree (dist/) or trusted runner
+// copy, or the checkout above a compiled tree built before it carried the pin.
 const runtimeRoot = path.join(__dirname, "..", "..");
-const RUNNER_ROOT = fs.existsSync(path.join(runtimeRoot, "package.json"))
+const RUNNER_ROOT = fs.existsSync(path.join(runtimeRoot, ".forge-version"))
     ? runtimeRoot
     : path.join(runtimeRoot, "..");
 // The one owner of the mnemonic: hardhat.config.ts requires it from here, so

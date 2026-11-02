@@ -64,8 +64,13 @@ describe("distributed isolated environment", function () {
         expect(paths).to.include(CHAIN_MODULE);
     });
 
-    it("ships the test chain module in the trusted runner archive and verifies its bytes", async function () {
+    // Mutation: .forge-version left out of the trusted runner archive -> the copy has no pin.
+    // Mutation: .forge-version left out of trustedRunnerManifest -> no manifest entry verifies it.
+    // Mutation: the runner root found by package.json, which the copy lacks -> the unpinned project is refused.
+    // Mutation: the compiled tree mirrors no .forge-version -> the archive built from dist/ has no pin to ship.
+    it("ships the test chain module and the runner's anvil pin in the trusted runner archive and verifies their bytes", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "trusted-runner-"));
+        const unpinned = fs.mkdtempSync(path.join(os.tmpdir(), "unpinned-"));
         const inputs: Buffer[] = [];
         const backend = new DockerBackend({
             image: `runner@sha256:${"f".repeat(64)}`,
@@ -105,8 +110,24 @@ describe("distributed isolated environment", function () {
             ).to.equal(
                 crypto.createHash("sha256").update(shipped).digest("hex")
             );
+            const pin = fs.readFileSync(path.join(root, ".forge-version"));
+            expect(pin.toString()).to.equal(
+                fs.readFileSync(path.join(repoRoot(), ".forge-version"), "utf8")
+            );
+            expect(
+                manifest.find(
+                    (entry: { path: string }) => entry.path === ".forge-version"
+                ).sha256
+            ).to.equal(crypto.createHash("sha256").update(pin).digest("hex"));
+            // the copy's own pin applies to a project with none
+            const shippedChain = path.join(root, CHAIN_MODULE);
+            const { pinnedAnvilMismatch } = require(shippedChain);
+            expect(pinnedAnvilMismatch(unpinned, process.env)).to.equal(null);
         } finally {
+            for (const key of Object.keys(require.cache))
+                if (key.startsWith(root)) delete require.cache[key];
             fs.rmSync(root, { recursive: true, force: true });
+            fs.rmSync(unpinned, { recursive: true, force: true });
         }
     });
 
