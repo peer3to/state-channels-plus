@@ -20,6 +20,9 @@ Cases read slots, balances, nonces and code with `scp_getState` through one or t
 - `fails with the not-retained error for a block hash the service does not know`: REQ-SDS-7-PZCBQ9.T1.P10
 - `fails with the not-retained error for a block a reorg orphaned`: REQ-SDS-7-PZCBQ9.T1.P11
 - `refuses a malformed state request with invalid params`: REQ-SDS-7-PZCBQ9.T1.P12
+- `refuses a state read naming more than 1024 fields with invalid params and reads nothing`: REQ-SDS-7-PZCBQ9.T1.P18
+- `keeps at most 16 state reads at the upstream at once`: REQ-SDS-7-PZCBQ9.T1.P19
+- `answers a state read at the field cap while blocks are mined, and keeps pushing records`: REQ-SDS-7-PZCBQ9.T1.P20
 - `keeps a cached balance current after a transfer without another fetch`: REQ-SDS-7-PZCBQ9.T1.P13
 - `keeps a cached nonce current after the account sends a transaction`: REQ-SDS-7-PZCBQ9.T1.P14
 - `keeps cached code current after a deploy and reads it as empty at an earlier block`: REQ-SDS-7-PZCBQ9.T1.P15

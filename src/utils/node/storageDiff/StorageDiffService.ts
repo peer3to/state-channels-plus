@@ -50,6 +50,8 @@ const DEFAULT_UPSTREAM_REQUEST_TIMEOUT_MS = 10_000;
 const RECONCILE_RETRY_LIMIT = 3;
 /** Delay before the first retry; each further retry doubles it. */
 const RECONCILE_RETRY_BACKOFF_MS = 250;
+/** State reads for peers at the upstream at once; the head's own reads keep room. */
+const MAX_STATE_FETCHES_IN_FLIGHT = 16;
 
 const TRACE_OPTIONS = {
     tracer: "prestateTracer",
@@ -144,6 +146,9 @@ export class StorageDiffService {
     private readonly watched = new Map<AccountAddress, Promise<void>>();
     // One fetch per missing field, shared by every reader waiting for it.
     private readonly flights = new Map<FlightKey, Promise<void>>();
+    // State reads at the upstream now, and the ones waiting for a free place.
+    private stateFetchesInFlight = 0;
+    private readonly stateFetchWaiters: (() => void)[] = [];
     private readonly peerHub: PeerHub;
     // One serialized queue: reconciliation commits branches in order, and
     // subscriptions and catch-up reads see a consistent canonical history.
@@ -774,7 +779,9 @@ export class StorageDiffService {
                 continue;
             const flight = this.loadField(field, {
                 pinned,
-                value: this.fetchField(field, pinned)
+                value: this.limitStateFetch(() =>
+                    this.fetchField(field, pinned)
+                )
             }).finally(() => this.flights.delete(key));
             this.flights.set(key, flight);
         }
@@ -816,10 +823,14 @@ export class StorageDiffService {
                 () =>
                     issued
                         ? issued.value.catch((error) => {
-                              issued.value = this.fetchField(field, pinned);
+                              issued.value = this.limitStateFetch(() =>
+                                  this.fetchField(field, pinned)
+                              );
                               throw error;
                           })
-                        : this.fetchField(field, pinned),
+                        : this.limitStateFetch(() =>
+                              this.fetchField(field, pinned)
+                          ),
                 "Retrying the state fetch"
             );
             const index = this.retainedIndex(pinned);
@@ -834,6 +845,21 @@ export class StorageDiffService {
             }
             this.stateCache.set(field, scratch.get(field)!);
         });
+    }
+
+    /** Runs a state read for a peer once fewer than `MAX_STATE_FETCHES_IN_FLIGHT` are at the upstream. */
+    private async limitStateFetch<T>(read: () => Promise<T>): Promise<T> {
+        while (this.stateFetchesInFlight >= MAX_STATE_FETCHES_IN_FLIGHT)
+            await new Promise<void>((resolve) =>
+                this.stateFetchWaiters.push(resolve)
+            );
+        this.stateFetchesInFlight++;
+        try {
+            return await read();
+        } finally {
+            this.stateFetchesInFlight--;
+            this.stateFetchWaiters.shift()?.();
+        }
     }
 
     /** The value of `field` at exactly block `blockHash` (EIP-1898). */

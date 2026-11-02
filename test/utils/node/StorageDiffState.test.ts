@@ -21,9 +21,14 @@ import {
     ZERO_WORD
 } from "@/utils/node/storageDiff/blockStorageDiff";
 import { expect } from "chai";
-import { getCreateAddress, toQuantity } from "ethers";
+import { getCreateAddress, toBeHex, toQuantity } from "ethers";
 
 const SLOT = { slots: [VALUE_SLOT] };
+
+/** `count` distinct 32-byte slot keys, from slot 1 on. */
+function slotKeys(count: number): string[] {
+    return Array.from({ length: count }, (_, i) => toBeHex(i + 1, 32));
+}
 
 describe("StorageDiffService state", function () {
     it("reads a slot from the upstream on the first read, pinned to the best head's block hash", async function () {
@@ -278,6 +283,61 @@ describe("StorageDiffService state", function () {
             expect((error as StorageDiffRpcError).code).to.equal(
                 INVALID_PARAMS
             );
+        });
+    });
+
+    // Mutation: the field cap removed -> the request is answered.
+    it("refuses a state read naming more than 1024 fields with invalid params and reads nothing", async function () {
+        await withStorageDiffSession(async ({ client, relay, signer }) => {
+            const { address, set } = await openStorage(client, signer);
+            const { record: head } = await set(5n);
+            const readsBefore = fieldReads(relay);
+
+            const error = await rejectionOf(
+                client.getState(head.hash, [
+                    { address, slots: slotKeys(1023), account: true }
+                ])
+            );
+
+            expect((error as StorageDiffRpcError).code).to.equal(
+                INVALID_PARAMS
+            );
+            expect(fieldReads(relay)).to.equal(readsBefore);
+        });
+    });
+
+    // Mutation: the fetch limit removed -> all 64 reads at the node at once.
+    it("keeps at most 16 state reads at the upstream at once", async function () {
+        await withStorageDiffSession(async ({ client, relay, signer }) => {
+            const { address, set } = await openStorage(client, signer);
+            const { record: head } = await set(5n);
+
+            const state = await client.getState(head.hash, [
+                { address, slots: slotKeys(64) }
+            ]);
+
+            expect(
+                Object.keys(state.accounts[address].storage!)
+            ).to.have.length(64);
+            expect(relay.maxInFlight("eth_getStorageAt")).to.be.within(2, 16);
+        });
+    });
+
+    it("answers a state read at the field cap while blocks are mined, and keeps pushing records", async function () {
+        await withStorageDiffSession(async ({ client, signer }) => {
+            const { address, set } = await openStorage(client, signer);
+            const { record: head } = await set(5n);
+
+            const read = client.getState(head.hash, [
+                { address, slots: slotKeys(1024) }
+            ]);
+            const second = await set(6n);
+            const third = await set(7n);
+
+            expect(
+                Object.keys((await read).accounts[address].storage!)
+            ).to.have.length(1024);
+            expect(third.record.parentHash).to.equal(second.record.hash);
         });
     });
 

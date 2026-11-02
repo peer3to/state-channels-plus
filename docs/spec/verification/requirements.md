@@ -855,7 +855,7 @@ Specification cases tested: 5/5.
 Specification cases tested: 10/10.
 
 [`REQ-SDS-7-PZCBQ9` (State reads come from one shared cache)](../specification/runtime/storage-diff-service.md#req-sds-7-pzcbq9)
-Specification cases tested: 16/16.
+Specification cases tested: 19/19.
 
 [`REQ-SDS-11-QV2VPT` (Upstream trouble is retried, then fatal)](../specification/runtime/storage-diff-service.md#req-sds-11-qv2vpt)
 Specification cases tested: 11/12. Untested: T1.P10.

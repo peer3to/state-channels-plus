@@ -40,6 +40,9 @@ export class UpstreamRelay {
     private readonly sockets = new Set<WebSocket>();
     // Requests seen per method, held or failed ones included.
     private readonly seen = new Map<UpstreamMethod, number>();
+    // Requests forwarded and not answered yet, per method, and the most at once.
+    private readonly inFlight = new Map<UpstreamMethod, number>();
+    private readonly peakInFlight = new Map<UpstreamMethod, number>();
     // Params of every request seen, per method, in arrival order.
     private readonly seenParams = new Map<UpstreamMethod, unknown[][]>();
     // Method -> how its answers are rewritten.
@@ -75,6 +78,11 @@ export class UpstreamRelay {
     /** How many `method` requests reached the relay. */
     requestCount(method: UpstreamMethod): number {
         return this.seen.get(method) ?? 0;
+    }
+
+    /** The most `method` requests the node had unanswered at once. */
+    maxInFlight(method: UpstreamMethod): number {
+        return this.peakInFlight.get(method) ?? 0;
     }
 
     /** The params of every `method` request that reached the relay. */
@@ -168,11 +176,19 @@ export class UpstreamRelay {
         // requests in flight, by id, so an answer can be rewritten
         const asked = new Map<unknown, RelayedRequest>();
         upstream.on("message", (data) => {
+            const parsed = JSON.parse(data.toString());
+            const answers = Array.isArray(parsed) ? parsed : [parsed];
+            for (const answer of answers) {
+                const request = asked.get(answer.id);
+                if (request && answer.id !== undefined)
+                    this.inFlight.set(
+                        request.method,
+                        (this.inFlight.get(request.method) ?? 1) - 1
+                    );
+            }
             if (client.readyState !== WebSocket.OPEN) return;
             if (this.tampering.size === 0)
                 return void client.send(data.toString());
-            const parsed = JSON.parse(data.toString());
-            const answers = Array.isArray(parsed) ? parsed : [parsed];
             for (const answer of answers) {
                 const request = asked.get(answer.id);
                 const transform = request && this.tampering.get(request.method);
@@ -263,6 +279,10 @@ export class UpstreamRelay {
                 hold.onArrive();
                 return;
             }
+            const pending = (this.inFlight.get(request.method) ?? 0) + 1;
+            this.inFlight.set(request.method, pending);
+            if (pending > this.maxInFlight(request.method))
+                this.peakInFlight.set(request.method, pending);
             forward(frame);
         });
         const cut = () => {

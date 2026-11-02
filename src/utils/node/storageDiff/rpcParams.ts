@@ -58,12 +58,18 @@ export function parseBlockHash(value: unknown): string {
     return value.toLowerCase();
 }
 
+/**
+ * Fields (each slot, balance and nonce as two, code) one `scp_getState` may
+ * name; an account that names none counts as one.
+ */
+export const MAX_STATE_FIELDS = 1024;
+
 const STATE_REQUEST_SHAPE =
     "accounts must be an array of {address, slots?, account?, code?}";
 
 export function parseStateRequests(value: unknown): StateRequest[] {
     if (!Array.isArray(value)) throw invalidParams(STATE_REQUEST_SHAPE);
-    return value.map((raw): StateRequest => {
+    const requests = value.map((raw): StateRequest => {
         if (
             !isObject(raw) ||
             typeof raw.address !== "string" ||
@@ -89,4 +95,20 @@ export function parseStateRequests(value: unknown): StateRequest[] {
             code: raw.code === true
         };
     });
+    const fields = requests.reduce(
+        (sum, request) =>
+            sum +
+            Math.max(
+                1,
+                request.slots.length +
+                    (request.account ? 2 : 0) +
+                    (request.code ? 1 : 0)
+            ),
+        0
+    );
+    if (fields > MAX_STATE_FIELDS)
+        throw invalidParams(
+            `A state read may name at most ${MAX_STATE_FIELDS} fields`
+        );
+    return requests;
 }

@@ -29,7 +29,7 @@ The service follows one chain level: the upstream's best head, which can roll ba
 
 **<a id="req-sds-4-zzdevf"></a>`REQ-SDS-4-ZZDEVF` — Reported values are the chain's own, not the tracer's.** For the subscribed addresses a record MUST hold the values the chain holds at the end of the block, whatever the upstream's trace reports. The trace is used for which storage keys and accounts a block touched; its values are used as they are only when no call frame of the block carries an error. For a block with a failed frame, or whose call frames could not be had, the end-of-block values of the touched keys and accounts MUST be read from the upstream pinned to the block hash. A touched key whose value did not change MUST NOT appear in `pre` or `post`. The old values of a multi-block step come from the service's own cache carried forward block by block. A block whose trace values were used keeps them for every account the trace names, so an account first watched later finds its retained history without a read; a block read from the upstream holds only the watched accounts, and an account watched later has its history read for those blocks. Phase 1 limit: state a block changes outside its transactions' traced keys and accounts (system calls, withdrawals) is not seen.
 
-**<a id="req-sds-7-pzcbq9"></a>`REQ-SDS-7-PZCBQ9` — State reads come from one shared cache.** `scp_getState` MUST answer storage slots, balance, nonce and code of any address from a cache shared by all peers. A field the cache lacks is read from the upstream once, pinned to the best head's block hash, and concurrent misses for one field share one fetch. If a block is committed during a fetch its writes MUST be applied to the fetched value. Each committed block's `post` updates the cached fields already held, and a reorganization undoes the orphaned blocks with their `pre` values, newest first. A block hash that names a retained block MUST be answered as of that block, rolling the head value back over later `pre` values; a hash that is unknown, orphaned or older than the window MUST fail with the not-retained error (code `-32002`) so the caller can fall back. A malformed request fails as invalid params. Phase 1 limit: cached state is never evicted, so the cache grows without bound on a long-running service; eviction is follow-up work.
+**<a id="req-sds-7-pzcbq9"></a>`REQ-SDS-7-PZCBQ9` — State reads come from one shared cache.** `scp_getState` MUST answer storage slots, balance, nonce and code of any address from a cache shared by all peers. A field the cache lacks is read from the upstream once, pinned to the best head's block hash, and concurrent misses for one field share one fetch. One request MUST name at most 1024 fields (a slot is one, balance and nonce are two, code is one, and an account naming none counts as one); a larger one fails as invalid params and reads nothing. At most 16 state reads for peers MUST be at the upstream at once, so the reads that follow the head keep room. If a block is committed during a fetch its writes MUST be applied to the fetched value. Each committed block's `post` updates the cached fields already held, and a reorganization undoes the orphaned blocks with their `pre` values, newest first. A block hash that names a retained block MUST be answered as of that block, rolling the head value back over later `pre` values; a hash that is unknown, orphaned or older than the window MUST fail with the not-retained error (code `-32002`) so the caller can fall back. A malformed request fails as invalid params. Phase 1 limit: cached state is never evicted, so the cache grows without bound on a long-running service; eviction is follow-up work.
 
 **<a id="req-sds-11-qv2vpt"></a>`REQ-SDS-11-QV2VPT` — Upstream trouble is retried, then fatal; a lagging peer is told and cut.** A block that changes while it is traced, an upstream error answer and a request timeout MUST be retried, both while loading the initial history and while following the head. A lost upstream connection MUST be reopened, its requests sent again, the head subscription renewed and the chain reconciled from the last canonical record, so subscribers see a continuous chain or a replacement branch; an account first watched meanwhile gets its history once the upstream answers, never an empty one. An upstream that refuses the first connection fails the start. Anything else, or a failure that outlasts its retries, including an outage longer than the request retries allow and an upstream reset to a chain sharing no ancestor with the retained one, MUST be fatal: the service closes its peers and exits nonzero, and never invents an empty diff, so a supervisor restarts it. A peer whose unsent bytes pass the configured limit MUST be sent a notice naming the reason (`scp_disconnect`), pushed nothing more, and disconnected, so it recovers by catch-up inside the retention window instead of silently missing records.
 
@@ -46,7 +46,7 @@ The service follows one chain level: the upstream's best head, which can roll ba
 
 **Protected assets.** The integrity of the state data peers mirror, the availability of the service to peers, and the credentials of the upstream.
 
-**Trust boundaries.** Peers are untrusted: their requests are validated (malformed parameters, unknown or non-endpoint member names, batches and oversized messages are refused), and a peer that does not drain its pushes is cut instead of buffering without bound. The upstream is trusted and so is the operator; errors name the upstream by scheme and host only, never its credentials.
+**Trust boundaries.** Peers are untrusted: their requests are validated (malformed parameters, unknown or non-endpoint member names, batches, oversized messages and state reads over the field cap are refused), their state reads reach the upstream at most 16 at a time, and a peer that does not drain its pushes is cut instead of buffering without bound. The upstream is trusted and so is the operator; errors name the upstream by scheme and host only, never its credentials.
 
 **Threats and defenses.** A reverted sub-call that a tracer reports as applied would feed false values to every peer: values are read from the node whenever a frame failed ([`REQ-SDS-4-ZZDEVF`](storage-diff-service.md#req-sds-4-zzdevf)). An upstream failure is retried and then fatal, so the service never invents an empty diff ([`REQ-SDS-11-QV2VPT`](storage-diff-service.md#req-sds-11-qv2vpt)).
 
@@ -182,11 +182,11 @@ No slot or transfer of a reverted frame is reported, no unchanged slot is listed
 
 **Setup and stimulus:**
 
-Read slots, balance, nonce and code through two clients, concurrently and after further blocks, reorganizations and transfers; ask for older retained, unknown, orphaned and pruned blocks.
+Read slots, balance, nonce and code through two clients, concurrently and after further blocks, reorganizations and transfers; ask for older retained, unknown, orphaned and pruned blocks; ask for more fields than the cap, for many uncached slots, and for the cap while blocks are mined.
 
 **Expected result:**
 
-A second client and a concurrent client cost no extra upstream read; cached values follow commits and reorganizations; unretained blocks fail with the not-retained error.
+A second client and a concurrent client cost no extra upstream read; cached values follow commits and reorganizations; unretained blocks fail with the not-retained error; an oversized read is refused before any upstream read, and no more than 16 reads are at the upstream at once.
 
 **Required permutations:**
 
@@ -221,6 +221,12 @@ A second client and a concurrent client cost no extra upstream read; cached valu
 <a id="req-sds-7-pzcbq9.t1.p15"></a>`REQ-SDS-7-PZCBQ9.T1.P15` — cached code follows a deploy and reads as empty at an earlier block
 
 <a id="req-sds-7-pzcbq9.t1.p16"></a>`REQ-SDS-7-PZCBQ9.T1.P16` — a state read for an older retained block is still answered after the head moved
+
+<a id="req-sds-7-pzcbq9.t1.p18"></a>`REQ-SDS-7-PZCBQ9.T1.P18` — a state read naming more than 1024 fields fails as invalid params and reads nothing
+
+<a id="req-sds-7-pzcbq9.t1.p19"></a>`REQ-SDS-7-PZCBQ9.T1.P19` — at most 16 state reads are at the upstream at once
+
+<a id="req-sds-7-pzcbq9.t1.p20"></a>`REQ-SDS-7-PZCBQ9.T1.P20` — a state read at the field cap is answered while blocks are mined and records keep coming
 
 #### <a id="req-sds-11-qv2vpt.t1"></a>`REQ-SDS-11-QV2VPT.T1`
 
