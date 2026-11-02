@@ -698,7 +698,9 @@ fork's gas estimator, passes `--test-chain project` (or sets
 `hardhat node` for every slot chain and fixture node, locally and on every
 worker, and keeps the in-process `hardhat` network on EDR. A distributed run
 sends the setting to its workers with the rest of its environment. This
-repository's own tests need anvil.
+repository's own tests need anvil. The anvil test chain must be the version in
+the project's `.forge-version`, or in the runner's own when the project has
+none; any other anvil is refused.
 
 Dial diagnostics include the Noise handshake hash for each stream. Close lines
 state whether this application closed the stream, Hyperswarm reported duplicate

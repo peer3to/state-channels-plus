@@ -1,9 +1,18 @@
 // The test chain: the pinned anvil, configured like the hardhat network in
 // hardhat.config.ts. Shared by the node launcher and test/utils/nodeInfra.js.
+const fs = require("fs");
+const path = require("path");
 const { ACCOUNT_POOL_SIZE } = require("../e2e-parallel/shared/constants");
 const { pinnedFoundryMismatch } = require("../e2e-parallel/shared/forgeConfig");
 
 const ANVIL_BIN = "anvil";
+// The runner's own root, whose .forge-version pins anvil for a project with
+// none: this file's checkout or package, also when it runs from the compiled
+// tree (dist/scripts/infra).
+const runtimeRoot = path.join(__dirname, "..", "..");
+const RUNNER_ROOT = fs.existsSync(path.join(runtimeRoot, "package.json"))
+    ? runtimeRoot
+    : path.join(runtimeRoot, "..");
 // The one owner of the mnemonic: hardhat.config.ts requires it from here, so
 // account N derives the same address on the node and in hardhat's own signers.
 const MNEMONIC = "test test test test test test test test test test test junk";
@@ -27,15 +36,26 @@ const ANVIL_WATCHDOG = [
 
 /**
  * Tests run on the anvil pinned in .forge-version, the one the runner image
- * ships. Another anvil is another chain implementation, so refuse it. Returns
- * the refusal, or null when the pinned anvil (or no pin) is found.
+ * ships: the project's pin, or the runner's own for a project with none.
+ * Another anvil is another chain implementation, so refuse it, and refuse
+ * when neither pins one. Returns the refusal, or null when the pinned anvil
+ * is found.
  */
-function pinnedAnvilMismatch(projectRoot = process.cwd(), env = process.env) {
-    const mismatch = pinnedFoundryMismatch(ANVIL_BIN, projectRoot, env);
+function pinnedAnvilMismatch(
+    projectRoot = process.cwd(),
+    env = process.env,
+    runnerRoot = RUNNER_ROOT
+) {
+    const pinRoot = [projectRoot, runnerRoot].find((root) =>
+        fs.existsSync(path.join(root, ".forge-version"))
+    );
+    if (!pinRoot)
+        return `No .forge-version pins anvil in ${projectRoot} or in the runner (${runnerRoot})`;
+    const mismatch = pinnedFoundryMismatch(ANVIL_BIN, pinRoot, env);
     if (!mismatch) return null;
     return (
         `${mismatch}. ` +
-        'Run: foundryup --install "$(cat .forge-version)" and put ~/.foundry/bin first on PATH'
+        `Run: foundryup --install "$(cat ${path.join(pinRoot, ".forge-version")})" and put ~/.foundry/bin first on PATH`
     );
 }
 

@@ -183,6 +183,7 @@
     "*.sol": "forge fmt"
   },
   "files": [
+    ".forge-version",
     "dist",
     "contracts",
     "artifacts",

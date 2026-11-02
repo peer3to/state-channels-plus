@@ -40,7 +40,8 @@ const HARDHAT_MNEMONIC =
 const { pinnedAnvilMismatch } = require("../../scripts/infra/anvilNode.js") as {
     pinnedAnvilMismatch: (
         root: string,
-        env: NodeJS.ProcessEnv
+        env: NodeJS.ProcessEnv,
+        runnerRoot?: string
     ) => string | null;
 };
 const { pinnedFoundryMismatch } =
@@ -329,20 +330,32 @@ describe("e2e parallel test chain", function () {
     // Mutation: pinnedFoundryMismatch returns null for a differing version -> the 0.0.1 pin accepts this anvil.
     // Mutation: the version regex no longer matches `--version` output -> the repository's own pin refuses its anvil.
     // Mutation: an unreadable version accepted, as the forge check once did -> node's version passes.
-    it("the pinned-anvil check refuses another or an unreadable version, and accepts the pinned one or no pin", function () {
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), "anvil-pin-"));
+    // Mutation: no fallback to the runner's pin -> the unpinned project accepts the anvil the 0.0.1 runner refuses.
+    // Mutation: the runner's pin read before the project's -> the 0.0.1 project accepts this anvil.
+    // Mutation: no pin anywhere accepted -> the unpinned project and runner pass.
+    it("the pinned-anvil check refuses another or an unreadable version, falls back to the runner's pin, and refuses no pin", function () {
+        const project = fs.mkdtempSync(path.join(os.tmpdir(), "anvil-pin-"));
+        const runner = fs.mkdtempSync(path.join(os.tmpdir(), "anvil-runner-"));
         try {
-            expect(pinnedAnvilMismatch(root, process.env)).to.equal(null);
-            fs.writeFileSync(path.join(root, ".forge-version"), "v0.0.1\n");
-            expect(pinnedAnvilMismatch(root, process.env)).to.include(
+            expect(pinnedAnvilMismatch(project, process.env, runner)).to.equal(
+                `No .forge-version pins anvil in ${project} or in the runner (${runner})`
+            );
+            expect(pinnedAnvilMismatch(project, process.env)).to.equal(null);
+            fs.writeFileSync(path.join(runner, ".forge-version"), "v0.0.1\n");
+            expect(
+                pinnedAnvilMismatch(project, process.env, runner)
+            ).to.include("does not match .forge-version (0.0.1)");
+            fs.writeFileSync(path.join(project, ".forge-version"), "v0.0.1\n");
+            expect(pinnedAnvilMismatch(project, process.env)).to.include(
                 "does not match .forge-version (0.0.1)"
             );
-            expect(pinnedFoundryMismatch("node", root, process.env)).to.include(
-                "node (unknown version) does not match"
-            );
+            expect(
+                pinnedFoundryMismatch("node", project, process.env)
+            ).to.include("node (unknown version) does not match");
             expect(pinnedAnvilMismatch(repoRoot(), process.env)).to.equal(null);
         } finally {
-            fs.rmSync(root, { recursive: true, force: true });
+            fs.rmSync(project, { recursive: true, force: true });
+            fs.rmSync(runner, { recursive: true, force: true });
         }
     });
 
