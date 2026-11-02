@@ -73,8 +73,8 @@ clear a dispute marker whose dispute the chain does not hold, unless a transacti
 be unmined; and re-arm the on-chain posting of its own latest block, which runs on its own timer and
 may post during the hold below, because that block carries a signature made before the crash. A
 failed chain read fails the restore, and with it the persistent start: a head that read did not
-reconcile is stale. It MUST then stay `SYNCED` — no signing (a block co-signature or a join
-countersignature alike), no block authored or executed, no turn notification, no participant-timeout action — until its first
+reconcile is stale. It MUST then stay `SYNCED` — no block co-signature and no join
+countersignature, no block authored or executed, no turn notification, no participant-timeout action — until its first
 synchronization after the restart settles. When that synchronization fails for any reason (a failed or
 undecodable answer, silence or a lost transport included) or its deadline passes with no participant
 answering, it MUST abort as an observer does and arm nothing from the restored
