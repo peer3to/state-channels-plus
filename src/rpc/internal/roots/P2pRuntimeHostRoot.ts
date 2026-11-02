@@ -667,10 +667,6 @@ export class P2pRuntimeHostRoot<
                 );
         }
 
-        if (this.boundChannelId) {
-            await stateManager.setChannelId(this.boundChannelId);
-        }
-
         this.runtimeHandle = { stateManager, evmDiamondStateMachine, storage };
         // a disposal that began during the build missed this runtime: cut
         // and dispose it here (both repeat safely), with any child root its
@@ -685,6 +681,10 @@ export class P2pRuntimeHostRoot<
                 [...this.children].map((child) => child.dispose())
             );
             throw new RootDisposedError("Runtime disposed during setup");
+        }
+        // after the handle: a failed restore still closes the partition
+        if (this.boundChannelId) {
+            await stateManager.setChannelId(this.boundChannelId);
         }
         steps.mark("stateManager");
         await stateManager.p2pManager.localRpc.ready();

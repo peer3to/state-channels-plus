@@ -248,7 +248,8 @@ export class PersistenceController {
     }
 
     public async flush(): Promise<void> {
-        this.assertOpen();
+        // after close starts nothing new reaches disk: wait for close's drain
+        if (this.closePromise) return this.closePromise;
         await this.flushThrough(this.nextRevision);
     }
 
@@ -297,10 +298,13 @@ export class PersistenceController {
     }
 
     private enqueue(operations: PersistenceBatchOperation[]): void {
+        // a write after close starts stays in memory
         if (
             !operations.length ||
             !this.databaseHandle ||
-            this.inFailureCleanup
+            this.inFailureCleanup ||
+            this.closing ||
+            this.closed
         ) {
             return;
         }
@@ -452,12 +456,8 @@ export class PersistenceController {
     }
 
     private assertMutationAllowed(): void {
-        this.assertOpen();
         if (!this.bound) {
             throw new Error("Persistence controller is not bound");
-        }
-        if (this.closing && !this.inFailureCleanup) {
-            throw new Error("Persistence controller is closing");
         }
     }
 

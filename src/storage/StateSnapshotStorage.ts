@@ -39,24 +39,7 @@ export class StateSnapshotStorage {
         options?: StoreOptions
     ): StateSnapshotHash {
         const hash = options?.hash ?? snapshot.hash;
-        this.snapshotsByHash.update(hash, (existing) => {
-            const existingGenesis = this.genesisSnapshotByForkId.get(
-                snapshot.forkID
-            );
-            if (
-                snapshot.isGenesis &&
-                existingGenesis &&
-                existingGenesis !== hash
-            ) {
-                throw new Error(
-                    `Conflicting genesis snapshots for fork ${snapshot.forkID}`
-                );
-            }
-            if (existing && existing.encode() !== snapshot.encode()) {
-                throw new Error(`Incompatible state snapshot for hash ${hash}`);
-            }
-            return snapshot;
-        });
+        this.snapshotsByHash.set(hash, snapshot);
         return hash;
     }
 
@@ -88,14 +71,6 @@ export class StateSnapshotStorage {
         this.genesisSnapshotByForkId.clear();
         for (const [hash, snapshot] of this.snapshotsByHash.entries()) {
             if (snapshot.isGenesis) {
-                const existingHash = this.genesisSnapshotByForkId.get(
-                    snapshot.forkID
-                );
-                if (existingHash && existingHash !== hash) {
-                    throw new Error(
-                        `Conflicting genesis snapshots for fork ${snapshot.forkID}`
-                    );
-                }
                 this.genesisSnapshotByForkId.set(snapshot.forkID, hash);
             }
         }

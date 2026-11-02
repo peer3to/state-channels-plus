@@ -34,7 +34,7 @@ describe("DisputeStorage", () => {
 
             expect(hash).to.equal(mockDisputeHash);
             const stored = storage.getDisputeConfirmation(hash);
-            expect(stored?.signedDispute).to.equal(mockSignedDispute);
+            expect(stored?.signedDispute).to.deep.equal(mockSignedDispute);
             expect(stored?.signatures).to.deep.equal([]);
         });
 
@@ -46,7 +46,7 @@ describe("DisputeStorage", () => {
 
             expect(hash).to.equal(customHash);
             const stored = storage.getDisputeConfirmation(customHash);
-            expect(stored?.signedDispute).to.equal(mockSignedDispute);
+            expect(stored?.signedDispute).to.deep.equal(mockSignedDispute);
             expect(stored?.signatures).to.deep.equal([]);
         });
 
@@ -79,7 +79,7 @@ describe("DisputeStorage", () => {
 
             expect(hash).to.equal(mockDisputeHash);
             const stored = storage.getDisputeConfirmation(hash);
-            expect(stored).to.equal(mockDisputeConfirmation);
+            expect(stored).to.deep.equal(mockDisputeConfirmation);
         });
 
         it("should store DisputeConfirmation with provided hash", () => {
@@ -91,7 +91,7 @@ describe("DisputeStorage", () => {
 
             expect(hash).to.equal(customHash);
             const stored = storage.getDisputeConfirmation(customHash);
-            expect(stored).to.equal(mockDisputeConfirmation);
+            expect(stored).to.deep.equal(mockDisputeConfirmation);
         });
 
         it("should merge signatures with deduplication on duplicate insert", () => {
@@ -174,7 +174,7 @@ describe("DisputeStorage", () => {
 
             const stored = storage.getDisputeConfirmation(hash1);
             // Should preserve the original SignedDispute
-            expect(stored?.signedDispute).to.equal(mockSignedDispute);
+            expect(stored?.signedDispute).to.deep.equal(mockSignedDispute);
             // Should have merged signatures
             expect(stored?.signatures.length).to.be.greaterThan(
                 mockDisputeConfirmation.signatures.length
@@ -189,7 +189,7 @@ describe("DisputeStorage", () => {
 
         it("should get dispute confirmation by hash", () => {
             const result = storage.getDisputeConfirmation(mockDisputeHash);
-            expect(result).to.equal(mockDisputeConfirmation);
+            expect(result).to.deep.equal(mockDisputeConfirmation);
         });
 
         it("should return undefined for non-existent dispute", () => {
@@ -217,13 +217,13 @@ describe("DisputeStorage", () => {
             // All disputes should be retrievable
             expect(
                 storage.getDisputeConfirmation(hash1)?.signedDispute
-            ).to.equal(dispute1);
+            ).to.deep.equal(dispute1);
             expect(
                 storage.getDisputeConfirmation(hash2)?.signedDispute
-            ).to.equal(dispute2);
+            ).to.deep.equal(dispute2);
             expect(
                 storage.getDisputeConfirmation(hash3)?.signedDispute
-            ).to.equal(dispute3);
+            ).to.deep.equal(dispute3);
         });
 
         it("should maintain signatures across different storage methods", () => {

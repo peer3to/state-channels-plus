@@ -27,19 +27,11 @@ export class FraudProofStorage {
 
     public storeFraudProof(fraudProof: FraudProofStruct): Hash {
         const proofHash = hash(fraudProof.encodedProof);
-        this.fraudProofs.update(proofHash, (existing) => {
-            if (
-                existing &&
-                (String(existing.proofType) !== String(fraudProof.proofType) ||
-                    String(existing.participant).toLowerCase() !==
-                        String(fraudProof.participant).toLowerCase())
-            ) {
-                throw new Error(`Incompatible fraud proof for ${proofHash}`);
-            }
-
-            // Store the fraud proof; a stored one is kept as is
-            return existing ?? fraudProof;
-        });
+        // Store the fraud proof; a stored one is kept as is
+        this.fraudProofs.update(
+            proofHash,
+            (existing) => existing ?? fraudProof
+        );
         return proofHash;
     }
 

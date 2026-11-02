@@ -163,7 +163,7 @@ describe("BlockStorage", () => {
             const hash = storage.storeBlock(block);
 
             const stored = storage.getBlock(hash!);
-            expect(stored).to.equal(block);
+            expect(stored?.equals(block)).to.be.true;
         });
 
         it("should insert block confirmation with provided keys", () => {
@@ -174,8 +174,8 @@ describe("BlockStorage", () => {
 
             const stored = storage.getBlock(hash!);
             const storedByCoords = storage.getBlock(mockForkId, mockHeight);
-            expect(stored).to.equal(block);
-            expect(storedByCoords).to.equal(block);
+            expect(stored?.equals(block)).to.be.true;
+            expect(storedByCoords?.equals(block)).to.be.true;
         });
     });
 
@@ -595,7 +595,7 @@ describe("BlockStorage", () => {
         });
 
         describe("Different blocks with same hash but different coordinates", () => {
-            it("should return hash when storing block with same hash but different coordinates", () => {
+            it("should reject a stored hash with different coordinates", () => {
                 // Store first block
                 storage.storeBlock(
                     Block.fromBlockConfirmation(mockBlockConfirmation)
@@ -613,12 +613,41 @@ describe("BlockStorage", () => {
                     }
                 );
 
-                expect(result).to.equal(mockBlockHash);
+                expect(result).to.equal(undefined);
+                expect(
+                    storage.getBlock(
+                        differentCoordinates.forkId,
+                        differentCoordinates.height
+                    )
+                ).to.equal(undefined);
             });
         });
 
-        describe("Reference equality", () => {
-            it("should maintain reference equality between hash and coordinates maps", () => {
+        describe("Persistence-only stores", () => {
+            it("keeps the tip when a held block is stored again normally", () => {
+                storage.storeBlock(mockBlock, { justPersist: true });
+                storage.storeBlock(
+                    Block.fromBlockConfirmation(mockBlockConfirmation)
+                );
+
+                expect(storage.getLatestBlockHeight(mockForkId)).to.equal(-1);
+            });
+
+            it("moves the tip when a normal block is held again", () => {
+                storage.storeBlock(mockBlock);
+                storage.storeBlock(
+                    Block.fromBlockConfirmation(mockBlockConfirmation),
+                    { justPersist: true }
+                );
+
+                expect(storage.getLatestBlockHeight(mockForkId)).to.equal(
+                    mockHeight
+                );
+            });
+        });
+
+        describe("Lookup consistency", () => {
+            it("should apply a signature inserted by coordinates to the block read by hash", () => {
                 // Store a block
                 const hash = storage.storeBlock(
                     Block.fromBlockConfirmation(mockBlockConfirmation)
@@ -638,11 +667,9 @@ describe("BlockStorage", () => {
                 // Assert that the changes are also applied on the by-hash block
                 expect(blockByHash?.confirmationSignatures.has(newSignature)).to
                     .be.true;
+                // an earlier read is a copy the insert does not change
                 expect(blockByCoords?.confirmationSignatures.has(newSignature))
-                    .to.be.true;
-
-                // Verify they are the same object reference
-                expect(blockByHash).to.equal(blockByCoords);
+                    .to.be.false;
             });
         });
     });
