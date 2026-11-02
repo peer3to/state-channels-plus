@@ -257,6 +257,13 @@ Engineer decision (Luka, 2026-10-12): left as is. With persisted storage a resyn
 and a turn notification means this runtime is next and has not produced that block yet; revisit when
 persistence is implemented.
 
+**Revisited (2026-11-02, persistence):** with persistence enabled, a restarted participant installs
+its own durable head before it synchronizes, so the resync replays only the tail, and it stays
+`SYNCED` with no turn notification until that first synchronization settles
+([`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../specification/storage/durability.md#req-stor-3-4rjger)). The case remains for
+a runtime without persistence, the default until
+[`FIND-PROOF-PERSISTENCE-1-HYC9DS`](open-findings.md#find-proof-persistence-1-hyc9ds) is fixed.
+
 **Status:** Open; low.
 
 ## Logical join retry lifetime
@@ -389,6 +396,11 @@ unsupported replay accusations.
 **Disposition:** Open; high. Deferred by Luka to a follow-up PR; details and missing regressions
 below.
 
+**Persistence (Luke 2026-11-02).** With the disk medium a poisoned coordinate survives a restart,
+because the load restores the block store as it was. This finding is not fixed first: persistence
+lands off by default ([`REQ-STOR-10-XY96KG` (Persistence is opt-in)](../specification/storage/durability.md#req-stor-10-xy96kg)),
+and the default flips when this finding is fixed.
+
 **Open; high, with a potential honest-auditor slash. Engineer disposition (2026-10-06): defer the
 implementation and regression tests to a follow-up PR.** Luka requested that PR #519's SR1
 finding and its TO1/TO2 coverage gaps remain recorded here. This deferral does not resolve the
@@ -510,9 +522,11 @@ that the VM already holds the new state during prepare, while storage, fork and 
 **Relation to [`FIND-STATE-1-0K7XMY`](open-findings.md#find-state-1-0k7xmy).** Its resolved sync part makes storage, fork and status
 change together. It does not make the VM change together with them.
 
-**Async storage.** The current atomicity of storage, fork and status depends on synchronous storage: `persistHistory()` and `commit()` run
-with no await between them. Once storage becomes async, that step can interleave with other tasks, and a crash can leave part of the
-writes persisted.
+**Storage stays synchronous (2026-11-02).** The atomicity of storage, fork and status depends on synchronous storage: `persistHistory()` and
+`commit()` run with no await between them. The disk medium keeps that: store operations stay synchronous on memory, and each synchronous
+storage step reaches disk as one atomic batch cut only between steps, so a crash leaves disk at a prefix of whole steps
+([`REQ-STOR-7-K1J7EA` (Write-behind disk copy loaded once)](../specification/storage/durability.md#req-stor-7-k1j7ea)). That gives "persisted writes of one update must be atomic
+on crash" below with no change to the install path. The VM half of this finding is unchanged.
 
 **Engineer disposition (Luka, 2026-10-08).** Record the defect and defer the design. Concurrency must be kept: making the readers
 take the state mutex is rejected.
@@ -878,6 +892,13 @@ chain sends and the parent bus (see [`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-finding
 so nothing the imploding runtime does after the cut leaves it as a frame or a transaction. The
 VM child is still disposed under a refresh that is still running; that local failure is tolerated
 by the ingest catch since PR #556.
+
+**Update (2026-11-02, persistence):** the disk medium closes in that one disposal, after the cut:
+writes made before the cut drain to disk, and a write after the cut changes memory only and never
+reaches disk, so nothing the imploding runtime writes after the cut has a lasting effect
+([`REQ-STOR-9-ZR8A92` (Closed by the one disposal)](../specification/storage/durability.md#req-stor-9-zr8a92)). The blacklist stays in
+memory (Luke 2026-11-02, [`FIND-STORAGE-8-CS91XW`](open-findings.md#find-storage-8-cs91xw)), so the
+impact note above still holds.
 
 **Side-effect audit of tolerating more (2026-10-16).** (1) No partial queue state: ingest's
 mutations before a throw point are the pre-mutation block clone, one synchronous queue set/merge
@@ -1605,6 +1626,41 @@ deleted; its only test caller that observed a stored run now reads `tryGetMessag
 which reports `missingBlockHash`, and the tests of the method itself are deleted. Rejected: changing
 it to return a `MessageBlockRun`, which would keep a second walk-from-tip read with no production
 caller.
+
+<a id="find-storage-8-cs91xw"></a>
+
+### FIND-STORAGE-8-CS91XW
+
+**Defect:** _Open (2026-11-02, engineer: deferred)._ Recorded peer verdicts are not persisted.
+[`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)
+says a recorded verdict MUST be persisted with the identity and reason so it outlives the session;
+[`BlacklistStorage`](../implementation/source/src/storage/BlacklistStorage.ts.md) keeps verdicts in
+memory only, also with the disk medium enabled, so a restarted runtime starts with no verdicts.
+
+**Disposition:** Deferred by Luke on 2026-11-02: the blacklist stays in memory (status quo) in the
+persistence change. Reason: [`FIND-RUNTIME-2-4B0D0Q`](open-findings.md#find-runtime-2-4b0d0q) showed
+local failures blacklisting honest peers (fixed in PR #556 for ingest), and the handshake already
+reads the blacklist, so a persisted verdict would refuse that peer at its next handshake after a
+restart, with no way to lift it. Persisting it waits until no local failure path can still record a
+verdict. Then the store takes the disk medium like the other stores, and the verdicts load at start
+(the non-normative future work in rpc.md).
+
+<a id="find-storage-9-0ftpd8"></a>
+
+### FIND-STORAGE-9-0FTPD8
+
+**Defect:** _Open (2026-11-02, engineer: accepted for now)._ The signer secret is stored unencrypted
+in the persistence partition
+([`REQ-STOR-11-Q4AT07` (Partition identity, ownership, and survival)](../specification/storage/durability.md#req-stor-11-q4at07)).
+Anyone who can read the host's storage for that origin (IndexedDB in a browser) or user (the LevelDB
+directory on node) can take the key, and with it the participant's funds in the channel. Luka's
+prototype left a TODO to encrypt it with a caller-supplied key.
+
+**Disposition:** Luke, 2026-11-02: plaintext in the persistence change so the work is not blocked;
+encryption is a follow-up. Its key policy is minimum interruption to the player: ideally the poker
+player never notices that a chain is involved, so the follow-up adds no extra password and no prompt
+on each restore. Exit: the follow-up encrypts the stored secret under that policy and adds its tests
+under [`REQ-STOR-11-Q4AT07.T1`](../specification/storage/durability.md#req-stor-11-q4at07.t1).
 
 <a id="find-runtime-1-gapy72"></a>
 
@@ -2806,9 +2862,10 @@ for the valid, invalid, calldata and no-calldata cases. Luke decided the two oth
   arrive in one canonical (block, log index) order, and a lagging auditor receives the same order
   in a burst, so delivery order is not a variable the system can produce.
 - [`INV-DISPUTE-PIPE-1-BN0K81.T1.P4`](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81.t1.p4) (restart) is deferred until persistence exists
-  ([`OQ-23-SDBGYB` (SDK restart and recovery semantics)](../implementation/open-questions.md#oq-23-sdbgyb)). Storage is in memory only and a
+  ([`OQ-23-SDBGYB` (SDK restart and recovery semantics)](../implementation/open-questions.md#oq-23-sdbgyb)). Without persistence a
   restarted peer comes back as a fresh spectator and resyncs, so resuming an audit after a restart
-  does not exist yet.
+  does not exist; persistence is opt-in and its restart tests are planned under
+  [`REQ-STOR-3-4RJGER.T1`](../specification/storage/durability.md#req-stor-3-4rjger.t1).
 
 What remains is [`REQ-RUNTIME-5-WJ1XKK` (Required host environments: browser and Node)](../specification/runtime/execution.md#req-runtime-5-wj1xkk): the browser, Node, mixed-host and
 worker-less capability matrix is unverified as a whole. The browser gates run transport, executor,
