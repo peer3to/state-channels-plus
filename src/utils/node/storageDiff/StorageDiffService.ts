@@ -292,15 +292,17 @@ export class StorageDiffService {
         await Promise.all(
             requests.map((request) => this.watch(request.address))
         );
-        for (let attempt = 0; attempt <= RECONCILE_RETRY_LIMIT; attempt++) {
+        return await this.retryWhileChainMoves(async () => {
             this.assertRetained(blockHash);
             this.fetchMissing(fields);
             await Promise.all(fields.map((field) => this.ensureCached(field)));
             // Synchronous from here: the cache and the chain agree.
             const index = this.retainedIndex(blockHash);
-            if (index < 0) continue;
             const heads = fields.map((field) => this.stateCache.get(field));
-            if (heads.some((value) => value === undefined)) continue;
+            if (index < 0 || heads.some((value) => value === undefined))
+                throw new HeadChangedError(
+                    "The chain moved while state was read"
+                );
             const scratch = new StateCache();
             fields.forEach((field, i) => scratch.set(field, heads[i]!));
             for (let i = this.canonical.length - 1; i > index; i--) {
@@ -312,8 +314,7 @@ export class StorageDiffService {
                 hash: block.hash,
                 accounts: this.accountsOf(requests, fields, scratch)
             };
-        }
-        throw new HeadChangedError("The chain moved while state was read");
+        });
     }
 
     /** The environment of the best head. */
@@ -804,7 +805,7 @@ export class StorageDiffService {
         first?: { pinned: string; value: Promise<StateValue> }
     ): Promise<void> {
         let unused = first;
-        for (let attempt = 0; attempt <= RECONCILE_RETRY_LIMIT; attempt++) {
+        await this.retryWhileChainMoves(async () => {
             const pinned =
                 unused?.pinned ??
                 this.canonical[this.canonical.length - 1].hash;
@@ -822,16 +823,17 @@ export class StorageDiffService {
                 "Retrying the state fetch"
             );
             const index = this.retainedIndex(pinned);
-            if (index < 0) continue;
+            if (index < 0)
+                throw new HeadChangedError(
+                    "The chain moved while state was fetched"
+                );
             const scratch = new StateCache();
             scratch.set(field, value);
             for (let i = index + 1; i < this.canonical.length; i++) {
                 scratch.applyForward(this.canonical[i]);
             }
             this.stateCache.set(field, scratch.get(field)!);
-            return;
-        }
-        throw new HeadChangedError("The chain moved while state was fetched");
+        });
     }
 
     /** The value of `field` at exactly block `blockHash` (EIP-1898). */
@@ -887,6 +889,15 @@ export class StorageDiffService {
 
     private retainedIndex(blockHash: string): number {
         return this.canonical.findIndex((record) => record.hash === blockHash);
+    }
+
+    /** Runs `job` again at once while the chain moves under it. */
+    private async retryWhileChainMoves<T>(job: () => Promise<T>): Promise<T> {
+        return await retry(job, {
+            maxRetries: RECONCILE_RETRY_LIMIT,
+            signal: this.stopping.signal,
+            shouldRetry: (error) => error instanceof HeadChangedError
+        });
     }
 
     /** Runs `job` again after a transient failure, with backoff. */
