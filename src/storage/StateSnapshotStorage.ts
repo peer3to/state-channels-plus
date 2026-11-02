@@ -3,9 +3,11 @@ import {
     type PersistenceController
 } from "./persistence";
 import StateSnapshot from "@/models/StateSnapshot";
-import type { ForkId, Hash } from "@/types/types";
+import { Hash, ForkId } from "@/types/types";
 
 type StateSnapshotHash = Hash;
+type HeadKey = "value";
+
 type StoreOptions = {
     hash?: StateSnapshotHash;
 };
@@ -13,34 +15,50 @@ type StoreOptions = {
 export class StateSnapshotStorage {
     private readonly snapshotsByHash: PersistentCollection<
         StateSnapshotHash,
-        StateSnapshot
+        "stateSnapshots"
     >;
-
     // Store genesis SnapshotData by forkId (forkId = hash(snapshotData)
-    private readonly genesisSnapshotByForkId = new Map<
+    // -> the latest stored genesis snapshot's hash: two candidates for one fork can be held
+    private readonly genesisSnapshotByForkId: PersistentCollection<
         ForkId,
-        StateSnapshotHash
-    >();
+        "genesisSnapshots"
+    >;
+    // the fork of the installed state; fork heights restart at 0, so it is not derived
+    private readonly headForkId: PersistentCollection<HeadKey, "headFork">;
 
     constructor(controller?: PersistenceController) {
         this.snapshotsByHash = new PersistentCollection(
             "stateSnapshots",
-            controller,
-            () => this.rebuildIndexes()
+            controller
         );
+        this.genesisSnapshotByForkId = new PersistentCollection(
+            "genesisSnapshots",
+            controller
+        );
+        this.headForkId = new PersistentCollection("headFork", controller);
     }
 
     // ====================================
     // CREATE
     // ====================================
 
-    public storeStateSnapshot(
+    storeStateSnapshot(
         snapshot: StateSnapshot,
         options?: StoreOptions
     ): StateSnapshotHash {
         const hash = options?.hash ?? snapshot.hash;
+
         this.snapshotsByHash.set(hash, snapshot);
+
+        if (snapshot.isGenesis) {
+            this.genesisSnapshotByForkId.set(snapshot.forkID, hash);
+        }
+
         return hash;
+    }
+
+    storeHeadForkId(forkId: ForkId): void {
+        this.headForkId.set("value", forkId);
     }
 
     // ====================================
@@ -50,29 +68,18 @@ export class StateSnapshotStorage {
     /**
      * Get a state snapshot by its hash
      */
-    public getStateSnapshotByHash(
+    getStateSnapshotByHash(
         snapshotHash: StateSnapshotHash
     ): StateSnapshot | undefined {
         return this.snapshotsByHash.get(snapshotHash);
     }
 
-    public getGenesisSnapshotByForkId(
-        forkId: ForkId
-    ): StateSnapshot | undefined {
+    getGenesisSnapshotByForkId(forkId: ForkId): StateSnapshot | undefined {
         const hash = this.genesisSnapshotByForkId.get(forkId);
-        return hash ? this.snapshotsByHash.get(hash) : undefined;
+        return hash === undefined ? undefined : this.snapshotsByHash.get(hash);
     }
 
-    public getSnapshotCount(): number {
-        return this.snapshotsByHash.size;
-    }
-
-    public rebuildIndexes(): void {
-        this.genesisSnapshotByForkId.clear();
-        for (const [hash, snapshot] of this.snapshotsByHash.entries()) {
-            if (snapshot.isGenesis) {
-                this.genesisSnapshotByForkId.set(snapshot.forkID, hash);
-            }
-        }
+    getHeadForkId(): ForkId | undefined {
+        return this.headForkId.get("value");
     }
 }

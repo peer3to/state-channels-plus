@@ -10,8 +10,8 @@ export class FraudProofStorage {
     // ====================================
     // STORAGE MAPS
     // ====================================
-    private readonly fraudProofs: PersistentCollection<Hash, FraudProofStruct>;
-    private readonly participantToProofs = new Map<Address, Set<Hash>>();
+    private readonly fraudProofs: PersistentCollection<Hash, "fraudProofs">; // key: fraudProofId
+    private readonly participantToProofs = new Map<Address, Set<Hash>>(); // lowercased participant -> set of fraud proof IDs, in store order
 
     constructor(controller?: PersistenceController) {
         this.fraudProofs = new PersistentCollection(
@@ -27,11 +27,15 @@ export class FraudProofStorage {
 
     public storeFraudProof(fraudProof: FraudProofStruct): Hash {
         const proofHash = hash(fraudProof.encodedProof);
+
         // Store the fraud proof; a stored one is kept as is
-        this.fraudProofs.update(
-            proofHash,
-            (existing) => existing ?? fraudProof
-        );
+        if (this.fraudProofs.has(proofHash)) {
+            return proofHash;
+        }
+
+        this.fraudProofs.set(proofHash, fraudProof);
+        this.indexProof(proofHash, fraudProof);
+
         return proofHash;
     }
 
@@ -46,7 +50,7 @@ export class FraudProofStorage {
         participant: Address
     ): FraudProofStruct | undefined {
         const proofIds = this.participantToProofs.get(
-            String(participant).toLowerCase() as Address
+            this.participantKey(participant)
         );
         const firstId = proofIds?.values().next().value;
         return firstId ? this.fraudProofs.get(firstId) : undefined;
@@ -56,16 +60,23 @@ export class FraudProofStorage {
         return this.fraudProofs.get(proofHash);
     }
 
-    public rebuildIndexes(): void {
+    private indexProof(proofHash: Hash, proof: FraudProofStruct): void {
+        const participant = this.participantKey(proof.participant);
+        const hashes =
+            this.participantToProofs.get(participant) ?? new Set<Hash>();
+        hashes.add(proofHash);
+        this.participantToProofs.set(participant, hashes);
+    }
+
+    private participantKey(participant: FraudProofStruct["participant"]) {
+        return String(participant).toLowerCase() as Address;
+    }
+
+    // after a load, in store order
+    private rebuildIndexes(): void {
         this.participantToProofs.clear();
         for (const [proofHash, proof] of this.fraudProofs.entries()) {
-            const participant = String(
-                proof.participant
-            ).toLowerCase() as Address;
-            const hashes =
-                this.participantToProofs.get(participant) ?? new Set<Hash>();
-            hashes.add(proofHash);
-            this.participantToProofs.set(participant, hashes);
+            this.indexProof(proofHash, proof);
         }
     }
 }

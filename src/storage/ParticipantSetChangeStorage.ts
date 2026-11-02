@@ -5,7 +5,10 @@ import {
 import type { BlockHeight, ForkId } from "@/types/types";
 
 export class ParticipantSetChangeStorage {
-    private readonly changes: PersistentCollection<ForkId, Set<BlockHeight>>;
+    private readonly changes: PersistentCollection<
+        ForkId,
+        "participantSetChanges"
+    >;
 
     constructor(controller?: PersistenceController) {
         this.changes = new PersistentCollection(

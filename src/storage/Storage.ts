@@ -11,14 +11,9 @@ import { MessageBlockStorage } from "./MessageBlockStorage";
 import { ParticipantSetChangeStorage } from "./ParticipantSetChangeStorage";
 import {
     PersistenceController,
-    PersistentCollection,
     type PersistenceControllerOptions,
     type PersistenceDatabaseHandle
 } from "./persistence";
-import {
-    createStorageRecordCodec,
-    type RuntimeMetadata
-} from "./persistence/storageCodecs";
 import { type BlockPredecessor, QueueStorage } from "./QueueStorage";
 import { StateMachineStateStorage } from "./StateMachineStateStorage";
 import { StateSnapshotStorage } from "./StateSnapshotStorage";
@@ -48,11 +43,6 @@ export class Storage {
     public readonly eventSync: EventSyncStorage;
     public readonly blacklist: BlacklistStorage;
     private readonly controller: PersistenceController;
-    private readonly runtimeMetadata: PersistentCollection<
-        "active",
-        RuntimeMetadata
-    >;
-    private persistenceLocation?: string;
 
     // `maxChannelParticipants` comes from the deployed contract, so the queue's
     // retention bound follows the chain instead of restating it.
@@ -61,13 +51,13 @@ export class Storage {
         logger?: Logger,
         persistenceOptions: Pick<
             PersistenceControllerOptions,
-            "flushIntervalMs" | "maxBatchOperations"
+            "flushIntervalMs"
         > = {}
     ) {
-        this.controller = new PersistenceController(
-            createStorageRecordCodec(),
-            { logger, ...persistenceOptions }
-        );
+        this.controller = new PersistenceController({
+            logger,
+            ...persistenceOptions
+        });
         this.blocks = deepCopyProxy(new BlockStorage(this.controller));
         this.inboundMessages = deepCopyProxy(
             new MessageBlockStorage("inboundMessages", this.controller)
@@ -84,9 +74,7 @@ export class Storage {
         this.participantSetChanges = deepCopyProxy(
             new ParticipantSetChangeStorage(this.controller)
         );
-        this.queues = deepCopyProxy(
-            new QueueStorage(maxChannelParticipants, this.controller)
-        );
+        this.queues = deepCopyProxy(new QueueStorage(maxChannelParticipants));
         this.disputes = deepCopyProxy(new DisputeStorage(this.controller));
         this.fraudProofs = deepCopyProxy(
             new FraudProofStorage(this.controller)
@@ -102,64 +90,42 @@ export class Storage {
         );
         this.eventSync = deepCopyProxy(new EventSyncStorage(this.controller));
         this.blacklist = deepCopyProxy(new BlacklistStorage());
-        this.runtimeMetadata = new PersistentCollection(
-            "runtimeMetadata",
-            this.controller
-        );
+        // `open` takes a live database handle and callback, not data
         return deepCopyProxy(this, {
-            preserveArgumentsFor: new Set([
-                "bind",
-                "setPersistenceFailureHandler",
-                "flush",
-                "close"
-            ])
+            preserveArgumentsFor: new Set(["open"])
         });
     }
 
     /**
-     * Hydrates EVERY collection above in one pass and rebuilds their derived
-     * indexes; all-or-nothing (a decode failure restores the previous caches
-     * and closes the database). Runs during host construction, before the
-     * StateManager exists - so `StateManager.restorePersistedState` only has to
-     * recover the process-local state that never reaches a collection.
+     * Loads every persisted collection from `databaseHandle` and checks the
+     * head fork's chain; fails closed (the database is closed and the error
+     * names its location). From then on writes reach disk behind memory.
+     * `onFailure` runs when a batch fails for good.
      */
-    public async bind(
-        databaseHandle: PersistenceDatabaseHandle
+    public async open(
+        databaseHandle: PersistenceDatabaseHandle,
+        onFailure: (error: Error) => void
     ): Promise<void> {
-        this.persistenceLocation = databaseHandle.location;
-        this.controller.attachDatabaseHandle(databaseHandle);
-        await this.controller.bind();
-        // TODO(persistence): distinguish legal forward crash prefixes from
-        // referenced corruption before rejecting hydration.
+        await this.controller.open(databaseHandle, onFailure);
+        try {
+            this.verifyHeadFork();
+        } catch (error) {
+            await this.controller.close().catch(() => undefined);
+            throw new Error(
+                `${error instanceof Error ? error.message : String(error)} (persistence: ${databaseHandle.location})`
+            );
+        }
     }
 
-    public setPersistenceFailureHandler(handler: (error: Error) => void): void {
-        this.controller.setFailureHandler(handler);
-    }
-
-    public setRuntimeMetadata(metadata: RuntimeMetadata): void {
-        this.runtimeMetadata.set("active", metadata);
-    }
-
-    public getRuntimeMetadata(): RuntimeMetadata | undefined {
-        return this.runtimeMetadata.get("active");
-    }
-
+    /** Resolves once the disk holds every write made before the call. */
     public flush(): Promise<void> {
         return this.controller.flush();
     }
 
+    /** Drains pending writes and closes the database; later writes stay in memory. */
     public close(): Promise<void> {
         return this.controller.close();
     }
-
-    public getPersistenceLocation(): string | undefined {
-        return this.persistenceLocation;
-    }
-
-    // TODO(persistence): add proof-aware pruning in a separate design. It must
-    // protect active proof roots, disputes, queue entries, heads, and stale-fork
-    // tombstones, then revalidate writes that raced its reachability scan.
 
     /**
      * Get the state snapshot for given block coordinates.
@@ -315,5 +281,57 @@ export class Storage {
         }
 
         return previousBlockOrSnapshot.stateSnapshot!.timestamp;
+    }
+
+    /**
+     * The head fork links from its lowest stored block to its latest one
+     * (block 0 to the fork genesis), and its latest state is held.
+     */
+    private verifyHeadFork(): void {
+        const forkId = this.stateSnapshots.getHeadForkId();
+        if (forkId === undefined) return;
+        const latestHeight = this.blocks.getLatestBlockHeight(forkId);
+        const head =
+            latestHeight >= 0
+                ? this.blocks.getBlock(forkId, latestHeight)
+                : undefined;
+        if (!this.getPredecessor(forkId, head)) {
+            throw new Error(
+                `Persisted head fork ${String(forkId)} has no snapshot and state at height ${latestHeight}`
+            );
+        }
+        let below: Hash | undefined;
+        for (let height = 0; height <= latestHeight; height++) {
+            const block = this.blocks.getBlock(forkId, height);
+            if (!block) {
+                if (below !== undefined) {
+                    throw new Error(
+                        `Persisted head fork ${String(forkId)} misses block ${height}`
+                    );
+                }
+                continue;
+            }
+            if (height === 0) {
+                below =
+                    this.stateSnapshots.getGenesisSnapshotByForkId(
+                        forkId
+                    )?.hash;
+                if (below === undefined) {
+                    throw new Error(
+                        `Persisted head fork ${String(forkId)} has block 0 but no genesis snapshot`
+                    );
+                }
+            }
+            if (
+                below !== undefined &&
+                String(block.previousBlockHash).toLowerCase() !==
+                    String(below).toLowerCase()
+            ) {
+                throw new Error(
+                    `Persisted block ${String(forkId)}:${height} does not link to the block below it`
+                );
+            }
+            below = block.hash;
+        }
     }
 }

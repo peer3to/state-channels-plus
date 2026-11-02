@@ -29,11 +29,15 @@ export type JoinUpdate = Partial<
 type ForceJoinKey = "value";
 
 export class ForceJoinStorage {
-    private readonly value: PersistentCollection<ForceJoinKey, JoinRecord>;
+    private readonly value: PersistentCollection<ForceJoinKey, "forceJoin">;
     private nextJoinId = 0;
 
     constructor(controller?: PersistenceController) {
-        this.value = new PersistentCollection("forceJoin", controller);
+        // a new join never reuses a loaded join's id
+        this.value = new PersistentCollection("forceJoin", controller, () => {
+            const join = this.value.get("value");
+            if (join) this.nextJoinId = join.id + 1;
+        });
     }
 
     startJoin(

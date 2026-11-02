@@ -15,7 +15,7 @@ export class DisputeFraudProofStorage {
     // ====================================
     private readonly disputeFraudProofs: PersistentCollection<
         DisputeHash,
-        DisputeFraudProofStruct
+        "disputeFraudProofs"
     >;
 
     constructor(controller?: PersistenceController) {
@@ -33,10 +33,10 @@ export class DisputeFraudProofStorage {
         const disputeHash = hash(
             Codec.encode(disputeFraudProof.dispute, Type.Dispute)
         );
-        this.disputeFraudProofs.update(
-            disputeHash,
-            (existing) => existing ?? disputeFraudProof
-        );
+        // a stored proof for the dispute is kept as is
+        if (!this.disputeFraudProofs.has(disputeHash)) {
+            this.disputeFraudProofs.set(disputeHash, disputeFraudProof);
+        }
         return disputeHash;
     }
 
