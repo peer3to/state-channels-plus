@@ -13,6 +13,8 @@ transport or precomputed result boolean stands in for discovery.
 
 The leave-all case joins two topics on one runtime and leaves every session of that runtime: both listeners close, and a later join of one left topic binds a listener again, so no left session remains to absorb it.
 
+The late-join case disposes an inline runtime, then joins a discovery key through its manager; the live inline peer, which shares the discovery realm, reads no listener.
+
 The late-ready case holds a real accepted socket, disposes its manager, then sends the valid wire frame. It asserts socket closure with no acknowledgement and no remaining transports.
 
 The pending-dial shutdown case delays every handshake reply on both inline peers, waits until one runtime has a real dial in flight, and disposes that peer's runtime, whose release settles the dial's handshake wait with `false`. It asserts that no peer retry was scheduled, which is where a retry records itself together with its warning and timer.
@@ -35,6 +37,7 @@ The replacement-endpoint cases use real listener leave/rejoin and registry adver
 - `repeated and concurrent joins share one listener and a pending join can be left`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P9, REQ-LOBBY-9-N894C0.T1.P17
 - `closes an accepted socket whose ready frame arrives after manager disposal`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P11
 - `holds an inbound reconnect inside the cooldown after the previous transport closed and admits it once the cooldown has passed, without blacklisting`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P13, REQ-LOBBY-9-N894C0.T1.P19
+- `starts no listener for a join that enters after its runtime was disposed`: REQ-RUNTIME-3-VQXW59.T1.P97
 - `schedules no retry for a local dial whose handshake is pending when its runtime shuts down`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P14
 - `retries the replacement endpoint announced while the old endpoint handshake is pending`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P15, REQ-LOBBY-9-N894C0.T1.P24
 - `retries the replacement endpoint announced while the old authenticated transport is still connected`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P16, REQ-LOBBY-9-N894C0.T1.P25

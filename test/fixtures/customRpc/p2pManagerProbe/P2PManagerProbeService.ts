@@ -3669,6 +3669,35 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         };
     }
 
+    /**
+     * Starts the first Holepunch join, then cuts the network while the join
+     * loads the swarm module.
+     */
+    public async probeHolepunchCutDuringSwarmLoad() {
+        const holepunch = this.p2pManager.holepunch;
+        const swarmBeforeJoin = holepunch.swarm !== undefined;
+        const join = holepunch.join(Buffer.from("topic-a"));
+        await this.p2pManager.dispose();
+        await join;
+        return {
+            swarmBeforeJoin,
+            swarmAfterJoin: holepunch.swarm !== undefined
+        };
+    }
+
+    /** Joins a Holepunch topic after the network cut. */
+    public async probeHolepunchJoinAfterCut() {
+        const holepunch = this.p2pManager.holepunch;
+        const swarmBeforeCut = holepunch.swarm !== undefined;
+        await this.p2pManager.dispose();
+        await holepunch.join(Buffer.from("topic-a"));
+        return {
+            swarmBeforeCut,
+            swarmAfterJoin: holepunch.swarm !== undefined,
+            joinedTopics: holepunch.topics.map((topic) => topic.toString("hex"))
+        };
+    }
+
     public async probeReplacementHandshake(
         address: string
     ): Promise<ReplacementHandshakeProbe> {

@@ -65,6 +65,8 @@ class Holepunch {
         else await teardown;
     }
     public async join(topic: Buffer) {
+        // a join after the cut creates no swarm
+        if (this.p2pManager.isDisposed) return;
         await this.ensureNodeSwarm();
         this.topics.push(topic);
         // A browser relay that is still loading announces it on `setupSwarm`.
@@ -161,7 +163,8 @@ class Holepunch {
             // Loaded on first use, like the browser relay's modules (see HolepunchRelay).
             // @ts-ignore
             const { default: Hyperswarm } = await import("hyperswarm");
-            if (this.swarm) return;
+            // the cut may land while the module loads
+            if (this.swarm || this.p2pManager.isDisposed) return;
             this.swarm = new Hyperswarm();
         }
         this.setupSwarm();

@@ -502,6 +502,34 @@ describe("P2PManager", function () {
         ).to.deep.equal(TRANSPORTS_CLOSED_AFTER_CUT);
     });
 
+    it("creates no Holepunch swarm and joins no topic for a discovery join after the network cut (worker)", async function () {
+        await fixture!.cleanup();
+        fixture = new P2PManagerFixture();
+        await fixture.setup({ isolatedPeers: true });
+        expect(
+            await fixture
+                .control()
+                .p2pManagerProbe.probeHolepunchJoinAfterCut()
+                .request()
+        ).to.deep.equal({
+            swarmBeforeCut: false,
+            swarmAfterJoin: false,
+            joinedTopics: []
+        });
+    });
+
+    it("creates no Holepunch swarm when the network cut lands while the first join loads the swarm module (worker)", async function () {
+        await fixture!.cleanup();
+        fixture = new P2PManagerFixture();
+        await fixture.setup({ isolatedPeers: true });
+        expect(
+            await fixture
+                .control()
+                .p2pManagerProbe.probeHolepunchCutDuringSwarmLoad()
+                .request()
+        ).to.deep.equal({ swarmBeforeJoin: false, swarmAfterJoin: false });
+    });
+
     it("retires a replaced handshake transport and keeps one live connection", async function () {
         const result = await fixture!
             .control()
@@ -1766,17 +1794,43 @@ describe("P2PManager", function () {
                     evidenceTime: 2
                 }
             });
-            // the join is held longer than the whole abort sequence, so the
-            // abort lands while the connect handler is still inside it and
-            // the rejection comes from the closed port, not from the held join
-            const holdMs = 3000;
+            // the join is held until the cut, so the abort lands while the
+            // connect handler is still inside it and the rejection comes from
+            // the closed port, not from the held join
             await assertObserverConnectRejectsOnEnd(fixture.getHarness(), {
-                settledWithinMs: holdMs,
+                settledWithinMs: 3000,
                 stage: (observer) =>
                     fixture!
                         .getHarness()
                         .control(observer)
-                        .stub.stubHoldDiscoveryJoin(holdMs)
+                        .stub.stubHoldDiscoveryJoin(0)
+                        .request()
+                        .then(() => undefined)
+            });
+        });
+
+        it("observer connect rejects with RootDisposedError when the runtime is disposed during the discovery join, and the join that resumes after the cut does not hold the disposal", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            // the join resumes 200 ms after the cut, past the root's release
+            // of the discovery sessions, while the worker drains; a session
+            // it opened would hold the worker past the drain bound
+            await assertObserverConnectRejectsOnEnd(fixture.getHarness(), {
+                end: "dispose",
+                settledWithinMs: 2 * 2 * 1000,
+                stage: (observer) =>
+                    fixture!
+                        .getHarness()
+                        .control(observer)
+                        .stub.stubHoldDiscoveryJoin(200)
                         .request()
                         .then(() => undefined)
             });

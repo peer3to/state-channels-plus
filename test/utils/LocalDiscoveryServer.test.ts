@@ -124,6 +124,29 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
         }
     });
 
+    it("starts no listener for a join that enters after its runtime was disposed", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, {
+            autoConnect: false,
+            configOverrides: { RUN_SDK_IN_THREAD: false }
+        });
+        const [disposed, live] = h.peers;
+        const { sm } = runtimeEndpointFor(disposed.p2pInstance);
+        await disposed.p2pInstance.dispose();
+
+        await sm.p2pManager.joinDiscoveryKey(
+            ethers.id("local-discovery-join-after-disposal")
+        );
+
+        // inline runtimes share one discovery realm: the live peer reads it
+        expect(
+            await h
+                .control(live)
+                .stub.getLocalDiscoveryListenerCount()
+                .request()
+        ).to.equal(0);
+    });
+
     it("schedules no retry for a local dial whose handshake is pending when its runtime shuts down", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, {
