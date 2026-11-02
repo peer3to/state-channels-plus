@@ -613,6 +613,11 @@ export class PeerTestHarness<
         return wallet.privateKey;
     }
 
+    /** The directory a persistent peer's channel partitions live in. */
+    public getPersistenceLocation(index: number): string | undefined {
+        return this.persistenceLocations.get(index);
+    }
+
     public async createPeer(index: number, signer: Signer): Promise<void> {
         const address = await signer.getAddress();
 

@@ -394,7 +394,7 @@ describe("PersistenceController", function () {
         await controller.close();
     });
 
-    it("deletes an unbound database that holds no record", async () => {
+    it("closes an unbound database that holds no record and keeps its metadata", async () => {
         const database = new GatedMemoryLevel();
         const { controller, open } = build();
         await open(database);
@@ -402,6 +402,9 @@ describe("PersistenceController", function () {
 
         await controller.unbind();
 
-        expect(await database.get("metadata!identity")).to.equal(undefined);
+        expect(database.status).to.equal("closed");
+        await database.open();
+        expect(await database.get("metadata!identity")).to.equal("channel");
+        await database.close();
     });
 });

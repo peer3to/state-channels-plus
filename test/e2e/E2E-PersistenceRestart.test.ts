@@ -1,49 +1,14 @@
+import { isRootDisposedError } from "@/rpc/internal/RemoteRoot";
 import { Status } from "@/types";
-import type { ForkId } from "@/types/types";
+import {
+    authorWhileDown,
+    RESTART_TIME_CONFIG
+} from "@test/fixtures/PersistenceRestartStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
-
-// A persistent peer keeps its channel in its own temporary partition; a
-// restart disposes its runtime and starts it again with the same key. The
-// participant timeout is long enough that no peer times out the restarting one.
-const RESTART_TIME_CONFIG = { p2pTime: 30 };
-
-type Harness = ReturnType<typeof TestSession.getHarness>;
-
-/** the live peers author `count` blocks, each by the peer whose turn it is */
-async function authorWhileDown(h: Harness, forkId: ForkId, count: number) {
-    const live = h.peers.filter((peer) => peer.index !== 2);
-    const query = h.control(live[0]).query;
-    for (let index = 0; index < count; index++) {
-        const height = await query.getLatestBlockHeight(forkId).request();
-        let author: (typeof live)[number] | undefined;
-        await waitFor(async () => {
-            for (const peer of live) {
-                const nextToWrite = await h
-                    .control(peer)
-                    .query.getNextToWrite()
-                    .request();
-                if (nextToWrite === peer.address) author = peer;
-            }
-            return author !== undefined;
-        });
-        await author!.p2pInstance.p2pContractInstance.add(1);
-        await waitFor(async () =>
-            (
-                await Promise.all(
-                    live.map((peer) =>
-                        h
-                            .control(peer)
-                            .query.getLatestBlockHeight(forkId)
-                            .request()
-                    )
-                )
-            ).every((latest) => latest === height! + 1)
-        );
-    }
-}
+import { readdir } from "node:fs/promises";
 
 describe("E2E: persistence restart", function () {
     it("a participant restarted mid-channel holds its persisted height at SYNCED and authors nothing before any sync, syncs the blocks made while it was down, then participates and the channel continues", async () => {
@@ -59,7 +24,7 @@ describe("E2E: persistence restart", function () {
 
         // the others author two blocks while peer 2 is down
         await h.getPeer(2).p2pInstance.dispose();
-        await authorWhileDown(h, forkId, 2);
+        await authorWhileDown(h, forkId, 2, 2);
         const othersHeight = await h
             .control(h.getPeer(0))
             .query.getLatestBlockHeight(forkId)
@@ -76,6 +41,15 @@ describe("E2E: persistence restart", function () {
         );
         expect(await query.getStatus().request()).to.equal(Status.SYNCED);
         expect(restarted.eventSpies.onTurn?.callCount).to.equal(0);
+        // the local mirror holds the chain's snapshot before any sync
+        expect(
+            await query.getLocalStateSnapshotStruct().request()
+        ).to.deep.equal(
+            await h
+                .control(h.getPeer(0))
+                .query.getLocalStateSnapshotStruct()
+                .request()
+        );
         let authoringError: unknown;
         try {
             await h.getPeer(2).p2pInstance.p2pContractInstance.add(1);
@@ -110,33 +84,36 @@ describe("E2E: persistence restart", function () {
         expect(new Set(hashes).size).to.equal(1);
     });
 
-    it("a restarted participant with no participant reachable resumes from its persisted head at the sync deadline", async () => {
+    it("a restarted participant with no participant reachable aborts at the restart sync deadline as an observer does and never participates", async () => {
         const h = TestSession.getHarness();
-        const forkId = await h.lifecycle.start(2, 2, {
+        await h.lifecycle.start(2, 2, {
             persistentPeers: [1],
             timeConfig: RESTART_TIME_CONFIG
         });
-        const heightBeforeRestart = await h
-            .control(h.getPeer(1))
-            .query.getLatestBlockHeight(forkId)
-            .request();
         await h.getPeer(0).p2pInstance.dispose();
 
         const restarted = await h.lifecycle.restartPeer(1);
-        const query = h.control(restarted).query;
-        await h
-            .control(restarted)
-            .network.connectToChannel(String(h.channelId))
-            .request();
+        expect(await h.control(restarted).query.getStatus().request()).to.equal(
+            Status.SYNCED
+        );
+        // the abort disposes the runtime while the connect may still run
+        const connected = await restarted.p2pInstance.p2pSigner
+            .connectToChannel(h.channelId)
+            .catch((error: unknown) => {
+                if (!isRootDisposedError(error)) throw error;
+                return false;
+            });
+        expect(connected).to.equal(false);
 
         await waitFor(
-            async () =>
-                (await query.getStatus().request()) === Status.PARTICIPATING
+            async () => (restarted.eventSpies.onAbort?.callCount ?? 0) > 0
         );
-        expect(await query.getLatestBlockHeight(forkId).request()).to.equal(
-            heightBeforeRestart
-        );
-        expect(restarted.eventSpies.onAbort?.callCount).to.equal(0);
+        expect(restarted.eventSpies.onTurn?.callCount).to.equal(0);
+        expect(
+            restarted.eventSpies.onStatusChanged
+                ?.getCalls()
+                .some((call) => call.args[1] === Status.PARTICIPATING)
+        ).to.equal(false);
     });
 
     it("a persistent runtime that set and cleared another channel id binds the channel that opens and resumes it after a restart", async () => {
@@ -162,6 +139,9 @@ describe("E2E: persistence restart", function () {
             .request();
         expect(heightBeforeRestart).to.not.equal(null);
 
+        // the attempt's partition stays next to the channel's: never deleted
+        expect(await readdir(h.getPersistenceLocation(1)!)).to.have.length(2);
+
         const restarted = await h.lifecycle.restartPeer(1);
         const query = h.control(restarted).query;
 
@@ -169,6 +149,67 @@ describe("E2E: persistence restart", function () {
             heightBeforeRestart
         );
         expect(await query.getStatus().request()).to.equal(Status.SYNCED);
+    });
+
+    it("a participant restarted after its own dispute landed keeps its dispute marker and its local mirror holds that dispute window", async () => {
+        const h = TestSession.getHarness();
+        const forkId = await h.lifecycle.start(3, 2, {
+            persistentPeers: [2],
+            timeConfig: RESTART_TIME_CONFIG
+        });
+        await h.dispute.openOrdinaryDisputeWindow({
+            maliciousPeerIndex: 0,
+            excludedPeerIndex: 1,
+            forkId
+        });
+        const chainCommitments = await h
+            .control(h.getPeer(0))
+            .query.getDisputeWindowCommitments(forkId)
+            .request();
+        expect(chainCommitments).to.not.be.empty;
+
+        const restarted = await h.lifecycle.restartPeer(2);
+        const query = h.control(restarted).query;
+
+        expect(await query.didIDispute(forkId).request()).to.equal(true);
+        expect(
+            await query.getDisputeWindowCommitments(forkId).request()
+        ).to.include.members(chainCommitments);
+    });
+
+    it("an author restarted before any peer signed its latest block posts that block's calldata on chain", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 2, {
+            persistentPeers: [0, 1, 2],
+            timeConfig: RESTART_TIME_CONFIG
+        });
+        // gossip and the calldata post are cut, so only the author holds
+        // the block, with its own signature alone
+        const { leader, observer, authored, forkId } =
+            await h.transition.authorNextBlockOffWireWait();
+        const observerQuery = h.control(observer).query;
+        expect(
+            await observerQuery
+                .getBlockCalldataTimestamp(
+                    forkId,
+                    authored.height,
+                    leader.address
+                )
+                .request()
+        ).to.equal(null);
+
+        await h.lifecycle.restartPeer(leader.index);
+
+        await waitFor(
+            async () =>
+                (await observerQuery
+                    .getBlockCalldataTimestamp(
+                        forkId,
+                        authored.height,
+                        leader.address
+                    )
+                    .request()) !== null
+        );
     });
 
     it("a runtime without persistence restarts as a fresh node", async () => {
