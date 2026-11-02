@@ -5,7 +5,6 @@ import {
     type BlockEnvironment,
     type BlockSelector,
     type BlockStorageDiff,
-    type IncludedHeadRecord,
     type RpcBlock,
     type StateRequestParams,
     type StorageDiffDelayNotice,
@@ -32,8 +31,6 @@ export type MirrorFeedHandlers = {
         subscription: SubscriptionId,
         snapshot: StorageDiffSnapshot
     ) => void;
-    /** The included head advanced. */
-    onIncludedHead: (head: IncludedHeadRecord) => void;
     /** A block or snapshot a peer may be waiting for will not come soon. */
     onDelayed: (notice: StorageDiffDelayNotice) => void;
     /** The feed ended; it is unusable. */
@@ -46,10 +43,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isCatchUp(value: unknown): value is StorageDiffCatchUp {
     return (
-        isRecord(value) &&
-        Array.isArray(value.records) &&
-        isRecord(value.head) &&
-        (value.includedHead === null || isRecord(value.includedHead))
+        isRecord(value) && Array.isArray(value.records) && isRecord(value.head)
     );
 }
 
@@ -61,15 +55,11 @@ function isBlockEnvironment(value: unknown): value is BlockEnvironment {
     return isRecord(value);
 }
 
-function isIncludedHeadRecord(value: unknown): value is IncludedHeadRecord {
-    return isRecord(value);
-}
-
 /**
  * The storage diff service's JSON-RPC WebSocket as the mirror uses it: the
- * three `scp_` requests, and the `scp_subscription`, `scp_snapshot`,
- * `scp_includedHead` and `scp_delayed` pushes handed to the handlers. The socket never reconnects; its owner
- * opens a new one after `onLost`.
+ * three `scp_` requests, and the `scp_subscription`, `scp_snapshot` and
+ * `scp_delayed` pushes handed to the handlers. The socket never reconnects;
+ * its owner opens a new one after `onLost`.
  */
 export class StorageDiffSocket extends WebSocketProvider {
     private readonly handlers: MirrorFeedHandlers;
@@ -125,8 +115,8 @@ export class StorageDiffSocket extends WebSocketProvider {
     }
 
     /**
-     * The retained records from `fromBlock` to the head, the included head
-     * and the head's environment.
+     * The retained records from `fromBlock` to the head and the head's
+     * environment.
      */
     async catchUp(
         addresses: AccountAddress[],
@@ -215,10 +205,6 @@ export class StorageDiffSocket extends WebSocketProvider {
                     params.subscription as SubscriptionId,
                     params.result as StorageDiffSnapshot
                 );
-                return;
-            }
-            if (method === "scp_includedHead" && isIncludedHeadRecord(params)) {
-                this.handlers.onIncludedHead(params);
                 return;
             }
             if (method === "scp_delayed" && isRecord(params)) {

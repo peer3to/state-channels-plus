@@ -801,7 +801,7 @@ Specification cases tested: 14/14.
 Specification cases tested: 6/6.
 
 [`REQ-RPCMIRROR-6-MHV1QD` (Chain data comes from the service when it holds it)](../specification/runtime/rpc-mirror.md#req-rpcmirror-6-mhv1qd)
-Specification cases tested: 4/4.
+Specification cases tested: 3/3.
 
 [`REQ-RPCMIRROR-7-4A6NJN` (A fraction of local answers is checked against the node)](../specification/runtime/rpc-mirror.md#req-rpcmirror-7-4a6njn)
 Specification cases tested: 6/6.

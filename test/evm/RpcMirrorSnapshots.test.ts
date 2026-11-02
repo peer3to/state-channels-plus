@@ -79,12 +79,18 @@ describe("MirrorRpcProvider snapshots", function () {
             expect(serviceRequests(session, "scp_getState")).to.have.length(1);
             release();
             await waitUntilAnsweredLocally(session, address);
-            // the code and the slot are local now: a contract call needs no lazy read
-            const asked = serviceRequests(session, "scp_getState").length;
+            // the code and the slot are local now: a contract call needs no
+            // lazy read of the contract (the caller, subscribed by the call
+            // and still syncing, may be read)
+            const contractReads = () =>
+                serviceRequests(session, "scp_getState").filter((request) =>
+                    JSON.stringify(request.params).includes(
+                        address.toLowerCase()
+                    )
+                ).length;
+            const asked = contractReads();
             expect(await storage.getValue()).to.equal(5n);
-            expect(serviceRequests(session, "scp_getState")).to.have.length(
-                asked
-            );
+            expect(contractReads()).to.equal(asked);
         });
     });
 
@@ -145,9 +151,13 @@ describe("MirrorRpcProvider snapshots", function () {
         await withMirrorSession(async (session) => {
             const { storage, address } = await deployMirroredStorage(session);
             await (await storage.setValue(5n)).wait();
-            // the service has staged the blocks; the backfill's own reads fail
+            // the service has staged the blocks; the backfill's block listing
+            // reads malformed blocks, which fail it without a retry (the
+            // service's own head fetches ask for full transactions)
             await sleep(500);
-            session.relay.failNext("eth_getBlockByNumber", 50);
+            session.relay.tamper("eth_getBlockByNumber", (result, params) =>
+                params[1] === false ? { malformed: true } : result
+            );
 
             const word = await session.provider.getStorage(address, 0);
             // the notice that no snapshot is coming (Mutation: a service that sends no

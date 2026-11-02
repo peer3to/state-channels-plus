@@ -10,7 +10,6 @@ import type { RecentSlowest } from "@/utils/storageDiff/LearnedBackstop";
 import type {
     BlockEnvironment,
     BlockSelector,
-    IncludedHeadRecord,
     RpcBlock
 } from "@/utils/storageDiff/storageDiffWire";
 import type { EVM } from "@ethereumjs/evm";
@@ -70,11 +69,6 @@ export class Mirror {
             nodeRoundTrips: options.nodeRoundTrips,
             logger: options.logger
         });
-    }
-
-    /** The newest block the service reported as included, if any. */
-    get includedHead(): IncludedHeadRecord | undefined {
-        return this.chain.includedHead;
     }
 
     /** Calls issued from now on see the chain at least up to block `number`. */

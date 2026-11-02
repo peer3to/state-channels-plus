@@ -21,7 +21,6 @@ import type {
     AccountDiffs,
     BlockEnvironment,
     BlockStorageDiff,
-    IncludedHeadRecord,
     StateRequestParams,
     StorageDiffCatchUp,
     StorageDiffDelayNotice,
@@ -91,7 +90,6 @@ export class MirrorChain {
     private readonly snapshotWaits: SnapshotWaits;
     private feed?: StorageDiffSocket;
     private subscription?: SubscriptionId;
-    private includedHeadRecord?: IncludedHeadRecord;
     /** Accounts whose missing state is read from the node: the feed's copy was found wrong. */
     private readonly nodeRead = new Set<AccountAddress>();
     private failedAttempts = 0;
@@ -126,11 +124,6 @@ export class MirrorChain {
             () => this.waitCapMs,
             (address) => this.state.isComplete(address)
         );
-    }
-
-    /** The newest block the service reported as included, if any. */
-    get includedHead(): IncludedHeadRecord | undefined {
-        return this.includedHeadRecord;
     }
 
     /** The block the cached state is at, if the mirror is following. */
@@ -323,7 +316,6 @@ export class MirrorChain {
             onSnapshot: (_subscription, snapshot) => {
                 if (!this.closed) this.receiveSnapshot(snapshot);
             },
-            onIncludedHead: (head) => this.noteIncludedHead(head),
             onDelayed: (notice) => this.receiveDelay(notice),
             onLost: (reason) => void this.onFeedLost(feed, reason)
         });
@@ -336,7 +328,6 @@ export class MirrorChain {
     /** Takes the service's best head as the head. */
     private async startFromServiceHead(): Promise<void> {
         const answer = await this.feed!.catchUp([...this.tracked], BEYOND_HEAD);
-        if (answer.includedHead) this.noteIncludedHead(answer.includedHead);
         const head = answer.head;
         this.followed.begin(head, this.tracked);
     }
@@ -556,12 +547,6 @@ export class MirrorChain {
         return subscribed.accounts;
     }
 
-    private noteIncludedHead(head: IncludedHeadRecord): void {
-        const current = this.includedHeadRecord;
-        if (!current || BigInt(head.number) > BigInt(current.number))
-            this.includedHeadRecord = head;
-    }
-
     /** Applies a pushed record once every earlier read and record is done. */
     private async applyPushed(record: BlockStorageDiff): Promise<void> {
         await this.lock.lock();
@@ -607,7 +592,6 @@ export class MirrorChain {
             this.followed.clear();
             return;
         }
-        if (answer.includedHead) this.noteIncludedHead(answer.includedHead);
         for (const record of answer.records) {
             if (this.followed.hashAt(BigInt(record.number)) === record.hash)
                 continue;

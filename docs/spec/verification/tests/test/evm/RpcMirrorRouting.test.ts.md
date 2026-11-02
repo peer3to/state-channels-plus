@@ -19,7 +19,6 @@ This file covers which reads are answered locally and which go to the node whole
 - `sends estimateGas and reads at an older block to the node`: REQ-RPCMIRROR-2-1P38E2.T1.P1
 - `sends every read to the node without a storage diff service`: REQ-RPCMIRROR-2-1P38E2.T1.P2
 - `sends a pending nonce read to the node and answers the latest one itself`: REQ-RPCMIRROR-1-XQNZ4J.T1.P9
-- `records the included head from the catch-up and from a push`: REQ-RPCMIRROR-6-MHV1QD.T1.P4
 - `answers the chain id from its first answer without asking a node again`: REQ-RPCMIRROR-6-MHV1QD.T1.P1
 - `answers the block number, blocks, transactions and receipts as the node does, without asking a node`: REQ-RPCMIRROR-6-MHV1QD.T1.P2
 - `asks the node for a transaction, receipt or block the service does not hold`: REQ-RPCMIRROR-6-MHV1QD.T1.P3

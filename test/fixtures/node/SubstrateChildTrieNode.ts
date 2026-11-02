@@ -78,9 +78,9 @@ export async function withSubstrateNode<T>(
             ? Number(text.slice("0xblock".length))
             : contract.tipNumber;
     };
-    // `Revive.AccountInfoOf` keys share the map's prefix, then the address
-    const accountInfoKey = reviveAccountInfoKey(contract.address);
-    const accountInfoPrefix = accountInfoKey.slice(0, -40);
+    // `Revive.AccountInfoOf` keys share the map's prefix, then the address;
+    // read per request: a caller may name the contract once it is deployed
+    const accountInfoKey = () => reviveAccountInfoKey(contract.address);
     const server = new WebSocketServer({ port: 0, host: "127.0.0.1" });
     await new Promise((resolve) => server.once("listening", resolve));
     const keysAt = (blockNumber: number) => {
@@ -107,9 +107,10 @@ export async function withSubstrateNode<T>(
                 : "0xblock" + number;
         }
         if (method === "state_getStorage") {
-            if (params[0] === accountInfoKey) return contract.info;
+            if (params[0] === accountInfoKey()) return contract.info;
             // another account: none on this node
-            if (String(params[0]).startsWith(accountInfoPrefix)) return null;
+            if (String(params[0]).startsWith(accountInfoKey().slice(0, -40)))
+                return null;
             rootReads++;
             const number = numberOf(params[1]);
             if (number < contract.deployed) return null;

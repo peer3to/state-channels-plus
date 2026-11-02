@@ -1,4 +1,3 @@
-import { DepthIncludedHeadStrategy } from "@/utils/node/storageDiff/includedHead/DepthIncludedHeadStrategy";
 import {
     deployCommitProbe,
     deployMirroredStorage,
@@ -158,30 +157,6 @@ describe("MirrorRpcProvider routing", function () {
                 )
             ).to.deep.equal(["pending"]);
         });
-    });
-
-    it("records the included head from the catch-up and from a push", async function () {
-        await withMirrorSession(
-            async (session) => {
-                const { storage } = await deployMirroredStorage(session);
-                await storage.getValue();
-                const head = await headNumber(session);
-                const included = await session.chain.getBlock(head - 1);
-                expect(session.provider.includedHead).to.deep.equal({
-                    number: toQuantity(head - 1),
-                    hash: included!.hash
-                });
-
-                await session.chain.send("evm_mine", []);
-
-                await waitFor(
-                    () =>
-                        session.provider.includedHead?.number ===
-                        toQuantity(head)
-                );
-            },
-            { includedHead: new DepthIncludedHeadStrategy(1) }
-        );
     });
 
     it("answers the chain id from its first answer without asking a node again", async function () {

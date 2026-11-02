@@ -176,11 +176,6 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
         });
     }
 
-    /** The newest block the storage diff service reported as included. */
-    get includedHead() {
-        return this.mirror?.includedHead;
-    }
-
     private createUpstream(): MirrorUpstream {
         const read = async (method: string, params: unknown[]) =>
             (await this.requestNode(method, params)) as string;

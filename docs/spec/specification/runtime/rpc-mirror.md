@@ -31,7 +31,7 @@ The client is a drop-in for the plain multi-endpoint provider ([chain-observatio
 
 **<a id="req-rpcmirror-5-kdrwdz"></a>`REQ-RPCMIRROR-5-KDRWDZ` — The copy follows the chain through gaps and reorganizations.** The client MUST apply each pushed record on its parent block. After a reorganization it MUST hold the replacement branch's values and restore a slot the orphaned block wrote when the replacement does not write it. A record whose parent is not the head makes the client ask the service for the blocks from the next missing one; when the service no longer retains them the client MUST empty its copy and read from the service again. When the service does not retain the head block of a state read (the not-retained error of [`REQ-SDS-7-PZCBQ9` (State reads come from one shared cache)](storage-diff-service.md#req-sds-7-pzcbq9)), the client reads that block's state from the node, at that block's number, only for as long as the service gives that answer. The block environment of local calls comes from the service's records, not from block reads on the node.
 
-**<a id="req-rpcmirror-6-mhv1qd"></a>`REQ-RPCMIRROR-6-MHV1QD` — Chain data comes from the service when it holds it.** The client MUST answer the chain id from its first answer without asking a node again, and answer the block number, blocks, transactions and receipts from the service's retained data exactly as a node would, without asking a node. A transaction, receipt or block the service does not hold MUST be asked of the node. The client MUST record the newest included head the service reports, from a catch-up and from a push.
+**<a id="req-rpcmirror-6-mhv1qd"></a>`REQ-RPCMIRROR-6-MHV1QD` — Chain data comes from the service when it holds it.** The client MUST answer the chain id from its first answer without asking a node again, and answer the block number, blocks, transactions and receipts from the service's retained data exactly as a node would, without asking a node. A transaction, receipt or block the service does not hold MUST be asked of the node.
 
 **<a id="req-rpcmirror-7-4a6njn"></a>`REQ-RPCMIRROR-7-4A6NJN` — A fraction of local answers is checked against the node.** The client MUST re-ask the node, after replying and at the same block hash, a configured fraction of the reads it answered locally (`eth_call`, storage, balance, nonce and code), and compare. A match is counted. A mismatch is counted and logged with what was read, at which block and the call's selector but never the values, and the account MUST be dropped to lazy reads from then on, so its state is read from the node. A node that cannot answer leaves the sample skipped; sampling never delays or fails the peer's read. A fraction of 0 sends the node nothing. The reaction to a mismatch is required behavior; the fraction is a tuning value. A client built without a configured fraction uses the configuration default of 1%.
 
@@ -250,11 +250,11 @@ Reads equal the canonical branch's values; gaps are filled from the service; an 
 
 **Setup and stimulus:**
 
-Ask for the chain id twice, the head, a retained block, a transaction and its receipt, then a transaction, receipt and block the service does not hold; move the included head by catch-up and by push.
+Ask for the chain id twice, the head, a retained block, a transaction and its receipt, then a transaction, receipt and block the service does not hold.
 
 **Expected result:**
 
-Retained answers equal the node's and cost the node no request; unheld identities reach the node; the recorded included head is the newest reported.
+Retained answers equal the node's and cost the node no request; unheld identities reach the node.
 
 **Required permutations:**
 
@@ -263,8 +263,6 @@ Retained answers equal the node's and cost the node no request; unheld identitie
 <a id="req-rpcmirror-6-mhv1qd.t1.p2"></a>`REQ-RPCMIRROR-6-MHV1QD.T1.P2` — the block number, blocks, transactions and receipts are answered as the node does, without asking a node
 
 <a id="req-rpcmirror-6-mhv1qd.t1.p3"></a>`REQ-RPCMIRROR-6-MHV1QD.T1.P3` — a transaction, receipt or block the service does not hold is asked of the node
-
-<a id="req-rpcmirror-6-mhv1qd.t1.p4"></a>`REQ-RPCMIRROR-6-MHV1QD.T1.P4` — the included head is recorded from the catch-up and from a push
 
 #### <a id="req-rpcmirror-7-4a6njn.t1"></a>`REQ-RPCMIRROR-7-4A6NJN.T1`
 
