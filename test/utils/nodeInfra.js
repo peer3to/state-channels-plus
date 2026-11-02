@@ -28,6 +28,15 @@ const DISCOVERY_SCRIPT = path.join(
 const { ANVIL_BIN, ANVIL_WATCHDOG, anvilArgs, pinnedAnvilMismatch } = require(
     path.join(PACKAGE_ROOT, "scripts", "infra", "anvilNode.js")
 );
+const { resolveProjectHardhatCli } = require(
+    path.join(
+        PACKAGE_ROOT,
+        "scripts",
+        "e2e-parallel",
+        "shared",
+        "projectModules"
+    )
+);
 
 // ---------------------------------------------------------------------------
 // Primitives (used by both the harness and the runner)
@@ -128,7 +137,8 @@ function pipeLogs(child, logPath) {
     return logStream;
 }
 
-// Extra node flags for the discovery registry, e.g.
+// Extra node flags for the infra processes (the project's hardhat node, the
+// discovery registry), e.g.
 // TEST_INFRA_NODE_FLAGS="--cpu-prof --cpu-prof-dir=/tmp/prof". Empty by default.
 function infraNodeFlags() {
     const flags = process.env.TEST_INFRA_NODE_FLAGS;
@@ -139,6 +149,22 @@ const NODE_STARTUP_BUDGET_MS = 30000;
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\u001b\[[0-9;]*[A-Za-z]/g;
 const BOUND_PORT_RE = /Listening on 127\.0\.0\.1:(\d+)\r?\n/;
+const HARDHAT_BOUND_PORT_RE =
+    /JSON-RPC server at http:\/\/127\.0\.0\.1:(\d+)\//;
+
+/**
+ * The test chain E2E_TEST_CHAIN selects: "anvil", the pinned anvil (the
+ * default), or "project", the project's own `hardhat node`, for a project
+ * whose tests rely on its own Hardhat build.
+ */
+function testChain(env = process.env) {
+    const chain = env.E2E_TEST_CHAIN || "anvil";
+    if (chain !== "anvil" && chain !== "project")
+        throw new Error(
+            `E2E_TEST_CHAIN must be anvil or project, not ${chain}`
+        );
+    return chain;
+}
 
 // The pinned-anvil check, once per PATH: it runs `anvil --version`.
 const anvilChecks = new Map();
@@ -150,13 +176,14 @@ function anvilRefusal(env) {
 }
 
 /**
- * Spawn the test chain, the pinned anvil (scripts/infra/anvilNode.js), on
- * `port` or one it binds itself on 0; wait for its bound-port line and for its
- * RPC to answer, and return `{ proc, url, stop, exited, logClosed }`. The
- * chain binds port 0 itself: a port reserved and released first can be taken
- * by another process before the chain binds it. Inherits process.env so the
- * e2e mining / chain id apply. anvil runs under ANVIL_WATCHDOG, so it dies
- * with this process however this process dies.
+ * Spawn the test chain (testChain), the pinned anvil
+ * (scripts/infra/anvilNode.js) or the project's `hardhat node`, on `port` or
+ * one it binds itself on 0; wait for its bound-port line and for its RPC to
+ * answer, and return `{ proc, url, stop, exited, logClosed }`. The chain binds
+ * port 0 itself: a port reserved and released first can be taken by another
+ * process before the chain binds it. Inherits process.env so the e2e mining /
+ * chain id apply. The chain runs under ANVIL_WATCHDOG, so it dies with this
+ * process however this process dies.
  */
 async function startHardhatNode({
     port,
@@ -170,17 +197,27 @@ async function startHardhatNode({
         HARDHAT_NODE_HOST: "127.0.0.1",
         HARDHAT_NODE_PORT: String(port ?? 0)
     };
-    const refusal = anvilRefusal(nodeEnv);
+    const projectChain = testChain(nodeEnv) === "project";
+    const refusal = projectChain ? null : anvilRefusal(nodeEnv);
     if (refusal) throw new Error(`${label} cannot start: ${refusal}`);
-    const proc = spawn(
-        "/bin/sh",
-        ["-c", ANVIL_WATCHDOG, "sh", ANVIL_BIN, ...anvilArgs(nodeEnv)],
-        {
-            cwd: PROJECT_ROOT,
-            env: nodeEnv,
-            stdio: ["pipe", "pipe", "pipe"]
-        }
-    );
+    const command = projectChain
+        ? [
+              process.execPath,
+              ...infraNodeFlags(),
+              resolveProjectHardhatCli(PROJECT_ROOT),
+              "node",
+              "--hostname",
+              "127.0.0.1",
+              "--port",
+              String(port ?? 0)
+          ]
+        : [ANVIL_BIN, ...anvilArgs(nodeEnv)];
+    const boundPortRe = projectChain ? HARDHAT_BOUND_PORT_RE : BOUND_PORT_RE;
+    const proc = spawn("/bin/sh", ["-c", ANVIL_WATCHDOG, "sh", ...command], {
+        cwd: PROJECT_ROOT,
+        env: nodeEnv,
+        stdio: ["pipe", "pipe", "pipe"]
+    });
     let resolveExit;
     const exited = new Promise((resolve) => {
         resolveExit = resolve;
@@ -243,7 +280,7 @@ async function startHardhatNode({
         const onData = (chunk) => {
             if (settled || bound) return;
             output += chunk.toString().replace(ANSI_RE, "");
-            const match = BOUND_PORT_RE.exec(output);
+            const match = boundPortRe.exec(output);
             if (!match) return;
             const boundPort = Number(match[1]);
             if (!(boundPort >= 1 && boundPort <= 65535)) return;
@@ -412,11 +449,11 @@ function teardownInfra(infra) {
 
 /**
  * Provision `slotCount` uniform slots (own hardhat node + discovery + reset
- * deploy-cache dir), all in parallel. Returns `{ slots, infra }`. Each piece is
+ * deploy-cache dir), all in parallel; `env` reaches each slot's chain. Returns `{ slots, infra }`. Each piece is
  * registered the moment it's ready, and `allSettled` lets every boot finish
  * before we act, so a partial failure tears down cleanly with no orphans.
  */
-async function provisionSlots(slotCount, logDir) {
+async function provisionSlots(slotCount, logDir, env = {}) {
     const infra = { nodes: [], discoveries: [] };
     const infraPath = (name) => path.join(path.resolve(logDir), "infra", name);
 
@@ -441,7 +478,7 @@ async function provisionSlots(slotCount, logDir) {
             port: 0,
             logPath: infraPath(`hardhat-node-slot${id}.log`),
             label: `slot ${id} hardhat node`,
-            env: { E2E_INTERVAL_MINING: "1" }
+            env: { ...env, E2E_INTERVAL_MINING: "1" }
         });
         node.label = `slot ${id} hardhat node`;
         node.slotId = id;
@@ -540,6 +577,7 @@ module.exports = {
     startDhtBootstrapper,
     waitForHardhatNode,
     startHardhatNode,
+    testChain,
     startDiscoveryRegistry,
     jsonRpc,
     resetSlotCacheDir,

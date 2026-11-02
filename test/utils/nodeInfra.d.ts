@@ -64,6 +64,9 @@ export function startDhtBootstrapper(
     options?: { port?: number; attempts?: number }
 ): Promise<DhtBootstrapper>;
 export function startHardhatNode(opts?: StartInfraOptions): Promise<NodeHandle>;
+export function testChain(
+    env?: Record<string, string | undefined>
+): "anvil" | "project";
 export function waitForHardhatNode(
     url: string,
     timeoutMs?: number,
@@ -83,7 +86,8 @@ export function resetSlotCacheDir(dir: string): void;
 export function teardownInfra(infra: Infra): void;
 export function provisionSlots(
     slotCount: number,
-    logDir: string
+    logDir: string,
+    env?: Record<string, string | undefined>
 ): Promise<{ slots: Slot[]; infra: Infra }>;
 export function startGasMonitor(
     slots: Slot[],

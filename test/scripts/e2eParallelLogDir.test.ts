@@ -20,6 +20,7 @@ type ParsedCliArgs = {
     distributed: boolean;
     discoveryTimeoutMs: number;
     forwardEnv: string[];
+    testChain?: string;
     executionProfile: Record<string, number>;
 };
 const argParser: {
@@ -201,6 +202,7 @@ describe("e2e-parallel argParser - logDir validation", function () {
             "--distributed",
             "--discovery-timeout",
             "--forward-env",
+            "--test-chain",
             "--forge-only",
             "--no-forge",
             "--forge-threads"
@@ -767,6 +769,57 @@ describe("e2e-parallel logging - github annotations", function () {
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
         }
+    });
+});
+
+describe("e2e-parallel test chain selection", function () {
+    // Mutation: the --test-chain value check dropped -> geth is accepted.
+    it("--test-chain takes anvil or project and refuses any other chain", function () {
+        expect(parseCliArgs(argv()).testChain).to.equal(undefined);
+        expect(
+            parseCliArgs(argv("--test-chain", "project")).testChain
+        ).to.equal("project");
+        expect(parseCliArgs(argv("--test-chain=anvil")).testChain).to.equal(
+            "anvil"
+        );
+        expect(() => parseCliArgs(argv("--test-chain", "geth"))).to.throw(
+            "--test-chain requires anvil or project"
+        );
+    });
+
+    // Mutation: main's E2E_TEST_CHAIN check removed -> the geth chain runs on to discovery.
+    // Mutation: --test-chain not copied into E2E_TEST_CHAIN -> the environment's geth is refused.
+    it("a runner invocation refuses an unknown E2E_TEST_CHAIN before discovery, and --test-chain replaces it", function () {
+        const run = (...args: string[]) =>
+            spawnSync(
+                process.execPath,
+                [
+                    path.join(
+                        findRepoRoot(),
+                        "scripts",
+                        "test-e2e-parallel.js"
+                    ),
+                    "--skip-build",
+                    "--dry-run",
+                    "--test-pattern",
+                    "no-test-file-matches-this",
+                    ...args
+                ],
+                {
+                    cwd: findRepoRoot(),
+                    encoding: "utf8",
+                    env: { ...process.env, E2E_TEST_CHAIN: "geth" }
+                }
+            );
+        const refused = run();
+        expect(refused.status).to.equal(1);
+        expect(refused.stderr).to.include(
+            "E2E_TEST_CHAIN must be anvil or project, not geth"
+        );
+        expect(refused.stderr).not.to.include("No implemented tests found");
+        const replaced = run("--test-chain", "anvil");
+        expect(replaced.stderr).not.to.include("E2E_TEST_CHAIN must be");
+        expect(replaced.stderr).to.include("No implemented tests found");
     });
 });
 

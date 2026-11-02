@@ -689,8 +689,16 @@ instruction, so after merging the anvil test chain change every pool host must
 be updated and restarted together; CI fails until they all are. A worker host
 and its isolated guest must also match exactly, since both run the host's own
 checkout. A host starts its slot chains from that checkout too: protocol 16
-hosts run them on the pinned anvil, and older hosts, which are refused, ran
-`hardhat node`.
+hosts run them on the run's test chain, the pinned anvil by default, and older
+hosts, which are refused, ran `hardhat node`.
+
+A project whose tests rely on its own Hardhat build, such as the peer3 Hardhat
+fork's gas estimator, passes `--test-chain project` (or sets
+`E2E_TEST_CHAIN=project`). The runner then starts the project's own
+`hardhat node` for every slot chain and fixture node, locally and on every
+worker, and keeps the in-process `hardhat` network on EDR. A distributed run
+sends the setting to its workers with the rest of its environment. This
+repository's own tests need anvil.
 
 Dial diagnostics include the Noise handshake hash for each stream. Close lines
 state whether this application closed the stream, Hyperswarm reported duplicate

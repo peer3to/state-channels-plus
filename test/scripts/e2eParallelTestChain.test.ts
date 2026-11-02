@@ -25,7 +25,7 @@ import {
 } from "@test/utils/nodeInfra";
 import { repoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
-import { spawn } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { HDNodeWallet, JsonRpcProvider } from "ethers";
 import fs from "fs";
 import { ethers, network } from "hardhat";
@@ -273,6 +273,48 @@ describe("e2e parallel test chain", function () {
         fs.rmSync(logDir, { recursive: true, force: true });
     });
 
+    // Mutation: the project branch dropped from startHardhatNode -> the project chain answers as anvil.
+    it("a node on the project test chain is the project's own hardhat node, on the port it binds itself", async function () {
+        const project = await startHardhatNode({
+            port: 0,
+            env: { E2E_TEST_CHAIN: "project" }
+        });
+        try {
+            expect(await call(project.url)("web3_clientVersion")).to.match(
+                /^HardhatNetwork\/2\.22\.9\//
+            );
+        } finally {
+            project.stop();
+            await project.exited;
+        }
+        const anvil = await startHardhatNode({ port: 0 });
+        try {
+            expect(await call(anvil.url)("web3_clientVersion")).to.equal(
+                "anvil/v1.7.1"
+            );
+        } finally {
+            anvil.stop();
+            await anvil.exited;
+        }
+    });
+
+    // Mutation: testChain accepts any value -> the geth chain starts as anvil.
+    it("a test chain other than anvil or project is refused before a node starts", async function () {
+        let failure: Error | undefined;
+        try {
+            const node = await startHardhatNode({
+                port: 0,
+                env: { E2E_TEST_CHAIN: "geth" }
+            });
+            node.stop();
+        } catch (error) {
+            failure = error as Error;
+        }
+        expect(failure?.message).to.equal(
+            "E2E_TEST_CHAIN must be anvil or project, not geth"
+        );
+    });
+
     it("starting a node with no anvil on PATH rejects naming the missing anvil", async function () {
         let failure: Error | undefined;
         try {
@@ -492,6 +534,54 @@ describe("e2e parallel test chain", function () {
                 [hash]
             );
             expect(receipt?.status).to.equal("0x1");
+        }
+    });
+
+    // Mutation: useAnvilForInProcessNetwork ignores E2E_TEST_CHAIN -> the send asks the project's hardhat node for anvil_getAutomine and fails.
+    it("hardhat's in-process network stays EDR on the project test chain and runs on anvil otherwise", function () {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "in-process-chain-"));
+        try {
+            const probe = path.join(dir, "client.test.js");
+            fs.writeFileSync(
+                probe,
+                `const { network } = require("hardhat");
+describe("probe", function () {
+    it("sends and prints the in-process client", async function () {
+        const [from, to] = await network.provider.send("eth_accounts");
+        await network.provider.send("eth_sendTransaction", [{ from, to, value: "0x1" }]);
+        console.log("client:", await network.provider.send("web3_clientVersion"));
+    });
+});
+`
+            );
+            const clientOn = (chain: string | undefined) => {
+                const run = spawnSync(
+                    process.execPath,
+                    [
+                        require.resolve("hardhat/internal/cli/cli.js"),
+                        "test",
+                        "--no-compile",
+                        probe
+                    ],
+                    {
+                        cwd: repoRoot(),
+                        encoding: "utf8",
+                        env: {
+                            ...process.env,
+                            NODE_PATH: path.join(repoRoot(), "node_modules"),
+                            E2E_TEST_CHAIN: chain
+                        }
+                    }
+                );
+                return (
+                    /client: (\S+)/.exec(run.stdout)?.[1] ??
+                    `${run.stdout}${run.stderr}`
+                );
+            };
+            expect(clientOn("project")).to.match(/^HardhatNetwork\/2\.22\.9\//);
+            expect(clientOn(undefined)).to.equal("anvil/v1.7.1");
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
         }
     });
 

@@ -8,10 +8,10 @@ const ANVIL_BIN = "anvil";
 // account N derives the same address on the node and in hardhat's own signers.
 const MNEMONIC = "test test test test test test test test test test test junk";
 
-// A /bin/sh script that runs anvil ("$@") and stops it when its owner's end
-// of the shell's stdin closes, which the OS does when the owner dies (SIGKILL
-// included), and when the shell is sent SIGTERM / SIGINT. Exits with anvil's
-// status.
+// A /bin/sh script that runs the test chain ("$@": anvil, or the project's
+// hardhat node) and stops it when its owner's end of the shell's stdin
+// closes, which the OS does when the owner dies (SIGKILL included), and when
+// the shell is sent SIGTERM / SIGINT. Exits with the chain's status.
 const ANVIL_WATCHDOG = [
     // an asynchronous list's stdin is /dev/null, so keep this one on fd 3
     "exec 3<&0",

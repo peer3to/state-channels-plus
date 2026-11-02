@@ -46,6 +46,7 @@ const {
 } = require("./e2e-parallel/local/scheduler");
 const {
     provisionSlots,
+    testChain,
     teardownInfra,
     startGasMonitor
 } = require("../test/utils/nodeInfra");
@@ -248,12 +249,31 @@ function buildBaseEnv(threadModes) {
     };
 }
 
+// The env a distributed run sends its workers: the forwarded names and the
+// run's settings. A worker's slot chains read the test chain from it.
+function buildDistributedBaseEnv(forwardEnv, threadModes) {
+    return buildRemoteEnvironment(process.env, forwardEnv, {
+        LOG_LEVEL: process.env.LOG_LEVEL || "verbose",
+        CRASH_LOG_UPLOAD_ENDPOINT: "",
+        NODE_OPTIONS: "--enable-source-maps --stack-trace-limit=1000",
+        STREAM_PARALLEL_CHILD_OUTPUT: "0",
+        E2E_TEST_CHAIN: testChain(process.env),
+        FORCE_COLOR: "1",
+        TERM: process.env.TERM || "xterm-256color",
+        RUN_SDK_IN_THREAD: threadModes.sdkThread ? "true" : "false",
+        VM_DEDICATED_THREAD: threadModes.vmThread ? "true" : "false"
+    });
+}
+
 async function main(options = {}) {
     const cli = { ...parseCliArgs(process.argv), ...options };
     if (cli.help) {
         console.log(getHelpText());
         return;
     }
+    // Every chain the run starts reads the test chain from the environment.
+    if (cli.testChain) process.env.E2E_TEST_CHAIN = cli.testChain;
+    testChain(process.env);
     // A broken overrides file fails the run before anything is built.
     readOverrides(path.resolve(process.cwd(), DEFAULT_COST_OVERRIDES_PATH));
 
@@ -540,24 +560,9 @@ async function main(options = {}) {
                     ),
                     keepInfraLogs: cli.keepInfraLogs,
                     signal: distributedCancellation.signal,
-                    baseEnv: buildRemoteEnvironment(
-                        process.env,
+                    baseEnv: buildDistributedBaseEnv(
                         cli.forwardEnv,
-                        {
-                            LOG_LEVEL: process.env.LOG_LEVEL || "verbose",
-                            CRASH_LOG_UPLOAD_ENDPOINT: "",
-                            NODE_OPTIONS:
-                                "--enable-source-maps --stack-trace-limit=1000",
-                            STREAM_PARALLEL_CHILD_OUTPUT: "0",
-                            FORCE_COLOR: "1",
-                            TERM: process.env.TERM || "xterm-256color",
-                            RUN_SDK_IN_THREAD: threadModes.sdkThread
-                                ? "true"
-                                : "false",
-                            VM_DEDICATED_THREAD: threadModes.vmThread
-                                ? "true"
-                                : "false"
-                        }
+                        threadModes
                     )
                 });
                 if (signalExitCode) {
@@ -684,6 +689,7 @@ if (require.main === module) {
 
 module.exports = {
     buildBaseEnv,
+    buildDistributedBaseEnv,
     resolveWarmUps,
     orderTasks,
     discoveryFailureMessage,

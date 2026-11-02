@@ -108,10 +108,13 @@ class LazyAnvilProvider extends EventEmitter implements EIP1193Provider {
  * see the network they always did. The chain starts like every other test
  * node (nodeInfra) and inherits the mining and chain id settings from the
  * environment, as hardhat.config.ts does; the `inProcess` network config
- * supplies the HTTP and gas settings.
+ * supplies the HTTP and gas settings. Under the project's own test chain
+ * (E2E_TEST_CHAIN=project) the network stays EDR.
  */
 export function useAnvilForInProcessNetwork(hre: HardhatRuntimeEnvironment) {
     if (hre.network.name !== "hardhat") return;
+    const { testChain } = require("./nodeInfra");
+    if (testChain() === "project") return;
     const netConfig = hre.config.networks[IN_PROCESS_NETWORK];
     if (!netConfig || !("url" in netConfig))
         throw new Error(

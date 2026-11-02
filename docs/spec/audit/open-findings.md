@@ -2199,7 +2199,9 @@ capped at the block gas limit; every estimate is one execution. Since 2026-09-26
 stipend is funded upfront ([`FIND-STIPEND-1-9YSNWB`](open-findings.md#find-stipend-1-9ysnwb)): the
 estimate still runs once, and the two replay sends use it plus the manager's
 `getStateTransitionReplayGas` (engineer decision 2026-09-27), so the fork's estimator never searches
-for the stipend.
+for the stipend. Since the anvil test chain (engineer decision 2026-11-02), the runner's default chain
+is the pinned anvil, a searching estimator; a project that relies on the fork's estimator, such as
+poker, runs its own chain with `--test-chain project`.
 
 <a id="find-auth-1-c1zhbj"></a>
 
