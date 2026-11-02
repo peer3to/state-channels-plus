@@ -18,6 +18,7 @@ import {
     UPSTREAM_FAULT,
     UpstreamErrorAnswer
 } from "../../fixtures/node/UpstreamRelay";
+import { sleep } from "@/utils";
 import { ZERO_WORD } from "@/utils/node/storageDiff/blockStorageDiff";
 import { expect } from "chai";
 import { Wallet, toQuantity } from "ethers";
@@ -388,6 +389,80 @@ describe("StorageDiffService backfill values", function () {
                 ).to.be.at.most(8);
             }
         );
+    });
+
+    // Mutation: peer reads wait behind a backfill's in arrival order.
+    it("serves a peer's state read ahead of the backfill reads waiting for the upstream", async function () {
+        await withStorageDiffSession(async ({ client, relay, signer }) => {
+            const writer = await deploySlotWriter(signer);
+            for (let slot = 1; slot <= 40; slot++)
+                await writeSlot(signer, writer, slot, BigInt(slot));
+            const sender = (await signer.getAddress()).toLowerCase();
+            const head = (await client.request("scp_getHead", [])) as {
+                hash: string;
+            };
+            const held = relay.holdAll("eth_getStorageAt");
+            await client.subscribe([writer]);
+            // 16 value reads of the backfill at the upstream, the rest waiting
+            while (relay.requestCount("eth_getStorageAt") < 16) await sleep(20);
+            await sleep(100);
+
+            const read = client.getState(head.hash, [
+                { address: sender, account: true }
+            ]);
+            await sleep(100);
+            held.release();
+            await read;
+
+            const arrivals = relay.arrivals();
+            const peerRead = arrivals.findIndex(
+                ({ method, params }) =>
+                    method === "eth_getBalance" && params[0] === sender
+            );
+            expect(peerRead).to.be.greaterThan(-1);
+            // the held 16, then the peer's read at the first free place
+            expect(
+                arrivals
+                    .slice(0, peerRead)
+                    .filter(({ method }) => method === "eth_getStorageAt")
+            ).to.have.length.at.most(18);
+        });
+    });
+
+    // Mutation: every subscribed account is backfilled at once.
+    it("backfills at most two accounts at once and the next once one is done", async function () {
+        await withStorageDiffSession(async ({ client, relay, signer }) => {
+            const writers: string[] = [];
+            for (let i = 0; i < 3; i++) {
+                const writer = await deploySlotWriter(signer);
+                await writeSlot(signer, writer, 1, BigInt(i + 1));
+                writers.push(writer);
+            }
+            const held = relay.holdAll("debug_traceBlockByNumber");
+
+            const subscription = await client.subscribe(writers);
+            // two backfills reach their traces; the third waits
+            while (relay.requestCount("debug_traceBlockByNumber") < 2)
+                await sleep(20);
+            await sleep(300);
+            const probed = new Set(
+                relay
+                    .paramsOf("eth_getCode")
+                    .map((params) => String(params[0]).toLowerCase())
+            );
+            held.release();
+            const snapshotted = new Set<string>();
+            while (snapshotted.size < writers.length)
+                for (const address of Object.keys(
+                    (await client.nextSnapshot(subscription)).accounts
+                ))
+                    snapshotted.add(address);
+
+            expect(
+                writers.filter((writer) => probed.has(writer))
+            ).to.have.length(2);
+            expect([...snapshotted]).to.have.members(writers);
+        });
     });
 
     // Mutation: a failed trace starts the whole backfill over.

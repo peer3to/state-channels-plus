@@ -91,6 +91,8 @@ const BACKFILL_ROUNDS = 100;
 const BACKFILL_RESTARTS = 5;
 /** Blocks one backfill traces at once. */
 const BACKFILL_TRACES_AT_ONCE = 8;
+/** Backfills that read at once; the others wait, `syncing`. */
+const BACKFILLS_AT_ONCE = 2;
 /** JSON-RPC code of an upstream that does not know a method. */
 const METHOD_NOT_FOUND_CODE = -32601;
 /**
@@ -291,13 +293,18 @@ export class StorageDiffService {
     private readonly watched = new Map<AccountAddress, WatchedAccount>();
     // One fetch per missing field, shared by every reader waiting for it.
     private readonly flights = new Map<FlightKey, Promise<void>>();
-    // State reads at the upstream now, and the ones waiting for a free place.
+    // State reads at the upstream now, and the ones waiting for a free place:
+    // peers' reads, then a backfill's, which get a place only when no peer's waits.
     private stateFetchesInFlight = 0;
     private readonly stateFetchWaiters: (() => void)[] = [];
+    private readonly backfillFetchWaiters: (() => void)[] = [];
     // Accounts whose backfill failed or found fewer entries than the chain holds: read lazily, not backfilled again.
     private readonly lazyAccounts = new Set<AccountAddress>();
     // Backfills in flight, one per account.
     private readonly backfills = new Map<AccountAddress, Promise<void>>();
+    // Backfills reading now, and the ones waiting for a free place.
+    private backfillsRunning = 0;
+    private readonly backfillWaiters: (() => void)[] = [];
     // Entry recounts in flight, one per account.
     private readonly recounts = new Map<AccountAddress, Recount>();
     private readonly backfillBlocks: ABackfillBlockSource;
@@ -311,6 +318,9 @@ export class StorageDiffService {
     private upstreamHeadProbe?: Promise<void>;
     // Set when a read started waiting after that ask was sent: it asks once more.
     private upstreamHeadProbeAgain = false;
+    // The last `upstream-behind` pushed, as "requested@head hash": the same one
+    // at the same head is not pushed again.
+    private lastUpstreamBehind?: string;
     // How long such a read may wait when no event ends it: learned from how
     // long a new head took to commit after the upstream announced it.
     private readonly backstop = new LearnedBackstop(SDK_RPC_DEADLINE_MS);
@@ -355,7 +365,7 @@ export class StorageDiffService {
             request: (method, params) =>
                 this.retryTransient(
                     () =>
-                        this.limitStateFetch(() =>
+                        this.limitBackfillFetch(() =>
                             this.request(method, params)
                         ),
                     "Retrying a backfill read"
@@ -363,7 +373,7 @@ export class StorageDiffService {
             requestOn: (node, method, params) =>
                 this.retryTransient(
                     () =>
-                        this.limitStateFetch(() =>
+                        this.limitBackfillFetch(() =>
                             this.request(method, params, node)
                         ),
                     "Retrying a backfill read"
@@ -1375,17 +1385,31 @@ export class StorageDiffService {
     }
 
     /** Runs a state read for a peer once fewer than `MAX_STATE_FETCHES_IN_FLIGHT` are at the upstream. */
-    private async limitStateFetch<T>(read: () => Promise<T>): Promise<T> {
+    private limitStateFetch<T>(read: () => Promise<T>): Promise<T> {
+        return this.limitFetch(read, this.stateFetchWaiters);
+    }
+
+    /** Runs a backfill's read within the same limit, behind every peer read that waits. */
+    private limitBackfillFetch<T>(read: () => Promise<T>): Promise<T> {
+        return this.limitFetch(read, this.backfillFetchWaiters);
+    }
+
+    /** Runs `read` once a place is free, waiting in `waiters`; a freed place goes to a peer's read first. */
+    private async limitFetch<T>(
+        read: () => Promise<T>,
+        waiters: (() => void)[]
+    ): Promise<T> {
         while (this.stateFetchesInFlight >= MAX_STATE_FETCHES_IN_FLIGHT)
-            await new Promise<void>((resolve) =>
-                this.stateFetchWaiters.push(resolve)
-            );
+            await new Promise<void>((resolve) => waiters.push(resolve));
         this.stateFetchesInFlight++;
         try {
             return await read();
         } finally {
             this.stateFetchesInFlight--;
-            this.stateFetchWaiters.shift()?.();
+            (
+                this.stateFetchWaiters.shift() ??
+                this.backfillFetchWaiters.shift()
+            )?.();
         }
     }
 
@@ -1543,6 +1567,12 @@ export class StorageDiffService {
             )
                 waiter.end();
         }
+        if (notice.reason === "upstream-behind") {
+            const told = `${notice.requested}@${notice.head.hash}`;
+            // the peers have this one, and the head has not moved since
+            if (told === this.lastUpstreamBehind) return;
+            this.lastUpstreamBehind = told;
+        }
         for (const peer of this.peerHub.peers.values()) {
             if (peer.closing || peer.subscriptions.size === 0) continue;
             this.peerHub.pushDelay(peer, notice);
@@ -1639,7 +1669,10 @@ export class StorageDiffService {
         return receipts;
     }
 
-    /** Starts rebuilding `address` from its history, unless that is done or running. */
+    /**
+     * Starts rebuilding `address` from its history, unless that is done or
+     * running; it waits while `BACKFILLS_AT_ONCE` others read.
+     */
     private startBackfill(address: AccountAddress): void {
         if (
             this.backfills.has(address) ||
@@ -1656,7 +1689,18 @@ export class StorageDiffService {
             // every watched account is held: no room to rebuild this one
             return;
         }
-        const job = this.runBackfill(address, filled)
+        // awaited once the backfill has a place; a failure there is its own
+        filled.catch(() => undefined);
+        const job = this.takeBackfillPlace()
+            .then(async () => {
+                try {
+                    if (!this.stopping.signal.aborted)
+                        await this.runBackfill(address, filled);
+                } finally {
+                    this.backfillsRunning--;
+                    this.backfillWaiters.shift()?.();
+                }
+            })
             .catch((error) => {
                 if (this.stopping.signal.aborted) return;
                 this.logger.warn(
@@ -1679,6 +1723,18 @@ export class StorageDiffService {
                 this.release(undefined, [address]);
             });
         this.backfills.set(address, job);
+    }
+
+    /** Resolves once fewer than `BACKFILLS_AT_ONCE` backfills read, taking a place. */
+    private async takeBackfillPlace(): Promise<void> {
+        while (
+            this.backfillsRunning >= BACKFILLS_AT_ONCE &&
+            !this.stopping.signal.aborted
+        )
+            await new Promise<void>((resolve) =>
+                this.backfillWaiters.push(resolve)
+            );
+        this.backfillsRunning++;
     }
 
     /**
@@ -1995,7 +2051,7 @@ export class StorageDiffService {
         record.codeProbes++;
         try {
             // not retried on its own: a failed probe starts the backfill over
-            const code = await this.limitStateFetch(() =>
+            const code = await this.limitBackfillFetch(() =>
                 this.request("eth_getCode", [address, toQuantity(block)])
             );
             return typeof code === "string" && code !== "0x";
@@ -2076,7 +2132,7 @@ export class StorageDiffService {
             record.stateReads++;
             return this.retryTransient(
                 () =>
-                    this.limitStateFetch(() =>
+                    this.limitBackfillFetch(() =>
                         this.fetchField(field, blockHash)
                     ),
                 "Retrying a backfill read"
@@ -2227,6 +2283,7 @@ export class StorageDiffService {
         this.shutdown ??= (async () => {
             this.stopping.abort();
             for (const waiter of [...this.headWaiters]) waiter.end();
+            for (const wake of this.backfillWaiters.splice(0)) wake();
             this.upstream.destroy();
             this.backfillBlocks.close();
             await this.peerHub.close();

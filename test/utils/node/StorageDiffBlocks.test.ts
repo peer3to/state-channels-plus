@@ -377,6 +377,29 @@ describe("StorageDiffService blocks", function () {
         });
     });
 
+    // Mutation: every upstream-behind is pushed, the same one again included.
+    it("does not push an upstream-behind notice again that is the same as the last one at an unchanged head", async function () {
+        await withStorageDiffSession(async ({ client }) => {
+            await client.subscribe([]);
+            const head = (await client.request("scp_getHead", [])) as {
+                number: string;
+                hash: string;
+            };
+            const asked = toQuantity(BigInt(head.number) + 100n);
+
+            await client.request("scp_getHead", [asked]);
+            await client.request("scp_getHead", [asked]);
+
+            expect(await client.nextDelay()).to.deep.equal({
+                reason: "upstream-behind",
+                requested: asked,
+                head: { number: head.number, hash: head.hash }
+            });
+            await sleep(200);
+            expect(client.unreadDelays()).to.deep.equal([]);
+        });
+    });
+
     it("answers at once with what it holds, and tells subscribers, when tracing the awaited block fails", async function () {
         await withStorageDiffSession(
             async ({ client, provider, relay, signer }) => {

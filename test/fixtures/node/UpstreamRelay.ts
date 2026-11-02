@@ -68,6 +68,10 @@ export class UpstreamRelay {
     private readonly answered = new Map<UpstreamMethod, number>();
     // Params of every request seen, per method, in arrival order.
     private readonly seenParams = new Map<UpstreamMethod, unknown[][]>();
+    // Every request seen, in arrival order.
+    private readonly arrived: RelayedRequest[] = [];
+    // Method -> its requests held until the hold is released.
+    private readonly heldAll = new Map<UpstreamMethod, (() => void)[]>();
     // Method -> how its answers are rewritten.
     private readonly tampering = new Map<
         UpstreamMethod,
@@ -151,6 +155,26 @@ export class UpstreamRelay {
     }
 
     /**
+     * Holds every `method` request from now on until `release`, which
+     * forwards them in arrival order and lets later ones pass.
+     */
+    holdAll(method: UpstreamMethod): { release: () => void } {
+        const waiting: (() => void)[] = [];
+        this.heldAll.set(method, waiting);
+        return {
+            release: () => {
+                this.heldAll.delete(method);
+                for (const forward of waiting.splice(0)) forward();
+            }
+        };
+    }
+
+    /** Every request that reached the relay, in arrival order. */
+    arrivals(): { method: UpstreamMethod; params: unknown[] }[] {
+        return this.arrived.map(({ method, params }) => ({ method, params }));
+    }
+
+    /**
      * Rewrites the `result` of every answer to a `method` request, as an
      * upstream whose answers are wrong would send it.
      */
@@ -191,6 +215,7 @@ export class UpstreamRelay {
     }
 
     private count(request: RelayedRequest): void {
+        this.arrived.push(request);
         this.seen.set(request.method, this.requestCount(request.method) + 1);
         this.seenParams.set(request.method, [
             ...(this.seenParams.get(request.method) ?? []),
@@ -327,11 +352,16 @@ export class UpstreamRelay {
                 hold.onArrive();
                 return;
             }
-            const pending = (this.inFlight.get(request.method) ?? 0) + 1;
-            this.inFlight.set(request.method, pending);
-            if (pending > this.maxInFlight(request.method))
-                this.peakInFlight.set(request.method, pending);
-            forward(frame);
+            const send = () => {
+                const pending = (this.inFlight.get(request.method) ?? 0) + 1;
+                this.inFlight.set(request.method, pending);
+                if (pending > this.maxInFlight(request.method))
+                    this.peakInFlight.set(request.method, pending);
+                forward(frame);
+            };
+            const waiting = this.heldAll.get(request.method);
+            if (waiting) waiting.push(send);
+            else send();
         });
         const cut = () => {
             client.terminate();
