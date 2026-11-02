@@ -116,6 +116,80 @@ describe("E2E: persistence restart", function () {
         ).to.equal(false);
     });
 
+    it("a restarted participant whose restart sync answer fails aborts as an observer does and never participates", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 2, {
+            persistentPeers: [1],
+            timeConfig: RESTART_TIME_CONFIG
+        });
+        // the only participant answers the restart sync with an undecodable payload
+        await h
+            .control(h.getPeer(0))
+            .stub.stubSpectatePayload("0x1234")
+            .request();
+
+        const restarted = await h.lifecycle.restartPeer(1);
+        expect(await h.control(restarted).query.getStatus().request()).to.equal(
+            Status.SYNCED
+        );
+        // the abort disposes the runtime while the connect may still run
+        const connected = await restarted.p2pInstance.p2pSigner
+            .connectToChannel(h.channelId)
+            .catch((error: unknown) => {
+                if (!isRootDisposedError(error)) throw error;
+                return false;
+            });
+        expect(connected).to.equal(false);
+
+        await waitFor(
+            async () => (restarted.eventSpies.onAbort?.callCount ?? 0) > 0
+        );
+        expect(restarted.eventSpies.onTurn?.callCount).to.equal(0);
+        expect(
+            restarted.eventSpies.onStatusChanged
+                ?.getCalls()
+                .some((call) => call.args[1] === Status.PARTICIPATING)
+        ).to.equal(false);
+    });
+
+    it("a participant restarted with a dispute marker whose dispute never reached the chain signs the next blocks on that fork", async () => {
+        const h = TestSession.getHarness();
+        const forkId = await h.lifecycle.start(3, 3, {
+            persistentPeers: [2],
+            timeConfig: RESTART_TIME_CONFIG
+        });
+        // the marker reached disk, then the process died before the upload
+        await h.execOnHost(h.getPeer(2), async (sm) => {
+            sm.storage.disputes.storeDisputedFork(sm.forkId, true);
+            await sm.storage.flush();
+        });
+
+        const restarted = await h.lifecycle.restartPeer(2);
+        const query = h.control(restarted).query;
+        await h.network.connectPeers([2]);
+        await waitFor(
+            async () =>
+                (await query.getStatus().request()) === Status.PARTICIPATING
+        );
+        const height = (await query.getLatestBlockHeight(forkId).request())!;
+        await h.transition.advanceState({ count: 3 });
+
+        // it signs every next block and authors its own turn, which a node
+        // disputing the fork never does
+        const source = h.control(h.getPeer(0)).query;
+        const authors: string[] = [];
+        for (let next = height + 1; next <= height + 3; next++) {
+            const own = await query.getBlockByHeight(forkId, next).request();
+            expect(own?.confirmationSignerAddresses).to.include(
+                restarted.address
+            );
+            authors.push(
+                (await source.getBlockByHeight(forkId, next).request())!.author
+            );
+        }
+        expect(authors).to.include(restarted.address);
+    });
+
     it("a persistent runtime that set and cleared another channel id binds the channel that opens and resumes it after a restart", async () => {
         const h = TestSession.getHarness();
         await h.setup(2, {

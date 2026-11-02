@@ -484,6 +484,19 @@ export default class BlockQueueManager {
 
     private async queueTimeout(blockHash: Hash): Promise<void> {
         this.timeoutHandles.delete(blockHash);
+        // a held restored head keeps the entry queued for the release drain
+        if (this.stateManager.stateApplicationService.holdsRestoredHead) {
+            if (this.stateManager.storage.queues.getQueuedEntry(blockHash))
+                this.timeoutHandles.set(
+                    blockHash,
+                    this.timeoutManager.scheduleTask(
+                        () => this.queueTimeout(blockHash),
+                        this.timeConfig.agreementTime * 1000,
+                        `BlockQueueManager.queueTimeout (held) - ${blockHash}`
+                    )
+                );
+            return;
+        }
         // Dequeue first: the timeout owns the entry it sees - no race with
         // other tasks. Copies arriving from here on pool into a fresh entry
         // that converges on its own.

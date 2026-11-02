@@ -29,7 +29,7 @@ import {
     assertSyncingAbsentSenderTakesOneStrike,
     stageAbsentGossipAcrossUnreducedWindow
 } from "@test/fixtures/QueueNetworkRetentionFixture";
-import { MathTestSession } from "@test/harness";
+import { MathTestSession, resolveTestTimeConfig } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { id, ZeroHash } from "ethers";
@@ -39,7 +39,7 @@ import { id, ZeroHash } from "ethers";
 // deviations. Both tests read that routing off its two observable effects.
 
 describe("Unit: BlockQueueManager", () => {
-    it("a held restored head executes no queued gossip or proof copy, so it co-signs nothing, until the restart sync settles", async () => {
+    it("a held restored head executes no queued gossip or proof copy, by drain or by an elapsed queue timeout, so it co-signs nothing, until the restart sync settles", async () => {
         const h = MathTestSession.getHarness();
         const forkId = await h.lifecycle.start(3, 3, {
             persistentPeers: [2],
@@ -64,7 +64,8 @@ describe("Unit: BlockQueueManager", () => {
             .getLatestBlockHeight(forkId)
             .request();
         expect(restoredHeight).to.equal(othersHeight - 2);
-        // every intake origin reaches block commit through the queue drain
+        // every intake origin reaches block commit through the queue drain or
+        // the entry's queue timeout
         await control.transition
             .ingestBlockConfirmation(gossip.encodedBlockConfirmation, {
                 origin: BlockOrigin.NETWORK,
@@ -78,6 +79,12 @@ describe("Unit: BlockQueueManager", () => {
             .request();
         await h.execOnHost(h.getPeer(2), (sm) =>
             sm.blockQueueManager.tryExecuteFromQueue()
+        );
+        // the gossip copy sits at the next height: its queue timeout would
+        // execute it directly
+        await sleep(
+            (resolveTestTimeConfig(RESTART_TIME_CONFIG).agreementTime + 1) *
+                1000
         );
 
         expect(await control.query.isBlockQueued(gossip.hash).request()).to.be

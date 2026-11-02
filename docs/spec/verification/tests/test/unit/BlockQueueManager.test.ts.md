@@ -68,11 +68,11 @@ window still unreduced, the intake has not completed, the spectator answered onc
 blacklisted; after peer 1 reduces the window the spectator answers again, the intake completes and
 the still-absent spectator is blacklisted.
 
-A persistent peer restarted through `LifecycleActions.restartPeer` with two blocks it never saw is handed one as a gossip copy and one as a proof copy before it connects; a direct queue drain leaves both queued and its height unchanged, and once it connects its restart sync settles, it participates and reaches the others' height.
+A persistent peer restarted through `LifecycleActions.restartPeer` with two blocks it never saw is handed one as a gossip copy and one as a proof copy before it connects; a direct queue drain, then a wait past the gossip copy's queue timeout, leave both queued and its height unchanged, and once it connects its restart sync settles, it participates and reaches the others' height.
 
 ## Tests
 
-- `a held restored head executes no queued gossip or proof copy, so it co-signs nothing, until the restart sync settles`: REQ-STOR-3-4RJGER.T1.P18
+- `a held restored head executes no queued gossip or proof copy, by drain or by an elapsed queue timeout, so it co-signs nothing, until the restart sync settles`: REQ-STOR-3-4RJGER.T1.P18
 - `a queue timeout firing after the runtime aborted sends its source no probe`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P43
 - `a junk supplier answering a source probe through a window the chain has not reduced is asked again once the chain reduces it, then excluded`: REQ-SYNC-4-AWHFPA.T1.P8
 - `evidence posted into the window while a source probe waits extends the kill period and changes nothing: the supplier is asked again after the reduction, then excluded`: REQ-SYNC-4-AWHFPA.T1.P10

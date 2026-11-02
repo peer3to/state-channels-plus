@@ -337,7 +337,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         // A result that lands after the chain already supplied the state is
         // stale: the wait settled through the status hook and a late false
         // must not abort an already synced runtime.
-        if (this.initialSyncSettled || stateManager.status !== Status.OPENED) {
+        if (this.initialSyncSettled || !this.awaitsInitialSync()) {
             this.settleInitialSync(success);
             return;
         }
