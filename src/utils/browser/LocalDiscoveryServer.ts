@@ -48,6 +48,8 @@ export class LocalDiscoveryServer {
         rendezvousKey: string,
         myPeerAddress: string
     ): Promise<void> {
+        // a join after the cut starts no session
+        if (p2pManager.isDisposed) return;
         const ws = new WebSocket(
             `${this.registryUrl()}?channelId=${encodeURIComponent(rendezvousKey)}` +
                 `&address=${encodeURIComponent(myPeerAddress)}`

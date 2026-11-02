@@ -555,6 +555,14 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         return this.service.probeTransportsAfterCut();
     }
 
+    public probeHolepunchCutDuringSwarmLoad() {
+        return this.service.probeHolepunchCutDuringSwarmLoad();
+    }
+
+    public probeHolepunchJoinAfterCut() {
+        return this.service.probeHolepunchJoinAfterCut();
+    }
+
     public probeReplacementHandshake(
         address: string
     ): Promise<ReplacementHandshakeProbe> {

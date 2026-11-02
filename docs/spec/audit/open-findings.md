@@ -821,6 +821,17 @@ Still open: a request already parked on the state mutex at an abort can finish i
 and answer the application before the connection closes, and a peer connection created after the
 release closes only when its data channel arrives or ICE fails.
 
+**Update (2026-11-02, late discovery joins, Luke: one line at admission):** a discovery join that
+starts after the cut used to open a session that nobody released: the root's release had already left
+every local discovery session, so a connect handler still running after the cut opened a new listener
+and registry socket, and the worker did not drain within its bound (a 1-in-6 flake of the observer
+dispose test). The joins are now refused where they register: `connectToPeers` in the Node and browser
+[`LocalDiscoveryServer`](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md)
+([browser](../implementation/source/src/utils/browser/LocalDiscoveryServer.ts.md)) and
+[`Holepunch`](../implementation/source/src/Holepunch.ts.md) `join`, which also checks again after it loads
+the swarm module, so a cut during the load creates no swarm. Evidence: [`REQ-RUNTIME-3-VQXW59.T1.P97`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p97), [`REQ-RUNTIME-3-VQXW59.T1.P98`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p98),
+[`REQ-RUNTIME-3-VQXW59.T1.P99`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p99), [`REQ-RUNTIME-3-VQXW59.T1.P100`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p100), [`REQ-RUNTIME-3-VQXW59.T1.P101`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p101).
+
 **Update (2026-10-31, dispose cut-off slice 6, Luke):** the parent reply drain is deleted for every
 root: a request whose handler has not answered when the connection closes rejects with the
 runtime-disposed error, and only the disposal's own acknowledgement still leaves. The root flushes its

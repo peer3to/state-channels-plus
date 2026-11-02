@@ -209,6 +209,11 @@ globalThis.__transportE2E = {
         await p2pManager().joinDiscoveryKey(discoveryKey);
     },
 
+    /** Joins `discoveryKey` on this page's runtime, also after its disposal. */
+    joinDiscoveryKey(discoveryKey) {
+        return p2pManager().joinDiscoveryKey(discoveryKey);
+    },
+
     dispose() {
         return peer?.dispose();
     }

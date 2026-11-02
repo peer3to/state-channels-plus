@@ -666,6 +666,8 @@ export class LocalDiscoveryServer {
         rendezvousKey: RendezvousKey,
         myPeerAddress: string
     ): Promise<void> {
+        // a join after the cut starts no session
+        if (p2pManager.isDisposed) return;
         const joins =
             this.discoveryJoins.get(p2pManager) ??
             new Map<RendezvousKey, Promise<void>>();

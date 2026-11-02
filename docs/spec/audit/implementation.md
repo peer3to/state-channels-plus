@@ -3,6 +3,23 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## Discovery joins after the dispose cut — 2026-11-02
+
+What changed (Luke: refuse a late join where it registers):
+
+1. [LocalDiscoveryServer.ts](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md) and its
+   [browser twin](../implementation/source/src/utils/browser/LocalDiscoveryServer.ts.md): `connectToPeers`
+   returns at once when its P2P manager is disposed, so a join that starts after the root released the
+   discovery sessions opens no listener, registry socket or relay membership. Before, a connect handler
+   still running after the cut opened one, and the worker hit its drain bound.
+2. [Holepunch.ts](../implementation/source/src/Holepunch.ts.md): `join` returns once the manager is
+   disposed, and `ensureNodeSwarm` checks again after loading the swarm module, so a cut during the load
+   creates no swarm.
+
+Requirement: [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59),
+cases [`REQ-RUNTIME-3-VQXW59.T1.P97`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p97) to [`REQ-RUNTIME-3-VQXW59.T1.P101`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p101). Another instance of
+[`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw).
+
 ## Block intake: a still-syncing source takes a counted close — 2026-10-29
 
 What changed: commit `dd162f81` narrowed the 2026-10-26 rule "the requester does not count that as a
