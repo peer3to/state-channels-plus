@@ -36,7 +36,7 @@ The service follows one chain level: the upstream's best head, which can roll ba
 ## Assumptions and constraints
 
 - The upstream node is trusted. It serves new-head notifications over a WebSocket, blocks by number and hash, a prestate diff trace and a call-frame trace per block, and balance, nonce, code and storage reads pinned to a block hash.
-- The trace never omits a key that really changed (it is a superset of the truth).
+- The trace is taken to name every key that really changed. Asset Hub breaks this for a created contract's slot that its constructor writes twice with the same value (paritytech/polkadot-sdk#13663): such a write is missing from the record and a cached value for it can be wrong. This is an accepted phase 1 limit until the entry-count guard of the snapshot work returns in the follow-up pull request.
 - State a block changes outside the traced keys and accounts of its transactions (system calls, withdrawals) is not seen. This is an accepted phase 1 limit (engineer, 2026-10-31): a cached value can stay wrong until a reorganization clears it. Cached state is never evicted; eviction is follow-up work.
 - History and the cache are kept in memory only, for a bounded retention window of canonical blocks; a restarted service loads the window again. A peer that falls behind the window must read the node.
 - The service is a single process without authentication; it binds to loopback by default and any wider binding is the operator's responsibility. This is an accepted phase 1 limit (engineer, 2026-10-31): phase 2 proofs are meant to remove the need to trust the service.
