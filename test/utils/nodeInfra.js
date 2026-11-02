@@ -10,6 +10,7 @@ const fs = require("fs");
 const http = require("http");
 const net = require("net");
 const path = require("path");
+const readline = require("readline");
 
 const PROJECT_ROOT = process.cwd();
 const runtimeRoot = path.join(__dirname, "..", "..");
@@ -151,6 +152,9 @@ const ANSI_RE = /\u001b\[[0-9;]*[A-Za-z]/g;
 const BOUND_PORT_RE = /Listening on 127\.0\.0\.1:(\d+)\r?\n/;
 const HARDHAT_BOUND_PORT_RE =
     /JSON-RPC server at http:\/\/127\.0\.0\.1:(\d+)\//;
+// anvil prints the method of every RPC request on a line of its own
+const RPC_METHOD_LINE_RE =
+    /^(?:eth|net|web3|anvil|hardhat|evm|debug|trace|txpool|ots|erigon|personal)_\w+$/;
 
 /**
  * The test chain E2E_TEST_CHAIN selects: "anvil", the pinned anvil (the
@@ -164,6 +168,18 @@ function testChain(env = process.env) {
             `E2E_TEST_CHAIN must be anvil or project, not ${chain}`
         );
     return chain;
+}
+
+/** Copy the chain's output after ready to this process's, without anvil's RPC method lines. */
+function forwardChainOutput(proc) {
+    for (const [source, target] of [
+        [proc.stdout, process.stdout],
+        [proc.stderr, process.stderr]
+    ]) {
+        readline.createInterface({ input: source }).on("line", (line) => {
+            if (!RPC_METHOD_LINE_RE.test(line)) target.write(`${line}\n`);
+        });
+    }
 }
 
 // The pinned-anvil check, once per PATH: it runs `anvil --version`.
@@ -183,13 +199,15 @@ function anvilRefusal(env) {
  * port 0 itself: a port reserved and released first can be taken by another
  * process before the chain binds it. Inherits process.env so the e2e mining /
  * chain id apply. The chain runs under ANVIL_WATCHDOG, so it dies with this
- * process however this process dies.
+ * process however this process dies. `forwardOutput` copies the chain's output
+ * after ready to this process's own (forwardChainOutput).
  */
 async function startHardhatNode({
     port,
     logPath,
     label = "hardhat node",
-    env = {}
+    env = {},
+    forwardOutput = false
 } = {}) {
     const nodeEnv = {
         ...process.env,
@@ -245,6 +263,7 @@ async function startHardhatNode({
             proc.off("exit", onExit);
             proc.stdout.off("data", onData);
             proc.stderr.off("data", onData);
+            if (forwardOutput) forwardChainOutput(proc);
             // keep draining the chain's log so its pipes never fill
             proc.stdout.resume();
             proc.stderr.resume();

@@ -26,7 +26,7 @@ import {
 import { repoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
 import { spawn, spawnSync } from "child_process";
-import { HDNodeWallet, JsonRpcProvider } from "ethers";
+import { HDNodeWallet, Interface, JsonRpcProvider } from "ethers";
 import fs from "fs";
 import { ethers, network } from "hardhat";
 import net from "node:net";
@@ -583,6 +583,42 @@ describe("probe", function () {
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
         }
+    });
+
+    // Mutation: the in-process chain started without forwardOutput -> the marker never reaches this process.
+    // Mutation: forwardChainOutput copies every line -> anvil's eth_call line reaches it too.
+    it("contract console.log on hardhat's in-process network reaches the test process's output without anvil's RPC method lines", async function () {
+        // console.sol's log(string) is this call to the console address
+        const data = new Interface(["function log(string)"]).encodeFunctionData(
+            "log",
+            ["in-process console.log marker"]
+        );
+        const written: string[] = [];
+        const write = process.stdout.write;
+        process.stdout.write = ((
+            chunk: string | Uint8Array,
+            ...rest: never[]
+        ) => {
+            written.push(chunk.toString());
+            return write.call(process.stdout, chunk, ...rest);
+        }) as typeof process.stdout.write;
+        try {
+            await network.provider.send("eth_call", [
+                { to: "0x000000000000000000636F6e736F6c652e6c6f67", data },
+                "latest"
+            ]);
+            const deadline = Date.now() + 5000;
+            while (
+                !written.join("").includes("in-process console.log marker") &&
+                Date.now() < deadline
+            )
+                await new Promise((resolve) => setTimeout(resolve, 50));
+        } finally {
+            process.stdout.write = write;
+        }
+        const lines = written.join("").split("\n");
+        expect(lines).to.include("in-process console.log marker");
+        expect(lines).not.to.include("eth_call");
     });
 
     it("the browser runtime server's node interval-mines and stops when the server closes", async function () {

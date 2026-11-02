@@ -79,9 +79,11 @@ class LazyAnvilProvider extends EventEmitter implements EIP1193Provider {
         const { HttpProvider } = await import(
             "hardhat/internal/core/providers/http"
         );
+        // contract console.log reaches this process's output, as it did on EDR
         const node = await startHardhatNode({
             port: 0,
-            label: "in-process chain"
+            label: "in-process chain",
+            forwardOutput: true
         });
         // the chain must neither keep this process alive nor outlive it
         node.proc.unref();
