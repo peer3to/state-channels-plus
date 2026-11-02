@@ -10,7 +10,7 @@
 
 The helpers derive the node's storage key for an address, read a trie id from account info, name the child trie, and find the blocks after which a trie root changed.
 
-- Setup: Call the helpers with recorded account info, 20-byte and malformed addresses, and a root function over a block range.
+- Setup: Call the helpers with recorded account info, account info with a multi-byte trie id length and with fewer bytes than its trie id length, 20-byte and malformed addresses, and a root function over a block range.
 - Oracle: Keys equal the node's, malformed input is refused, and the changed blocks are found with far fewer root reads than blocks.
 
 - [x] `UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P1` — the AccountInfoOf key of an address is derived as the node holds it
@@ -21,3 +21,5 @@ The helpers derive the node's storage key for an address, read a trie id from ac
 - [x] `UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P11` — the blocks after which a trie root changes are found in few reads
 - [x] `UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P12` — nothing is found when the root is the same at both ends
 - [x] `UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P13` — a change in the last block of the range is found
+- [x] `UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P14` — a contract's account info whose trie id length is not a one-byte compact is refused
+- [x] `UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P15` — a contract's account info shorter than the trie id it claims is refused

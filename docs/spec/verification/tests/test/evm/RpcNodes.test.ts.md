@@ -60,6 +60,7 @@ within the one-second window (every node was destroyed).
 - `never reconnects after stopReconnecting`: UNIT-TEST-RPC-NODE-1-VTXH1M.P6
 - `fails a request held for a reconnect when destroyed`: UNIT-TEST-RPC-NODE-1-VTXH1M.P7
 - `opens a socket to a node that serves no Ethereum RPC without asking its chain id`: UNIT-TEST-RPC-NODE-1-VTXH1M.P14, REQ-SDS-9-ZRPZZW.T1.P25
+- `reopens a socket to a node that serves no Ethereum RPC without asking its chain id`: UNIT-TEST-RPC-NODE-1-VTXH1M.P15, REQ-SDS-9-ZRPZZW.T1.P26
 - `sends a transaction to the first node only while it is connected`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P1, REQ-CHAINOBS-2-2NCSQ3.T1.P1
 - `fails a transaction over to the next node while the first is cut`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P2, REQ-CHAINOBS-2-2NCSQ3.T1.P2
 - `holds a transaction while no node is connected and sends it once one reconnects`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P3, REQ-CHAINOBS-2-2NCSQ3.T1.P5

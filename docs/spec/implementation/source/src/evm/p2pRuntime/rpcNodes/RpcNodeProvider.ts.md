@@ -30,3 +30,4 @@ Connection lifecycle of one endpoint
 - [x] `UNIT-TEST-RPC-NODE-1-VTXH1M.P12` — a socket's unsubscribe answered with an error by a live node: no unhandled rejection, reads continue
 - [x] `UNIT-TEST-RPC-NODE-1-VTXH1M.P13` — a socket's `eth_subscribe` cancelled by the provider's destroy right after a log subscription: no unhandled rejection
 - [x] `UNIT-TEST-RPC-NODE-1-VTXH1M.P14` — a socket to a node that serves no Ethereum RPC opens once the node answers the heartbeat request, without asking its chain id
+- [x] `UNIT-TEST-RPC-NODE-1-VTXH1M.P15` — a socket to a node that serves no Ethereum RPC reopens after a cut without asking its chain id, and a request held meanwhile is answered

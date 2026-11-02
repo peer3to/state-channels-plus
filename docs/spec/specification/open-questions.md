@@ -54,6 +54,8 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-SPEC-SDS-1-Q6T63H`](open-questions.md#oq-spec-sds-1-q6t63h)                           | Is an unauthenticated storage diff service acceptable beyond loopback in phase 1?                                                                           | Storage diff service lane (2026-10-31)          | [runtime/storage-diff-service.md](./runtime/storage-diff-service.md)                                                                                                                                                       | Resolved                          |
 | [`OQ-SPEC-SDS-2-HJS9DY`](open-questions.md#oq-spec-sds-2-hjs9dy)                           | State changed outside a block's traced transaction keys is not seen                                                                                         | Storage diff service lane (2026-10-31)          | [runtime/storage-diff-service.md](./runtime/storage-diff-service.md), [StorageDiffService.ts](../implementation/source/src/utils/node/storageDiff/StorageDiffService.ts.md)                                                | Resolved                          |
 | [`OQ-SPEC-SDS-3-AWN6WE`](open-questions.md#oq-spec-sds-3-awn6we)                           | Does the service roll records and its cache back on a reorganization while the SDK has no finality level?                                                   | Review of the storage diff service (2026-11-02) | [runtime/storage-diff-service.md](./runtime/storage-diff-service.md)                                                                                                                                                       | Resolved                          |
+| [`OQ-SPEC-SDS-4-3Q41FF`](open-questions.md#oq-spec-sds-4-3q41ff)                           | Should backfill reads yield to peer state reads inside the shared limit, and should backfills be capped?                                                    | Review of the storage diff service (2026-11-02) | [runtime/storage-diff-service.md](./runtime/storage-diff-service.md)                                                                                                                                                       | Open                              |
+| [`OQ-SPEC-SDS-5-84Z373`](open-questions.md#oq-spec-sds-5-84z373)                           | Is an `upstream-behind` notice identical to the last one at the same head pushed again?                                                                     | Review of the storage diff service (2026-11-02) | [runtime/storage-diff-service.md](./runtime/storage-diff-service.md)                                                                                                                                                       | Open                              |
 
 ## Register assumptions and constraints
 
@@ -879,3 +881,23 @@ Resolved (engineer, 2026-11-02): rollback stays. The service follows one level, 
 The pull request review asked for one chain level with no reorg rollback and no included strategies, leaving finality to later SDK-wide work. Removing the included level settles the second part; whether a service that follows a head which can roll back must undo orphaned blocks was left open.
 
 Owner: [storage-diff-service.md](./runtime/storage-diff-service.md) ([`REQ-SDS-1-TXEY33` (A subscription receives one record per canonical block)](runtime/storage-diff-service.md#req-sds-1-txey33), [`REQ-SDS-7-PZCBQ9` (State reads come from one shared cache)](runtime/storage-diff-service.md#req-sds-7-pzcbq9)). Requested engineer decision: keep rollback, or drop it with the included level.
+
+<a id="oq-spec-sds-4-3q41ff"></a>
+
+## OQ-SPEC-SDS-4-3Q41FF — Should backfill reads yield to peer state reads inside the shared limit, and should backfills be capped?
+
+Open (review of the storage diff service, 2026-11-02). Every read of a backfill goes through the same limit of 16 state reads in flight as the peers' state reads ([`REQ-SDS-9-ZRPZZW`](runtime/storage-diff-service.md#req-sds-9-zrpzzw), [`REQ-SDS-7-PZCBQ9` (State reads come from one shared cache)](runtime/storage-diff-service.md#req-sds-7-pzcbq9)), and the limit serves its waiters in arrival order. A backfill queues a value read for every key at once, and a block source queues a level of reads at a time, so a peer's `scp_getState` that arrives behind N backfill reads waits about N/16 round trips: 10,000 slots at 50 ms is about 30 s, past the SDK's 3 s deadline. Any peer can start such a backfill by subscribing, and nothing caps how many run at once. The engineer decided (2 Nov 2026) that backfill reads are single requests within the limit, so a backfill cannot crowd out the head's own reads; how backfill reads rank against peer reads inside the limit is not settled.
+
+Alternatives: peer reads first (a second queue the limit serves before the backfill's); some of the 16 places kept for peer reads; a cap on concurrent backfills or on the keys of one backfill; or the current arrival order.
+
+Owner: [`REQ-SDS-9-ZRPZZW`](runtime/storage-diff-service.md#req-sds-9-zrpzzw) and [`REQ-SDS-7-PZCBQ9` (State reads come from one shared cache)](runtime/storage-diff-service.md#req-sds-7-pzcbq9). Requested engineer decision: pick the ranking and whether to cap backfills (the review recommends peer reads first plus a small cap on concurrent backfills).
+
+<a id="oq-spec-sds-5-84z373"></a>
+
+## OQ-SPEC-SDS-5-84Z373 — Is an `upstream-behind` notice identical to the last one at the same head pushed again?
+
+Open (review of the storage diff service, 2026-11-02). [`REQ-SDS-12-N40MKR`](runtime/storage-diff-service.md#req-sds-12-n40mkr) pushes `upstream-behind` to every connection holding a subscription when a caller asks for a block the upstream has not seen. The service now asks the upstream once for all waits at a time, so concurrent asks cost one push; one peer repeating the same far `minBlock` one request after another still makes each repeat push the same notice, with the same requested block and head, to every subscriber.
+
+Alternatives: push every notice, as now; do not push a notice identical to the last one while the head is unchanged; or bound the pushes another way, for example per peer.
+
+Owner: [`REQ-SDS-12-N40MKR`](runtime/storage-diff-service.md#req-sds-12-n40mkr). Requested engineer decision: whether an identical notice at an unchanged head is pushed again.

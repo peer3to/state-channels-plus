@@ -13,6 +13,8 @@ Direct calls to the helper functions with recorded account info; the root-bisect
 - `refuses an address that is not 20 bytes`: UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P2
 - `reads the child trie id of a contract's account info`: UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P3
 - `reads no trie id from an account that is not a contract`: UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P4
+- `refuses a contract's account info whose trie id length is not a one-byte compact`: UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P14
+- `refuses a contract's account info shorter than the trie id it claims`: UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P15
 - `names the child trie by the prefixed storage key`: UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P5
 - `finds the blocks after which a trie root changes, in few reads`: UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P11
 - `finds nothing when the root is the same at both ends`: UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P12
