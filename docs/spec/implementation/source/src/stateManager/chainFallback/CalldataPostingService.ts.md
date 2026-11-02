@@ -4,6 +4,7 @@
 
 ## Requirements
 
+- [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../../../../../specification/storage/durability.md#req-stor-3-4rjger)
 - [`REQ-DA-1-NVV85Z` (Block data whose calldata commitment is posted MUST be recoverable from the…)](../../../../../specification/security/data-availability.md#req-da-1-nvv85z)
 
 ## UNIT-TEST-CALLDATA-POSTING-SERVICE-1-P42419

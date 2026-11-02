@@ -28,4 +28,4 @@ The suite drives a real `PersistenceController` with one `PersistentCollection` 
 - `releases the database when close begins while the load is running`: REQ-STOR-9-ZR8A92.T1.P5
 - `refuses a second open`: none
 - `unbinds after draining pending writes, keeps a database that holds records and binds another one with what memory holds`: REQ-STOR-11-Q4AT07.T1.P8
-- `deletes an unbound database that holds no record`: REQ-STOR-11-Q4AT07.T1.P8
+- `closes an unbound database that holds no record and keeps its metadata`: REQ-STOR-11-Q4AT07.T1.P8

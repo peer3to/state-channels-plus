@@ -4,6 +4,7 @@
 
 ## Requirements
 
+- [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../../../../../specification/storage/durability.md#req-stor-3-4rjger)
 - [`REQ-BLOCK-PIPE-1-SS24D1` (Unified work item)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-1-ss24d1)
 - [`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6)
 - [`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg)

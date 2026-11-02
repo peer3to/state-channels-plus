@@ -200,10 +200,11 @@ memory stays the copy every read uses and disk is a write-behind copy behind `ab
 stored is flushed after every signature whose loss could get the node slashed, before it leaves the
 process ([`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](../specification/storage/durability.md#req-stor-8-25d06n)); the
 one disposal closes the medium ([`REQ-STOR-9-ZR8A92` (Closed by the one disposal)](../specification/storage/durability.md#req-stor-9-zr8a92)); a restarted
-participant installs its durable head, stays `SYNCED` until its first sync settles, and recovers lost
-peer writes through that sync
-([`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../specification/storage/durability.md#req-stor-3-4rjger)). The chain-event replay and the
-restart re-arms that requirement names are not built
+participant installs its durable head, reconciles it with one chain read, stays `SYNCED` until its
+first sync settles, aborts when no participant answers that sync, and recovers lost peer writes
+through it
+([`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../specification/storage/durability.md#req-stor-3-4rjger)). Chain-event replay and
+pending-join resume are descoped by Luke (2026-11-02)
 ([`FIND-STORAGE-10-G3WFJ8`](../audit/open-findings.md#find-storage-10-g3wfj8)). Strongest rejected
 alternative: synchronous writes on every store operation (one disk commit per write on the state
 mutex path). Persistence is off by default until

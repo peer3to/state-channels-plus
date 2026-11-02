@@ -1666,27 +1666,26 @@ under [`REQ-STOR-11-Q4AT07.T1`](../specification/storage/durability.md#req-stor-
 
 ### FIND-STORAGE-10-G3WFJ8
 
-**Defect:** _Open (2026-11-02, engineer decision pending)._ A restarted node recovers from its
-first synchronization only. [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../specification/storage/durability.md#req-stor-3-4rjger)
-requires more, and none of it is built: the first chain subscription after a restart is live only,
-so chain events after the durable observation cursor are not replayed (a dispute, snapshot update,
-slash or join made while the node was down is seen only if a synchronization covers it); a
-`disputedForks` marker that reached disk before a crash that kept its dispute from leaving is never
-cleared, so the node refuses to sign or dispute on that fork until it is timed out; the local copies
-of the chain's dispute windows and snapshot stay empty until a synchronization refetches them, so a
-dispute audit on the no-participant deadline path fails ("Timeout timestamp not found"); the
-on-chain posting of the node's own latest block and a pending join are not re-armed; and
-`onChannelOpened` is not gated against a restored head (harmless while nothing replays). When no
-participant serves the restart synchronization before its deadline, the node resumes from the
-restored head and arms the participant-timeout check from that head's timestamp, so it can raise a
-timeout dispute from a head it could not verify.
+**Defect:** _Open (2026-11-02, engineer: descoped)._ A restarted node recovers from its first
+synchronization only. The first chain subscription after a restart is live only, so chain events
+after the durable observation cursor are not replayed: a dispute, snapshot update, slash or join made
+while the node was down reaches it only when a synchronization covers it. A pending joiner restarted
+before its join landed resumes nothing: its join record is on disk, but no expiry or seating check is
+armed. Replaying the events would also need `onChannelOpened` gated against a restored head, or the
+replayed opening would reset the VM to genesis under the restored blocks.
 
-**Disposition:** For Luke: build the five restart items per plan 26 (catch-up from the cursor with
-the `onChannelOpened` gate, marker reconciliation, mirror refetch, own-calldata re-arm, pending-join
-resume) with their tests under [`REQ-STOR-3-4RJGER.T1`](../specification/storage/durability.md#req-stor-3-4rjger.t1)
-(P8 to P12), or descope them and narrow the requirement to synchronization-only recovery; and for
-the deadline path, either arm no timeout until a live block or synchronization confirms the head, or
-abort as an observer does. Persistence is off by default
+**Disposition:** Descoped by Luke on 2026-11-02 to a follow-up: chain-event replay from the durable
+cursor with the `onChannelOpened` gate, and pending-join resume. Reason: recovery is sync-only, as in
+Luka's prototype; the protocol assumes always-online clients (A8,
+[`REQ-TRUST-4-KW24NF` (Version one REQUIRES a watchtower or equivalent continuously available delegate…)](../specification/security/trust-model.md#req-trust-4-kw24nf)), and a node
+offline through a contest window is the watchtower's case (spec PR #456, not built yet; until then
+the integrator keeps clients online).
+[`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../specification/storage/durability.md#req-stor-3-4rjger)
+is narrowed to synchronization-only recovery accordingly. The other restart items are built: the
+restore reads the chain's snapshot and dispute windows into the local mirror, clears a dispute marker
+whose dispute never landed, and re-arms the calldata post of an own latest block; a held head executes
+no queued block; and a restart synchronization that no participant answers before its deadline aborts
+as an observer does. Persistence is off by default
 ([`REQ-STOR-10-XY96KG` (Persistence is opt-in)](../specification/storage/durability.md#req-stor-10-xy96kg)),
 so no default runtime reaches these cases.
 

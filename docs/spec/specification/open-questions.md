@@ -716,6 +716,13 @@ avoid blacklisting, and under what evidence. This blocks a softer policy, not th
 Related finding: a chain block that lands during one sync verification can fail an honest payload
 ([`FIND-SYNC-8-E9K3YP`](../audit/open-findings.md#find-sync-8-e9k3yp)).
 
+Restart (2026-11-02): a restarted participant could make an honest restart-sync payload stale by
+itself, authoring or co-signing on its restored head while that payload was in flight, and then
+exclude its responder. It now authors, executes and co-signs nothing until its restart
+synchronization settles
+([`REQ-STOR-3-4RJGER` (Restart recovery without trust)](storage/durability.md#req-stor-3-4rjger)), so that self-made race is gone; the
+honest stale and fork-adoption cases above stay open.
+
 <a id="oq-spec-clock-1-z8tbfe"></a>
 
 ## OQ-SPEC-CLOCK-1-Z8TBFE — Keeping runtime clocks in agreement over a session

@@ -4,7 +4,6 @@
 
 ## Requirements
 
-- [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../../../specification/storage/durability.md#req-stor-3-4rjger)
 - [`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../../../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)
 - [`REQ-TRUST-2-X8GCZ7` (A client MUST have at least one available, honest RPC connection through which…)](../../../specification/security/trust-model.md#req-trust-2-x8gcz7)
 - [`REQ-IX-7-A004VZ` (Chain observation)](../../../specification/interactions.md#req-ix-7-a004vz)
