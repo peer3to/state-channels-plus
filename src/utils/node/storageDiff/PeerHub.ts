@@ -12,7 +12,6 @@ import {
     type SubscriptionId
 } from "./blockStorageDiff";
 import { StorageDiffRpcMethods } from "./StorageDiffRpcMethods";
-import type { StorageDiffDelayNotice } from "../../storageDiff/storageDiffWire";
 import WebSocket, { WebSocketServer, type AddressInfo } from "ws";
 
 /** `scp_disconnect` reason for a peer cut for falling behind. */
@@ -38,12 +37,6 @@ export interface StorageDiffPeer {
     nextSubscription: number;
     /** Cut for falling behind; gets nothing more. */
     closing: boolean;
-    /** Accounts whose snapshot this peer has been sent. */
-    snapshotted: Set<AccountAddress>;
-    /** Accounts a subscription reply promised as `ready` whose snapshot is not sent yet. */
-    promisedReady: Set<AccountAddress>;
-    /** Per subscription, run once the reply that returned its id is sent. */
-    afterReply: Map<SubscriptionId, () => void>;
 }
 
 /** What the peer hub uses of the service whose peers it serves. */
@@ -114,15 +107,34 @@ export class PeerHub {
         server.on("connection", (socket) => this.accept(socket));
     }
 
+    send(socket: WebSocket, message: unknown): void {
+        if (socket.readyState !== WebSocket.OPEN) return;
+        socket.send(JSON.stringify(message));
+    }
+
+    publish(record: StagedBlock): void {
+        for (const [socket, peer] of this.peers) {
+            if (peer.closing) continue;
+            for (const [subscription, addresses] of peer.subscriptions) {
+                this.send(socket, {
+                    jsonrpc: "2.0",
+                    method: "scp_subscription",
+                    params: {
+                        subscription,
+                        result: filterRecord(record, addresses)
+                    }
+                });
+            }
+            this.dropIfLagging(peer);
+        }
+    }
+
     private accept(socket: WebSocket): void {
         const peer: StorageDiffPeer = {
             socket,
             subscriptions: new Map(),
             nextSubscription: 0,
-            closing: false,
-            snapshotted: new Set(),
-            promisedReady: new Set(),
-            afterReply: new Map()
+            closing: false
         };
         const methods = this.createMethods(peer);
         this.peers.set(socket, peer);
@@ -181,17 +193,6 @@ export class PeerHub {
             const result = await methods[endpoint](request.params);
             if (!notification)
                 this.send(socket, { jsonrpc: "2.0", id, result });
-            const peer = this.peers.get(socket);
-            // only the reply that carries the id may release its job; another
-            // request's reply could land before this one is sent
-            const subscription = isObject(result)
-                ? result.subscription
-                : undefined;
-            if (peer && typeof subscription === "string") {
-                const job = peer.afterReply.get(subscription);
-                peer.afterReply.delete(subscription);
-                job?.();
-            }
         } catch (error) {
             const code = (error as { code?: unknown }).code;
             if (notification) return;
@@ -203,32 +204,10 @@ export class PeerHub {
         }
     }
 
-    send(socket: WebSocket, message: unknown): void {
-        if (socket.readyState !== WebSocket.OPEN) return;
-        socket.send(JSON.stringify(message));
-    }
-
-    publish(record: StagedBlock): void {
-        for (const [socket, peer] of this.peers) {
-            if (peer.closing) continue;
-            for (const [subscription, addresses] of peer.subscriptions) {
-                this.send(socket, {
-                    jsonrpc: "2.0",
-                    method: "scp_subscription",
-                    params: {
-                        subscription,
-                        result: filterRecord(record, addresses)
-                    }
-                });
-            }
-            this.dropIfLagging(peer);
-        }
-    }
-
     // The limit applies to the socket's aggregate buffered bytes, so a
     // catch-up reply the peer has not drained counts as well.
     // A peer that cannot keep up recovers with catch-up, not lost records.
-    dropIfLagging(peer: StorageDiffPeer): void {
+    private dropIfLagging(peer: StorageDiffPeer): void {
         if (peer.socket.bufferedAmount > this.maxPeerBufferedBytes) {
             this.dropLagging(peer);
         }
@@ -250,25 +229,5 @@ export class PeerHub {
         socket.close(SEND_BUFFER_OVERFLOW_CLOSE_CODE, SEND_BUFFER_OVERFLOW);
         const grace = setTimeout(() => socket.terminate(), PEER_CLOSE_GRACE_MS);
         socket.once("close", () => clearTimeout(grace));
-    }
-
-    pushDelay(peer: StorageDiffPeer, notice: StorageDiffDelayNotice): void {
-        this.send(peer.socket, {
-            jsonrpc: "2.0",
-            method: "scp_delayed",
-            params: notice
-        });
-        this.dropIfLagging(peer);
-    }
-
-    /** Every address some open subscription asks for. */
-    subscribedAddresses(): AccountAddress[] {
-        const addresses = new Set<AccountAddress>();
-        for (const peer of this.peers.values()) {
-            for (const list of peer.subscriptions.values()) {
-                for (const address of list) addresses.add(address);
-            }
-        }
-        return [...addresses];
     }
 }

@@ -48,7 +48,6 @@ export class UpstreamRelay {
         (result: unknown, params: unknown[]) => unknown
     >();
     private connections = 0;
-    private roundTripCount = 0;
     private refusing = false;
     private hold?: Hold;
     private failing?: { method: UpstreamMethod; remaining: number };
@@ -81,11 +80,6 @@ export class UpstreamRelay {
     /** The params of every `method` request that reached the relay. */
     paramsOf(method: UpstreamMethod): unknown[][] {
         return [...(this.seenParams.get(method) ?? [])];
-    }
-
-    /** Frames the service sent: a batch array is one. */
-    get roundTrips(): number {
-        return this.roundTripCount;
     }
 
     /** Connections the service opened, refused ones included. */
@@ -197,7 +191,6 @@ export class UpstreamRelay {
             const parsed = JSON.parse(frame) as
                 | RelayedRequest
                 | RelayedRequest[];
-            this.roundTripCount++;
             for (const call of Array.isArray(parsed) ? parsed : [parsed])
                 asked.set(call.id, call);
             // a batch array is counted per call and forwarded whole

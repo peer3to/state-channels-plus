@@ -78,9 +78,10 @@ function parseTraceAccounts(value: unknown, what: string): AccountDiffs {
 
 /**
  * What a block touched, by account: the storage keys, and whether balance,
- * nonce or code may have changed. Only keys and accounts: a trace's values
- * are not to be trusted (Asset Hub reports writes of reverted sub-calls), so
- * the values of what a block touched are read from the node.
+ * nonce or code may have changed. Only keys and accounts: in a block in which
+ * a call frame failed, the trace's values are not to be trusted (Asset Hub
+ * reports writes of reverted sub-calls), so the values of what that block
+ * touched are read from the node.
  */
 export type BlockTouches = Record<
     AccountAddress,
@@ -223,7 +224,57 @@ export function mergeTransactionDiffs(entries: unknown): {
             overlay(post, address, account, true);
         }
     }
+    dropUnchanged(pre, post);
     return { pre, post };
+}
+
+/**
+ * Drops each field and slot the block did not change: one whose block-level
+ * `pre` equals its `post` (changed and restored within the block), and one
+ * `pre` shows without `post` (diff mode's unchanged context). Accounts left
+ * empty on both sides go too. An account with no `pre` was created in the
+ * block and keeps its `post`.
+ */
+function dropUnchanged(pre: AccountDiffs, post: AccountDiffs): void {
+    for (const [address, before] of Object.entries(pre)) {
+        const after = post[address];
+        if (after === undefined) continue;
+        for (const field of ["balance", "nonce", "code"] as const) {
+            if (before[field] === undefined) continue;
+            if (
+                after[field] === undefined ||
+                sameValue(field, before[field]!, after[field]!)
+            ) {
+                delete before[field];
+                delete after[field];
+            }
+        }
+        for (const [slot, word] of Object.entries(before.storage ?? {})) {
+            if (after.storage?.[slot] === word) {
+                delete before.storage![slot];
+                delete after.storage[slot];
+            }
+        }
+        if (before.storage && Object.keys(before.storage).length === 0)
+            delete before.storage;
+        if (after.storage && Object.keys(after.storage).length === 0)
+            delete after.storage;
+        if (
+            Object.keys(before).length === 0 &&
+            Object.keys(after).length === 0
+        ) {
+            delete pre[address];
+            delete post[address];
+        }
+    }
+}
+
+function sameValue(
+    field: "balance" | "nonce" | "code",
+    a: string | number,
+    b: string | number
+): boolean {
+    return field === "balance" ? BigInt(a) === BigInt(b) : a === b;
 }
 
 function overlay(

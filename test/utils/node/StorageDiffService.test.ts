@@ -3,11 +3,16 @@ import {
     StorageDiffRpcError
 } from "../../fixtures/node/StorageDiffClient";
 import {
+    asksCallFrames,
     deployNumberStorage,
+    deploySlotWriter,
     recordKey,
     setValue,
+    slotKey,
     storageWord,
-    VALUE_SLOT
+    VALUE_SLOT,
+    withFailedFrames,
+    writeSlot
 } from "../../fixtures/node/StorageDiffContracts";
 import {
     rejectionOf,
@@ -26,15 +31,12 @@ import {
 } from "@/utils/node/storageDiff/PeerHub";
 import { expect } from "chai";
 import { toQuantity } from "ethers";
-import { once } from "node:events";
-import WebSocket from "ws";
 
 /**
- * The service retries a block's reads 3 times (4 attempts) and reconnects the
- * upstream 5 times (6 attempts); a literal, so a changed limit is noticed.
+ * The service retries a block's reads 3 times (4 attempts); a literal, so a
+ * changed limit is noticed.
  */
 const RECONCILE_ATTEMPTS = 4;
-const RECONNECT_ATTEMPTS = 6;
 
 describe("StorageDiffService", function () {
     it("pushes the pre and post value of a slot a transaction wrote to a subscriber of that address", async function () {
@@ -307,53 +309,6 @@ describe("StorageDiffService", function () {
         });
     });
 
-    it("sends a subscription's snapshot after the reply that returned its id, not after a pipelined request's reply", async function () {
-        await withStorageDiffSession(async ({ client, service, signer }) => {
-            const storage = await deployNumberStorage(signer);
-            const address = await recordKey(storage);
-            // the first subscriber's snapshot shows the account is complete,
-            // so the next subscription is answered ready with a snapshot at once
-            const first = await client.subscribe([address]);
-            await client.nextSnapshot(first);
-            const socket = new WebSocket(service.url);
-            try {
-                await once(socket, "open");
-                const arrivals: { id?: number; method?: string }[] = [];
-                socket.on("message", (data) =>
-                    arrivals.push(JSON.parse(data.toString()))
-                );
-                socket.send(
-                    JSON.stringify({
-                        jsonrpc: "2.0",
-                        id: 1,
-                        method: "scp_subscribeContractStorage",
-                        params: [[address]]
-                    })
-                );
-                for (let id = 2; id < 40; id++)
-                    socket.send(
-                        JSON.stringify({
-                            jsonrpc: "2.0",
-                            id,
-                            method: "scp_unsubscribe",
-                            params: ["0xffff"]
-                        })
-                    );
-                while (!arrivals.some((m) => m.method === "scp_snapshot"))
-                    await new Promise((resolve) => setTimeout(resolve, 10));
-
-                expect(arrivals.findIndex((m) => m.id === 1)).to.be.greaterThan(
-                    -1
-                );
-                expect(arrivals.findIndex((m) => m.id === 1)).to.be.lessThan(
-                    arrivals.findIndex((m) => m.method === "scp_snapshot")
-                );
-            } finally {
-                socket.close();
-            }
-        });
-    });
-
     it("answers false to scp_unsubscribe for a subscription id the socket does not hold", async function () {
         await withStorageDiffSession(async ({ client }) => {
             const unsubscribed = await client.unsubscribe("0x1");
@@ -427,8 +382,8 @@ describe("StorageDiffService", function () {
     it("fails the service once the retries of an upstream error are exhausted", async function () {
         await withStorageDiffSession(async ({ relay, service, signer }) => {
             const storage = await deployNumberStorage(signer);
-            relay.failNext("debug_traceBlockByNumber", RECONCILE_ATTEMPTS);
-            // one attempt asks for the state diff and the call frames in one batch
+            // one attempt asks for the state diff and the call frames: two requests
+            relay.failNext("debug_traceBlockByNumber", 2 * RECONCILE_ATTEMPTS);
             const attempts = () =>
                 relay
                     .paramsOf("debug_traceBlockByNumber")
@@ -527,14 +482,14 @@ describe("StorageDiffService", function () {
         });
     });
 
-    it("fails to start once the upstream keeps dropping during the initial history load", async function () {
+    it("fails to start when the upstream refuses its first connection", async function () {
         await withStorageDiffUpstream(async ({ relay, start }) => {
-            relay.cutNext("eth_getBlockByNumber", RECONNECT_ATTEMPTS);
+            relay.refuseConnections(true);
 
             const failure = await rejectionOf(start());
 
             expect(failure).to.be.instanceOf(Error);
-            expect(relay.connectionCount).to.equal(RECONNECT_ATTEMPTS);
+            expect(relay.connectionCount).to.equal(1);
         });
     });
 
@@ -569,18 +524,51 @@ describe("StorageDiffService", function () {
         });
     });
 
-    it("fails the service once the reconnect retries are exhausted", async function () {
-        await withStorageDiffSession(async ({ relay, service }) => {
-            const connectionsBefore = relay.connectionCount;
+    it("fails the service once an upstream outage outlasts the request retries", async function () {
+        await withStorageDiffSession(
+            async ({ relay, service }) => {
+                relay.refuseConnections(true);
+                relay.disconnect();
+                const failure = await rejectionOf(service.closed);
+
+                expect(failure).to.be.instanceOf(Error);
+                expect((failure as Error).message).to.include("timed out");
+            },
+            { upstreamRequestTimeoutMs: 200 }
+        );
+    });
+
+    // Mutation: a watched account's history filled with nothing while the
+    // upstream is away -> the catch-up records miss its writes.
+    it("fills the history of an account first watched while the upstream reconnects", async function () {
+        await withStorageDiffSession(async ({ client, relay, signer }) => {
+            // a failed frame in every block: only watched accounts get values
+            relay.tamper("debug_traceBlockByNumber", (result, params) =>
+                asksCallFrames(params) ? withFailedFrames(result) : result
+            );
+            const writer = await deploySlotWriter(signer);
+            const witness = await client.subscribe([]);
+            const first = await writeSlot(signer, writer, 1, 5n);
+            await client.recordAt(witness, first.blockNumber);
 
             relay.refuseConnections(true);
             relay.disconnect();
-            const failure = await rejectionOf(service.closed);
+            const records = client.getDiffs([writer], first.blockNumber);
+            const state = client.getState(first.blockHash, [
+                { address: writer, slots: [slotKey(1)] }
+            ]);
+            relay.refuseConnections(false);
 
-            expect(failure).to.be.instanceOf(Error);
-            expect(relay.connectionCount - connectionsBefore).to.equal(
-                RECONNECT_ATTEMPTS
-            );
+            expect(
+                (await records).map((record) => record.post[writer]?.storage)
+            ).to.deep.equal([{ [slotKey(1)]: storageWord(5n) }]);
+            expect((await state).accounts[writer].storage).to.deep.equal({
+                [slotKey(1)]: storageWord(5n)
+            });
+            // the service is still up and answers
+            expect(await client.request("scp_getHead", [])).to.include({
+                hash: first.blockHash
+            });
         });
     });
 
