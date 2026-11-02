@@ -363,6 +363,7 @@ where this section and the requirement differ, the requirement wins.
   state, and do not add disposed checks to in-memory work. In runtime components the only reads of
   disposal state are admission points where outside work can start after the cut: a late connection
   is closed where it registers (`ProfileManager`, `WebRTCTransport`, `LocalDiscoveryServer`), a late
+  discovery join starts no session (`LocalDiscoveryServer.connectToPeers`, `Holepunch.join`), a late
   chain subscription is refused (`StateManager.setChannelId`), and a late abort is ignored
   (`StateManager.abort`). Root, bridge and logger lifecycle code (`createRoot`, the roots,
   `RemoteRoot`, `RuntimeLifecycleService`, the logger family) keeps its own disposal state.
