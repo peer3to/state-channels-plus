@@ -1,4 +1,8 @@
 import {
+    deployedAfter,
+    probedBlock
+} from "../../fixtures/node/StorageDiffBackfillFixture";
+import {
     deploySlotWriter,
     dumpedAccount,
     slotKey,
@@ -16,12 +20,7 @@ import {
 } from "../../fixtures/node/UpstreamRelay";
 import { ZERO_WORD } from "@/utils/node/storageDiff/blockStorageDiff";
 import { expect } from "chai";
-import {
-    type JsonRpcProvider,
-    type JsonRpcSigner,
-    Wallet,
-    toQuantity
-} from "ethers";
+import { Wallet, toQuantity } from "ethers";
 
 describe("StorageDiffService backfill", function () {
     it("pushes the complete storage of a contract at the head when it is first subscribed, as anvil dumps it", async function () {
@@ -251,28 +250,6 @@ describe("StorageDiffService backfill beyond the window", function () {
 });
 
 describe("StorageDiffService deploy block search", function () {
-    /** Mines `empty` blocks, deploys a writer and writes two slots; returns the deploy block and the head. */
-    async function deployedAfter(
-        provider: JsonRpcProvider,
-        signer: JsonRpcSigner,
-        empty: number
-    ): Promise<{ writer: string; deployed: number; head: number }> {
-        for (let i = 0; i < empty; i++) await provider.send("evm_mine", []);
-        const writer = await deploySlotWriter(signer);
-        // read uncached: ethers keeps the block number for a polling interval
-        const head = async () =>
-            Number(await provider.send("eth_blockNumber", []));
-        const deployed = await head();
-        await writeSlot(signer, writer, 1, 5n);
-        await writeSlot(signer, writer, 2, 6n);
-        return { writer, deployed, head: await head() };
-    }
-
-    /** The block of a backfill's code probe: a quantity, where other reads name a hash. */
-    function probedBlock(params: unknown[]): number | undefined {
-        return typeof params[1] === "string" ? Number(params[1]) : undefined;
-    }
-
     // Mutation: hasCode treats every error answer as "no code", or none.
     it("finds the deploy block when the upstream answers that reads below its contracts pallet are not supported", async function () {
         await withStorageDiffSession(
@@ -409,6 +386,44 @@ describe("StorageDiffService backfill values", function () {
                 expect(
                     relay.maxInFlight("debug_traceBlockByNumber")
                 ).to.be.at.most(8);
+            }
+        );
+    });
+
+    // Mutation: a failed trace starts the whole backfill over.
+    it("asks a failed trace again on its own, without starting the backfill over", async function () {
+        await withStorageDiffSession(
+            async ({ client, relay, backfills, signer, warnings }) => {
+                const writer = await deploySlotWriter(signer);
+                await writeSlot(signer, writer, 1, 5n);
+                await writeSlot(signer, writer, 2, 6n);
+                const codeReads = relay.requestCount("eth_getCode");
+                const traces = relay.requestCount("debug_traceBlockByNumber");
+                relay.failNext("debug_traceBlockByNumber", 1);
+
+                const subscription = await client.subscribe([writer]);
+                const snapshot = await client.nextSnapshot(subscription);
+
+                expect(
+                    nonZero(snapshot.accounts[writer].storage)
+                ).to.deep.equal({
+                    [slotKey(1)]: storageWord(5n),
+                    [slotKey(2)]: storageWord(6n)
+                });
+                const [cost] = backfills;
+                // the deploy block and the two writes, one of them asked twice
+                expect(
+                    relay.requestCount("debug_traceBlockByNumber") - traces
+                ).to.equal(cost.traces + 1);
+                // the code probes once, and the code read of the final values
+                expect(relay.requestCount("eth_getCode") - codeReads).to.equal(
+                    cost.codeProbes + 1
+                );
+                expect(
+                    warnings.some(({ message }) =>
+                        message.includes("Retrying a backfill read")
+                    )
+                ).to.equal(true);
             }
         );
     });

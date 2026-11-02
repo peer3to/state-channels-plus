@@ -1,3 +1,9 @@
+import {
+    backfilled,
+    backfillWith,
+    until,
+    WRITE_ADDS_ENTRY
+} from "../../fixtures/node/StorageDiffBackfillFixture";
 import { StorageDiffClient } from "../../fixtures/node/StorageDiffClient";
 import {
     asksCallFrames,
@@ -9,17 +15,11 @@ import {
 } from "../../fixtures/node/StorageDiffContracts";
 import {
     fieldReads,
-    withStorageDiffSession,
-    withStorageDiffUpstream
+    withStorageDiffSession
 } from "../../fixtures/node/StorageDiffSession";
-import {
-    RECORDED_ACCOUNT_INFO,
-    withSubstrateNode,
-    type SubstrateNode
-} from "../../fixtures/node/SubstrateChildTrieNode";
 import { sleep } from "@/utils";
-import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
 import { expect } from "chai";
+import { toQuantity } from "ethers";
 
 describe("StorageDiffService snapshot status of a subscription", function () {
     it("says syncing for an account it still has to backfill, and ready once the account is complete", async function () {
@@ -79,62 +79,6 @@ describe("StorageDiffService snapshot status of a subscription", function () {
 });
 
 describe("StorageDiffService backfill checked against the chain", function () {
-    /** A node of the writer's chain with `entries` child trie entries. */
-    async function backfillWith(
-        entries: number | ((blockNumber: number) => number),
-        run: (context: {
-            node: SubstrateNode;
-            session: Parameters<
-                Parameters<typeof withStorageDiffUpstream>[0]
-            >[0];
-            writer: string;
-            client: StorageDiffClient;
-            head: { number: number; hash: string };
-        }) => Promise<void>
-    ): Promise<void> {
-        await withStorageDiffUpstream(async (session) => {
-            const { provider, signer, start } = session;
-            const writer = await deploySlotWriter(signer);
-            await writeSlot(signer, writer, 1, 5n);
-            await writeSlot(signer, writer, 2, 7n);
-            const block = (await provider.getBlock("latest"))!;
-            await withSubstrateNode(
-                {
-                    address: writer,
-                    changes: [block.number - 2, block.number - 1, block.number],
-                    deployed: block.number - 2,
-                    tipNumber: block.number,
-                    tipHash: () => "0xtip",
-                    info: RECORDED_ACCOUNT_INFO,
-                    entries
-                },
-                async (node) => {
-                    const service = await start({
-                        backfillBlocks: new ChildTrieBlockSource(node.url)
-                    });
-                    const client = await StorageDiffClient.connect(service.url);
-                    try {
-                        await run({
-                            node,
-                            session,
-                            writer,
-                            client,
-                            head: { number: block.number, hash: block.hash! }
-                        });
-                    } finally {
-                        client.close();
-                    }
-                }
-            );
-        });
-    }
-
-    async function backfilled(
-        session: Parameters<Parameters<typeof withStorageDiffUpstream>[0]>[0]
-    ): Promise<void> {
-        while (session.backfills.length === 0) await sleep(20);
-    }
-
     it("keeps an account lazy and warns with both counts when the chain holds more entries than the history named", async function () {
         await backfillWith(3, async ({ session, writer, client, head }) => {
             const first = await client.subscribeWithStatus([writer]);
@@ -189,7 +133,8 @@ describe("StorageDiffService backfill checked against the chain", function () {
             async ({ client, relay, signer, warnings }) => {
                 const writer = await deploySlotWriter(signer);
                 await writeSlot(signer, writer, 1, 5n);
-                relay.failNext("debug_traceBlockByNumber", 50);
+                // every code probe fails: the backfill starts over until it gives up
+                relay.failNext("eth_getCode", 50);
 
                 const subscription = await client.subscribe([writer]);
                 const notice = await client.nextSnapshot(subscription);
@@ -203,6 +148,68 @@ describe("StorageDiffService backfill checked against the chain", function () {
                 ).to.equal(true);
             }
         );
+    });
+
+    // Mutation: a failed backfill tells only the subscribers of the moment.
+    it("tells a later subscriber that an account whose backfill failed is lazy, and does not backfill it again", async function () {
+        await withStorageDiffSession(
+            async ({ client, relay, service, signer }) => {
+                const writer = await deploySlotWriter(signer);
+                await writeSlot(signer, writer, 1, 5n);
+                // every code probe fails: the backfill starts over until it gives up
+                relay.failNext("eth_getCode", 50);
+                const subscription = await client.subscribe([writer]);
+                await client.nextSnapshot(subscription);
+                const probes = relay.requestCount("eth_getCode");
+                const traces = relay.requestCount("debug_traceBlockByNumber");
+
+                const later = await StorageDiffClient.connect(service.url);
+                try {
+                    const second = await later.subscribeWithStatus([writer]);
+                    const notice = await later.nextSnapshot(
+                        second.subscription
+                    );
+                    await sleep(300);
+
+                    expect(second.accounts).to.deep.equal({ [writer]: "lazy" });
+                    expect(notice.lazy).to.deep.equal([writer]);
+                    expect(notice.accounts).to.deep.equal({});
+                    expect(relay.requestCount("eth_getCode")).to.equal(probes);
+                    expect(
+                        relay.requestCount("debug_traceBlockByNumber")
+                    ).to.equal(traces);
+                } finally {
+                    later.close();
+                }
+            }
+        );
+    });
+
+    // Mutation: an unsubscribed account stays marked as sent to the peer.
+    it("pushes the snapshot again to a peer that subscribes again after it unsubscribed", async function () {
+        await withStorageDiffSession(async ({ client, signer }) => {
+            const writer = await deploySlotWriter(signer);
+            await writeSlot(signer, writer, 1, 5n);
+            const first = await client.subscribe([writer]);
+            await client.nextSnapshot(first);
+            await client.unsubscribe(first);
+            // the peer gets no record of this block
+            const written = await writeSlot(signer, writer, 1, 8n);
+            await client.request("scp_getHead", [
+                toQuantity(written.blockNumber)
+            ]);
+
+            const again = await client.subscribeWithStatus([writer]);
+            const snapshot = await Promise.race([
+                client.nextSnapshot(again.subscription),
+                sleep(3000).then(() => undefined)
+            ]);
+
+            expect(again.accounts).to.deep.equal({ [writer]: "ready" });
+            expect(nonZero(snapshot?.accounts[writer].storage)).to.deep.equal({
+                [slotKey(1)]: storageWord(8n)
+            });
+        });
     });
 
     it("does not backfill a lazy account again when it is subscribed again", async function () {
@@ -238,16 +245,6 @@ describe("StorageDiffService backfill checked against the chain", function () {
             ).to.deep.equal([]);
         });
     });
-
-    // the chain holds one more entry from the block of the write on
-    const WRITE_ADDS_ENTRY = (firstBlock: () => number) => (n: number) =>
-        n >= firstBlock() ? 3 : 2;
-
-    /** Waits until `done` holds, up to a bound. */
-    async function until(done: () => boolean): Promise<boolean> {
-        for (let i = 0; i < 150 && !done(); i++) await sleep(20);
-        return done();
-    }
 
     // The scripted Substrate node (SubstrateChildTrieNode) and the trace that
     // omits the write are fault injections: the recorded exchange is in
@@ -343,6 +340,128 @@ describe("StorageDiffService backfill checked against the chain", function () {
                     keyPages: cost("childstate_getKeysPaged"),
                     accountInfo: cost("state_getStorage")
                 }).to.deep.equal({ blockHash: 1, keyPages: 1, accountInfo: 0 });
+                expect(
+                    session.warnings.filter(({ message }) =>
+                        message.includes("write left fewer storage entries")
+                    )
+                ).to.deep.equal([]);
+                expect(client.unreadSnapshots(subscription)).to.deep.equal([]);
+            }
+        );
+    });
+
+    // Mutation: the count of an account without code fails the backfill.
+    it("pushes an account without code with its balance and nonce where the Substrate node holds no contract for it", async function () {
+        await backfillWith(2, async ({ session, client }) => {
+            const sender = (await session.signer.getAddress()).toLowerCase();
+
+            const first = await client.subscribeWithStatus([sender]);
+            const snapshot = await client.nextSnapshot(first.subscription);
+
+            expect(first.accounts).to.deep.equal({ [sender]: "syncing" });
+            expect(snapshot.lazy).to.equal(undefined);
+            expect(snapshot.accounts[sender].code).to.equal("0x");
+            expect(BigInt(snapshot.accounts[sender].balance!)).to.equal(
+                await session.provider.getBalance(sender)
+            );
+            expect(
+                session.warnings.filter(({ message }) =>
+                    message.includes("Backfill failed")
+                )
+            ).to.deep.equal([]);
+        });
+    });
+
+    // Mutation: a null block hash is passed on, so the listing and the count
+    // are of the lagging node's best block, and the account is pushed as
+    // ready without the slots written after it.
+    it("pushes the slots written in blocks a lagging Substrate node had not reached yet", async function () {
+        let tip = Number.MAX_SAFE_INTEGER;
+        await backfillWith(
+            // the slots are written in the block before the tip and at the tip
+            (blockNumber) =>
+                blockNumber >= tip ? 2 : blockNumber >= tip - 1 ? 1 : 0,
+            async ({ session, writer, client, head }) => {
+                tip = head.number;
+
+                const first = await client.subscribeWithStatus([writer]);
+                const snapshot = await client.nextSnapshot(first.subscription);
+
+                expect(first.accounts).to.deep.equal({ [writer]: "syncing" });
+                expect(snapshot.lazy).to.equal(undefined);
+                expect(
+                    nonZero(snapshot.accounts[writer].storage)
+                ).to.deep.equal({
+                    [slotKey(1)]: storageWord(5n),
+                    [slotKey(2)]: storageWord(7n)
+                });
+                expect(
+                    session.warnings.filter(({ message }) =>
+                        message.includes("stays lazy")
+                    )
+                ).to.deep.equal([]);
+            },
+            { lag: { blocks: 2, ms: 300 } }
+        );
+    });
+
+    // Mutation: a count that fails demotes the account.
+    it("keeps an account complete, and warns, when the count after a write fails", async function () {
+        await backfillWith(2, async ({ node, session, writer, client }) => {
+            const subscription = await client.subscribe([writer]);
+            await client.nextSnapshot(subscription);
+            await backfilled(session);
+            node.failKeyPages(true);
+
+            await writeSlot(session.signer, writer, 1, 11n);
+            const warned = () =>
+                session.warnings.some(({ message }) =>
+                    message.includes("Cannot count an account's entries")
+                );
+            // the count's reads are retried before it gives up
+            expect(await until(warned, 10_000)).to.equal(true);
+            node.failKeyPages(false);
+            const later = await client.subscribeWithStatus([writer]);
+
+            expect(later.accounts).to.deep.equal({ [writer]: "ready" });
+            expect(client.unreadSnapshots(subscription)).to.deep.equal([]);
+        });
+    });
+
+    // Mutation: a mismatching count of a block a reorg dropped demotes the account.
+    it("keeps an account complete when a count that differs is of a block a reorg dropped", async function () {
+        let dropped = Number.MAX_SAFE_INTEGER;
+        await backfillWith(
+            (blockNumber) => (blockNumber === dropped ? 99 : 2),
+            async ({ node, session, writer, client }) => {
+                const { provider, signer } = session;
+                const subscription = await client.subscribe([writer]);
+                await client.nextSnapshot(subscription);
+                await backfilled(session);
+                const held = node.holdKeyPages();
+                dropped =
+                    Number(await provider.send("eth_blockNumber", [])) + 1;
+                await writeSlot(signer, writer, 1, 11n);
+                await held.arrived;
+
+                // the counted block is replaced by an empty one
+                await provider.send("anvil_reorg", [1, []]);
+                const replacement = await provider.send(
+                    "eth_getBlockByNumber",
+                    [toQuantity(dropped), false]
+                );
+                for (;;) {
+                    const served = (await client.request("scp_getBlock", [
+                        toQuantity(dropped)
+                    ])) as { hash: string } | null;
+                    if (served?.hash === replacement.hash) break;
+                    await sleep(20);
+                }
+                held.release();
+                await sleep(300);
+
+                const later = await client.subscribeWithStatus([writer]);
+                expect(later.accounts).to.deep.equal({ [writer]: "ready" });
                 expect(
                     session.warnings.filter(({ message }) =>
                         message.includes("write left fewer storage entries")

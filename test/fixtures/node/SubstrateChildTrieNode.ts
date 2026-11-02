@@ -8,6 +8,8 @@ export const RECORDED_ACCOUNT_INFO =
 
 /** Marks an answer the node gives as a method-not-found error. */
 const METHOD_NOT_SERVED = Symbol("method not served");
+/** Marks a key page the node answers with an error. */
+const KEY_PAGE_FAULT = Symbol("key page fault");
 
 /** What a Substrate node holds of one contract, as far as the reads of the child trie sources go. */
 export type SubstrateContract = {
@@ -24,6 +26,13 @@ export type SubstrateContract = {
     info: string | null;
     /** Entries in the child trie, or per block number. */
     entries: number | ((blockNumber: number) => number);
+    /**
+     * The node's best block is `blocks` short of the tip until `ms` after it
+     * is first asked for a block it lacks. Meanwhile it answers null for
+     * those blocks, and a read with no block hash is of its best block, as on
+     * a Substrate node. Unset, the node knows every block.
+     */
+    lag?: { blocks: number; ms: number };
 };
 
 export type SubstrateNode = {
@@ -36,6 +45,8 @@ export type SubstrateNode = {
     keyPageBlocks: () => number[];
     /** Holds the answers to key pages from now on until `release`. */
     holdKeyPages: () => { arrived: Promise<void>; release: () => void };
+    /** While set, every key page is answered with an error. */
+    failKeyPages: (fail: boolean) => void;
 };
 
 /**
@@ -55,6 +66,21 @@ export async function withSubstrateNode<T>(
     // Key page answers waiting for a release, while a hold is on.
     let held: (() => void)[] | undefined;
     let onHeld: (() => void) | undefined;
+    let failingKeyPages = false;
+    let best = contract.tipNumber - (contract.lag?.blocks ?? 0);
+    // when the node was first asked for a block it lacks
+    let lagSince: number | undefined;
+    // the block a hash names; no hash names the best block
+    const numberOf = (hash: unknown): number => {
+        if (hash === null || hash === undefined) return best;
+        const text = String(hash);
+        return text.startsWith("0xblock")
+            ? Number(text.slice("0xblock".length))
+            : contract.tipNumber;
+    };
+    // `Revive.AccountInfoOf` keys share the map's prefix, then the address
+    const accountInfoKey = reviveAccountInfoKey(contract.address);
+    const accountInfoPrefix = accountInfoKey.slice(0, -40);
     const server = new WebSocketServer({ port: 0, host: "127.0.0.1" });
     await new Promise((resolve) => server.once("listening", resolve));
     const keysAt = (blockNumber: number) => {
@@ -71,18 +97,21 @@ export async function withSubstrateNode<T>(
         requests[method] = (requests[method] ?? 0) + 1;
         if (method === "chain_getBlockHash") {
             const number = params[0] as number;
+            if (contract.lag && number > best) {
+                lagSince ??= Date.now();
+                if (Date.now() - lagSince < contract.lag.ms) return null;
+                best = contract.tipNumber;
+            }
             return number === contract.tipNumber
                 ? contract.tipHash()
                 : "0xblock" + number;
         }
         if (method === "state_getStorage") {
-            if (params[0] === reviveAccountInfoKey(contract.address))
-                return contract.info;
+            if (params[0] === accountInfoKey) return contract.info;
+            // another account: none on this node
+            if (String(params[0]).startsWith(accountInfoPrefix)) return null;
             rootReads++;
-            const hash = String(params[1]);
-            const number = hash.startsWith("0xblock")
-                ? Number(hash.slice("0xblock".length))
-                : contract.tipNumber;
+            const number = numberOf(params[1]);
             if (number < contract.deployed) return null;
             return (
                 "0xroot" + contract.changes.filter((c) => c <= number).length
@@ -94,12 +123,11 @@ export async function withSubstrateNode<T>(
                 string,
                 number,
                 string | null,
-                string
+                string | null
             ];
-            const blockNumber = String(hash).startsWith("0xblock")
-                ? Number(String(hash).slice("0xblock".length))
-                : contract.tipNumber;
+            const blockNumber = numberOf(hash);
             keyPageBlocks.push(blockNumber);
+            if (failingKeyPages) return KEY_PAGE_FAULT;
             const keys = keysAt(blockNumber);
             const from = last === null ? 0 : keys.indexOf(last) + 1;
             return keys.slice(from, from + count);
@@ -127,7 +155,16 @@ export async function withSubstrateNode<T>(
                                       message: "Method not found"
                                   }
                               }
-                            : { jsonrpc: "2.0", id: call.id, result }
+                            : result === KEY_PAGE_FAULT
+                              ? {
+                                    jsonrpc: "2.0",
+                                    id: call.id,
+                                    error: {
+                                        code: -32000,
+                                        message: "Key page fault"
+                                    }
+                                }
+                              : { jsonrpc: "2.0", id: call.id, result }
                     )
                 );
             if (held && call.method === "childstate_getKeysPaged") {
@@ -156,6 +193,9 @@ export async function withSubstrateNode<T>(
                         for (const send of waiting) send();
                     }
                 };
+            },
+            failKeyPages: (fail) => {
+                failingKeyPages = fail;
             }
         });
     } finally {

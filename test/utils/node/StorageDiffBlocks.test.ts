@@ -1,3 +1,4 @@
+import { StorageDiffRpcError } from "../../fixtures/node/StorageDiffClient";
 import {
     deployNumberStorage,
     setValue
@@ -7,9 +8,13 @@ import {
     withStorageDiffSession
 } from "../../fixtures/node/StorageDiffSession";
 import { sleep } from "@/utils";
+import {
+    INTERNAL_ERROR,
+    INVALID_PARAMS
+} from "@/utils/node/storageDiff/blockStorageDiff";
 import { SDK_RPC_DEADLINE_MS } from "@/utils/storageDiff/LearnedBackstop";
 import { expect } from "chai";
-import { toQuantity } from "ethers";
+import { toQuantity, Wallet } from "ethers";
 
 /** Time is the input: how long a read that must wait is watched for. */
 const ABSENCE_WINDOW_MS = 500;
@@ -174,6 +179,70 @@ describe("StorageDiffService blocks", function () {
         );
     });
 
+    // Mutation: a null receipt answer is kept as the block's receipt.
+    it("reads a receipt again after the upstream answered null for it", async function () {
+        await withStorageDiffSession(
+            async ({ client, provider, relay, signer }) => {
+                const storage = await deployNumberStorage(signer);
+                const receipt = await setValue(storage, 3n);
+                await client.subscribe([]);
+                relay.failNext("eth_getBlockReceipts", 1, {
+                    code: -32601,
+                    message: "the method eth_getBlockReceipts does not exist"
+                });
+                // a node that has not indexed the block answers null once
+                let indexed = false;
+                relay.tamper("eth_getTransactionReceipt", (result) => {
+                    if (indexed) return result;
+                    indexed = true;
+                    return null;
+                });
+
+                const failed = await rejectionOf(
+                    client.request("scp_getTransactionReceipt", [receipt.hash])
+                );
+                const answer = await client.request(
+                    "scp_getTransactionReceipt",
+                    [receipt.hash]
+                );
+
+                expect(failed).to.be.instanceOf(StorageDiffRpcError);
+                expect(answer).to.deep.equal(
+                    await provider.send("eth_getTransactionReceipt", [
+                        receipt.hash
+                    ])
+                );
+                expect(
+                    relay.requestCount("eth_getTransactionReceipt")
+                ).to.equal(2);
+            }
+        );
+    });
+
+    // Mutation: an upstream error answer's code and message reach the peer.
+    it("answers a peer with an internal error, not the upstream's code and message, when the upstream fails a receipts read", async function () {
+        await withStorageDiffSession(async ({ client, relay, signer }) => {
+            const storage = await deployNumberStorage(signer);
+            const receipt = await setValue(storage, 3n);
+            await client.subscribe([]);
+            // -32002 is also the service's own not-retained code
+            relay.failNext("eth_getBlockReceipts", 1, {
+                code: -32002,
+                message: `resource unavailable at ${relay.url}`
+            });
+
+            const error = await rejectionOf(
+                client.request("scp_getTransactionReceipt", [receipt.hash])
+            );
+
+            expect(error).to.be.instanceOf(StorageDiffRpcError);
+            expect((error as StorageDiffRpcError).code).to.equal(
+                INTERNAL_ERROR
+            );
+            expect((error as Error).message).to.equal("Internal error");
+        });
+    });
+
     it("fetches one block per empty head and no parent block by hash", async function () {
         await withStorageDiffSession(async ({ provider, relay, client }) => {
             const subscription = await client.subscribe([]);
@@ -276,6 +345,38 @@ describe("StorageDiffService blocks", function () {
         });
     });
 
+    // Mutation: every wait asks the upstream for its block number.
+    it("asks the upstream for its block number once for many reads waiting for a block it has not seen", async function () {
+        await withStorageDiffSession(async ({ client, relay }) => {
+            await client.subscribe([]);
+            const head = (await client.request("scp_getHead", [])) as {
+                number: string;
+                hash: string;
+            };
+            const asked = toQuantity(BigInt(head.number) + 100n);
+            const before = relay.requestCount("eth_blockNumber");
+
+            const answers = (await Promise.all(
+                Array.from({ length: 200 }, () =>
+                    client.request("scp_getHead", [asked])
+                )
+            )) as { number: string }[];
+
+            expect(answers.map((answer) => answer.number)).to.deep.equal(
+                answers.map(() => head.number)
+            );
+            // one ask, one more for reads that came during it, and a heartbeat at most
+            expect(
+                relay.requestCount("eth_blockNumber") - before
+            ).to.be.at.most(3);
+            expect(await client.nextDelay()).to.deep.equal({
+                reason: "upstream-behind",
+                requested: asked,
+                head: { number: head.number, hash: head.hash }
+            });
+        });
+    });
+
     it("answers at once with what it holds, and tells subscribers, when tracing the awaited block fails", async function () {
         await withStorageDiffSession(
             async ({ client, provider, relay, signer }) => {
@@ -366,6 +467,150 @@ describe("StorageDiffService blocks", function () {
             expect(waited).to.be.at.least(2_700);
             expect(waited).to.be.lessThan(3_000 + 2_000);
             held.release();
+        });
+    });
+
+    // Mutation: scp_getTransaction reads minBlock from another param, or does not wait.
+    it("holds a transaction read that names the block its caller saw until the head reaches it", async function () {
+        await withStorageDiffSession(
+            async ({ client, provider, relay, signer }) => {
+                await client.subscribe([]);
+                // the first block of the session: the backstop is still the SDK deadline
+                const held = relay.holdNext("eth_getBlockByNumber", "latest");
+                const sent = await signer.sendTransaction({
+                    to: Wallet.createRandom().address,
+                    value: 1n
+                });
+                const receipt = (await sent.wait())!;
+                await held.arrived;
+                let settled = false;
+                const read = client
+                    .request("scp_getTransaction", [
+                        receipt.hash,
+                        toQuantity(receipt.blockNumber)
+                    ])
+                    .finally(() => (settled = true));
+                await sleep(ABSENCE_WINDOW_MS);
+                expect(
+                    settled,
+                    "the service has not reached the block"
+                ).to.equal(false);
+                held.release();
+
+                expect(await read).to.deep.equal(
+                    await provider.send("eth_getTransactionByHash", [
+                        receipt.hash
+                    ])
+                );
+            }
+        );
+    });
+
+    // Mutation: scp_getTransactionReceipt reads minBlock from another param, or does not wait.
+    it("holds a receipt read that names the block its caller saw until the head reaches it", async function () {
+        await withStorageDiffSession(
+            async ({ client, provider, relay, signer }) => {
+                await client.subscribe([]);
+                // the first block of the session: the backstop is still the SDK deadline
+                const held = relay.holdNext("eth_getBlockByNumber", "latest");
+                const sent = await signer.sendTransaction({
+                    to: Wallet.createRandom().address,
+                    value: 1n
+                });
+                const receipt = (await sent.wait())!;
+                await held.arrived;
+                let settled = false;
+                const read = client
+                    .request("scp_getTransactionReceipt", [
+                        receipt.hash,
+                        toQuantity(receipt.blockNumber)
+                    ])
+                    .finally(() => (settled = true));
+                await sleep(ABSENCE_WINDOW_MS);
+                expect(
+                    settled,
+                    "the service has not reached the block"
+                ).to.equal(false);
+                held.release();
+
+                expect(await read).to.deep.equal(
+                    await provider.send("eth_getTransactionReceipt", [
+                        receipt.hash
+                    ])
+                );
+            }
+        );
+    });
+
+    // Mutation: any one of the rules below is dropped.
+    it("refuses malformed scp_getBlock params with invalid params", async function () {
+        await withStorageDiffSession(async ({ client }) => {
+            const malformed = [
+                ["pending"],
+                ["latest", "yes"],
+                ["latest", false, "0x1", "extra"],
+                ["latest", false, "0x" + "f".repeat(17)],
+                ["latest", false, 7]
+            ];
+
+            const codes = await Promise.all(
+                malformed.map(async (params) => {
+                    const error = await rejectionOf(
+                        client.request("scp_getBlock", params)
+                    );
+                    return (error as StorageDiffRpcError | undefined)?.code;
+                })
+            );
+
+            expect(codes).to.deep.equal(malformed.map(() => INVALID_PARAMS));
+        });
+    });
+
+    // Mutation: any one of the rules below is dropped.
+    it("refuses malformed scp_getHead params with invalid params", async function () {
+        await withStorageDiffSession(async ({ client }) => {
+            const malformed = [["0x1", "0x2"], ["0x" + "f".repeat(17)], ["7"]];
+
+            const codes = await Promise.all(
+                malformed.map(async (params) => {
+                    const error = await rejectionOf(
+                        client.request("scp_getHead", params)
+                    );
+                    return (error as StorageDiffRpcError | undefined)?.code;
+                })
+            );
+
+            expect(codes).to.deep.equal(malformed.map(() => INVALID_PARAMS));
+        });
+    });
+
+    // Mutation: any one of the rules below is dropped, for either endpoint.
+    it("refuses malformed transaction and receipt read params with invalid params", async function () {
+        await withStorageDiffSession(async ({ client }) => {
+            const hash = "0x" + "cd".repeat(32);
+            const malformed = [
+                [],
+                [hash, "0x1", "extra"],
+                ["0x1234"],
+                [hash, "0x" + "f".repeat(17)]
+            ];
+
+            const codes = await Promise.all(
+                ["scp_getTransaction", "scp_getTransactionReceipt"].flatMap(
+                    (method) =>
+                        malformed.map(async (params) => {
+                            const error = await rejectionOf(
+                                client.request(method, params)
+                            );
+                            return (error as StorageDiffRpcError | undefined)
+                                ?.code;
+                        })
+                )
+            );
+
+            expect(codes).to.deep.equal(
+                [...malformed, ...malformed].map(() => INVALID_PARAMS)
+            );
         });
     });
 });

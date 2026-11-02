@@ -20,6 +20,7 @@ import {
     assertDestroyRejectsWaitingRead,
     assertNodeOnAnotherChainRefused,
     assertNonEthereumNodeOpensWithoutChainId,
+    assertNonEthereumNodeReconnectsWithoutChainId,
     assertSilentNodeMarkedDeadAndReadFailsOver,
     assertStartupDoesNotWaitForASilentNode,
     assertStopReconnectingRejectsWaitingRead,
@@ -91,6 +92,11 @@ describe("RpcNodeProvider", () => {
 
     it("opens a socket to a node that serves no Ethereum RPC without asking its chain id", async () => {
         await assertNonEthereumNodeOpensWithoutChainId();
+    });
+
+    // Mutation: a reopened socket is checked like an Ethereum node's, by chain id.
+    it("reopens a socket to a node that serves no Ethereum RPC without asking its chain id", async () => {
+        await assertNonEthereumNodeReconnectsWithoutChainId();
     });
 });
 

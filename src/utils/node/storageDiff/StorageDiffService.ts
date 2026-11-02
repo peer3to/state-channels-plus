@@ -8,6 +8,7 @@ import {
     environmentOf,
     filterRecord,
     invalidParams,
+    isObject,
     LIMIT_EXCEEDED_ERROR_CODE,
     NOT_RETAINED_ERROR_CODE,
     parseHeader,
@@ -189,13 +190,17 @@ export interface StorageDiffServiceOptions {
     logger: Logger;
 }
 
-/** The upstream answered a request with an error; `code` is its JSON-RPC code. */
+/**
+ * The upstream answered a request with an error; `upstreamCode` is its
+ * JSON-RPC code. Not named `code`: a peer is answered with the code and
+ * message of an error that has one, and the upstream's are not for peers.
+ */
 class UpstreamRequestError extends Error {
-    readonly code?: number;
+    readonly upstreamCode?: number;
 
-    constructor(message: string, code?: number) {
+    constructor(message: string, upstreamCode?: number) {
         super(message);
-        this.code = code;
+        this.upstreamCode = upstreamCode;
     }
 }
 
@@ -289,7 +294,7 @@ export class StorageDiffService {
     // State reads at the upstream now, and the ones waiting for a free place.
     private stateFetchesInFlight = 0;
     private readonly stateFetchWaiters: (() => void)[] = [];
-    // Accounts whose backfill found fewer entries than the chain holds: read lazily, not backfilled again.
+    // Accounts whose backfill failed or found fewer entries than the chain holds: read lazily, not backfilled again.
     private readonly lazyAccounts = new Set<AccountAddress>();
     // Backfills in flight, one per account.
     private readonly backfills = new Map<AccountAddress, Promise<void>>();
@@ -302,6 +307,10 @@ export class StorageDiffService {
     private blockReceiptsSupported = true;
     // Reads waiting for the best head to reach the block their caller saw.
     private readonly headWaiters = new Set<HeadWaiter>();
+    // The ask for the upstream's newest block number, one for all those reads.
+    private upstreamHeadProbe?: Promise<void>;
+    // Set when a read started waiting after that ask was sent: it asks once more.
+    private upstreamHeadProbeAgain = false;
     // How long such a read may wait when no event ends it: learned from how
     // long a new head took to commit after the upstream announced it.
     private readonly backstop = new LearnedBackstop(SDK_RPC_DEADLINE_MS);
@@ -341,11 +350,24 @@ export class StorageDiffService {
             DEFAULT_MAX_WATCHED_ADDRESSES_PER_CONNECTION;
         this.upstream = new RpcNodeProvider(options.upstreamUrl, this.logger);
         this.backfillBlocks = options.backfillBlocks ?? new ListedBlockSource();
+        // a failed read is asked again on its own, not the whole backfill
         this.backfillUpstream = {
             request: (method, params) =>
-                this.limitStateFetch(() => this.request(method, params)),
+                this.retryTransient(
+                    () =>
+                        this.limitStateFetch(() =>
+                            this.request(method, params)
+                        ),
+                    "Retrying a backfill read"
+                ),
             requestOn: (node, method, params) =>
-                this.limitStateFetch(() => this.request(method, params, node)),
+                this.retryTransient(
+                    () =>
+                        this.limitStateFetch(() =>
+                            this.request(method, params, node)
+                        ),
+                    "Retrying a backfill read"
+                ),
             logger: this.logger
         };
         this.peerHub = new PeerHub({
@@ -467,12 +489,23 @@ export class StorageDiffService {
         });
     }
 
-    /** Takes effect at once: no record is pushed to `id` after this. */
+    /**
+     * Takes effect at once: no record is pushed to `id` after this. An
+     * account no other subscription of the peer follows gets its snapshot
+     * again when it is subscribed again: the peer missed its records.
+     */
     unsubscribe(peer: StorageDiffPeer, id: SubscriptionId): boolean {
         const addresses = peer.subscriptions.get(id);
         if (!addresses) return false;
         peer.subscriptions.delete(id);
         this.release(peer, addresses);
+        peer.afterReply.delete(id);
+        const followed = new Set([...peer.subscriptions.values()].flat());
+        for (const address of [...peer.snapshotted, ...peer.promisedReady])
+            if (!followed.has(address)) {
+                peer.snapshotted.delete(address);
+                peer.promisedReady.delete(address);
+            }
         return true;
     }
 
@@ -652,8 +685,8 @@ export class StorageDiffService {
         return (
             receipts.find(
                 (receipt) =>
-                    (receipt as { transactionHash?: string })
-                        .transactionHash === transaction.hash
+                    isObject(receipt) &&
+                    receipt.transactionHash === transaction.hash
             ) ?? null
         );
     }
@@ -1433,7 +1466,7 @@ export class StorageDiffService {
             };
             const timer = setTimeout(waiter.end, this.backstop.boundMs);
             this.headWaiters.add(waiter);
-            void this.checkUpstreamHas(waiter);
+            this.probeUpstreamHead();
         });
     }
 
@@ -1445,25 +1478,54 @@ export class StorageDiffService {
     }
 
     /**
-     * Asks the upstream for its newest block number; when it has not seen the
-     * block `waiter` waits for, that block cannot arrive soon. A failed ask
-     * leaves the wait to the backstop.
+     * Asks the upstream for its newest block number, one ask in flight for
+     * every wait, within the limit of state reads for peers; a wait that
+     * starts meanwhile gets one more ask after it. A block the upstream has
+     * not seen cannot arrive soon. A failed ask leaves the waits to the
+     * backstop.
      */
-    private async checkUpstreamHas(waiter: HeadWaiter): Promise<void> {
-        try {
-            const answer = await this.request("eth_blockNumber", []);
-            if (!this.headWaiters.has(waiter) || typeof answer !== "string")
-                return;
-            if (BigInt(answer) >= waiter.minBlock) return;
-            const head = this.canonical[this.canonical.length - 1];
-            this.noteDelay({
-                reason: "upstream-behind",
-                requested: toQuantity(waiter.minBlock),
-                head: { number: head.number, hash: head.hash }
-            });
-        } catch {
-            // the backstop ends the wait
+    private probeUpstreamHead(): void {
+        if (this.upstreamHeadProbe) {
+            this.upstreamHeadProbeAgain = true;
+            return;
         }
+        const asked = [...this.headWaiters];
+        this.upstreamHeadProbe = (async () => {
+            try {
+                const answer = await this.limitStateFetch(() =>
+                    this.request("eth_blockNumber", [])
+                );
+                if (typeof answer === "string")
+                    this.noteUpstreamBehind(BigInt(answer), asked);
+            } catch {
+                // the backstop ends the waits
+            }
+        })().finally(() => {
+            this.upstreamHeadProbe = undefined;
+            if (!this.upstreamHeadProbeAgain) return;
+            this.upstreamHeadProbeAgain = false;
+            if (this.headWaiters.size > 0) this.probeUpstreamHead();
+        });
+    }
+
+    /**
+     * Tells the peers about the lowest block of the waits in `asked` that the
+     * upstream, at block `seen`, has not seen: that ends every wait for it or
+     * a later block.
+     */
+    private noteUpstreamBehind(seen: bigint, asked: HeadWaiter[]): void {
+        const late = asked
+            .filter((waiter) => this.headWaiters.has(waiter))
+            .map((waiter) => waiter.minBlock)
+            .filter((minBlock) => minBlock > seen);
+        if (late.length === 0) return;
+        const lowest = late.reduce((a, b) => (b < a ? b : a));
+        const head = this.canonical[this.canonical.length - 1];
+        this.noteDelay({
+            reason: "upstream-behind",
+            requested: toQuantity(lowest),
+            head: { number: head.number, hash: head.hash }
+        });
     }
 
     /**
@@ -1550,13 +1612,13 @@ export class StorageDiffService {
             } catch (error) {
                 if (
                     !(error instanceof UpstreamRequestError) ||
-                    error.code !== METHOD_NOT_FOUND_CODE
+                    error.upstreamCode !== METHOD_NOT_FOUND_CODE
                 )
                     throw error;
                 this.blockReceiptsSupported = false;
             }
         }
-        return await Promise.all(
+        const receipts = await Promise.all(
             transactions.map((transaction) =>
                 this.limitStateFetch(() =>
                     this.request("eth_getTransactionReceipt", [
@@ -1565,6 +1627,16 @@ export class StorageDiffService {
                 )
             )
         );
+        // a node that has not indexed the block yet answers null
+        if (
+            receipts.some(
+                (receipt, i) =>
+                    !isObject(receipt) ||
+                    receipt.transactionHash !== transactions[i].hash
+            )
+        )
+            throw new Error("Receipts do not cover the block");
+        return receipts;
     }
 
     /** Starts rebuilding `address` from its history, unless that is done or running. */
@@ -1594,15 +1666,12 @@ export class StorageDiffService {
                         reason: this.failureReason(error)
                     }
                 );
-                // tell the subscribers now, so they do not wait for a snapshot
+                // lazy until the cache is cleared; the subscribers are told
+                // now, so they do not wait for a snapshot
                 return this.enqueue(async () => {
+                    this.lazyAccounts.add(address);
                     for (const peer of this.peerHub.peers.values())
-                        if (!peer.closing)
-                            this.sendSnapshots(
-                                peer,
-                                [address],
-                                new Set([address])
-                            );
+                        if (!peer.closing) this.sendSnapshots(peer, [address]);
                 });
             })
             .finally(() => {
@@ -1925,10 +1994,10 @@ export class StorageDiffService {
     ): Promise<boolean> {
         record.codeProbes++;
         try {
-            const code = await this.backfillUpstream.request("eth_getCode", [
-                address,
-                toQuantity(block)
-            ]);
+            // not retried on its own: a failed probe starts the backfill over
+            const code = await this.limitStateFetch(() =>
+                this.request("eth_getCode", [address, toQuantity(block)])
+            );
             return typeof code === "string" && code !== "0x";
         } catch (error) {
             // Asset Hub answers this before its contracts pallet existed: no
@@ -2005,8 +2074,12 @@ export class StorageDiffService {
         const slots = [...keys];
         const read = (field: StateField) => {
             record.stateReads++;
-            return this.limitStateFetch(() =>
-                this.fetchField(field, blockHash)
+            return this.retryTransient(
+                () =>
+                    this.limitStateFetch(() =>
+                        this.fetchField(field, blockHash)
+                    ),
+                "Retrying a backfill read"
             );
         };
         const [balance, nonce, code, ...words] = await Promise.all([

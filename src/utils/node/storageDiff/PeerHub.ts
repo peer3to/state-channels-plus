@@ -179,6 +179,35 @@ export class PeerHub {
         }
     }
 
+    // The limit applies to the socket's aggregate buffered bytes, so a
+    // catch-up reply the peer has not drained counts as well.
+    // A peer that cannot keep up recovers with catch-up, not lost records.
+    dropIfLagging(peer: StorageDiffPeer): void {
+        if (peer.socket.bufferedAmount > this.maxPeerBufferedBytes) {
+            this.dropLagging(peer);
+        }
+    }
+
+    pushDelay(peer: StorageDiffPeer, notice: StorageDiffDelayNotice): void {
+        this.send(peer.socket, {
+            jsonrpc: "2.0",
+            method: "scp_delayed",
+            params: notice
+        });
+        this.dropIfLagging(peer);
+    }
+
+    /** Every address some open subscription asks for. */
+    subscribedAddresses(): AccountAddress[] {
+        const addresses = new Set<AccountAddress>();
+        for (const peer of this.peers.values()) {
+            for (const list of peer.subscriptions.values()) {
+                for (const address of list) addresses.add(address);
+            }
+        }
+        return [...addresses];
+    }
+
     private accept(socket: WebSocket): void {
         const peer: StorageDiffPeer = {
             socket,
@@ -291,15 +320,6 @@ export class PeerHub {
         }
     }
 
-    // The limit applies to the socket's aggregate buffered bytes, so a
-    // catch-up reply the peer has not drained counts as well.
-    // A peer that cannot keep up recovers with catch-up, not lost records.
-    dropIfLagging(peer: StorageDiffPeer): void {
-        if (peer.socket.bufferedAmount > this.maxPeerBufferedBytes) {
-            this.dropLagging(peer);
-        }
-    }
-
     /** Tells a peer it fell behind, then closes once the notice drains. */
     private dropLagging(peer: StorageDiffPeer): void {
         const { socket } = peer;
@@ -316,25 +336,5 @@ export class PeerHub {
         socket.close(SEND_BUFFER_OVERFLOW_CLOSE_CODE, SEND_BUFFER_OVERFLOW);
         const grace = setTimeout(() => socket.terminate(), PEER_CLOSE_GRACE_MS);
         socket.once("close", () => clearTimeout(grace));
-    }
-
-    pushDelay(peer: StorageDiffPeer, notice: StorageDiffDelayNotice): void {
-        this.send(peer.socket, {
-            jsonrpc: "2.0",
-            method: "scp_delayed",
-            params: notice
-        });
-        this.dropIfLagging(peer);
-    }
-
-    /** Every address some open subscription asks for. */
-    subscribedAddresses(): AccountAddress[] {
-        const addresses = new Set<AccountAddress>();
-        for (const peer of this.peers.values()) {
-            for (const list of peer.subscriptions.values()) {
-                for (const address of list) addresses.add(address);
-            }
-        }
-        return [...addresses];
     }
 }

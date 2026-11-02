@@ -37,6 +37,22 @@ describe("Asset Hub state check helpers", function () {
         expect(trieIdOf("0x0100000000")).to.equal(undefined);
     });
 
+    // Mutation: a multi-byte compact length is read as a one-byte one.
+    it("refuses a contract's account info whose trie id length is not a one-byte compact", function () {
+        // variant 0, then compact mode 1: a two-byte length
+        expect(() => trieIdOf("0x000101" + "ab".repeat(64))).to.throw(
+            "Unexpected trie id length encoding"
+        );
+    });
+
+    // Mutation: a short value yields the bytes it has as the trie id.
+    it("refuses a contract's account info shorter than the trie id it claims", function () {
+        // variant 0 claiming 32 bytes (0x80 = 32 << 2) with only 10 present
+        expect(() => trieIdOf("0x0080" + "ab".repeat(10))).to.throw(
+            "Truncated account info"
+        );
+    });
+
     it("names the child trie by the prefixed storage key", function () {
         expect(childStorageKey(RECORDED_TRIE_ID)).to.equal(
             "0x3a6368696c645f73746f726167653a64656661756c743a" +

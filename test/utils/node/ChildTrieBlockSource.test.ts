@@ -3,57 +3,15 @@ import {
     withRecordedChildTrieNode
 } from "../../fixtures/node/RecordedAssetHubChildTrie";
 import {
-    RECORDED_ACCOUNT_INFO,
-    withSubstrateNode,
-    type SubstrateContract,
-    type SubstrateNode
-} from "../../fixtures/node/SubstrateChildTrieNode";
-import { createLogger } from "@/utils";
-import {
-    ChainMovedError,
-    type BackfillUpstream
-} from "@/utils/node/storageDiff/backfillBlocks/ABackfillBlockSource";
+    chain,
+    CHILD_TRIE_ADDRESS,
+    CHILD_TRIE_TIP,
+    NO_UPSTREAM,
+    withSource
+} from "../../fixtures/node/StorageDiffBackfillFixture";
+import { ChainMovedError } from "@/utils/node/storageDiff/backfillBlocks/ABackfillBlockSource";
 import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
 import { expect } from "chai";
-
-const ADDRESS = "0x99ee73298423dcf5da3059a5e48bda20bfbcd01b";
-const TIP = { number: 1_000_000n, hash: "0xeth" };
-
-/** A chain shape for the recorded contract, with the tip's hash per question. */
-function chain(overrides: Partial<SubstrateContract> = {}): SubstrateContract {
-    return {
-        address: ADDRESS,
-        changes: [],
-        deployed: 0,
-        tipNumber: Number(TIP.number),
-        tipHash: () => "0xtip",
-        info: RECORDED_ACCOUNT_INFO,
-        entries: 0,
-        ...overrides
-    };
-}
-
-/** Reads the Substrate node straight; the source never asks the eth upstream. */
-const NO_UPSTREAM: BackfillUpstream = {
-    request: () => Promise.reject(new Error("The eth upstream is not used")),
-    requestOn: (node, method, params) => node.send(method, params),
-    logger: createLogger({}, { component: "ChildTrieBlockSourceTest" })
-};
-
-/** Runs `use` with a source on a node of `contract`, closed in `finally`. */
-async function withSource<T>(
-    contract: SubstrateContract,
-    use: (source: ChildTrieBlockSource, reads: SubstrateNode) => Promise<T>
-): Promise<T> {
-    return await withSubstrateNode(contract, async (node) => {
-        const source = new ChildTrieBlockSource(node.url);
-        try {
-            return await use(source, node);
-        } finally {
-            source.close();
-        }
-    });
-}
 
 describe("ChildTrieBlockSource", function () {
     // The recorded tests replay real Asset Hub answers. The tests below them
@@ -131,9 +89,9 @@ describe("ChildTrieBlockSource", function () {
             async (source, node) => {
                 const listing = await source.listBlocks(
                     NO_UPSTREAM,
-                    ADDRESS,
+                    CHILD_TRIE_ADDRESS,
                     400n,
-                    TIP
+                    CHILD_TRIE_TIP
                 );
 
                 expect(listing.numbers).to.deep.equal(changes.map(BigInt));
@@ -151,9 +109,9 @@ describe("ChildTrieBlockSource", function () {
             async (source) => {
                 const listing = await source.listBlocks(
                     NO_UPSTREAM,
-                    ADDRESS,
+                    CHILD_TRIE_ADDRESS,
                     11n,
-                    TIP
+                    CHILD_TRIE_TIP
                 );
                 expect(listing.numbers).to.deep.equal([]);
             }
@@ -170,7 +128,74 @@ describe("ChildTrieBlockSource", function () {
             }),
             async (source) => {
                 const error = await source
-                    .listBlocks(NO_UPSTREAM, ADDRESS, 500n, TIP)
+                    .listBlocks(
+                        NO_UPSTREAM,
+                        CHILD_TRIE_ADDRESS,
+                        500n,
+                        CHILD_TRIE_TIP
+                    )
+                    .then(
+                        () => undefined,
+                        (reason: unknown) => reason
+                    );
+                expect(error).to.be.instanceOf(ChainMovedError);
+            }
+        );
+    });
+
+    // Mutation: a null block hash is passed on as the block to read, which
+    // the node reads as its older best block.
+    it("lists a change in the tip block once a Substrate node that had not reached the tip has", async function () {
+        const tip = Number(CHILD_TRIE_TIP.number);
+        await withSource(
+            chain({
+                changes: [400, tip],
+                deployed: 400,
+                lag: { blocks: 2, ms: 300 }
+            }),
+            async (source) => {
+                const listing = await source.listBlocks(
+                    NO_UPSTREAM,
+                    CHILD_TRIE_ADDRESS,
+                    400n,
+                    CHILD_TRIE_TIP
+                );
+
+                expect(listing.numbers).to.deep.equal([400n, BigInt(tip)]);
+            }
+        );
+    });
+
+    // Mutation: a null block hash is passed on as the block to count at.
+    it("counts the entries at the asked block once a Substrate node that had not reached it has", async function () {
+        const tip = Number(CHILD_TRIE_TIP.number);
+        await withSource(
+            chain({
+                entries: (blockNumber) => (blockNumber >= tip ? 5 : 3),
+                lag: { blocks: 2, ms: 300 }
+            }),
+            async (source) => {
+                expect(
+                    await source.countStorageEntries(
+                        NO_UPSTREAM,
+                        CHILD_TRIE_ADDRESS,
+                        CHILD_TRIE_TIP
+                    )
+                ).to.equal(5);
+            }
+        );
+    });
+
+    it("fails with a chain move when the Substrate node stays behind the block it is asked for", async function () {
+        await withSource(
+            chain({ entries: 5, lag: { blocks: 1, ms: 60_000 } }),
+            async (source) => {
+                const error = await source
+                    .countStorageEntries(
+                        NO_UPSTREAM,
+                        CHILD_TRIE_ADDRESS,
+                        CHILD_TRIE_TIP
+                    )
                     .then(
                         () => undefined,
                         (reason: unknown) => reason
@@ -183,7 +208,7 @@ describe("ChildTrieBlockSource", function () {
     it("fails for an address that is not a contract", async function () {
         await withSource(chain({ info: null }), async (source) => {
             const error = await source
-                .listBlocks(NO_UPSTREAM, ADDRESS, 1n, TIP)
+                .listBlocks(NO_UPSTREAM, CHILD_TRIE_ADDRESS, 1n, CHILD_TRIE_TIP)
                 .then(
                     () => undefined,
                     (reason: unknown) => reason
@@ -194,10 +219,27 @@ describe("ChildTrieBlockSource", function () {
         });
     });
 
+    // Mutation: a count of an account without a contract fails like a listing.
+    it("counts no entries for an address that is not a contract", async function () {
+        await withSource(chain({ info: null }), async (source) => {
+            expect(
+                await source.countStorageEntries(
+                    NO_UPSTREAM,
+                    CHILD_TRIE_ADDRESS,
+                    CHILD_TRIE_TIP
+                )
+            ).to.equal(0);
+        });
+    });
+
     it("counts the entries of the contract's child trie across pages", async function () {
         await withSource(chain({ entries: 2_345 }), async (source) => {
             expect(
-                await source.countStorageEntries(NO_UPSTREAM, ADDRESS, TIP)
+                await source.countStorageEntries(
+                    NO_UPSTREAM,
+                    CHILD_TRIE_ADDRESS,
+                    CHILD_TRIE_TIP
+                )
             ).to.equal(2_345);
         });
     });
@@ -205,9 +247,21 @@ describe("ChildTrieBlockSource", function () {
     it("shares the block hash read of counts asked for at one block at the same time", async function () {
         await withSource(chain({ entries: 7 }), async (source, node) => {
             const counts = await Promise.all([
-                source.countStorageEntries(NO_UPSTREAM, ADDRESS, TIP),
-                source.countStorageEntries(NO_UPSTREAM, ADDRESS, TIP),
-                source.countStorageEntries(NO_UPSTREAM, ADDRESS, TIP)
+                source.countStorageEntries(
+                    NO_UPSTREAM,
+                    CHILD_TRIE_ADDRESS,
+                    CHILD_TRIE_TIP
+                ),
+                source.countStorageEntries(
+                    NO_UPSTREAM,
+                    CHILD_TRIE_ADDRESS,
+                    CHILD_TRIE_TIP
+                ),
+                source.countStorageEntries(
+                    NO_UPSTREAM,
+                    CHILD_TRIE_ADDRESS,
+                    CHILD_TRIE_TIP
+                )
             ]);
 
             expect(counts).to.deep.equal([7, 7, 7]);
@@ -217,9 +271,13 @@ describe("ChildTrieBlockSource", function () {
 
     it("reads the account info once for a contract it counts again", async function () {
         await withSource(chain({ entries: 7 }), async (source, node) => {
-            await source.countStorageEntries(NO_UPSTREAM, ADDRESS, TIP);
-            await source.countStorageEntries(NO_UPSTREAM, ADDRESS, {
-                number: TIP.number + 1n
+            await source.countStorageEntries(
+                NO_UPSTREAM,
+                CHILD_TRIE_ADDRESS,
+                CHILD_TRIE_TIP
+            );
+            await source.countStorageEntries(NO_UPSTREAM, CHILD_TRIE_ADDRESS, {
+                number: CHILD_TRIE_TIP.number + 1n
             });
 
             expect(node.requests().state_getStorage).to.equal(1);

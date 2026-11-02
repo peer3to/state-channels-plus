@@ -920,6 +920,44 @@ export async function assertNonEthereumNodeOpensWithoutChainId(): Promise<void> 
     );
 }
 
+export async function assertNonEthereumNodeReconnectsWithoutChainId(): Promise<void> {
+    await withSubstrateNode(
+        {
+            address: "0x" + "11".repeat(20),
+            changes: [],
+            deployed: 0,
+            tipNumber: 7,
+            tipHash: () => "0xtip",
+            info: RECORDED_ACCOUNT_INFO,
+            entries: 0
+        },
+        async (substrate) => {
+            const logger = quietLogger();
+            const proxy = await RpcNodeProxy.start(substrate.url);
+            const node = new RpcNodeProvider(
+                proxy.url,
+                logger,
+                {},
+                { ethereum: false }
+            );
+            try {
+                expect(await node.firstAttempt).to.equal(undefined);
+                await cutAndWaitForDrop(proxy, node);
+                const held = node.send("chain_getBlockHash", [7]);
+                proxy.restore();
+
+                expect(await held).to.equal("0xtip");
+                expect(node.isConnected).to.equal(true);
+                expect(substrate.requests().eth_chainId ?? 0).to.equal(0);
+            } finally {
+                node.destroy();
+                await proxy.close();
+                logger.dispose();
+            }
+        }
+    );
+}
+
 export async function assertDestroyRejectsInFlightRead(): Promise<void> {
     await withProxiedNodes(1, async ({ node, proxies, nodes, logger }) => {
         const provider = new MultiRpcProvider(nodes, logger);
