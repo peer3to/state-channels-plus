@@ -22,6 +22,8 @@ const { staleRunnerImageReason } = require("./runnerImage");
 const RUNTIME_LABEL = "peer3.distributed-environment";
 const ENVIRONMENT_NAME_PREFIX = "peer3-test-";
 const DOCKER_OPERATION_TIMEOUT_MS = 5 * 60 * 1000;
+/** How long an unsafe-host worker's Chromium may take to launch at startup. */
+const BROWSER_PROBE_TIMEOUT_MS = 60 * 1000;
 
 function assertEnvironmentKey(environmentKey) {
     if (
@@ -965,6 +967,40 @@ class UnsafeHostBackend {
         return { available: true };
     }
 
+    /**
+     * Whether the browser gates can launch Chromium here: the host's
+     * Playwright launches it from the cache the guest is pointed at.
+     */
+    async browserRuntime(env = process.env) {
+        let playwright;
+        try {
+            playwright = require.resolve("playwright");
+        } catch {
+            return { available: false, reason: "playwright is not installed" };
+        }
+        const probe =
+            `require(${JSON.stringify(playwright)}).chromium` +
+            ".launch({ headless: true }).then((browser) => browser.close())" +
+            '.catch((error) => { process.stderr.write(String(error.message).split("\\n")[0]); process.exit(1); })';
+        try {
+            await runProcess(process.execPath, ["-e", probe], {
+                env: {
+                    ...env,
+                    PLAYWRIGHT_BROWSERS_PATH:
+                        env.PLAYWRIGHT_BROWSERS_PATH ||
+                        hostPlaywrightBrowsersPath()
+                },
+                timeoutMs: BROWSER_PROBE_TIMEOUT_MS
+            });
+            return { available: true };
+        } catch (error) {
+            return {
+                available: false,
+                reason: error.stderr?.toString("utf8").trim() || error.message
+            };
+        }
+    }
+
     async create(allocation) {
         const root = path.join(
             this.workRoot,
@@ -1530,6 +1566,16 @@ class IsolatedEnvironmentManager {
 
     capabilities() {
         return { backend: this.backendName, isolation: this.isolation };
+    }
+
+    /**
+     * Whether the host's environments can run the browser gates. A Docker
+     * environment runs the runner image, whose Dockerfile revision `detect`
+     * checks and which installs Chromium; a backend that cannot tell (a test
+     * stand-in) reports one.
+     */
+    async browserRuntime() {
+        return (await this.backend.browserRuntime?.()) ?? { available: true };
     }
 }
 

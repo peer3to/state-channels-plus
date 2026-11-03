@@ -9,7 +9,8 @@ import {
 import { expect } from "chai";
 
 const {
-    assertCompatibleWorkerProtocol
+    assertCompatibleWorkerProtocol,
+    assertWorkerRunsBrowserTasks
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
 const {
     DISTRIBUTED_PROTOCOL_VERSION,
@@ -120,6 +121,112 @@ describe("distributed worker protocol pool", function () {
         expect(run.warnings.join("\n")).to.include(
             "Ignoring worker host-15: Distributed worker protocol mismatch"
         );
+    });
+
+    // Mutation: the browser-runtime check skipped -> host-bare is leased and runs browser tasks.
+    it("refuses a host without a browser runtime for a run with browser tasks, and runs every task on the host that has one", async function () {
+        const run = await runAgainstProtocolWorkers([
+            {
+                name: "host-bare",
+                distributedProtocol: 16,
+                browserRuntime: { available: false, reason: "no Chromium" }
+            },
+            { name: "host-full", distributedProtocol: 16 }
+        ]);
+        expect(run.failure).to.equal(null);
+        expect({
+            bare: workerNamed(run.workers, "host-bare").labels,
+            bareOffers: workerNamed(run.workers, "host-bare").workspaceOffers,
+            full: sortedLabels(workerNamed(run.workers, "host-full").labels),
+            failed: run.result.failed.length
+        }).to.deep.equal({
+            bare: [],
+            bareOffers: 0,
+            full: sortedLabels(MIXED_TIER_TASKS.map((task) => task.label)),
+            failed: 0
+        });
+        expect(run.warnings.join("\n")).to.include(
+            "Ignoring worker host-bare: Worker host has no browser runtime for this run's browser tasks (no Chromium)"
+        );
+    });
+
+    // Mutation: a host without a browser runtime refused for every run -> no worker is discovered.
+    it("leases a host without a browser runtime for a run with no browser tasks", async function () {
+        const tasks = MIXED_TIER_TASKS.filter(
+            (task) => task.runner !== "browser"
+        );
+        const run = await runAgainstProtocolWorkers(
+            [
+                {
+                    name: "host-bare",
+                    distributedProtocol: 16,
+                    browserRuntime: { available: false, reason: "no Chromium" }
+                }
+            ],
+            { tasks }
+        );
+        expect(run.failure).to.equal(null);
+        expect(
+            sortedLabels(workerNamed(run.workers, "host-bare").labels)
+        ).to.deep.equal(sortedLabels(tasks.map((task) => task.label)));
+    });
+
+    // Mutation: only `runner: "browser"` counts -> the marked Mocha files run on host-bare.
+    it("refuses a host without a browser runtime for a run whose only browser tasks are marked Mocha files", async function () {
+        const run = await runAgainstProtocolWorkers(
+            [
+                {
+                    name: "host-bare",
+                    distributedProtocol: 16,
+                    browserRuntime: { available: false, reason: "no Chromium" }
+                }
+            ],
+            { tasks: CHROMIUM_MOCHA_TASKS, discoveryTimeoutMs: 1000 }
+        );
+        expect(run.failure?.message).to.equal(
+            "No distributed workers discovered"
+        );
+        expect(workerNamed(run.workers, "host-bare").labels).to.deep.equal([]);
+        expect(run.warnings.join("\n")).to.include(
+            "Ignoring worker host-bare: Worker host has no browser runtime"
+        );
+    });
+
+    // Mutation: a host that reports nothing taken as having a browser runtime.
+    it("refuses a host that reports no browser runtime for a run with browser tasks", function () {
+        expect(() =>
+            assertWorkerRunsBrowserTasks(
+                { distributedProtocol: 16 },
+                MIXED_TIER_TASKS
+            )
+        ).to.throw(
+            "Worker host has no browser runtime for this run's browser tasks (it reports none)"
+        );
+    });
+
+    // Mutation: a lost attempt is not reissued -> its task never completes and the run fails it.
+    it("runs the task of a host that leaves mid-attempt on another host, and passes the run", async function () {
+        const run = await runAgainstProtocolWorkers([
+            {
+                name: "host-gone",
+                distributedProtocol: 16,
+                leaseSteps: ["leave-on-first-task"]
+            },
+            {
+                name: "host-stays",
+                distributedProtocol: 16,
+                // Keep the run open until host-gone has been handed a task.
+                holdFirstResultUntil: { worker: "host-gone", labels: 1 }
+            }
+        ]);
+        expect(run.failure).to.equal(null);
+        const [lost] = workerNamed(run.workers, "host-gone").labels;
+        expect(workerNamed(run.workers, "host-gone").labels).to.have.length(1);
+        expect(workerNamed(run.workers, "host-stays").labels).to.include(lost);
+        expect({
+            completed: run.result.completed,
+            failed: run.result.failed.length
+        }).to.deep.equal({ completed: 5, failed: 0 });
     });
 
     it("leases only the current protocol, with every runner", function () {

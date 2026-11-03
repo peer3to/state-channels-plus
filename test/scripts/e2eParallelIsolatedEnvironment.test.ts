@@ -1214,6 +1214,29 @@ describe("distributed isolated environment", function () {
     });
 });
 
+describe("unsafe-host browser runtime", function () {
+    // Mutation: browserRuntime reports a runtime without launching Chromium -> available.
+    it("reports no browser runtime, naming the missing Chromium, when the browsers path holds none", async function () {
+        const empty = fs.mkdtempSync(
+            path.join(os.tmpdir(), "scp-no-chromium-")
+        );
+        try {
+            const runtime = await new UnsafeHostBackend({
+                workRoot: empty
+            }).browserRuntime({
+                ...process.env,
+                PLAYWRIGHT_BROWSERS_PATH: empty
+            });
+
+            expect(runtime.available).to.equal(false);
+            expect(runtime.reason).to.include("Executable doesn't exist");
+            expect(runtime.reason).to.include(empty);
+        } finally {
+            fs.rmSync(empty, { recursive: true, force: true });
+        }
+    });
+});
+
 describe("unsafe-host browsers path", function () {
     // Start an unsafe-host environment and return the environment its guest
     // receives; the guest itself is not needed to read that.

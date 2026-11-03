@@ -350,8 +350,10 @@ with the suite still green.
   task.
 - Browser gates and Mocha files marked `// @distributed-requires: browser` run
   on any leased worker host: only protocol 16 hosts are leased, and each needs
-  its runner image built with `yarn test:parallel:image`. Nothing is skipped;
-  with no host the run fails with "No distributed workers discovered". A Mocha
+  its runner image built with `yarn test:parallel:image`. Nothing is skipped:
+  a run with browser tasks refuses a host that reports it cannot launch
+  Chromium, and with no host left the run fails with "No distributed workers
+  discovered". A Mocha
   file that launches Chromium must carry that marker in its leading comments. See
   "Browser tests" in the root `README.md`.
 - Legacy in-process unit/integration: `yarn test`. E2E inline: `yarn test:e2e`.

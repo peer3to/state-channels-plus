@@ -84,8 +84,10 @@ full gate so the development cycle stays lean.
 Browser gates, and Mocha test files marked `// @distributed-requires: browser`,
 run on any leased worker host: the orchestrator leases only protocol 16 hosts,
 and each must have its runner image built with `yarn test:parallel:image`.
-Nothing is skipped; when no host connects, the run fails with "No distributed
-workers discovered". A Mocha test file that launches Chromium must carry that
+Nothing is skipped. A host reports at startup whether it can launch Chromium;
+a run with browser tasks refuses a host that cannot, with a warning that names
+why, and when no host is left the run fails with "No distributed workers
+discovered". A Mocha test file that launches Chromium must carry that
 marker in its leading comments. See the README's
 [Browser tests](README.md#browser-tests) section.
 

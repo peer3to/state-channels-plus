@@ -78,6 +78,7 @@ export type ProtocolWorkerLeaseStep =
     | "outside-manifest"
     | "invalid-diff"
     | "one-task-then-close"
+    | "leave-on-first-task"
     | "reject-allocation"
     | "close-after-offer";
 
@@ -90,6 +91,8 @@ export type ProtocolWorkerLeaseStep =
 async function startProtocolWorker(options: {
     name: string;
     distributedProtocol: number;
+    // What the host reports about Chromium; a host with one by default.
+    browserRuntime?: { available: boolean; reason?: string };
     keys: PoolKeys;
     dht: unknown;
     // One step per lease in order; leases past the end behave normally.
@@ -146,6 +149,9 @@ async function startProtocolWorker(options: {
                 name: options.name,
                 capabilities: {
                     distributedProtocol: options.distributedProtocol,
+                    browserRuntime: options.browserRuntime ?? {
+                        available: true
+                    },
                     memoryGb: 1,
                     heartbeatTimeoutMs: 60_000
                 }
@@ -206,6 +212,12 @@ async function startProtocolWorker(options: {
                 record.runners.push(assignment.task.runner);
                 record.labels.push(assignment.task.label);
                 record.costs.push(assignment.task.cost);
+                if (step === "leave-on-first-task") {
+                    // Gone mid-attempt, and not coming back to redial.
+                    peer.close("fixture host leaves mid-attempt");
+                    await close();
+                    return;
+                }
                 const hold = options.holdFirstResultUntil;
                 if (hold && record.labels.length === 1) {
                     const deadline = Date.now() + 30_000;
@@ -297,6 +309,7 @@ export async function runAgainstProtocolWorkers(
     workers: Array<{
         name: string;
         distributedProtocol: number;
+        browserRuntime?: { available: boolean; reason?: string };
         leaseSteps?: ProtocolWorkerLeaseStep[];
         holdFirstResultUntil?: HoldFirstResultUntil;
         attemptResult?: Record<string, unknown>;

@@ -238,6 +238,14 @@ downloads browsers, so a gate finds Chromium only through
 unless the operator exported another path. A gate that cannot find the browser
 says so and names the variable.
 
+A worker host checks at startup that its environments can launch Chromium:
+the runner image installs it (and the server refuses a stale image), and an
+unsafe-host worker launches it once from that cache. The host reports the
+result to every orchestrator. A run with browser tasks refuses a host that
+cannot launch Chromium, warning `Worker host has no browser runtime for this
+run's browser tasks (…)` with the cause; a run without browser tasks still
+leases it.
+
 A worker runs tasks with the runner from its own checkout, so the browser tier
 reaches it only after **the worker host updates that checkout, restarts
 `yarn test:parallel:server`, and rebuilds its runner image**

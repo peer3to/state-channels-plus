@@ -91,7 +91,13 @@ function anvilArgs(env = process.env) {
         intervalMining ? "1000000000" : "30000000"
     ];
     if (blockTimeMs) {
-        args.push("--block-time", String(Number(blockTimeMs) / 1000));
+        const ms = Number(blockTimeMs);
+        // anvil would take NaN or a negative and exit before its ready line
+        if (!Number.isFinite(ms) || ms <= 0)
+            throw new Error(
+                `HARDHAT_NODE_BLOCK_TIME_MS must be a positive number of milliseconds, got ${JSON.stringify(blockTimeMs)}`
+            );
+        args.push("--block-time", String(ms / 1000));
     }
     return args;
 }

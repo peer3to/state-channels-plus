@@ -37,13 +37,29 @@ import path from "path";
 // scripts/infra/anvilNode.js; hardhat.config.ts requires it from there).
 const HARDHAT_MNEMONIC =
     "test test test test test test test test test test test junk";
-const { pinnedAnvilMismatch } = require("../../scripts/infra/anvilNode.js") as {
-    pinnedAnvilMismatch: (
-        root: string,
-        env: NodeJS.ProcessEnv,
-        runnerRoot?: string
-    ) => string | null;
-};
+const { anvilArgs, pinnedAnvilMismatch } =
+    require("../../scripts/infra/anvilNode.js") as {
+        anvilArgs: (env: NodeJS.ProcessEnv) => string[];
+        pinnedAnvilMismatch: (
+            root: string,
+            env: NodeJS.ProcessEnv,
+            runnerRoot?: string
+        ) => string | null;
+    };
+/** Time is the input: the interval a slot node mines at, one block a second. */
+const SLOT_BLOCK_TIME_MS = 1000;
+
+/** A fresh project and runner directory, neither pinning anvil yet. */
+function withPinRoots(use: (project: string, runner: string) => void): void {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), "anvil-pin-"));
+    const runner = fs.mkdtempSync(path.join(os.tmpdir(), "anvil-runner-"));
+    try {
+        use(project, runner);
+    } finally {
+        fs.rmSync(project, { recursive: true, force: true });
+        fs.rmSync(runner, { recursive: true, force: true });
+    }
+}
 const { pinnedFoundryMismatch } =
     require("../../scripts/e2e-parallel/shared/forgeConfig.js") as {
         pinnedFoundryMismatch: (
@@ -74,15 +90,40 @@ describe("e2e parallel test chain", function () {
         await expectStopped(slots[0].nodeUrl);
     });
 
-    // Mutation: the --block-time argument dropped from anvilArgs -> the slot node automines.
-    it("a runner slot node mines a block a second with automine off, and mines a later nonce sent first after the earlier one", async function () {
+    // Mutation: the --block-time argument dropped from anvilArgs -> the slot node automines and mines no empty block.
+    it("a runner slot node mines blocks without transactions, at most one a second, with automine off", async function () {
+        const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "chain-slot-"));
+        const { slots, infra } = await provisionSlots(1, logDir);
+        const node = infra.nodes[0];
+        try {
+            const rpc = call(slots[0].nodeUrl);
+            expect(await rpc("anvil_getAutomine")).to.equal(false);
+            const start = BigInt(await rpc<string>("eth_blockNumber"));
+            const startedAt = Date.now();
+            let head = start;
+            while (head < start + 2n) {
+                await new Promise((resolve) => setTimeout(resolve, 100));
+                head = BigInt(await rpc<string>("eth_blockNumber"));
+            }
+            // the first new block can come at once, the second a block time later
+            expect(Date.now() - startedAt).to.be.at.least(
+                SLOT_BLOCK_TIME_MS - 100
+            );
+        } finally {
+            teardownInfra(infra);
+            await node.exited;
+            fs.rmSync(logDir, { recursive: true, force: true });
+        }
+    });
+
+    // Concurrent senders reach the node out of nonce order; both must mine.
+    it("a runner slot node mines a later nonce sent first once the earlier one arrives", async function () {
         const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "chain-slot-"));
         const { slots, infra } = await provisionSlots(1, logDir);
         const node = infra.nodes[0];
         const provider = new JsonRpcProvider(slots[0].nodeUrl);
         try {
             const rpc = call(slots[0].nodeUrl);
-            expect(await rpc("anvil_getAutomine")).to.equal(false);
             const [sender, recipient] = await rpc<string[]>("eth_accounts");
             const { later, earlier } = await outOfOrderTransfers(
                 walletOf(HARDHAT_MNEMONIC, sender),
@@ -101,10 +142,6 @@ describe("e2e parallel test chain", function () {
             expect(Number(second.blockNumber)).to.be.at.least(
                 Number(first.blockNumber)
             );
-            const start = BigInt(await rpc<string>("eth_blockNumber"));
-            await new Promise((resolve) => setTimeout(resolve, 2500));
-            const mined = BigInt(await rpc<string>("eth_blockNumber")) - start;
-            expect(Number(mined)).to.be.within(2, 3);
         } finally {
             provider.destroy();
             teardownInfra(infra);
@@ -113,8 +150,8 @@ describe("e2e parallel test chain", function () {
         }
     });
 
-    // Mutation: startHardhatNode hands back the first live node -> the second node is the paused one and its transfer never mines.
-    it("an isolated node serves prestateTracer diffMode and pauses mining only on itself", async function () {
+    // Mutation: the isolated node started on the default chain id -> eth_chainId is 0x7a69.
+    it("an isolated node serves prestateTracer diffMode for a transaction and for its block", async function () {
         let url = "";
         await withIsolatedHardhatNode(
             async (provider) => {
@@ -122,7 +159,17 @@ describe("e2e parallel test chain", function () {
                 const rpc = call(url);
                 expect(await rpc("eth_chainId")).to.equal("0x7a6a");
                 await expectBothTraces(rpc, await transferOneWei(rpc));
+            },
+            { chainId: 31338 }
+        );
+        await expectStopped(url);
+    });
 
+    // Mutation: startHardhatNode hands back the first live node -> the second node is the paused one and its transfer never mines.
+    it("an isolated node with automine off pauses mining only on itself", async function () {
+        await withIsolatedHardhatNode(
+            async (provider) => {
+                const rpc = call(provider._getConnection().url);
                 await rpc("evm_setAutomine", [false]);
                 const [sender, recipient] = await rpc<string[]>("eth_accounts");
                 const pending = await rpc<string>("eth_sendTransaction", [
@@ -150,7 +197,6 @@ describe("e2e parallel test chain", function () {
             },
             { chainId: 31338 }
         );
-        await expectStopped(url);
     });
 
     // Mutation: the launcher mnemonic changed to another phrase -> addresses differ.
@@ -327,36 +373,76 @@ describe("e2e parallel test chain", function () {
         expect(failure?.message).to.include("Failed to start anvil");
     });
 
-    // Mutation: pinnedFoundryMismatch returns null for a differing version -> the 0.0.1 pin accepts this anvil.
-    // Mutation: the version regex no longer matches `--version` output -> the repository's own pin refuses its anvil.
-    // Mutation: an unreadable version accepted, as the forge check once did -> node's version passes.
-    // Mutation: no fallback to the runner's pin -> the unpinned project accepts the anvil the 0.0.1 runner refuses.
-    // Mutation: the runner's pin read before the project's -> the 0.0.1 project accepts this anvil.
     // Mutation: no pin anywhere accepted -> the unpinned project and runner pass.
-    it("the pinned-anvil check refuses another or an unreadable version, falls back to the runner's pin, and refuses no pin", function () {
-        const project = fs.mkdtempSync(path.join(os.tmpdir(), "anvil-pin-"));
-        const runner = fs.mkdtempSync(path.join(os.tmpdir(), "anvil-runner-"));
-        try {
+    it("the pinned-anvil check refuses when neither the project nor the runner pins anvil", function () {
+        withPinRoots((project, runner) => {
             expect(pinnedAnvilMismatch(project, process.env, runner)).to.equal(
                 `No .forge-version pins anvil in ${project} or in the runner (${runner})`
             );
+        });
+    });
+
+    // Mutation: no fallback to the runner's pin -> the unpinned project is refused.
+    it("the pinned-anvil check accepts this anvil for a project with no pin under the runner's own pin", function () {
+        withPinRoots((project) => {
             expect(pinnedAnvilMismatch(project, process.env)).to.equal(null);
+        });
+    });
+
+    // Mutation: pinnedFoundryMismatch returns null for a differing version -> the 0.0.1 pin accepts this anvil.
+    it("the pinned-anvil check refuses this anvil when the runner pins another version for a project with none", function () {
+        withPinRoots((project, runner) => {
             fs.writeFileSync(path.join(runner, ".forge-version"), "v0.0.1\n");
             expect(
                 pinnedAnvilMismatch(project, process.env, runner)
             ).to.include("does not match .forge-version (0.0.1)");
+        });
+    });
+
+    // Mutation: the runner's pin read before the project's -> the 0.0.1 project accepts this anvil.
+    it("the pinned-anvil check reads the project's pin before the runner's", function () {
+        withPinRoots((project) => {
             fs.writeFileSync(path.join(project, ".forge-version"), "v0.0.1\n");
             expect(pinnedAnvilMismatch(project, process.env)).to.include(
                 "does not match .forge-version (0.0.1)"
             );
+        });
+    });
+
+    // Mutation: an unreadable version accepted, as the forge check once did -> node's version passes.
+    it("the pinned-tool check refuses a binary whose version it cannot read", function () {
+        withPinRoots((project) => {
+            fs.writeFileSync(path.join(project, ".forge-version"), "v0.0.1\n");
             expect(
                 pinnedFoundryMismatch("node", project, process.env)
             ).to.include("node (unknown version) does not match");
-            expect(pinnedAnvilMismatch(repoRoot(), process.env)).to.equal(null);
-        } finally {
-            fs.rmSync(project, { recursive: true, force: true });
-            fs.rmSync(runner, { recursive: true, force: true });
-        }
+        });
+    });
+
+    // Mutation: the version regex no longer matches `--version` output -> the repository's own pin refuses its anvil.
+    it("the pinned-anvil check accepts this anvil under the repository's own pin", function () {
+        expect(pinnedAnvilMismatch(repoRoot(), process.env)).to.equal(null);
+    });
+
+    // Mutation: the block time passed through unchecked -> anvil gets --block-time NaN.
+    it("refuses a block time that is not a positive number of milliseconds before a node starts", function () {
+        expect(() =>
+            anvilArgs({ HARDHAT_NODE_BLOCK_TIME_MS: "fast" })
+        ).to.throw(
+            'HARDHAT_NODE_BLOCK_TIME_MS must be a positive number of milliseconds, got "fast"'
+        );
+        expect(() => anvilArgs({ HARDHAT_NODE_BLOCK_TIME_MS: "-5" })).to.throw(
+            "must be a positive number of milliseconds"
+        );
+    });
+
+    // Mutation: the block time passed in milliseconds -> anvil mines one block every 100 seconds.
+    it("passes a block time in milliseconds to anvil in seconds", function () {
+        const args = anvilArgs({ HARDHAT_NODE_BLOCK_TIME_MS: "100" });
+        expect(args.slice(args.indexOf("--block-time"))).to.deep.equal([
+            "--block-time",
+            "0.1"
+        ]);
     });
 
     // Mutation: the exit handler before ready removed -> the start waits out its 30 s budget instead.

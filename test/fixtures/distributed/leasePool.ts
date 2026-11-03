@@ -80,6 +80,8 @@ type LeaseConnection = {
     };
     connected: boolean;
     heartbeat: NodeJS.Timeout;
+    /** What the worker host's SERVER_READY declared. */
+    capabilities: Record<string, unknown>;
 };
 
 type LeaseWorkerServer = {
@@ -162,6 +164,13 @@ export class LeaseOrchestrator {
             });
         });
         return orchestrator;
+    }
+
+    /** What the worker host `label` declared in its SERVER_READY. */
+    capabilitiesOf(label: string): Record<string, unknown> | undefined {
+        return [...this.connections.values()].find(
+            (connection) => connection.label === label
+        )?.capabilities;
     }
 
     checkpoint(): number {
@@ -296,7 +305,8 @@ export class LeaseOrchestrator {
             label: ready.header.name,
             peer,
             connected: true,
-            heartbeat
+            heartbeat,
+            capabilities: ready.header.capabilities
         };
         this.connections.set(workerId, connection);
         peer.on("message", (message: LeaseEvent) => {

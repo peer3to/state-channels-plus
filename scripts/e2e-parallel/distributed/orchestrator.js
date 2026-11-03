@@ -29,6 +29,7 @@ const {
 } = require("../shared/constants");
 const { CostCache } = require("../shared/costCache");
 const { budgetHoldReason } = require("../shared/scheduling");
+const { normalizeTaskRunner } = require("../shared/taskRunners");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
 const { fromWireCostBudget, toWireTask } = require("./taskWire");
 const { OrchestratorLogStore } = require("./orchestratorLogStore");
@@ -133,6 +134,24 @@ function assertCompatibleWorkerProtocol(capabilities) {
     if (runners) return runners;
     throw new Error(
         `Distributed worker protocol mismatch: orchestrator accepts ${MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL}-${DISTRIBUTED_PROTOCOL_VERSION}, worker host provides ${capabilities?.distributedProtocol ?? "none"}. Update and restart the worker host or rebase this branch.`
+    );
+}
+
+/** Whether `task` launches Chromium: a browser gate or a marked Mocha file. */
+function needsBrowser(task) {
+    return (
+        normalizeTaskRunner(task.runner) === "browser" ||
+        (task.requires ?? []).includes("browser")
+    );
+}
+
+/** Throws when `tasks` include browser tasks the worker host cannot run. */
+function assertWorkerRunsBrowserTasks(capabilities, tasks) {
+    if (!tasks.some(needsBrowser) || capabilities?.browserRuntime?.available)
+        return;
+    throw new Error(
+        `Worker host has no browser runtime for this run's browser tasks (${capabilities?.browserRuntime?.reason ?? "it reports none"}). ` +
+            "Rebuild its runner image with yarn test:parallel:image, or install Chromium for an unsafe-host worker (yarn playwright install chromium), and restart it."
     );
 }
 
@@ -698,6 +717,10 @@ async function runDistributed(options) {
             try {
                 runners = assertCompatibleWorkerProtocol(
                     ready.header.capabilities
+                );
+                assertWorkerRunsBrowserTasks(
+                    ready.header.capabilities,
+                    options.tasks
                 );
             } catch (error) {
                 info.ban(true);
@@ -1334,6 +1357,7 @@ module.exports = {
     resetSetupFailures,
     aggregateWorkerStats,
     assertCompatibleWorkerProtocol,
+    assertWorkerRunsBrowserTasks,
     coordinatorResultActions,
     createWorkerColorRegistry,
     createHeartbeatMonitor,
