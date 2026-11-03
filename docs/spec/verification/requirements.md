@@ -276,7 +276,7 @@ Specification cases tested: 13/13.
 Specification cases tested: 12/12.
 
 [`REQ-CHAINOBS-3-N137ZP` (Manager events from the storage diff service, through connection loss)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)
-Specification cases tested: 26/26.
+Specification cases tested: 27/27.
 
 [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)
 Specification cases tested: 7/7.

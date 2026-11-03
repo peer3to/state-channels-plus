@@ -100,6 +100,8 @@ class NodeSocket extends WebSocketProvider {
      * pushes (a new head or a log), before the subscriber hears of it.
      */
     announced?: AnnouncedBlockWatcher;
+    /** Called when the node refuses a subscription on this live socket. */
+    refusedSubscription?: (kind: unknown, error: unknown) => void;
 
     // Overrides SocketProvider._processMessage: also reports the block each
     // subscription notification belongs to.
@@ -116,7 +118,9 @@ class NodeSocket extends WebSocketProvider {
     // ethers also keeps an eth_subscribe answer unhandled: one cancelled by
     // this socket's destroy never settles, as the subscription is gone with it.
     // A node that refuses newHeads but offers newBlockHeaders (Asset Hub) is
-    // asked for that instead: its pushes carry the same header `number`.
+    // asked for that instead: its pushes carry the same header `number`. Any
+    // other refusal is reported and never settles either: ethers would leave
+    // its rejection unhandled, and the subscription gets no events.
     override send(
         method: string,
         params: unknown[] | Record<string, unknown>
@@ -132,7 +136,11 @@ class NodeSocket extends WebSocketProvider {
                     offersNewBlockHeaders(error)
                 )
                     return this.send("eth_subscribe", ["newBlockHeaders"]);
-                throw error;
+                this.refusedSubscription?.(
+                    Array.isArray(params) ? params[0] : undefined,
+                    error
+                );
+                return new Promise<never>(() => undefined);
             });
         return answer;
     }
@@ -509,6 +517,15 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
             opened.announced = (blockNumber, isHead) => {
                 for (const watcher of this.announcedWatchers)
                     watcher(blockNumber, isHead);
+            };
+            opened.refusedSubscription = (kind, error) => {
+                // the owner is gone, and so may be its logger
+                if (this.stopped) return;
+                this.logger.warn("RPC node refused a subscription", {
+                    ...LoggerUtils.getRpcNodeMetadata(this.url),
+                    kind,
+                    error
+                });
             };
             socket = opened;
             const socketEnd = watchSocketEnd(socket);

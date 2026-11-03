@@ -149,8 +149,8 @@ layer's heartbeat, reconnect and failover, and contract-log subscriptions over e
 uses the SDK's provider set with the same endpoints as the SDK; failover and when to throw live inside
 that provider; a capability the SDK provider lacks is recorded as an SDK open finding, not worked
 around. The remaining provider limits are [`FIND-RPC-3-FY8YV3`](open-findings.md#find-rpc-3-fy8yv3),
-[`FIND-RPC-4-7H2R11`](open-findings.md#find-rpc-4-7h2r11), [`FIND-RPC-5-G4WNX5`](open-findings.md#find-rpc-5-g4wnx5) and
-[`FIND-RPC-6-CZ4GCV`](open-findings.md#find-rpc-6-cz4gcv). The history below is the context of the question.
+[`FIND-RPC-4-7H2R11`](open-findings.md#find-rpc-4-7h2r11) and
+[`FIND-RPC-6-CZ4GCV`](open-findings.md#find-rpc-6-cz4gcv); [`FIND-RPC-5-G4WNX5`](open-findings.md#find-rpc-5-g4wnx5) is resolved. The history below is the context of the question.
 
 Seen three times in live poker bots (2026-10-15). An application's own ethers
 `WebSocketProvider` that stays idle for minutes was dropped on the path to

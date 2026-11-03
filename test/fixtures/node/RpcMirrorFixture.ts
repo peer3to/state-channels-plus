@@ -72,6 +72,8 @@ export type MirrorSessionSettings = StorageDiffServiceSettings & {
     maxFollowedAccounts?: number;
     /** Give the provider a second node, through a proxy of its own. */
     secondNode?: boolean;
+    /** Sets up the node's proxy before the provider opens its socket. */
+    prepareNode?: (node: RpcNodeProxy) => void;
 };
 
 /**
@@ -87,6 +89,7 @@ export async function withMirrorSession<T>(
         sampleRate: named,
         maxFollowedAccounts,
         secondNode,
+        prepareNode,
         ...serviceSettings
     } = settings;
     const sampleRate = "sampleRate" in settings ? named : 0;
@@ -98,6 +101,7 @@ export async function withMirrorSession<T>(
             const secondProxy = secondNode
                 ? await RpcNodeProxy.start(chain._getConnection().url)
                 : undefined;
+            prepareNode?.(node);
             const logger = createLogger(
                 {},
                 {},

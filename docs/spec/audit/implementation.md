@@ -347,7 +347,7 @@ Luka decided these changes in the shared poker client manager plan (poker-contra
    ([`FIND-RPC-6-CZ4GCV`](open-findings.md#find-rpc-6-cz4gcv)). In [RpcNodeProvider](../implementation/source/src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md),
    `NodeSocket.send` returns a never-settling answer for an `eth_subscribe` that failed because the socket was
    destroyed, so a destroy right after a subscription leaves no unhandled rejection; an error answer on a live
-   socket still does ([`FIND-RPC-5-G4WNX5`](open-findings.md#find-rpc-5-g4wnx5)). The provider still never throws after its start
+   socket is logged and never settles either ([`FIND-RPC-5-G4WNX5`](open-findings.md#find-rpc-5-g4wnx5), resolved). The provider still never throws after its start
    while every endpoint is down ([`FIND-RPC-3-FY8YV3`](open-findings.md#find-rpc-3-fy8yv3)).
 3. [JoinChannelService](../implementation/source/src/rpc/network/services/joinChannel/JoinChannelService.ts.md) `signJoinRequest` does only local
    work: the deadline against `Clock.getTimeInSeconds()`, and threshold membership through the new

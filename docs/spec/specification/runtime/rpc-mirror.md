@@ -264,6 +264,8 @@ The read stays pending while the pushes are held and then returns the post-block
 
 [`REQ-RPCMIRROR-4-H35NFC.T1.P24`](rpc-mirror.md#req-rpcmirror-4-h35nfc.t1.p24) — a client with no block listener subscribes to every connected node's heads
 
+[`REQ-RPCMIRROR-4-H35NFC.T1.P25`](rpc-mirror.md#req-rpcmirror-4-h35nfc.t1.p25) — a client whose only node refuses every subscription warns once, leaves no unhandled rejection and keeps answering reads from the copy
+
 #### <a id="req-rpcmirror-5-kdrwdz.t1"></a>`REQ-RPCMIRROR-5-KDRWDZ.T1`
 
 **Requirements / invariants:**

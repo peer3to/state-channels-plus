@@ -748,9 +748,9 @@ endpoints, liveness check and failover, so it adds no trust boundary. Its contra
 deduplicate by block hash and log index over every node socket. Residual risks: a log emitted during a
 full outage, or missed by a node while it was down and delivered by no other node, is never delivered
 ([`FIND-RPC-4-7H2R11`](open-findings.md#find-rpc-4-7h2r11)); a reorganization removal is not reported
-([`FIND-RPC-6-CZ4GCV`](open-findings.md#find-rpc-6-cz4gcv)); a node's error answer to `eth_subscribe` on a live socket
-is an unhandled rejection, which a host that treats unhandled rejections as fatal turns into a crash
-([`FIND-RPC-5-G4WNX5`](open-findings.md#find-rpc-5-g4wnx5)); and while every endpoint is down requests wait and nothing
+([`FIND-RPC-6-CZ4GCV`](open-findings.md#find-rpc-6-cz4gcv)); a node that refuses a subscription with an error on a live
+socket is logged and its subscription gets no events
+([`FIND-RPC-5-G4WNX5`](open-findings.md#find-rpc-5-g4wnx5), resolved: no unhandled rejection); and while every endpoint is down requests wait and nothing
 throws ([`FIND-RPC-3-FY8YV3`](open-findings.md#find-rpc-3-fy8yv3)).
 
 A join-signature responder now answers from local reads

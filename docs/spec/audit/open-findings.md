@@ -2572,16 +2572,18 @@ has no such recovery.
 
 ### FIND-RPC-5-G4WNX5
 
-**Defect:** Open (2026-10-26). A node that answers `eth_subscribe` with an error on a live socket
-leaves an unhandled rejection: ethers does not handle that answer, and `NodeSocket.send`
-([RpcNodeProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md)) settles only an `eth_subscribe` answer that the socket's destroy
-cancelled (that one never settles). The one test that answers `eth_subscribe` with an error on a live socket
-([`REQ-CHAINOBS-3-N137ZP.T1.P36`](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp.t1.p36)) does not record unhandled rejections; run with a recorder it shows one (2026-11-03).
-Relates to [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8). Since 2026-11-03 every runtime reaches this path too: the client keeps a head subscription on every
-connected node ([`REQ-RPCMIRROR-4-H35NFC` (A read is never older than a block the peer already saw)](../specification/runtime/rpc-mirror.md#req-rpcmirror-4-h35nfc)), so a node that refuses `newHeads`
-without offering `newBlockHeaders` leaves an unhandled rejection on each of its sockets.
+**Defect:** Resolved (2026-11-03). A node that answered `eth_subscribe` with an error on a live
+socket left an unhandled rejection: ethers does not handle that answer. Since the client keeps a
+head subscription on every connected node ([`REQ-RPCMIRROR-4-H35NFC` (A read is never older than a block the peer already saw)](../specification/runtime/rpc-mirror.md#req-rpcmirror-4-h35nfc)), every runtime reached it
+through a node that refuses `newHeads` without offering `newBlockHeaders`. `NodeSocket.send`
+([RpcNodeProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md)) now logs such a refusal with the node's scheme and host and
+returns an answer that never settles, as it already did for a subscription the socket's destroy
+cancelled; that subscription gets no events. The engineer chose this fix (2026-11-03).
+Relates to [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8).
 
-**Disposition:** Recorded, not addressed now; revisit later.
+**Proposed direction:** Current evidence is mapped under
+[`REQ-CHAINOBS-3-N137ZP.T1.P49`](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp.t1.p49) and
+[`REQ-RPCMIRROR-4-H35NFC.T1.P25`](../specification/runtime/rpc-mirror.md#req-rpcmirror-4-h35nfc.t1.p25).
 
 <a id="find-rpc-6-cz4gcv"></a>
 

@@ -13,6 +13,7 @@ import {
     deployLogEmitter,
     emitValue
 } from "@test/fixtures/node/StorageDiffContracts";
+import { recordUnhandledRejections } from "@test/fixtures/UnhandledRejectionRecorder";
 import { waitFor } from "@test/utils/waitFor";
 import type { SimpleNumberStorage } from "@typechain-types";
 import { expect } from "chai";
@@ -177,6 +178,44 @@ describe("MirrorRpcProvider freshness", function () {
             expect(await read).to.equal(3n);
             expect(nodeRequests(session, "eth_call")).to.have.length(0);
         });
+    });
+
+    it("keeps answering reads from the mirror when its only node refuses every subscription, with one warning and no unhandled rejection", async function () {
+        const recorder = recordUnhandledRejections();
+        try {
+            await withMirrorSession(
+                async (session) => {
+                    const { storage, chainStorage } =
+                        await deployMirroredStorage(session);
+                    await (await chainStorage.setValue(7n)).wait();
+
+                    await waitFor(
+                        async () => (await storage.getValue()) === 7n
+                    );
+                    const refusals = session.warnings.filter(
+                        (warning) =>
+                            warning.message ===
+                            "RPC node refused a subscription"
+                    );
+
+                    expect(nodeRequests(session, "eth_call")).to.have.length(0);
+                    // the provider's own head subscription, refused once
+                    expect(refusals).to.have.length(1);
+                    // Mutation: the refusal rethrown, as ethers leaves it unhandled
+                    expect(await recorder.settled()).to.deep.equal([]);
+                },
+                {
+                    prepareNode: (node) =>
+                        node.errorRequests(
+                            "eth_subscribe",
+                            -32602,
+                            "Invalid params"
+                        )
+                }
+            );
+        } finally {
+            recorder.stop();
+        }
     });
 
     // Mutation: a backstop seeded with a short default ends the first wait early.
