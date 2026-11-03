@@ -13,6 +13,7 @@ Cases subscribe to contracts whose history the service must backfill, against an
 - `finds the deploy block by bisection and traces only the blocks with transactions since`: REQ-SDS-9-ZRPZZW.T1.P2
 - `answers a read of a never-written slot of a complete contract without asking the upstream`: REQ-SDS-9-ZRPZZW.T1.P3
 - `keeps a complete contract current from the records and does not push its snapshot again`: REQ-SDS-9-ZRPZZW.T1.P4
+- `answers a slot of a complete contract with its value before a block a reorg dropped, when that block cleared it`: REQ-SDS-9-ZRPZZW.T1.P36
 - `pushes an account without code with its balance and nonce`: REQ-SDS-9-ZRPZZW.T1.P5
 - `includes a block mined while the history is being traced`: REQ-SDS-9-ZRPZZW.T1.P6
 - `starts over when a reorg drops the block the history was read to`: REQ-SDS-9-ZRPZZW.T1.P7

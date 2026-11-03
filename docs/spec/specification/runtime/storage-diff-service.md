@@ -413,6 +413,8 @@ A ready account's snapshot equals the chain's complete state at its block; a laz
 
 <a id="req-sds-9-zrpzzw.t1.p35"></a>`REQ-SDS-9-ZRPZZW.T1.P35` — at most two accounts are backfilled at once and the next starts once one is done
 
+<a id="req-sds-9-zrpzzw.t1.p36"></a>`REQ-SDS-9-ZRPZZW.T1.P36` — a slot of a complete contract that a block a reorganization dropped had cleared is answered with its value before that block, without asking the upstream
+
 #### <a id="req-sds-11-qv2vpt.t1"></a>`REQ-SDS-11-QV2VPT.T1`
 
 **Requirements / invariants:**

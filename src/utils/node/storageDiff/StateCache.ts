@@ -156,11 +156,8 @@ export class StateCache {
             if (account.code !== undefined) {
                 this.update("code", address, account.code);
             }
-            for (const [slot, word] of Object.entries(account.storage ?? {})) {
-                const cached = this.slots.get(address);
-                if (cached && (cached.has(slot) || this.complete.has(address)))
-                    cached.set(slot, word);
-            }
+            for (const [slot, word] of Object.entries(account.storage ?? {}))
+                this.updateSlot(address, slot, word);
         }
     }
 
@@ -198,11 +195,23 @@ export class StateCache {
             if (before.code !== undefined) {
                 this.update("code", address, before.code);
             }
-            for (const [slot, word] of Object.entries(before.storage ?? {})) {
-                const cached = this.slots.get(address);
-                if (cached?.has(slot)) cached.set(slot, word);
-            }
+            for (const [slot, word] of Object.entries(before.storage ?? {}))
+                this.updateSlot(address, slot, word);
         }
+    }
+
+    /**
+     * Sets a slot that is cached, or any slot of a complete account: a slot
+     * missing from a complete account reads as zero, so a write must land.
+     */
+    private updateSlot(
+        address: AccountAddress,
+        slot: StorageSlot,
+        word: StorageWord
+    ): void {
+        const cached = this.slots.get(address);
+        if (cached && (cached.has(slot) || this.complete.has(address)))
+            cached.set(slot, word);
     }
 
     private update(

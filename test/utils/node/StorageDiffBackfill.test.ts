@@ -147,6 +147,40 @@ describe("StorageDiffService backfill", function () {
         });
     });
 
+    // Mutation: a rolled-back block restores only slots the cache holds.
+    it("answers a slot of a complete contract with its value before a block a reorg dropped, when that block cleared it", async function () {
+        await withStorageDiffSession(
+            async ({ client, provider, relay, signer }) => {
+                const writer = await deploySlotWriter(signer);
+                await writeSlot(signer, writer, 1, 5n);
+                const cleared = await writeSlot(signer, writer, 1, 0n);
+                const subscription = await client.subscribe([writer]);
+                const snapshot = await client.nextSnapshot(subscription);
+                expect(Number(snapshot.block.number)).to.equal(
+                    cleared.blockNumber
+                );
+
+                // the block that cleared the slot is replaced by an empty one
+                await provider.send("anvil_reorg", [1, []]);
+                const replaced = await client.recordAt(
+                    subscription,
+                    cleared.blockNumber
+                );
+                const reads = fieldReads(relay);
+                const state = await client.getState(replaced.hash, [
+                    { address: writer, slots: [slotKey(1)] }
+                ]);
+
+                expect(replaced.hash).to.not.equal(cleared.blockHash);
+                expect(state.accounts[writer].storage).to.deep.equal({
+                    [slotKey(1)]: storageWord(5n)
+                });
+                // answered from the complete account, not the upstream
+                expect(fieldReads(relay) - reads).to.equal(0);
+            }
+        );
+    });
+
     it("pushes an account without code with its balance and nonce", async function () {
         await withStorageDiffSession(async ({ client, provider, signer }) => {
             const sender = (await signer.getAddress()).toLowerCase();
