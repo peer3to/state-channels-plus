@@ -2,6 +2,7 @@
 import type {
     AccountAddress,
     BlockStorageDiff,
+    StorageDiffSnapshot,
     SubscribeResult,
     SubscriptionId
 } from "@/utils/node/storageDiff/blockStorageDiff";
@@ -9,6 +10,7 @@ import {
     type StorageDiffCatchUp,
     type StorageDiffState
 } from "@/utils/node/storageDiff/StorageDiffService";
+import type { StorageDiffDelayNotice } from "@/utils/storageDiff/storageDiffWire";
 import WebSocket from "ws";
 
 /** A JSON-RPC error answer, with its code, as the service sent it. */
@@ -39,6 +41,18 @@ export class StorageDiffClient {
         SubscriptionId,
         Waiter<BlockStorageDiff>
     >();
+    // Snapshots pushed to a subscription and not read yet, in arrival order.
+    private readonly snapshots = new Map<
+        SubscriptionId,
+        StorageDiffSnapshot[]
+    >();
+    private readonly snapshotWaiters = new Map<
+        SubscriptionId,
+        Waiter<StorageDiffSnapshot>
+    >();
+    // `scp_delayed` notices not yet read, in arrival order.
+    private readonly delays: StorageDiffDelayNotice[] = [];
+    private delayWaiter?: Waiter<StorageDiffDelayNotice>;
     // `scp_disconnect` notification params, in arrival order.
     private readonly disconnectNotices: unknown[] = [];
     private readonly socketClosed: Promise<{ code: number; reason: string }>;
@@ -86,6 +100,13 @@ export class StorageDiffClient {
     }
 
     async subscribe(addresses: AccountAddress[]): Promise<SubscriptionId> {
+        return (await this.subscribeWithStatus(addresses)).subscription;
+    }
+
+    /** Subscribes and returns the snapshot status of each address too. */
+    async subscribeWithStatus(
+        addresses: AccountAddress[]
+    ): Promise<SubscribeResult> {
         const result = (await this.request("scp_subscribeContractStorage", [
             addresses
         ])) as SubscribeResult;
@@ -95,7 +116,7 @@ export class StorageDiffClient {
             result.subscription,
             this.records.get(result.subscription) ?? []
         );
-        return result.subscription;
+        return result;
     }
 
     async unsubscribe(subscription: SubscriptionId): Promise<boolean> {
@@ -142,6 +163,20 @@ export class StorageDiffClient {
         return (await this.catchUp(addresses, fromBlock)).records;
     }
 
+    /** The next snapshot pushed to `subscription`. */
+    nextSnapshot(subscription: SubscriptionId): Promise<StorageDiffSnapshot> {
+        const queued = this.snapshots.get(subscription)?.shift();
+        if (queued) return Promise.resolve(queued);
+        return new Promise((resolve) =>
+            this.snapshotWaiters.set(subscription, resolve)
+        );
+    }
+
+    /** Snapshots pushed to `subscription` and not read yet. */
+    unreadSnapshots(subscription: SubscriptionId): StorageDiffSnapshot[] {
+        return [...(this.snapshots.get(subscription) ?? [])];
+    }
+
     /** The next pushed record of `subscription`, in push order. */
     nextRecord(subscription: SubscriptionId): Promise<BlockStorageDiff> {
         const queued = this.records.get(subscription)?.shift();
@@ -165,6 +200,18 @@ export class StorageDiffClient {
                 );
             }
         }
+    }
+
+    /** The next `scp_delayed` notice, in push order. */
+    nextDelay(): Promise<StorageDiffDelayNotice> {
+        const queued = this.delays.shift();
+        if (queued) return Promise.resolve(queued);
+        return new Promise((resolve) => (this.delayWaiter = resolve));
+    }
+
+    /** `scp_delayed` notices pushed and not read yet. */
+    unreadDelays(): StorageDiffDelayNotice[] {
+        return [...this.delays];
     }
 
     /** Stops reading from the socket, so the service's sends pile up. */
@@ -194,6 +241,26 @@ export class StorageDiffClient {
         const message = JSON.parse(raw);
         if (message.method === "scp_disconnect") {
             this.disconnectNotices.push(message.params);
+            return;
+        }
+        if (message.method === "scp_delayed") {
+            const waiter = this.delayWaiter;
+            this.delayWaiter = undefined;
+            if (waiter) waiter(message.params);
+            else this.delays.push(message.params);
+            return;
+        }
+        if (message.method === "scp_snapshot") {
+            const { subscription, result } = message.params;
+            const waiter = this.snapshotWaiters.get(subscription);
+            if (waiter) {
+                this.snapshotWaiters.delete(subscription);
+                waiter(result);
+                return;
+            }
+            const queue = this.snapshots.get(subscription) ?? [];
+            queue.push(result);
+            this.snapshots.set(subscription, queue);
             return;
         }
         if (message.method === "scp_subscription") {

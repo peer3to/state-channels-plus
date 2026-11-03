@@ -51,6 +51,34 @@ export interface StateRequest {
     code: boolean;
 }
 
+/** `scp_getBlock`'s block: `"latest"`, a quantity, or a 32-byte hash. */
+export type ParsedBlockSelector =
+    | { kind: "latest" }
+    | { kind: "number"; number: bigint }
+    | { kind: "hash"; hash: string };
+
+export function parseBlockSelector(value: unknown): ParsedBlockSelector {
+    if (value === "latest") return { kind: "latest" };
+    // a 64-digit quantity is a hash
+    if (typeof value === "string" && HASH.test(value)) {
+        return { kind: "hash", hash: value.toLowerCase() };
+    }
+    if (typeof value === "string" && QUANTITY.test(value)) {
+        return { kind: "number", number: BigInt(value) };
+    }
+    throw invalidParams(
+        'block must be "latest", a hex quantity or a 32-byte hash'
+    );
+}
+
+/** The optional block number a read waits for the head to reach. */
+export function parseMinBlock(value: unknown): bigint | undefined {
+    if (value === undefined) return undefined;
+    if (typeof value === "string" && QUANTITY.test(value) && value.length <= 18)
+        return BigInt(value);
+    throw invalidParams("minBlock must be a hex quantity");
+}
+
 export function parseBlockHash(value: unknown): string {
     if (typeof value !== "string" || !HASH.test(value)) {
         throw invalidParams("blockHash must be a 32-byte hex hash");

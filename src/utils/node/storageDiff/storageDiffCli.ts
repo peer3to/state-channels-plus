@@ -1,3 +1,4 @@
+import { ChildTrieBlockSource } from "./backfillBlocks/ChildTrieBlockSource";
 import type { StorageDiffServiceOptions } from "./StorageDiffService";
 import { parseArgs } from "node:util";
 
@@ -49,7 +50,8 @@ export function parseStorageDiffArgs(
             "max-connections": { type: "string" },
             "max-in-flight-requests": { type: "string" },
             "max-watched-addresses": { type: "string" },
-            "max-watched-addresses-per-connection": { type: "string" }
+            "max-watched-addresses-per-connection": { type: "string" },
+            "asset-hub-substrate-url": { type: "string" }
         },
         strict: true,
         allowPositionals: false
@@ -71,5 +73,10 @@ export function parseStorageDiffArgs(
         if (value !== undefined)
             options[COUNT_FLAGS[flag]] = parseCount(flag, value);
     }
+    // Asset Hub: backfills find a contract's changed blocks on its Substrate node
+    if (values["asset-hub-substrate-url"] !== undefined)
+        options.backfillBlocks = new ChildTrieBlockSource(
+            values["asset-hub-substrate-url"]
+        );
     return options;
 }

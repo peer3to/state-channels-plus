@@ -7,6 +7,7 @@
 - [`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../../../../../../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)
 - [`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../../../../../../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)
 - [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../../../../../../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)
+- [`REQ-SDS-9-ZRPZZW` (A subscription is anchored by a complete snapshot, or told none is coming)](../../../../../../specification/runtime/storage-diff-service.md#req-sds-9-zrpzzw)
 
 ## UNIT-TEST-RPC-NODE-1-VTXH1M
 
@@ -28,3 +29,5 @@ Connection lifecycle of one endpoint
 - [x] `UNIT-TEST-RPC-NODE-1-VTXH1M.P11` — a socket's unsubscribe answered after destroy: no unhandled rejection
 - [x] `UNIT-TEST-RPC-NODE-1-VTXH1M.P12` — a socket's unsubscribe answered with an error by a live node: no unhandled rejection, reads continue
 - [x] `UNIT-TEST-RPC-NODE-1-VTXH1M.P13` — a socket's `eth_subscribe` cancelled by the provider's destroy right after a log subscription: no unhandled rejection
+- [x] `UNIT-TEST-RPC-NODE-1-VTXH1M.P14` — a socket to a node that serves no Ethereum RPC opens once the node answers the heartbeat request, without asking its chain id
+- [x] `UNIT-TEST-RPC-NODE-1-VTXH1M.P15` — a socket to a node that serves no Ethereum RPC reopens after a cut without asking its chain id, and a request held meanwhile is answered

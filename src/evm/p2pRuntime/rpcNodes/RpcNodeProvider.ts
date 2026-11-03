@@ -8,6 +8,7 @@ import {
     type JsonRpcPayload,
     type JsonRpcResult,
     makeError,
+    Network,
     WebSocketProvider
 } from "ethers";
 
@@ -21,6 +22,8 @@ const CONNECT_TIMEOUT_MS = 10_000;
 const HEARTBEAT_INTERVAL_MS = 10_000;
 /** How long a heartbeat may take before the socket counts as dead. */
 const HEARTBEAT_TIMEOUT_MS = 5_000;
+/** What a heartbeat asks; any answer, an error one too, proves the socket alive. */
+const HEARTBEAT_METHOD = "eth_blockNumber";
 /** Least time between two warnings about one node's failed reconnects. */
 const RECONNECT_WARNING_INTERVAL_MS = 60_000;
 
@@ -53,6 +56,18 @@ type NodeConnection = {
  */
 export type ExpectedChain = { chainId?: bigint };
 
+export type RpcNodeProviderOptions = {
+    /**
+     * False for a node that serves no Ethereum RPC (an Asset Hub Substrate
+     * node): it has no chain id to detect or check, so a connection counts as
+     * open once the node answers a request at all, an error answer included.
+     */
+    ethereum?: boolean;
+};
+
+/** The network of a node that serves no Ethereum RPC: never asked for. */
+const NOT_ETHEREUM_NETWORK = new Network("not-ethereum", 0n);
+
 /** A node's WebSocket. */
 class NodeSocket extends WebSocketProvider {
     // Overrides JsonRpcApiProvider.send: ethers sends a removed subscription's
@@ -80,9 +95,13 @@ class NodeSocket extends WebSocketProvider {
  * that names the endpoint by scheme and host only: its text would carry the
  * whole URL, credentials included.
  */
-function openSocket(url: string): WebSocketProvider {
+function openSocket(url: string, ethereum: boolean): WebSocketProvider {
     try {
-        return new NodeSocket(url);
+        return ethereum
+            ? new NodeSocket(url)
+            : new NodeSocket(url, NOT_ETHEREUM_NETWORK, {
+                  staticNetwork: NOT_ETHEREUM_NETWORK
+              });
     } catch {
         throw new Error(
             `Cannot open a WebSocket to ${LoggerUtils.getRpcNodeMetadata(url).rpcNode}`
@@ -203,6 +222,7 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
     /** Requests waiting for this node to reconnect. */
     private readonly connectionWaiters = new Set<() => void>();
     private readonly expectedChain: ExpectedChain;
+    private readonly ethereum: boolean;
     private connection?: NodeConnection;
     private failedAttempts = 0;
     private lastReconnectWarningAt?: number;
@@ -215,18 +235,22 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
     constructor(
         url: string,
         logger: Logger,
-        expectedChain: ExpectedChain = {}
+        expectedChain: ExpectedChain = {},
+        options: RpcNodeProviderOptions = {}
     ) {
         // cacheTimeout -1: ethers keeps a failed answer for 250 ms and would
         // hand it to a retry of the same request without asking the node
+        // a node that serves no Ethereum RPC is never asked for its chain id
         super(undefined, {
-            staticNetwork: true,
+            staticNetwork:
+                options.ethereum === false ? NOT_ETHEREUM_NETWORK : true,
             batchMaxCount: 1,
             cacheTimeout: -1
         });
         this.url = url;
         this.logger = logger.child({ component: "RpcNode" });
         this.expectedChain = expectedChain;
+        this.ethereum = options.ethereum ?? true;
         this.firstAttempt = this.connect();
     }
 
@@ -385,15 +409,19 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
             "RPC node connection attempt timed out"
         );
         try {
-            socket = openSocket(this.url);
+            socket = openSocket(this.url, this.ethereum);
             const socketEnd = watchSocketEnd(socket);
             const network = await Promise.race([
-                socket.getNetwork(),
+                this.ethereum ? socket.getNetwork() : this.firstAnswer(socket),
                 socketEnd.then((reason) => Promise.reject(reason)),
                 attemptDeadline.expired
             ]);
             const expected = this.expectedChain.chainId;
-            if (expected !== undefined && network.chainId !== expected)
+            if (
+                network &&
+                expected !== undefined &&
+                network.chainId !== expected
+            )
                 throw new Error(
                     `RPC node serves chain ${network.chainId}, expected ${expected}`
                 );
@@ -401,7 +429,7 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
                 await socket.destroy();
                 return undefined;
             }
-            this.expectedChain.chainId = network.chainId;
+            if (network) this.expectedChain.chainId = network.chainId;
             this.attach(socket, socketEnd);
             return undefined;
         } catch (error) {
@@ -472,6 +500,18 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
         for (const watcher of this.watchers) watcher(socket, true);
     }
 
+    /**
+     * Settles once a socket to a node that serves no Ethereum RPC answered
+     * the heartbeat request, an error answer included; a socket that ends
+     * first rejects.
+     */
+    private async firstAnswer(socket: WebSocketProvider): Promise<undefined> {
+        await socket.send(HEARTBEAT_METHOD, []).catch(() => undefined);
+        if (socket.websocket.readyState !== 1)
+            throw new Error("WebSocket closed");
+        return undefined;
+    }
+
     // a socket whose path died silently reports no close: it must answer
     private async checkHeartbeat(connection: NodeConnection): Promise<void> {
         if (connection.hasEnded) return;
@@ -480,7 +520,7 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
             "RPC node heartbeat timed out"
         );
         // an error answer is still an answer: the socket is alive
-        const answered = connection.socket.send("eth_blockNumber", []).then(
+        const answered = connection.socket.send(HEARTBEAT_METHOD, []).then(
             () => undefined,
             (error: unknown) => {
                 if (connection.hasEnded || this.stopped || !this.reconnects)

@@ -10,6 +10,7 @@ import { UpstreamRelay } from "./UpstreamRelay";
 import { createLogger } from "@/utils";
 import {
     StorageDiffService,
+    type BackfillRecord,
     type StorageDiffServiceOptions
 } from "@/utils/node/storageDiff/StorageDiffService";
 import { type JsonRpcProvider, type JsonRpcSigner } from "ethers";
@@ -50,6 +51,8 @@ export type StorageDiffUpstream = {
     signer: JsonRpcSigner;
     /** Warnings the services' loggers got, oldest first. */
     warnings: LoggedWarning[];
+    /** What each backfill the services finished cost and found, oldest first. */
+    backfills: BackfillRecord[];
     /** Starts a service on the relay; it is closed in `finally`. */
     start: (
         settings?: StorageDiffServiceSettings
@@ -77,6 +80,7 @@ export async function withStorageDiffUpstream<T>(
         );
         const services: StorageDiffService[] = [];
         const warnings: LoggedWarning[] = [];
+        const backfills: BackfillRecord[] = [];
         try {
             const signer = await provider.getSigner(0);
             const start = async (settings: StorageDiffServiceSettings = {}) => {
@@ -89,6 +93,13 @@ export async function withStorageDiffUpstream<T>(
                 logger.warn = (message: unknown, ...meta: unknown[]) => {
                     warnings.push({ message: String(message), meta });
                     warn(message, ...meta);
+                };
+                // Records each finished backfill, then logs it as usual.
+                const info = logger.info.bind(logger);
+                logger.info = (message: unknown, ...meta: unknown[]) => {
+                    if (message === "Backfilled an account")
+                        backfills.push(meta[0] as BackfillRecord);
+                    info(message, ...meta);
                 };
                 const service = await StorageDiffService.start({
                     upstreamUrl: relay.url,
@@ -104,6 +115,7 @@ export async function withStorageDiffUpstream<T>(
                 relay,
                 signer,
                 warnings,
+                backfills,
                 start
             });
         } finally {

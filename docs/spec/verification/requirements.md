@@ -849,19 +849,31 @@ Specification cases tested: 8/8.
 Specification cases tested: 4/4.
 
 [`REQ-SDS-3-5JW8AK` (Subscriptions belong to their connection and end on request)](../specification/runtime/storage-diff-service.md#req-sds-3-5jw8ak)
-Specification cases tested: 5/5.
+Specification cases tested: 8/8.
 
 [`REQ-SDS-4-ZZDEVF` (Reported values are the chain's own, not the tracer's)](../specification/runtime/storage-diff-service.md#req-sds-4-zzdevf)
 Specification cases tested: 10/10.
 
+[`REQ-SDS-5-B2V01N` (Logs of subscribed addresses travel with their block)](../specification/runtime/storage-diff-service.md#req-sds-5-b2v01n)
+Specification cases tested: 11/11.
+
 [`REQ-SDS-7-PZCBQ9` (State reads come from one shared cache)](../specification/runtime/storage-diff-service.md#req-sds-7-pzcbq9)
 Specification cases tested: 19/19.
 
+[`REQ-SDS-8-FQFNTV` (Retained blocks, transactions and receipts are served from the service)](../specification/runtime/storage-diff-service.md#req-sds-8-fqfntv)
+Specification cases tested: 13/13.
+
+[`REQ-SDS-9-ZRPZZW` (A subscription is anchored by a complete snapshot, or told none is coming)](../specification/runtime/storage-diff-service.md#req-sds-9-zrpzzw)
+Specification cases tested: 38/38.
+
 [`REQ-SDS-11-QV2VPT` (Upstream trouble is retried, then fatal)](../specification/runtime/storage-diff-service.md#req-sds-11-qv2vpt)
-Specification cases tested: 13/14. Untested: T1.P10.
+Specification cases tested: 15/15.
 
 [`REQ-SDS-12-JDW71Y` (What peers can make the service hold is bounded)](../specification/runtime/storage-diff-service.md#req-sds-12-jdw71y)
-Specification cases tested: 16/16.
+Specification cases tested: 20/20.
+
+[`REQ-SDS-12-N40MKR` (A wait for a late block or snapshot ends at the first event, not at a fixed time)](../specification/runtime/storage-diff-service.md#req-sds-12-n40mkr)
+Specification cases tested: 12/12.
 
 [`REQ-SEC-1-SNS1GA` (Before this specification is finalized, a dedicated security review of the full…)](../audit/security-assessment.md#req-sec-1-sns1ga)
 Specification cases tested: none planned.
