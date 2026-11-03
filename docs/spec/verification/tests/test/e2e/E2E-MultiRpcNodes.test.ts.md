@@ -70,6 +70,7 @@ The two lagging-node cases set `STORAGE_DIFF_URL` to empty so the peer's mirror 
 ## Tests
 
 - `delivers an event emitted while the peer's only RPC node was cut through the reconnect catch-up`: REQ-CHAINOBS-3-N137ZP.T1.P5, REQ-CHAINOBS-3-N137ZP.T1.P2
+- `sends a join and observes its event through an RPC node that refuses newHeads and offers newBlockHeaders`: REQ-CHAINOBS-3-N137ZP.T1.P37
 - `delivers every event exactly once and keeps sending through the second RPC node when the first is cut`: INV-CHAINOBS-1-ASVKC1.T1.P7, REQ-CHAINOBS-2-2NCSQ3.T1.P6
 - `delivers the event missed while cut when a newer event arrives during the catch-up read`: REQ-CHAINOBS-3-N137ZP.T1.P7, UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P6, REQ-CHAINOBS-3-N137ZP.T1.P28, UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P16
 - `retries a failed catch-up read while the node stays connected`: REQ-CHAINOBS-3-N137ZP.T1.P8, UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P7

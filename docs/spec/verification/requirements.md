@@ -276,7 +276,7 @@ Specification cases tested: 13/13.
 Specification cases tested: 12/12.
 
 [`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)
-Specification cases tested: 33/33.
+Specification cases tested: 37/37.
 
 [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)
 Specification cases tested: 7/7.
@@ -795,7 +795,7 @@ Specification cases tested: 12/12.
 Specification cases tested: 18/18.
 
 [`REQ-RPCMIRROR-4-H35NFC` (A read is never older than a block the peer already saw)](../specification/runtime/rpc-mirror.md#req-rpcmirror-4-h35nfc)
-Specification cases tested: 24/24.
+Specification cases tested: 26/26.
 
 [`REQ-RPCMIRROR-5-KDRWDZ` (The copy follows the chain through gaps and reorganizations)](../specification/runtime/rpc-mirror.md#req-rpcmirror-5-kdrwdz)
 Specification cases tested: 8/8.
@@ -867,7 +867,7 @@ Specification cases tested: 8/10. Untested: T1.P1, T1.P5.
 Specification cases tested: 8/8.
 
 [`REQ-SDS-1-TXEY33` (A subscription receives one record per canonical block)](../specification/runtime/storage-diff-service.md#req-sds-1-txey33)
-Specification cases tested: 8/8.
+Specification cases tested: 9/9.
 
 [`REQ-SDS-2-R1RRCF` (Catch-up returns the retained history and the head)](../specification/runtime/storage-diff-service.md#req-sds-2-r1rrcf)
 Specification cases tested: 4/4.

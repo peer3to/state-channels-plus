@@ -10,6 +10,7 @@ Each case starts the service in front of an isolated anvil test chain reached th
 ## Tests
 
 - `pushes the pre and post value of a slot a transaction wrote to a subscriber of that address`: REQ-SDS-1-TXEY33.T1.P1
+- `pushes the record of a block from an upstream that refuses newHeads and offers newBlockHeaders`: REQ-SDS-1-TXEY33.T1.P9
 - `pushes the header and no diff of a block whose transactions leave the subscribed address untouched`: REQ-SDS-1-TXEY33.T1.P2
 - `pushes a record for a block without transactions`: REQ-SDS-1-TXEY33.T1.P3
 - `reports a slot cleared to zero as the zero word in post`: REQ-SDS-1-TXEY33.T1.P4
