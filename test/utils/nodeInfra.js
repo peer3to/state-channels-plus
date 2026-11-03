@@ -428,6 +428,8 @@ async function startInfraProcess({
           })
         : Promise.resolve();
     child.once("close", () => logStream?.end());
+    // with no log to pipe to, stderr is drained so its pipe never fills
+    if (!logStream) child.stderr.resume();
     const stop = () => {
         if (!child.killed) child.kill("SIGTERM");
     };

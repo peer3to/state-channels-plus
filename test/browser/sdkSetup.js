@@ -134,6 +134,16 @@ export async function deployLocalStateMachine(
     return receipt.contractAddress;
 }
 
+/**
+ * The storage diff service of a gate's node, proxied beside its RPC at the
+ * page's origin (sdkRuntimeServer.mjs).
+ */
+export function storageDiffUrlOf(providerUrl) {
+    return providerUrl
+        .replace(/^http/, "ws")
+        .replace(/\/rpc$/, "/storage-diff");
+}
+
 export async function setupBrowserPeer(
     peerWallet,
     providerUrl,
@@ -162,7 +172,8 @@ export async function setupBrowserPeer(
                         ...options,
                         config: {
                             ...options.config,
-                            PROVIDER_URL: providerUrl
+                            PROVIDER_URL: providerUrl,
+                            STORAGE_DIFF_URL: storageDiffUrlOf(providerUrl)
                         },
                         signerSecret: peerWallet.privateKey
                     },
