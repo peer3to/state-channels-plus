@@ -864,7 +864,7 @@ Specification cases tested: 19/19.
 Specification cases tested: 13/13.
 
 [`REQ-SDS-9-ZRPZZW` (A subscription is anchored by a complete snapshot, or told none is coming)](../specification/runtime/storage-diff-service.md#req-sds-9-zrpzzw)
-Specification cases tested: 37/37.
+Specification cases tested: 38/38.
 
 [`REQ-SDS-11-QV2VPT` (Upstream trouble is retried, then fatal)](../specification/runtime/storage-diff-service.md#req-sds-11-qv2vpt)
 Specification cases tested: 15/15.

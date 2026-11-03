@@ -317,6 +317,57 @@ describe("StorageDiffService backfill beyond the window", function () {
             { retention: 2 }
         );
     });
+    // Mutation: the check of the block the range resumes after is not
+    // retried on its own -> one error answer starts the backfill over and
+    // the code probes are asked again.
+    it("asks the block a resumed range starts after again on its own when the upstream fails it once", async function () {
+        await withStorageDiffSession(
+            async ({ client, relay, signer, warnings }) => {
+                const writer = await deploySlotWriter(signer);
+                const first = await writeSlot(signer, writer, 1, 5n);
+                // the first round lists up to this block, the next one checks it
+                const covered = toQuantity(first.blockNumber);
+                let asked = 0;
+                relay.tamper("eth_getBlockByNumber", (result, params) =>
+                    params[0] === covered &&
+                    params[1] === false &&
+                    ++asked === 2
+                        ? UPSTREAM_FAULT
+                        : result
+                );
+                const held = relay.holdNext(
+                    "debug_traceBlockByNumber",
+                    covered
+                );
+                const probes = relay.paramsOf("eth_getCode").length;
+                const subscription = await client.subscribe([writer]);
+                await held.arrived;
+                for (let i = 0; i < 4; i++)
+                    await writeSlot(signer, writer, 2, BigInt(i + 1));
+                held.release();
+                const snapshot = await client.nextSnapshot(subscription);
+
+                expect(asked).to.be.at.least(2);
+                expect(
+                    nonZero(snapshot.accounts[writer].storage)
+                ).to.deep.equal({
+                    [slotKey(1)]: storageWord(5n),
+                    [slotKey(2)]: storageWord(4n)
+                });
+                const codeReads = relay
+                    .paramsOf("eth_getCode")
+                    .slice(probes)
+                    .map((params) => String(params[1]));
+                expect(new Set(codeReads).size).to.equal(codeReads.length);
+                expect(
+                    warnings.some(({ message }) =>
+                        message.includes("Retrying a backfill read")
+                    )
+                ).to.equal(true);
+            },
+            { retention: 2 }
+        );
+    });
 });
 
 describe("StorageDiffService deploy block search", function () {

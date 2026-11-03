@@ -417,6 +417,8 @@ A ready account's snapshot equals the chain's complete state at its block; a laz
 
 <a id="req-sds-9-zrpzzw.t1.p37"></a>`REQ-SDS-9-ZRPZZW.T1.P37` — a backfill whose values were read at a block a reorganization orphans before they are committed starts over and names the keys the replacement block wrote
 
+<a id="req-sds-9-zrpzzw.t1.p38"></a>`REQ-SDS-9-ZRPZZW.T1.P38` — the read of the block a resumed range starts after is asked again on its own when the upstream fails it, without starting the backfill over
+
 #### <a id="req-sds-11-qv2vpt.t1"></a>`REQ-SDS-11-QV2VPT.T1`
 
 **Requirements / invariants:**

@@ -2057,13 +2057,17 @@ export class StorageDiffService {
             from,
             tip
         );
-        if (
-            parentHash !== undefined &&
-            (await this.fetchHeader(from - 1n)).hash !== parentHash
-        )
-            throw new ChainMovedError(
-                "The block the history was read to left the chain"
+        if (parentHash !== undefined) {
+            // a backfill read like the others: behind peer reads, retried on its own
+            const parent = await this.backfillUpstream.request(
+                "eth_getBlockByNumber",
+                [toQuantity(from - 1n), false]
             );
+            if (parent === null || parseHeader(parent).hash !== parentHash)
+                throw new ChainMovedError(
+                    "The block the history was read to left the chain"
+                );
+        }
         const keys = new Set<StorageSlot>();
         for (
             let i = 0;

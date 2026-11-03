@@ -168,12 +168,12 @@ export function filterRecord(
     };
 }
 
-/** Validates the `eth_getLogs` answer for one block; sorted by logIndex. */
 /** Orders logs as their block does. */
 export function byLogIndex(a: StorageDiffLog, b: StorageDiffLog): number {
     return Number(BigInt(a.logIndex) - BigInt(b.logIndex));
 }
 
+/** Validates the `eth_getLogs` answer for one block; sorted by logIndex. */
 export function parseLogs(value: unknown): StorageDiffLog[] {
     if (!Array.isArray(value)) throw new Error("Malformed logs from upstream");
     const logs = value.map((raw): StorageDiffLog => {

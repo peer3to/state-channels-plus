@@ -26,3 +26,4 @@ Cases subscribe to contracts whose history the service must backfill, against an
 - `serves a peer's state read ahead of the backfill reads waiting for the upstream`: REQ-SDS-9-ZRPZZW.T1.P34
 - `backfills at most two accounts at once and the next once one is done`: REQ-SDS-9-ZRPZZW.T1.P35
 - `fails the backfill, and reads the account lazily, when a storage word it reads is malformed`: REQ-SDS-9-ZRPZZW.T1.P22
+- `asks the block a resumed range starts after again on its own when the upstream fails it once`: REQ-SDS-9-ZRPZZW.T1.P38
