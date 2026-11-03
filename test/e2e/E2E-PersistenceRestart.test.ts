@@ -239,7 +239,7 @@ describe("E2E: persistence restart", function () {
         expect(authors).to.include(restarted.address);
     });
 
-    it("a participant held at its restored head uploads no dispute when a kill empties its fork's dispute window", async () => {
+    it("a participant held at its restored head audits no dispute and uploads none when a kill empties its fork's dispute window", async () => {
         const h = TestSession.getHarness();
         const forkId = await h.lifecycle.start(3, 2, {
             persistentPeers: [2]
@@ -250,6 +250,7 @@ describe("E2E: persistence restart", function () {
         const uploads = await h.rpcStub.recordDisputeSubmissions(2, {
             forward: true
         });
+        const audits = await h.rpcStub.recordDisputeAudits(2);
         // peer 0 kills the invalid dispute alone, which empties the window;
         // every peer that sees that kill then tries to dispute the fork
         await h.dispute.suppressDisputeInitiation([0]);
@@ -263,7 +264,13 @@ describe("E2E: persistence restart", function () {
         // recorded well within it
         await sleep(500);
 
+        // the held peer took the dispute as relevant, past the fork check
+        // that comes before the audit gate
+        expect(
+            restarted.eventSpies.disputeStarted?.callCount
+        ).to.be.greaterThan(0);
         expect(await uploads.submissions()).to.have.length(0);
+        expect(await audits.auditCount()).to.equal(0);
         expect(await query.didIDispute(forkId).request()).to.equal(false);
         expect(await query.getStatus().request()).to.equal(Status.SYNCED);
     });

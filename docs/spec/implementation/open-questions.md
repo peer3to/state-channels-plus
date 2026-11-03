@@ -225,7 +225,9 @@ chain anchor, resume) needs an algorithm decision.
 Verification deferred on this question (Luke, 2026-10-27):
 [`INV-DISPUTE-PIPE-1-BN0K81.T1.P4`](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81.t1.p4) (an auditor's restart) waits for the persistence
 restart tests, because a restarted peer without persistence comes back as a fresh spectator and
-resyncs.
+resyncs. With persistence a restarted auditor is held at `SYNCED`, audits nothing until its restart
+sync settles, and does not audit the dispute again at release
+([`FIND-STORAGE-13-3A4RES`](../audit/open-findings.md#find-storage-13-3a4res)).
 
 <a id="oq-24-a4xrtb"></a>
 

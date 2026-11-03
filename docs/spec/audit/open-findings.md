@@ -1711,10 +1711,17 @@ synchronization settles, checked once in `DisputeManager.dispute`; a dispute wan
 comes back through the path that re-evaluates it (the participant timeout armed at release, the next
 chain event), with no retry machinery. Kills, fraud proofs and audits stay allowed: they carry signed
 evidence the chain checks, so a stale head cannot make them slashable. The hold therefore refuses
-block co-signatures, authored or executed blocks, join countersignatures and disputes. Two planned
+block co-signatures, authored or executed blocks, join countersignatures and disputes.
+
+Correction, Luke 2026-11-03 (delegated): a held head is `SYNCED`, and only a committed participant
+audits a dispute (`EventHandler`), so a held head audits, kills and adds evidence to nothing until its
+restart synchronization settles; the dispute-authoring refusal stays. This supersedes the note above
+that kills, fraud proofs and audits stay allowed. A dispute posted during the hold and
+not audited again at release is
+[`FIND-STORAGE-13-3A4RES`](open-findings.md#find-storage-13-3a4res). Two planned
 restart cases are descoped to this follow-up and stay planned, untested permutations:
 [`REQ-STOR-3-4RJGER.T1.P8`](../specification/storage/durability.md#req-stor-3-4rjger.t1.p8) (a timeout
-dispute audited before any peer connects) and
+dispute posted before any peer connects is not audited while held, nor at release) and
 [`REQ-STOR-3-4RJGER.T1.P11`](../specification/storage/durability.md#req-stor-3-4rjger.t1.p11) (a fork
 change while the node was down).
 
@@ -1752,6 +1759,22 @@ pruning bounds memory and disk together once it exists.
 **Proposed direction:** Prune by the obligation rule of that requirement (the proof-store work of #560);
 its tests go under
 [`REQ-STOR-4-MF6FT6.T1`](../specification/storage/durability.md#req-stor-4-mf6ft6.t1).
+
+<a id="find-storage-13-3a4res"></a>
+
+### FIND-STORAGE-13-3A4RES
+
+**Defect:** _Open (2026-11-03, engineer: accepted, Luke 2026-11-03 (delegated))._ A restarted node
+held at its restored head is `SYNCED` and audits no dispute, so a counterparty dispute posted during
+the hold gets no kill and no evidence from it. Release re-arms only the turn, the participant timeout
+and the queue drain; nothing audits the stored dispute window again, so a stale but valid dispute can
+settle without the restarted node's newer state when no later chain event makes it dispute.
+
+**Disposition:** Accepted with no new machinery. The protocol assumes always-online clients (A8,
+[`REQ-TRUST-4-KW24NF` (Version one REQUIRES a watchtower or equivalent continuously available delegate…)](../specification/security/trust-model.md#req-trust-4-kw24nf)):
+a node that restarts through a contest window is the watchtower's case (spec PR #456, not built yet;
+until then the integrator keeps clients online). Persistence is off by default
+([`REQ-STOR-10-XY96KG` (Persistence is opt-in)](../specification/storage/durability.md#req-stor-10-xy96kg)).
 
 <a id="find-runtime-1-gapy72"></a>
 
@@ -2955,8 +2978,10 @@ for the valid, invalid, calldata and no-calldata cases. Luke decided the two oth
 - [`INV-DISPUTE-PIPE-1-BN0K81.T1.P4`](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81.t1.p4) (restart) is deferred until persistence exists
   ([`OQ-23-SDBGYB` (SDK restart and recovery semantics)](../implementation/open-questions.md#oq-23-sdbgyb)). Without persistence a
   restarted peer comes back as a fresh spectator and resyncs, so resuming an audit after a restart
-  does not exist; persistence is opt-in and its restart tests are planned under
-  [`REQ-STOR-3-4RJGER.T1`](../specification/storage/durability.md#req-stor-3-4rjger.t1).
+  does not exist. With persistence a restarted auditor is held at `SYNCED` and audits nothing until
+  its restart sync settles, and nothing audits the dispute again at release
+  ([`REQ-STOR-3-4RJGER.T1.P26`](../specification/storage/durability.md#req-stor-3-4rjger.t1.p26),
+  [`FIND-STORAGE-13-3A4RES`](open-findings.md#find-storage-13-3a4res)).
 
 What remains is [`REQ-RUNTIME-5-WJ1XKK` (Required host environments: browser and Node)](../specification/runtime/execution.md#req-runtime-5-wj1xkk): the browser, Node, mixed-host and
 worker-less capability matrix is unverified as a whole. The browser gates run transport, executor,

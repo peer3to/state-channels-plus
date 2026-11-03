@@ -936,7 +936,7 @@ Specification cases tested: 1/4. Untested: T1.P2, T1.P3, T1.P4.
 Specification cases tested: 0/19.
 
 [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../specification/storage/durability.md#req-stor-3-4rjger)
-Specification cases tested: 19/23. Untested: T1.P3, T1.P4, T1.P8, T1.P11.
+Specification cases tested: 20/24. Untested: T1.P3, T1.P4, T1.P8, T1.P11.
 
 [`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](../specification/storage/durability.md#req-stor-4-mf6ft6)
 Specification cases tested: 0/5.

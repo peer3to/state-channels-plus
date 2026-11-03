@@ -137,7 +137,7 @@ class DisputeManager {
                 return {};
             }
             // a restored head authors no dispute until the restart sync
-            // settled; a kill below still goes out alone
+            // settled
             if (this.stateManager.stateApplicationService.holdsRestoredHead) {
                 this.logger.info(
                     "no dispute: restored head waits for the restart sync",
