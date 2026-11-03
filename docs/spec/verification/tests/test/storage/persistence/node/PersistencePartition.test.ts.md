@@ -5,12 +5,13 @@ Exercises: [PersistencePartition.ts](../../../../../../../implementation/source/
 
 ## Overview
 
-The suite opens real `classic-level` partitions in a temporary directory through `openPersistencePartition`, and edits a closed partition's metadata directly with `classic-level` to stage bad disk state. It checks that a caller-supplied location keeps its mode, the metadata a new partition records, resume with the stored secret, the lock on a held partition, channel isolation, refused encoding versions in both directions, a missing secret record, an identity mismatch, the release of a partition after a refused bind, the explicit reset, and a `Storage` round trip on classic-level. The held-partition case opens twice from one process, not from a second process, so `REQ-STOR-11-Q4AT07.T1.P5` stays unassigned; the missing-record case removes only the secret, so `REQ-STOR-5-T6EQSA.T1.P11` stays unassigned.
+The suite opens real `classic-level` partitions in a temporary directory through `openPersistencePartition`, and edits a closed partition's metadata directly with `classic-level` to stage bad disk state. It checks that a caller-supplied location keeps its mode, that differently spelled addresses and chain ids give one namespace and resume one partition, the metadata a new partition records, resume with the stored secret, the lock on a held partition, channel isolation, refused encoding versions in both directions, a missing secret record, an identity mismatch, the release of a partition after a refused bind, the explicit reset, and a `Storage` round trip on classic-level. The held-partition case opens twice from one process, not from a second process, so `REQ-STOR-11-Q4AT07.T1.P5` stays unassigned; the missing-record case removes only the secret, so `REQ-STOR-5-T6EQSA.T1.P11` stays unassigned.
 
 ## Tests
 
 - `records a new partition's identity, encoding version and signer secret together`: REQ-STOR-11-Q4AT07.T1.P1
 - `leaves the mode of a location the caller supplied as it was`: none
+- `maps checksummed and lowercase addresses, and decimal and hex chain ids, to one partition`: REQ-STOR-11-Q4AT07.T1.P10
 - `resumes an existing partition with its stored signer secret`: none
 - `refuses a second open of a held partition`: none
 - `keeps one channel's records apart from another channel's`: REQ-STOR-5-T6EQSA.T1.P1

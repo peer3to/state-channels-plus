@@ -951,7 +951,7 @@ Specification cases tested: 2/7. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6.
 Specification cases tested: 17/21. Untested: T1.P2, T1.P12, T1.P19, T1.P21.
 
 [`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](../specification/storage/durability.md#req-stor-8-25d06n)
-Specification cases tested: 12/13. Untested: T1.P13.
+Specification cases tested: 14/15. Untested: T1.P13.
 
 [`REQ-STOR-9-ZR8A92` (Closed by the one disposal)](../specification/storage/durability.md#req-stor-9-zr8a92)
 Specification cases tested: 6/6.
@@ -960,7 +960,7 @@ Specification cases tested: 6/6.
 Specification cases tested: 0/1.
 
 [`REQ-STOR-11-Q4AT07` (Partition identity, ownership, and survival)](../specification/storage/durability.md#req-stor-11-q4at07)
-Specification cases tested: 4/8. Untested: T1.P2, T1.P5, T1.P6, T1.P7.
+Specification cases tested: 6/10. Untested: T1.P2, T1.P5, T1.P6, T1.P7.
 
 [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../specification/peer-communication/synchronization.md#req-sync-1-t2589h)
 Specification cases tested: 17/20. Untested: T1.P2, T1.P4, T1.P7.

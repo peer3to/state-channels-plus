@@ -1718,6 +1718,41 @@ dispute audited before any peer connects) and
 [`REQ-STOR-3-4RJGER.T1.P11`](../specification/storage/durability.md#req-stor-3-4rjger.t1.p11) (a fork
 change while the node was down).
 
+<a id="find-storage-11-00c45c"></a>
+
+### FIND-STORAGE-11-00C45C
+
+**Defect:** _Open (2026-11-03)._ A load checks that the head fork's blocks link and that a snapshot
+and state are held at the head, but never that a content-addressed record matches the hash it is
+stored under: a state blob is not compared with `keccak256` of its bytes, a snapshot or block with
+its own hash, and the head block's signatures are not verified. A changed byte that still decodes in
+the head's state, the head block, or a snapshot loads into the VM or is served in a synchronization,
+against
+[`REQ-STOR-5-T6EQSA` (Isolation, integrity, and versioned encoding)](../specification/storage/durability.md#req-stor-5-t6eqsa)
+and
+[`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../specification/storage/durability.md#req-stor-3-4rjger).
+Corruption below the head is caught by the link walk. Persistence is off by default
+([`REQ-STOR-10-XY96KG` (Persistence is opt-in)](../specification/storage/durability.md#req-stor-10-xy96kg)).
+
+**Proposed direction:** In the load's head-fork check (`Storage`), compare each content-addressed
+record of the head fork (state, snapshots, blocks) with its recomputed hash and verify the head
+block's signatures through the signer-recovery owner; a mismatch refuses the bind and names the key.
+Tests: corrupt one byte of each record type and expect the bind refused.
+
+<a id="find-storage-12-ee87dd"></a>
+
+### FIND-STORAGE-12-EE87DD
+
+**Defect:** _Open (2026-11-03)._ Nothing prunes: every store keeps every record for the life of
+the channel, in memory and, with persistence on, on disk, so
+[`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](../specification/storage/durability.md#req-stor-4-mf6ft6)
+is not met and both grow with the channel. Deletes already reach disk through the collections, so
+pruning bounds memory and disk together once it exists.
+
+**Proposed direction:** Prune by the obligation rule of that requirement (the proof-store work of #560);
+its tests go under
+[`REQ-STOR-4-MF6FT6.T1`](../specification/storage/durability.md#req-stor-4-mf6ft6.t1).
+
 <a id="find-runtime-1-gapy72"></a>
 
 ### FIND-RUNTIME-1-GAPY72
