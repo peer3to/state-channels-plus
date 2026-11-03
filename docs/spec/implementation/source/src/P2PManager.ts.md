@@ -4,6 +4,7 @@
 
 ## Requirements
 
+- [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../../../specification/storage/durability.md#req-stor-3-4rjger)
 - [`INV-RPC-1-SJS2T6` (Identity-bound dispatch)](../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6)
 - [`REQ-RPC-1-FF89Z0` (Typed wire contract)](../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0)
 - [`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)

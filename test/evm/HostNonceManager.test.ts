@@ -1,5 +1,7 @@
 import HostNonceManager from "@/evm/signer/HostNonceManager";
+import Storage from "@/storage";
 import { withGasHeadroom } from "@/utils/gas";
+import { GatedMemoryLevel } from "@test/fixtures/GatedMemoryLevel";
 import {
     assertIsolatedBoundedReadCountsLaterReceipt,
     assertIsolatedBroadcastSharesStartBlockRead,
@@ -10,11 +12,45 @@ import {
     assertIsolatedRevertedGasRecorded,
     assertIsolatedSettleIgnoresLaterObservation
 } from "@test/fixtures/node/IsolatedGasUsageFixture";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import type { TransactionResponse } from "ethers";
 import { ethers } from "hardhat";
 import assert from "node:assert/strict";
 import sinon from "sinon";
+
+/**
+ * A funded sender whose manager waits on a real storage over a gated disk;
+ * `write` leaves a write pending, so a flush needs one batch.
+ */
+async function gatedSender() {
+    const [funder, recipient] = await ethers.getSigners();
+    const sender = ethers.Wallet.createRandom().connect(ethers.provider);
+    await (
+        await funder.sendTransaction({
+            to: sender.address,
+            value: ethers.parseEther("1")
+        })
+    ).wait();
+    const database = new GatedMemoryLevel();
+    const storage = new Storage(undefined, undefined, {
+        flushIntervalMs: 60_000
+    });
+    await storage.open(database.handle(), () => undefined);
+    const manager = new HostNonceManager(sender, undefined, () =>
+        storage.flush()
+    );
+    const pendingNonce = () =>
+        ethers.provider.getTransactionCount(sender.address, "pending");
+    return {
+        recipient,
+        database,
+        storage,
+        manager,
+        pendingNonce,
+        write: () => storage.forceExit.setForceExit(true)
+    };
+}
 
 /** Init code that deploys the one-byte runtime `STOP` (`0x00`). */
 const STOP_RUNTIME_INIT_CODE = "0x6001600c60003960016000f300";
@@ -384,6 +420,125 @@ describe("HostNonceManager", () => {
         } finally {
             held.restore();
         }
+    });
+
+    it("broadcasts nothing while the disk has not confirmed the writes made before the send, and broadcasts once it has", async () => {
+        const { recipient, database, storage, manager, pendingNonce, write } =
+            await gatedSender();
+        database.hold();
+        write();
+        let sent = false;
+        const sending = manager
+            .sendTransaction({ to: recipient.address, value: 1n })
+            .then((response) => {
+                sent = true;
+                return response;
+            });
+        await waitFor(() => database.batches.length === 1);
+
+        expect(sent).to.equal(false);
+        expect(await pendingNonce()).to.equal(0);
+        database.release();
+        await (await sending).wait();
+        expect(database.batches[0].committed).to.equal(true);
+        expect(await pendingNonce()).to.equal(1);
+        await storage.close();
+    });
+
+    it("gives two sends waiting on one batch their nonces in call order", async () => {
+        const { recipient, database, storage, manager, write } =
+            await gatedSender();
+        database.hold();
+        write();
+        const first = manager.sendTransaction({
+            to: recipient.address,
+            value: 1n
+        });
+        const second = manager.sendTransaction({
+            to: recipient.address,
+            value: 2n
+        });
+        await waitFor(() => database.batches.length === 1);
+
+        database.release();
+        const responses = await Promise.all([first, second]);
+
+        expect(responses.map(({ nonce }) => nonce)).to.deep.equal([0, 1]);
+        expect(responses.map(({ value }) => value)).to.deep.equal([1n, 2n]);
+        await Promise.all(responses.map((response) => response.wait()));
+        await storage.close();
+    });
+
+    it("a send waiting for the disk at cut takes no nonce and never settles", async () => {
+        const { recipient, database, storage, manager, pendingNonce, write } =
+            await gatedSender();
+        database.hold();
+        write();
+        let isSettled = false;
+        void manager
+            .sendTransaction({ to: recipient.address, value: 1n })
+            .finally(() => {
+                isSettled = true;
+            });
+        await waitFor(() => database.batches.length === 1);
+
+        manager.cut();
+        database.release();
+        await storage.close();
+        // a later transaction of another signer mines meanwhile
+        const [funder] = await ethers.getSigners();
+        await (
+            await funder.sendTransaction({ to: recipient.address, value: 1n })
+        ).wait();
+
+        expect(isSettled).to.equal(false);
+        expect(await pendingNonce()).to.equal(0);
+    });
+
+    it("a send whose disk write fails takes no nonce and never settles", async () => {
+        const { recipient, database, manager, pendingNonce, write } =
+            await gatedSender();
+        // the first attempt and both retries fail
+        database.failNext(3);
+        write();
+        let isSettled = false;
+        void manager
+            .sendTransaction({ to: recipient.address, value: 1n })
+            .finally(() => {
+                isSettled = true;
+            });
+        await waitFor(() => database.batches.length === 3);
+        const [funder] = await ethers.getSigners();
+        await (
+            await funder.sendTransaction({ to: recipient.address, value: 1n })
+        ).wait();
+
+        expect(isSettled).to.equal(false);
+        expect(await pendingNonce()).to.equal(0);
+    });
+
+    it("sends at once when the storage has no disk bound", async () => {
+        const [funder, recipient] = await ethers.getSigners();
+        const sender = ethers.Wallet.createRandom().connect(ethers.provider);
+        await (
+            await funder.sendTransaction({
+                to: sender.address,
+                value: ethers.parseEther("1")
+            })
+        ).wait();
+        const storage = new Storage();
+        storage.forceExit.setForceExit(true);
+        const manager = new HostNonceManager(sender, undefined, () =>
+            storage.flush()
+        );
+
+        const response = await manager.sendTransaction({
+            to: recipient.address,
+            value: 1n
+        });
+
+        expect(response.nonce).to.equal(0);
+        await response.wait();
     });
 
     it("cannot create another nonce owner by reconnecting", async () => {

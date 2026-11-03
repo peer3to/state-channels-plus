@@ -175,6 +175,12 @@ export type HarnessOptions<
      * down. Restore them through `PeerTestHarness.getRpcNodeProxies`.
      */
     rpcNodeProxiesCutAtStart?: Record<number, number[]>;
+    /**
+     * Peers that persist their channel to disk, each in its own temporary
+     * directory. Such a peer started again after the channel opened resumes
+     * the channel from its partition (`LifecycleActions.restartPeer`).
+     */
+    persistentPeers?: number[];
 };
 
 export type TestPeer<

@@ -136,6 +136,11 @@ class DisputeManager {
                 );
                 return {};
             }
+            // a restored head authors no dispute until the restart sync settled
+            if (this.stateManager.stateApplicationService.holdsRestoredHead) {
+                this.logger.info("no dispute: restored head held", { forkId });
+                return {};
+            }
 
             // Drain admitted block work before closing admission. Construction
             // and submission run outside the state mutex; the marker keeps
@@ -184,8 +189,6 @@ class DisputeManager {
                 dispute,
                 fraudProofsToApply
             );
-
-            await this.storage.flush();
 
             // Without fraud proofs no gas limit is passed: the chain signer
             // sends each upload with its estimate plus headroom (see

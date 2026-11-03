@@ -1,35 +1,42 @@
 import type { PersistenceController } from "./PersistenceController";
-import type { CollectionId } from "./PersistenceRecordCodec";
-import cloneDeep from "lodash.clonedeep";
+import { codecs, type CollectionId } from "./storageCodecs";
 
-export type PersistentCollectionUpdate<TValue> = (
-    currentValue: TValue | undefined
-) => TValue | undefined;
+import { ethers } from "ethers";
 
+const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+
+/** A key's place in `Map` insertion order; a load sorts by it. */
+type InsertionSequence = number;
+/** `abi.encode(uint256 sequence, bytes value)` */
+export type EncodedRecord = string;
+
+/**
+ * A `Map` whose writes the controller copies to disk; without a controller it
+ * is a plain `Map`. Values are held by reference: the store proxies copy at
+ * the boundary.
+ */
 export class PersistentCollection<TKey, TValue> {
     public readonly id: CollectionId;
     private readonly cache = new Map<TKey, TValue>();
-    private controller?: PersistenceController;
-    private readonly onCacheChanged?: () => void;
+    private readonly sequences = new Map<TKey, InsertionSequence>();
+    private readonly controller?: PersistenceController;
+    // rebuilds the owning store's derived indexes after a load
+    private readonly onLoad?: () => void;
+    private nextSequence = 0;
 
     constructor(
         id: CollectionId,
         controller?: PersistenceController,
-        onCacheChanged?: () => void
+        onLoad?: () => void
     ) {
         this.id = id;
         this.controller = controller;
-        this.onCacheChanged = onCacheChanged;
+        this.onLoad = onLoad;
         controller?.register(this);
     }
 
-    public attach(controller: PersistenceController): void {
-        if (this.controller === controller) return;
-        if (this.controller) {
-            throw new Error(`${this.id} is already attached to a controller`);
-        }
-        this.controller = controller;
-        controller.register(this);
+    public get size(): number {
+        return this.cache.size;
     }
 
     public get(key: TKey): TValue | undefined {
@@ -52,86 +59,73 @@ export class PersistentCollection<TKey, TValue> {
         return this.cache.values();
     }
 
-    public get size(): number {
-        return this.cache.size;
-    }
-
+    /** An overwrite keeps the key's place in the order. */
     public set(key: TKey, value: TValue): TValue {
-        if (!this.controller) {
-            const copiedValue = cloneDeep(value);
-            this.cache.set(key, copiedValue);
-            this.notifyChanged();
-            return cloneDeep(copiedValue);
+        this.cache.set(key, value);
+        if (!this.sequences.has(key)) {
+            this.sequences.set(key, this.nextSequence++);
         }
-        return this.controller.update(this, key, () =>
-            cloneDeep(value)
-        ) as TValue;
+        this.controller?.enqueue(this, key);
+        return value;
     }
 
+    /** Writes what `updater` returns; `undefined` deletes the key. */
     public update(
         key: TKey,
-        updater: PersistentCollectionUpdate<TValue>
+        updater: (current: TValue | undefined) => TValue | undefined
     ): TValue | undefined {
-        if (!this.controller) {
-            const nextValue = updater(cloneDeep(this.cache.get(key)));
-            const committedValue = cloneDeep(nextValue);
-            this.apply(key, committedValue);
-            return cloneDeep(committedValue);
-        }
-        return this.controller.update(this, key, updater);
+        const next = updater(this.cache.get(key));
+        if (next === undefined) this.delete(key);
+        else this.set(key, next);
+        return next;
     }
 
     public delete(key: TKey): boolean {
-        if (!this.cache.has(key)) return false;
-        this.update(key, () => undefined);
+        if (!this.cache.delete(key)) return false;
+        this.sequences.delete(key);
+        this.controller?.enqueue(this, key);
         return true;
     }
 
-    public deleteMany(keys: readonly TKey[]): void {
-        this.takeMany(keys);
+    /** The key's current disk record; undefined once the key is gone. */
+    public encodeRecord(key: TKey): EncodedRecord | undefined {
+        const value = this.cache.get(key);
+        if (value === undefined) return undefined;
+        const codec = codecs[this.id] as { encode(value: TValue): string };
+        return abiCoder.encode(
+            ["uint256", "bytes"],
+            [this.sequences.get(key), codec.encode(value)]
+        );
     }
 
-    public takeMany(keys: readonly TKey[]): TValue[] {
-        if (!this.controller) {
-            const values = keys.flatMap((key) => {
-                const value = this.cache.get(key);
-                this.cache.delete(key);
-                return value === undefined ? [] : [cloneDeep(value)];
-            });
-            if (values.length) this.notifyChanged();
-            return values;
-        }
-        return this.controller.deleteMany(this, keys);
-    }
-
-    public clear(): void {
-        if (!this.controller) {
-            if (!this.cache.size) return;
-            this.cache.clear();
-            this.notifyChanged();
-            return;
-        }
-        this.controller.clear(this);
-    }
-
-    public apply(key: TKey, value: TValue | undefined, notify = true): void {
-        if (value === undefined) {
-            this.cache.delete(key);
-        } else {
-            this.cache.set(key, value);
-        }
-        if (notify) this.notifyChanged();
-    }
-
-    public replace(entries: Iterable<[TKey, TValue]>): void {
+    /** Replaces memory with `records`, in their stored order. */
+    public load(records: Array<[TKey, EncodedRecord]>): void {
+        const decoded = records.map(([key, encodedRecord]) => {
+            try {
+                const [sequence, encodedValue] = abiCoder.decode(
+                    ["uint256", "bytes"],
+                    encodedRecord
+                );
+                return {
+                    key,
+                    sequence: Number(sequence),
+                    value: codecs[this.id].decode(encodedValue) as TValue
+                };
+            } catch (error) {
+                throw new Error(
+                    `Cannot decode persisted ${this.id} record ${String(key)}: ${String(error)}`
+                );
+            }
+        });
+        decoded.sort((left, right) => left.sequence - right.sequence);
         this.cache.clear();
-        for (const [key, value] of entries) {
+        this.sequences.clear();
+        this.nextSequence = 0;
+        for (const { key, sequence, value } of decoded) {
             this.cache.set(key, value);
+            this.sequences.set(key, sequence);
+            this.nextSequence = sequence + 1;
         }
-        this.notifyChanged();
-    }
-
-    public notifyChanged(): void {
-        this.onCacheChanged?.();
+        this.onLoad?.();
     }
 }

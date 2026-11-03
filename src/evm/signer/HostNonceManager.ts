@@ -23,10 +23,17 @@ class HostNonceManager extends AbstractSigner {
     private nonceStateIndeterminate = false;
     // Set by the runtime's disposal cut-off: no transaction leaves after it.
     private isCut = false;
+    // resolves once disk holds every write made before the call
+    private readonly flushStorage?: () => Promise<void>;
 
-    constructor(signer: Signer, logger?: Logger) {
+    constructor(
+        signer: Signer,
+        logger?: Logger,
+        flushStorage?: () => Promise<void>
+    ) {
         super(signer.provider);
         this.signer = signer;
+        this.flushStorage = flushStorage;
         this.gasUsage = new GasUsageRecorder(
             logger?.child({ component: "GasUsage" })
         );
@@ -96,6 +103,11 @@ class HostNonceManager extends AbstractSigner {
     private async sendWithOwnedNonce(
         tx: TransactionRequest
     ): Promise<TransactionResponse> {
+        // nothing leaves before disk holds what was written before it; a
+        // failed flush freezes the send as the cut does
+        await this.flushStorage?.().catch(
+            () => new Promise<never>(() => undefined)
+        );
         await this.mutex.lock({
             taskName: "HostNonceManager.sendTransaction"
         });

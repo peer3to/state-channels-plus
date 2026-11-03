@@ -145,6 +145,20 @@ describe("StateSnapshotStorage", () => {
             ).to.equal(laterGenesis.hash);
         });
 
+        it("keeps the later genesis when the earlier one is stored again", () => {
+            const laterStruct = genesisStateSnapshot.toStruct();
+            laterStruct.timestamp = BigInt(laterStruct.timestamp) + 1n;
+            const laterGenesis = StateSnapshot.from(laterStruct);
+            storage.storeStateSnapshot(genesisStateSnapshot);
+            storage.storeStateSnapshot(laterGenesis);
+
+            storage.storeStateSnapshot(genesisStateSnapshot);
+
+            expect(
+                storage.getGenesisSnapshotByForkId(laterGenesis.forkID)?.hash
+            ).to.equal(laterGenesis.hash);
+        });
+
         it("should not non-genesis snapshots in genesis mapping", () => {
             // Store non-genesis snapshot
             storage.storeStateSnapshot(stateSnapshot);

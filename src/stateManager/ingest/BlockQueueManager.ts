@@ -52,11 +52,6 @@ export default class BlockQueueManager {
     private readonly recoveryScheduledForFork: Set<ForkId> = new Set();
     private readonly recoverySuppressedUntil: Map<ForkId, Timestamp> =
         new Map();
-    // Blocks currently dequeued and executing. An entry leaves the queue before
-    // it runs, so a copy arriving meanwhile would otherwise look unknown and be
-    // scheduled a second time. Held from dequeue until `executeQueuedEntry`
-    // finishes (released in its `finally`, so a throw can't strand the hash).
-    private readonly executingHashes = new Set<Hash>();
 
     constructor(
         private readonly stateManager: StateManager,
@@ -158,18 +153,6 @@ export default class BlockQueueManager {
                           senderAddress: options.senderAddress
                       }
                     : { origin: options.origin };
-
-            // Executing right now: park the copy so its signatures/sources pool
-            // into a deferred entry (queued under the same block hash) without
-            // scheduling a second execution. `executeQueuedEntry` drains it.
-            if (this.executingHashes.has(block.hash)) {
-                this.stateManager.storage.queues.queueBlock(
-                    block,
-                    queueOptions
-                );
-                return true;
-            }
-
             if (this.isPastBlock(block, strategy)) {
                 this.settlePastBlock(
                     this.stateManager.storage.queues.createEntry(
@@ -242,20 +225,13 @@ export default class BlockQueueManager {
     }
 
     /**
-     * Restart entry point: the queue is durable but timers are process-local,
-     * so hydrated entries come back with no timeout armed. Re-arm each one for
-     * the REMAINDER of its window (`scheduleQueueTimeout` reads the persisted
-     * `firstSeenAt`, so a restart never grants a fresh one) and drain the forks
-     * they belong to. Runs before listeners/transport attach.
+     * After a restart load: an entry whose window passed while the node was
+     * down is dropped unprobed; the rest wait out what is left of theirs.
      */
-    public async resumePersistedQueue(): Promise<void> {
-        const forkIds = new Set<ForkId>();
+    public armRestoredQueue(): void {
         for (const entry of this.stateManager.storage.queues.getEntries()) {
-            this.scheduleQueueTimeout(entry.block.hash);
-            forkIds.add(entry.block.forkId);
-        }
-        for (const forkId of forkIds) {
-            await this.tryExecuteFromQueue(forkId);
+            if (!this.scheduleQueueTimeout(entry.block.hash))
+                this.stateManager.storage.queues.removeBlock(entry.block.hash);
         }
     }
 
@@ -273,6 +249,9 @@ export default class BlockQueueManager {
     }
 
     public async tryExecuteFromQueue(forkId?: ForkId): Promise<void> {
+        // a held restored head executes and co-signs nothing; its release
+        // drains the queue through scheduleFollowUps
+        if (this.stateManager.stateApplicationService.holdsRestoredHead) return;
         const activeForkId = forkId ?? this.stateManager.forkId;
         // A scheduled forkId is not authority - a fork transition may have
         // landed since; the entries drain via the post-transition call.
@@ -309,7 +288,6 @@ export default class BlockQueueManager {
 
         for (const entry of entries) {
             this.cancelQueueTimeout(entry.block.hash);
-            this.executingHashes.add(entry.block.hash);
             this.scheduleQueuedEntryExecution(entry);
         }
     }
@@ -517,6 +495,19 @@ export default class BlockQueueManager {
 
     private async queueTimeout(blockHash: Hash): Promise<void> {
         this.timeoutHandles.delete(blockHash);
+        // a held restored head keeps the entry queued for the release drain
+        if (this.stateManager.stateApplicationService.holdsRestoredHead) {
+            if (this.stateManager.storage.queues.getQueuedEntry(blockHash))
+                this.timeoutHandles.set(
+                    blockHash,
+                    this.timeoutManager.scheduleTask(
+                        () => this.queueTimeout(blockHash),
+                        this.timeConfig.agreementTime * 1000,
+                        `BlockQueueManager.queueTimeout (held) - ${blockHash}`
+                    )
+                );
+            return;
+        }
         // Dequeue first: the timeout owns the entry it sees - no race with
         // other tasks. Copies arriving from here on pool into a fresh entry
         // that converges on its own.
@@ -677,14 +668,6 @@ export default class BlockQueueManager {
         });
     }
 
-    /**
-     * Executes a dequeued entry and then drains its deferred copy - the single
-     * entry (the queue is keyed by block hash) that pooled every copy ingest
-     * parked while this hash was in `executingHashes`. That copy carries
-     * signatures/attribution `entry` never saw, and ingest scheduled neither a
-     * timeout nor an execution for it, so nothing else would pick it up - and
-     * the queue is durable now, so it would linger past restart.
-     */
     private async executeQueuedEntry(entry: QueuedBlockEntry): Promise<void> {
         try {
             if (this.isBlockStored(entry.block)) {
@@ -692,9 +675,6 @@ export default class BlockQueueManager {
                     entry,
                     this.stateManager.getActiveValidationStrategy(entry.block)
                 );
-                // Merged separately: `entry` was dequeued before the copies
-                // arrived, so the two hold different signature sets.
-                await this.drainDeferredCopy(entry);
                 return;
             }
 
@@ -719,31 +699,10 @@ export default class BlockQueueManager {
                     }
                 );
             }
-
-            // Only drain once the block actually stored. On a failure or a
-            // not-ready result `restoreQueuedEntry` has already merged `entry`
-            // INTO the deferred copy and armed its timeout - removing it here
-            // would drop the entry the queue now owns.
-            if (this.isBlockStored(entry.block)) {
-                await this.drainDeferredCopy(entry);
-            }
         } finally {
-            this.executingHashes.delete(entry.block.hash);
             // a drain takes one height: whatever this entry did, the next
             // queued height drains now, not at its queue timeout
             this.scheduleQueueExecution(entry.block.forkId);
-        }
-    }
-
-    private async drainDeferredCopy(entry: QueuedBlockEntry): Promise<void> {
-        const deferred = this.stateManager.storage.queues.removeBlock(
-            entry.block.hash
-        );
-        if (deferred) {
-            await this.handleStoredBlockConfirmationMerge(
-                deferred,
-                this.stateManager.getActiveValidationStrategy(entry.block)
-            );
         }
     }
 

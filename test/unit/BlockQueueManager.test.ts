@@ -1,5 +1,6 @@
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { BlockOrigin } from "@/storage/QueueStorage";
+import { Status } from "@/types";
 import { BlockConfirmationEthersType } from "@/types/ethers";
 import type { Address, Hash } from "@/types/types";
 import { Codec, sleep, Type } from "@/utils";
@@ -10,6 +11,7 @@ import {
     stagePrunedObserver,
     withQueuedBlockMadePast
 } from "@test/fixtures/PastBlockStaging";
+import { authorWhileDown } from "@test/fixtures/PersistenceRestartStaging";
 import { assertDeployedMaximum } from "@test/fixtures/QueueDeploymentFixture";
 import {
     assertStoredTipCopyDrainsNextBlock,
@@ -24,7 +26,7 @@ import {
     assertSyncingAbsentSenderTakesOneStrike,
     stageAbsentGossipAcrossUnreducedWindow
 } from "@test/fixtures/QueueNetworkRetentionFixture";
-import { MathTestSession } from "@test/harness";
+import { MathTestSession, resolveTestTimeConfig } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { id, ZeroHash } from "ethers";
@@ -34,6 +36,74 @@ import { id, ZeroHash } from "ethers";
 // deviations. Both tests read that routing off its two observable effects.
 
 describe("Unit: BlockQueueManager", () => {
+    it("a held restored head executes no queued gossip or proof copy, by drain or by an elapsed queue timeout, so it co-signs nothing, until the restart sync settles", async () => {
+        const h = MathTestSession.getHarness();
+        const forkId = await h.lifecycle.start(3, 3, {
+            persistentPeers: [2]
+        });
+        await h.getPeer(2).p2pInstance.dispose();
+        await authorWhileDown(h, forkId, 2, 2);
+        const source = h.control(h.getPeer(0)).query;
+        const othersHeight = (await source
+            .getLatestBlockHeight(forkId)
+            .request())!;
+        const gossip = (await source
+            .getBlockByHeight(forkId, othersHeight - 1)
+            .request())!;
+        const proof = (await source
+            .getBlockByHeight(forkId, othersHeight)
+            .request())!;
+
+        const restarted = await h.lifecycle.restartPeer(2);
+        const control = h.control(restarted);
+        const restoredHeight = await control.query
+            .getLatestBlockHeight(forkId)
+            .request();
+        expect(restoredHeight).to.equal(othersHeight - 2);
+        // every intake origin reaches block commit through the queue drain or
+        // the entry's queue timeout
+        await control.transition
+            .ingestBlockConfirmation(gossip.encodedBlockConfirmation, {
+                origin: BlockOrigin.NETWORK,
+                senderAddress: h.getPeer(0).address
+            })
+            .request();
+        await control.transition
+            .ingestBlockConfirmation(proof.encodedBlockConfirmation, {
+                origin: BlockOrigin.PROOF
+            })
+            .request();
+        await h.execOnHost(h.getPeer(2), (sm) =>
+            sm.blockQueueManager.tryExecuteFromQueue()
+        );
+        // the gossip copy sits at the next height: its queue timeout would
+        // execute it directly
+        await sleep((resolveTestTimeConfig().agreementTime + 1) * 1000);
+
+        expect(await control.query.isBlockQueued(gossip.hash).request()).to.be
+            .true;
+        expect(await control.query.isBlockQueued(proof.hash).request()).to.be
+            .true;
+        expect(
+            await control.query.getLatestBlockHeight(forkId).request()
+        ).to.equal(restoredHeight);
+        expect(await control.query.getStatus().request()).to.equal(
+            Status.SYNCED
+        );
+
+        await h.network.connectPeers([2]);
+        await waitFor(
+            async () =>
+                (await control.query.getStatus().request()) ===
+                Status.PARTICIPATING
+        );
+        await waitFor(
+            async () =>
+                (await control.query.getLatestBlockHeight(forkId).request()) ===
+                othersHeight
+        );
+    });
+
     it("a queue timeout firing after the runtime aborted sends its source no probe", async () => {
         const f = new QueueIntakeFixture();
         await f.start();

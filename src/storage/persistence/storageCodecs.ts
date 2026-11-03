@@ -1,9 +1,5 @@
 import type { JoinRecord } from "../ForceJoinStorage";
 import type { BlockOrigin, QueuedBlockEntry } from "../QueueStorage";
-import {
-    PersistenceRecordCodec,
-    type PersistenceValueCodec
-} from "./PersistenceRecordCodec";
 import { Block } from "@/models";
 
 import StateSnapshot from "@/models/StateSnapshot";
@@ -46,11 +42,9 @@ export interface PersistedMessageBlockRecord {
     advancesTip: boolean;
 }
 
-export interface RuntimeMetadata {
-    activeForkId?: ForkId;
-    headHash?: Hash;
-    snapshotHash?: Hash;
-    stateHash?: Hash;
+export interface PersistenceValueCodec<TValue> {
+    encode(value: TValue): string;
+    decode(encodedValue: string): TValue;
 }
 
 function blockCodec(): PersistenceValueCodec<PersistedBlockRecord> {
@@ -248,131 +242,78 @@ function blockCalldataCodec(): PersistenceValueCodec<BlockCalldata> {
     };
 }
 
-function runtimeMetadataCodec(): PersistenceValueCodec<RuntimeMetadata> {
-    return {
-        encode: (value) =>
-            abiCoder.encode(
-                [
-                    "bool",
-                    "bytes32",
-                    "bool",
-                    "bytes32",
-                    "bool",
-                    "bytes32",
-                    "bool",
-                    "bytes32"
-                ],
-                [
-                    value.activeForkId !== undefined,
-                    value.activeForkId ?? ethers.ZeroHash,
-                    value.headHash !== undefined,
-                    value.headHash ?? ethers.ZeroHash,
-                    value.snapshotHash !== undefined,
-                    value.snapshotHash ?? ethers.ZeroHash,
-                    value.stateHash !== undefined,
-                    value.stateHash ?? ethers.ZeroHash
-                ]
-            ),
-        decode: (encodedValue) => {
-            const [
-                hasActiveForkId,
-                activeForkId,
-                hasHeadHash,
-                headHash,
-                hasSnapshotHash,
-                snapshotHash,
-                hasStateHash,
-                stateHash
-            ] = abiCoder.decode(
-                [
-                    "bool",
-                    "bytes32",
-                    "bool",
-                    "bytes32",
-                    "bool",
-                    "bytes32",
-                    "bool",
-                    "bytes32"
-                ],
-                encodedValue
-            );
-            return {
-                activeForkId: hasActiveForkId
-                    ? (activeForkId as ForkId)
-                    : undefined,
-                headHash: hasHeadHash ? (headHash as Hash) : undefined,
-                snapshotHash: hasSnapshotHash
-                    ? (snapshotHash as Hash)
-                    : undefined,
-                stateHash: hasStateHash ? (stateHash as Hash) : undefined
-            };
-        }
-    };
-}
-
-export function createStorageRecordCodec(): PersistenceRecordCodec {
-    const registry = new PersistenceRecordCodec();
-    registry.register("blocks", blockCodec());
-    registry.register("inboundMessages", messageCodec());
-    registry.register("outboundMessages", messageCodec());
-    registry.register<StateSnapshot>("stateSnapshots", {
-        encode: (snapshot) => ethers.hexlify(snapshot.encode()),
-        decode: (encodedValue) => StateSnapshot.decode(encodedValue)
-    });
-    registry.register<Bytes>("stateMachineStates", {
-        encode: (encodedState) => ethers.hexlify(encodedState),
-        decode: (encodedValue) => encodedValue as Bytes
-    });
-    registry.register<Set<BlockHeight>>("participantSetChanges", {
-        encode: (heights) =>
+/** One codec per persisted collection; its keys are the collection ids. */
+export const codecs = {
+    blocks: blockCodec(),
+    inboundMessages: messageCodec(),
+    outboundMessages: messageCodec(),
+    stateSnapshots: {
+        encode: (snapshot: StateSnapshot) => ethers.hexlify(snapshot.encode()),
+        decode: (encodedValue: string) => StateSnapshot.decode(encodedValue)
+    },
+    // the fork of the installed state
+    headFork: {
+        encode: (forkId: ForkId) => abiCoder.encode(["bytes32"], [forkId]),
+        decode: (encodedValue: string) =>
+            abiCoder.decode(["bytes32"], encodedValue)[0] as ForkId
+    },
+    stateMachineStates: {
+        encode: (encodedState: Bytes) => ethers.hexlify(encodedState),
+        decode: (encodedValue: string) => encodedValue as Bytes
+    },
+    participantSetChanges: {
+        encode: (heights: Set<BlockHeight>) =>
             abiCoder.encode(
                 ["uint256[]"],
                 [[...heights].sort((a, b) => a - b)]
             ),
-        decode: (encodedValue) => {
+        decode: (encodedValue: string) => {
             const [heights] = abiCoder.decode(["uint256[]"], encodedValue);
             return new Set(
                 (heights as bigint[]).map((height) => Number(height))
             );
         }
-    });
-    registry.register("queues", queueCodec());
-    registry.register<DisputeConfirmationStruct>("disputes", {
-        encode: (confirmation) =>
+    },
+    queues: queueCodec(),
+    disputes: {
+        encode: (confirmation: DisputeConfirmationStruct) =>
             ethers.hexlify(
                 Codec.encode(confirmation, Type.DisputeConfirmation)
             ),
-        decode: (encodedValue) =>
+        decode: (encodedValue: string) =>
             Codec.decode(encodedValue, Type.DisputeConfirmation)
-    });
-    registry.register<boolean>("disputedForks", {
-        encode: (value) => abiCoder.encode(["bool"], [value]),
-        decode: (encodedValue) => abiCoder.decode(["bool"], encodedValue)[0]
-    });
-    registry.register("fraudProofs", fraudProofCodec());
-    registry.register("disputeFraudProofs", disputeFraudProofCodec());
-    registry.register<TimeoutStruct>("timeout", {
-        encode: (timeout) =>
+    },
+    disputedForks: {
+        encode: (value: boolean) => abiCoder.encode(["bool"], [value]),
+        decode: (encodedValue: string): boolean =>
+            abiCoder.decode(["bool"], encodedValue)[0]
+    },
+    fraudProofs: fraudProofCodec(),
+    disputeFraudProofs: disputeFraudProofCodec(),
+    timeout: {
+        encode: (timeout: TimeoutStruct) =>
             ethers.hexlify(Codec.encode(timeout, Type.Timeout)),
-        decode: (encodedValue) => Codec.decode(encodedValue, Type.Timeout)
-    });
-    registry.register<boolean>("forceExit", {
-        encode: (value) => abiCoder.encode(["bool"], [value]),
-        decode: (encodedValue) => abiCoder.decode(["bool"], encodedValue)[0]
-    });
-    registry.register<JoinRecord>("forceJoin", {
-        encode: (join) => JSON.stringify(join),
-        decode: (encodedValue) => JSON.parse(encodedValue) as JoinRecord
-    });
-    registry.register("blockCalldata", blockCalldataCodec());
-    registry.register<number>("eventSync", {
-        encode: (value) => abiCoder.encode(["uint256"], [value]),
-        decode: (encodedValue) =>
+        decode: (encodedValue: string) =>
+            Codec.decode(encodedValue, Type.Timeout)
+    },
+    forceExit: {
+        encode: (value: boolean) => abiCoder.encode(["bool"], [value]),
+        decode: (encodedValue: string): boolean =>
+            abiCoder.decode(["bool"], encodedValue)[0]
+    },
+    // hex: the record envelope holds bytes
+    forceJoin: {
+        encode: (join: JoinRecord) =>
+            ethers.hexlify(ethers.toUtf8Bytes(JSON.stringify(join))),
+        decode: (encodedValue: string) =>
+            JSON.parse(ethers.toUtf8String(encodedValue)) as JoinRecord
+    },
+    blockCalldata: blockCalldataCodec(),
+    eventSync: {
+        encode: (value: number) => abiCoder.encode(["uint256"], [value]),
+        decode: (encodedValue: string) =>
             Number(abiCoder.decode(["uint256"], encodedValue)[0])
-    });
-    registry.register<RuntimeMetadata>(
-        "runtimeMetadata",
-        runtimeMetadataCodec()
-    );
-    return registry;
-}
+    }
+};
+
+export type CollectionId = keyof typeof codecs;

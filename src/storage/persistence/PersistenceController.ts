@@ -1,350 +1,241 @@
 import type {
-    PersistenceBatchOperation,
-    PersistenceDatabaseHandle
+    EncodedPersistenceValue,
+    PersistenceDatabaseHandle,
+    PersistenceKey
 } from "./PersistenceDatabase";
-import {
-    PersistenceRecordCodec,
-    type CollectionId
-} from "./PersistenceRecordCodec";
-import type { PersistentCollection } from "./PersistentCollection";
+import type {
+    EncodedRecord,
+    PersistentCollection
+} from "./PersistentCollection";
+import type { CollectionId } from "./storageCodecs";
 import type { Logger } from "@/utils/logging";
 import { retry } from "@/utils/retry";
 
-import cloneDeep from "lodash.clonedeep";
+import type { AbstractBatchOptions } from "abstract-level";
 
 const RECORD_PREFIX = "records!v1!";
 const DEFAULT_FLUSH_INTERVAL_MS = 50;
-const DEFAULT_MAX_BATCH_OPERATIONS = 500;
-const DEFAULT_PENDING_WARNING_OPERATIONS = 2_000;
+const PENDING_WARNING_RECORDS = 2_000;
 
 type RegisteredCollection = PersistentCollection<unknown, unknown>;
-type EncodedRecordKey = string;
-type PendingRecord = {
-    operation: PersistenceBatchOperation;
-    revision: number;
-};
+/** `records!v1!<collection id>!<map key>` */
+type RecordKey = string;
+/** Counts writes; a flush waits until a batch holds its revision. */
+type Revision = number;
 type FlushWaiter = {
-    targetRevision: number;
+    revision: Revision;
     resolve: () => void;
     reject: (error: Error) => void;
 };
+// every batch is synced: classic-level reads `sync`, abstract-level's
+// options type does not name it
+export const SYNCED = { sync: true } as AbstractBatchOptions<
+    PersistenceKey,
+    EncodedPersistenceValue
+>;
 
 export interface PersistenceControllerOptions {
-    databaseHandle?: PersistenceDatabaseHandle;
     logger?: Logger;
-    maxRetries?: number;
     flushIntervalMs?: number;
-    maxBatchOperations?: number;
-    pendingWarningOperations?: number;
+    maxRetries?: number;
 }
 
+/**
+ * Copies collection writes to disk behind memory. A drain starts only between
+ * tasks (timer, `flush()`, `close()`) and writes everything pending as one
+ * `database.batch`, so the disk always holds a prefix of synchronous steps.
+ */
 export class PersistenceController {
     private readonly collections = new Map<
         CollectionId,
         RegisteredCollection
     >();
-    private readonly codec: PersistenceRecordCodec;
-    private databaseHandle?: PersistenceDatabaseHandle;
-    private readonly logger?: Logger;
-    private readonly maxRetries: number;
-    private readonly flushIntervalMs: number;
-    private readonly maxBatchOperations: number;
-    private readonly pendingWarningOperations: number;
-    private readonly pendingRecords = new Map<
-        EncodedRecordKey,
-        PendingRecord
+    // what changed since the last drain; the drain encodes the live value
+    private readonly pending = new Map<
+        RecordKey,
+        { collection: RegisteredCollection; key: unknown }
     >();
     private readonly flushWaiters: FlushWaiter[] = [];
+    private readonly logger?: Logger;
+    private readonly flushIntervalMs: number;
+    private readonly maxRetries: number;
+    private databaseHandle?: PersistenceDatabaseHandle;
     private failureHandler?: (error: Error) => void;
     private poisonedError?: Error;
     private flushTimer?: ReturnType<typeof setTimeout>;
     private drainPromise?: Promise<void>;
     private closePromise?: Promise<void>;
-    private nextRevision = 0;
-    private persistedRevision = 0;
-    private bound = false;
-    private closing = false;
-    private closed = false;
-    private inFailureCleanup = false;
+    private nextRevision: Revision = 0;
+    private persistedRevision: Revision = 0;
     private pendingWarningEmitted = false;
 
-    constructor(
-        codec: PersistenceRecordCodec,
-        options: PersistenceControllerOptions = {}
-    ) {
-        this.codec = codec;
-        this.databaseHandle = options.databaseHandle;
+    constructor(options: PersistenceControllerOptions = {}) {
         this.logger = options.logger;
-        this.maxRetries = options.maxRetries ?? 2;
         this.flushIntervalMs =
             options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
-        this.maxBatchOperations =
-            options.maxBatchOperations ?? DEFAULT_MAX_BATCH_OPERATIONS;
-        this.pendingWarningOperations =
-            options.pendingWarningOperations ??
-            DEFAULT_PENDING_WARNING_OPERATIONS;
-        this.bound = !options.databaseHandle;
+        this.maxRetries = options.maxRetries ?? 2;
     }
 
-    public register<TKey, TValue>(
-        collection: PersistentCollection<TKey, TValue>
-    ): void {
+    public register(collection: RegisteredCollection): void {
         if (this.collections.has(collection.id)) {
             throw new Error(
                 `Persistence collection already registered: ${collection.id}`
             );
         }
-        this.collections.set(
-            collection.id,
-            collection as PersistentCollection<unknown, unknown>
-        );
+        this.collections.set(collection.id, collection);
     }
 
-    public async bind(): Promise<void> {
-        this.assertOpen();
-        if (this.bound) return;
-        if (!this.databaseHandle) {
-            this.bound = true;
-            return;
-        }
-
-        const hydrated = new Map<CollectionId, Array<[string, unknown]>>();
-        for (const collectionId of this.collections.keys()) {
-            hydrated.set(collectionId, []);
-        }
-
+    /**
+     * Loads every collection from disk in one all-or-nothing pass. An empty
+     * disk keeps what memory holds and writes it; records on both sides are
+     * refused. `verifyLoad` checks the loaded records. On failure the database
+     * is closed and memory is left as it was.
+     * Nothing writes a persisted collection while the load runs: the bind
+     * happens before the channel's first write.
+     */
+    public async open(
+        databaseHandle: PersistenceDatabaseHandle,
+        onFailure: (error: Error) => void,
+        verifyLoad: () => void = () => undefined
+    ): Promise<void> {
+        const records = new Map<CollectionId, Array<[string, EncodedRecord]>>();
         try {
-            await this.databaseHandle.database.open();
+            // a refused handle is closed too: nothing else holds it
+            if (this.databaseHandle || this.closePromise) {
+                throw new Error("Persistence controller is already opened");
+            }
+            await databaseHandle.database.open();
             for await (const [
-                key,
-                encodedValue
-            ] of this.databaseHandle.database.iterator({
+                recordKey,
+                encodedRecord
+            ] of databaseHandle.database.iterator({
                 gte: RECORD_PREFIX,
                 lt: `${RECORD_PREFIX}\uffff`
             })) {
-                const parsed = this.parseRecordKey(key);
-                const entries = hydrated.get(parsed.collectionId);
-                if (!entries) {
+                const { collectionId, key } = this.parseRecordKey(recordKey);
+                if (!this.collections.has(collectionId)) {
                     throw new Error(
-                        `Unknown persistence collection ${parsed.collectionId}`
+                        `Unknown persistence collection ${collectionId} at ${recordKey}`
                     );
                 }
-                entries.push([
-                    parsed.key,
-                    this.codec.decode(parsed.collectionId, encodedValue)
-                ]);
+                const entries = records.get(collectionId) ?? [];
+                entries.push([key, encodedRecord]);
+                records.set(collectionId, entries);
             }
-        } catch (error) {
-            try {
-                await this.databaseHandle.close();
-            } catch {
-                // Preserve the bind failure, which has the actionable location.
+            if (this.closePromise) {
+                throw new Error("Persistence controller closed while opening");
             }
-            throw this.withLocation(error);
-        }
-
-        const previousEntries = new Map<
-            CollectionId,
-            Array<[unknown, unknown]>
-        >();
-        for (const [collectionId, collection] of this.collections) {
-            previousEntries.set(
-                collectionId,
-                cloneDeep([...collection.entries()])
+            const held = [...this.collections.values()].find(
+                (collection) => collection.size
             );
-        }
-
-        try {
-            for (const [collectionId, entries] of hydrated) {
-                this.collections.get(collectionId)!.replace(entries);
-            }
-        } catch (error) {
-            for (const [collectionId, entries] of previousEntries) {
-                this.collections.get(collectionId)!.replace(entries);
-            }
-            try {
-                await this.databaseHandle.close();
-            } catch {
-                // Preserve the hydration failure and its actionable location.
-            }
-            throw this.withLocation(error);
-        }
-        this.bound = true;
-    }
-
-    public attachDatabaseHandle(
-        databaseHandle: PersistenceDatabaseHandle
-    ): void {
-        this.assertOpen();
-        if (this.databaseHandle) {
-            throw new Error("Persistence database is already attached");
-        }
-        this.databaseHandle = databaseHandle;
-        this.bound = false;
-    }
-
-    public setFailureHandler(handler: (error: Error) => void): void {
-        this.failureHandler = handler;
-    }
-
-    public update<TKey, TValue>(
-        collection: PersistentCollection<TKey, TValue>,
-        key: TKey,
-        updater: (currentValue: TValue | undefined) => TValue | undefined
-    ): TValue | undefined {
-        this.assertMutationAllowed();
-        const currentValue = cloneDeep(collection.get(key));
-        const nextValue = updater(currentValue);
-        const committedValue = cloneDeep(nextValue);
-        const operation = this.createOperation(
-            collection.id,
-            key,
-            committedValue
-        );
-        collection.apply(key, committedValue);
-        this.enqueue([operation]);
-        return cloneDeep(committedValue);
-    }
-
-    public clear<TKey, TValue>(
-        collection: PersistentCollection<TKey, TValue>
-    ): void {
-        this.assertMutationAllowed();
-        const operations = [...collection.keys()].map(
-            (key): PersistenceBatchOperation => ({
-                type: "del",
-                key: this.recordKey(collection.id, key)
-            })
-        );
-        if (!operations.length) return;
-        collection.replace([]);
-        this.enqueue(operations);
-    }
-
-    public deleteMany<TKey, TValue>(
-        collection: PersistentCollection<TKey, TValue>,
-        keys: readonly TKey[]
-    ): TValue[] {
-        this.assertMutationAllowed();
-        const existing = [...new Set(keys)].flatMap((key) => {
-            const value = collection.get(key);
-            return value === undefined
-                ? []
-                : [[key, cloneDeep(value)] as const];
-        });
-        if (!existing.length) return [];
-
-        for (const [key] of existing) collection.apply(key, undefined, false);
-        collection.notifyChanged();
-        this.enqueue(
-            existing.map(
-                ([key]): PersistenceBatchOperation => ({
-                    type: "del",
-                    key: this.recordKey(collection.id, key)
-                })
-            )
-        );
-        return existing.map(([, value]) => value);
-    }
-
-    public async flush(): Promise<void> {
-        // after close starts nothing new reaches disk: wait for close's drain
-        if (this.closePromise) return this.closePromise;
-        await this.flushThrough(this.nextRevision);
-    }
-
-    public close(): Promise<void> {
-        if (this.closePromise) return this.closePromise;
-        if (this.closed) return Promise.resolve();
-
-        this.closing = true;
-        this.clearFlushTimer();
-        const targetRevision = this.nextRevision;
-        this.closePromise = (async () => {
-            let flushError: Error | undefined;
-            try {
-                await this.flushThrough(targetRevision);
-            } catch (error) {
-                flushError = this.normalizeError(error);
-            }
-            try {
-                await this.databaseHandle?.close();
-            } catch (error) {
-                flushError ??= this.normalizeError(error);
-            } finally {
-                this.closed = true;
-                this.closing = false;
-                this.rejectWaiters(
-                    flushError ?? new Error("Persistence controller is closed")
+            if (records.size && held) {
+                throw new Error(
+                    `Cannot load persisted records: ${held.id} already holds records in memory`
                 );
             }
-            if (flushError) throw flushError;
+            if (records.size) {
+                this.load(records, verifyLoad);
+            }
+        } catch (error) {
+            await databaseHandle.close().catch(() => undefined);
+            throw this.withLocation(error, databaseHandle);
+        }
+        this.databaseHandle = databaseHandle;
+        this.failureHandler = onFailure;
+        if (records.size) return;
+        for (const collection of this.collections.values()) {
+            for (const key of collection.keys()) this.enqueue(collection, key);
+        }
+    }
+
+    public enqueue(collection: RegisteredCollection, key: unknown): void {
+        // a write after close starts, or after a failure, stays in memory
+        if (!this.databaseHandle || this.closePromise || this.poisonedError) {
+            return;
+        }
+        this.nextRevision++;
+        this.pending.set(this.recordKey(collection.id, key), {
+            collection,
+            key
+        });
+        this.maybeWarnPendingSize();
+        this.scheduleDrain();
+    }
+
+    /** Resolves once a batch holds every write made before the call. */
+    public flush(): Promise<void> {
+        // after close starts nothing new reaches disk: wait for close's drain
+        if (this.closePromise) return this.closePromise;
+        return this.flushThrough(this.nextRevision);
+    }
+
+    /**
+     * Drains what is pending and closes the database; it is never deleted.
+     * Memory stays; `open` binds again.
+     */
+    public async unbind(): Promise<void> {
+        const databaseHandle = this.databaseHandle;
+        if (!databaseHandle || this.closePromise) return;
+        // a failed batch already reached the failure handler
+        await this.flushThrough(this.nextRevision).catch(() => undefined);
+        // a close started meanwhile owns the database
+        if (this.closePromise) return;
+        this.databaseHandle = undefined;
+        this.failureHandler = undefined;
+        this.clearFlushTimer();
+        this.pending.clear();
+        this.persistedRevision = this.nextRevision;
+        this.resolveWaiters();
+        await databaseHandle.close();
+    }
+
+    /** Drains what is pending, then closes the database. */
+    public close(): Promise<void> {
+        if (this.closePromise) return this.closePromise;
+        const databaseHandle = this.databaseHandle;
+        const drained = this.flushThrough(this.nextRevision);
+        this.clearFlushTimer();
+        this.closePromise = (async () => {
+            // a failed batch already reached the failure handler
+            await drained.catch(() => undefined);
+            await databaseHandle?.close();
         })();
         return this.closePromise;
     }
 
-    private createOperation<TKey, TValue>(
-        collectionId: CollectionId,
-        key: TKey,
-        value: TValue | undefined
-    ): PersistenceBatchOperation {
-        return value === undefined
-            ? { type: "del", key: this.recordKey(collectionId, key) }
-            : {
-                  type: "put",
-                  key: this.recordKey(collectionId, key),
-                  value: this.codec.encode(collectionId, value)
-              };
-    }
-
-    private enqueue(operations: PersistenceBatchOperation[]): void {
-        // a write after close starts stays in memory
-        if (
-            !operations.length ||
-            !this.databaseHandle ||
-            this.inFailureCleanup ||
-            this.closing ||
-            this.closed
-        ) {
-            return;
-        }
-        if (this.poisonedError) return;
-
-        const revision = ++this.nextRevision;
-        for (const operation of operations) {
-            this.pendingRecords.set(String(operation.key), {
-                operation,
-                revision
-            });
-        }
-        this.maybeWarnPendingSize();
-
-        if (this.pendingRecords.size >= this.maxBatchOperations) {
-            this.clearFlushTimer();
-            this.startDrain();
-        } else {
-            this.scheduleFlush();
+    private load(
+        records: Map<CollectionId, Array<[string, EncodedRecord]>>,
+        verifyLoad: () => void
+    ) {
+        try {
+            for (const [collectionId, collection] of this.collections) {
+                collection.load(records.get(collectionId) ?? []);
+            }
+            verifyLoad();
+        } catch (error) {
+            // every collection was empty before the load
+            for (const collection of this.collections.values()) {
+                collection.load([]);
+            }
+            throw error;
         }
     }
 
-    private flushThrough(targetRevision: number): Promise<void> {
-        if (!this.databaseHandle || targetRevision <= this.persistedRevision) {
+    private flushThrough(revision: Revision): Promise<void> {
+        if (!this.databaseHandle || revision <= this.persistedRevision) {
             return Promise.resolve();
         }
         if (this.poisonedError) return Promise.reject(this.poisonedError);
-
         const promise = new Promise<void>((resolve, reject) => {
-            this.flushWaiters.push({ targetRevision, resolve, reject });
+            this.flushWaiters.push({ revision, resolve, reject });
         });
         this.clearFlushTimer();
         this.startDrain();
         return promise;
     }
 
-    private scheduleFlush(): void {
-        if (this.flushTimer || this.drainPromise || !this.pendingRecords.size) {
-            return;
-        }
+    private scheduleDrain(): void {
+        if (this.flushTimer || this.drainPromise || !this.pending.size) return;
         this.flushTimer = setTimeout(() => {
             this.flushTimer = undefined;
             this.startDrain();
@@ -353,82 +244,82 @@ export class PersistenceController {
     }
 
     private startDrain(): void {
-        if (
-            this.drainPromise ||
-            this.poisonedError ||
-            !this.databaseHandle ||
-            !this.pendingRecords.size
-        ) {
+        const databaseHandle = this.databaseHandle;
+        if (this.drainPromise || this.poisonedError || !databaseHandle) return;
+        if (!this.pending.size) return;
+        const revision = this.nextRevision;
+        let operations;
+        try {
+            operations = [...this.pending].map(
+                ([recordKey, { collection, key }]) => {
+                    const value = collection.encodeRecord(key);
+                    return value === undefined
+                        ? { type: "del" as const, key: recordKey }
+                        : { type: "put" as const, key: recordKey, value };
+                }
+            );
+        } catch (error) {
+            this.poison(error);
             return;
         }
-
-        const records = [...this.pendingRecords.values()];
-        this.pendingRecords.clear();
-        const highestRevision = Math.max(
-            ...records.map((record) => record.revision)
-        );
-        this.drainPromise = this.commit(
-            records.map((record) => record.operation)
+        this.pending.clear();
+        this.drainPromise = retry(
+            () => databaseHandle.database.batch(operations, SYNCED),
+            {
+                maxRetries: this.maxRetries,
+                delayMs: 10,
+                useExponentialBackoff: true,
+                onRetry: (attempt, error) =>
+                    this.logger?.warn("Retrying persistence mutation", {
+                        attempt,
+                        error
+                    })
+            }
         )
-            .then(() => {
-                this.persistedRevision = Math.max(
-                    this.persistedRevision,
-                    highestRevision
-                );
-                this.resolveWaiters();
-            })
-            .catch((error) => this.poison(error))
+            .then(
+                () => {
+                    this.persistedRevision = revision;
+                    this.resolveWaiters();
+                },
+                (error) => this.poison(error)
+            )
             .finally(() => {
                 this.drainPromise = undefined;
-                if (this.poisonedError) return;
-                if (
-                    this.pendingRecords.size >= this.maxBatchOperations ||
-                    this.hasWaitingRevision()
-                ) {
-                    this.startDrain();
-                } else {
-                    this.scheduleFlush();
-                }
+                if (this.flushWaiters.length) this.startDrain();
+                else this.scheduleDrain();
             });
     }
 
-    private async commit(
-        operations: PersistenceBatchOperation[]
-    ): Promise<void> {
-        if (!operations.length || !this.databaseHandle) return;
-        await retry(() => this.databaseHandle!.database.batch(operations), {
-            maxRetries: this.maxRetries,
-            delayMs: 10,
-            useExponentialBackoff: true,
-            onRetry: (attempt, error) =>
-                this.logger?.warn("Retrying persistence mutation", {
-                    attempt,
-                    error
-                })
-        });
-    }
-
+    // waiters are pushed in revision order: resolve the covered prefix in order
     private resolveWaiters(): void {
-        for (let index = this.flushWaiters.length - 1; index >= 0; index--) {
-            const waiter = this.flushWaiters[index];
-            if (waiter.targetRevision > this.persistedRevision) continue;
-            this.flushWaiters.splice(index, 1);
-            waiter.resolve();
+        while (
+            this.flushWaiters.length &&
+            this.flushWaiters[0].revision <= this.persistedRevision
+        ) {
+            this.flushWaiters.shift()!.resolve();
         }
     }
 
-    private rejectWaiters(error: Error): void {
-        for (const waiter of this.flushWaiters.splice(0)) waiter.reject(error);
-    }
-
-    private hasWaitingRevision(): boolean {
-        return this.flushWaiters.some(
-            (waiter) => waiter.targetRevision > this.persistedRevision
-        );
+    private poison(error: unknown): void {
+        if (this.poisonedError) return;
+        const normalized = this.withLocation(error, this.databaseHandle);
+        this.poisonedError = normalized;
+        this.logger?.error("Persistence mutation failed", {
+            error: normalized
+        });
+        for (const waiter of this.flushWaiters.splice(0))
+            waiter.reject(normalized);
+        try {
+            this.failureHandler?.(normalized);
+        } catch (handlerError) {
+            this.logger?.error("Persistence failure handler failed", {
+                error: handlerError
+            });
+        }
     }
 
     private maybeWarnPendingSize(): void {
-        if (this.pendingRecords.size < this.pendingWarningOperations) {
+        if (this.pending.size < PENDING_WARNING_RECORDS) {
             this.pendingWarningEmitted = false;
             return;
         }
@@ -437,8 +328,7 @@ export class PersistenceController {
         this.logger?.warn(
             "Persistence pending-record high-water mark reached",
             {
-                pendingRecords: this.pendingRecords.size,
-                warningThreshold: this.pendingWarningOperations
+                pendingRecords: this.pending.size
             }
         );
     }
@@ -449,59 +339,23 @@ export class PersistenceController {
         this.flushTimer = undefined;
     }
 
-    private assertOpen(): void {
-        if (this.closed) {
-            throw new Error("Persistence controller is closed");
-        }
+    private withLocation(
+        error: unknown,
+        databaseHandle?: PersistenceDatabaseHandle
+    ): Error {
+        const message = error instanceof Error ? error.message : String(error);
+        return databaseHandle
+            ? new Error(`${message} (persistence: ${databaseHandle.location})`)
+            : error instanceof Error
+              ? error
+              : new Error(message);
     }
 
-    private assertMutationAllowed(): void {
-        if (!this.bound) {
-            throw new Error("Persistence controller is not bound");
-        }
-    }
-
-    private poison(error: unknown): void {
-        const normalized = this.normalizeError(error);
-        if (this.poisonedError) return;
-        this.poisonedError = normalized;
-        this.logger?.error("Persistence mutation failed", {
-            error: normalized
-        });
-        this.rejectWaiters(normalized);
-        if (!this.failureHandler) return;
-        this.inFailureCleanup = true;
-        try {
-            this.failureHandler(normalized);
-        } catch (handlerError) {
-            this.logger?.error("Persistence failure handler failed", {
-                error: this.normalizeError(handlerError)
-            });
-        } finally {
-            this.inFailureCleanup = false;
-        }
-    }
-
-    private normalizeError(error: unknown): Error {
-        return error instanceof Error ? error : new Error(String(error));
-    }
-
-    private withLocation(error: unknown): Error {
-        const normalized = this.normalizeError(error);
-        const location = this.databaseHandle?.location;
-        return location
-            ? new Error(`${normalized.message} (persistence: ${location})`)
-            : normalized;
-    }
-
-    private recordKey(
-        collectionId: CollectionId,
-        key: unknown
-    ): EncodedRecordKey {
+    private recordKey(collectionId: CollectionId, key: unknown): RecordKey {
         return `${RECORD_PREFIX}${collectionId}!${String(key)}`;
     }
 
-    private parseRecordKey(recordKey: EncodedRecordKey): {
+    private parseRecordKey(recordKey: RecordKey): {
         collectionId: CollectionId;
         key: string;
     } {

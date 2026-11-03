@@ -36,14 +36,10 @@ describe("E2E: dispute validation / inbound anchor availability", function () {
 
         const removed = await h.execOnHost(
             h.getPeer(1),
-            (sm, args) => {
-                const snapshots = sm.storage.stateSnapshots as unknown as {
-                    snapshotsByHash: Map<string, unknown>;
-                };
-                return snapshots.snapshotsByHash.delete(
+            (sm, args) =>
+                sm.storage.stateSnapshots["snapshotsByHash"].delete(
                     String(args.snapshotHash)
-                );
-            },
+                ),
             { snapshotHash: dispute.input.latestStateSnapshotHash }
         );
         expect(removed).to.equal(true);

@@ -1,5 +1,8 @@
+import { Status } from "@/types";
+import type { ChannelId } from "@/types/types";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
+import { ethers } from "ethers";
 
 describe("StateManager.isActiveFork", function () {
     it("rejects an older fork after a real reduction", async function () {
@@ -65,5 +68,102 @@ describe("StateManager.getActiveValidationStrategy", function () {
             {}
         );
         expect(result).to.deep.equal({ committed: true, gossip: true });
+    });
+});
+
+describe("StateManager.setChannelId restore", function () {
+    it("a restored head clears a persisted dispute marker whose dispute never reached the chain", async function () {
+        const h = TestSession.getHarness();
+        const forkId = await h.lifecycle.start(2, 1, {
+            persistentPeers: [1]
+        });
+        // the marker reached disk, then the process died before the upload
+        await h.execOnHost(h.getPeer(1), async (sm) => {
+            sm.storage.disputes.storeDisputedFork(sm.forkId, true);
+            await sm.storage.flush();
+        });
+        expect(
+            await h.control(h.getPeer(1)).query.didIDispute(forkId).request()
+        ).to.equal(true);
+
+        const restarted = await h.lifecycle.restartPeer(1);
+
+        expect(
+            await h.control(restarted).query.didIDispute(forkId).request()
+        ).to.equal(false);
+    });
+
+    it("a chain that cannot be read fails the persistent start and releases the partition; the next start resumes from it", async function () {
+        const h = TestSession.getHarness();
+        const forkId = await h.lifecycle.start(2, 1, {
+            persistentPeers: [1],
+            rpcNodeProxiesByPeer: { 1: 1 }
+        });
+        const height = await h
+            .control(h.getPeer(1))
+            .query.getLatestBlockHeight(forkId)
+            .request();
+
+        // the restarted runtime's only RPC node is down
+        h.options.rpcNodeProxiesCutAtStart = { 1: [0] };
+        let startError: unknown;
+        try {
+            await h.lifecycle.restartPeer(1);
+        } catch (error) {
+            startError = error;
+        }
+        expect(startError).to.be.instanceOf(Error);
+
+        h.options.rpcNodeProxiesCutAtStart = undefined;
+        const restarted = await h.lifecycle.restartPeer(1);
+        const query = h.control(restarted).query;
+        expect(await query.getLatestBlockHeight(forkId).request()).to.equal(
+            height
+        );
+        expect(await query.getStatus().request()).to.equal(Status.SYNCED);
+    });
+
+    it("a persistent runtime bound to one channel's partition refuses to bind another channel", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 1, { persistentPeers: [1] });
+
+        const refusal = await h.execOnHost(
+            h.getPeer(1),
+            async (sm, args) => {
+                try {
+                    await sm.setChannelId(args.otherChannelId as ChannelId);
+                    return null;
+                } catch (error) {
+                    return String(error);
+                }
+            },
+            { otherChannelId: ethers.hexlify(ethers.randomBytes(32)) }
+        );
+
+        expect(refusal).to.contain("cannot be rebound to another channel");
+    });
+
+    it("a restored head refills the local mirror with the chain's snapshot before any sync", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 1, {
+            persistentPeers: [1]
+        });
+
+        const restarted = await h.lifecycle.restartPeer(1);
+
+        expect(await h.control(restarted).query.getStatus().request()).to.equal(
+            Status.SYNCED
+        );
+        expect(
+            await h
+                .control(restarted)
+                .query.getLocalStateSnapshotStruct()
+                .request()
+        ).to.deep.equal(
+            await h
+                .control(h.getPeer(0))
+                .query.getLocalStateSnapshotStruct()
+                .request()
+        );
     });
 });

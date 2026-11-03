@@ -141,8 +141,7 @@ export async function setupP2pRuntime<
         const preparedPartition = await openPersistencePartition({
             identity: { ...persistenceIdentity, channelId },
             persistence,
-            signerSecret: runtimeSignerSecret,
-            existingPartition: "allow"
+            signerSecret: runtimeSignerSecret
         });
         await preparedPartition.databaseHandle.close();
         // a caller's own key never signs as the partition's stored signer

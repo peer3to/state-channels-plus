@@ -3,6 +3,7 @@ import {
     EARLY_TIMEOUT_RECHECK_REASON,
     MISMATCH_TIMEOUT_RECHECK_REASON
 } from "@/stateManager/chainFallback/ParticipantTimeoutService";
+import { Status } from "@/types";
 import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
@@ -183,6 +184,37 @@ describe("Unit: DisputeManager", function () {
             await tasks.restore();
         }
     });
+    it("a restored head held for its restart sync authors no dispute, and authors one once that sync settled", async function () {
+        const h = TestSession.getHarness();
+        const forkId = await h.lifecycle.start(2, 1, {
+            persistentPeers: [1]
+        });
+        const restarted = await h.lifecycle.restartPeer(1);
+        const query = h.control(restarted).query;
+        const uploads = await h.rpcStub.recordDisputeSubmissions(1);
+        const dispute = () =>
+            h.execOnHost(
+                h.getPeer(1),
+                (sm, args) => sm.disputeManager.dispute(args.forkId),
+                { forkId },
+                { timeoutMs: h.event.hostExecTimeoutMs() }
+            );
+
+        expect(await query.getStatus().request()).to.equal(Status.SYNCED);
+        await dispute();
+        expect(await uploads.submissions()).to.have.length(0);
+        expect(await query.didIDispute(forkId).request()).to.equal(false);
+
+        await h.network.connectPeers([1]);
+        await waitFor(
+            async () =>
+                (await query.getStatus().request()) === Status.PARTICIPATING
+        );
+        await dispute();
+        expect(await uploads.submissions()).to.have.length(1);
+        await uploads.restore();
+    });
+
     describe("constructDispute", function () {
         it("successor fork: the ancestor fork's slash, also one a kill lands first, is not listed", async function () {
             const h = TestSession.getHarness();

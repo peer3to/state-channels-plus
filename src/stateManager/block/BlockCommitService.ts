@@ -64,10 +64,10 @@ export default class BlockCommitService {
             );
 
         // step 3 - add my signature if appropriate
-        if (
+        const signs =
             (await this.shouldSignBlock(block, shouldPromoteToParticipant)) &&
-            !isDisputeReplay
-        ) {
+            !isDisputeReplay;
+        if (signs) {
             // Sign the block and add our signature to confirmation signatures
             const signature = await block.sign(sm.signer);
             this.logger.debug("Signing block", {
@@ -80,16 +80,6 @@ export default class BlockCommitService {
         sm.storage.blocks.storeBlock(block, {
             justPersist: isDisputeReplay
         });
-        if (!isDisputeReplay) {
-            // TODO(persistence): recover legal prefixes if the process crashes
-            // between snapshot, state, block, and metadata commits.
-            sm.storage.setRuntimeMetadata({
-                activeForkId: block.forkId,
-                headHash: block.hash,
-                snapshotHash: stateSnapshot.hash,
-                stateHash: stateSnapshot.stateMachineStateHash
-            });
-        }
         // step 5 - persist the outbound message blocks if any
         if (options?.outboundMessageBlock) {
             sm.storage.outboundMessages.store(options.outboundMessageBlock);
@@ -107,7 +97,14 @@ export default class BlockCommitService {
             );
         }
 
-        await sm.storage.flush();
+        // The block is canonical from here: a failure in the remaining side
+        // effects, the flush included, must not roll the VM back behind
+        // stored state.
+        options?.onBlockCommitted?.();
+
+        // our signature leaves the process only once the commit is on disk
+        if (signs || block.author === sm.signerAddress)
+            await sm.storage.flush();
 
         // Publish status only after all durable mutations for the transition
         // have succeeded.
@@ -122,9 +119,6 @@ export default class BlockCommitService {
                 )
             );
         }
-        // The block is canonical from here: a failure in the remaining side
-        // effects must not roll the VM back behind stored state.
-        options?.onBlockCommitted?.();
         if (!isDisputeReplay) {
             // counts toward the force-join bound while this signer's join is
             // observed and not seated; the join service ignores it otherwise
@@ -176,12 +170,9 @@ export default class BlockCommitService {
 
         // step 11 - maybe post block on chain
         if (block.author === sm.signerAddress) {
-            sm.timeoutManager.scheduleTask(
-                () => {
-                    sm.calldataPostingService.maybePostBlockOnChain(block.hash);
-                },
-                sm.timeConfig.agreementTime * 1000,
-                `maybePostBlockOnChain - block ${block.height} - fork ${block.forkId}`
+            sm.calldataPostingService.schedulePost(
+                block,
+                sm.timeConfig.agreementTime
             );
         }
 

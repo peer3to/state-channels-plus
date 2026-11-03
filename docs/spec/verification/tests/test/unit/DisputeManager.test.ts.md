@@ -73,6 +73,7 @@ assert none happened (`6.P3`, credited to the plain upload). One test holds the 
 (`disputeAndKillSharingHeldRead`), starts a dispute and a kill against it, and asserts one pending
 read and no send while it is held, then one resolved read and both sends at their own recorded
 estimate plus the replay gas, the kill mined without error (`6.P11`). A non-timeout dispute refused as a previous-producer mismatch queues no mismatch retry: the ZeroAddress participant guard suppresses the re-arm, so no mismatch task exists without a nonzero submitted timeout.
+The restored-head test restarts a persistent participant (`LifecycleActions.restartPeer`) without connecting it and calls `dispute()` host-side while it is held at `SYNCED`: no upload is recorded and no marker is left. After it connects and participates, the same call records one upload.
 
 ## Tests
 
@@ -163,3 +164,4 @@ estimate plus the replay gas, the kill mined without error (`6.P11`). A non-time
 - `a rejected replay requirement read rejects the kill without sending it and the next kill reads again`: none
 - `fraud proof stored while constructDispute is held at getStateProof → lands in fraudProofsToApply and onChainSlashes`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P1, UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P8
 - `a non-timeout dispute refused as a predecessor mismatch queues no mismatch retry`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P45, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P17
+- `a restored head held for its restart sync authors no dispute, and authors one once that sync settled`: REQ-STOR-3-4RJGER.T1.P24

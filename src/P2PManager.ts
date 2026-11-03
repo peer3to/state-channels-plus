@@ -263,7 +263,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
 
         this.addConnection(transport);
 
-        if (isChannelOpened) {
+        if (this.awaitsInitialSync()) {
             await this.syncIfParticipant(peerAddress, transport);
             // a check cut by teardown reports no connection
             if (transport.isClosed) return;
@@ -337,7 +337,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         // A result that lands after the chain already supplied the state is
         // stale: the wait settled through the status hook and a late false
         // must not abort an already synced runtime.
-        if (this.initialSyncSettled || stateManager.status !== Status.OPENED) {
+        if (this.initialSyncSettled || !this.awaitsInitialSync()) {
             this.settleInitialSync(success);
             return;
         }
@@ -355,8 +355,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     private onResponderSyncing(peerAddress: Address): void {
         this.initialSyncStarted = false;
         const stateManager = this.stateManager;
-        if (this.initialSyncSettled || stateManager.status !== Status.OPENED)
-            return;
+        if (this.initialSyncSettled || !this.awaitsInitialSync()) return;
         const syncingPeer = getChecksumAddress(peerAddress);
         if (!this.syncingPeerRetries.has(syncingPeer)) {
             this.armInitialSyncDeadline();
@@ -405,7 +404,20 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         if (this.initialSyncSettled) return;
         this.initialSyncSettled = true;
         this.initialSyncOutcome = success;
+        // a restored head takes its participation once the restart sync settled
+        this.stateManager.stateApplicationService.releaseRestoredHead();
         this.resolveInitialSync?.(success);
+    }
+
+    /**
+     * An observer (OPENED) has no state until its initial sync; a restored
+     * head is held until the restart sync settles.
+     */
+    private awaitsInitialSync(): boolean {
+        return (
+            this.stateManager.status === Status.OPENED ||
+            this.stateManager.stateApplicationService.holdsRestoredHead
+        );
     }
 
     /** Promotes the committed lobby profile into the normal connection set. */
@@ -426,7 +438,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     public async joinDiscoveryKey(discoveryKey: string): Promise<void> {
         requireBytes32(discoveryKey, "Discovery key must be exactly 32 bytes");
         const normalizedKey = ethers.hexlify(discoveryKey);
-        const waitForInitialSync = this.stateManager.status === Status.OPENED;
+        const waitForInitialSync = this.awaitsInitialSync();
         const initialSync = waitForInitialSync
             ? this.isInitialSyncSuccessfulWait()
             : undefined;
@@ -453,7 +465,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         if (!initialSync) return;
         // The status may have left OPENED during the discovery join (chain
         // genesis). Nothing later would settle the wait, so settle now.
-        if (this.stateManager.status !== Status.OPENED) {
+        if (!this.awaitsInitialSync()) {
             this.settleInitialSync(isEngagedStatus(this.stateManager.status));
             return;
         }
@@ -510,7 +522,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     private expireInitialSyncDeadline(): void {
         const stateManager = this.stateManager;
         this.isInitialSyncDeadlineHeld = false;
-        if (stateManager.status !== Status.OPENED) {
+        if (!this.awaitsInitialSync()) {
             this.settleInitialSync(isEngagedStatus(this.stateManager.status));
             return;
         }

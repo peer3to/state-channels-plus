@@ -1243,6 +1243,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 await stateManager.eventSyncService.readViewBlock(channelId)
         };
         this.logger.debug(`Generated syncpayload`, syncPayload);
+        // the payload carries stored signed blocks: they leave only from disk
+        await stateManager.storage.flush();
         return syncPayload;
     }
 
@@ -1282,6 +1284,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             );
 
         for (const dw of disputeWindows) {
+            // the chain holds no window for this fork
+            if (dw.evidence.creationTimestamp === 0n) continue;
             await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.persistDisputeWindow(
                 channelId,
                 dw
