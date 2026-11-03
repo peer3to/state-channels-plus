@@ -1681,21 +1681,22 @@ export class StorageDiffService {
             this.stopping.signal.aborted
         )
             return;
-        // the records keep its values while it runs, so it is never dropped meanwhile
-        let filled: Promise<void>;
-        try {
-            filled = this.hold(undefined, [address]);
-        } catch {
-            // every watched account is held: no room to rebuild this one
-            return;
-        }
-        // awaited once the backfill has a place; a failure there is its own
-        filled.catch(() => undefined);
+        // Set once the backfill holds the account: from when it gets its
+        // place until it is done, so a waiting backfill holds nothing.
+        let held = false;
         const job = this.takeBackfillPlace()
             .then(async () => {
                 try {
-                    if (!this.stopping.signal.aborted)
-                        await this.runBackfill(address, filled);
+                    // a backfill no subscription names any more costs nothing
+                    if (
+                        this.stopping.signal.aborted ||
+                        !this.peerHub.subscribedAddresses().includes(address)
+                    )
+                        return;
+                    // the records keep its values while it runs, so it is never dropped meanwhile
+                    const filled = this.hold(undefined, [address]);
+                    held = true;
+                    await this.runBackfill(address, filled);
                 } finally {
                     this.backfillsRunning--;
                     this.backfillWaiters.shift()?.();
@@ -1720,7 +1721,7 @@ export class StorageDiffService {
             })
             .finally(() => {
                 this.backfills.delete(address);
-                this.release(undefined, [address]);
+                if (held) this.release(undefined, [address]);
             });
         this.backfills.set(address, job);
     }

@@ -603,6 +603,53 @@ describe("StorageDiffService limits", function () {
         );
     });
 
+    // Mutation: a waiting backfill holds its account -> the second
+    // connection's subscription is refused; a backfill no subscription names
+    // any more still runs -> the abandoned accounts are probed.
+    it("holds nothing for a backfill that waits for its turn, and skips one no subscription names any more", async function () {
+        await withStorageDiffSession(
+            async ({ client, relay, service, signer }) => {
+                const writers = [
+                    await deploySlotWriter(signer),
+                    await deploySlotWriter(signer)
+                ];
+                for (const writer of writers)
+                    await writeSlot(signer, writer, 1, 5n);
+                const held = relay.holdAll("debug_traceBlockByNumber");
+                const running = await client.subscribe(writers);
+                // both backfill places are taken by the writers' traces
+                await eventually(async () => {
+                    if (relay.requestCount("debug_traceBlockByNumber") < 2)
+                        throw new Error(
+                            "The backfills have not reached their traces"
+                        );
+                });
+                const abandoned = await client.subscribe([X, Y]);
+                await client.unsubscribe(abandoned);
+                const other = await StorageDiffClient.connect(service.url);
+                try {
+                    const subscribed = await other.subscribeWithStatus([Z]);
+
+                    held.release();
+                    await other.nextSnapshot(subscribed.subscription);
+                    await client.nextSnapshot(running);
+                    const probed = relay
+                        .paramsOf("eth_getCode")
+                        .map((params) => String(params[0]).toLowerCase());
+
+                    expect(subscribed.accounts).to.deep.equal({
+                        [Z]: "syncing"
+                    });
+                    expect(probed).to.not.include.members([X]);
+                    expect(probed).to.not.include.members([Y]);
+                } finally {
+                    other.close();
+                }
+            },
+            { maxWatchedAddresses: 4 }
+        );
+    });
+
     // Mutation: a dropped account stays complete -> it is subscribed as ready.
     it("subscribes a complete contract that was dropped from the watched set as syncing and pushes its snapshot again", async function () {
         await withStorageDiffSession(

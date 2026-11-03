@@ -870,7 +870,7 @@ Specification cases tested: 36/36.
 Specification cases tested: 15/15.
 
 [`REQ-SDS-12-JDW71Y` (What peers can make the service hold is bounded)](../specification/runtime/storage-diff-service.md#req-sds-12-jdw71y)
-Specification cases tested: 19/19.
+Specification cases tested: 20/20.
 
 [`REQ-SDS-12-N40MKR` (A wait for a late block or snapshot ends at the first event, not at a fixed time)](../specification/runtime/storage-diff-service.md#req-sds-12-n40mkr)
 Specification cases tested: 11/11.
