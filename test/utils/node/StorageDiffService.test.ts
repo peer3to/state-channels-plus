@@ -605,7 +605,12 @@ describe("StorageDiffService", function () {
                     lagging.close();
                 }
             },
-            { maxPeerBufferedBytes: limitBytes }
+            {
+                maxPeerBufferedBytes: limitBytes,
+                // the 1000 subscriptions are the bytes that pile up
+                maxSubscriptionsPerConnection: 1000,
+                maxInFlightRequests: 1000
+            }
         );
     });
 });

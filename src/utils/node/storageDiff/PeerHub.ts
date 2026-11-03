@@ -3,6 +3,7 @@ import {
     INVALID_PARAMS,
     INVALID_REQUEST,
     isObject,
+    LIMIT_EXCEEDED_ERROR_CODE,
     METHOD_NOT_FOUND,
     PARSE_ERROR,
     rpcError,
@@ -22,6 +23,10 @@ export const SEND_BUFFER_OVERFLOW_CLOSE_CODE = 1008;
 const MAX_PEER_PAYLOAD_BYTES = 1024 * 1024;
 /** How long a cut peer gets to drain the notice before the socket drops. */
 const PEER_CLOSE_GRACE_MS = 10_000;
+/** HTTP status of a refused upgrade from an origin not allowed. */
+const ORIGIN_REFUSED_STATUS = 403;
+/** HTTP status of a refused upgrade while every connection is taken. */
+const CONNECTIONS_FULL_STATUS = 503;
 
 /** Endpoint names a request may route to: the endpoint class's own methods. */
 const ENDPOINTS: ReadonlySet<string> = new Set(
@@ -35,6 +40,8 @@ export interface StorageDiffPeer {
     socket: WebSocket;
     subscriptions: Map<SubscriptionId, AccountAddress[]>;
     nextSubscription: number;
+    /** Requests of this peer being answered now. */
+    inFlight: number;
     /** Cut for falling behind; gets nothing more. */
     closing: boolean;
 }
@@ -46,8 +53,16 @@ export interface PeerHubOptions {
     port: number;
     /** A peer whose unsent bytes pass this is told why and cut. */
     maxPeerBufferedBytes: number;
+    /** Connections open at once; one more is refused at the upgrade. */
+    maxConnections: number;
+    /** Requests of one peer answered at once; one more is answered with an error. */
+    maxInFlightRequests: number;
+    /** Browser origins that may connect; a connection without an `Origin` header always may. */
+    allowedOrigins: string[];
     /** The endpoints one connection's requests reach. */
     createMethods: (peer: StorageDiffPeer) => StorageDiffRpcMethods;
+    /** Called once a peer's connection closed. */
+    disconnected: (peer: StorageDiffPeer) => void;
     /** Called when the server fails. */
     fail: (error: unknown) => void;
 }
@@ -58,9 +73,14 @@ export class PeerHub {
     private readonly host: string;
     private readonly port: number;
     private readonly maxPeerBufferedBytes: number;
+    private readonly maxConnections: number;
+    private readonly maxInFlightRequests: number;
+    // `Origin` header values that may connect.
+    private readonly allowedOrigins: ReadonlySet<string>;
     private readonly createMethods: (
         peer: StorageDiffPeer
     ) => StorageDiffRpcMethods;
+    private readonly disconnected: (peer: StorageDiffPeer) => void;
     private readonly fail: (error: unknown) => void;
     private server?: WebSocketServer;
 
@@ -68,7 +88,11 @@ export class PeerHub {
         this.host = options.host;
         this.port = options.port;
         this.maxPeerBufferedBytes = options.maxPeerBufferedBytes;
+        this.maxConnections = options.maxConnections;
+        this.maxInFlightRequests = options.maxInFlightRequests;
+        this.allowedOrigins = new Set(options.allowedOrigins);
         this.createMethods = options.createMethods;
+        this.disconnected = options.disconnected;
         this.fail = options.fail;
     }
 
@@ -96,7 +120,24 @@ export class PeerHub {
         const server = new WebSocketServer({
             host: this.host,
             port: this.port,
-            maxPayload: MAX_PEER_PAYLOAD_BYTES
+            maxPayload: MAX_PEER_PAYLOAD_BYTES,
+            // Decided while the upgrade is handled, before its connection
+            // counts: a refused one gets an HTTP error and no socket.
+            verifyClient: ({ origin }, admit) => {
+                if (origin && !this.allowedOrigins.has(origin))
+                    return admit(
+                        false,
+                        ORIGIN_REFUSED_STATUS,
+                        "Origin not allowed"
+                    );
+                if (this.peers.size >= this.maxConnections)
+                    return admit(
+                        false,
+                        CONNECTIONS_FULL_STATUS,
+                        "Too many connections"
+                    );
+                admit(true);
+            }
         });
         this.server = server;
         await new Promise<void>((resolve, reject) => {
@@ -134,15 +175,19 @@ export class PeerHub {
             socket,
             subscriptions: new Map(),
             nextSubscription: 0,
+            inFlight: 0,
             closing: false
         };
         const methods = this.createMethods(peer);
         this.peers.set(socket, peer);
         socket.on("error", () => socket.terminate());
-        socket.on("close", () => this.peers.delete(socket));
+        socket.on("close", () => {
+            this.peers.delete(socket);
+            this.disconnected(peer);
+        });
         socket.on("message", (data, isBinary) => {
             this.handleRpc(
-                socket,
+                peer,
                 methods,
                 isBinary ? "" : data.toString()
             ).catch(() => socket.terminate());
@@ -150,12 +195,19 @@ export class PeerHub {
     }
 
     private async handleRpc(
-        socket: WebSocket,
+        peer: StorageDiffPeer,
         methods: StorageDiffRpcMethods,
         raw: string
     ): Promise<void> {
+        const { socket } = peer;
+        // an answer the peer does not read counts toward its buffer limit too
+        const answer = (message: unknown) => {
+            if (peer.closing) return;
+            this.send(socket, message);
+            this.dropIfLagging(peer);
+        };
         const reply = (id: unknown, code: number, message: string) =>
-            this.send(socket, { jsonrpc: "2.0", id, error: { code, message } });
+            answer({ jsonrpc: "2.0", id, error: { code, message } });
         let request: unknown;
         try {
             request = JSON.parse(raw);
@@ -182,17 +234,29 @@ export class PeerHub {
             return reply(null, INVALID_REQUEST, "Invalid Request");
         }
         const notification = !("id" in request);
+        // JSON-RPC 2.0 lets a request leave out empty params
+        const params = request.params ?? [];
         try {
             if (!ENDPOINTS.has(request.method)) {
                 throw rpcError(METHOD_NOT_FOUND, "Method not found");
             }
-            if (!Array.isArray(request.params)) {
+            if (!Array.isArray(params)) {
                 throw rpcError(INVALID_PARAMS, "params must be an array");
             }
+            if (peer.inFlight >= this.maxInFlightRequests)
+                throw rpcError(
+                    LIMIT_EXCEEDED_ERROR_CODE,
+                    `At most ${this.maxInFlightRequests} requests of a connection are answered at once`
+                );
             const endpoint = request.method as keyof StorageDiffRpcMethods;
-            const result = await methods[endpoint](request.params);
-            if (!notification)
-                this.send(socket, { jsonrpc: "2.0", id, result });
+            peer.inFlight++;
+            let result: unknown;
+            try {
+                result = await methods[endpoint](params);
+            } finally {
+                peer.inFlight--;
+            }
+            if (!notification) answer({ jsonrpc: "2.0", id, result });
         } catch (error) {
             const code = (error as { code?: unknown }).code;
             if (notification) return;

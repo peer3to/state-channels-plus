@@ -24,14 +24,30 @@ yarn infra:storage-diff --upstream ws://127.0.0.1:8546
 
 | Flag          | Default     | Meaning                                              |
 | ------------- | ----------- | ---------------------------------------------------- |
-| `--upstream`  | (required)  | `ws://` or `wss://` upstream. HTTP cannot supply `newHeads`, so it is rejected. |
+| `--upstream`  | `$STORAGE_DIFF_UPSTREAM_URL` | `ws://` or `wss://` upstream; one of the two is required. HTTP cannot supply `newHeads`, so it is rejected. The variable keeps credentials in the URL off the process list. |
 | `--host`      | `127.0.0.1` | Bind address.                                        |
 | `--port`      | `19778`     | Bind port; `0` takes an OS-assigned port.            |
 | `--retention` | `128`       | Canonical blocks kept for catch-up (integer >= 1).   |
-| `--max-peer-buffered-bytes` | `16777216` | A peer whose unsent bytes pass this is told why and cut (integer >= 1). |
+| `--max-peer-buffered-bytes` | `16777216` | A peer whose unsent pushes and answers pass this is told why and cut (integer >= 1). |
+| `--max-addresses-per-request` | `1000` | Addresses a subscription or catch-up, and accounts a state read, may name. |
+| `--max-subscriptions-per-connection` | `64` | Subscriptions one connection may hold open. |
+| `--max-connections` | `256` | Connections open at once; one more is refused with HTTP 503. |
+| `--max-in-flight-requests` | `32` | Requests of one connection answered at once. |
+| `--max-watched-addresses` | `10000` | Accounts whose values the service keeps (see below). |
+| `--allow-origin` | (none) | A browser origin that may connect; repeat it for more. Connections without an `Origin` header (node clients) are always admitted, browser origins not listed get HTTP 403. |
+
+A request past the address limit fails as invalid params; one past a
+subscription, in-flight or watched limit fails with code `-32005`. The
+connection stays open either way.
 
 The cache lives in memory only: a restarted service loads the last
-`retention` blocks again and refills the cache on reads.
+`retention` blocks again and refills the cache on reads. Only watched
+accounts are cached. An account is watched while a subscription names it or a
+request reads it, and stays watched afterwards until its place is needed: past
+`--max-watched-addresses` the least recently used account that no
+subscription or request holds is dropped together with its cached values.
+After an outage longer than the retention window only the newest `retention`
+blocks are traced, and the history restarts at them.
 
 Once it is serving, it prints one line to stdout and nothing else:
 `{"event":"listening","url":"ws://127.0.0.1:19778"}`. The URL is the bound

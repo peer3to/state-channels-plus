@@ -858,7 +858,10 @@ Specification cases tested: 10/10.
 Specification cases tested: 19/19.
 
 [`REQ-SDS-11-QV2VPT` (Upstream trouble is retried, then fatal)](../specification/runtime/storage-diff-service.md#req-sds-11-qv2vpt)
-Specification cases tested: 11/12. Untested: T1.P10.
+Specification cases tested: 13/14. Untested: T1.P10.
+
+[`REQ-SDS-12-JDW71Y` (What peers can make the service hold is bounded)](../specification/runtime/storage-diff-service.md#req-sds-12-jdw71y)
+Specification cases tested: 13/13.
 
 [`REQ-SEC-1-SNS1GA` (Before this specification is finalized, a dedicated security review of the full…)](../audit/security-assessment.md#req-sec-1-sns1ga)
 Specification cases tested: none planned.

@@ -1,7 +1,10 @@
 import { ScriptProcess } from "../../fixtures/node/ScriptProcess";
 import { StorageDiffClient } from "../../fixtures/node/StorageDiffClient";
 import { withStorageDiffUpstream } from "../../fixtures/node/StorageDiffSession";
-import { parseStorageDiffArgs } from "@/utils/node/storageDiff/storageDiffCli";
+import {
+    parseStorageDiffArgs,
+    UPSTREAM_URL_ENV
+} from "@/utils/node/storageDiff/storageDiffCli";
 import { expect } from "chai";
 
 describe("storage diff service flags", function () {
@@ -34,6 +37,71 @@ describe("storage diff service flags", function () {
                 "lots"
             ])
         ).to.throw("--max-peer-buffered-bytes must be a non-negative integer");
+    });
+
+    it("passes each limit flag on as its service option", function () {
+        const options = parseStorageDiffArgs([
+            "--upstream",
+            "ws://127.0.0.1:1",
+            "--max-addresses-per-request",
+            "11",
+            "--max-subscriptions-per-connection",
+            "12",
+            "--max-connections",
+            "13",
+            "--max-in-flight-requests",
+            "14",
+            "--max-watched-addresses",
+            "15"
+        ]);
+
+        expect(options).to.deep.equal({
+            upstreamUrl: "ws://127.0.0.1:1",
+            maxAddressesPerRequest: 11,
+            maxSubscriptionsPerConnection: 12,
+            maxConnections: 13,
+            maxInFlightRequests: 14,
+            maxWatchedAddresses: 15
+        });
+    });
+
+    it("passes every --allow-origin on as an allowed origin", function () {
+        const options = parseStorageDiffArgs([
+            "--upstream",
+            "ws://127.0.0.1:1",
+            "--allow-origin",
+            "https://a.example",
+            "--allow-origin",
+            "https://b.example"
+        ]);
+
+        expect(options.allowedOrigins).to.deep.equal([
+            "https://a.example",
+            "https://b.example"
+        ]);
+    });
+
+    it("reads the upstream URL from STORAGE_DIFF_UPSTREAM_URL without --upstream", function () {
+        const options = parseStorageDiffArgs([], {
+            [UPSTREAM_URL_ENV]: "wss://user:key@rpc.example"
+        });
+
+        expect(options.upstreamUrl).to.equal("wss://user:key@rpc.example");
+    });
+
+    it("takes --upstream over STORAGE_DIFF_UPSTREAM_URL", function () {
+        const options = parseStorageDiffArgs(
+            ["--upstream", "ws://127.0.0.1:1"],
+            { [UPSTREAM_URL_ENV]: "ws://127.0.0.1:2" }
+        );
+
+        expect(options.upstreamUrl).to.equal("ws://127.0.0.1:1");
+    });
+
+    it("refuses to start without --upstream or STORAGE_DIFF_UPSTREAM_URL", function () {
+        expect(() => parseStorageDiffArgs([], {})).to.throw(
+            "--upstream <ws://... | wss://...> or STORAGE_DIFF_UPSTREAM_URL is required"
+        );
     });
 
     it("refuses an unknown flag", function () {

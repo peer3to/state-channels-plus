@@ -95,4 +95,31 @@ describe("StateCache", function () {
         expect(cache.get({ kind: "nonce", address: A })).to.equal(undefined);
         expect(cache.get(slot(A, SLOT))).to.equal(undefined);
     });
+
+    // Mutation: forget keeps a scalar or the slots, or drops another account's.
+    it("forgets every field of one account and keeps another account's", function () {
+        const cache = new StateCache();
+        for (const address of [A, B]) {
+            cache.set({ kind: "balance", address }, "0x1");
+            cache.set({ kind: "nonce", address }, 3);
+            cache.set({ kind: "code", address }, "0x00");
+            cache.set(slot(address, SLOT), FIVE);
+        }
+
+        cache.forget(A);
+
+        const fields = (address: string) => [
+            cache.get({ kind: "balance", address }),
+            cache.get({ kind: "nonce", address }),
+            cache.get({ kind: "code", address }),
+            cache.get(slot(address, SLOT))
+        ];
+        expect(fields(A)).to.deep.equal([
+            undefined,
+            undefined,
+            undefined,
+            undefined
+        ]);
+        expect(fields(B)).to.deep.equal(["0x1", 3, "0x00", FIVE]);
+    });
 });

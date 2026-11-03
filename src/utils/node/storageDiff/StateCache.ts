@@ -78,6 +78,13 @@ export class StateCache {
         this.slots.clear();
     }
 
+    /** Drops every cached field of `address`. */
+    forget(address: AccountAddress): void {
+        for (const kind of ["balance", "nonce", "code"])
+            this.scalars.delete(scalarKey(kind, address));
+        this.slots.delete(address);
+    }
+
     /** Moves cached fields to the state after `change`. */
     applyForward(change: StateChange): void {
         for (const [address, account] of Object.entries(change.post)) {

@@ -1,6 +1,8 @@
 import {
     environmentOf,
     filterRecord,
+    invalidParams,
+    LIMIT_EXCEEDED_ERROR_CODE,
     NOT_RETAINED_ERROR_CODE,
     parseHeader,
     PRUNED_ERROR_CODE,
@@ -36,6 +38,7 @@ import type {
 } from "../../storageDiff/storageDiffWire";
 import RpcNodeProvider from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import type { Logger } from "@/utils";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import { retry } from "@/utils/retry";
 import { toQuantity } from "ethers";
 
@@ -43,6 +46,11 @@ const DEFAULT_RETENTION_BLOCKS = 128;
 export type { StorageDiffCatchUp, StorageDiffState };
 
 const DEFAULT_MAX_PEER_BUFFERED_BYTES = 16 * 1024 * 1024;
+const DEFAULT_MAX_ADDRESSES_PER_REQUEST = 1000;
+const DEFAULT_MAX_SUBSCRIPTIONS_PER_CONNECTION = 64;
+const DEFAULT_MAX_CONNECTIONS = 256;
+const DEFAULT_MAX_IN_FLIGHT_REQUESTS = 32;
+const DEFAULT_MAX_WATCHED_ADDRESSES = 10_000;
 const DEFAULT_PORT = 19778;
 /** How long one upstream request may take, a reconnect included. */
 const DEFAULT_UPSTREAM_REQUEST_TIMEOUT_MS = 10_000;
@@ -63,6 +71,16 @@ const CALL_TRACE_OPTIONS = { tracer: "callTracer" };
 /** Identifies one state fetch in flight: a `StateField` as text. */
 type FlightKey = string;
 
+/** An account whose values the records keep, and who needs them now. */
+type WatchedAccount = {
+    /** Settles when the retained records hold the account. */
+    filled: Promise<void>;
+    /** The last fill failed: the next hold fills again. */
+    failed: boolean;
+    /** Subscriptions naming it and requests reading it now; it is never dropped while any are. */
+    holders: number;
+};
+
 export interface StorageDiffServiceOptions {
     /** `ws://` or `wss://` upstream that serves `newHeads` and tracing. */
     upstreamUrl: string;
@@ -75,6 +93,18 @@ export interface StorageDiffServiceOptions {
     maxPeerBufferedBytes?: number;
     /** How long one upstream request may take, a reconnect included; 10 s by default. */
     upstreamRequestTimeoutMs?: number;
+    /** Addresses one subscription or catch-up, and accounts one state read, may name; 1,000 by default. */
+    maxAddressesPerRequest?: number;
+    /** Subscriptions one connection may hold open; 64 by default. */
+    maxSubscriptionsPerConnection?: number;
+    /** Connections open at once; 256 by default. */
+    maxConnections?: number;
+    /** Requests of one connection being answered at once; 32 by default. */
+    maxInFlightRequests?: number;
+    /** Accounts whose values the service keeps; 10,000 by default. */
+    maxWatchedAddresses?: number;
+    /** Browser origins that may connect; a connection without an `Origin` header always may. */
+    allowedOrigins?: string[];
     logger: Logger;
 }
 
@@ -136,14 +166,17 @@ export class StorageDiffService {
     private readonly upstreamEndpoint: string;
     private readonly retention: number;
     private readonly upstreamRequestTimeoutMs: number;
+    private readonly maxAddressesPerRequest: number;
+    private readonly maxSubscriptionsPerConnection: number;
+    private readonly maxWatchedAddresses: number;
     private readonly stopping = new AbortController();
     private readonly upstream: RpcNodeProvider;
     private canonical: StagedBlock[] = [];
     // Account and slot values at the best head; every upstream read fills it.
     private readonly stateCache = new StateCache();
-    // Accounts the service keeps the values of in every record it stages: one
-    // entry per account, settled when the retained records hold them too.
-    private readonly watched = new Map<AccountAddress, Promise<void>>();
+    // Accounts the service keeps the values of in every record it stages,
+    // least recently used first. Only a watched account's values are cached.
+    private readonly watched = new Map<AccountAddress, WatchedAccount>();
     // One fetch per missing field, shared by every reader waiting for it.
     private readonly flights = new Map<FlightKey, Promise<void>>();
     // State reads at the upstream now, and the ones waiting for a free place.
@@ -173,13 +206,25 @@ export class StorageDiffService {
         this.upstreamRequestTimeoutMs =
             options.upstreamRequestTimeoutMs ??
             DEFAULT_UPSTREAM_REQUEST_TIMEOUT_MS;
+        this.maxAddressesPerRequest =
+            options.maxAddressesPerRequest ?? DEFAULT_MAX_ADDRESSES_PER_REQUEST;
+        this.maxSubscriptionsPerConnection =
+            options.maxSubscriptionsPerConnection ??
+            DEFAULT_MAX_SUBSCRIPTIONS_PER_CONNECTION;
+        this.maxWatchedAddresses =
+            options.maxWatchedAddresses ?? DEFAULT_MAX_WATCHED_ADDRESSES;
         this.upstream = new RpcNodeProvider(options.upstreamUrl, this.logger);
         this.peerHub = new PeerHub({
             host: options.host ?? "127.0.0.1",
             port: options.port ?? DEFAULT_PORT,
             maxPeerBufferedBytes:
                 options.maxPeerBufferedBytes ?? DEFAULT_MAX_PEER_BUFFERED_BYTES,
+            maxConnections: options.maxConnections ?? DEFAULT_MAX_CONNECTIONS,
+            maxInFlightRequests:
+                options.maxInFlightRequests ?? DEFAULT_MAX_IN_FLIGHT_REQUESTS,
+            allowedOrigins: options.allowedOrigins ?? [],
             createMethods: (peer) => new StorageDiffRpcMethods(this, peer),
+            disconnected: (peer) => this.disconnected(peer),
             fail: (error) => this.fail(error)
         });
         this.closed = new Promise<void>((resolve, reject) => {
@@ -196,13 +241,11 @@ export class StorageDiffService {
     static async start(
         options: StorageDiffServiceOptions
     ): Promise<StorageDiffService> {
-        let upstreamEndpoint: string;
         try {
             const parsed = new URL(options.upstreamUrl);
             if (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") {
                 throw new Error("unsupported protocol");
             }
-            upstreamEndpoint = `${parsed.protocol}//${parsed.host}`;
         } catch {
             throw new Error(
                 "upstreamUrl must be a ws:// or wss:// URL (newHeads needs a subscription transport)"
@@ -216,11 +259,23 @@ export class StorageDiffService {
         if (!Number.isInteger(port) || port < 0 || port > 65535) {
             throw new Error("port must be an integer between 0 and 65535");
         }
-        const limit = options.maxPeerBufferedBytes;
-        if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
-            throw new Error("maxPeerBufferedBytes must be a positive integer");
+        const limits = {
+            maxPeerBufferedBytes: options.maxPeerBufferedBytes,
+            maxAddressesPerRequest: options.maxAddressesPerRequest,
+            maxSubscriptionsPerConnection:
+                options.maxSubscriptionsPerConnection,
+            maxConnections: options.maxConnections,
+            maxInFlightRequests: options.maxInFlightRequests,
+            maxWatchedAddresses: options.maxWatchedAddresses
+        };
+        for (const [name, limit] of Object.entries(limits)) {
+            if (limit !== undefined && (!Number.isInteger(limit) || limit < 1))
+                throw new Error(`${name} must be a positive integer`);
         }
-        const service = new StorageDiffService(options, upstreamEndpoint);
+        const service = new StorageDiffService(
+            options,
+            LoggerUtils.getRpcNodeMetadata(options.upstreamUrl).rpcNode
+        );
         await service.open();
         return service;
     }
@@ -238,28 +293,78 @@ export class StorageDiffService {
         peer: StorageDiffPeer,
         addresses: AccountAddress[]
     ): Promise<SubscribeResult> {
+        this.assertAddressCount(addresses);
         return await this.enqueue(async () => {
             if (!this.peerHub.peers.has(peer.socket))
                 throw new Error("Peer closed");
+            if (peer.subscriptions.size >= this.maxSubscriptionsPerConnection)
+                throw rpcError(
+                    LIMIT_EXCEEDED_ERROR_CODE,
+                    `A connection may hold at most ${this.maxSubscriptionsPerConnection} subscriptions`
+                );
+            // the records keep these accounts' values from the next block on
+            this.hold(addresses).catch(() => undefined);
             const id = "0x" + (++peer.nextSubscription).toString(16);
             peer.subscriptions.set(id, addresses);
-            // the records keep these accounts' values from the next block on
-            for (const address of addresses) void this.watch(address);
             return { subscription: id };
         });
     }
 
     /** Takes effect at once: no record is pushed to `id` after this. */
     unsubscribe(peer: StorageDiffPeer, id: SubscriptionId): boolean {
-        return peer.subscriptions.delete(id);
+        const addresses = peer.subscriptions.get(id);
+        if (!addresses) return false;
+        peer.subscriptions.delete(id);
+        this.release(addresses);
+        return true;
     }
 
     async getDiffs(
         addresses: AccountAddress[],
         fromBlock: bigint
     ): Promise<StorageDiffCatchUp> {
+        this.assertAddressCount(addresses);
         // the records hold the requested accounts, filled in if need be
-        await Promise.all(addresses.map((address) => this.watch(address)));
+        const filled = this.hold(addresses);
+        try {
+            await filled;
+            return await this.readDiffs(addresses, fromBlock);
+        } finally {
+            this.release(addresses);
+        }
+    }
+
+    /**
+     * The values of the requested fields at retained block `blockHash`.
+     * A field missing from the cache is fetched from the upstream once, at the
+     * best head, however many readers wait for it; an older block is answered
+     * by undoing the later blocks' writes with their `pre` values.
+     */
+    async getState(
+        blockHash: string,
+        requests: StateRequest[]
+    ): Promise<StorageDiffState> {
+        const addresses = requests.map((request) => request.address);
+        this.assertAddressCount(addresses);
+        // the records hold the requested accounts, which a value read needs
+        const filled = this.hold(addresses);
+        try {
+            await filled;
+            return await this.readState(blockHash, requests);
+        } finally {
+            this.release(addresses);
+        }
+    }
+
+    /** The environment of the best head. */
+    getHead(): BlockEnvironment {
+        return environmentOf(this.canonical[this.canonical.length - 1]);
+    }
+
+    private async readDiffs(
+        addresses: AccountAddress[],
+        fromBlock: bigint
+    ): Promise<StorageDiffCatchUp> {
         return await this.enqueue(async () => {
             const best = this.canonical[this.canonical.length - 1];
             const head = BigInt(best.number);
@@ -282,21 +387,11 @@ export class StorageDiffService {
         });
     }
 
-    /**
-     * The values of the requested fields at retained block `blockHash`.
-     * A field missing from the cache is fetched from the upstream once, at the
-     * best head, however many readers wait for it; an older block is answered
-     * by undoing the later blocks' writes with their `pre` values.
-     */
-    async getState(
+    private async readState(
         blockHash: string,
         requests: StateRequest[]
     ): Promise<StorageDiffState> {
         const fields = requests.flatMap((request) => this.fieldsOf(request));
-        // the records hold the requested accounts, which a value read needs
-        await Promise.all(
-            requests.map((request) => this.watch(request.address))
-        );
         return await this.retryWhileChainMoves(async () => {
             this.assertRetained(blockHash);
             this.fetchMissing(fields);
@@ -320,11 +415,6 @@ export class StorageDiffService {
                 accounts: this.accountsOf(requests, fields, scratch)
             };
         });
-    }
-
-    /** The environment of the best head. */
-    getHead(): BlockEnvironment {
-        return environmentOf(this.canonical[this.canonical.length - 1]);
     }
 
     private async open(): Promise<void> {
@@ -449,28 +539,34 @@ export class StorageDiffService {
         }
         branch.reverse();
         // An ancestor older than the window becomes the oldest retained record.
+        let blocks = below ? [below, ...branch] : branch;
+        // After a long outage or a deep reorg only the newest blocks stay
+        // retained, so only they are traced; the history restarts at them.
+        const restarts = blocks.length > this.retention;
+        if (restarts) blocks = blocks.slice(-this.retention);
         // A traced block was checked after its trace; an empty tip is not
         // rechecked: a reorg during staging wakes a new reconciliation.
         const staged = await this.stage(
-            below ? [below, ...branch] : branch,
+            blocks,
             // the cache is at the first block's parent when the branch extends the head
-            !below && ancestor === canonical.length - 1 ? "cache" : "chain"
+            !restarts && !below && ancestor === canonical.length - 1
+                ? "cache"
+                : "chain"
         );
         // Cached values follow the chain: back over the orphans, then forward.
-        if (below) {
+        if (below || restarts) {
             this.stateCache.clear();
         } else {
             for (let i = canonical.length - 1; i > ancestor; i--) {
                 this.stateCache.applyBackward(canonical[i]);
             }
         }
-        canonical.splice(ancestor + 1);
+        canonical.splice(restarts ? 0 : ancestor + 1);
         canonical.push(...staged);
-        for (const record of staged.slice(below ? 1 : 0))
-            this.stateCache.applyForward(record);
+        const added = below && !restarts ? staged.slice(1) : staged;
+        for (const record of added) this.stateCache.applyForward(record);
         canonical.splice(0, Math.max(0, canonical.length - this.retention));
-        for (const record of staged.slice(below ? 1 : 0))
-            this.peerHub.publish(record);
+        for (const record of added) this.peerHub.publish(record);
     }
 
     private wake(): void {
@@ -691,19 +787,77 @@ export class StorageDiffService {
     }
 
     /**
-     * Starts keeping the values of `address` in every record, and fills the
-     * retained records staged before. Settles when they hold it; asking again
-     * returns the same promise.
+     * Holds `addresses` watched until `release`: the values of each are kept
+     * in every record staged from now on, and the retained records staged
+     * before are filled. Settles when they hold them all. Past the watched
+     * limit the least recently used accounts nobody holds are dropped, with
+     * their cached values; when those are too few, nothing is held.
      */
-    private watch(address: AccountAddress): Promise<void> {
-        let filled = this.watched.get(address);
-        if (!filled) {
-            // later blocks cover it from here; the fill covers the earlier ones
-            filled = this.enqueue(() => this.fillHistory(address));
-            this.watched.set(address, filled);
-            filled.catch(() => this.watched.delete(address));
+    private hold(addresses: AccountAddress[]): Promise<void> {
+        const wanted = new Set(addresses);
+        let excess =
+            this.watched.size +
+            [...wanted].filter((address) => !this.watched.has(address)).length -
+            this.maxWatchedAddresses;
+        const dropped: AccountAddress[] = [];
+        for (const [address, account] of this.watched) {
+            if (excess <= 0) break;
+            if (account.holders > 0 || wanted.has(address)) continue;
+            dropped.push(address);
+            excess--;
         }
-        return filled;
+        if (excess > 0)
+            throw rpcError(
+                LIMIT_EXCEEDED_ERROR_CODE,
+                `The service watches at most ${this.maxWatchedAddresses} addresses, all of them in use`
+            );
+        for (const address of dropped) {
+            this.watched.delete(address);
+            this.stateCache.forget(address);
+        }
+        for (const address of wanted) {
+            let account = this.watched.get(address);
+            if (!account || account.failed) {
+                // later blocks cover it from here; the fill covers the earlier ones
+                const filled = this.enqueue(() => this.fillHistory(address));
+                account ??= { filled, failed: false, holders: 0 };
+                account.filled = filled;
+                account.failed = false;
+                const filling = account;
+                filled.catch(() => {
+                    if (filling.filled === filled) filling.failed = true;
+                });
+            }
+            account.holders++;
+            // most recently used last
+            this.watched.delete(address);
+            this.watched.set(address, account);
+        }
+        return Promise.all(
+            [...wanted].map((address) => this.watched.get(address)!.filled)
+        ).then(() => undefined);
+    }
+
+    /** Ends one hold of each of `addresses`; they stay watched until dropped. */
+    private release(addresses: AccountAddress[]): void {
+        for (const address of new Set(addresses)) {
+            const account = this.watched.get(address);
+            if (account) account.holders--;
+        }
+    }
+
+    /** A closed connection's subscriptions hold their accounts no more. */
+    private disconnected(peer: StorageDiffPeer): void {
+        for (const addresses of peer.subscriptions.values())
+            this.release(addresses);
+        peer.subscriptions.clear();
+    }
+
+    private assertAddressCount(addresses: AccountAddress[]): void {
+        if (new Set(addresses).size > this.maxAddressesPerRequest)
+            throw invalidParams(
+                `A request may name at most ${this.maxAddressesPerRequest} addresses`
+            );
     }
 
     /** Adds `address` to the retained records that were staged without it. */
@@ -812,6 +966,8 @@ export class StorageDiffService {
         first?: { pinned: string; value: Promise<StateValue> }
     ): Promise<void> {
         let unused = first;
+        // a value of an account dropped meanwhile would not follow the chain
+        const watching = this.watched.get(field.address);
         await this.retryWhileChainMoves(async () => {
             const pinned =
                 unused?.pinned ??
@@ -843,7 +999,8 @@ export class StorageDiffService {
             for (let i = index + 1; i < this.canonical.length; i++) {
                 scratch.applyForward(this.canonical[i]);
             }
-            this.stateCache.set(field, scratch.get(field)!);
+            if (this.watched.get(field.address) === watching)
+                this.stateCache.set(field, scratch.get(field)!);
         });
     }
 

@@ -53,8 +53,12 @@ export class StorageDiffClient {
         socket.on("message", (data) => this.onMessage(data.toString()));
     }
 
-    static async connect(url: string): Promise<StorageDiffClient> {
-        const socket = new WebSocket(url);
+    /** Connects as a browser page at `origin` would when it is given. */
+    static async connect(
+        url: string,
+        options: { origin?: string } = {}
+    ): Promise<StorageDiffClient> {
+        const socket = new WebSocket(url, options);
         await new Promise<void>((resolve, reject) => {
             socket.once("open", () => resolve());
             socket.once("error", reject);
@@ -69,6 +73,15 @@ export class StorageDiffClient {
             this.socket.send(
                 JSON.stringify({ jsonrpc: "2.0", id, method, params })
             );
+        });
+    }
+
+    /** A request that leaves `params` out, as JSON-RPC 2.0 allows. */
+    requestWithoutParams(method: string): Promise<unknown> {
+        const id = ++this.nextId;
+        return new Promise((resolve, reject) => {
+            this.answers.set(id, { resolve, reject });
+            this.socket.send(JSON.stringify({ jsonrpc: "2.0", id, method }));
         });
     }
 

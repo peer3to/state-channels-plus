@@ -8,7 +8,10 @@ import {
 } from "./StorageDiffContracts";
 import { UpstreamRelay } from "./UpstreamRelay";
 import { createLogger } from "@/utils";
-import { StorageDiffService } from "@/utils/node/storageDiff/StorageDiffService";
+import {
+    StorageDiffService,
+    type StorageDiffServiceOptions
+} from "@/utils/node/storageDiff/StorageDiffService";
 import { type JsonRpcProvider, type JsonRpcSigner } from "ethers";
 
 /** What `promise` rejected with, or undefined when it resolved. */
@@ -32,11 +35,10 @@ export function fieldReads(relay: UpstreamRelay): number {
     ].reduce((sum, method) => sum + relay.requestCount(method), 0);
 }
 
-export type StorageDiffServiceSettings = {
-    retention?: number;
-    maxPeerBufferedBytes?: number;
-    upstreamRequestTimeoutMs?: number;
-};
+export type StorageDiffServiceSettings = Omit<
+    StorageDiffServiceOptions,
+    "upstreamUrl" | "logger"
+>;
 
 /** A `warn` call of the service's logger. */
 export type LoggedWarning = { message: string; meta: unknown[] };

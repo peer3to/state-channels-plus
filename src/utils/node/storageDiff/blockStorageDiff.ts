@@ -15,6 +15,7 @@ import type {
 // The wire types live in a shared module, which the mirror in the browser
 // build imports too; they are re-exported here for the service's own files.
 export {
+    LIMIT_EXCEEDED_ERROR_CODE,
     NOT_RETAINED_ERROR_CODE,
     PRUNED_ERROR_CODE
 } from "../../storageDiff/storageDiffWire";

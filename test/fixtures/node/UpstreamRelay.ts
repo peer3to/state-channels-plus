@@ -43,6 +43,8 @@ export class UpstreamRelay {
     // Requests forwarded and not answered yet, per method, and the most at once.
     private readonly inFlight = new Map<UpstreamMethod, number>();
     private readonly peakInFlight = new Map<UpstreamMethod, number>();
+    // Answers the node sent back, per method.
+    private readonly answered = new Map<UpstreamMethod, number>();
     // Params of every request seen, per method, in arrival order.
     private readonly seenParams = new Map<UpstreamMethod, unknown[][]>();
     // Method -> how its answers are rewritten.
@@ -81,6 +83,11 @@ export class UpstreamRelay {
     }
 
     /** The most `method` requests the node had unanswered at once. */
+    /** Answers the node sent to `method` requests. */
+    answerCount(method: UpstreamMethod): number {
+        return this.answered.get(method) ?? 0;
+    }
+
     maxInFlight(method: UpstreamMethod): number {
         return this.peakInFlight.get(method) ?? 0;
     }
@@ -180,11 +187,16 @@ export class UpstreamRelay {
             const answers = Array.isArray(parsed) ? parsed : [parsed];
             for (const answer of answers) {
                 const request = asked.get(answer.id);
-                if (request && answer.id !== undefined)
+                if (request && answer.id !== undefined) {
                     this.inFlight.set(
                         request.method,
                         (this.inFlight.get(request.method) ?? 1) - 1
                     );
+                    this.answered.set(
+                        request.method,
+                        this.answerCount(request.method) + 1
+                    );
+                }
             }
             if (client.readyState !== WebSocket.OPEN) return;
             if (this.tampering.size === 0)

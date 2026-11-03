@@ -29,24 +29,26 @@ The service follows one chain level: the upstream's best head, which can roll ba
 
 **<a id="req-sds-4-zzdevf"></a>`REQ-SDS-4-ZZDEVF` — Reported values are the chain's own, not the tracer's.** For the subscribed addresses a record MUST hold the values the chain holds at the end of the block, whatever the upstream's trace reports. The trace is used for which storage keys and accounts a block touched; its values are used as they are only when no call frame of the block carries an error. For a block with a failed frame, or whose call frames could not be had, the end-of-block values of the touched keys and accounts MUST be read from the upstream pinned to the block hash. A touched key whose value did not change MUST NOT appear in `pre` or `post`. The old values of a multi-block step come from the service's own cache carried forward block by block. A block whose trace values were used keeps them for every account the trace names, so an account first watched later finds its retained history without a read; a block read from the upstream holds only the watched accounts, and an account watched later has its history read for those blocks. Phase 1 limit: state a block changes outside its transactions' traced keys and accounts (system calls, withdrawals) is not seen.
 
-**<a id="req-sds-7-pzcbq9"></a>`REQ-SDS-7-PZCBQ9` — State reads come from one shared cache.** `scp_getState` MUST answer storage slots, balance, nonce and code of any address from a cache shared by all peers. A field the cache lacks is read from the upstream once, pinned to the best head's block hash, and concurrent misses for one field share one fetch. One request MUST name at most 1024 fields (a slot is one, balance and nonce are two, code is one, and an account naming none counts as one); a larger one fails as invalid params and reads nothing. At most 16 state reads for peers MUST be at the upstream at once, so the reads that follow the head keep room. If a block is committed during a fetch its writes MUST be applied to the fetched value. Each committed block's `post` updates the cached fields already held, and a reorganization undoes the orphaned blocks with their `pre` values, newest first. A block hash that names a retained block MUST be answered as of that block, rolling the head value back over later `pre` values; a hash that is unknown, orphaned or older than the window MUST fail with the not-retained error (code `-32002`) so the caller can fall back. A malformed request fails as invalid params. Phase 1 limit: cached state is never evicted, so the cache grows without bound on a long-running service; eviction is follow-up work.
+**<a id="req-sds-7-pzcbq9"></a>`REQ-SDS-7-PZCBQ9` — State reads come from one shared cache.** `scp_getState` MUST answer storage slots, balance, nonce and code of any address from a cache shared by all peers. A field the cache lacks is read from the upstream once, pinned to the best head's block hash, and concurrent misses for one field share one fetch. One request MUST name at most 1024 fields (a slot is one, balance and nonce are two, code is one, and an account naming none counts as one); a larger one fails as invalid params and reads nothing. At most 16 state reads for peers MUST be at the upstream at once, so the reads that follow the head keep room. If a block is committed during a fetch its writes MUST be applied to the fetched value. Each committed block's `post` updates the cached fields already held, and a reorganization undoes the orphaned blocks with their `pre` values, newest first. A block hash that names a retained block MUST be answered as of that block, rolling the head value back over later `pre` values; a hash that is unknown, orphaned or older than the window MUST fail with the not-retained error (code `-32002`) so the caller can fall back. A malformed request fails as invalid params. Only the values of watched accounts are cached, and an account dropped from the watched set loses its cached values ([`REQ-SDS-12-JDW71Y`](storage-diff-service.md#req-sds-12-jdw71y)).
 
-**<a id="req-sds-11-qv2vpt"></a>`REQ-SDS-11-QV2VPT` — Upstream trouble is retried, then fatal; a lagging peer is told and cut.** A block that changes while it is traced, an upstream error answer and a request timeout MUST be retried, both while loading the initial history and while following the head. A lost upstream connection MUST be reopened, its requests sent again, the head subscription renewed and the chain reconciled from the last canonical record, so subscribers see a continuous chain or a replacement branch; an account first watched meanwhile gets its history once the upstream answers, never an empty one. An upstream that refuses the first connection fails the start. Anything else, or a failure that outlasts its retries, including an outage longer than the request retries allow and an upstream reset to a chain sharing no ancestor with the retained one, MUST be fatal: the service closes its peers and exits nonzero, and never invents an empty diff, so a supervisor restarts it. A peer whose unsent bytes pass the configured limit MUST be sent a notice naming the reason (`scp_disconnect`), pushed nothing more, and disconnected, so it recovers by catch-up inside the retention window instead of silently missing records.
+**<a id="req-sds-11-qv2vpt"></a>`REQ-SDS-11-QV2VPT` — Upstream trouble is retried, then fatal; a lagging peer is told and cut.** A block that changes while it is traced, an upstream error answer and a request timeout MUST be retried, both while loading the initial history and while following the head. A lost upstream connection MUST be reopened, its requests sent again, the head subscription renewed and the chain reconciled from the last canonical record, so subscribers see a continuous chain or a replacement branch; an account first watched meanwhile gets its history once the upstream answers, never an empty one. When the new blocks of an outage or a reorganization outnumber the retention window, only the newest window of them MUST be traced: the retained history restarts at them, the cache is emptied, and they are pushed in chain order. An upstream that refuses the first connection fails the start. Anything else, or a failure that outlasts its retries, including an outage longer than the request retries allow and an upstream reset to a chain sharing no ancestor with the retained one, MUST be fatal: the service closes its peers and exits nonzero, and never invents an empty diff, so a supervisor restarts it. A peer whose unsent bytes, pushed records and answers alike, pass the configured limit MUST be sent a notice naming the reason (`scp_disconnect`), pushed nothing more, and disconnected, so it recovers by catch-up inside the retention window instead of silently missing records.
+
+**<a id="req-sds-12-jdw71y"></a>`REQ-SDS-12-JDW71Y` — What peers can make the service hold is bounded.** Every limit below is configurable; the defaults are given. A subscription or a catch-up MUST name at most 1,000 addresses, and a state read at most 1,000 accounts; a larger request fails as invalid params. A connection MUST hold at most 64 subscriptions and have at most 32 requests answered at once; a request past either fails with the limit error (code `-32005`) and the connection stays open. At most 256 connections MUST be open at once; one more is refused at the WebSocket upgrade with HTTP 503. An upgrade that carries an `Origin` header MUST be refused with HTTP 403 unless that origin is on the configured allow list, which is empty by default; an upgrade without the header, as node clients send it, is admitted. A request that leaves out `params` is read as having empty params. The service MUST keep the values of at most 10,000 watched accounts. An account is held while a subscription names it or a request reads it; a subscription releases its accounts when it is unsubscribed or its connection closes. An account nobody holds stays watched, with its cached values, until a new account needs its place: the least recently used account nobody holds is then dropped together with its cached values. A request that needs more new accounts than can be dropped fails with the limit error and holds nothing. A fetch that ends after its account was dropped MUST leave no value in the cache.
 
 ## Assumptions and constraints
 
 - The upstream node is trusted. It serves new-head notifications over a WebSocket, blocks by number and hash, a prestate diff trace and a call-frame trace per block, and balance, nonce, code and storage reads pinned to a block hash.
 - The trace is taken to name every key that really changed. Asset Hub breaks this for a created contract's slot that its constructor writes twice with the same value (paritytech/polkadot-sdk#13663): such a write is missing from the record and a cached value for it can be wrong. This is an accepted phase 1 limit until the entry-count guard of the snapshot work returns in the follow-up pull request.
-- State a block changes outside the traced keys and accounts of its transactions (system calls, withdrawals) is not seen. This is an accepted phase 1 limit (engineer, 2026-10-31): a cached value can stay wrong until a reorganization clears it. Cached state is never evicted; eviction is follow-up work.
+- State a block changes outside the traced keys and accounts of its transactions (system calls, withdrawals) is not seen. This is an accepted phase 1 limit (engineer, 2026-10-31): a cached value can stay wrong until a reorganization clears it or its account is dropped from the watched set.
 - History and the cache are kept in memory only, for a bounded retention window of canonical blocks; a restarted service loads the window again. A peer that falls behind the window must read the node.
-- The service is a single process without authentication; it binds to loopback by default and any wider binding is the operator's responsibility. This is an accepted phase 1 limit (engineer, 2026-10-31): phase 2 proofs are meant to remove the need to trust the service.
+- The service is a single process without authentication; it binds to loopback by default and any wider binding is the operator's responsibility. Browser pages reach it only from the origins the operator allows. The upstream URL can be given in an environment variable, which keeps its credentials off the process list. This is an accepted phase 1 limit (engineer, 2026-10-31): phase 2 proofs are meant to remove the need to trust the service.
 - Phase 1 carries no proofs and no gossip: the service's answers are as trustworthy as the service and its upstream.
 
 ## Security considerations
 
 **Protected assets.** The integrity of the state data peers mirror, the availability of the service to peers, and the credentials of the upstream.
 
-**Trust boundaries.** Peers are untrusted: their requests are validated (malformed parameters, unknown or non-endpoint member names, batches, oversized messages and state reads over the field cap are refused), their state reads reach the upstream at most 16 at a time, and a peer that does not drain its pushes is cut instead of buffering without bound. The upstream is trusted and so is the operator; errors name the upstream by scheme and host only, never its credentials.
+**Trust boundaries.** Peers are untrusted: their requests are validated (malformed parameters, unknown or non-endpoint member names, batches, oversized messages and state reads over the field cap are refused), their state reads reach the upstream at most 16 at a time, a peer that does not drain its pushes and answers is cut instead of buffering without bound, and the addresses, subscriptions, requests in progress, connections and watched accounts they can make the service hold are capped ([`REQ-SDS-12-JDW71Y`](storage-diff-service.md#req-sds-12-jdw71y)). A page in a browser can connect only from an allowed origin, so a site the user visits cannot read the service on their machine. The upstream is trusted and so is the operator; errors name the upstream by scheme and host only, never its credentials.
 
 **Threats and defenses.** A reverted sub-call that a tracer reports as applied would feed false values to every peer: values are read from the node whenever a frame failed ([`REQ-SDS-4-ZZDEVF`](storage-diff-service.md#req-sds-4-zzdevf)). An upstream failure is retried and then fatal, so the service never invents an empty diff ([`REQ-SDS-11-QV2VPT`](storage-diff-service.md#req-sds-11-qv2vpt)).
 
@@ -236,11 +238,11 @@ A second client and a concurrent client cost no extra upstream read; cached valu
 
 **Setup and stimulus:**
 
-Make the upstream change a block during its trace, answer with errors, drop its connection while following and while loading, refuse its first connection, stay away past the request retries, watch a new account while it reconnects, reset it to an unrelated chain, and stop reading from a subscriber.
+Make the upstream change a block during its trace, answer with errors, drop its connection while following and while loading, refuse its first connection, stay away past the request retries and past the retention window, watch a new account while it reconnects, reset it to an unrelated chain, and stop reading from a subscriber and from a requester.
 
 **Expected result:**
 
-Transient failures end in the canonical record being pushed; a refused first connection, exhausted retries and an unrelated chain end the service; an account watched during a reconnect gets its real history; a lagging subscriber receives the notice before its socket closes.
+Transient failures end in the canonical record being pushed; a refused first connection, exhausted retries and an unrelated chain end the service; an account watched during a reconnect gets its real history; after an outage longer than the window only the retained blocks are traced and pushed; a lagging subscriber or requester receives the notice before its socket closes.
 
 **Required permutations:**
 
@@ -267,6 +269,52 @@ Transient failures end in the canonical record being pushed; a refused first con
 <a id="req-sds-11-qv2vpt.t1.p13"></a>`REQ-SDS-11-QV2VPT.T1.P13` — the service fails once an upstream outage outlasts the request retries
 
 <a id="req-sds-11-qv2vpt.t1.p14"></a>`REQ-SDS-11-QV2VPT.T1.P14` — an account first watched while the upstream reconnects gets its history and state from the chain
+
+<a id="req-sds-11-qv2vpt.t1.p15"></a>`REQ-SDS-11-QV2VPT.T1.P15` — after an outage longer than the window only the blocks that stay retained are traced, and they are pushed
+
+<a id="req-sds-11-qv2vpt.t1.p16"></a>`REQ-SDS-11-QV2VPT.T1.P16` — a peer that does not read its answers is told why with scp_disconnect and cut
+
+#### <a id="req-sds-12-jdw71y.t1"></a>`REQ-SDS-12-JDW71Y.T1`
+
+**Requirements / invariants:**
+
+[`REQ-SDS-12-JDW71Y`](storage-diff-service.md#req-sds-12-jdw71y)
+
+**Setup and stimulus:**
+
+Start the service with small limits and an allow list, then pass each limit: name too many addresses, open too many subscriptions, requests and connections, connect from browser origins, leave `params` out, and read more accounts than the watched limit with and without subscriptions holding them.
+
+**Expected result:**
+
+Each request past a limit gets its error and the connection keeps working; refused upgrades get their HTTP status; the least recently used account nobody holds is dropped with its cached values, and a held one never is.
+
+**Required permutations:**
+
+<a id="req-sds-12-jdw71y.t1.p1"></a>`REQ-SDS-12-JDW71Y.T1.P1` — past the watched limit the least recently used account nobody holds is dropped and read again when asked
+
+<a id="req-sds-12-jdw71y.t1.p2"></a>`REQ-SDS-12-JDW71Y.T1.P2` — a dropped account's value includes a write of a block with a failed frame mined while it was not watched
+
+<a id="req-sds-12-jdw71y.t1.p3"></a>`REQ-SDS-12-JDW71Y.T1.P3` — a new account is refused with the limit error while every watched account is subscribed, and the connection keeps working
+
+<a id="req-sds-12-jdw71y.t1.p4"></a>`REQ-SDS-12-JDW71Y.T1.P4` — an unsubscribe releases its accounts
+
+<a id="req-sds-12-jdw71y.t1.p5"></a>`REQ-SDS-12-JDW71Y.T1.P5` — a closed connection releases its subscriptions' accounts
+
+<a id="req-sds-12-jdw71y.t1.p6"></a>`REQ-SDS-12-JDW71Y.T1.P6` — a subscription past the connection's limit fails with the limit error, and one is taken again after an unsubscribe
+
+<a id="req-sds-12-jdw71y.t1.p7"></a>`REQ-SDS-12-JDW71Y.T1.P7` — a subscription, a catch-up or a state read naming more addresses than the request limit fails as invalid params; one at the limit is taken
+
+<a id="req-sds-12-jdw71y.t1.p8"></a>`REQ-SDS-12-JDW71Y.T1.P8` — a connection past the connection limit is refused at the upgrade with HTTP 503, and one is admitted after a close
+
+<a id="req-sds-12-jdw71y.t1.p9"></a>`REQ-SDS-12-JDW71Y.T1.P9` — a request past the connection's in-flight limit fails with the limit error and the connection keeps working
+
+<a id="req-sds-12-jdw71y.t1.p10"></a>`REQ-SDS-12-JDW71Y.T1.P10` — a browser origin not on the allow list is refused at the upgrade with HTTP 403
+
+<a id="req-sds-12-jdw71y.t1.p11"></a>`REQ-SDS-12-JDW71Y.T1.P11` — a browser origin on the allow list is admitted
+
+<a id="req-sds-12-jdw71y.t1.p12"></a>`REQ-SDS-12-JDW71Y.T1.P12` — a request without `params` is answered as one with empty params
+
+<a id="req-sds-12-jdw71y.t1.p13"></a>`REQ-SDS-12-JDW71Y.T1.P13` — a fetch that ends after its account was dropped leaves no value in the cache
 
 ### Coverage rule
 

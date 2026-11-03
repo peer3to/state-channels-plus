@@ -8,6 +8,8 @@
 export const PRUNED_ERROR_CODE = -32001;
 /** The block of a state read is unknown, orphaned or older than the window. */
 export const NOT_RETAINED_ERROR_CODE = -32002;
+/** A request passed one of the service's limits; the connection stays open. */
+export const LIMIT_EXCEEDED_ERROR_CODE = -32005;
 
 /** Lower-case `0x`-prefixed 20-byte account address. */
 export type AccountAddress = string;
