@@ -184,36 +184,47 @@ describe("MirrorRpcProvider sampling", function () {
                     5_000,
                     20
                 );
-                // reads of the dropped account by block number; samples name a block hash
-                const nodeReads = (slot: bigint) =>
-                    nodeRequests(session, "eth_getStorageAt").filter(
-                        (request) => {
-                            const [, asked, block] =
-                                request.params as unknown[];
-                            return (
-                                typeof block === "string" &&
-                                BigInt(String(asked)) === slot
-                            );
-                        }
-                    ).length;
+                // Node reads of a slot over one read, its sample included: the
+                // sample asks once, and a read the node answers asks once more.
+                const nodeReadsOf = async (
+                    slot: number,
+                    read: () => Promise<unknown>
+                ) => {
+                    const asked = () =>
+                        nodeRequests(session, "eth_getStorageAt").filter(
+                            (request) =>
+                                BigInt(
+                                    String((request.params as unknown[])[1])
+                                ) === BigInt(slot)
+                        ).length;
+                    const before = asked();
+                    await read();
+                    // time is the input: the sample is asked after the reply
+                    await sleep(300);
+                    return asked() - before;
+                };
 
                 await (await storage.setValue(7n)).wait();
-                const beforeWrite = nodeReads(0n);
-                expect(
-                    BigInt(await session.provider.getStorage(address, 0))
-                ).to.equal(7n);
-                expect(nodeReads(0n)).to.be.greaterThan(beforeWrite);
+                let written = 0n;
+                const afterWrite = await nodeReadsOf(0, async () => {
+                    written = BigInt(
+                        await session.provider.getStorage(address, 0)
+                    );
+                });
+                expect(written).to.equal(7n);
+                expect(afterWrite).to.equal(2);
 
                 session.service.cut();
                 session.service.restore();
                 // the first read follows again; its snapshot comes after it
                 await session.provider.getStorage(address, 9);
                 await sleep(300);
-                const beforeSlot = nodeReads(10n);
-                expect(await session.provider.getStorage(address, 10)).to.equal(
-                    ZeroHash
-                );
-                expect(nodeReads(10n)).to.be.greaterThan(beforeSlot);
+                let unwritten = "";
+                const afterReconnect = await nodeReadsOf(10, async () => {
+                    unwritten = await session.provider.getStorage(address, 10);
+                });
+                expect(unwritten).to.equal(ZeroHash);
+                expect(afterReconnect).to.equal(2);
             },
             { sampleRate: 1 }
         );

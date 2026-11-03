@@ -8,6 +8,8 @@ import {
     assertHeartbeatErrorAnswerKeepsNode,
     assertInvalidLogWindowRejectsStartup,
     assertBoundaryMirrorSampleRatesStart,
+    assertConfiguredMirrorBoundReachesTheMirror,
+    assertInvalidMirrorBoundRejectsStartup,
     assertInvalidMirrorSampleRateRejectsStartup,
     assertInvalidSecretOpensNoNode,
     assertLogsComeOnceFromNodeSockets,
@@ -174,6 +176,17 @@ describe("MultiRpcProvider", () => {
     // Mutation: the rate check excludes 0 or 1 (a strict bound).
     it("starts with a mirror sample rate of 0 and of 1, the ends of the range", async () => {
         await assertBoundaryMirrorSampleRatesStart();
+    });
+
+    // Mutation: the bound is not checked -> startup goes on with a bound of 0.
+    it("rejects startup over a mirror bound on followed contracts that is not a positive integer, without opening a node", async () => {
+        await assertInvalidMirrorBoundRejectsStartup();
+    });
+
+    // Mutation: the configured bound does not reach the mirror -> the third
+    // contract's subscribe names three, is refused, and its read goes to the node.
+    it("follows at most the configured number of contracts, so a service with that address limit refuses no subscribe", async () => {
+        await assertConfiguredMirrorBoundReachesTheMirror();
     });
 
     it("relays each new block once from the node sockets without polling", async () => {

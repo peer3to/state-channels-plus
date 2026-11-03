@@ -18,6 +18,11 @@ export type Config = {
     // asked of the RPC node, at the same block hash, and compared; a
     // difference drops that account to lazy reads. Default 0.01.
     MIRROR_SAMPLE_RATE: number;
+    // Contracts the local copy follows at once; past it the least recently
+    // read one is no longer followed. At most the storage diff service's
+    // --max-addresses-per-request, since every subscribe names them all.
+    // Default 1000, the service's default.
+    MIRROR_MAX_FOLLOWED_CONTRACTS: number;
     DEBUG_STATE_MANAGER: boolean;
     DEBUG_DISPUTE_HANDLER: boolean;
     DEBUG_P2P_MANAGER: boolean;
@@ -75,12 +80,16 @@ export const DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS = 120;
 /** Default fraction of the mirror's local answers that are re-asked of the node. */
 export const DEFAULT_MIRROR_SAMPLE_RATE = 0.01;
 
+/** Default number of contracts the mirror follows: the storage diff service's default per-request limit. */
+export const DEFAULT_MIRROR_MAX_FOLLOWED_CONTRACTS = 1000;
+
 const DEFAULT_CONFIG: Config = {
     PROVIDER_URL: "http://localhost:8545",
     PROVIDER_URLS: [],
     LOG_QUERY_MAX_BLOCKS: 1000,
     STORAGE_DIFF_URL: "",
     MIRROR_SAMPLE_RATE: DEFAULT_MIRROR_SAMPLE_RATE,
+    MIRROR_MAX_FOLLOWED_CONTRACTS: DEFAULT_MIRROR_MAX_FOLLOWED_CONTRACTS,
     DEBUG_STATE_MANAGER: false,
     DEBUG_DISPUTE_HANDLER: false,
     DEBUG_P2P_MANAGER: false,
@@ -129,6 +138,17 @@ export function assertMirrorSampleRate(rate: number): void {
     if (!(rate >= 0 && rate <= 1))
         throw new Error(
             `MIRROR_SAMPLE_RATE must be a number from 0 to 1, got ${rate}`
+        );
+}
+
+/**
+ * Rejects a bound on the mirror's followed contracts that is not a positive
+ * integer: the copy could follow nothing, or a fraction of a contract.
+ */
+export function assertMirrorMaxFollowedContracts(count: number): void {
+    if (!Number.isSafeInteger(count) || count < 1)
+        throw new Error(
+            `MIRROR_MAX_FOLLOWED_CONTRACTS must be a positive integer, got ${count}`
         );
 }
 

@@ -5,7 +5,6 @@ import {
     parseLocalRead
 } from "./mirror/LocalReadParser";
 import { Mirror, type MirrorRead } from "./mirror/Mirror";
-import type { MirrorUpstream } from "./mirror/MirrorChain";
 import { MirrorSampler } from "./mirror/MirrorSampler";
 import { MirrorUnavailableError } from "./mirror/MirrorUnavailableError";
 import MultiRpcProvider from "./MultiRpcProvider";
@@ -16,7 +15,6 @@ import { DEFAULT_MIRROR_SAMPLE_RATE } from "@/utils/config";
 import type { Logger } from "@/utils/logging/Logger";
 import { RecentSlowest } from "@/utils/storageDiff/LearnedBackstop";
 import {
-    toQuantity,
     type JsonRpcError,
     type JsonRpcPayload,
     type JsonRpcResult
@@ -86,7 +84,8 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
                 );
             this.mirror = new Mirror({
                 serviceUrl: options.storageDiffUrl,
-                upstream: this.createUpstream(),
+                requestNode: (method, params) =>
+                    this.requestNode(method, params),
                 logger,
                 customPrecompiles: options.customPrecompiles ?? [],
                 owner: options.owner,
@@ -191,20 +190,5 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
             number: BigInt(receipt.blockNumber),
             hash: receipt.blockHash.toLowerCase()
         });
-    }
-
-    private createUpstream(): MirrorUpstream {
-        const read = async (method: string, params: unknown[]) =>
-            (await this.requestNode(method, params)) as string;
-        return {
-            getStorageAt: (address, slot, block) =>
-                read("eth_getStorageAt", [address, slot, toQuantity(block)]),
-            getBalance: (address, block) =>
-                read("eth_getBalance", [address, toQuantity(block)]),
-            getTransactionCount: (address, block) =>
-                read("eth_getTransactionCount", [address, toQuantity(block)]),
-            getCode: (address, block) =>
-                read("eth_getCode", [address, toQuantity(block)])
-        };
     }
 }

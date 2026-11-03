@@ -27,7 +27,7 @@ This file covers the cached state of storage slots: first reads, cache hits, reo
 - `restores a slot the orphaned block wrote when the replacement block does not write it`: REQ-RPCMIRROR-5-KDRWDZ.T1.P2
 - `asks the service for the blocks from the next missing one when a record's parent is not the head`: REQ-RPCMIRROR-5-KDRWDZ.T1.P3
 - `empties the cache when the service no longer retains the missing blocks, and the next read goes to the service again`: REQ-RPCMIRROR-5-KDRWDZ.T1.P4
-- `reads from the node at the head block number only while the service answers that the block is not retained`: REQ-RPCMIRROR-5-KDRWDZ.T1.P5
+- `reads from the node at the head block hash only while the service answers that the block is not retained`: REQ-RPCMIRROR-5-KDRWDZ.T1.P5
 - `keeps the service connection and the cache when the node fails a state read`: REQ-RPCMIRROR-8-1PA83T.T1.P3
 - `takes the block environment from the service without reading blocks from the node`: REQ-RPCMIRROR-5-KDRWDZ.T1.P6
 - `keeps its copy and the connection when the service refuses a subscribe with its limit error, and the node answers that read`: REQ-RPCMIRROR-8-1PA83T.T1.P12
@@ -35,3 +35,6 @@ This file covers the cached state of storage slots: first reads, cache hits, reo
 - `stops following the least recently read contract to follow a new one past its bound, and keeps answering the others locally`: REQ-RPCMIRROR-3-7MQH88.T1.P17
 - `does not follow an account without code: reads it again at a new head, without subscribing to it`: REQ-RPCMIRROR-3-7MQH88.T1.P18
 - `keeps its copy and the connection when the service refuses a pushed record's catch-up, and catches up with a later record`: REQ-RPCMIRROR-8-1PA83T.T1.P14
+- `reads the storage and balance of an address the chain serves with its own precompile from the node`: REQ-RPCMIRROR-2-1P38E2.T1.P12
+- `reads the replacement branch's value after a reorg replaces the block the copy began following at`: REQ-RPCMIRROR-5-KDRWDZ.T1.P7
+- `reads the replacement branch's value after a reorg deeper than the blocks the copy keeps`: REQ-RPCMIRROR-5-KDRWDZ.T1.P8

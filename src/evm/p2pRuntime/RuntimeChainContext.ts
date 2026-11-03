@@ -7,6 +7,7 @@ import RpcNodeProvider, {
 } from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import {
     assertLogQueryMaxBlocks,
+    assertMirrorMaxFollowedContracts,
     assertMirrorSampleRate,
     type Config
 } from "@/utils/config";
@@ -87,13 +88,23 @@ function anyNodeConnected(nodes: readonly RpcNodeProvider[]): Promise<boolean> {
  */
 export async function createRpcNodesProvider(
     config: Pick<Config, "PROVIDER_URL" | "PROVIDER_URLS"> &
-        Partial<Pick<Config, "STORAGE_DIFF_URL" | "MIRROR_SAMPLE_RATE">>,
+        Partial<
+            Pick<
+                Config,
+                | "STORAGE_DIFF_URL"
+                | "MIRROR_SAMPLE_RATE"
+                | "MIRROR_MAX_FOLLOWED_CONTRACTS"
+            >
+        >,
     logger: Logger,
     mirror: Pick<MirrorProviderOptions, "customPrecompiles" | "owner"> = {}
 ): Promise<MultiRpcProvider> {
     // a bad fraction would only mis-sample reads
     if (config.MIRROR_SAMPLE_RATE !== undefined)
         assertMirrorSampleRate(config.MIRROR_SAMPLE_RATE);
+    // a bound the service refuses would stop the copy following new contracts
+    if (config.MIRROR_MAX_FOLLOWED_CONTRACTS !== undefined)
+        assertMirrorMaxFollowedContracts(config.MIRROR_MAX_FOLLOWED_CONTRACTS);
     const expectedChain: ExpectedChain = {};
     const nodes = resolveProviderUrls(config).map(
         (url) => new RpcNodeProvider(url, logger, expectedChain)
@@ -115,6 +126,7 @@ export async function createRpcNodesProvider(
     return new MirrorRpcProvider(nodes, logger, {
         storageDiffUrl: config.STORAGE_DIFF_URL,
         sampleRate: config.MIRROR_SAMPLE_RATE,
+        maxFollowedAccounts: config.MIRROR_MAX_FOLLOWED_CONTRACTS,
         ...mirror
     });
 }

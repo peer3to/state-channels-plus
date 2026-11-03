@@ -1,7 +1,10 @@
 import type { MirrorBlock } from "./FollowedChain";
-import { MirrorChain, type MirrorUpstream } from "./MirrorChain";
+import { MirrorChain, type NodeRequest } from "./MirrorChain";
 import { MirrorStateManager } from "./MirrorStateManager";
-import { MirrorUnavailableError } from "./MirrorUnavailableError";
+import {
+    MirrorUnavailableError,
+    NotLocalError
+} from "./MirrorUnavailableError";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
 import { createEvm } from "@/evm/EvmFactory";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
@@ -13,7 +16,7 @@ import type {
     BlockSelector,
     RpcBlock
 } from "@/utils/storageDiff/storageDiffWire";
-import type { EVM } from "@ethereumjs/evm";
+import type { EVM, EVMOpts } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
 import { getBytes, hexlify, toBeHex, zeroPadValue } from "ethers";
 
@@ -38,7 +41,8 @@ export type MirrorCallOutcome =
 export type MirrorOptions = {
     /** `ws://` URL of the storage diff service. */
     serviceUrl: string;
-    upstream: MirrorUpstream;
+    /** One request to the RPC node, for state the service cannot read at the head. */
+    requestNode: NodeRequest;
     logger: Logger;
     customPrecompiles: EvmCustomPrecompileManifest[];
     /** The root that owns the precompiles' child roots, if the host has one. */
@@ -71,7 +75,7 @@ export class Mirror {
         this.chain = new MirrorChain({
             serviceUrl: options.serviceUrl,
             state: this.state,
-            upstream: options.upstream,
+            requestNode: options.requestNode,
             nodeRoundTrips: options.nodeRoundTrips,
             maxFollowedAccounts: options.maxFollowedAccounts,
             logger: options.logger
@@ -127,7 +131,7 @@ export class Mirror {
         observe?: (seen: MirrorRead) => void
     ): Promise<string> {
         const key = getBytes(zeroPadValue(toBeHex(BigInt(slot)), 32));
-        return await this.observed(observe, async (head) => {
+        return await this.observed(observe, async () => {
             return hexlify(
                 await this.state.getContractStorage(
                     Address.fromString(address),
@@ -141,7 +145,7 @@ export class Mirror {
         address: string,
         observe?: (seen: MirrorRead) => void
     ): Promise<bigint> {
-        return await this.observed(observe, async (head) => {
+        return await this.observed(observe, async () => {
             return (
                 (await this.state.getAccount(Address.fromString(address)))
                     ?.balance ?? 0n
@@ -153,7 +157,7 @@ export class Mirror {
         address: string,
         observe?: (seen: MirrorRead) => void
     ): Promise<bigint> {
-        return await this.observed(observe, async (head) => {
+        return await this.observed(observe, async () => {
             return (
                 (await this.state.getAccount(Address.fromString(address)))
                     ?.nonce ?? 0n
@@ -165,7 +169,7 @@ export class Mirror {
         address: string,
         observe?: (seen: MirrorRead) => void
     ): Promise<string> {
-        return await this.observed(observe, async (head) => {
+        return await this.observed(observe, async () => {
             return hexlify(this.state.readCodeOf(Address.fromString(address)));
         });
     }
@@ -261,6 +265,7 @@ export class Mirror {
             {
                 allowUnlimitedContractSize: true,
                 stateManager: this.state,
+                blockchain: this.blockHashes(),
                 customPrecompiles: this.options.customPrecompiles
             },
             this.options.logger,
@@ -273,6 +278,26 @@ export class Mirror {
         for (const address of evm.precompiles.keys())
             this.precompileAddresses.add(`0x${address}`);
         return evm;
+    }
+
+    /**
+     * BLOCKHASH from the blocks the copy applied, whose hashes are the
+     * service's; a block older than the copy keeps sends the call to the node.
+     */
+    // the package does not export its Blockchain type, only the option that takes one
+    private blockHashes(): NonNullable<EVMOpts["blockchain"]> {
+        const blockchain: NonNullable<EVMOpts["blockchain"]> = {
+            getBlock: async (number: number) => {
+                const hash = this.chain.hashAt(BigInt(number));
+                if (!hash)
+                    throw new NotLocalError(
+                        `Block ${number} is older than the mirror keeps`
+                    );
+                return { hash: () => getBytes(hash) };
+            },
+            shallowCopy: () => blockchain
+        };
+        return blockchain;
     }
 
     private blockOf(head: MirrorBlock, environment: BlockEnvironment) {

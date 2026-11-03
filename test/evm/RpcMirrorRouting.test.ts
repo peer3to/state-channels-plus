@@ -9,7 +9,6 @@ import {
 } from "@test/fixtures/node/RpcMirrorFixture";
 import { deployRuntimeCode } from "@test/fixtures/node/StorageDiffContracts";
 import { rejectionOf } from "@test/fixtures/node/StorageDiffSession";
-import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { isError, toQuantity } from "ethers";
 
@@ -109,28 +108,11 @@ describe("MirrorRpcProvider routing", function () {
                 {},
                 { level: "error", attachErrorListener: false }
             );
-            const read = (method: string, params: unknown[]) =>
-                session.chain.send(method, params) as Promise<string>;
             let chainIdReads = 0;
             const mirror = new Mirror({
                 serviceUrl: session.service.url,
-                upstream: {
-                    getStorageAt: (account, slot, block) =>
-                        read("eth_getStorageAt", [
-                            account,
-                            slot,
-                            toQuantity(block)
-                        ]),
-                    getBalance: (account, block) =>
-                        read("eth_getBalance", [account, toQuantity(block)]),
-                    getTransactionCount: (account, block) =>
-                        read("eth_getTransactionCount", [
-                            account,
-                            toQuantity(block)
-                        ]),
-                    getCode: (account, block) =>
-                        read("eth_getCode", [account, toQuantity(block)])
-                },
+                requestNode: (method, params) =>
+                    session.chain.send(method, params),
                 logger,
                 customPrecompiles: [],
                 getChainId: async () => {
@@ -372,6 +354,59 @@ describe("MirrorRpcProvider routing", function () {
 
             expect(asked("eth_getTransactionReceipt")).to.equal(receipts + 1);
             expect(asked("eth_getBlockByHash")).to.equal(blocks + 1);
+        });
+    });
+
+    // Mutation: the local EVM has no block hashes -> BLOCKHASH reads 0.
+    it("answers BLOCKHASH of a block the copy applied as the node does, without asking the node", async function () {
+        await withMirrorSession(async (session) => {
+            // returns BLOCKHASH(NUMBER - 1)
+            const probe = await deployRuntimeCode(
+                session.signer,
+                "600143034060005260206000f3"
+            );
+            const { storage } = await deployMirroredStorage(session);
+            await storage.getValue();
+            // two blocks the copy applies after it started following
+            await (await storage.setValue(1n)).wait();
+            await (await storage.setValue(2n)).wait();
+            expect(await storage.getValue()).to.equal(2n);
+            const head = await headNumber(session);
+            const before = nodeRequests(session, "eth_call").length;
+
+            const hash = await session.provider.send("eth_call", [
+                { to: probe.toLowerCase(), data: "0x" },
+                "latest"
+            ]);
+
+            expect(hash).to.equal(
+                (await session.chain.getBlock(head - 1))!.hash
+            );
+            expect(nodeRequests(session, "eth_call").length - before).to.equal(
+                0
+            );
+        });
+    });
+
+    // Mutation: an unknown block hash reads 0 locally -> the node is not asked.
+    it("sends a call whose BLOCKHASH names a block older than the copy keeps to the node", async function () {
+        await withMirrorSession(async (session) => {
+            const probe = await deployRuntimeCode(
+                session.signer,
+                "600143034060005260206000f3"
+            );
+            const head = await headNumber(session);
+
+            // the copy starts following at the head: the block before it is not kept
+            const hash = await session.provider.send("eth_call", [
+                { to: probe.toLowerCase(), data: "0x" },
+                "latest"
+            ]);
+
+            expect(hash).to.equal(
+                (await session.chain.getBlock(head - 1))!.hash
+            );
+            expect(nodeRequests(session, "eth_call")).to.have.length(1);
         });
     });
 });

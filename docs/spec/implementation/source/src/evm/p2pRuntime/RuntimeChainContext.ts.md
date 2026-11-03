@@ -42,3 +42,5 @@ Endpoint list resolution and startup
 - [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P13` — `createRpcNodesProvider` called directly with no reachable endpoint rejects with `Chain access requires a reachable WebSocket provider at …`, naming every endpoint by scheme and host
 - [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P14` — a `MIRROR_SAMPLE_RATE` outside 0 to 1 or not a number rejects startup and opens no node
 - [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P15` — a `MIRROR_SAMPLE_RATE` of 0 or of 1 starts and reaches the node
+- [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P16` — a `MIRROR_MAX_FOLLOWED_CONTRACTS` that is not a positive integer rejects startup before any node is opened
+- [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P17` — the configured `MIRROR_MAX_FOLLOWED_CONTRACTS` bounds the contracts the mirror follows

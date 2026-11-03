@@ -406,7 +406,7 @@ describe("MirrorRpcProvider state", function () {
         );
     });
 
-    it("reads from the node at the head block number only while the service answers that the block is not retained", async function () {
+    it("reads from the node at the head block hash only while the service answers that the block is not retained", async function () {
         await withMirrorSession(async (session) => {
             const { storage, chainStorage } =
                 await deployMirroredStorage(session);
@@ -417,15 +417,16 @@ describe("MirrorRpcProvider state", function () {
                 NOT_RETAINED_ERROR_CODE,
                 "Block is not retained"
             );
-            const head = await headNumber(session);
+            const head = (await session.chain.getBlock("latest"))!;
 
             expect(await storage.getValue()).to.equal(5n);
 
+            // Mutation: the node is read at the block number -> a reorg could answer another block.
             expect(
                 nodeRequests(session, "eth_getStorageAt").map(
                     (request) => (request.params as unknown[])[2]
                 )
-            ).to.deep.equal([toQuantity(head)]);
+            ).to.deep.equal([{ blockHash: head.hash }]);
             expect(
                 nodeRequests(session, "eth_getCode").length
             ).to.be.greaterThan(0);
@@ -702,6 +703,89 @@ describe("MirrorRpcProvider state", function () {
                 expect(nodeStateReads(session)).to.equal(0);
             },
             { maxInFlightRequests: 1 }
+        );
+    });
+
+    // Mutation: a chain precompile's state is read from the service ->
+    // the node is not asked.
+    it("reads the storage and balance of an address the chain serves with its own precompile from the node", async function () {
+        await withMirrorSession(async (session) => {
+            // a builtin above the standard precompiles the local EVM runs
+            const builtin = "0x" + "00".repeat(18) + "0100";
+
+            await session.provider.getStorage(builtin, 0);
+            await session.provider.getBalance(builtin);
+
+            expect(nodeRequests(session, "eth_getStorageAt")).to.have.length(1);
+            expect(nodeRequests(session, "eth_getBalance")).to.have.length(1);
+            expect(serviceStateReadsOf(session, builtin)).to.equal(0);
+        });
+    });
+
+    // Mutation: a record whose catch-up does not reach it is left -> the
+    // copy stays on the orphaned branch.
+    it("reads the replacement branch's value after a reorg replaces the block the copy began following at", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, chainStorage } =
+                await deployMirroredStorage(session);
+            await (await chainStorage.setValue(5n)).wait();
+            const checkpoint = await session.chain.send("evm_snapshot", []);
+            await (await chainStorage.setValue(6n)).wait();
+            // the copy begins following at this block
+            expect(await storage.getValue()).to.equal(6n);
+            await session.chain.send("anvil_mine", [toQuantity(3)]);
+
+            await session.chain.send("evm_revert", [checkpoint]);
+            await (await chainStorage.setValue(9n)).wait();
+
+            await waitFor(
+                async () => (await storage.getValue()) === 9n,
+                5_000,
+                20
+            );
+            // the copy itself follows the replacement branch: the next read stays local
+            const calls = nodeRequests(session, "eth_call").length;
+            expect(await storage.getValue()).to.equal(9n);
+            expect(nodeRequests(session, "eth_call")).to.have.length(calls);
+        });
+    });
+
+    // Mutation: a record below the blocks the copy keeps is ignored -> the
+    // copy stays on the orphaned branch.
+    it("reads the replacement branch's value after a reorg deeper than the blocks the copy keeps", async function () {
+        await withMirrorSession(
+            async (session) => {
+                const { storage, chainStorage } =
+                    await deployMirroredStorage(session);
+                await (await chainStorage.setValue(5n)).wait();
+                expect(await storage.getValue()).to.equal(5n);
+                const checkpoint = await session.chain.send("evm_snapshot", []);
+                await (await chainStorage.setValue(6n)).wait();
+                // more blocks than the 128 the copy keeps for a rollback
+                await session.chain.send("anvil_mine", [toQuantity(130)]);
+                await (await chainStorage.setValue(7n)).wait();
+                // the copy has applied every block up to the write
+                await waitFor(
+                    async () => (await storage.getValue()) === 7n,
+                    10_000,
+                    20
+                );
+
+                await session.chain.send("evm_revert", [checkpoint]);
+                await (await chainStorage.setValue(9n)).wait();
+
+                await waitFor(
+                    async () => (await storage.getValue()) === 9n,
+                    5_000,
+                    20
+                );
+                // the copy itself follows the replacement branch: the next read stays local
+                const calls = nodeRequests(session, "eth_call").length;
+                expect(await storage.getValue()).to.equal(9n);
+                expect(nodeRequests(session, "eth_call")).to.have.length(calls);
+            },
+            // the service keeps the whole reorg, so only the copy is outrun
+            { retention: 200 }
         );
     });
 });

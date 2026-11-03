@@ -44,29 +44,21 @@ const BEYOND_HEAD = 1n << 64n;
  */
 const DEFAULT_MAX_FOLLOWED_ACCOUNTS = 1000;
 
-/**
- * What the mirror reads from the RPC node when the service does not retain
- * the head block (answers -32002), at that block's number.
- */
-export interface MirrorUpstream {
-    getStorageAt(
-        address: AccountAddress,
-        slot: string,
-        block: bigint
-    ): Promise<string>;
-    getBalance(address: AccountAddress, block: bigint): Promise<string>;
-    getTransactionCount(
-        address: AccountAddress,
-        block: bigint
-    ): Promise<string>;
-    getCode(address: AccountAddress, block: bigint): Promise<string>;
-}
+/** One request to the RPC node, answered with its result. */
+export type NodeRequest = (
+    method: string,
+    params: unknown[]
+) => Promise<unknown>;
 
 export type MirrorChainOptions = {
     /** `ws://` URL of the storage diff service. */
     serviceUrl: string;
     state: MirrorStateManager;
-    upstream: MirrorUpstream;
+    /**
+     * What the mirror reads from the RPC node when the service does not
+     * retain the head block (answers -32002), at that block's hash.
+     */
+    requestNode: NodeRequest;
     /** How long the nodes took lately to answer; the waits leave room for it. */
     nodeRoundTrips?: RecentSlowest;
     /**
@@ -87,7 +79,7 @@ export type MirrorChainOptions = {
 export class MirrorChain {
     private readonly serviceUrl: string;
     private readonly state: MirrorStateManager;
-    private readonly upstream: MirrorUpstream;
+    private readonly requestNode: NodeRequest;
     private readonly logger: Logger;
     /** How long the nodes took lately to answer what the provider forwarded. */
     private readonly nodeRoundTrips: RecentSlowest;
@@ -124,7 +116,7 @@ export class MirrorChain {
     constructor(options: MirrorChainOptions) {
         this.serviceUrl = options.serviceUrl;
         this.state = options.state;
-        this.upstream = options.upstream;
+        this.requestNode = options.requestNode;
         this.nodeRoundTrips = options.nodeRoundTrips ?? new RecentSlowest();
         this.maxFollowed =
             options.maxFollowedAccounts ?? DEFAULT_MAX_FOLLOWED_ACCOUNTS;
@@ -294,6 +286,11 @@ export class MirrorChain {
     /** The environment of the head block. */
     headEnvironment(): BlockEnvironment {
         return this.followed.headEnvironment();
+    }
+
+    /** The hash of block `number` on the chain the copy follows, if it keeps that block. */
+    hashAt(number: bigint): string | undefined {
+        return this.followed.base ? this.followed.hashAt(number) : undefined;
     }
 
     async close(): Promise<void> {
@@ -489,7 +486,7 @@ export class MirrorChain {
                 (miss) => !this.nodeRead.has(miss.address)
             );
             if (fromNode.length > 0)
-                this.state.fill(await this.readFromNode(head.number, fromNode));
+                this.state.fill(await this.readFromNode(head.hash, fromNode));
             if (fromFeed.length === 0) return;
             try {
                 const state = await this.feed!.getState(
@@ -501,7 +498,7 @@ export class MirrorChain {
             } catch (error) {
                 if (!(error instanceof StorageDiffNotRetainedError))
                     throw error;
-                this.state.fill(await this.readFromNode(head.number, fromFeed));
+                this.state.fill(await this.readFromNode(head.hash, fromFeed));
             }
             this.unfollowCodeless(added);
         } catch (error) {
@@ -598,38 +595,38 @@ export class MirrorChain {
     }
 
     private async readFromNode(
-        block: bigint,
+        block: string,
         misses: StateRequestParams[]
     ): Promise<AccountDiffs> {
         const accounts: AccountDiffs = {};
+        // pinned to the block's hash: a reorg cannot hand back another block's state
+        const at = { blockHash: block };
+        const read = async (method: string, params: unknown[]) =>
+            String(await this.requestNode(method, [...params, at]));
         try {
             await Promise.all(
                 misses.map(async ({ address, slots, account, code }) => {
-                    const read = (accounts[address] ??= {});
+                    const known = (accounts[address] ??= {});
                     await Promise.all([
                         ...(slots ?? []).map(async (slot) => {
-                            (read.storage ??= {})[slot] =
-                                await this.upstream.getStorageAt(
-                                    address,
-                                    slot,
-                                    block
-                                );
+                            (known.storage ??= {})[slot] = await read(
+                                "eth_getStorageAt",
+                                [address, slot]
+                            );
                         }),
                         account &&
-                            this.upstream
-                                .getBalance(address, block)
-                                .then((v) => {
-                                    read.balance = v;
-                                }),
+                            read("eth_getBalance", [address]).then((v) => {
+                                known.balance = v;
+                            }),
                         account &&
-                            this.upstream
-                                .getTransactionCount(address, block)
-                                .then((v) => {
-                                    read.nonce = Number(BigInt(v));
-                                }),
+                            read("eth_getTransactionCount", [address]).then(
+                                (v) => {
+                                    known.nonce = Number(BigInt(v));
+                                }
+                            ),
                         code &&
-                            this.upstream.getCode(address, block).then((v) => {
-                                read.code = v;
+                            read("eth_getCode", [address]).then((v) => {
+                                known.code = v;
                             })
                     ]);
                 })
@@ -773,8 +770,16 @@ export class MirrorChain {
     private async apply(record: BlockStorageDiff): Promise<void> {
         const head = this.followed.head!;
         const number = BigInt(record.number);
-        // below what the mirror keeps: neither a duplicate nor placeable
-        if (number < this.followed.base!.number) return;
+        // below what the mirror keeps: the service's chain moved below the
+        // blocks the copy holds, a reorg deeper than its rollback reach
+        if (number < this.followed.base!.number) {
+            this.log(
+                "info",
+                "A record is older than the blocks the mirror keeps; clearing the cache"
+            );
+            this.followed.clear();
+            return;
+        }
         if (this.followed.hashAt(number) === record.hash) return;
         if (this.followed.attach(record)) return;
         // the parent is not a block the mirror holds: a gap, or a branch
@@ -784,6 +789,18 @@ export class MirrorChain {
                 ? head.number + 1n
                 : this.followed.base!.number + 1n
         );
+        // the catch-up did not reach the record: the copy is on a branch
+        // the service left at or below the block it began from
+        if (
+            this.followed.base &&
+            this.followed.hashAt(number) !== record.hash
+        ) {
+            this.log(
+                "info",
+                "A record does not join the blocks the mirror keeps; clearing the cache"
+            );
+            this.followed.clear();
+        }
     }
 
     /** Applies the records from `from` on; an unplaceable or pruned answer clears the cache. */

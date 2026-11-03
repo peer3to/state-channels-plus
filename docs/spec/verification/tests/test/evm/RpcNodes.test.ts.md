@@ -97,3 +97,5 @@ within the one-second window (every node was destroyed).
 - `rejects startup over a log window that is not a positive integer without opening a node`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P12, REQ-CHAINOBS-1-5JTHY8.T1.P11
 - `rejects startup over a mirror sampling fraction outside 0 to 1 without opening a node`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P14, REQ-CHAINOBS-1-5JTHY8.T1.P12
 - `starts with a mirror sample rate of 0 and of 1, the ends of the range`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P15, REQ-CHAINOBS-1-5JTHY8.T1.P13
+- `rejects startup over a mirror bound on followed contracts that is not a positive integer, without opening a node`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P16
+- `follows at most the configured number of contracts, so a service with that address limit refuses no subscribe`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P17

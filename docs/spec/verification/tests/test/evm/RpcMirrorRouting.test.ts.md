@@ -25,3 +25,5 @@ This file covers which reads are answered locally and which go to the node whole
 - `answers a call that sets EIP-1559 fee fields from the node, which prices it against its base fee`: REQ-RPCMIRROR-2-1P38E2.T1.P9
 - `answers a call that fails without reverting from the node, which keeps the chain's gas accounting`: REQ-RPCMIRROR-2-1P38E2.T1.P10
 - `starts the local EVM again for a call after a start that failed`: REQ-RPCMIRROR-8-1PA83T.T1.P11
+- `answers BLOCKHASH of a block the copy applied as the node does, without asking the node`: REQ-RPCMIRROR-1-XQNZ4J.T1.P10
+- `sends a call whose BLOCKHASH names a block older than the copy keeps to the node`: REQ-RPCMIRROR-2-1P38E2.T1.P11
