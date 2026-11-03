@@ -166,6 +166,31 @@ describe("E2E: persistence durability", function () {
         );
     });
 
+    it("a seated joiner turns PARTICIPATING only once the flush after it signs its promoting block is confirmed", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 2, { persistentPeers: [2] });
+        const joiner = h.getPeer((await h.join.addSpectatorWait()).index);
+        await h.join.joinChannelWait({ joiner });
+        await h.event.waitUntilPeerStatus(
+            joiner.index,
+            Status.PENDING_PARTICIPANT
+        );
+        const gate = await holdFlushes(h, joiner);
+        expect(gate.bound).to.equal(true);
+
+        // a pending joiner signs nothing until the block that seats it
+        for (let block = 0; block < 4 && (await gate.held()) === 0; block++)
+            await h.transition.advanceState({ count: 1, waitForPeers: [0, 1] });
+        await gate.waitUntilHeld();
+        await sleep(ABSENCE_WINDOW_MS);
+        expect(await h.control(joiner).query.getStatus().request()).to.equal(
+            Status.PENDING_PARTICIPANT
+        );
+
+        await gate.release();
+        await h.event.waitUntilPeerStatus(joiner.index, Status.PARTICIPATING);
+    });
+
     it("an open-channel signature leaves neither the lower nor the higher address until its write is confirmed, and the channel then opens", async () => {
         const h = TestSession.getHarness();
         await h.setup(2, {

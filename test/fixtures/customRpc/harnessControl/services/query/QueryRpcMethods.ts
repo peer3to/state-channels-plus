@@ -585,11 +585,8 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
 
     /** Number of distinct state snapshots stored. */
     public getSnapshotCount(): number {
-        // Reads the storage's private index (no public count accessor).
-        const store = this.service.storage.stateSnapshots as unknown as {
-            snapshotsByHash: Map<string, unknown>;
-        };
-        return store.snapshotsByHash.size;
+        // the storage's private index (no public count accessor)
+        return this.service.storage.stateSnapshots["snapshotsByHash"].size;
     }
 
     /**

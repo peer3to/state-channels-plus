@@ -9,6 +9,7 @@ import {
 import type { ForkId } from "@/types/types";
 import { expect } from "chai";
 import { ClassicLevel } from "classic-level";
+import { ethers } from "ethers";
 import { chmod, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -104,6 +105,27 @@ describe("Node persistence partition", function () {
         await open(identity());
 
         expect((await stat(root)).mode & 0o777).to.equal(0o755);
+    });
+
+    it("maps checksummed and lowercase addresses, and decimal and hex chain ids, to one partition", async () => {
+        const spelled = identity();
+        const respelled: PersistencePartitionIdentity = {
+            chainId: "0x7a69",
+            stateChannelManagerAddress:
+                spelled.stateChannelManagerAddress.toLowerCase(),
+            stateMachineAddress: ethers.getAddress(spelled.stateMachineAddress),
+            channelId: spelled.channelId.toUpperCase().replace("0X", "0x")
+        };
+        expect(getPersistenceNamespace(respelled)).to.equal(
+            getPersistenceNamespace(spelled)
+        );
+
+        const secret = String(factory.hexString(32));
+        const first = await open(spelled, secret);
+        await first.databaseHandle.close();
+        const resumed = await open(respelled, String(factory.hexString(32)));
+
+        expect(resumed.signerSecret).to.equal(secret);
     });
 
     it("resumes an existing partition with its stored signer secret", async () => {

@@ -1,6 +1,8 @@
 import { Status } from "@/types";
+import type { ChannelId } from "@/types/types";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
+import { ethers } from "ethers";
 
 describe("StateManager.isActiveFork", function () {
     it("rejects an older fork after a real reduction", async function () {
@@ -119,6 +121,26 @@ describe("StateManager.setChannelId restore", function () {
             height
         );
         expect(await query.getStatus().request()).to.equal(Status.SYNCED);
+    });
+
+    it("a persistent runtime bound to one channel's partition refuses to bind another channel", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 1, { persistentPeers: [1] });
+
+        const refusal = await h.execOnHost(
+            h.getPeer(1),
+            async (sm, args) => {
+                try {
+                    await sm.setChannelId(args.otherChannelId as ChannelId);
+                    return null;
+                } catch (error) {
+                    return String(error);
+                }
+            },
+            { otherChannelId: ethers.hexlify(ethers.randomBytes(32)) }
+        );
+
+        expect(refusal).to.contain("cannot be rebound to another channel");
     });
 
     it("a restored head refills the local mirror with the chain's snapshot before any sync", async function () {
