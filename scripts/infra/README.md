@@ -4,9 +4,9 @@
   peer discovery registry. It listens on `127.0.0.1:19777` by default
   (`LOCAL_DISCOVERY_HOST`, `LOCAL_DISCOVERY_PORT`).
 - `run-e2e-worker.js`: runs the end-to-end suite in worker mode
-  (`RUN_SDK_IN_THREAD=true`) against an external Hardhat node.
-- `start-hardhat-node.js`: starts that Hardhat node, on `127.0.0.1:18545` by
-  default.
+  (`RUN_SDK_IN_THREAD=true`) against an external test node.
+- `start-hardhat-node.js`: starts that test node, the pinned anvil
+  (`anvilNode.js`), on `127.0.0.1:18545` by default.
 
 ## Open security questions
 

@@ -1,26 +1,26 @@
 #!/usr/bin/env node
 
+// `yarn infra:hardhat-node`: the test chain on HARDHAT_NODE_HOST /
+// HARDHAT_NODE_PORT (see anvilNode.js for what it mirrors).
 const { spawn } = require("node:child_process");
-const path = require("node:path");
+const {
+    ANVIL_BIN,
+    ANVIL_WATCHDOG,
+    anvilArgs,
+    pinnedAnvilMismatch
+} = require("./anvilNode");
 
-const host = process.env.HARDHAT_NODE_HOST || "127.0.0.1";
-const port = process.env.HARDHAT_NODE_PORT || "18545";
+const mismatch = pinnedAnvilMismatch();
+if (mismatch) {
+    console.error(mismatch);
+    process.exit(1);
+}
 
-const hardhatCli = path.join(
-    process.cwd(),
-    "node_modules",
-    "hardhat",
-    "internal",
-    "cli",
-    "cli.js"
-);
-
+// Under the watchdog, anvil stops when this process does, even on SIGKILL.
 const child = spawn(
-    process.execPath,
-    [hardhatCli, "node", "--hostname", host, "--port", String(port)],
-    {
-        stdio: "inherit"
-    }
+    "/bin/sh",
+    ["-c", ANVIL_WATCHDOG, "sh", ANVIL_BIN, ...anvilArgs()],
+    { stdio: ["pipe", "inherit", "inherit"] }
 );
 
 const forwardSignal = (signal) => {
@@ -31,6 +31,11 @@ const forwardSignal = (signal) => {
 
 process.on("SIGINT", () => forwardSignal("SIGINT"));
 process.on("SIGTERM", () => forwardSignal("SIGTERM"));
+
+child.on("error", (error) => {
+    console.error(`Failed to start anvil: ${error.message}`);
+    process.exit(1);
+});
 
 child.on("exit", (code, signal) => {
     if (signal) {

@@ -146,6 +146,11 @@ async function main(options = {}) {
         volumeDriver: config.volumeDriver,
         trustedRoot: path.resolve(__dirname, "../../..")
     });
+    const browserRuntime = await environmentManager.browserRuntime();
+    if (!browserRuntime.available)
+        console.warn(
+            `Worker host has no browser runtime (${browserRuntime.reason}); runs with browser tasks will not lease it`
+        );
     audit.append({
         action: "cache-configuration",
         accepted: true,
@@ -181,7 +186,8 @@ async function main(options = {}) {
                     capabilities: capabilities(
                         config,
                         environmentManager,
-                        authorization
+                        authorization,
+                        browserRuntime
                     )
                 })
                 .catch(() => {});
@@ -692,7 +698,8 @@ async function main(options = {}) {
                 capabilities: capabilities(
                     config,
                     environmentManager,
-                    authorization
+                    authorization,
+                    browserRuntime
                 )
             });
             console.log("Orchestrator connected and authenticated");
@@ -1514,7 +1521,12 @@ async function main(options = {}) {
     return { pool, manager, environmentManager, review, shutdown };
 }
 
-function capabilities(config, environmentManager, authorization) {
+function capabilities(
+    config,
+    environmentManager,
+    authorization,
+    browserRuntime
+) {
     const runtime = environmentManager?.capabilities() || {
         backend: "unresolved",
         isolation: null
@@ -1527,6 +1539,7 @@ function capabilities(config, environmentManager, authorization) {
         memoryGb: config.memLimitGb,
         heartbeatTimeoutMs: config.heartbeatTimeoutMs,
         isolatedRuntime: runtime,
+        browserRuntime,
         authorizationPolicy: authorization?.policy() || {
             publicKeyAuthorizationRequired: !config.allowUnlistedOrchestrators
         },

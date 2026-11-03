@@ -31,7 +31,7 @@ describe("distributed setup failure cap", function () {
             [
                 {
                     name: "failing-host",
-                    distributedProtocol: 14,
+                    distributedProtocol: 16,
                     leaseSteps: Array(10).fill("outside-manifest")
                 }
             ],
@@ -59,7 +59,7 @@ describe("distributed setup failure cap", function () {
             [
                 {
                     name: "refusing-host",
-                    distributedProtocol: 14,
+                    distributedProtocol: 16,
                     leaseSteps: Array(10).fill("reject-allocation")
                 }
             ],
@@ -91,7 +91,7 @@ describe("distributed setup failure cap", function () {
             [
                 {
                     name: "closing-host",
-                    distributedProtocol: 14,
+                    distributedProtocol: 16,
                     leaseSteps: Array(10).fill("close-after-offer")
                 }
             ],
@@ -120,12 +120,12 @@ describe("distributed setup failure cap", function () {
             [
                 {
                     name: "failing-host",
-                    distributedProtocol: 14,
+                    distributedProtocol: 16,
                     leaseSteps: Array(10).fill("outside-manifest")
                 },
                 {
                     name: "healthy-host",
-                    distributedProtocol: 14,
+                    distributedProtocol: 16,
                     holdFirstResultUntil: {
                         worker: "failing-host",
                         workspaceOffers: MAX_IDENTICAL_SETUP_FAILURES
@@ -162,7 +162,7 @@ describe("distributed setup failure cap", function () {
             [
                 {
                     name: "flaky-host",
-                    distributedProtocol: 14,
+                    distributedProtocol: 16,
                     leaseSteps: ["outside-manifest"]
                 }
             ],
@@ -184,7 +184,7 @@ describe("distributed setup failure cap", function () {
             [
                 {
                     name: "recovering-host",
-                    distributedProtocol: 14,
+                    distributedProtocol: 16,
                     leaseSteps: [
                         "outside-manifest",
                         "outside-manifest",
@@ -209,7 +209,7 @@ describe("distributed setup failure cap", function () {
             [
                 {
                     name: "alternating-host",
-                    distributedProtocol: 14,
+                    distributedProtocol: 16,
                     leaseSteps: [
                         "outside-manifest",
                         "invalid-diff",

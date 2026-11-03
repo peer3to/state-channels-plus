@@ -8,7 +8,7 @@ The shared assertion body lives in `test/fixtures/WatchdogRuntimePortAssertions.
 ## Overview
 
 Runtime-port tests of the one worker-error policy. `setupWatchdogP2pInstance` builds a real
-runtime against a Hardhat node whose dedicated contract-executor worker is the scripted watchdog
+runtime against an anvil test node whose dedicated contract-executor worker is the scripted watchdog
 entry: the inline host receives it through `HostContext.createContractExecutor`; the sdk-worker
 host is the outer test entry `watchdogP2pRuntimeWorkerEntry`, which injects the same factory
 inside its own thread. Each case subscribes `onHostError` after readiness, proves nothing trips

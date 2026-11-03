@@ -15,4 +15,5 @@ Checks the runner Chromium probe environment. These runner mechanics do not esta
 - `checks the gates' Chromium before a run schedules them`: none
 - `passes the Chromium pre-check when only the headless shell the gates launch is installed`: none
 - `fails the Chromium pre-check when only the full Chromium is installed`: none
+- `reports a browser runtime on an unsafe host whose Chromium the gates launch`: none
 - `launches a real Chromium through the gates' own policy`: none

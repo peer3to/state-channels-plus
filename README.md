@@ -162,7 +162,7 @@ default. `--e2e-only` selects the Mocha end-to-end tier and drops the forge and
 browser tiers with it. Use `--mocha-test-pattern`, `--forge-test-pattern` or
 `--browser-test-pattern` when only one tier needs a filename filter.
 
-Forge tasks need no Hardhat node, so they take neither a warm slot nor a funded
+Forge tasks need no test chain, so they take neither a warm slot nor a funded
 account partition. Local and distributed runs build the contracts and the
 scheduled forge test files once before scheduling; unselected test files are
 not compiled.
@@ -202,7 +202,7 @@ yarn hardhat forge-test --match-contract '^UtilityFacetTest$'
 ### Browser tests
 
 Each `test/browser/run-*.mjs` gate is one task. A gate boots a Vite server, its
-own Hardhat node and one headless Chromium, then drives every scenario in that
+own anvil test node and one headless Chromium, then drives every scenario in that
 browser; a scenario may use several isolated pages (the transport gates open one
 browser context per peer). Splitting a gate per case would relaunch that stack
 per case.
@@ -238,22 +238,23 @@ downloads browsers, so a gate finds Chromium only through
 unless the operator exported another path. A gate that cannot find the browser
 says so and names the variable.
 
+A worker host checks at startup that its environments can launch Chromium:
+the runner image installs it (and the server refuses a stale image), and an
+unsafe-host worker launches it once from that cache. The host reports the
+result to every orchestrator. A run with browser tasks refuses a host that
+cannot launch Chromium, warning `Worker host has no browser runtime for this
+run's browser tasks (…)` with the cause; a run without browser tasks still
+leases it.
+
 A worker runs tasks with the runner from its own checkout, so the browser tier
 reaches it only after **the worker host updates that checkout, restarts
 `yarn test:parallel:server`, and rebuilds its runner image**
 (`yarn test:parallel:image`; the server refuses a stale image, and on restart
 discards cached environments whose containers were created from another image). The browser tier
-arrived with distributed protocol 14. The orchestrator still leases protocol 13
-hosts and hands them only hardhat and forge tasks, so a pool can upgrade one
-host at a time. A Mocha test file that launches Chromium carries
-`// @distributed-requires: browser` in its leading comments, and its tests go
-only to hosts that run the browser tier as well. When they are all that is left
-and no connected worker has supported the browser runner for the discovery
-window (`--discovery-timeout`), the run skips the browser tasks and those marked
-Mocha tests with a warning that lists them (also written to the GitHub job
-summary) instead of failing; CI's `browser` job runs the same gates inside the
-runner image either way. A task whose attempt was lost with the only host that
-could run it fails instead of being skipped.
+arrived with distributed protocol 14, and the orchestrator now leases only
+protocol 16 hosts, so every pool host must be updated together. A Mocha test
+file that launches Chromium carries `// @distributed-requires: browser` in its
+leading comments, and its tests go only to hosts that run the browser tier.
 
 A worker that leaves before it is given a task, whether its lease or workspace
 setup fails, it refuses the requested resources, or its connection closes, is
@@ -368,7 +369,7 @@ the fields are `durationMs`, `cores` and `rssGb`, plus an optional string
 `comment` that records why the cost is set by hand. An invalid overrides file fails the run
 before anything is built, in either schedule. The defaults are placeholders in
 `scripts/e2e-parallel/shared/constants.js`, to be tuned from
-`run-metrics.json`. Workers on protocol 13/14 keep the old admission.
+`run-metrics.json`. Workers on protocol 15 or older are no longer leased.
 
 ### Distributed parallel tests
 
@@ -681,20 +682,33 @@ and cleanup. Use repeatable `--forward-env
 orchestrator environment are never forwarded. Stop a server with SIGINT or
 SIGTERM. Canonical task and failure logs remain on the orchestrator under
 `logs/run-N/`, including `error_*.ansi` files and worker infrastructure
-diagnostics. If a discovery server, Hardhat node, or isolated worker fails,
+diagnostics. If a discovery server, test chain, or isolated worker fails,
 `logs/run-N/infra/` is retained with the process diagnostic and the affected
 worker's streamed output. Infrastructure output is collected and retained when
 any test fails. A fully successful run skips collection unless
 `--keep-infra-logs` is set.
 
-The orchestrator leases worker hosts on any distributed protocol from the
-minimum it still supports up to its own (`MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL`
-and `DISTRIBUTED_PROTOCOL_VERSION` in `protocol.js`), and schedules on each host
-only the tasks whose runner, and every runner their test file requires, its
-protocol knows. A host outside that range is rejected
-before test execution with an update or rebase instruction. A worker host and
-its isolated guest must still match exactly, since both run the host's own
-checkout.
+The orchestrator leases only worker hosts on its own distributed protocol
+(`MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL` and `DISTRIBUTED_PROTOCOL_VERSION` in
+`protocol.js`, both 16), and schedules on each host only the tasks whose runner,
+and every runner their test file requires, its protocol knows. A host outside
+that range is rejected before test execution with an update or rebase
+instruction, so after merging the anvil test chain change every pool host must
+be updated and restarted together; CI fails until they all are. A worker host
+and its isolated guest must also match exactly, since both run the host's own
+checkout. A host starts its slot chains from that checkout too: protocol 16
+hosts run them on the run's test chain, the pinned anvil by default, and older
+hosts, which are refused, ran `hardhat node`.
+
+A project whose tests rely on its own Hardhat build, such as the peer3 Hardhat
+fork's gas estimator, passes `--test-chain project` (or sets
+`E2E_TEST_CHAIN=project`). The runner then starts the project's own
+`hardhat node` for every slot chain and fixture node, locally and on every
+worker, and keeps the in-process `hardhat` network on EDR. A distributed run
+sends the setting to its workers with the rest of its environment. This
+repository's own tests need anvil. The anvil test chain must be the version in
+the project's `.forge-version`, or in the runner's own when the project has
+none; any other anvil is refused.
 
 Dial diagnostics include the Noise handshake hash for each stream. Close lines
 state whether this application closed the stream, Hyperswarm reported duplicate

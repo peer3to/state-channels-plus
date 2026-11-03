@@ -4,15 +4,10 @@ const { normalizeTaskRunner } = require("../shared/taskRunners");
 
 // This whitelist is the only thing that crosses to the worker — a field left
 // out here is silently dropped. `runner` carries the tier so the worker can
-// keep forge tasks off its slot and account pools; a worker whose runner code
-// predates the field simply gives every task a slot it may not need.
-function toWireTask(
-    task,
-    projectRoot,
-    { schedule = "fifo", distributedProtocol } = {}
-) {
+// keep forge tasks off its slot and account pools.
+function toWireTask(task, projectRoot, { schedule = "fifo" } = {}) {
     const root = path.resolve(projectRoot);
-    const includeCost = schedule === "cost" && distributedProtocol >= 15;
+    const includeCost = schedule === "cost";
     return {
         label: task.label,
         logName: task.logName,

@@ -966,13 +966,13 @@ describe("parallel task runner classification", function () {
             "utils",
             "nodeInfra.js"
         );
-        const copiedProjectModules = path.join(
-            packageRoot,
-            "scripts",
-            "e2e-parallel",
-            "shared",
-            "projectModules.js"
-        );
+        // nodeInfra's own requires: the chain module and what it loads
+        const copiedScripts = [
+            "scripts/e2e-parallel/shared/projectModules.js",
+            "scripts/e2e-parallel/shared/constants.js",
+            "scripts/e2e-parallel/shared/forgeConfig.js",
+            "scripts/infra/anvilNode.js"
+        ];
         const discoveryScript = path.join(
             packageRoot,
             "scripts",
@@ -991,9 +991,9 @@ describe("parallel task runner classification", function () {
         try {
             for (const filePath of [
                 copiedNodeInfra,
-                copiedProjectModules,
                 discoveryScript,
-                hardhatCli
+                hardhatCli,
+                ...copiedScripts.map((file) => path.join(packageRoot, file))
             ]) {
                 fs.mkdirSync(path.dirname(filePath), { recursive: true });
             }
@@ -1001,16 +1001,12 @@ describe("parallel task runner classification", function () {
                 path.join(REPO_ROOT, "test", "utils", "nodeInfra.js"),
                 copiedNodeInfra
             );
-            fs.copyFileSync(
-                path.join(
-                    REPO_ROOT,
-                    "scripts",
-                    "e2e-parallel",
-                    "shared",
-                    "projectModules.js"
-                ),
-                copiedProjectModules
-            );
+            for (const file of copiedScripts) {
+                fs.copyFileSync(
+                    path.join(REPO_ROOT, file),
+                    path.join(packageRoot, file)
+                );
+            }
             fs.writeFileSync(discoveryScript, "");
             fs.writeFileSync(hardhatCli, "");
             process.chdir(callerRoot);

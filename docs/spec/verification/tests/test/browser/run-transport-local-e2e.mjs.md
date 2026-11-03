@@ -5,7 +5,7 @@ Test file: [test/browser/run-transport-local-e2e.mjs](../../../../../../test/bro
 ## Overview
 
 The runner behind package script `test:browser:transport:local` (shared driver
-`transportPermutations.mjs`) starts a Hardhat node mining once a second, the local discovery relay hub (`localDiscoveryRelayHub.mjs`: membership sockets announce a topic's peers, link sockets pair two peers), a Vite dev
+`transportPermutations.mjs`) starts an anvil test node mining once a second, the local discovery relay hub (`localDiscoveryRelayHub.mjs`: membership sockets announce a topic's peers, link sockets pair two peers), a Vite dev
 server, and headless Chromium. Each SDK runtime runs in its own browser context and page
 (`RUN_SDK_IN_THREAD`, WebRTC on the page through the bridge) and authors a `MathStateMachine`
 block on each of its turns. Two pages join one lobby topic at the same moment; the oracles are one

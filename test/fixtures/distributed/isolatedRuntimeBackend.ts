@@ -47,6 +47,8 @@ export class TestIsolatedRuntimeBackend {
     workspaceOfferWriteDelayMs = 0;
     startDelayMs = 0;
     guestDistributedProtocol = DISTRIBUTED_PROTOCOL_VERSION;
+    // What browserRuntime reports; unset, the manager's default stands.
+    reportedBrowserRuntime?: { available: boolean; reason?: string };
     // Containers the backend reports as created from another runner image.
     readonly otherImageContainers = new Set<string>();
     private resolveFirstCreateStarted!: () => void;
@@ -68,6 +70,10 @@ export class TestIsolatedRuntimeBackend {
     async detect() {
         this.calls.push({ operation: "detect" });
         return { available: true };
+    }
+
+    async browserRuntime() {
+        return this.reportedBrowserRuntime;
     }
 
     async create(allocation: unknown) {

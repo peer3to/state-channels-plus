@@ -51,6 +51,8 @@ Options:
       --distributed              Run tasks on authenticated remote workers
       --discovery-timeout <ms>   Time to wait for the first worker
       --forward-env <name>       Environment variable to forward (repeatable)
+      --test-chain anvil|project Test chain: the pinned anvil (default) or the
+                                 project's own hardhat node (E2E_TEST_CHAIN)
 
 By default Mocha tests (excluding parallel-runner and browser-required tests)
 and all Foundry test contracts under test/ are discovered and logs are written to a new logs/run-N directory.
@@ -122,6 +124,8 @@ function parseCliArgs(argv) {
         distributed: false,
         discoveryTimeoutMs: 30000,
         forwardEnv: [],
+        // undefined → E2E_TEST_CHAIN, else anvil.
+        testChain: undefined,
         distributedOptionsProvided: false,
         localCapacityOptionsProvided: []
     };
@@ -539,6 +543,16 @@ function parseCliArgs(argv) {
                 throw new Error(`${arg} requires a value`);
             options.forwardEnv.push(value);
             options.distributedOptionsProvided = true;
+            continue;
+        }
+        if (arg === "--test-chain" || arg.startsWith("--test-chain=")) {
+            const value =
+                arg === "--test-chain"
+                    ? argv[++i]
+                    : arg.slice("--test-chain=".length);
+            if (!["anvil", "project"].includes(value))
+                throw new Error("--test-chain requires anvil or project");
+            options.testChain = value;
             continue;
         }
         if (/^-?\d+(?:\.\d+)?$/.test(arg)) continue;

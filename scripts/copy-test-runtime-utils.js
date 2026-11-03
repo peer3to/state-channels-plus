@@ -1,8 +1,9 @@
 // Mirror everything the compiled test tree needs but tsc does not emit: the
 // non-TypeScript files under test/ (worker scripts, fixtures, JSON, Solidity
 // sources the forge tests read) and the JavaScript runner under scripts/ that
-// the runner tests require relative to themselves. Paths keep their shape, so
-// dist/test/... and dist/scripts/... mirror test/... and scripts/....
+// the runner tests require relative to themselves, with the runner's anvil pin
+// (.forge-version). Paths keep their shape, so dist/test/... and
+// dist/scripts/... mirror test/... and scripts/....
 const fs = require("fs");
 const path = require("path");
 
@@ -33,6 +34,10 @@ function mirror(sourceDir, keep) {
 const notTypeScript = (file) => !/\.(c|m)?tsx?$/.test(file);
 const copiedTest = mirror(path.join(projectRoot, "test"), notTypeScript);
 const copiedScripts = mirror(path.join(projectRoot, "scripts"), notTypeScript);
+fs.copyFileSync(
+    path.join(projectRoot, ".forge-version"),
+    path.join(dist, ".forge-version")
+);
 console.log(
     `Mirrored ${copiedTest} test asset(s) and ${copiedScripts} runner file(s) into dist`
 );

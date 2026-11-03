@@ -216,7 +216,8 @@ describe("HostNonceManager", () => {
                 value: ethers.parseEther("2"),
                 gasLimit: 21_000n
             }),
-            /enough funds/
+            // anvil's refusal: "Insufficient funds for gas * price + value"
+            /Insufficient funds/
         );
 
         expect(await manager.gasUsage.settledSnapshot()).to.deep.equal([]);

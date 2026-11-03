@@ -134,6 +134,11 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                     h.channelId,
                     h.activeForkId!
                 );
+            // anvil gives a block in the same second the window's timestamp,
+            // which the minTimeStamp guard refuses before the window guard
+            await h.event.waitUntilTimestamp(
+                Number(windowCreationTimestamp) + 1
+            );
             await h.tamper.plantFreshTimeoutForNextWriter(1);
 
             try {

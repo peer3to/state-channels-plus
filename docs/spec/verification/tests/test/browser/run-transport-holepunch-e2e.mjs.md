@@ -5,7 +5,7 @@ Test file: [test/browser/run-transport-holepunch-e2e.mjs](../../../../../../test
 ## Overview
 
 The runner behind package script `test:browser:transport:holepunch` (shared driver
-`transportPermutations.mjs`) starts a Hardhat node mining once a second, real Hyperswarm through dht-relay WebSocket servers on a private HyperDHT testnet (`localHolepunch.js`, served from the SDK's own `@hyperswarm/dht-relay` dependency), a Vite dev
+`transportPermutations.mjs`) starts an anvil test node mining once a second, real Hyperswarm through dht-relay WebSocket servers on a private HyperDHT testnet (`localHolepunch.js`, served from the SDK's own `@hyperswarm/dht-relay` dependency), a Vite dev
 server, and headless Chromium. Each SDK runtime runs in its own browser context and page
 (`RUN_SDK_IN_THREAD`, WebRTC on the page through the bridge) and authors a `MathStateMachine`
 block on each of its turns. Two pages join one lobby topic at the same moment; the oracles are one

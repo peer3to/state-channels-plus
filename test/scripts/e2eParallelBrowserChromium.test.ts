@@ -14,6 +14,7 @@ import {
     writeIdlingGate
 } from "../fixtures/distributed/browserGateTrees";
 import { expect } from "chai";
+import os from "os";
 import path from "path";
 
 // These tests launch a real Chromium or run a gate that does, so they need the
@@ -21,6 +22,14 @@ import path from "path";
 // that provide it, and the pure-logic browser tests stay in
 // e2eParallelBrowserTasks.test.ts.
 
+const { UnsafeHostBackend } =
+    require("../../scripts/e2e-parallel/distributed/isolatedEnvironment.js") as {
+        UnsafeHostBackend: new (options: { workRoot: string }) => {
+            browserRuntime: (
+                env: NodeJS.ProcessEnv
+            ) => Promise<{ available: boolean; reason?: string }>;
+        };
+    };
 const { BROWSER_TEST_TASK } =
     require("../../scripts/e2e-parallel/shared/browserConfig.js") as {
         BROWSER_TEST_TASK: string;
@@ -134,6 +143,15 @@ describe("browser tier environment", function () {
         expect(output).to.match(/^FAILED /);
         expect(output).to.contain("yarn playwright install chromium");
         expect(output).to.contain("--no-browser");
+    });
+
+    // Mutation: the probe reports no runtime whatever the host has -> unavailable.
+    it("reports a browser runtime on an unsafe host whose Chromium the gates launch", async function () {
+        const runtime = await new UnsafeHostBackend({
+            workRoot: os.tmpdir()
+        }).browserRuntime(process.env);
+
+        expect(runtime).to.deep.equal({ available: true });
     });
 
     it("launches a real Chromium through the gates' own policy", function () {

@@ -51,6 +51,9 @@ const {
     readCpuSnapshot
 } = require("../../scripts/e2e-parallel/shared/cpuAccounting.js");
 const { runTask } = require("../../scripts/e2e-parallel/shared/runTask.js");
+const {
+    buildDistributedBaseEnv
+} = require("../../scripts/test-e2e-parallel.js");
 const { startDiscoveryRegistry } = require("../utils/nodeInfra.js");
 
 describe("distributed parallel runner", function () {
@@ -1075,6 +1078,76 @@ describe("shipped outputs", function () {
             }
         } finally {
             process.env.PATH = originalPath;
+            await pool.close();
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    // Mutation: buildDistributedBaseEnv leaves E2E_TEST_CHAIN out -> the worker's slot chain is anvil.
+    // Mutation: the worker provisions its slots without the run's E2E_TEST_CHAIN -> the slot chain is anvil.
+    // Mutation: provisionSlots drops its env -> the slot chain is anvil.
+    it("a real worker starts its slot chain on the project test chain the run names", async function () {
+        const pool = await LeasePoolHarness.create();
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "real-chain-"));
+        const originalPath = process.env.PATH;
+        const originalChain = process.env.E2E_TEST_CHAIN;
+        const workspace = await createRealWorkerWorkspace(root, []);
+        fs.writeFileSync(
+            workspace.testFile,
+            `const assert = require("assert");
+describe("slot chain", function () {
+    it("is the project's hardhat node", async function () {
+        const answer = await fetch(process.env.PROVIDER_URL, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "web3_clientVersion", params: [] })
+        });
+        assert.match((await answer.json()).result, /^HardhatNetwork\\//);
+    });
+});
+`
+        );
+        try {
+            process.env.PATH = `${workspace.binDir}${path.delimiter}${originalPath}`;
+            process.env.E2E_TEST_CHAIN = "project";
+            await pool.startServer("chain-worker");
+            const result = await runDistributed({
+                tasks: [
+                    {
+                        label: "test:cost.test.js:is the project's hardhat node",
+                        args: [
+                            "test",
+                            "--no-compile",
+                            workspace.testFile,
+                            "--grep",
+                            "^slot chain is the project's hardhat node$"
+                        ],
+                        logName: "chain__project",
+                        fullTitle: "slot chain is the project's hardhat node",
+                        runner: "hardhat",
+                        isE2E: false
+                    }
+                ],
+                projectRoot: workspace.projectRoot,
+                archivePath: path.join(root, "bundle.tgz"),
+                manifest: await buildRuntimeManifest(workspace.projectRoot),
+                logDir: path.join(root, "logs"),
+                poolSecret: pool.poolSecret,
+                discoveryTimeoutMs: 5000,
+                discoveryRefreshMs: 25,
+                baseEnv: buildDistributedBaseEnv([], {
+                    sdkThread: false,
+                    vmThread: false
+                }),
+                dht: pool.createOrchestratorDht(),
+                executionProfile: { slots: 1, workers: 1, schedulerTickMs: 50 }
+            });
+            expect(result.failed).to.deep.equal([]);
+            expect(result.completed).to.equal(1);
+        } finally {
+            process.env.PATH = originalPath;
+            if (originalChain === undefined) delete process.env.E2E_TEST_CHAIN;
+            else process.env.E2E_TEST_CHAIN = originalChain;
             await pool.close();
             fs.rmSync(root, { recursive: true, force: true });
         }

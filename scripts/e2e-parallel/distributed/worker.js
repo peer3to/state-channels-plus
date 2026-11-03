@@ -172,9 +172,12 @@ function rejectPending(error) {
 
 async function start(config) {
     configuration = config;
+    // The worker is forked with the guest's own environment, so the run's
+    // test chain reaches the slot chains only from the run's baseEnv.
     const provisioned = await provisionSlots(
         config.slotCount,
-        config.infraLogDir
+        config.infraLogDir,
+        { E2E_TEST_CHAIN: config.baseEnv.E2E_TEST_CHAIN }
     );
     infra = provisioned.infra;
     slots = provisioned.slots;

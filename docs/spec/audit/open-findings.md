@@ -2199,7 +2199,9 @@ capped at the block gas limit; every estimate is one execution. Since 2026-09-26
 stipend is funded upfront ([`FIND-STIPEND-1-9YSNWB`](open-findings.md#find-stipend-1-9ysnwb)): the
 estimate still runs once, and the two replay sends use it plus the manager's
 `getStateTransitionReplayGas` (engineer decision 2026-09-27), so the fork's estimator never searches
-for the stipend.
+for the stipend. Since the anvil test chain (engineer decision 2026-11-02), the runner's default chain
+is the pinned anvil, a searching estimator; a project that relies on the fork's estimator, such as
+poker, runs its own chain with `--test-chain project`.
 
 <a id="find-auth-1-c1zhbj"></a>
 
@@ -2302,8 +2304,8 @@ when the replay starts, and the variable work before the replay (proof checks, s
 state, deleting the previous transition's outbound messages) can exceed any fixed margin; a poker
 dispute needed about 9.5M (about 3.9M before the replay, requirement 5.64M) while
 `max(estimate, requirement × 1.3)` gave 8.89M and failed the poker gate. The sum is needed there.
-(2) **Searching estimator** (geth, anvil, stock hardhat, and the SDK's in-process EDR test node,
-measured to search): the upfront refusal makes every lower gas fail, so the estimate already
+(2) **Searching estimator** (geth, anvil, stock hardhat, and hardhat 2.22 EDR, the SDK's in-process
+network when measured, which searched): the upfront refusal makes every lower gas fail, so the estimate already
 contains the requirement; the headroom applies to it and the requirement is added again, so the
 declared limit is at least about 2.5 × the requirement. The excess changes no verdict, but blocks
 are packed by declared limit, so it reserves block space and must fit the block gas limit. (3) **Block

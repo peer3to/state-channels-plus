@@ -33,6 +33,11 @@ export interface StartInfraOptions {
     env?: Record<string, string | undefined>;
 }
 
+export interface StartNodeOptions extends StartInfraOptions {
+    /** Copy the chain's output after ready to this process's own. */
+    forwardOutput?: boolean;
+}
+
 export interface Slot {
     id: number;
     nodeUrl: string;
@@ -63,10 +68,14 @@ export function startDhtBootstrapper(
     host: string,
     options?: { port?: number; attempts?: number }
 ): Promise<DhtBootstrapper>;
-export function startHardhatNode(opts?: StartInfraOptions): Promise<NodeHandle>;
+export function startHardhatNode(opts?: StartNodeOptions): Promise<NodeHandle>;
+export function testChain(
+    env?: Record<string, string | undefined>
+): "anvil" | "project";
 export function waitForHardhatNode(
     url: string,
-    timeoutMs?: number
+    timeoutMs?: number,
+    cancelled?: () => boolean
 ): Promise<void>;
 export function startDiscoveryRegistry(
     opts?: StartInfraOptions
@@ -82,7 +91,8 @@ export function resetSlotCacheDir(dir: string): void;
 export function teardownInfra(infra: Infra): void;
 export function provisionSlots(
     slotCount: number,
-    logDir: string
+    logDir: string,
+    env?: Record<string, string | undefined>
 ): Promise<{ slots: Slot[]; infra: Infra }>;
 export function startGasMonitor(
     slots: Slot[],

@@ -49,6 +49,8 @@ const profile = {
     targetLoad: 0.8
 };
 
+const CHAIN_MODULE = "scripts/infra/anvilNode.js";
+
 describe("distributed isolated environment", function () {
     it("packages the worker, workspace receiver, and test-infrastructure entry as trusted glue", function () {
         const manifest = trustedRunnerManifest(repoRoot());
@@ -59,6 +61,74 @@ describe("distributed isolated environment", function () {
         expect(paths).to.include("scripts/e2e-parallel/distributed/worker.js");
         expect(paths).to.include("test/utils/nodeInfra.js");
         expect(paths).to.include("scripts/infra/local-discovery-registry.js");
+        expect(paths).to.include(CHAIN_MODULE);
+    });
+
+    // Mutation: .forge-version left out of the trusted runner archive -> the copy has no pin.
+    // Mutation: .forge-version left out of trustedRunnerManifest -> no manifest entry verifies it.
+    // Mutation: the runner root found by package.json, which the copy lacks -> the unpinned project is refused.
+    // Mutation: the compiled tree mirrors no .forge-version -> the archive built from dist/ has no pin to ship.
+    it("ships the test chain module and the runner's anvil pin in the trusted runner archive and verifies their bytes", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "trusted-runner-"));
+        const unpinned = fs.mkdtempSync(path.join(os.tmpdir(), "unpinned-"));
+        const inputs: Buffer[] = [];
+        const backend = new DockerBackend({
+            image: `runner@sha256:${"f".repeat(64)}`,
+            run: async (
+                command: string,
+                args: string[],
+                options: { input?: Buffer }
+            ) => {
+                if (command === "tar") return runProcess(command, args);
+                if (options.input) {
+                    inputs.push(options.input);
+                    if (args.includes("tar")) {
+                        const unpacked = spawnSync(
+                            "tar",
+                            ["-xf", "-", "-C", root],
+                            { input: options.input }
+                        );
+                        expect(unpacked.status).to.equal(0);
+                    }
+                }
+                return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+            }
+        });
+        try {
+            await backend.refreshTrustedRunner({ container: "retained" });
+            const shipped = fs.readFileSync(path.join(root, CHAIN_MODULE));
+            const manifest = JSON.parse(inputs[1].toString());
+            expect(
+                shipped.equals(
+                    fs.readFileSync(path.join(repoRoot(), CHAIN_MODULE))
+                )
+            ).to.equal(true);
+            expect(
+                manifest.find(
+                    (entry: { path: string }) => entry.path === CHAIN_MODULE
+                ).sha256
+            ).to.equal(
+                crypto.createHash("sha256").update(shipped).digest("hex")
+            );
+            const pin = fs.readFileSync(path.join(root, ".forge-version"));
+            expect(pin.toString()).to.equal(
+                fs.readFileSync(path.join(repoRoot(), ".forge-version"), "utf8")
+            );
+            expect(
+                manifest.find(
+                    (entry: { path: string }) => entry.path === ".forge-version"
+                ).sha256
+            ).to.equal(crypto.createHash("sha256").update(pin).digest("hex"));
+            // the copy's own pin applies to a project with none
+            const shippedChain = path.join(root, CHAIN_MODULE);
+            const { pinnedAnvilMismatch } = require(shippedChain);
+            expect(pinnedAnvilMismatch(unpinned, process.env)).to.equal(null);
+        } finally {
+            for (const key of Object.keys(require.cache))
+                if (key.startsWith(root)) delete require.cache[key];
+            fs.rmSync(root, { recursive: true, force: true });
+            fs.rmSync(unpinned, { recursive: true, force: true });
+        }
     });
 
     it("starts, stops, and restarts one retained identity environment", async function () {
@@ -1141,6 +1211,30 @@ describe("distributed isolated environment", function () {
         );
         assembler.accept("stdout", 0, Buffer.from("no"));
         expect(() => assembler.complete()).to.throw("verification failed");
+    });
+});
+
+describe("unsafe-host browser runtime", function () {
+    // Mutation: browserRuntime reports a runtime without launching Chromium -> available.
+    it("reports no browser runtime, naming the missing Chromium, when the browsers path holds none", async function () {
+        const empty = fs.mkdtempSync(
+            path.join(os.tmpdir(), "scp-no-chromium-")
+        );
+        try {
+            const runtime = await new UnsafeHostBackend({
+                workRoot: empty
+            }).browserRuntime({
+                ...process.env,
+                PLAYWRIGHT_BROWSERS_PATH: empty
+            });
+
+            expect(runtime.available).to.equal(false);
+            expect(runtime.reason).to.include(
+                "Chromium for this Playwright version is missing"
+            );
+        } finally {
+            fs.rmSync(empty, { recursive: true, force: true });
+        }
     });
 });
 

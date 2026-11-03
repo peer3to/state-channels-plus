@@ -4,16 +4,23 @@ import "@nomicfoundation/hardhat-foundry";
 import { TASK_TEST } from "hardhat/builtin-tasks/task-names";
 import "./tasks/browserTest";
 import "./tasks/forgeTest";
+import {
+    IN_PROCESS_NETWORK,
+    useAnvilForInProcessNetwork
+} from "./test/utils/inProcessAnvil";
 
 // You need to export an object to set up your config
 // Go to https://hardhat.org/config/ to learn more
 
-// Keep in sync with test/harness/core/slotAccounts.ts (SLOT_STRIDE) and the
-// pool cap in scripts/e2e-parallel/shared/constants.js (ACCOUNT_POOL_SIZE).
+// Keep in sync with test/harness/core/slotAccounts.ts (SLOT_STRIDE), the
+// pool cap in scripts/e2e-parallel/shared/constants.js (ACCOUNT_POOL_SIZE) and
+// the test chain's launcher, scripts/infra/start-hardhat-node.js.
 const SLOT_STRIDE = 10;
 const ACCOUNT_POOL_SIZE = 400;
-const HARDHAT_MNEMONIC =
-    "test test test test test test test test test test test junk";
+// One owner: the test chain's mnemonic, so account N derives the same address
+// on the node and in hardhat's own signers.
+const { MNEMONIC: HARDHAT_MNEMONIC } =
+    require("./scripts/infra/anvilNode.js") as { MNEMONIC: string };
 
 /**
  * The parallel runner injects E2E_SLOT_INDEX and a test process only ever
@@ -71,6 +78,15 @@ const config: HardhatUserConfig = {
                     ? { auto: false, interval: 1000 }
                     : { auto: true }
         },
+        // Not a network to select: the in-process `hardhat` network runs on a
+        // private anvil (test/utils/inProcessAnvil.ts), which takes its HTTP
+        // and gas settings from here and its own url. anvil signs for its
+        // unlocked accounts, as EDR did, so nonces stay node-assigned.
+        [IN_PROCESS_NETWORK]: {
+            url: "http://127.0.0.1:0",
+            accounts: "remote",
+            timeout: 600_000
+        },
         localhost: {
             // Env-driven so the worker-mode e2e run can point hardhat's deploy
             // network, the worker's PROVIDER_URL, and the external node at one URL.
@@ -126,17 +142,10 @@ task(TASK_TEST)
         if (taskArgs.excludeTags) {
             process.env.LOG_EXCLUDE_TAGS = taskArgs.excludeTags;
         }
-        // the base task reads the in-process network's stack-trace failure
-        // count after mocha -> on a network no test touched that builds a whole
-        // EDR provider (~1 s) just to read 0
-        const provider = hre.network.provider;
-        const send = provider.send.bind(provider);
-        provider.send = (method, params) =>
-            method === "hardhat_getStackTraceFailuresCount" &&
-            (provider as unknown as { provider?: unknown }).provider ===
-                undefined
-                ? Promise.resolve(0)
-                : send(method, params);
+        // Every test chain is anvil, the in-process network included. Only
+        // the test task: other hardhat tasks (and a manual `hardhat node`)
+        // keep EDR.
+        useAnvilForInProcessNetwork(hre);
         return runSuper(taskArgs);
     });
 

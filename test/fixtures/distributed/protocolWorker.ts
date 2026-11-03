@@ -71,9 +71,8 @@ type HoldFirstResultUntil = {
 /**
  * How a host answers the workspace offer of one lease: a need naming a file the
  * manifest does not offer, a need that is not a diff, a normal lease that
- * closes the connection after running one task, a lease that leaves the pool
- * for good on its first task without reporting a result, a host that refuses
- * the lease's resources, or a host that closes the connection unannounced.
+ * closes the connection after running one task, a host that refuses the
+ * lease's resources, or a host that closes the connection unannounced.
  */
 export type ProtocolWorkerLeaseStep =
     | "outside-manifest"
@@ -92,6 +91,8 @@ export type ProtocolWorkerLeaseStep =
 async function startProtocolWorker(options: {
     name: string;
     distributedProtocol: number;
+    // What the host reports about Chromium; a host with one by default.
+    browserRuntime?: { available: boolean; reason?: string };
     keys: PoolKeys;
     dht: unknown;
     // One step per lease in order; leases past the end behave normally.
@@ -100,9 +101,7 @@ async function startProtocolWorker(options: {
     // offers and been handed this many tasks, so a run cannot finish before
     // that host's setup failures land, or before it has run a task.
     holdFirstResultUntil?: HoldFirstResultUntil;
-    // Join the DHT only once another host has run this many tasks.
-    joinAfter?: { worker: string; labels: number };
-    // The records of every host in the run, for holdFirstResultUntil and joinAfter.
+    // The records of every host in the run, for holdFirstResultUntil.
     records?: () => ProtocolWorkerRecord[];
     // Fields merged into every attempt result, e.g. measurements.
     attemptResult?: Record<string, unknown>;
@@ -129,8 +128,6 @@ async function startProtocolWorker(options: {
             dht: options.dht,
             refreshIntervalMs: 25
         });
-        // The run ended while this host was still joining.
-        if (closed) return pool.close();
         pool.onConnection(serve);
     };
     const close = async () => {
@@ -152,6 +149,9 @@ async function startProtocolWorker(options: {
                 name: options.name,
                 capabilities: {
                     distributedProtocol: options.distributedProtocol,
+                    browserRuntime: options.browserRuntime ?? {
+                        available: true
+                    },
                     memoryGb: 1,
                     heartbeatTimeoutMs: 60_000
                 }
@@ -262,27 +262,7 @@ async function startProtocolWorker(options: {
             // The orchestrator closing the stream ends this worker's part.
         }
     };
-    const joinAfter = options.joinAfter;
-    if (!joinAfter) {
-        await join();
-    } else {
-        void (async () => {
-            const deadline = Date.now() + 30_000;
-            const ran = () =>
-                options
-                    .records?.()
-                    .find((entry) => entry.name === joinAfter.worker)?.labels
-                    .length ?? 0;
-            while (
-                !closed &&
-                ran() < joinAfter.labels &&
-                Date.now() < deadline
-            ) {
-                await new Promise((resolve) => setTimeout(resolve, 25));
-            }
-            if (!closed) await join();
-        })();
-    }
+    await join();
     return { record, close };
 }
 
@@ -323,16 +303,15 @@ export const CHROMIUM_MOCHA_TASKS = [1, 2, 3].map((index) => ({
 /**
  * Run the real orchestrator over `tasks` (MIXED_TIER_TASKS by default) against worker hosts that
  * declare the given protocols, on a local DHT. Returns what each worker was
- * offered and ran, the run result or failure, the console warnings, and what
- * the run appended to a GitHub step summary.
+ * offered and ran, the run result or failure, and the console warnings.
  */
 export async function runAgainstProtocolWorkers(
     workers: Array<{
         name: string;
         distributedProtocol: number;
+        browserRuntime?: { available: boolean; reason?: string };
         leaseSteps?: ProtocolWorkerLeaseStep[];
         holdFirstResultUntil?: HoldFirstResultUntil;
-        joinAfter?: { worker: string; labels: number };
         attemptResult?: Record<string, unknown>;
         workerStats?: Record<string, unknown>;
         afterRunComplete?: () => void;
@@ -352,15 +331,12 @@ export async function runAgainstProtocolWorkers(
     const path = require("path");
     const network = await createLocalDhtNetwork();
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "distributed-mixed-"));
-    const summaryPath = path.join(root, "step-summary.md");
-    fs.writeFileSync(summaryPath, "");
     for (const [file, content] of Object.entries(options.files ?? {}))
         fs.writeFileSync(path.join(root, file), content);
     const poolSecret = `mixed-${process.pid}-${Date.now()}`;
     const keys = derivePoolKeys(poolSecret);
     const warnings: string[] = [];
     const originalWarn = console.warn;
-    const originalSummary = process.env.GITHUB_STEP_SUMMARY;
     const started: Array<{
         record: ProtocolWorkerRecord;
         close: () => Promise<void>;
@@ -379,7 +355,6 @@ export async function runAgainstProtocolWorkers(
         console.warn = (...data: unknown[]) => {
             warnings.push(data.map(String).join(" "));
         };
-        process.env.GITHUB_STEP_SUMMARY = summaryPath;
         const manifest = {
             version: 3,
             packageManager: "pnpm",
@@ -429,14 +404,10 @@ export async function runAgainstProtocolWorkers(
                 ? JSON.parse(fs.readFileSync(metricsPath, "utf8"))
                 : null,
             warnings,
-            summary: fs.readFileSync(summaryPath, "utf8") as string,
             workers: started.map((worker) => worker.record)
         };
     } finally {
         console.warn = originalWarn;
-        if (originalSummary === undefined)
-            delete process.env.GITHUB_STEP_SUMMARY;
-        else process.env.GITHUB_STEP_SUMMARY = originalSummary;
         for (const worker of started) await worker.close();
         fs.rmSync(root, { recursive: true, force: true });
         await network.close();

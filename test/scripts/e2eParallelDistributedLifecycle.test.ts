@@ -39,6 +39,31 @@ const emptySourceSha256 = crypto
     .digest("hex");
 
 describe("distributed worker pool lifecycle", function () {
+    // Mutation: the host leaves its browser runtime out of SERVER_READY -> the orchestrator sees none.
+    it("a worker host reports in SERVER_READY that its environments cannot launch Chromium, with the cause", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        backend.reportedBrowserRuntime = {
+            available: false,
+            reason: "no Chromium here"
+        };
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const orchestrator = await pool.startOrchestrator("runtime");
+            await orchestrator.waitFor(worker.name, "LEASE_GRANTED");
+
+            expect(
+                orchestrator.capabilitiesOf(worker.name)?.browserRuntime
+            ).to.deep.equal({ available: false, reason: "no Chromium here" });
+            await orchestrator.send(worker.name, "RELEASE");
+            await orchestrator.waitFor(worker.name, "LEASE_CLEAN");
+        } finally {
+            await pool.close();
+        }
+    });
+
     it("refuses two shared-host servers on one resolved work root before discovery", async function () {
         const pool = await LeasePoolHarness.create();
         const root = fs.mkdtempSync(

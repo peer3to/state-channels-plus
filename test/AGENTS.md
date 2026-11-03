@@ -297,6 +297,12 @@ work; it does not cancel or dispose the feature operation.
 - A fixed duration is allowed only when time is the test input or oracle, such
   as testing timeout behavior, holding an absence window, or injecting a short
   scheduling delay. Keep that reason clear at the call site.
+- Test chains are anvil, so blocks mined in one second, and the pending block
+  an estimate runs on, can share a timestamp. A test that needs the chain past
+  an on-chain time `T` waits with `h.event.waitUntilTimestamp(T + 1)` before
+  the transaction instead of assuming the next block is later (see the
+  "existing window predates timeout deadline" case in
+  `test/e2e/disputeValidation/disputeInputFields/timeout.test.ts`).
 
 ## Chai comparators and contract-bearing objects
 
@@ -342,15 +348,17 @@ with the suite still green.
   forge and browser tiers. Add `--e2e-only` to run only E2E tests (it drops the
   forge and browser tiers), or `--grep <regexp>` for the narrowest relevant
   task.
-- Browser gates and Mocha files marked `// @distributed-requires: browser` need
-  a protocol 14 or newer worker host whose runner image was built with
-  `yarn test:parallel:image`. Without one they are skipped after the discovery
-  window with a warning that lists them; check a green run for it. A Mocha file
-  that launches Chromium must carry that marker in its leading comments. See
+- Browser gates and Mocha files marked `// @distributed-requires: browser` run
+  on any leased worker host: only protocol 16 hosts are leased, and each needs
+  its runner image built with `yarn test:parallel:image`. Nothing is skipped:
+  a run with browser tasks refuses a host that reports it cannot launch
+  Chromium, and with no host left the run fails with "No distributed workers
+  discovered". A Mocha
+  file that launches Chromium must carry that marker in its leading comments. See
   "Browser tests" in the root `README.md`.
 - Legacy in-process unit/integration: `yarn test`. E2E inline: `yarn test:e2e`.
 - E2E in worker mode: `yarn test:e2e:worker` (per-file process isolation +
-  internal X/N progress; needs the hardhat node — `yarn infra:hardhat-node`).
+  internal X/N progress; needs the anvil test node — `yarn infra:hardhat-node`).
 - Always prefer the distributed runner, also for focused subsets, loops, and
   reruns: `yarn test:parallel:distributed --grep <regexp>`. The local runner is
   acceptable only for a small focused selection (about ten tests or fewer).
