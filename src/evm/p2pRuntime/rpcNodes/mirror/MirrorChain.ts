@@ -410,7 +410,7 @@ export class MirrorChain {
             snapshots.release(
                 added.filter((address) => statuses[address] !== "ready")
             );
-            await snapshots.settled();
+            await snapshots.settled(this.serviceTimeoutMs());
             // following may have cleared the cache; the pass then starts over
             const head = this.followed.head;
             if (!head) return;

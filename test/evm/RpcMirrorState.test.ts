@@ -2,6 +2,7 @@ import { sleep } from "@/utils";
 import { SDK_RPC_DEADLINE_MS } from "@/utils/storageDiff/LearnedBackstop";
 import { NOT_RETAINED_ERROR_CODE } from "@/utils/storageDiff/storageDiffWire";
 import {
+    backfillAtService,
     deployEnvironmentProbe,
     deployMirroredStorage,
     headNumber,
@@ -200,6 +201,38 @@ describe("MirrorRpcProvider state", function () {
             expect(elapsed).to.be.lessThan(
                 SDK_RPC_DEADLINE_MS - 2 * NODE_ROUND_TRIP_MS
             );
+        });
+    });
+
+    // Mutation: the snapshot wait is armed with its backstop alone, ignoring
+    // what the read spent waiting for the block.
+    it("answers a read from the node within the SDK deadline when it waited for a block and then for a snapshot the service never pushes", async function () {
+        await withMirrorSession(async (session) => {
+            const first = await deployMirroredStorage(session);
+            expect(await first.storage.getValue()).to.equal(0n);
+            const second = await deployMirroredStorage(session);
+            await (await second.chainStorage.setValue(4n)).wait();
+            await backfillAtService(session, [second.address]);
+            // the runtime listens to blocks; the provider relays what it hears
+            await session.provider.on("block", () => undefined);
+            const release =
+                session.service.holdNotifications("scp_subscription");
+            await (await first.chainStorage.setValue(1n)).wait();
+            // time is the input: the node's announcement reaches the provider
+            await sleep(ABSENCE_WINDOW_MS);
+            session.service.dropNotifications("scp_snapshot");
+
+            const started = Date.now();
+            const read = session.provider.getStorage(second.address, 0);
+            // time is the input: the read spends half its deadline on the block
+            await sleep(SDK_RPC_DEADLINE_MS / 2);
+            release();
+            const word = await read;
+            const elapsed = Date.now() - started;
+
+            expect(BigInt(word)).to.equal(4n);
+            expect(elapsed).to.be.lessThan(SDK_RPC_DEADLINE_MS);
+            expect(nodeRequests(session, "eth_getStorageAt")).to.have.length(1);
         });
     });
 

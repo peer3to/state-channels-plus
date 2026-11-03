@@ -34,7 +34,7 @@ describe("SnapshotWaits", function () {
         waits.holdWhile(new Promise<void>((resolve) => (place = resolve)));
 
         let ended = false;
-        const outcome = expected.settled().then(
+        const outcome = expected.settled(1_000).then(
             () => undefined,
             (error: unknown) => error
         );
@@ -45,5 +45,24 @@ describe("SnapshotWaits", function () {
         place();
 
         expect(await outcome).to.be.instanceOf(MirrorUnavailableError);
+    });
+
+    // Mutation: the wait is armed with the backstop alone, ignoring the read's time left.
+    it("ends a wait when the read's time runs out before its backstop", async function () {
+        const waits = new SnapshotWaits(
+            () => 10_000,
+            () => false
+        );
+        const expected = waits.expectSnapshots([ACCOUNT]);
+
+        const started = Date.now();
+        const outcome = await expected.settled(50).then(
+            () => undefined,
+            (error: unknown) => error
+        );
+
+        expect(outcome).to.be.instanceOf(MirrorUnavailableError);
+        // time is the output: the 50 ms left, far below the 10 s backstop
+        expect(Date.now() - started).to.be.lessThan(1_000);
     });
 });

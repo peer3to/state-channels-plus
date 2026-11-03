@@ -75,11 +75,12 @@ export class SnapshotWaits {
      * all of them; it ends at the first of: they all arrive, the service says
      * they are not coming (`lazy`: the read goes on and reads them as it
      * needs; delayed: the read throws and goes to the node), the connection
-     * drops, or the learned backstop runs out (the read throws).
+     * drops, or the learned backstop or the read's `timeLeftMs` runs out
+     * (the read throws).
      */
     expectSnapshots(addresses: AccountAddress[]): {
         release: (addresses: AccountAddress[]) => void;
-        settled: () => Promise<void>;
+        settled: (timeLeftMs: number) => Promise<void>;
         forget: () => void;
     } {
         const waiting = addresses.filter(
@@ -113,15 +114,19 @@ export class SnapshotWaits {
             release: (released) => {
                 for (const address of released) this.end(address, "not-coming");
             },
-            settled: async () => {
+            settled: async (timeLeftMs) => {
                 if (remaining === 0) return;
                 let timer: ReturnType<typeof setTimeout> | undefined;
                 let expiredAtBackstop = false;
+                // the read's deadline bounds the wait as much as the backstop
                 const expired = new Promise<void>((resolve) => {
-                    timer = setTimeout(() => {
-                        expiredAtBackstop = true;
-                        resolve();
-                    }, this.snapshotBackstop.boundMs);
+                    timer = setTimeout(
+                        () => {
+                            expiredAtBackstop = true;
+                            resolve();
+                        },
+                        Math.min(this.snapshotBackstop.boundMs, timeLeftMs)
+                    );
                 });
                 await Promise.race([all, expired]);
                 clearTimeout(timer);

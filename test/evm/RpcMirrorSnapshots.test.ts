@@ -202,6 +202,104 @@ describe("MirrorRpcProvider snapshots", function () {
         });
     });
 
+    // Mutation: a read whose subscribe step fails leaves its snapshot wait
+    // behind, and the snapshot pushed after the reconnect is then dropped.
+    it("takes the snapshot of a ready account after a reconnect when the read that followed it failed its catch-up", async function () {
+        await withMirrorSession(async (session) => {
+            const first = await deployMirroredStorage(session);
+            expect(await first.storage.getValue()).to.equal(0n);
+            const { chainStorage, address } =
+                await deployMirroredStorage(session);
+            await (await chainStorage.setValue(5n)).wait();
+            await backfillAtService(session, [address]);
+            // the read gets no snapshot and fails its catch-up, which drops the connection
+            session.service.dropNotifications("scp_snapshot");
+            session.service.failNextRequest("scp_getContractStorageDiffs");
+            expect(
+                BigInt(await session.provider.getStorage(address, 0))
+            ).to.equal(5n);
+            session.service.stopDroppingNotifications("scp_snapshot");
+            // the reconnect's snapshot arrives before following starts again
+            const snapshots = session.service.deliveredCount("scp_snapshot");
+            const held = session.service.holdReplies(
+                "scp_getContractStorageDiffs"
+            );
+
+            const read = session.provider.getStorage(address, 0);
+            await waitFor(
+                () =>
+                    session.service.deliveredCount("scp_snapshot") > snapshots,
+                5_000,
+                20
+            );
+            held.release();
+            expect(BigInt(await read)).to.equal(5n);
+            // time is the input: the snapshot queued behind the read is placed
+            await sleep(300);
+            const asked = serviceRequests(session, "scp_getState").length;
+
+            // an unwritten slot of a complete account reads as zero locally
+            expect(
+                BigInt(await session.provider.getStorage(address, 7))
+            ).to.equal(0n);
+            expect(serviceRequests(session, "scp_getState")).to.have.length(
+                asked
+            );
+        });
+    });
+
+    // Mutation: a read's snapshot wait ends at its backstop while the snapshot
+    // is still being placed, and the next read runs under a moving head.
+    it("holds the mirror past the snapshot backstop until a snapshot being placed for the read is placed", async function () {
+        await withMirrorSession(async (session) => {
+            const { address: taught } = await deployMirroredStorage(session);
+            const { chainStorage, address } =
+                await deployMirroredStorage(session);
+            await (await chainStorage.setValue(3n)).wait();
+            await backfillAtService(session, [taught, address]);
+            // a snapshot that arrives teaches how long snapshots take
+            await session.provider.getStorage(taught, 0);
+            // the mirror's head stays behind the service's, so the snapshot is ahead of it
+            const releaseRecords =
+                session.service.holdNotifications("scp_subscription");
+            await (await chainStorage.setValue(4n)).wait();
+            // the snapshot's catch-up is held; the read's own one passes after it
+            const releaseUnsubscribe =
+                session.service.holdReplies("scp_unsubscribe");
+            const catchUps = session.service.forwardedCount(
+                "scp_getContractStorageDiffs"
+            );
+            const releaseCatchUp = session.service.holdRequests(
+                "scp_getContractStorageDiffs",
+                1
+            );
+
+            let settled = false;
+            const read = session.provider
+                .getStorage(address, 0)
+                .finally(() => (settled = true));
+            await waitFor(
+                () =>
+                    session.service.forwardedCount(
+                        "scp_getContractStorageDiffs"
+                    ) > catchUps,
+                5_000,
+                20
+            );
+            releaseUnsubscribe.release();
+            // time is the input: past the backstop the fast snapshot taught
+            await sleep(SDK_RPC_DEADLINE_MS / 3);
+            expect(settled, "the snapshot is still being placed").to.equal(
+                false
+            );
+            releaseCatchUp();
+            const word = await read;
+            releaseRecords();
+
+            expect(BigInt(word)).to.equal(4n);
+        });
+    });
+
     it("does not shorten the wait for a snapshot because blocks arrived fast", async function () {
         await withMirrorSession(async (session) => {
             const { chainStorage, address } =

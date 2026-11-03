@@ -116,41 +116,6 @@ export class FollowedChain {
         return true;
     }
 
-    private applyBlock(record: BlockStorageDiff): void {
-        this.state.fill(record.post);
-        this.forgetNodeRead(record);
-        this.applied.push(record);
-        this.handlers.onArrived(BigInt(record.number));
-        if (this.pendingSnapshots.length > 0) {
-            const waiting = this.pendingSnapshots;
-            this.pendingSnapshots = [];
-            for (const snapshot of waiting) this.placeSnapshot(snapshot);
-        }
-        while (this.applied.length > MAX_APPLIED_BLOCKS) {
-            const oldest = this.applied.shift()!;
-            this.baseBlock = this.toBlock(oldest);
-            this.baseEnvironment = oldest;
-        }
-        this.handlers.onHeadChanged();
-    }
-
-    private rollBack(): void {
-        const record = this.applied.pop();
-        if (!record) throw new Error("Cannot roll back below the first block");
-        this.state.revertBlock(record);
-        this.forgetNodeRead(record);
-        // a block rolled back is no longer the chain's: nothing to wait for
-        this.handlers.onRolledBack(record.hash);
-        const number = BigInt(record.number);
-        // an address followed from this block on has no diff to undo it
-        for (const [address, since] of this.trackedSince) {
-            if (since >= number) {
-                this.state.dropToLazy(address);
-                this.trackedSince.set(address, number - 1n);
-            }
-        }
-    }
-
     /**
      * Makes the snapshot's accounts what it says, then replays the applied
      * blocks after it for them. A snapshot of a block the head has not
@@ -194,6 +159,41 @@ export class FollowedChain {
         this.trackedSince.clear();
         this.pendingSnapshots = [];
         this.handlers.onCleared();
+    }
+
+    private applyBlock(record: BlockStorageDiff): void {
+        this.state.fill(record.post);
+        this.forgetNodeRead(record);
+        this.applied.push(record);
+        this.handlers.onArrived(BigInt(record.number));
+        if (this.pendingSnapshots.length > 0) {
+            const waiting = this.pendingSnapshots;
+            this.pendingSnapshots = [];
+            for (const snapshot of waiting) this.placeSnapshot(snapshot);
+        }
+        while (this.applied.length > MAX_APPLIED_BLOCKS) {
+            const oldest = this.applied.shift()!;
+            this.baseBlock = this.toBlock(oldest);
+            this.baseEnvironment = oldest;
+        }
+        this.handlers.onHeadChanged();
+    }
+
+    private rollBack(): void {
+        const record = this.applied.pop();
+        if (!record) throw new Error("Cannot roll back below the first block");
+        this.state.revertBlock(record);
+        this.forgetNodeRead(record);
+        // a block rolled back is no longer the chain's: nothing to wait for
+        this.handlers.onRolledBack(record.hash);
+        const number = BigInt(record.number);
+        // an address followed from this block on has no diff to undo it
+        for (const [address, since] of this.trackedSince) {
+            if (since >= number) {
+                this.state.dropToLazy(address);
+                this.trackedSince.set(address, number - 1n);
+            }
+        }
     }
 
     private toBlock(record: BlockStorageDiff): MirrorBlock {
