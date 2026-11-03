@@ -629,3 +629,20 @@ test("still blocks a removed test whose report names no planned ID", () =>
         assert.equal(result.status, 1, result.stderr + result.stdout);
         assert.match(result.stdout, /Unmapped changed files/);
     }));
+
+test("does not block a changed recorded capture under test fixtures", () =>
+    fixture((f) => {
+        f.write("test/fixtures/node/answers.recorded.json", "{}\n");
+        const result = f.check();
+        assert.equal(result.status, 0, result.stderr + result.stdout);
+        assert.doesNotMatch(result.stdout, /Unmapped changed files/);
+    }));
+
+test("still blocks a changed fixture data file that is not a recorded capture", () =>
+    fixture((f) => {
+        f.write("test/fixtures/node/answers.json", "{}\n");
+        const result = f.check();
+        assert.equal(result.status, 1, result.stderr + result.stdout);
+        assert.match(result.stdout, /Unmapped changed files/);
+        assert.match(result.stdout, /test\/fixtures\/node\/answers\.json/);
+    }));

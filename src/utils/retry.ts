@@ -14,6 +14,8 @@ export interface RetryConfig {
     onRetry?: (attempt: number, error: any) => void;
     /** Once aborted, no further attempt starts and a pending delay ends at once */
     signal?: AbortSignal;
+    /** An error this returns false for is rethrown at once, without retrying */
+    shouldRetry?: (error: unknown) => boolean;
 }
 
 /**
@@ -52,7 +54,8 @@ export async function retry<T>(
         useExponentialBackoff = false,
         backoffFactor = 2,
         onRetry,
-        signal
+        signal,
+        shouldRetry
     } = config;
 
     let lastError: any;
@@ -64,7 +67,11 @@ export async function retry<T>(
             lastError = error;
 
             // If this was the last attempt, or the work was canceled, don't prepare for retry
-            if (attempt === maxRetries || signal?.aborted) {
+            if (
+                attempt === maxRetries ||
+                signal?.aborted ||
+                shouldRetry?.(error) === false
+            ) {
                 break;
             }
 

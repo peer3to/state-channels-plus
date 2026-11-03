@@ -842,6 +842,27 @@ Specification cases tested: 8/10. Untested: T1.P1, T1.P5.
 [`REQ-SDK-ARCH-7-H64K87` (Open connections are observable)](../specification/runtime/sdk.md#req-sdk-arch-7-h64k87)
 Specification cases tested: 8/8.
 
+[`REQ-SDS-1-TXEY33` (A subscription receives one record per canonical block)](../specification/runtime/storage-diff-service.md#req-sds-1-txey33)
+Specification cases tested: 8/8.
+
+[`REQ-SDS-2-R1RRCF` (Catch-up returns the retained history and the head)](../specification/runtime/storage-diff-service.md#req-sds-2-r1rrcf)
+Specification cases tested: 4/4.
+
+[`REQ-SDS-3-5JW8AK` (Subscriptions belong to their connection and end on request)](../specification/runtime/storage-diff-service.md#req-sds-3-5jw8ak)
+Specification cases tested: 5/5.
+
+[`REQ-SDS-4-ZZDEVF` (Reported values are the chain's own, not the tracer's)](../specification/runtime/storage-diff-service.md#req-sds-4-zzdevf)
+Specification cases tested: 10/10.
+
+[`REQ-SDS-7-PZCBQ9` (State reads come from one shared cache)](../specification/runtime/storage-diff-service.md#req-sds-7-pzcbq9)
+Specification cases tested: 19/19.
+
+[`REQ-SDS-11-QV2VPT` (Upstream trouble is retried, then fatal)](../specification/runtime/storage-diff-service.md#req-sds-11-qv2vpt)
+Specification cases tested: 13/14. Untested: T1.P10.
+
+[`REQ-SDS-12-JDW71Y` (What peers can make the service hold is bounded)](../specification/runtime/storage-diff-service.md#req-sds-12-jdw71y)
+Specification cases tested: 16/16.
+
 [`REQ-SEC-1-SNS1GA` (Before this specification is finalized, a dedicated security review of the full…)](../audit/security-assessment.md#req-sec-1-sns1ga)
 Specification cases tested: none planned.
 

@@ -3,6 +3,10 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## Storage diff service — 2026-11-02
+
+Every file of the service has a file report under `implementation/source/src/utils/node/storageDiff/` and `implementation/source/src/utils/storageDiff/`. After the engineer's scope review (2026-11-02) the service reads its upstream through `RpcNodeProvider`, `StateReader` and `BlockStager` are methods of `StorageDiffService` again, and the included level, the persisted cache, backfill and snapshots, head waits, and block, receipt and log serving are gone from this pull request; the backfill block sources and their question move to the follow-up pull request. `mergeTransactionDiffs` now drops pairs a block restores, with the merge branches covered by new cases of [`UNIT-TEST-SDS-BLOCK-TOUCHES-1-0CE0ZS`](../implementation/source/src/utils/node/storageDiff/traceDiffs.ts.md#unit-test-sds-block-touches-1-0ce0zs), and the cache's rollback rules by [`UNIT-TEST-SDS-STATE-CACHE-1-4B9043`](../implementation/source/src/utils/node/storageDiff/StateCache.ts.md#unit-test-sds-state-cache-1-4b9043). `retry` gained `shouldRetry`, with two new cases in [`UNIT-TEST-RETRY-1-19CEJ1`](../implementation/source/src/utils/retry.ts.md#unit-test-retry-1-19cej1).
+
 ## Block intake: a still-syncing source takes a counted close — 2026-10-29
 
 What changed: commit `dd162f81` narrowed the 2026-10-26 rule "the requester does not count that as a

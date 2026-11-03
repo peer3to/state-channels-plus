@@ -28,6 +28,9 @@ const REQUIREMENT_GLOBAL_RE = new RegExp(REQUIREMENT_PATTERN, "g");
 const REQUIREMENT_ID_RE = new RegExp(`^${REQUIREMENT_PATTERN}$`);
 // A file report that implements no specified behavior says so in one line.
 const NO_SPECIFIED_BEHAVIOR_RE = /^No specified behavior:/m;
+// A recorded capture is JSON data a test reads; it holds no declarations and
+// cannot carry an inline ignore marker, so its path is the exclusion.
+const RECORDED_CAPTURE = /^test\/fixtures\/.+\.recorded\.json$/;
 // Derived by `yarn spec:ids:fix` and names every requirement; the test-bullet edit
 // that changed it is in the same diff and seeds the right requirement.
 const REQUIREMENT_STATUS_PATH = path
@@ -558,6 +561,7 @@ function main() {
     const relevantUnaccounted = sorted(changed).filter(
         (target) =>
             /^(?:src|contracts|test)\//.test(target) &&
+            !RECORDED_CAPTURE.test(target) &&
             !accountedFiles.has(target) &&
             !mappedReasons.has(target)
     );
