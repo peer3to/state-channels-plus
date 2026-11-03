@@ -14,9 +14,8 @@ Cases subscribe against an isolated anvil test chain, and against a scripted Sub
 - `keeps an account lazy and warns with both counts when the chain holds more entries than the history named`: REQ-SDS-9-ZRPZZW.T1.P10, REQ-SDS-9-ZRPZZW.T1.P11
 - `tells a subscriber of a lazy account that no snapshot is coming also when it subscribes after the backfill`: REQ-SDS-9-ZRPZZW.T1.P12
 - `tells the subscriber at once when the backfill fails`: REQ-SDS-9-ZRPZZW.T1.P13
-- `tells a later subscriber that an account whose backfill failed is lazy, and does not backfill it again`: REQ-SDS-9-ZRPZZW.T1.P29
+- `tells a later subscriber that an account whose backfill failed is lazy, and does not backfill it again`: REQ-SDS-9-ZRPZZW.T1.P29, REQ-SDS-9-ZRPZZW.T1.P14
 - `pushes the snapshot again to a peer that subscribes again after it unsubscribed`: REQ-SDS-9-ZRPZZW.T1.P30
-- `does not backfill a lazy account again when it is subscribed again`: REQ-SDS-9-ZRPZZW.T1.P14
 - `pushes the snapshot and answers every slot from the cache when the chain holds just the entries the history named`: REQ-SDS-9-ZRPZZW.T1.P15
 - `keeps an account lazy and tells its subscriber when a block's trace omits a write the chain holds`: REQ-SDS-9-ZRPZZW.T1.P16
 - `keeps an account complete when the count after a write matches, at the cost of one hash read and one key page`: REQ-SDS-9-ZRPZZW.T1.P17
@@ -25,3 +24,4 @@ Cases subscribe against an isolated anvil test chain, and against a scripted Sub
 - `keeps an account complete, and warns, when the count after a write fails`: REQ-SDS-9-ZRPZZW.T1.P32
 - `keeps an account complete when a count that differs is of a block a reorg dropped`: REQ-SDS-9-ZRPZZW.T1.P33
 - `counts a complete account once more, at the newest written block, for the blocks written while a count runs`: REQ-SDS-9-ZRPZZW.T1.P23
+- `starts the backfill over when the block its values were read at is orphaned before they are committed, and names the key the replacement block wrote`: REQ-SDS-9-ZRPZZW.T1.P37

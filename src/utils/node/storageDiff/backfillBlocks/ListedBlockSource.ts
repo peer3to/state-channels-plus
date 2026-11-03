@@ -18,13 +18,10 @@ export class ListedBlockSource extends ABackfillBlockSource {
         upstream: BackfillUpstream,
         _address: AccountAddress,
         from: bigint,
-        tip: { number: bigint; hash: string },
-        parentHash?: string
+        tip: { number: bigint; hash: string }
     ): Promise<BlockListing> {
         const numbers: bigint[] = [];
-        let blocks = 0;
-        let blockReads = 0;
-        let previousHash = parentHash;
+        let previousHash: string | undefined;
         for (
             let start = from;
             start <= tip.number;
@@ -36,7 +33,6 @@ export class ListedBlockSource extends ABackfillBlockSource {
                     : tip.number;
             const wanted: bigint[] = [];
             for (let n = start; n <= end; n++) wanted.push(n);
-            blockReads += wanted.length;
             const listed = await Promise.all(
                 wanted.map((number) =>
                     upstream.request("eth_getBlockByNumber", [
@@ -56,7 +52,6 @@ export class ListedBlockSource extends ABackfillBlockSource {
                         "The chain moved while its blocks were listed"
                     );
                 previousHash = header.hash;
-                blocks++;
                 if (header.txCount > 0) numbers.push(header.number);
             }
         }
@@ -64,11 +59,7 @@ export class ListedBlockSource extends ABackfillBlockSource {
             throw new ChainMovedError(
                 "The range does not end at the expected block"
             );
-        return { numbers, blocks, blockReads, rootReads: 0 };
-    }
-
-    public async countStorageEntries(): Promise<number | undefined> {
-        return undefined;
+        return { numbers };
     }
 
     public close(): void {}

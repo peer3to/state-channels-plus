@@ -7,13 +7,11 @@ import type { Logger } from "@/utils";
  * service's state reads in flight and times out like the service's own.
  */
 export interface BackfillUpstream {
-    /** One request to the service's upstream. */
-    request(method: string, params: unknown[]): Promise<unknown>;
-    /** One request to another node the source connected to. */
-    requestOn(
-        node: RpcNodeProvider,
+    /** One request to the service's upstream, or to `node`, another node the source connected to. */
+    request(
         method: string,
-        params: unknown[]
+        params: unknown[],
+        node?: RpcNodeProvider
     ): Promise<unknown>;
     /** The service's logger, for the connections a source opens. */
     logger: Logger;
@@ -22,16 +20,10 @@ export interface BackfillUpstream {
 /** The chain changed under the range being read; the range is read again. */
 export class ChainMovedError extends Error {}
 
-/** The blocks of a range a contract's history has to be traced in, and what finding them cost. */
+/** The blocks of a range a contract's history has to be traced in. */
 export interface BlockListing {
     /** Blocks to trace, ascending. */
     numbers: bigint[];
-    /** Blocks the range spans. */
-    blocks: number;
-    /** `eth_getBlockByNumber` calls. */
-    blockReads: number;
-    /** Child trie root reads. */
-    rootReads: number;
 }
 
 /**
@@ -41,28 +33,26 @@ export interface BlockListing {
  */
 export default abstract class ABackfillBlockSource {
     /**
-     * The blocks of `from`..`tip.number` to trace. `parentHash` is the hash of
-     * block `from - 1` when the caller knows it. Throws `ChainMovedError` when
-     * the range does not end at `tip`.
+     * The blocks of `from`..`tip.number` to trace. Throws `ChainMovedError`
+     * when the range does not end at `tip`; the caller checks where it starts.
      */
     public abstract listBlocks(
         upstream: BackfillUpstream,
         address: AccountAddress,
         from: bigint,
-        tip: { number: bigint; hash: string },
-        parentHash?: string
+        tip: { number: bigint; hash: string }
     ): Promise<BlockListing>;
 
     /**
      * How many non-zero storage entries the chain holds for `address` at
-     * block `at`, when the source can count them; undefined when it cannot.
-     * A backfill that found another number is not complete.
+     * block `at`; absent on a source that cannot count them. A backfill that
+     * found another number is not complete.
      */
-    public abstract countStorageEntries(
+    public countStorageEntries?(
         upstream: BackfillUpstream,
         address: AccountAddress,
         at: { number: bigint }
-    ): Promise<number | undefined>;
+    ): Promise<number>;
 
     /** Idempotent: drops connections the source opened. */
     public abstract close(): void;

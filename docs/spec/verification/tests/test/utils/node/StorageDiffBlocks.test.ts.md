@@ -32,3 +32,4 @@ Cases run the service against an isolated anvil test chain through a relay, read
 - `refuses malformed scp_getBlock params with invalid params`: REQ-SDS-3-5JW8AK.T1.P6
 - `refuses malformed scp_getHead params with invalid params`: REQ-SDS-3-5JW8AK.T1.P7
 - `refuses malformed transaction and receipt read params with invalid params`: REQ-SDS-3-5JW8AK.T1.P8
+- `waits about the full SDK deadline for a silent hang after an upstream reconnect that found no new head`: REQ-SDS-12-N40MKR.T1.P12

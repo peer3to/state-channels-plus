@@ -10,7 +10,12 @@ import {
     withSource
 } from "../../fixtures/node/StorageDiffBackfillFixture";
 import { ChainMovedError } from "@/utils/node/storageDiff/backfillBlocks/ABackfillBlockSource";
-import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
+import {
+    ChildTrieBlockSource,
+    findChangedBlocks,
+    reviveAccountInfoKey,
+    trieIdOf
+} from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
 import { expect } from "chai";
 
 describe("ChildTrieBlockSource", function () {
@@ -34,10 +39,6 @@ describe("ChildTrieBlockSource", function () {
                 expect(listing.numbers).to.deep.equal(
                     recordedChildTrie.changedBlocks.map(BigInt)
                 );
-                expect(listing.blocks).to.equal(
-                    recordedChildTrie.tip - recordedChildTrie.from + 1
-                );
-                expect(listing.rootReads).to.be.lessThan(listing.blocks / 4);
                 expect(node.unrecorded()).to.deep.equal([]);
             } finally {
                 source.close();
@@ -95,10 +96,8 @@ describe("ChildTrieBlockSource", function () {
                 );
 
                 expect(listing.numbers).to.deep.equal(changes.map(BigInt));
-                expect(listing.blocks).to.equal(999_601);
-                expect(listing.blockReads).to.equal(0);
-                expect(listing.rootReads).to.equal(node.rootReads());
-                expect(listing.rootReads).to.be.lessThan(200);
+                // a bisection over 999,601 blocks
+                expect(node.rootReads()).to.be.lessThan(200);
             }
         );
     });
@@ -282,5 +281,72 @@ describe("ChildTrieBlockSource", function () {
 
             expect(node.requests().state_getStorage).to.equal(1);
         });
+    });
+});
+
+// The key derivations are checked by the recorded tests above: a wrong key
+// or prefix asks the replayed node for something it never answered.
+describe("ChildTrieBlockSource helpers", function () {
+    it("refuses an address that is not 20 bytes", function () {
+        expect(() => reviveAccountInfoKey("0x1234")).to.throw();
+    });
+
+    // Mutation: a multi-byte compact length is read as a one-byte one.
+    it("refuses a contract's account info whose trie id length is not a one-byte compact", function () {
+        // variant 0, then compact mode 1: a two-byte length
+        expect(() => trieIdOf("0x000101" + "ab".repeat(64))).to.throw(
+            "Unexpected trie id length encoding"
+        );
+    });
+
+    // Mutation: a short value yields the bytes it has as the trie id.
+    it("refuses a contract's account info shorter than the trie id it claims", function () {
+        // variant 0 claiming 32 bytes (0x80 = 32 << 2) with only 10 present
+        expect(() => trieIdOf("0x0080" + "ab".repeat(10))).to.throw(
+            "Truncated account info"
+        );
+    });
+
+    it("finds the blocks after which a trie root changes, in few reads", async function () {
+        // the root is the number of changes at or before the block
+        const changes = [3, 4, 500, 999_999];
+        let reads = 0;
+        const roots = async (blocks: number[]) => {
+            reads += blocks.length;
+            return blocks.map((n) =>
+                n < 3 ? undefined : String(changes.filter((c) => c <= n).length)
+            );
+        };
+
+        const changed = await findChangedBlocks(roots, 0, 1_000_000);
+
+        expect(changed).to.deep.equal(changes);
+        expect(reads).to.be.lessThan(changes.length * 2 * 21);
+    });
+
+    it("finds nothing when the root is the same at both ends", async function () {
+        let reads = 0;
+        const changed = await findChangedBlocks(
+            async (blocks) => {
+                reads += blocks.length;
+                return blocks.map(() => "0xroot");
+            },
+            10,
+            1_000
+        );
+
+        expect(changed).to.deep.equal([]);
+        // the two ends only
+        expect(reads).to.equal(2);
+    });
+
+    it("finds a change in the last block of the range", async function () {
+        const changed = await findChangedBlocks(
+            async (blocks) => blocks.map((n) => (n >= 64 ? "b" : "a")),
+            0,
+            64
+        );
+
+        expect(changed).to.deep.equal([64]);
     });
 });

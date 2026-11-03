@@ -496,6 +496,36 @@ describe("StorageDiffService blocks", function () {
         });
     });
 
+    // Mutation: every reconciliation is a backstop sample -> the reconnect
+    // that found no new head makes the backstop a few milliseconds.
+    it("waits about the full SDK deadline for a silent hang after an upstream reconnect that found no new head", async function () {
+        await withStorageDiffSession(async ({ client, provider, relay }) => {
+            const before = (await client.request("scp_getHead", [])) as {
+                number: string;
+            };
+            const asked = relay.requestCount("eth_getBlockByNumber");
+            relay.disconnect();
+            // the reopened socket reconciles and finds the same head
+            while (relay.requestCount("eth_getBlockByNumber") === asked)
+                await sleep(20);
+            await sleep(200);
+            const held = relay.holdNext("eth_getBlockByNumber", "latest");
+            await provider.send("evm_mine", []);
+            await held.arrived;
+            const mined = await provider.send("eth_blockNumber", []);
+            const started = Date.now();
+
+            const answer = (await client.request("scp_getHead", [mined])) as {
+                number: string;
+            };
+
+            const waited = Date.now() - started;
+            expect(answer.number).to.equal(before.number);
+            expect(waited).to.be.at.least(2_700);
+            held.release();
+        });
+    });
+
     // Mutation: scp_getTransaction reads minBlock from another param, or does not wait.
     it("holds a transaction read that names the block its caller saw until the head reaches it", async function () {
         await withStorageDiffSession(

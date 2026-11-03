@@ -864,7 +864,7 @@ Specification cases tested: 19/19.
 Specification cases tested: 13/13.
 
 [`REQ-SDS-9-ZRPZZW` (A subscription is anchored by a complete snapshot, or told none is coming)](../specification/runtime/storage-diff-service.md#req-sds-9-zrpzzw)
-Specification cases tested: 36/36.
+Specification cases tested: 37/37.
 
 [`REQ-SDS-11-QV2VPT` (Upstream trouble is retried, then fatal)](../specification/runtime/storage-diff-service.md#req-sds-11-qv2vpt)
 Specification cases tested: 15/15.
@@ -873,7 +873,7 @@ Specification cases tested: 15/15.
 Specification cases tested: 20/20.
 
 [`REQ-SDS-12-N40MKR` (A wait for a late block or snapshot ends at the first event, not at a fixed time)](../specification/runtime/storage-diff-service.md#req-sds-12-n40mkr)
-Specification cases tested: 11/11.
+Specification cases tested: 12/12.
 
 [`REQ-SEC-1-SNS1GA` (Before this specification is finalized, a dedicated security review of the full…)](../audit/security-assessment.md#req-sec-1-sns1ga)
 Specification cases tested: none planned.

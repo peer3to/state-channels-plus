@@ -381,7 +381,7 @@ A ready account's snapshot equals the chain's complete state at its block; a laz
 
 <a id="req-sds-9-zrpzzw.t1.p19"></a>`REQ-SDS-9-ZRPZZW.T1.P19` — the deploy block is found when the upstream answers that reads below its contracts pallet are not supported
 
-<a id="req-sds-9-zrpzzw.t1.p20"></a>`REQ-SDS-9-ZRPZZW.T1.P20` — the backfill starts over, keeping the deploy block, when a code probe below the head is answered with another error
+<a id="req-sds-9-zrpzzw.t1.p20"></a>`REQ-SDS-9-ZRPZZW.T1.P20` — the backfill starts over, and finds the same deploy block, when a code probe below the head is answered with another error
 
 <a id="req-sds-9-zrpzzw.t1.p21"></a>`REQ-SDS-9-ZRPZZW.T1.P21` — an error answer to the code probe at the head is not taken for an account without code
 
@@ -414,6 +414,8 @@ A ready account's snapshot equals the chain's complete state at its block; a laz
 <a id="req-sds-9-zrpzzw.t1.p35"></a>`REQ-SDS-9-ZRPZZW.T1.P35` — at most two accounts are backfilled at once and the next starts once one is done
 
 <a id="req-sds-9-zrpzzw.t1.p36"></a>`REQ-SDS-9-ZRPZZW.T1.P36` — a slot of a complete contract that a block a reorganization dropped had cleared is answered with its value before that block, without asking the upstream
+
+<a id="req-sds-9-zrpzzw.t1.p37"></a>`REQ-SDS-9-ZRPZZW.T1.P37` — a backfill whose values were read at a block a reorganization orphans before they are committed starts over and names the keys the replacement block wrote
 
 #### <a id="req-sds-11-qv2vpt.t1"></a>`REQ-SDS-11-QV2VPT.T1`
 
@@ -554,6 +556,8 @@ The wait ends at the head, or at once with the held state and the named notice, 
 <a id="req-sds-12-n40mkr.t1.p10"></a>`REQ-SDS-12-N40MKR.T1.P10` — many waits for a block the upstream has not seen cost one ask of its block number, and one more for waits that start during it
 
 <a id="req-sds-12-n40mkr.t1.p11"></a>`REQ-SDS-12-N40MKR.T1.P11` — an upstream-behind notice equal to the last one at an unchanged head is not pushed again
+
+<a id="req-sds-12-n40mkr.t1.p12"></a>`REQ-SDS-12-N40MKR.T1.P12` — an upstream reconnect that finds no new head leaves the backstop as it was
 
 ### Coverage rule
 

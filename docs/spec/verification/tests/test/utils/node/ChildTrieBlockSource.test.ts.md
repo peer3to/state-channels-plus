@@ -5,7 +5,7 @@ Exercises: [ChildTrieBlockSource.ts](../../../../../implementation/source/src/ut
 
 ## Overview
 
-The first three cases replay answers recorded from the Asset Hub Substrate node for a mainnet contract (`assetHubChildTrie.recorded.json`); the others drive the source against a scripted Substrate node that serves child trie roots, account info and key pages, for sizes and faults the recording does not hold. The lagging cases have the scripted node answer null for blocks past its best block for a while, or for good, and read its best block when no hash is named. The oracles are the listed blocks, the number of root reads, the chain-moved error and the entry counts.
+The first three cases replay answers recorded from the Asset Hub Substrate node for a mainnet contract (`assetHubChildTrie.recorded.json`); the others drive the source against a scripted Substrate node that serves child trie roots, account info and key pages, for sizes and faults the recording does not hold. The lagging cases have the scripted node answer null for blocks past its best block for a while, or for good, and read its best block when no hash is named. The oracles are the listed blocks, the number of root reads, the chain-moved error and the entry counts. The helper cases call the source's helpers directly with malformed input and a scripted root function that counts its reads.
 
 ## Tests
 
@@ -23,3 +23,9 @@ The first three cases replay answers recorded from the Asset Hub Substrate node 
 - `counts the entries of the contract's child trie across pages`: UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P5
 - `shares the block hash read of counts asked for at one block at the same time`: UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P7
 - `reads the account info once for a contract it counts again`: UNIT-TEST-SDS-CHILD-TRIE-SOURCE-1-3KQ7D4.P8
+- `refuses an address that is not 20 bytes`: UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P2
+- `refuses a contract's account info whose trie id length is not a one-byte compact`: UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P14
+- `refuses a contract's account info shorter than the trie id it claims`: UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P15
+- `finds the blocks after which a trie root changes, in few reads`: UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P11
+- `finds nothing when the root is the same at both ends`: UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P12
+- `finds a change in the last block of the range`: UNIT-TEST-SDS-ASSET-HUB-CHECK-1-1H2RAC.P13

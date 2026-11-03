@@ -19,7 +19,7 @@ Cases subscribe to contracts whose history the service must backfill, against an
 - `starts over when a reorg drops the block the history was read to`: REQ-SDS-9-ZRPZZW.T1.P7
 - `reads on, in more rounds, the blocks mined past the retained window while the history was being traced`: REQ-SDS-9-ZRPZZW.T1.P8
 - `finds the deploy block when the upstream answers that reads below its contracts pallet are not supported`: REQ-SDS-9-ZRPZZW.T1.P19
-- `starts the backfill over, and keeps the deploy block, when a code probe below the head is answered with another error`: REQ-SDS-9-ZRPZZW.T1.P20
+- `starts the backfill over, and finds the same deploy block, when a code probe below the head is answered with another error`: REQ-SDS-9-ZRPZZW.T1.P20
 - `does not take an error answer to the code probe at the head for an account without code`: REQ-SDS-9-ZRPZZW.T1.P21
 - `keeps a backfill's value reads within 16 at the upstream at once and its traces within 8`: REQ-SDS-9-ZRPZZW.T1.P24
 - `asks a failed trace again on its own, without starting the backfill over`: REQ-SDS-9-ZRPZZW.T1.P31

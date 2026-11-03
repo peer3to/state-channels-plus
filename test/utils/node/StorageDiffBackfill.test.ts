@@ -3,6 +3,7 @@ import {
     probedBlock
 } from "../../fixtures/node/StorageDiffBackfillFixture";
 import {
+    asksCallFrames,
     deploySlotWriter,
     dumpedAccount,
     slotKey,
@@ -61,7 +62,7 @@ describe("StorageDiffService backfill", function () {
 
     it("finds the deploy block by bisection and traces only the blocks with transactions since", async function () {
         await withStorageDiffSession(
-            async ({ client, provider, backfills, signer }) => {
+            async ({ client, provider, relay, backfills, signer }) => {
                 // blocks without transactions before the deploy, and between writes
                 for (let i = 0; i < 20; i++)
                     await provider.send("evm_mine", []);
@@ -76,25 +77,52 @@ describe("StorageDiffService backfill", function () {
                         ).transactions[0]
                     ))!.blockNumber
                 );
-                await writeSlot(signer, writer, 1, 5n);
+                const first = await writeSlot(signer, writer, 1, 5n);
                 await provider.send("evm_mine", []);
                 await provider.send("evm_mine", []);
-                await writeSlot(signer, writer, 2, 6n);
+                const second = await writeSlot(signer, writer, 2, 6n);
                 const head = Number(await provider.send("eth_blockNumber", []));
+                const probes = relay.paramsOf("eth_getCode").length;
+                const reads = relay.paramsOf("eth_getBlockByNumber").length;
+                const traces = relay.paramsOf(
+                    "debug_traceBlockByNumber"
+                ).length;
 
                 const subscription = await client.subscribe([writer]);
                 await client.nextSnapshot(subscription);
 
-                const [cost] = backfills;
-                expect(cost.deployBlock).to.equal(toQuantity(deployed));
-                // a probe at the head, then about log2(head) probes of the bisection
-                expect(cost.codeProbes).to.be.at.most(
-                    Math.ceil(Math.log2(head + 1)) + 1
+                expect(backfills[0].deployBlock).to.equal(toQuantity(deployed));
+                // a probe at the head, about log2(head) probes of the
+                // bisection, and the code read of the final values
+                expect(
+                    relay.paramsOf("eth_getCode").length - probes
+                ).to.be.at.most(Math.ceil(Math.log2(head + 1)) + 2);
+                // the listing starts at the deploy block
+                const listed = relay
+                    .paramsOf("eth_getBlockByNumber")
+                    .slice(reads)
+                    .map((params) => params[0])
+                    .filter((block) => block !== "latest")
+                    .map(Number);
+                expect(
+                    [...new Set(listed)].sort((a, b) => a - b)
+                ).to.deep.equal(
+                    Array.from(
+                        { length: head - deployed + 1 },
+                        (_, i) => deployed + i
+                    )
                 );
-                expect(cost.blocks).to.equal(head - deployed + 1);
                 // the deploy block and the two writes
-                expect(cost.tracedBlocks).to.equal(3);
-                expect(cost.traces).to.equal(3);
+                expect(
+                    relay
+                        .paramsOf("debug_traceBlockByNumber")
+                        .slice(traces)
+                        .map((params) => Number(params[0]))
+                ).to.deep.equal([
+                    deployed,
+                    first.blockNumber,
+                    second.blockNumber
+                ]);
             }
         );
     });
@@ -254,7 +282,7 @@ describe("StorageDiffService backfill", function () {
 describe("StorageDiffService backfill beyond the window", function () {
     it("reads on, in more rounds, the blocks mined past the retained window while the history was being traced", async function () {
         await withStorageDiffSession(
-            async ({ client, relay, backfills, signer }) => {
+            async ({ client, relay, signer }) => {
                 const writer = await deploySlotWriter(signer);
                 const first = await writeSlot(signer, writer, 1, 5n);
                 const held = relay.holdNext(
@@ -276,8 +304,15 @@ describe("StorageDiffService backfill beyond the window", function () {
                     [slotKey(1)]: storageWord(6n),
                     [slotKey(2)]: storageWord(4n)
                 });
-                // the first round traced only the deploy block and the first write
-                expect(backfills[0].traces).to.be.greaterThan(2);
+                // the first round traced only the deploy block and the first
+                // write; the head's own traces come in pairs, the backfill's alone
+                const later = relay
+                    .paramsOf("debug_traceBlockByNumber")
+                    .filter((params) => Number(params[0]) > first.blockNumber);
+                expect(
+                    later.filter((params) => !asksCallFrames(params)).length -
+                        later.filter(asksCallFrames).length
+                ).to.be.greaterThan(0);
             },
             { retention: 2 }
         );
@@ -322,7 +357,7 @@ describe("StorageDiffService deploy block search", function () {
     });
 
     // Mutation: an error answer at a probe at or above the deploy block reads as "no code".
-    it("starts the backfill over, and keeps the deploy block, when a code probe below the head is answered with another error", async function () {
+    it("starts the backfill over, and finds the same deploy block, when a code probe below the head is answered with another error", async function () {
         await withStorageDiffSession(
             async ({
                 client,
@@ -400,29 +435,27 @@ describe("StorageDiffService deploy block search", function () {
 describe("StorageDiffService backfill values", function () {
     // Mutation: backfill reads bypass the state read limit, or one backfill traces every listed block at once.
     it("keeps a backfill's value reads within 16 at the upstream at once and its traces within 8", async function () {
-        await withStorageDiffSession(
-            async ({ client, relay, backfills, signer }) => {
-                const writer = await deploySlotWriter(signer);
-                for (let slot = 1; slot <= 40; slot++)
-                    await writeSlot(signer, writer, slot, BigInt(slot));
+        await withStorageDiffSession(async ({ client, relay, signer }) => {
+            const writer = await deploySlotWriter(signer);
+            for (let slot = 1; slot <= 40; slot++)
+                await writeSlot(signer, writer, slot, BigInt(slot));
+            const traces = relay.requestCount("debug_traceBlockByNumber");
 
-                const subscription = await client.subscribe([writer]);
-                const snapshot = await client.nextSnapshot(subscription);
+            const subscription = await client.subscribe([writer]);
+            const snapshot = await client.nextSnapshot(subscription);
 
-                expect(
-                    Object.keys(nonZero(snapshot.accounts[writer].storage))
-                ).to.have.length(40);
-                // the deploy block and the 40 writes
-                expect(backfills[0].traces).to.equal(41);
-                expect(relay.maxInFlight("eth_getStorageAt")).to.be.within(
-                    2,
-                    16
-                );
-                expect(
-                    relay.maxInFlight("debug_traceBlockByNumber")
-                ).to.be.at.most(8);
-            }
-        );
+            expect(
+                Object.keys(nonZero(snapshot.accounts[writer].storage))
+            ).to.have.length(40);
+            // the deploy block and the 40 writes
+            expect(
+                relay.requestCount("debug_traceBlockByNumber") - traces
+            ).to.equal(41);
+            expect(relay.maxInFlight("eth_getStorageAt")).to.be.within(2, 16);
+            expect(relay.maxInFlight("debug_traceBlockByNumber")).to.be.at.most(
+                8
+            );
+        });
     });
 
     // Mutation: peer reads wait behind a backfill's in arrival order.
@@ -502,11 +535,11 @@ describe("StorageDiffService backfill values", function () {
     // Mutation: a failed trace starts the whole backfill over.
     it("asks a failed trace again on its own, without starting the backfill over", async function () {
         await withStorageDiffSession(
-            async ({ client, relay, backfills, signer, warnings }) => {
+            async ({ client, relay, signer, warnings }) => {
                 const writer = await deploySlotWriter(signer);
                 await writeSlot(signer, writer, 1, 5n);
                 await writeSlot(signer, writer, 2, 6n);
-                const codeReads = relay.requestCount("eth_getCode");
+                const codeReads = relay.paramsOf("eth_getCode").length;
                 const traces = relay.requestCount("debug_traceBlockByNumber");
                 relay.failNext("debug_traceBlockByNumber", 1);
 
@@ -519,15 +552,16 @@ describe("StorageDiffService backfill values", function () {
                     [slotKey(1)]: storageWord(5n),
                     [slotKey(2)]: storageWord(6n)
                 });
-                const [cost] = backfills;
                 // the deploy block and the two writes, one of them asked twice
                 expect(
                     relay.requestCount("debug_traceBlockByNumber") - traces
-                ).to.equal(cost.traces + 1);
-                // the code probes once, and the code read of the final values
-                expect(relay.requestCount("eth_getCode") - codeReads).to.equal(
-                    cost.codeProbes + 1
-                );
+                ).to.equal(4);
+                // each code probe once: no restart
+                const asked = relay
+                    .paramsOf("eth_getCode")
+                    .slice(codeReads)
+                    .map((params) => String(params[1]));
+                expect(new Set(asked).size).to.equal(asked.length);
                 expect(
                     warnings.some(({ message }) =>
                         message.includes("Retrying a backfill read")

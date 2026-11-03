@@ -116,6 +116,49 @@ describe("StorageDiffService backfill checked against the chain", function () {
         });
     });
 
+    // Mutation: the range after an orphaned anchor is listed without a check
+    // of where it starts -> the replacement block's key is never named and
+    // the account turns lazy.
+    it("starts the backfill over when the block its values were read at is orphaned before they are committed, and names the key the replacement block wrote", async function () {
+        // the chain holds slots 1 and 3 after the reorg
+        await backfillWith(
+            2,
+            async ({ node, session, writer, client, head }) => {
+                const { provider, signer } = session;
+                const held = node.holdKeyPages();
+                const subscription = await client.subscribe([writer]);
+                await held.arrived;
+
+                // the anchor block, which wrote slot 2, is replaced by one writing slot 3
+                await provider.send("anvil_reorg", [
+                    1,
+                    [
+                        [
+                            {
+                                from: await signer.getAddress(),
+                                to: writer,
+                                data: slotKey(3) + storageWord(9n).slice(2)
+                            },
+                            0
+                        ]
+                    ]
+                ]);
+                await provider.send("evm_mine", []);
+                await client.recordAt(subscription, head.number + 1);
+                held.release();
+                const snapshot = await client.nextSnapshot(subscription);
+
+                expect(snapshot.lazy ?? []).to.deep.equal([]);
+                expect(
+                    nonZero(snapshot.accounts[writer].storage)
+                ).to.deep.equal({
+                    [slotKey(1)]: storageWord(5n),
+                    [slotKey(3)]: storageWord(9n)
+                });
+            }
+        );
+    });
+
     it("tells a subscriber of a lazy account that no snapshot is coming also when it subscribes after the backfill", async function () {
         await backfillWith(3, async ({ session, writer, client }) => {
             await client.subscribe([writer]);
@@ -209,18 +252,6 @@ describe("StorageDiffService backfill checked against the chain", function () {
             expect(nonZero(snapshot?.accounts[writer].storage)).to.deep.equal({
                 [slotKey(1)]: storageWord(8n)
             });
-        });
-    });
-
-    it("does not backfill a lazy account again when it is subscribed again", async function () {
-        await backfillWith(3, async ({ session, writer, client }) => {
-            await client.subscribe([writer]);
-            await backfilled(session);
-
-            await client.subscribe([writer]);
-            await sleep(300);
-
-            expect(session.backfills).to.have.length(1);
         });
     });
 

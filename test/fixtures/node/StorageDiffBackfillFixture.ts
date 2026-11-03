@@ -39,8 +39,10 @@ export function chain(
 
 /** Reads the Substrate node straight; the source never asks the eth upstream. */
 export const NO_UPSTREAM: BackfillUpstream = {
-    request: () => Promise.reject(new Error("The eth upstream is not used")),
-    requestOn: (node, method, params) => node.send(method, params),
+    request: (method, params, node) =>
+        node
+            ? node.send(method, params)
+            : Promise.reject(new Error("The eth upstream is not used")),
     logger: createLogger({}, { component: "ChildTrieBlockSourceTest" })
 };
 

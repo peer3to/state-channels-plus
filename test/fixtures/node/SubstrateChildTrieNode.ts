@@ -1,5 +1,5 @@
 // @spec-test-coverage-ignore: scripted Substrate node staging; executable evidence belongs to its calling test declarations
-import { reviveAccountInfoKey } from "@/utils/node/storageDiff/assetHubStateCheck";
+import { reviveAccountInfoKey } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
 import { WebSocketServer, type AddressInfo } from "ws";
 
 /** The `Revive.AccountInfoOf` value Asset Hub held for a mainnet contract (a contract: variant 0, 32-byte trie id). */

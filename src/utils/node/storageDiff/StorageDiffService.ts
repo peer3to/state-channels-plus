@@ -5,6 +5,7 @@ import ABackfillBlockSource, {
 import { ListedBlockSource } from "./backfillBlocks/ListedBlockSource";
 import {
     bloomContains,
+    byLogIndex,
     environmentOf,
     filterRecord,
     invalidParams,
@@ -120,24 +121,11 @@ interface HeadWaiter {
     end: () => void;
 }
 
-/** What one contract's backfill cost and found. */
+/** What one contract's backfill found, as its log says. */
 export interface BackfillRecord {
     address: AccountAddress;
     /** Block the contract's code first appears at; undefined for an account without code. */
     deployBlock?: string;
-    /** `eth_getCode` calls of the search for the deploy block. */
-    codeProbes: number;
-    /** `eth_getBlockByNumber` calls that listed the blocks. */
-    blockReads: number;
-    /** Child trie root reads that found the changed blocks. */
-    rootReads: number;
-    /** `debug_traceBlockByNumber` calls. */
-    traces: number;
-    /** Reads of the final balance, nonce, code and slot values. */
-    stateReads: number;
-    /** Blocks listed, and how many of them were traced. */
-    blocks: number;
-    tracedBlocks: number;
     /** Slots found written. */
     slots: number;
     milliseconds: number;
@@ -362,15 +350,7 @@ export class StorageDiffService {
         this.backfillBlocks = options.backfillBlocks ?? new ListedBlockSource();
         // a failed read is asked again on its own, not the whole backfill
         this.backfillUpstream = {
-            request: (method, params) =>
-                this.retryTransient(
-                    () =>
-                        this.limitBackfillFetch(() =>
-                            this.request(method, params)
-                        ),
-                    "Retrying a backfill read"
-                ),
-            requestOn: (node, method, params) =>
+            request: (method, params, node) =>
                 this.retryTransient(
                     () =>
                         this.limitBackfillFetch(() =>
@@ -791,8 +771,11 @@ export class StorageDiffService {
         }
     }
 
-    /** Moves the canonical history to the upstream's current best head. */
-    private async reconcileHead(): Promise<void> {
+    /**
+     * Moves the canonical history to the upstream's current best head; true
+     * when that committed a block.
+     */
+    private async reconcileHead(): Promise<boolean> {
         const canonical = this.canonical;
         let cursor = await this.fetchHeader("latest");
         const branch: BlockHeader[] = [];
@@ -876,16 +859,19 @@ export class StorageDiffService {
             this.stateCache.applyForward(record);
             // complete accounts the block's trace names, with the entries the
             // cache holds after it: a trace can name an account yet omit its write
-            for (const address of Object.keys(record.touches))
-                if (this.stateCache.isComplete(address))
-                    this.recountEntries(address, {
-                        block: record,
-                        cached: this.stateCache.nonZeroSlots(address)
-                    });
+            // only a source that counts entries can catch an omitted write
+            if (this.backfillBlocks.countStorageEntries)
+                for (const address of Object.keys(record.touches))
+                    if (this.stateCache.isComplete(address))
+                        this.recountEntries(address, {
+                            block: record,
+                            cached: this.stateCache.nonZeroSlots(address)
+                        });
         }
         canonical.splice(0, Math.max(0, canonical.length - this.retention));
         for (const record of added) this.peerHub.publish(record);
         this.endReachedWaits();
+        return added.length > 0;
     }
 
     private wake(): void {
@@ -898,12 +884,13 @@ export class StorageDiffService {
         const woke = Date.now();
         this.enqueue(async () => {
             this.wakeQueued = false;
-            await this.retryTransient(
+            const committed = await this.retryTransient(
                 () => this.reconcileHead(),
                 "Retrying head reconciliation"
             );
-            // how long a new head took to commit after it was announced
-            this.backstop.record(Date.now() - woke);
+            // how long a new head took to commit after it was announced; a
+            // wake that found none (a reopened socket) is no arrival
+            if (committed) this.backstop.record(Date.now() - woke);
         }).catch((error) => this.fail(error));
     }
 
@@ -1604,9 +1591,7 @@ export class StorageDiffService {
             fresh.includes(log.address)
         );
         for (const address of fresh) block.loggedAddresses.add(address);
-        block.logs = [...block.logs, ...fetched].sort((a, b) =>
-            Number(BigInt(a.logIndex) - BigInt(b.logIndex))
-        );
+        block.logs = [...block.logs, ...fetched].sort(byLogIndex);
     }
 
     private findTransaction(
@@ -1754,19 +1739,7 @@ export class StorageDiffService {
         let restarts = 0;
         let covered: { number: bigint; hash: string } | undefined;
         let keys = new Set<StorageSlot>();
-        const fresh = (): BackfillRecord => ({
-            address,
-            codeProbes: 0,
-            blockReads: 0,
-            rootReads: 0,
-            traces: 0,
-            stateReads: 0,
-            blocks: 0,
-            tracedBlocks: 0,
-            slots: 0,
-            milliseconds: 0
-        });
-        let record = fresh();
+        let deployBlock: string | undefined;
         for (let round = 0; round < BACKFILL_ROUNDS; round++) {
             if (this.stopping.signal.aborted) return;
             const tipRecord = this.canonical[this.canonical.length - 1];
@@ -1778,18 +1751,16 @@ export class StorageDiffService {
                 if (!covered) {
                     const deploy = await this.findDeployBlock(
                         address,
-                        tip.number,
-                        record
+                        tip.number
                     );
                     if (deploy !== undefined) {
                         for (const slot of await this.backfillKeys(
                             address,
                             deploy,
-                            tip,
-                            record
+                            tip
                         ))
                             keys.add(slot);
-                        record.deployBlock = toQuantity(deploy);
+                        deployBlock = toQuantity(deploy);
                     }
                     covered = tip;
                 } else if (tip.number > covered.number) {
@@ -1797,7 +1768,6 @@ export class StorageDiffService {
                         address,
                         covered.number + 1n,
                         tip,
-                        record,
                         covered.hash
                     ))
                         keys.add(slot);
@@ -1813,12 +1783,11 @@ export class StorageDiffService {
                 const state = await this.readBackfillState(
                     address,
                     prepared.anchor.hash,
-                    prepared.keys,
-                    record
+                    prepared.keys
                 );
                 // a chain that holds other entries than the history named is not backfilled whole
                 // (Asset Hub's tracer can omit a constructor's repeated write: paritytech/polkadot-sdk#13663)
-                const held = await this.backfillBlocks.countStorageEntries(
+                const held = await this.backfillBlocks.countStorageEntries?.(
                     this.backfillUpstream,
                     address,
                     prepared.anchor
@@ -1843,9 +1812,13 @@ export class StorageDiffService {
                     keys = new Set(prepared.keys);
                     continue;
                 }
-                record.slots = slots;
-                record.milliseconds = Date.now() - started;
-                this.logger.info("Backfilled an account", { ...record });
+                const record: BackfillRecord = {
+                    address,
+                    deployBlock,
+                    slots,
+                    milliseconds: Date.now() - started
+                };
+                this.logger.info("Backfilled an account", record);
                 return;
             } catch (error) {
                 // a reorg moved blocks under the read: read the range again
@@ -1856,7 +1829,7 @@ export class StorageDiffService {
                     throw error;
                 covered = undefined;
                 keys = new Set();
-                record = fresh();
+                deployBlock = undefined;
             }
         }
         throw new Error("The chain kept moving under the backfill");
@@ -1950,9 +1923,9 @@ export class StorageDiffService {
      */
     private sendSnapshots(
         peer: StorageDiffPeer,
-        addresses: AccountAddress[],
-        lazy: ReadonlySet<AccountAddress> = this.lazyAccounts
+        addresses: AccountAddress[]
     ): void {
+        const lazy = this.lazyAccounts;
         const head = this.canonical[this.canonical.length - 1];
         // a ready account the cache no longer holds complete is late
         this.noteSnapshotsDelayed(
@@ -2030,15 +2003,14 @@ export class StorageDiffService {
      */
     private async findDeployBlock(
         address: AccountAddress,
-        tip: bigint,
-        record: BackfillRecord
+        tip: bigint
     ): Promise<bigint | undefined> {
-        if (!(await this.hasCode(address, tip, record))) return undefined;
+        if (!(await this.hasCode(address, tip))) return undefined;
         let low = 0n;
         let high = tip;
         while (low < high) {
             const middle = (low + high) / 2n;
-            if (await this.hasCode(address, middle, record)) high = middle;
+            if (await this.hasCode(address, middle)) high = middle;
             else low = middle + 1n;
         }
         return high;
@@ -2046,10 +2018,8 @@ export class StorageDiffService {
 
     private async hasCode(
         address: AccountAddress,
-        block: bigint,
-        record: BackfillRecord
+        block: bigint
     ): Promise<boolean> {
-        record.codeProbes++;
         try {
             // not retried on its own: a failed probe starts the backfill over
             const code = await this.limitBackfillFetch(() =>
@@ -2071,26 +2041,29 @@ export class StorageDiffService {
     /**
      * The keys the traces of the blocks of `from`..`tip.number` that the
      * backfill block source lists name for the contract. A trace is only
-     * used for which keys, never for what is in them.
+     * used for which keys, never for what is in them. `parentHash` is the
+     * block `from - 1` the range must start after; the check is the
+     * service's, since a source may not know the upstream's block hashes.
      */
     private async backfillKeys(
         address: AccountAddress,
         from: bigint,
         tip: { number: bigint; hash: string },
-        record: BackfillRecord,
         parentHash?: string
     ): Promise<Set<StorageSlot>> {
         const listing = await this.backfillBlocks.listBlocks(
             this.backfillUpstream,
             address,
             from,
-            tip,
-            parentHash
+            tip
         );
-        record.blockReads += listing.blockReads;
-        record.rootReads += listing.rootReads;
-        record.blocks += listing.blocks;
-        record.tracedBlocks += listing.numbers.length;
+        if (
+            parentHash !== undefined &&
+            (await this.fetchHeader(from - 1n)).hash !== parentHash
+        )
+            throw new ChainMovedError(
+                "The block the history was read to left the chain"
+            );
         const keys = new Set<StorageSlot>();
         for (
             let i = 0;
@@ -2101,7 +2074,6 @@ export class StorageDiffService {
                 i,
                 i + BACKFILL_TRACES_AT_ONCE
             );
-            record.traces += numbers.length;
             const traces = await Promise.all(
                 numbers.map((number) =>
                     this.backfillUpstream.request("debug_traceBlockByNumber", [
@@ -2125,20 +2097,17 @@ export class StorageDiffService {
     private async readBackfillState(
         address: AccountAddress,
         blockHash: string,
-        keys: Iterable<StorageSlot>,
-        record: BackfillRecord
+        keys: Iterable<StorageSlot>
     ): Promise<BackfilledState> {
         const slots = [...keys];
-        const read = (field: StateField) => {
-            record.stateReads++;
-            return this.retryTransient(
+        const read = (field: StateField) =>
+            this.retryTransient(
                 () =>
                     this.limitBackfillFetch(() =>
                         this.fetchField(field, blockHash)
                     ),
                 "Retrying a backfill read"
             );
-        };
         const [balance, nonce, code, ...words] = await Promise.all([
             read({ kind: "balance", address }),
             read({ kind: "nonce", address }),
@@ -2194,7 +2163,7 @@ export class StorageDiffService {
         { block, cached }: { block: StagedBlock; cached: number }
     ): Promise<void> {
         try {
-            const held = await this.backfillBlocks.countStorageEntries(
+            const held = await this.backfillBlocks.countStorageEntries?.(
                 this.backfillUpstream,
                 address,
                 { number: BigInt(block.number) }
