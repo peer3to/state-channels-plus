@@ -23,6 +23,9 @@ const ABSENCE_WINDOW_MS = 500;
 /** Time is the input: how long a held node reply makes a round trip. */
 const NODE_ROUND_TRIP_MS = 400;
 
+/** Time is the input: how long the node takes over a log query; four of it pass the deadline. */
+const SLOW_LOG_QUERY_MS = 1_000;
+
 /** Time is the input: how long after its announcement the slowest taught block reaches the copy. */
 const SLOW_RECORD_MS = 100;
 
@@ -312,12 +315,12 @@ describe("MirrorRpcProvider freshness", function () {
 
     it("shortens the longest wait as the node's round trips grow, and a read that waits the whole cap still gets the node's answer inside the deadline", async function () {
         await withMirrorSession(async (session) => {
-            const { storage } = await deployMirroredStorage(session);
+            const { storage, address } = await deployMirroredStorage(session);
             expect(await storage.getValue()).to.equal(0n);
 
-            // the node answers a forwarded request slowly: that is a round trip learned
-            const slowReply = session.node.holdReplies("eth_gasPrice");
-            const forwarded = session.provider.send("eth_gasPrice", []);
+            // the node answers a forwarded read slowly: that is a round trip learned
+            const slowReply = session.node.holdReplies("eth_getStorageAt");
+            const forwarded = session.provider.getStorage(address, 0, 1);
             await waitFor(() => slowReply.heldReplies() === 1, 5_000, 20);
             // time is the input: how long the node takes to answer
             await sleep(NODE_ROUND_TRIP_MS);
@@ -346,6 +349,43 @@ describe("MirrorRpcProvider freshness", function () {
             // wait run the whole deadline, and the node's answer comes late.
             expect(Date.now() - started).to.be.lessThan(SDK_RPC_DEADLINE_MS);
             release();
+        });
+    });
+
+    // Mutation: every forwarded request teaches the round trip, so one slow
+    // log query cuts the longest wait to nothing.
+    it("keeps the longest wait when the node answers a log query slowly", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, chainStorage } =
+                await deployMirroredStorage(session);
+            expect(await storage.getValue()).to.equal(0n);
+            // a log query no wait falls back to, answered slowly
+            const slowLogs = session.node.holdReplies("eth_getLogs");
+            const logs = session.provider.send("eth_getLogs", [
+                { fromBlock: "0x0", toBlock: "latest" }
+            ]);
+            await waitFor(() => slowLogs.heldReplies() === 1, 5_000, 20);
+            await sleep(SLOW_LOG_QUERY_MS);
+            slowLogs.release();
+            await logs;
+            // the runtime listens to blocks; the service stays silent about the next one
+            await session.provider.on("block", () => undefined);
+            const release =
+                session.service.holdNotifications("scp_subscription");
+            await (await chainStorage.setValue(3n)).wait();
+            // time is the input: the node's announcement reaches the provider
+            await sleep(ABSENCE_WINDOW_MS);
+
+            let settled = false;
+            const read = storage.getValue().finally(() => (settled = true));
+            await sleep(ABSENCE_WINDOW_MS);
+            expect(settled, "the read still waits for the block").to.equal(
+                false
+            );
+            release();
+
+            expect(await read).to.equal(3n);
+            expect(nodeRequests(session, "eth_call")).to.have.length(0);
         });
     });
 

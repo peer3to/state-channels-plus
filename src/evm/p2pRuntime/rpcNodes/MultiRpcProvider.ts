@@ -236,8 +236,8 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
         return result;
     }
 
-    /** Told how long a node took to answer a forwarded request; a subclass may learn from it. */
-    protected noteNodeAnswer(_durationMs: number): void {}
+    /** Told how long a node took to answer a forwarded `method` request; a subclass may learn from it. */
+    protected noteNodeAnswer(_method: string, _durationMs: number): void {}
 
     protected async forward(request: JsonRpcPayload): Promise<JsonRpcResult> {
         const params = Array.isArray(request.params)
@@ -252,7 +252,7 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
                     params
                 );
                 if (sent) {
-                    this.noteNodeAnswer(Date.now() - started);
+                    this.noteNodeAnswer(request.method, Date.now() - started);
                     return { id: request.id, result: sent.result };
                 }
             }

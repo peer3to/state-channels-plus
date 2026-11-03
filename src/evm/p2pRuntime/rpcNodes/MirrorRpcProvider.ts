@@ -1,5 +1,10 @@
 import type { MirrorBlock } from "./mirror/FollowedChain";
-import { isQuantity, paramsOf, parseLocalRead } from "./mirror/LocalReadParser";
+import {
+    isQuantity,
+    LOCAL_READ_METHODS,
+    paramsOf,
+    parseLocalRead
+} from "./mirror/LocalReadParser";
 import { Mirror } from "./mirror/Mirror";
 import type { MirrorUpstream } from "./mirror/MirrorChain";
 import { MirrorSampler } from "./mirror/MirrorSampler";
@@ -103,9 +108,15 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
     }
 
     // Overrides MultiRpcProvider.noteNodeAnswer: keeps the node round trips
-    // the mirror's waits leave room for.
-    protected override noteNodeAnswer(durationMs: number): void {
-        this.nodeRoundTrips.record(durationMs);
+    // the mirror's waits leave room for, of the reads a wait falls back to
+    // only; a log query or a transaction send teaches nothing. The chain id
+    // the provider asks for when it starts is the first sample.
+    protected override noteNodeAnswer(
+        method: string,
+        durationMs: number
+    ): void {
+        if (LOCAL_READ_METHODS.has(method) || method === "eth_chainId")
+            this.nodeRoundTrips.record(durationMs);
     }
 
     private async answer(

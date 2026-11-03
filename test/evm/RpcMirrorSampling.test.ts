@@ -120,7 +120,7 @@ describe("MirrorRpcProvider sampling", function () {
         );
     });
 
-    it("counts a mismatch between a cached value and the node, and reads the account from the node from then on", async function () {
+    it("reads the account from the node from then on after a mismatch between a cached value and the node", async function () {
         await withMirrorSession(
             async (session) => {
                 const { storage, address } =

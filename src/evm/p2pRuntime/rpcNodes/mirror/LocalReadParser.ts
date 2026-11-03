@@ -100,8 +100,26 @@ function parseCall(params: unknown[]): MirrorCall | undefined {
     };
 }
 
+/**
+ * The methods the mirror may answer locally: a read of one of them that the
+ * mirror cannot answer falls back to the nodes.
+ */
+export const LOCAL_READ_METHODS: ReadonlySet<string> = new Set([
+    "eth_call",
+    "eth_getStorageAt",
+    "eth_getBalance",
+    "eth_getCode",
+    "eth_getTransactionCount",
+    "eth_blockNumber",
+    "eth_getBlockByNumber",
+    "eth_getBlockByHash",
+    "eth_getTransactionByHash",
+    "eth_getTransactionReceipt"
+]);
+
 /** The local read for `request`, or undefined when the nodes must answer it. */
 export function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
+    if (!LOCAL_READ_METHODS.has(request.method)) return undefined;
     const params = paramsOf(request);
     switch (request.method) {
         case "eth_call": {
