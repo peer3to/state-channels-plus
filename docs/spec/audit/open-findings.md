@@ -1776,6 +1776,43 @@ a node that restarts through a contest window is the watchtower's case (spec PR 
 until then the integrator keeps clients online). Persistence is off by default
 ([`REQ-STOR-10-XY96KG` (Persistence is opt-in)](../specification/storage/durability.md#req-stor-10-xy96kg)).
 
+<a id="find-storage-14-ma3c9c"></a>
+
+### FIND-STORAGE-14-MA3C9C
+
+**Defect:** _Resolved (2026-11-03)._ Two routes let a signature leave before its write reached disk.
+A synchronization answer carried this node's stored signed blocks without a flush
+(`SpectateService.generateSyncPayload`), and a chain transaction with no flush at its call site
+(a snapshot post, a top-up, a kill, a reduction, a calldata post) was sent with no wait for the
+disk, against
+[`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](../specification/storage/durability.md#req-stor-8-25d06n).
+
+**Disposition:** Decided by Luke on 2026-11-03 (plan 28, design R): every chain transaction waits in
+`HostNonceManager` for the disk to confirm every earlier write, before it takes the nonce lock; the
+synchronization answer flushes before it returns; `BlockCommitService` keeps its flush for a block it
+signs or authors; every disk batch is synced. The call-site flushes behind the dispute, join and open
+transactions, and the join and open-channel signature flushes, are removed (Luke 2026-11-03: those
+off-chain signatures are never stored and are not slashable at a coordinate). Regression:
+[`REQ-STOR-8-25D06N.T1.P17`](../specification/storage/durability.md#req-stor-8-25d06n.t1.p17),
+[`REQ-STOR-8-25D06N.T1.P18`](../specification/storage/durability.md#req-stor-8-25d06n.t1.p18) and
+[`REQ-STOR-8-25D06N.T1.P25`](../specification/storage/durability.md#req-stor-8-25d06n.t1.p25).
+Residual: a future reader that sends stored signed blocks outside the state mutex must flush first;
+that is a written rule, not a type. Signing over the client interface is outside the gate
+([`OQ-AUDIT-STORAGE-1-B5T2QG` (Client-interface signing outside the disk gate)](open-questions.md#oq-audit-storage-1-b5t2qg)).
+
+<a id="find-storage-15-971mvn"></a>
+
+### FIND-STORAGE-15-971MVN
+
+**Defect:** _Open (2026-11-03, to investigate)._ A block replayed from the restart synchronization's
+tail and settled as a past block is merged without this node's signature. Whether the node
+countersigns it after the hold is released is unchecked against
+[`REQ-STOR-3-4RJGER.T1.P6`](../specification/storage/durability.md#req-stor-3-4rjger.t1.p6) and
+[`REQ-STOR-3-4RJGER.T1.P18`](../specification/storage/durability.md#req-stor-3-4rjger.t1.p18).
+
+**Disposition:** Luke, 2026-11-03: investigate as a separate finding. Re-signing after the release is
+only safe with a deterministic signer.
+
 <a id="find-runtime-1-gapy72"></a>
 
 ### FIND-RUNTIME-1-GAPY72

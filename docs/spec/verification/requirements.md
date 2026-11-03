@@ -936,7 +936,7 @@ Specification cases tested: 1/4. Untested: T1.P2, T1.P3, T1.P4.
 Specification cases tested: 0/19.
 
 [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../specification/storage/durability.md#req-stor-3-4rjger)
-Specification cases tested: 20/24. Untested: T1.P3, T1.P4, T1.P8, T1.P11.
+Specification cases tested: 22/26. Untested: T1.P3, T1.P4, T1.P8, T1.P11.
 
 [`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](../specification/storage/durability.md#req-stor-4-mf6ft6)
 Specification cases tested: 0/5.
@@ -948,10 +948,10 @@ Specification cases tested: 8/13. Untested: T1.P2, T1.P3, T1.P5, T1.P11, T1.P12.
 Specification cases tested: 2/7. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6.
 
 [`REQ-STOR-7-K1J7EA` (Write-behind disk copy loaded once)](../specification/storage/durability.md#req-stor-7-k1j7ea)
-Specification cases tested: 18/22. Untested: T1.P2, T1.P12, T1.P19, T1.P21.
+Specification cases tested: 22/26. Untested: T1.P2, T1.P12, T1.P19, T1.P21.
 
 [`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](../specification/storage/durability.md#req-stor-8-25d06n)
-Specification cases tested: 14/15. Untested: T1.P13.
+Specification cases tested: 20/22. Untested: T1.P13, T1.P19.
 
 [`REQ-STOR-9-ZR8A92` (Closed by the one disposal)](../specification/storage/durability.md#req-stor-9-zr8a92)
 Specification cases tested: 6/6.

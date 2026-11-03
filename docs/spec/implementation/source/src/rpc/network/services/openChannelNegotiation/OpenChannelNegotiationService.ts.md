@@ -8,7 +8,6 @@
 - [`REQ-NEG-1-RTKPT1` (Deterministic proposer and submitter)](../../../../../../../specification/peer-communication/channel-negotiation.md#req-neg-1-rtkpt1)
 - [`REQ-NEG-2-ED48TZ` (Chain-observed completion)](../../../../../../../specification/peer-communication/channel-negotiation.md#req-neg-2-ed48tz)
 - [`REQ-NEG-4-ZQ0985` (Committed-attempt admission and recovery)](../../../../../../../specification/peer-communication/channel-negotiation.md#req-neg-4-zq0985)
-- [`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](../../../../../../../specification/storage/durability.md#req-stor-8-25d06n)
 
 ## UNIT-TEST-OPEN-NEGOTIATION-SERVICE-1-G73XX2
 

@@ -19,6 +19,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-AUDIT-SYNC-1-83NTJY`](open-questions.md#oq-audit-sync-1-83ntjy)       | Inbound blocks in the sync payload                           | Engineer question (2026-10-07)  | [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx), [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf), [synchronization.md](../specification/peer-communication/synchronization.md) | Open (low priority)   |
 | [`OQ-AUDIT-RPC-1-BQA20A`](open-questions.md#oq-audit-rpc-1-bqa20a)         | Send reads and transactions to multiple nodes                | PR #511 review (2026-10-07)     | [security-assessment.md](./security-assessment.md), [chain-observation.md](../specification/runtime/chain-observation.md)                                                                                      | Open                  |
 | [`OQ-AUDIT-RPC-2-4VVAT0`](open-questions.md#oq-audit-rpc-2-4vvat0)         | Universal keepalive for idle chain WebSocket connections     | Live poker bots (2026-10-15)    | [`OQ-AUDIT-RPC-1-BQA20A`](open-questions.md#oq-audit-rpc-1-bqa20a), [chain-observation.md](../specification/runtime/chain-observation.md)                                                                      | Resolved (2026-10-26) |
+| [`OQ-AUDIT-STORAGE-1-B5T2QG`](open-questions.md#oq-audit-storage-1-b5t2qg) | Client-interface signing outside the disk gate               | Plan 28 (2026-11-03)            | [`REQ-STOR-8-25D06N`](../specification/storage/durability.md#req-stor-8-25d06n), [`FIND-STORAGE-14-MA3C9C`](open-findings.md#find-storage-14-ma3c9c)                                                           | Open                  |
 
 <a id="oq-5-4q38m5"></a>
 
@@ -187,3 +188,16 @@ timeout; the universal solution must account for that.
 
 Related: [`OQ-AUDIT-RPC-1-BQA20A`](open-questions.md#oq-audit-rpc-1-bqa20a),
 [chain-observation.md](../specification/runtime/chain-observation.md).
+
+<a id="oq-audit-storage-1-b5t2qg"></a>
+
+## OQ-AUDIT-STORAGE-1-B5T2QG — Client-interface signing outside the disk gate
+
+An application can ask the runtime to sign over the client interface without any disk wait: the
+message and typed-data signing of the off-chain signer (`P2pSignerRpcMethods.signMessage` and
+`signTypedData`) can sign a 32-byte block hash that was never stored, and the chain signer's
+`signTransaction` returns a signed transaction that bypasses both the disk gate and the disposal
+cut. Neither reaches a peer or the chain through the runtime, but the application can send it.
+Luke, 2026-11-03: out of scope for the durable-egress change, filed here. Requested decision:
+whether to route client signing through the managed signer and refuse 32-byte hashes, or put
+`signTransaction` behind the cut, or accept the bypass as the application's responsibility.

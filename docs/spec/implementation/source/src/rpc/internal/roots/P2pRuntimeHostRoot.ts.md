@@ -16,6 +16,7 @@
 - [`REQ-STOR-7-K1J7EA` (Write-behind disk copy loaded once)](../../../../../../specification/storage/durability.md#req-stor-7-k1j7ea)
 - [`REQ-STOR-9-ZR8A92` (Closed by the one disposal)](../../../../../../specification/storage/durability.md#req-stor-9-zr8a92)
 - [`REQ-STOR-11-Q4AT07` (Partition identity, ownership, and survival)](../../../../../../specification/storage/durability.md#req-stor-11-q4at07)
+- [`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](../../../../../../specification/storage/durability.md#req-stor-8-25d06n)
 
 ## UNIT-TEST-P2P-RUNTIME-HOST-1-TJYWGM
 

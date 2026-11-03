@@ -12,7 +12,7 @@ progress, not a gate on the already completed targeted-connect result.
 Because promotion happens after the connect result, the case assigns no pending-receipt permutation. The
 related requirement is `REQ-TJOIN-3-DCZKS6`.
 Spectator spawns in this suite go through the shared `addSpectatorAuthoring` helper (`test/harness/JoinActions.test.ts.md`): the spawn runs unawaited while the named participants keep authoring, bounded by literal minimum and maximum block counts, so no spawn or promotion sits inside an idle authoring window.
-The flush-failure case makes the next writer's disk fail every synced batch and holds the runtime abort that
+The flush-failure case makes the next writer's disk fail every batch and holds the runtime abort that
 failure triggers (`stub.failPersistenceFlushes(true)`), lets it author a block, and reads host-side that the
 stored head is the new block and the VM holds that block's stored state, so the failed flush rolled nothing back.
 
