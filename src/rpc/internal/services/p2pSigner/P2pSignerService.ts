@@ -9,7 +9,10 @@ export class P2pSignerService extends AInternalRpcService<P2pSignerRpcMethods> {
     constructor(
         router: InternalRpcRouter,
         public readonly requireP2pSigner: () => P2pSigner,
-        public readonly signer: ethers.Signer
+        public readonly signer: ethers.Signer,
+        public readonly bindPersistenceForChannel: (
+            channelId: string
+        ) => Promise<void>
     ) {
         super(router);
     }

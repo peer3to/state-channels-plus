@@ -43,6 +43,7 @@ import type {
 } from "@/rpc/network/registry";
 import StateChannelEventListener from "@/StateChannelEventListener";
 import Storage from "@/storage";
+import { validatePersistedRuntimeState } from "@/storage/persistence/validatePersistedRuntimeState";
 
 import { Status, TimeConfig } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
@@ -436,7 +437,39 @@ class StateManager<
         this.eventSyncService.setChannelId(channelId);
         // a disposed runtime subscribes nothing
         if (this.isDisposed) return;
+        await this.restorePersistedState();
         await this.stateChannelEventListener.setChannelId(channelId);
+    }
+
+    /**
+     * Restores what a restart CANNOT get from storage. Every storage collection
+     * (blocks, messages, snapshots, disputes, queues, ...) is already hydrated
+     * by `Storage.bind()`, which runs during host construction before this
+     * StateManager exists - so `validatePersistedRuntimeState` only cross-checks
+     * loaded caches, it never loads. What remains is the process-local state:
+     * the local diamond's VM state, the active fork field, the status (derived,
+     * deliberately never persisted), and the queue's timers.
+     */
+    public async restorePersistedState(): Promise<void> {
+        // memory-only storage has nothing loaded from disk to restore
+        if (!this.storage.getPersistenceLocation()) return;
+        const persisted = validatePersistedRuntimeState(
+            this.storage,
+            this.channelId
+        );
+        if (!persisted) return;
+
+        // TODO(persistence): classify and recover legal forward crash prefixes
+        // from multi-record flows instead of failing every inconsistent prefix.
+        await this.diamondStateMachine.setState(persisted.encodedState);
+        this.forkId = persisted.metadata.activeForkId;
+        const participants = await this.diamondStateMachine.getParticipants();
+        this.setStatus(
+            participants.includes(this.signerAddress)
+                ? Status.PARTICIPATING
+                : Status.SYNCED
+        );
+        await this.blockQueueManager.resumePersistedQueue();
     }
 
     public async clearChannelId(): Promise<void> {

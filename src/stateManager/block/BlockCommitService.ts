@@ -43,30 +43,31 @@ export default class BlockCommitService {
         const sm = this.stateManager;
         const isDisputeReplay =
             options?.strategy instanceof DisputeValidationStrategy;
-        // step 1 - potentially change status: SYNCED | PENDING_PARTICIPANT → PARTICIPATING.
-        // Never from a dispute replay: its block is on the dispute's chain,
-        // not this node's live history.
-        if (
-            !isDisputeReplay &&
-            (sm.status === Status.SYNCED ||
-                sm.status === Status.PENDING_PARTICIPANT)
-        ) {
-            const participants = await sm.diamondStateMachine.getParticipants();
-            const isParticipant = participants.includes(sm.signerAddress);
-            // a seated pending joiner's join ends on this status change:
-            // ChannelJoinService subscribes to onStatusChanged
-            if (isParticipant) sm.setStatus(Status.PARTICIPATING);
-        }
-        // step 2 - persist the state snapshot + state machine state first:
+        // step 1 - persist the state snapshot + state machine state first:
         // shouldSignBlock reads the resulting participants from storage
         sm.storage.stateSnapshots.storeStateSnapshot(stateSnapshot);
         sm.storage.stateMachineStates.storeStateMachineState(
             encodedStateMachineState,
             { hash: stateSnapshot.stateMachineStateHash }
         );
+        // step 2 - potentially change status: SYNCED | PENDING_PARTICIPANT → PARTICIPATING.
+        // Never from a dispute replay: its block is on the dispute's chain,
+        // not this node's live history.
+        const mayPromoteStatus =
+            !isDisputeReplay &&
+            (sm.status === Status.SYNCED ||
+                sm.status === Status.PENDING_PARTICIPANT);
+        const shouldPromoteToParticipant =
+            mayPromoteStatus &&
+            (await sm.diamondStateMachine.getParticipants()).includes(
+                sm.signerAddress
+            );
 
         // step 3 - add my signature if appropriate
-        if ((await this.shouldSignBlock(block)) && !isDisputeReplay) {
+        if (
+            (await this.shouldSignBlock(block, shouldPromoteToParticipant)) &&
+            !isDisputeReplay
+        ) {
             // Sign the block and add our signature to confirmation signatures
             const signature = await block.sign(sm.signer);
             this.logger.debug("Signing block", {
@@ -79,6 +80,40 @@ export default class BlockCommitService {
         sm.storage.blocks.storeBlock(block, {
             justPersist: isDisputeReplay
         });
+        if (!isDisputeReplay) {
+            // TODO(persistence): recover legal prefixes if the process crashes
+            // between snapshot, state, block, and metadata commits.
+            sm.storage.setRuntimeMetadata({
+                activeForkId: block.forkId,
+                headHash: block.hash,
+                snapshotHash: stateSnapshot.hash,
+                stateHash: stateSnapshot.stateMachineStateHash
+            });
+        }
+        // step 5 - persist the outbound message blocks if any
+        if (options?.outboundMessageBlock) {
+            sm.storage.outboundMessages.store(options.outboundMessageBlock);
+        }
+
+        // step 6 - persist participant change points
+        if (
+            !isDisputeReplay &&
+            (participantChanges.left.size > 0 ||
+                participantChanges.joined.size > 0)
+        ) {
+            sm.storage.participantSetChanges.storeChangePoint(
+                block.forkId,
+                block.height
+            );
+        }
+
+        await sm.storage.flush();
+
+        // Publish status only after all durable mutations for the transition
+        // have succeeded.
+        // a seated pending joiner's join ends on this status change:
+        // ChannelJoinService subscribes to onStatusChanged
+        if (shouldPromoteToParticipant) sm.setStatus(Status.PARTICIPATING);
         if (!isDisputeReplay) {
             sm.membershipService.publishOffChainEligibility(
                 sm.storage.getParticipantsUnion(
@@ -103,24 +138,8 @@ export default class BlockCommitService {
             logger: this.logger
         });
 
-        // step 5 - persist the outbound message blocks if any
-        if (options?.outboundMessageBlock) {
-            sm.storage.outboundMessages.store(options.outboundMessageBlock);
-        }
-
         // TODO - quick hack - cleaner code later
         if (isDisputeReplay) return;
-
-        // step 6 - persist participant change points
-        if (
-            participantChanges.left.size > 0 ||
-            participantChanges.joined.size > 0
-        ) {
-            sm.storage.participantSetChanges.storeChangePoint(
-                block.forkId,
-                block.height
-            );
-        }
 
         // step 7 - gossip after local persistence, so echoed confirmations are
         // recognized as duplicates/signature updates instead of being replayed.
@@ -178,13 +197,18 @@ export default class BlockCommitService {
         // tryExecuteFromQueue is universally scheduled on mutex release
     }
 
-    private async shouldSignBlock(block: Block): Promise<boolean> {
+    private async shouldSignBlock(
+        block: Block,
+        allowPendingPromotion = false
+    ): Promise<boolean> {
         const sm = this.stateManager;
         // Never counter-sign on a fork we are disputing: the signature would
         // postdate our dispute and make it stale.
         if (sm.storage.disputes.didIDispute(block.forkId)) return false;
         if (sm.p2pManager.isBlacklisted(block.author)) return false;
-        if (sm.status !== Status.PARTICIPATING) return false;
+        if (sm.status !== Status.PARTICIPATING && !allowPendingPromotion) {
+            return false;
+        }
         // Sign only blocks whose previous/resulting participant union contains
         // us (e.g. never after leaving the channel). The resulting snapshot is
         // persisted before signing, so a missing union means "don't sign".

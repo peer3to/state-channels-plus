@@ -35,6 +35,10 @@ import { doesWorkerNeedMainThreadBridge } from "@/rpc/network/services/WebRTCSet
 import WorkerBridgeWebRTCConnectionFactory from "@/rpc/network/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory";
 import StateManager from "@/stateManager/StateManager";
 import Storage from "@/storage";
+import {
+    openPersistencePartition,
+    type PersistenceDatabaseHandle
+} from "@/storage/persistence";
 import { TimeConfig } from "@/types";
 import { DebugProxy } from "@/utils";
 import { LocalDiscoveryServer } from "@/utils";
@@ -75,6 +79,7 @@ export interface HostContext {
 interface RuntimeHostState {
     stateManager: StateManager;
     evmDiamondStateMachine: EvmDiamondStateMachine;
+    storage: Storage;
 }
 
 /**
@@ -159,6 +164,9 @@ export class P2pRuntimeHostRoot<
     // is sized from it, so the chain stays authoritative for both.
     private maxChannelParticipants!: number;
     private signerAddress!: string;
+    private persistenceDatabaseHandle?: PersistenceDatabaseHandle;
+    private runtimeSignerSecret: string;
+    private boundChannelId?: string;
     private readonly context: HostContext;
     private readonly payload: SetupPayload;
 
@@ -191,6 +199,8 @@ export class P2pRuntimeHostRoot<
             context
         );
         this.payload = payload;
+        this.runtimeSignerSecret = payload.signerSecret;
+        this.boundChannelId = payload.persistence?.channelId;
         this.context = {
             ...local,
             threadLabel:
@@ -257,7 +267,8 @@ export class P2pRuntimeHostRoot<
         this.p2pSigner = new P2pSignerService(
             this.router,
             () => this.requireManager().p2pSigner,
-            signer
+            signer,
+            (channelId) => this.bindPersistenceForChannel(channelId)
         );
         this.hostRpc = new HostRpcService(this.router, () =>
             this.requireManager()
@@ -361,6 +372,41 @@ export class P2pRuntimeHostRoot<
         return this.requireManager().localRpc as TApplication;
     }
 
+    private async bindPersistenceForChannel(channelId: string): Promise<void> {
+        const payload = this.payload;
+        if (!payload.persistence) return;
+        const normalizedChannelId = ethers.hexlify(channelId).toLowerCase();
+        if (this.boundChannelId) {
+            if (
+                ethers.hexlify(this.boundChannelId).toLowerCase() !==
+                normalizedChannelId
+            ) {
+                throw new Error(
+                    "A persistent runtime cannot be rebound to another channel"
+                );
+            }
+            return;
+        }
+        if (!this.runtimeHandle) throw new Error("Runtime is not ready");
+        const partition = await openPersistencePartition({
+            identity: {
+                ...payload.persistence.identity,
+                channelId: normalizedChannelId
+            },
+            persistence: payload.persistence.options,
+            signerSecret: this.runtimeSignerSecret,
+            existingPartition: "reject"
+        });
+        if (partition.signerSecret !== this.runtimeSignerSecret) {
+            await partition.databaseHandle.close();
+            throw new Error(
+                "Late channel binding cannot replace the runtime signer"
+            );
+        }
+        await this.runtimeHandle.storage.bind(partition.databaseHandle);
+        this.boundChannelId = normalizedChannelId;
+    }
+
     private requireManager() {
         if (!this.runtimeHandle) throw new Error("Runtime is not ready");
         return this.runtimeHandle.stateManager.p2pManager;
@@ -389,8 +435,10 @@ export class P2pRuntimeHostRoot<
      * flush completes while the workers can still upload. Runs once.
      */
     private releaseRuntime(): Promise<void> | undefined {
-        const stateManager = this.runtimeHandle?.stateManager;
-        if (!stateManager) return;
+        const runtime = this.runtimeHandle;
+        // a partition opened before the runtime was built closes alone
+        if (!runtime) return this.persistenceDatabaseHandle?.close();
+        const stateManager = runtime.stateManager;
         const localRpc = stateManager.p2pManager.localRpc;
         return (this.runtimeRelease ??= runCleanup(
             // ends the chain-head waits (timer and block listener)
@@ -407,7 +455,9 @@ export class P2pRuntimeHostRoot<
             // An abort's log flush, already running: disposal ends the
             // workers only after it (it never fails; each realm reports its
             // own flush failures).
-            () => stateManager.abortFlush
+            () => stateManager.abortFlush,
+            // pending disk writes drain; a write after the cut stays in memory
+            () => runtime.storage.close()
         ));
     }
 
@@ -419,11 +469,24 @@ export class P2pRuntimeHostRoot<
     private async readChain(steps: StepTimer): Promise<bigint> {
         const payload = this.payload;
         const logger = this.rootLogger;
+        if (payload.persistence?.channelId) {
+            const partition = await openPersistencePartition({
+                identity: {
+                    ...payload.persistence.identity,
+                    channelId: payload.persistence.channelId
+                },
+                persistence: payload.persistence.options,
+                signerSecret: payload.signerSecret,
+                existingPartition: "allow"
+            });
+            this.persistenceDatabaseHandle = partition.databaseHandle;
+            this.runtimeSignerSecret = partition.signerSecret;
+        }
         // Provider creation happens before the rest of the runtime graph exists,
         // but its failure must still settle the paired client's `ready` promise.
         this.chainContext = await createRuntimeChainContext(
             payload.config,
-            payload.signerSecret,
+            this.runtimeSignerSecret,
             logger
         );
         steps.mark("provider");
@@ -542,7 +605,15 @@ export class P2pRuntimeHostRoot<
             );
         steps.mark("stateMachine");
 
-        const storage = new Storage(this.maxChannelParticipants);
+        const storage = new Storage(
+            this.maxChannelParticipants,
+            logger,
+            payload.persistence?.options
+        );
+        if (this.persistenceDatabaseHandle) {
+            await storage.bind(this.persistenceDatabaseHandle);
+            this.persistenceDatabaseHandle = undefined;
+        }
 
         const stateManager = new StateManager<MainRpcService, unknown>(
             // Managed signer: becomes StateManager.signer → DisputeManager.signer,
@@ -565,6 +636,7 @@ export class P2pRuntimeHostRoot<
             customRpcResolved?.customRpc,
             customRpcResolved?.customRpcOptions
         );
+        storage.setPersistenceFailureHandler(() => stateManager.abort());
 
         if (this.webRTCConnectionFactory)
             stateManager.p2pManager.localRpc.webRTCSetupService.setConnectionFactory(
@@ -595,7 +667,7 @@ export class P2pRuntimeHostRoot<
                 );
         }
 
-        this.runtimeHandle = { stateManager, evmDiamondStateMachine };
+        this.runtimeHandle = { stateManager, evmDiamondStateMachine, storage };
         // a disposal that began during the build missed this runtime: cut
         // and dispose it here (both repeat safely), with any child root its
         // custom RPC created after the children step, and fail the setup
@@ -609,6 +681,10 @@ export class P2pRuntimeHostRoot<
                 [...this.children].map((child) => child.dispose())
             );
             throw new RootDisposedError("Runtime disposed during setup");
+        }
+        // after the handle: a failed restore still closes the partition
+        if (this.boundChannelId) {
+            await stateManager.setChannelId(this.boundChannelId);
         }
         steps.mark("stateManager");
         await stateManager.p2pManager.localRpc.ready();

@@ -28,7 +28,7 @@ describe("MessageBlockStorage - outbound behavior", () => {
         it("stores block with computed hash", () => {
             const hash = storage.store(mockExitBlock);
             expect(hash).to.equal(mockBlockHash);
-            expect(storage.getMessageBlock(hash)).to.equal(mockExitBlock);
+            expect(storage.getMessageBlock(hash)).to.deep.equal(mockExitBlock);
         });
 
         it("accepts provided hash", () => {
@@ -56,7 +56,7 @@ describe("MessageBlockStorage - outbound behavior", () => {
 
         it("retrieves block by hash", () => {
             const block = storage.getMessageBlock(mockBlockHash);
-            expect(block).to.equal(mockExitBlock);
+            expect(block).to.deep.equal(mockExitBlock);
         });
 
         it("returns ordered message blocks when iterating by range", () => {
