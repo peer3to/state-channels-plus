@@ -8,7 +8,7 @@ A three-peer session where one peer reaches the single test node through harness
 
 ## Tests
 
-- `delivers every event exactly once and keeps sending through the second RPC node when the first is cut`: INV-CHAINOBS-1-ASVKC1.T1.P7, REQ-CHAINOBS-2-2NCSQ3.T1.P6, REQ-RPCMIRROR-2-1P38E2.T1.P9
+- `delivers every event exactly once and keeps sending through the second RPC node when the first is cut`: INV-CHAINOBS-1-ASVKC1.T1.P7, REQ-CHAINOBS-2-2NCSQ3.T1.P6, REQ-RPCMIRROR-2-1P38E2.T1.P13
 - `sends a join and observes its event through an RPC node that refuses newHeads and offers newBlockHeaders`: REQ-CHAINOBS-3-N137ZP.T1.P37
 - `watches the channel's logs again only after the listener selects it again`: UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P10
 - `lets a select that starts while an older select is still removing the watch win, and the older select watches nothing`: UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P22

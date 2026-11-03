@@ -789,7 +789,7 @@ Specification cases tested: 18/18.
 Specification cases tested: 10/10.
 
 [`REQ-RPCMIRROR-2-1P38E2` (Reads the copy cannot answer correctly go to the node whole)](../specification/runtime/rpc-mirror.md#req-rpcmirror-2-1p38e2)
-Specification cases tested: 11/12. Untested: T1.P13.
+Specification cases tested: 12/12.
 
 [`REQ-RPCMIRROR-3-7MQH88` (A snapshot is waited for only when the service says it is ready)](../specification/runtime/rpc-mirror.md#req-rpcmirror-3-7mqh88)
 Specification cases tested: 18/18.
