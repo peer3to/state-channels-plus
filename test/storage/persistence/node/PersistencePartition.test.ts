@@ -9,7 +9,7 @@ import {
 import type { ForkId } from "@/types/types";
 import { expect } from "chai";
 import { ClassicLevel } from "classic-level";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -96,6 +96,14 @@ describe("Node persistence partition", function () {
         expect(
             JSON.parse((await database.get("metadata!identity"))!).channelId
         ).to.equal(channel.channelId.toLowerCase());
+    });
+
+    it("leaves the mode of a location the caller supplied as it was", async () => {
+        await chmod(root, 0o755);
+
+        await open(identity());
+
+        expect((await stat(root)).mode & 0o777).to.equal(0o755);
     });
 
     it("resumes an existing partition with its stored signer secret", async () => {
