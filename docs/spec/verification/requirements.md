@@ -17,8 +17,8 @@ Specification cases tested: 4/4.
 [`INV-BLOCK-PIPE-1-1AB2ME` (Atomic ordered commit)](../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me)
 Specification cases tested: 8/15. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P8.
 
-[`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)
-Specification cases tested: 8/8.
+[`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)
+Specification cases tested: 7/7.
 
 [`INV-CONFIG-1-0FJ2HX` (Deterministic effective configuration)](../specification/runtime/configuration.md#inv-config-1-0fj2hx)
 Specification cases tested: 0/8.
@@ -275,8 +275,8 @@ Specification cases tested: 13/13.
 [`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)
 Specification cases tested: 12/12.
 
-[`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)
-Specification cases tested: 38/38.
+[`REQ-CHAINOBS-3-N137ZP` (Manager events from the storage diff service, through connection loss)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)
+Specification cases tested: 26/26.
 
 [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)
 Specification cases tested: 7/7.
@@ -789,7 +789,7 @@ Specification cases tested: 18/18.
 Specification cases tested: 10/10.
 
 [`REQ-RPCMIRROR-2-1P38E2` (Reads the copy cannot answer correctly go to the node whole)](../specification/runtime/rpc-mirror.md#req-rpcmirror-2-1p38e2)
-Specification cases tested: 12/12.
+Specification cases tested: 11/12. Untested: T1.P13.
 
 [`REQ-RPCMIRROR-3-7MQH88` (A snapshot is waited for only when the service says it is ready)](../specification/runtime/rpc-mirror.md#req-rpcmirror-3-7mqh88)
 Specification cases tested: 18/18.
@@ -808,6 +808,9 @@ Specification cases tested: 11/11.
 
 [`REQ-RPCMIRROR-8-1PA83T` (Trouble with the service degrades reads to the node, never fails them)](../specification/runtime/rpc-mirror.md#req-rpcmirror-8-1pa83t)
 Specification cases tested: 14/14.
+
+[`REQ-RPCMIRROR-9-5VD1GG` (The storage diff service is required)](../specification/runtime/rpc-mirror.md#req-rpcmirror-9-5vd1gg)
+Specification cases tested: 2/2.
 
 [`REQ-RUN-2-GBCZ5B` (No shared mutable memory across contexts)](../specification/runtime/execution.md#req-run-2-gbcz5b)
 Specification cases tested: 0/1.

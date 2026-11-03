@@ -7,10 +7,9 @@
 - [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../../../../../specification/storage/durability.md#req-stor-3-4rjger)
 - [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv)
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
-- [`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../../../../../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)
-  Partial: a trusted endpoint can hold the completed-block watermark without end by failing every catch-up `eth_getLogs` or head request while its reopened socket stays open; accepted limit ([`FIND-RPC-1-E5ZHAR`](../../../../../audit/open-findings.md#find-rpc-1-e5zhar)).
-- [`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../../../../../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)
-  Partial: every listed endpoint is trusted; logs are not cross-checked, so a forged log is processed and moves the watermark past real events; accepted limit ([`FIND-RPC-1-E5ZHAR`](../../../../../audit/open-findings.md#find-rpc-1-e5zhar)).
+- [`REQ-CHAINOBS-3-N137ZP` (Manager events from the storage diff service, through connection loss)](../../../../../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)
+- [`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing)](../../../../../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)
+  Partial: the storage diff service and every listed endpoint are trusted; events are not cross-checked, so a forged event is processed and moves the watermark past real events; accepted limit ([`FIND-RPC-1-E5ZHAR`](../../../../../audit/open-findings.md#find-rpc-1-e5zhar)).
 - [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../../../../../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)
 - [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
 - [`REQ-IX-7-A004VZ` (Chain observation)](../../../../../specification/interactions.md#req-ix-7-a004vz)
@@ -30,25 +29,6 @@ Exactly-once scheduling of streamed logs
 - [x] `UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P3` — removed by a reorg
 - [x] `UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P4` — lagging node's log below the watermark; <a id=\"unit-test-event-stream-dedup-1-hhp9f4.p5\"></a>
 - [x] `UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P5` — never-seen log in the watermark block
-
-## UNIT-TEST-EVENT-CATCH-UP-1-JV263P
-
-Reconnect catch-up
-
-- Setup: catchUpLogs on the peer's first real node after a lost subscription delivery, after full processing, and right after the channel opened; through a proxy whose head read fails once; holdWatermark taken twice around a real later top-up, and once on a channel before any block completed.
-- Oracle: The lost log is dispatched once and restores the inbound head; processed and opening logs are not dispatched again; a failed head read answers the watermark with no eth_getLogs; the watermark passes a held block only after every hold on it is released.
-
-- [x] `UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P1` — lost log delivered
-- [x] `UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P2` — processed log not dispatched again
-- [x] `UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P3` — opening logs not dispatched again
-- [x] `UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P4` — node head behind the watermark: nothing read
-- [x] `UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P5` — node head at the watermark: exactly that block read
-- [x] `UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P6` — failed head read: the watermark is answered for the retry and nothing is read, the retry from it reads from the watermark
-- [x] `UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P7` — a held watermark stays while a later block completes and moves to that block on release
-- [x] `UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P8` — a repeated release leaves another hold in place
-- [x] `UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P9` — a hold taken before any watermark exists holds at the given start block, keeps the channel's first completed block unpublished, and publishes it on release
-- [x] `UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P10` — reader head below the target head: nothing read, the watermark answered for the retry
-- [x] `UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P11` — reader head at the target head: read up to it and caught up
 
 ## UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4
 

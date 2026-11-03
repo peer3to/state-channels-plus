@@ -127,7 +127,7 @@ Evidence and scope: [SpectateService report](../implementation/source/src/rpc/ne
 Open; not critical now, to consider for production. Subscriptions already use every node: block
 events and contract-log subscriptions are made on every connected node socket, again on every
 reopened one, and each block and log is delivered once
-([`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp),
+([`REQ-CHAINOBS-3-N137ZP` (Manager events from the storage diff service, through connection loss)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp),
 [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)).
 The open part is requests. The current design sends every read and transaction to the first
 connected endpoint and fails over when it drops
