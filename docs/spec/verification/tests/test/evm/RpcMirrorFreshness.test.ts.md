@@ -5,7 +5,7 @@ Exercises: [MirrorRpcProvider.ts](../../../../implementation/source/src/evm/p2pR
 
 ## Overview
 
-Each case builds a `MirrorRpcProvider` over an isolated anvil test chain with a real storage diff service following it. Recording proxies sit between the provider and the node and between the provider and the service, so the oracles are the answers the provider returns, the exact requests each of them received, the service pushes the case holds back or withholds, the counters of the mirror and the warnings it logs. Cases that need an account lazy or a snapshot absent run the service with a block source or a held snapshot that produces that status; time-bound cases hold the service's pushes and observe that a read stays pending.
+Each case builds a `MirrorRpcProvider` over an isolated anvil test chain with a real storage diff service following it. Recording proxies sit between the provider and the node and between the provider and the service, so the oracles are the answers the provider returns, the exact requests each of them received, the service pushes the case holds back or withholds and the warnings it logs. Cases that need an account lazy or a snapshot absent run the service with a block source or a held snapshot that produces that status; time-bound cases hold the service's pushes and observe that a read stays pending.
 
 This file covers the waits for a block the peer saw or a node announced, their learned backstop, and what ends them.
 
@@ -13,7 +13,8 @@ This file covers the waits for a block the peer saw or a node announced, their l
 
 - `holds a call issued after the peer's own transaction is mined until the mirror has that block`: REQ-RPCMIRROR-4-H35NFC.T1.P1
 - `holds a call until the mirror reaches a block the node announced`: REQ-RPCMIRROR-4-H35NFC.T1.P2
-- `waits the whole cap, then asks the node, for an announced block before any record has reached the copy`: REQ-RPCMIRROR-4-H35NFC.T1.P18
+- `waits the whole cap, then asks the node, for an announced block before any record has reached the copy`: REQ-RPCMIRROR-4-H35NFC.T1.P18, REQ-RPCMIRROR-4-H35NFC.T1.P20
+- `keeps the longest wait when the node answers a log query slowly`: REQ-RPCMIRROR-4-H35NFC.T1.P19
 - `answers with the node's value, not the older head's, when a block never reaches the copy within the learned backstop`: REQ-RPCMIRROR-4-H35NFC.T1.P8, REQ-RPCMIRROR-4-H35NFC.T1.P13
 - `asks the node at once when the service says its tracing of the awaited block failed`: REQ-RPCMIRROR-4-H35NFC.T1.P9
 - `asks the service once when a wait for a block starts, so a service whose upstream is behind sends the reads to the node at once`: REQ-RPCMIRROR-4-H35NFC.T1.P10, REQ-RPCMIRROR-4-H35NFC.T1.P14
