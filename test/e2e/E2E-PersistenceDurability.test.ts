@@ -203,17 +203,23 @@ describe("E2E: persistence durability", function () {
         await h.lifecycle.start(2, 1, {
             persistentPeers: [0, 1]
         });
-        const participants = [h.getPeer(0), h.getPeer(1)];
-        const gates = [];
-        for (const participant of participants) {
-            const gate = await holdFlushes(h, participant);
-            expect(gate.bound).to.equal(true);
-            await leavePendingWrite(h, participant);
-            await gate.waitUntilHeld();
-            gates.push(gate);
-        }
+        const gates = await Promise.all(
+            [h.getPeer(0), h.getPeer(1)].map(async (participant) => {
+                const gate = await holdFlushes(h, participant);
+                expect(gate.bound).to.equal(true);
+                await leavePendingWrite(h, participant);
+                await gate.waitUntilHeld();
+                return gate;
+            })
+        );
 
         const spectator = h.getPeer((await h.join.addSpectator()).index);
+        // a sync answer waits for a held disk: nothing else flushes here
+        await waitFor(async () =>
+            (await Promise.all(gates.map((gate) => gate.waiting()))).some(
+                (count) => count > 0
+            )
+        );
         await sleep(ABSENCE_WINDOW_MS);
         expect(
             await h.control(spectator).query.getStatus().request()

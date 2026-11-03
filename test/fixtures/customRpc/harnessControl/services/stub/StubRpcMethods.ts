@@ -126,6 +126,10 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.getHeldPersistenceFlushCount();
     }
 
+    public getWaitingPersistenceFlushCount(): number {
+        return this.service.getWaitingPersistenceFlushCount();
+    }
+
     public releasePersistenceFlushes(): boolean {
         this.service.releasePersistenceFlushes();
         return true;

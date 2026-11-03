@@ -84,6 +84,9 @@ export async function holdFlushes(h: Harness, peer: Peer) {
         bound,
         held,
         waitUntilHeld: () => waitFor(async () => (await held()) > 0),
+        /** flushes waiting for the held disk now */
+        waiting: async () =>
+            (await stub().getWaitingPersistenceFlushCount().request()) ?? 0,
         release: () => stub().releasePersistenceFlushes().request()
     };
 }

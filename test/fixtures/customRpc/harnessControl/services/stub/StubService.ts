@@ -1197,6 +1197,11 @@ export class StubService extends ANetworkRpcService<
         return this.heldPersistenceFlushes;
     }
 
+    /** Flushes waiting for the disk now (private internals of the controller). */
+    public getWaitingPersistenceFlushCount(): number {
+        return this.sm.storage["controller"]["flushWaiters"].length;
+    }
+
     /** Lets every parked and later flush through. */
     public releasePersistenceFlushes(): void {
         this.releasePersistenceGate?.();
