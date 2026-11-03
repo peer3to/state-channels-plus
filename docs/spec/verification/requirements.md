@@ -948,7 +948,7 @@ Specification cases tested: 8/13. Untested: T1.P2, T1.P3, T1.P5, T1.P11, T1.P12.
 Specification cases tested: 2/7. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6.
 
 [`REQ-STOR-7-K1J7EA` (Write-behind disk copy loaded once)](../specification/storage/durability.md#req-stor-7-k1j7ea)
-Specification cases tested: 22/26. Untested: T1.P2, T1.P12, T1.P19, T1.P21.
+Specification cases tested: 23/27. Untested: T1.P2, T1.P12, T1.P19, T1.P21.
 
 [`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](../specification/storage/durability.md#req-stor-8-25d06n)
 Specification cases tested: 20/22. Untested: T1.P13, T1.P19.

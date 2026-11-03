@@ -10,7 +10,7 @@ import type { ForkId } from "@/types/types";
 import { expect } from "chai";
 import { ClassicLevel } from "classic-level";
 import { ethers } from "ethers";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -138,6 +138,14 @@ describe("Node persistence partition", function () {
         const resumed = await open(respelled, String(factory.hexString(32)));
 
         expect(resumed.signerSecret).to.equal(secret);
+    });
+
+    it("leaves the mode of a location the caller supplied as it was", async () => {
+        await chmod(root, 0o755);
+
+        await open(identity());
+
+        expect((await stat(root)).mode & 0o777).to.equal(0o755);
     });
 
     it("resumes an existing partition with its stored signer secret", async () => {

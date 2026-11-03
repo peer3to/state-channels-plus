@@ -585,6 +585,31 @@ describe("E2E: persistence restart", function () {
         await h.transition.advanceState({ count: 2 });
     });
 
+    it("a restart whose partition holds no head fork still drops a queued entry whose window passed", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 1, { persistentPeers: [1] });
+        // white-box: a partition with a queued entry and no head fork, as a
+        // node leaves it when it queued gossip before its first install
+        const hash = await h.execOnHost(h.getPeer(1), async (sm) => {
+            const block = sm.storage.blocks.getLatestBlock(sm.forkId)!;
+            sm.storage.queues.restoreEntry({
+                block,
+                firstSeenAt: 1,
+                origin: 1,
+                sourcesToSignatures: new Map()
+            });
+            sm.storage.stateSnapshots["headForkId"].delete("value");
+            await sm.storage.flush();
+            return block.hash;
+        });
+
+        const restarted = await h.lifecycle.restartPeer(1);
+
+        expect(
+            await h.control(restarted).query.isBlockQueued(hash).request()
+        ).to.equal(false);
+    });
+
     it("a runtime without persistence restarts as a fresh node", async () => {
         const h = TestSession.getHarness();
         const forkId = await h.lifecycle.start(2, 1);

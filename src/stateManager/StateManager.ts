@@ -527,7 +527,10 @@ class StateManager<
      */
     private async restoreLocalHead(): Promise<void> {
         const forkId = this.storage.stateSnapshots.getHeadForkId();
-        if (forkId === undefined || this.forkId !== NULL) return;
+        if (this.forkId !== NULL) return;
+        // a partition without a head fork can still hold queued entries
+        if (forkId === undefined)
+            return this.blockQueueManager.armRestoredQueue();
         const latestBlock = this.storage.blocks.getLatestBlock(forkId);
         const head = this.storage.getPredecessor(forkId, latestBlock);
         if (!head)

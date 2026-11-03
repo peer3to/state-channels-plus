@@ -1800,6 +1800,13 @@ Residual: a future reader that sends stored signed blocks outside the state mute
 that is a written rule, not a type. Signing over the client interface is outside the gate
 ([`OQ-AUDIT-STORAGE-1-B5T2QG` (Client-interface signing outside the disk gate)](open-questions.md#oq-audit-storage-1-b5t2qg)).
 
+Further decisions, Luke 2026-11-03: the record envelope that keeps each collection's insertion order
+across a reload is kept (overriding plan 28's drop of it), so the first stored proof per participant
+and the latest stored genesis candidate per fork survive a restart; `releaseRestoredHead` stays as
+it is; a load arms queued entries also when the partition holds no head fork; only the default root
+the SDK creates is set to mode 0700, never a location the caller supplied; and `BlockStorage` keeps
+dev's behaviour for a known hash stored at other coordinates.
+
 <a id="find-storage-15-971mvn"></a>
 
 ### FIND-STORAGE-15-971MVN
