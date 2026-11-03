@@ -1,5 +1,6 @@
 import type { Mirror, MirrorCall, MirrorRead } from "./Mirror";
 import { NotLocalError } from "./MirrorUnavailableError";
+import { paramsOf } from "../RpcNodeProvider";
 import {
     isHexString,
     toQuantity,
@@ -39,11 +40,6 @@ const SUPPORTED_CALL_FIELDS: ReadonlySet<string> = new Set([
     "type",
     "chainId"
 ]);
-
-/** The params of `request` as a list. */
-export function paramsOf(request: JsonRpcPayload): unknown[] {
-    return Array.isArray(request.params) ? request.params : [request.params];
-}
 
 /** Whether `tag` names the chain's newest state; an absent tag means latest. */
 function isHeadTag(tag: unknown, allowPending: boolean): boolean {
@@ -114,6 +110,22 @@ export const LOCAL_READ_METHODS: ReadonlySet<string> = new Set([
     "eth_getTransactionReceipt"
 ]);
 
+/** The account reads of `[address, tag]`, by method, once their params are checked. */
+const ACCOUNT_READS: Record<
+    "eth_getBalance" | "eth_getCode" | "eth_getTransactionCount",
+    (address: string) => LocalRead
+> = {
+    eth_getBalance: (address) => async (mirror, observe) => ({
+        result: toQuantity(await mirror.getBalance(address, observe))
+    }),
+    eth_getCode: (address) => async (mirror, observe) => ({
+        result: await mirror.getCode(address, observe)
+    }),
+    eth_getTransactionCount: (address) => async (mirror, observe) => ({
+        result: toQuantity(await mirror.getTransactionCount(address, observe))
+    })
+};
+
 /** The local read for `request`, or undefined when the nodes must answer it. */
 export function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
     if (!LOCAL_READ_METHODS.has(request.method)) return undefined;
@@ -154,44 +166,18 @@ export function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
                 result: await mirror.getStorageAt(address, slot, observe)
             });
         }
-        case "eth_getBalance": {
-            const [address, tag] = params;
-            if (
-                params.length > 2 ||
-                !isAddress(address) ||
-                !isHeadTag(tag, true)
-            )
-                return undefined;
-            return async (mirror, observe) => ({
-                result: toQuantity(await mirror.getBalance(address, observe))
-            });
-        }
-        case "eth_getCode": {
-            const [address, tag] = params;
-            if (
-                params.length > 2 ||
-                !isAddress(address) ||
-                !isHeadTag(tag, true)
-            )
-                return undefined;
-            return async (mirror, observe) => ({
-                result: await mirror.getCode(address, observe)
-            });
-        }
+        case "eth_getBalance":
+        case "eth_getCode":
         case "eth_getTransactionCount": {
             // a pending count includes the node's mempool, which the mirror lacks
             const [address, tag] = params;
             if (
                 params.length > 2 ||
                 !isAddress(address) ||
-                !isHeadTag(tag, false)
+                !isHeadTag(tag, request.method !== "eth_getTransactionCount")
             )
                 return undefined;
-            return async (mirror, observe) => ({
-                result: toQuantity(
-                    await mirror.getTransactionCount(address, observe)
-                )
-            });
+            return ACCOUNT_READS[request.method](address);
         }
         case "eth_blockNumber":
             if (params.length !== 0) return undefined;
@@ -222,18 +208,15 @@ export function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
                 result: await mirror.getBlock(hash, full)
             });
         }
-        case "eth_getTransactionByHash": {
-            const [hash] = params;
-            if (params.length !== 1 || !isHexString(hash, 32)) return undefined;
-            return async (mirror) => ({
-                result: await mirror.getTransaction(hash)
-            });
-        }
+        case "eth_getTransactionByHash":
         case "eth_getTransactionReceipt": {
             const [hash] = params;
             if (params.length !== 1 || !isHexString(hash, 32)) return undefined;
             return async (mirror) => ({
-                result: await mirror.getTransactionReceipt(hash)
+                result:
+                    request.method === "eth_getTransactionByHash"
+                        ? await mirror.getTransaction(hash)
+                        : await mirror.getTransactionReceipt(hash)
             });
         }
         default:

@@ -183,7 +183,12 @@ function getSocketConnectionError(event: unknown): Error {
  * Resolves with the reason once the socket errors or closes. ethers never
  * reconnects its socket.
  */
-function watchSocketEnd(socket: WebSocketProvider): Promise<Error> {
+/** The params of a JSON-RPC `request` as a list. */
+export function paramsOf(request: JsonRpcPayload): unknown[] {
+    return Array.isArray(request.params) ? request.params : [request.params];
+}
+
+export function watchSocketEnd(socket: WebSocketProvider): Promise<Error> {
     // ethers does not install an `onerror` handler on its underlying socket.
     // In Node, `ws` therefore promotes a failed initial connection to an
     // uncaught Error instead of rejecting the provider readiness request.
@@ -397,9 +402,7 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
     private async forward(request: JsonRpcPayload): Promise<JsonRpcResult> {
         for (;;) {
             const connection = await this.awaitConnection(request.method);
-            const params = Array.isArray(request.params)
-                ? request.params
-                : [request.params];
+            const params = paramsOf(request);
             const outcome = await this.sendOn(
                 connection,
                 request.method,

@@ -1,4 +1,6 @@
+import { watchSocketEnd } from "../RpcNodeProvider";
 import {
+    isObject,
     LIMIT_EXCEEDED_ERROR_CODE,
     NOT_RETAINED_ERROR_CODE,
     PRUNED_ERROR_CODE,
@@ -51,22 +53,18 @@ export type MirrorFeedHandlers = {
     onLost: (reason: Error) => void;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null;
-}
-
 function isCatchUp(value: unknown): value is StorageDiffCatchUp {
     return (
-        isRecord(value) && Array.isArray(value.records) && isRecord(value.head)
+        isObject(value) && Array.isArray(value.records) && isObject(value.head)
     );
 }
 
 function isState(value: unknown): value is StorageDiffState {
-    return isRecord(value) && isRecord(value.accounts);
+    return isObject(value) && isObject(value.accounts);
 }
 
 function isBlockEnvironment(value: unknown): value is BlockEnvironment {
-    return isRecord(value);
+    return isObject(value);
 }
 
 /**
@@ -79,7 +77,6 @@ export class StorageDiffSocket extends WebSocketProvider {
     private readonly handlers: MirrorFeedHandlers;
     /** Settles with the reason once the socket errors or closes. */
     private readonly ended: Promise<Error>;
-    private hasEnded = false;
     /** True once the owner closed the socket: its end is no loss. */
     private closing = false;
 
@@ -90,20 +87,9 @@ export class StorageDiffSocket extends WebSocketProvider {
         this.handlers = handlers;
         // ethers installs no `onerror`; in Node an unhandled socket error
         // would be thrown from `ws`
-        this.ended = new Promise<Error>((resolve) => {
-            const end = (reason: Error) => {
-                if (this.hasEnded) return;
-                this.hasEnded = true;
-                resolve(reason);
-                if (!this.closing) handlers.onLost(reason);
-            };
-            this.websocket.onerror = () =>
-                end(new Error("Storage diff socket failed"));
-            // `ws` and the browser WebSocket both have `onclose`; ethers'
-            // socket type does not declare it
-            if ("onclose" in this.websocket)
-                this.websocket.onclose = () =>
-                    end(new Error("Storage diff socket closed"));
+        this.ended = watchSocketEnd(this).then((reason) => {
+            if (!this.closing) handlers.onLost(reason);
+            return reason;
         });
     }
 
@@ -182,7 +168,7 @@ export class StorageDiffSocket extends WebSocketProvider {
             [block, full, ...(minBlock ? [minBlock] : [])],
             timeoutMs
         );
-        if (answer !== null && !isRecord(answer))
+        if (answer !== null && !isObject(answer))
             throw new Error("Malformed storage diff block");
         return answer as RpcBlock | null;
     }
@@ -232,23 +218,23 @@ export class StorageDiffSocket extends WebSocketProvider {
     // not eth_subscription messages, which is all the base class routes.
     override async _processMessage(message: string): Promise<void> {
         const parsed: unknown = JSON.parse(message);
-        if (isRecord(parsed) && !("id" in parsed)) {
+        if (isObject(parsed) && !("id" in parsed)) {
             const { method, params } = parsed;
-            if (method === "scp_subscription" && isRecord(params)) {
+            if (method === "scp_subscription" && isObject(params)) {
                 this.handlers.onRecord(
                     params.subscription as SubscriptionId,
                     params.result as BlockStorageDiff
                 );
                 return;
             }
-            if (method === "scp_snapshot" && isRecord(params)) {
+            if (method === "scp_snapshot" && isObject(params)) {
                 this.handlers.onSnapshot(
                     params.subscription as SubscriptionId,
                     params.result as StorageDiffSnapshot
                 );
                 return;
             }
-            if (method === "scp_delayed" && isRecord(params)) {
+            if (method === "scp_delayed" && isObject(params)) {
                 this.handlers.onDelayed(params as StorageDiffDelayNotice);
                 return;
             }
@@ -298,7 +284,7 @@ export class StorageDiffSocket extends WebSocketProvider {
                       ])
             ]);
         } catch (error) {
-            if (isRecord(error) && isRecord(error.error)) {
+            if (isObject(error) && isObject(error.error)) {
                 if (error.error.code === PRUNED_ERROR_CODE)
                     throw new StorageDiffPrunedError(
                         "Requested block has been pruned"

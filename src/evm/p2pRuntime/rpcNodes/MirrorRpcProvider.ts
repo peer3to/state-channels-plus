@@ -1,7 +1,6 @@
 import {
     isQuantity,
     LOCAL_READ_METHODS,
-    paramsOf,
     parseLocalRead
 } from "./mirror/LocalReadParser";
 import { Mirror, type MirrorRead } from "./mirror/Mirror";
@@ -9,6 +8,7 @@ import { MirrorSampler } from "./mirror/MirrorSampler";
 import { MirrorUnavailableError } from "./mirror/MirrorUnavailableError";
 import MultiRpcProvider from "./MultiRpcProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
+import { paramsOf } from "./RpcNodeProvider";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
 import { DEFAULT_MIRROR_SAMPLE_RATE } from "@/utils/config";

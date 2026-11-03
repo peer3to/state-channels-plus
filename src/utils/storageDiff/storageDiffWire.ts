@@ -11,6 +11,11 @@ export const NOT_RETAINED_ERROR_CODE = -32002;
 /** A request passed one of the service's limits; the connection stays open. */
 export const LIMIT_EXCEEDED_ERROR_CODE = -32005;
 
+/** Whether `value` is a JSON object: not null, not an array. */
+export function isObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /** Lower-case `0x`-prefixed 20-byte account address. */
 export type AccountAddress = string;
 /** 32-byte storage key, `0x` + 64 lower-case hex digits. */

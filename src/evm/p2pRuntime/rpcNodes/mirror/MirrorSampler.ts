@@ -1,4 +1,5 @@
-import { paramsOf, REVERT_ERROR_CODE } from "./LocalReadParser";
+import { paramsOf } from "../RpcNodeProvider";
+import { REVERT_ERROR_CODE } from "./LocalReadParser";
 import type { Mirror, MirrorRead } from "./Mirror";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";

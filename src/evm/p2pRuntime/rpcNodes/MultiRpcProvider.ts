@@ -1,4 +1,4 @@
-import { NodeSocketSubscriptions } from "./RpcNodeProvider";
+import { NodeSocketSubscriptions, paramsOf } from "./RpcNodeProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
@@ -240,9 +240,7 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     protected noteNodeAnswer(_method: string, _durationMs: number): void {}
 
     protected async forward(request: JsonRpcPayload): Promise<JsonRpcResult> {
-        const params = Array.isArray(request.params)
-            ? request.params
-            : [request.params];
+        const params = paramsOf(request);
         for (;;) {
             this.assertServing(request.method);
             for (const node of this.nodes) {
