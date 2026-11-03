@@ -1,4 +1,7 @@
 // @spec-test-coverage-ignore: replay of recorded Asset Hub frames, the node for the head subscription cases; declarations live in NodeHeadSubscription.test.ts and the cases of the proxies that use asNewBlockHeadersNode
+import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
+import RpcNodeProvider from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
+import { createLogger } from "@/utils/logging";
 import { once } from "node:events";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -25,6 +28,10 @@ const recorded: {
 
 /** The block of the header the node pushes. */
 export const PUSHED_BLOCK = BigInt(recorded.block);
+
+/** The id the node hands out for a newBlockHeaders subscription. */
+export const NEW_BLOCK_HEADERS_SUBSCRIPTION =
+    recorded.newBlockHeadersAck.result;
 
 /**
  * What a relay in front of a node that offers newHeads (anvil) does with a
@@ -69,6 +76,8 @@ export function asNewBlockHeadersNode(request: {
 export class NewBlockHeadersNode {
     /** The subscription kinds each `eth_subscribe` asked for, in order. */
     readonly subscribeKinds: string[] = [];
+    /** The subscription ids each `eth_unsubscribe` named, in order. */
+    readonly unsubscribedIds: string[] = [];
     private readonly server: WebSocketServer;
     private readonly subscriptions = new Set<WebSocket>();
     /** False: the node's refusal of newHeads does not name newBlockHeaders. */
@@ -134,6 +143,20 @@ export class NewBlockHeadersNode {
         const answer = (recordedAnswer: Frame) =>
             socket.send(JSON.stringify({ ...recordedAnswer, id: request.id }));
         if (request.method === "eth_chainId") return answer(recorded.chainId);
+        if (request.method === "eth_unsubscribe") {
+            // Not recorded: the node ends the subscription it handed out
+            const id = String(request.params[0]);
+            this.unsubscribedIds.push(id);
+            const known = id === NEW_BLOCK_HEADERS_SUBSCRIPTION;
+            if (known) this.subscriptions.delete(socket);
+            return socket.send(
+                JSON.stringify({
+                    jsonrpc: "2.0",
+                    id: request.id,
+                    result: known
+                })
+            );
+        }
         if (request.method !== "eth_subscribe")
             // Fault injection, not recorded: any other method is unknown to this node
             return socket.send(
@@ -157,5 +180,36 @@ export class NewBlockHeadersNode {
         if (kind !== "newBlockHeaders") return answer(recorded.newHeadsRefusal);
         this.subscriptions.add(socket);
         answer(recorded.newBlockHeadersAck);
+    }
+}
+
+/**
+ * Runs `use` with a provider over one {@link NewBlockHeadersNode}, which
+ * offers newBlockHeaders in its refusal of newHeads unless
+ * `offersNewBlockHeaders` is false; all of it ends in `finally`.
+ */
+export async function withNewBlockHeadersProvider(
+    offersNewBlockHeaders: boolean,
+    use: (
+        node: NewBlockHeadersNode,
+        provider: MultiRpcProvider,
+        rpcNode: RpcNodeProvider
+    ) => Promise<void>
+): Promise<void> {
+    const node = await NewBlockHeadersNode.start(offersNewBlockHeaders);
+    const logger = createLogger(
+        {},
+        {},
+        { level: "error", attachErrorListener: false }
+    );
+    const rpcNode = new RpcNodeProvider(node.url, logger);
+    const provider = new MultiRpcProvider([rpcNode], logger);
+    try {
+        await rpcNode.firstAttempt;
+        await use(node, provider, rpcNode);
+    } finally {
+        provider.destroy();
+        await node.close();
+        logger.dispose();
     }
 }

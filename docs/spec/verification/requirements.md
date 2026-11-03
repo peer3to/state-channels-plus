@@ -276,7 +276,7 @@ Specification cases tested: 13/13.
 Specification cases tested: 12/12.
 
 [`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)
-Specification cases tested: 37/37.
+Specification cases tested: 38/38.
 
 [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)
 Specification cases tested: 7/7.
