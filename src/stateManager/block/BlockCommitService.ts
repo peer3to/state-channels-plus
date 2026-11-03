@@ -97,6 +97,11 @@ export default class BlockCommitService {
             );
         }
 
+        // The block is canonical from here: a failure in the remaining side
+        // effects, the flush included, must not roll the VM back behind
+        // stored state.
+        options?.onBlockCommitted?.();
+
         // our signature leaves the process only once the commit is on disk
         if (signs || block.author === sm.signerAddress)
             await sm.storage.flush();
@@ -114,9 +119,6 @@ export default class BlockCommitService {
                 )
             );
         }
-        // The block is canonical from here: a failure in the remaining side
-        // effects must not roll the VM back behind stored state.
-        options?.onBlockCommitted?.();
         if (!isDisputeReplay) {
             // counts toward the force-join bound while this signer's join is
             // observed and not seated; the join service ignores it otherwise

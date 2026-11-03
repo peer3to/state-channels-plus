@@ -1161,11 +1161,19 @@ export class StubService extends ANetworkRpcService<
     }
 
     /**
-     * Fail every disk batch a flush waits for (the runtime then aborts);
-     * timer batches still reach disk. Applies to the partition bound now or,
-     * without one, to the next one bound; true when one is bound now.
+     * Fail every disk batch a flush waits for (the runtime then aborts, or
+     * with `holdAbort` parks that abort in `heldAbort`); timer batches still
+     * reach disk. Applies to the partition bound now or, without one, to the
+     * next one bound; true when one is bound now.
      */
-    public failPersistenceFlushes(): boolean {
+    public failPersistenceFlushes(holdAbort = false): boolean {
+        if (holdAbort) {
+            const abort = this.sm.abort.bind(this.sm);
+            this.sm.abort = () => {
+                this.sm.abort = abort;
+                this.heldAbort = abort;
+            };
+        }
         return this.gatePersistenceFlushes(() =>
             Promise.reject(new Error("injected flush failure"))
         );
