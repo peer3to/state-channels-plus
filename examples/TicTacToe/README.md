@@ -36,6 +36,13 @@ anvil -b 2 --block-base-fee-per-gas 0 --disable-code-size-limit --disable-min-pr
 ```
 This will also run a node on http://localhost:8545
 
+## Run the storage diff service
+The SDK needs a storage diff service that follows the node. It traces blocks with `prestateTracer`, which anvil supports and ganache does not. From the repository root:
+```shell
+yarn infra:storage-diff --upstream ws://127.0.0.1:8545
+```
+It listens on `ws://127.0.0.1:19778`, the `STORAGE_DIFF_URL` of the example config. Its flags are described in [scripts/infra/README.md](../../scripts/infra/README.md#storage-diff-service).
+
 ## Deploy contracts
 To deploy to a custom network, add a .env file and define PROVIDER_URL (look at .env.example). Default network: http://localhost:8545
 ```shell

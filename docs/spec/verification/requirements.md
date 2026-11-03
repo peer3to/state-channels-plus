@@ -810,7 +810,7 @@ Specification cases tested: 11/11.
 Specification cases tested: 14/14.
 
 [`REQ-RPCMIRROR-9-5VD1GG` (The storage diff service is required)](../specification/runtime/rpc-mirror.md#req-rpcmirror-9-5vd1gg)
-Specification cases tested: 2/2.
+Specification cases tested: 3/3.
 
 [`REQ-RUN-2-GBCZ5B` (No shared mutable memory across contexts)](../specification/runtime/execution.md#req-run-2-gbcz5b)
 Specification cases tested: 0/1.

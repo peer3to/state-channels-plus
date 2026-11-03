@@ -132,6 +132,17 @@ export function assertLogQueryMaxBlocks(maxBlocks: number): void {
 }
 
 /**
+ * Rejects a missing storage diff service URL: the runtime has no mode
+ * without the service.
+ */
+export function assertStorageDiffUrl(url: string): void {
+    if (!url)
+        throw new Error(
+            "STORAGE_DIFF_URL is required: set the ws:// URL of the storage diff service"
+        );
+}
+
+/**
  * Rejects a mirror sampling fraction outside 0 to 1: NaN never samples and a
  * value above 1 always does.
  */

@@ -618,7 +618,8 @@ async function main(options = {}) {
             [
                 process.pid,
                 ...infra.nodes.map((n) => n.proc.pid),
-                ...infra.discoveries.map((d) => d.child.pid)
+                ...infra.discoveries.map((d) => d.child.pid),
+                ...infra.services.map((s) => s.child.pid)
             ].filter(Boolean);
 
         const stats = await runScheduler({

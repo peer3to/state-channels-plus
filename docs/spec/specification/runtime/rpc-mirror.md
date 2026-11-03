@@ -37,7 +37,7 @@ The client is a drop-in for the plain multi-endpoint provider ([chain-observatio
 
 **<a id="req-rpcmirror-8-1pa83t"></a>`REQ-RPCMIRROR-8-1PA83T` — Trouble with the service degrades reads to the node, never fails them.** A failure of the storage diff service MUST NOT fail a peer's read, and a local EVM that fails to start MUST be started again by the next call: a read the copy cannot answer, or a state fill the service cannot complete, is answered by the node. A failed `scp_unsubscribe` of a superseded subscription costs only duplicate pushes the new subscription also carries, so it MUST be logged and MUST keep the service connection. A request the service refuses past one of its limits, or for naming more addresses than it allows ([`REQ-SDS-12-JDW71Y` (What peers can make the service hold is bounded)](storage-diff-service.md#req-sds-12-jdw71y)), changed nothing on the service: the client MUST keep its copy and the connection, the read is answered by the node, and a pushed record whose catch-up was refused waits for a later record to catch up. A refused catch-up of accounts the client has just followed is the exception: the records after the head may lack them, so the connection starts over. A service that is connected but silent MUST NOT stall a read: a read's wait for the copy and every request it makes of the service end within the longest wait of [`REQ-RPCMIRROR-4-H35NFC`](rpc-mirror.md#req-rpcmirror-4-h35nfc), after which the node answers it, and a request the copy's own following makes (a pushed record's catch-up) ends within the SDK's RPC deadline. A request that runs out of time while the copy is being changed drops the service connection; one that only reads the service's head, blocks, transactions or receipts does not.
 
-**<a id="req-rpcmirror-9-5vd1gg"></a>`REQ-RPCMIRROR-9-5VD1GG` — The storage diff service is required.** The client MUST refuse to build its provider, and to start its runtime chain context, without the URL of a storage diff service, and MUST do so before any RPC node is asked, so a missing service leaves nothing running and the failure names the missing setting. There is no mode in which the client runs without the service.
+**<a id="req-rpcmirror-9-5vd1gg"></a>`REQ-RPCMIRROR-9-5VD1GG` — The storage diff service is required.** The client MUST refuse to build its provider, through its constructor or the exported chain-access factory, and to start its runtime chain context, without the URL of a storage diff service, and MUST do so before any RPC node is asked, so a missing service leaves nothing running and the failure names the missing setting. There is no mode in which the client runs without the service.
 
 ## Assumptions and constraints
 
@@ -408,17 +408,19 @@ The connection stays open, a warning is logged, and reads continue from the copy
 
 **Setup and stimulus:**
 
-Build the provider with an empty service URL; start the runtime chain context with an empty service URL and an unreachable node.
+Build the provider with an empty service URL; build the exported chain access with an empty service URL and a reachable node behind a proxy; start the runtime chain context with an empty service URL and an unreachable node.
 
 **Expected result:**
 
-Both fail with the missing-setting message; the chain context fails with it, not with the unreachable node's refusal, because no node was opened.
+Each fails with the missing-setting message. The chain access leaves no socket open at the proxy, and the chain context fails with the message rather than the unreachable node's refusal: no node was opened.
 
 **Required permutations:**
 
 <a id="req-rpcmirror-9-5vd1gg.t1.p1"></a>`REQ-RPCMIRROR-9-5VD1GG.T1.P1` — building the provider without a service URL is refused
 
 <a id="req-rpcmirror-9-5vd1gg.t1.p2"></a>`REQ-RPCMIRROR-9-5VD1GG.T1.P2` — starting the runtime chain context without a service URL is refused before any node is asked
+
+<a id="req-rpcmirror-9-5vd1gg.t1.p3"></a>`REQ-RPCMIRROR-9-5VD1GG.T1.P3` — building the exported chain access without a service URL is refused before any node is asked
 
 ### Coverage rule
 

@@ -30,8 +30,8 @@ import * as factory from "@test/factory";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { ethers, id, Log } from "ethers";
 
-/** The bound of the wait for logs a catch-up scheduled; the drain is local. */
-const CATCH_UP_DRAIN_TIMEOUT_MS = 30_000;
+/** The bound of the wait for scheduled logs to complete; the drain is local. */
+const SCHEDULED_EVENTS_DRAIN_TIMEOUT_MS = 30_000;
 
 export type ConcurrentCalldataRecoveryProbe = {
     queryCount: number;
@@ -391,7 +391,7 @@ export class ValidationProbeService extends ANetworkRpcService<
      */
     public async drainScheduledEvents(): Promise<boolean> {
         await this.sm.eventSyncService.waitForScheduled(
-            CATCH_UP_DRAIN_TIMEOUT_MS
+            SCHEDULED_EVENTS_DRAIN_TIMEOUT_MS
         );
         return true;
     }
@@ -407,7 +407,7 @@ export class ValidationProbeService extends ANetworkRpcService<
         const sm = this.sm;
         if (redelivery === "reorgedAtWatermark")
             await sm.eventSyncService.waitForScheduled(
-                CATCH_UP_DRAIN_TIMEOUT_MS
+                SCHEDULED_EVENTS_DRAIN_TIMEOUT_MS
             );
         const contract = sm.stateChannelManagerContract;
         const logs = await contract.queryFilter(
@@ -493,7 +493,7 @@ export class ValidationProbeService extends ANetworkRpcService<
     /**
      * Start a select of a new channel, or a clear, on the listener of the
      * selected channel, then at once a select of another new channel. The
-     * first call unsubscribes the live sockets, so the second finds nothing
+     * first call stops the channel's log watch, so the second finds nothing
      * left to remove and resumes first. Selects the original channel again
      * afterwards.
      */
@@ -533,13 +533,15 @@ export class ValidationProbeService extends ANetworkRpcService<
     }
 
     /**
-     * Deliver the channel's ChannelOpened log again the way a lagging RPC
-     * node's stream would, once every scheduled log has completed. Record-only:
+     * Deliver the channel's ChannelOpened log again as the log feed would
+     * deliver it, once every scheduled log has completed. Record-only:
      * the handler records a call instead of opening the channel twice.
      */
     public async probeStreamedLogBelowWatermark(): Promise<StreamedLogDeliveryProbe> {
         const sm = this.sm;
-        await sm.eventSyncService.waitForScheduled(CATCH_UP_DRAIN_TIMEOUT_MS);
+        await sm.eventSyncService.waitForScheduled(
+            SCHEDULED_EVENTS_DRAIN_TIMEOUT_MS
+        );
         const contract = sm.stateChannelManagerContract;
         const logs = await contract.queryFilter(
             contract.filters.ChannelOpened(sm.channelId)

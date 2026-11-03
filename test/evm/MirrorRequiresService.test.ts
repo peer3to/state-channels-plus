@@ -1,15 +1,18 @@
 import { NewBlockHeadersNode } from "../fixtures/node/NewBlockHeadersNode";
+import { RpcNodeProxy } from "../fixtures/node/RpcNodeProxy";
 import MirrorRpcProvider from "@/evm/p2pRuntime/rpcNodes/MirrorRpcProvider";
 import RpcNodeProvider from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import { createRuntimeChainContext } from "@/evm/p2pRuntime/RuntimeChainContext";
+import { createRpcNodesProvider } from "@/index";
+import { sleep } from "@/utils";
 import { config } from "@/utils/config";
 import { createLogger } from "@/utils/logging";
 import { rejectionOf } from "@test/fixtures/node/StorageDiffSession";
 import { expect } from "chai";
 
 const MISSING_SERVICE = "STORAGE_DIFF_URL is required";
-/** How long a request that only a node answers may stay unanswered. */
-const UNANSWERED_AFTER_MS = 10_000;
+/** Time is the input: how long a socket that must not open is watched for. */
+const ABSENCE_WINDOW_MS = 1_000;
 
 describe("Storage diff service requirement", function () {
     it("refuses to build the mirror provider without a storage diff URL", async function () {
@@ -29,6 +32,34 @@ describe("Storage diff service requirement", function () {
             ).to.throw(MISSING_SERVICE);
         } finally {
             rpcNode.destroy();
+            await node.close();
+            logger.dispose();
+        }
+    });
+
+    it("refuses to build the exported chain access without a storage diff URL before any node is asked", async function () {
+        const node = await NewBlockHeadersNode.start();
+        const proxy = await RpcNodeProxy.start(node.url);
+        const logger = createLogger(
+            {},
+            {},
+            { level: "error", attachErrorListener: false }
+        );
+        try {
+            const failure = await rejectionOf(
+                createRpcNodesProvider(
+                    { PROVIDER_URL: proxy.url, STORAGE_DIFF_URL: "" },
+                    logger
+                )
+            );
+            await sleep(ABSENCE_WINDOW_MS);
+
+            expect(failure).to.be.instanceOf(Error);
+            expect((failure as Error).message).to.include(MISSING_SERVICE);
+            // nothing was left connecting to the reachable node
+            expect(proxy.openSockets).to.equal(0);
+        } finally {
+            await proxy.close();
             await node.close();
             logger.dispose();
         }

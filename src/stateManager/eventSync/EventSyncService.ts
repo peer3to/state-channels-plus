@@ -89,8 +89,9 @@ export type LogPageReadFailure = { failedFrom: BlockNumber; error: unknown };
  * most `maxSpan` blocks, and hand each window's logs to `onPage` before the
  * next window is read. Stops at the first window whose read fails and
  * answers where it starts, so a retry reads only from there; `undefined`
- * once every window was read. The single log reader of the event sync: the
- * reconnect catch-up and the recovery queries both page through it.
+ * once every window was read. The single node log reader: the log feed's
+ * reads below the service's retention and the recovery queries both page
+ * through it.
  */
 export async function readLogPages(
     provider: Provider,
@@ -194,11 +195,11 @@ export default class EventSyncService {
     }
 
     /**
-     * Schedule a log one RPC node's stream (live or catch-up) delivered. A
-     * log below the completed-block watermark is dropped: its block is fully
-     * processed and its dedup key may already be pruned, so a lagging node
-     * would otherwise dispatch it again. Recovery queries still use
-     * scheduleLog: they deliberately re-read blocks below the watermark.
+     * Schedule a log the provider's log feed delivered. A log below the
+     * completed-block watermark is dropped: its block is fully processed and
+     * its dedup key may already be pruned, so a second delivery of it would
+     * otherwise dispatch it again. Recovery queries still use scheduleLog:
+     * they deliberately re-read blocks below the watermark.
      */
     scheduleStreamedLog(
         log: Log,

@@ -1,7 +1,6 @@
 import MirrorRpcProvider, {
     type MirrorProviderOptions
 } from "@/evm/p2pRuntime/rpcNodes/MirrorRpcProvider";
-import type MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import RpcNodeProvider, {
     type ExpectedChain
 } from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
@@ -9,6 +8,7 @@ import {
     assertLogQueryMaxBlocks,
     assertMirrorMaxFollowedContracts,
     assertMirrorSampleRate,
+    assertStorageDiffUrl,
     type Config
 } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -16,7 +16,7 @@ import type { Logger } from "@/utils/logging/Logger";
 import { Signer, Wallet } from "ethers";
 
 export interface RuntimeChainContext {
-    provider: MultiRpcProvider;
+    provider: MirrorRpcProvider;
     signer: Signer;
 }
 
@@ -97,7 +97,9 @@ export async function createRpcNodesProvider(
         >,
     logger: Logger,
     mirror: Pick<MirrorProviderOptions, "customPrecompiles" | "owner"> = {}
-): Promise<MultiRpcProvider> {
+): Promise<MirrorRpcProvider> {
+    // checked before any node opens, so a missing service leaves nothing behind
+    assertStorageDiffUrl(config.STORAGE_DIFF_URL);
     // a bad fraction would only mis-sample reads
     if (config.MIRROR_SAMPLE_RATE !== undefined)
         assertMirrorSampleRate(config.MIRROR_SAMPLE_RATE);
@@ -146,11 +148,6 @@ export async function createRuntimeChainContext(
 ): Promise<RuntimeChainContext> {
     // a bad window size would only surface at the first catch-up
     assertLogQueryMaxBlocks(config.LOG_QUERY_MAX_BLOCKS);
-    // checked before any node opens, so a missing service leaves nothing behind
-    if (!config.STORAGE_DIFF_URL)
-        throw new Error(
-            "STORAGE_DIFF_URL is required: set the ws:// URL of the storage diff service"
-        );
     const secret = signerSecret.trim();
     // derived before any node opens, so a bad secret leaves nothing behind
     const wallet = /^0x[0-9a-fA-F]{64}$/.test(secret)

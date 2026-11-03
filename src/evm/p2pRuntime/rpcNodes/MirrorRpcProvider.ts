@@ -12,7 +12,10 @@ import type RpcNodeProvider from "./RpcNodeProvider";
 import { paramsOf } from "./RpcNodeProvider";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
-import { DEFAULT_MIRROR_SAMPLE_RATE } from "@/utils/config";
+import {
+    assertStorageDiffUrl,
+    DEFAULT_MIRROR_SAMPLE_RATE
+} from "@/utils/config";
 import type { Logger } from "@/utils/logging/Logger";
 import { RecentSlowest } from "@/utils/storageDiff/LearnedBackstop";
 import {
@@ -72,16 +75,14 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
         logger: Logger,
         options: MirrorProviderOptions
     ) {
+        // before the base class takes the nodes, so a refusal leaves them as they were
+        assertStorageDiffUrl(options.storageDiffUrl);
         super(nodes, logger);
         this.sampler = new MirrorSampler(
             (method, params) => this.requestNode(method, params),
             logger,
             options.sampleRate ?? DEFAULT_MIRROR_SAMPLE_RATE
         );
-        if (!options.storageDiffUrl)
-            throw new Error(
-                "STORAGE_DIFF_URL is required: set the ws:// URL of the storage diff service"
-            );
         // an event a node announced at block N must find the mirror at N
         for (const node of nodes)
             this.unwatchNodes.push(
