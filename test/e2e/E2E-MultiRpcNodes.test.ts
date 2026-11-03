@@ -63,6 +63,37 @@ describe("E2E: Multiple RPC nodes", function () {
         ).to.equal(callsBeforeCut + 2);
     });
 
+    it("sends a join and observes its event through an RPC node that refuses newHeads and offers newBlockHeaders", async function () {
+        const h = TestSession.getHarness();
+        const proxied = 2;
+        // the peer's only node has Asset Hub eth-rpc's head subscriptions
+        await h.lifecycle.start(3, 0, {
+            rpcNodeProxiesByPeer: { [proxied]: 1 },
+            rpcNodeProxiesOfferingOnlyNewBlockHeaders: { [proxied]: [0] }
+        });
+        const [proxy] = h.getRpcNodeProxies(proxied);
+        const callsBefore = h.event.getEventCallCount(
+            proxied,
+            "onInboundMessagesProcessed"
+        );
+
+        // the proxied peer signs and submits its own top-up and waits for it
+        // Mutation: no newBlockHeaders after the refusal, the peer hears no block
+        await h.join.forceInboundJoinWait({
+            participant: h.getPeer(proxied).address
+        });
+        await h.event.settleContractEvents(proxied);
+
+        expect(
+            h.event.getEventCallCount(proxied, "onInboundMessagesProcessed")
+        ).to.equal(callsBefore + 1);
+        expect(
+            proxy.forwardedRequests
+                .filter((request) => request.method === "eth_subscribe")
+                .map((request) => (request.params as unknown[])[0])
+        ).to.include("newBlockHeaders");
+    });
+
     it("delivers the event missed while cut when a newer event arrives during the catch-up read", async function () {
         const h = TestSession.getHarness();
         const proxied = 2;

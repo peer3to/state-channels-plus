@@ -74,6 +74,25 @@ export type RpcNodeProviderOptions = {
 /** The network of a node that serves no Ethereum RPC: never asked for. */
 const NOT_ETHEREUM_NETWORK = new Network("not-ethereum", 0n);
 
+/**
+ * Whether the node refused a subscription kind but names `newBlockHeaders` as
+ * an offered one. Asset Hub's eth-rpc answers "Invalid params" and names the
+ * offered kinds in the error's `data`.
+ */
+function offersNewBlockHeaders(error: unknown): boolean {
+    const reasons =
+        typeof error === "object" && error !== null && "error" in error
+            ? [
+                  (error.error as { message?: unknown })?.message,
+                  (error.error as { data?: unknown })?.data
+              ]
+            : [error instanceof Error ? error.message : undefined];
+    return reasons.some(
+        (reason) =>
+            typeof reason === "string" && reason.includes("newBlockHeaders")
+    );
+}
+
 /** A node's WebSocket. */
 class NodeSocket extends WebSocketProvider {
     /**
@@ -96,6 +115,8 @@ class NodeSocket extends WebSocketProvider {
     // before the answer) is settled here; the subscription ends with the socket.
     // ethers also keeps an eth_subscribe answer unhandled: one cancelled by
     // this socket's destroy never settles, as the subscription is gone with it.
+    // A node that refuses newHeads but offers newBlockHeaders (Asset Hub) is
+    // asked for that instead: its pushes carry the same header `number`.
     override send(
         method: string,
         params: unknown[] | Record<string, unknown>
@@ -105,6 +126,12 @@ class NodeSocket extends WebSocketProvider {
         if (method === "eth_subscribe")
             return answer.catch((error: unknown) => {
                 if (this.destroyed) return new Promise<never>(() => undefined);
+                if (
+                    Array.isArray(params) &&
+                    params[0] === "newHeads" &&
+                    offersNewBlockHeaders(error)
+                )
+                    return this.send("eth_subscribe", ["newBlockHeaders"]);
                 throw error;
             });
         return answer;

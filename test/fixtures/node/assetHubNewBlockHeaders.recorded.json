@@ -1,0 +1,48 @@
+{
+    "recordedAt": "2026-11-01T15:53:01.056Z",
+    "endpoint": "wss://eth-rpc.polkadot.io",
+    "block": 22576926,
+    "note": "Read-only exchange with the endpoint: eth_subscribe newHeads (refused), eth_subscribe newBlockHeaders (accepted), first push, and eth_chainId. Request ids are those of the recording; a replay answers with the id of the request it receives.",
+    "newHeadsRefusal": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+            "code": -32602,
+            "message": "Invalid params",
+            "data": "unknown variant `newHeads`, expected `newBlockHeaders` or `logs` at line 1 column 10"
+        }
+    },
+    "newBlockHeadersAck": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": "9aollPXadZQtqYev"
+    },
+    "headerPush": {
+        "jsonrpc": "2.0",
+        "method": "eth_subscription",
+        "params": {
+            "subscription": "9aollPXadZQtqYev",
+            "result": {
+                "number": "0x1587f1e",
+                "hash": "0xa511f9e8b87a6ecebcbdb2e38da404e8b2cb76a2fccaaf9e1c613a0d1a04f068",
+                "parentHash": "0xb9f435e1ca8ff17daa7fcd6afa7f9cacc6265913fe5a03c7eb2c69d2088c92b9",
+                "nonce": "0x0000000000000000",
+                "sha3Uncles": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+                "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+                "stateRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+                "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+                "miner": "0xaf481ce21d40925674782ad337a7bdb46a074b8a",
+                "extraData": "0x",
+                "gasLimit": "0xffffffffffffffff",
+                "gasUsed": "0x0",
+                "timestamp": "0x6ae76050"
+            }
+        }
+    },
+    "chainId": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": "0x190f1b43"
+    }
+}

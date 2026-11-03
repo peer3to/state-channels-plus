@@ -327,7 +327,9 @@ export class PeerTestHarness<
             hostRootManifest: options?.hostRootManifest,
             executorCallGasLimitByPeer: options?.executorCallGasLimitByPeer,
             rpcNodeProxiesByPeer: options?.rpcNodeProxiesByPeer,
-            rpcNodeProxiesCutAtStart: options?.rpcNodeProxiesCutAtStart
+            rpcNodeProxiesCutAtStart: options?.rpcNodeProxiesCutAtStart,
+            rpcNodeProxiesOfferingOnlyNewBlockHeaders:
+                options?.rpcNodeProxiesOfferingOnlyNewBlockHeaders
         };
         if (
             !this.options.timeConfig?.agreementTime ||
@@ -944,6 +946,9 @@ export class PeerTestHarness<
         for (const position of this.options.rpcNodeProxiesCutAtStart?.[index] ??
             [])
             proxies[position].cut();
+        for (const position of this.options
+            .rpcNodeProxiesOfferingOnlyNewBlockHeaders?.[index] ?? [])
+            proxies[position].offerOnlyNewBlockHeaders();
         this.rpcNodeProxies.set(index, proxies);
         return proxies;
     }

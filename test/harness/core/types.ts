@@ -176,6 +176,12 @@ export type HarnessOptions<
      * down. Restore them through `PeerTestHarness.getRpcNodeProxies`.
      */
     rpcNodeProxiesCutAtStart?: Record<number, number[]>;
+    /**
+     * Proxies of `rpcNodeProxiesByPeer` that offer head subscriptions as
+     * Asset Hub's eth-rpc does (peer index -> proxy positions): newHeads is
+     * refused and newBlockHeaders accepted.
+     */
+    rpcNodeProxiesOfferingOnlyNewBlockHeaders?: Record<number, number[]>;
 };
 
 export type TestPeer<

@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: test-owned WebSocket proxy in front of the test node; executable evidence belongs to its calling test declarations
+import { asNewBlockHeadersNode } from "./NewBlockHeadersNode";
 import { toQuantity } from "ethers";
 import { once } from "node:events";
 import { type RawData, WebSocket, WebSocketServer } from "ws";
@@ -179,6 +180,8 @@ export class RpcNodeProxy {
     private withheldNotifications?: WithheldNotification[];
     private isCut = false;
     private isBlackholed = false;
+    /** Whether head subscriptions are offered as Asset Hub's eth-rpc offers them. */
+    private offersOnlyNewBlockHeaders = false;
 
     private constructor(server: WebSocketServer, upstreamUrl: string) {
         this.server = server;
@@ -402,6 +405,14 @@ export class RpcNodeProxy {
         };
     }
 
+    /**
+     * Offer head subscriptions as Asset Hub's eth-rpc does: refuse newHeads,
+     * naming newBlockHeaders, and accept newBlockHeaders.
+     */
+    offerOnlyNewBlockHeaders(): void {
+        this.offersOnlyNewBlockHeaders = true;
+    }
+
     /** Keep every socket open but forward nothing in either direction. */
     blackhole(): void {
         this.isBlackholed = true;
@@ -448,6 +459,17 @@ export class RpcNodeProxy {
             // recorded, then lost: the path to the node is dead
             if (this.isBlackholed) return;
             if (method && this.swallowedMethods.has(method)) return;
+            const asAssetHub = this.offersOnlyNewBlockHeaders
+                ? asNewBlockHeadersNode({ method, id, params })
+                : undefined;
+            if (asAssetHub && "answer" in asAssetHub) {
+                client.send(asAssetHub.answer);
+                return;
+            }
+            if (asAssetHub) {
+                forward(Buffer.from(asAssetHub.forward), false);
+                return;
+            }
             const reply = (answer: object) =>
                 client.send(JSON.stringify({ jsonrpc: "2.0", id, ...answer }));
             const passing = method
