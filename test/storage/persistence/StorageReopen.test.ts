@@ -28,13 +28,32 @@ async function reopen(
     return openStorage(database);
 }
 
-async function openError(database: GatedMemoryLevel): Promise<Error> {
+async function openError(
+    database: GatedMemoryLevel,
+    storage = new Storage()
+): Promise<Error> {
     try {
-        await openStorage(database);
+        await storage.open(database.handle(), noFailure);
     } catch (error) {
         return error as Error;
     }
     throw new Error("expected the open to fail");
+}
+
+// a refused load leaves memory empty and the storage free to bind again
+async function expectRefusalReleased(
+    storage: Storage,
+    forkId: ForkId
+): Promise<void> {
+    expect(storage.stateSnapshots.getHeadForkId()).to.equal(undefined);
+    expect(storage.blocks.getLatestBlockHeight(forkId)).to.equal(-1);
+    expect(storage.stateSnapshots.getGenesisSnapshotByForkId(forkId)).to.equal(
+        undefined
+    );
+    const fresh = new GatedMemoryLevel();
+    await storage.open(fresh.handle(), noFailure);
+    expect(fresh.status).to.equal("open");
+    await storage.close();
 }
 
 function encodedBlock(block: Block | undefined): string | undefined {
@@ -675,12 +694,14 @@ describe("Storage reopen", function () {
             storage.blocks.deleteBlock(blocks[1].hash);
             await storage.close();
 
-            const error = await openError(database);
+            const reopened = new Storage();
+            const error = await openError(database, reopened);
 
             expect(error.message).to.include(`misses block 1`);
             expect(error.message).to.include(String(forkId));
             expect(error.message).to.include("memory:gated");
             expect(database.status).to.equal("closed");
+            await expectRefusalReleased(reopened, forkId);
         });
 
         it("refuses a head-fork block that does not link to the block below it", async () => {
@@ -697,12 +718,14 @@ describe("Storage reopen", function () {
             );
             await storage.close();
 
-            const error = await openError(database);
+            const reopened = new Storage();
+            const error = await openError(database, reopened);
 
             expect(error.message).to.include(
                 `${forkId}:2 does not link to the block below it`
             );
             expect(database.status).to.equal("closed");
+            await expectRefusalReleased(reopened, forkId);
         });
 
         it("refuses a head fork without the snapshot and state of its latest block", async () => {
@@ -719,12 +742,14 @@ describe("Storage reopen", function () {
             );
             await storage.close();
 
-            const error = await openError(database);
+            const reopened = new Storage();
+            const error = await openError(database, reopened);
 
             expect(error.message).to.include(
                 "has no snapshot and state at height 1"
             );
             expect(database.status).to.equal("closed");
+            await expectRefusalReleased(reopened, forkId);
         });
     });
 });

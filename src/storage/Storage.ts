@@ -98,23 +98,18 @@ export class Storage {
 
     /**
      * Loads every persisted collection from `databaseHandle` and checks the
-     * head fork's chain; fails closed (the database is closed and the error
-     * names its location). From then on writes reach disk behind memory.
+     * loaded head fork's chain; fails closed (the database is closed, memory
+     * is left as it was and the error names its location). From then on
+     * writes reach disk behind memory.
      * `onFailure` runs when a batch fails for good.
      */
     public async open(
         databaseHandle: PersistenceDatabaseHandle,
         onFailure: (error: Error) => void
     ): Promise<void> {
-        await this.controller.open(databaseHandle, onFailure);
-        try {
-            this.verifyHeadFork();
-        } catch (error) {
-            await this.controller.close().catch(() => undefined);
-            throw new Error(
-                `${error instanceof Error ? error.message : String(error)} (persistence: ${databaseHandle.location})`
-            );
-        }
+        await this.controller.open(databaseHandle, onFailure, () =>
+            this.verifyHeadFork()
+        );
     }
 
     /** Resolves once the disk holds every write made before the call. */

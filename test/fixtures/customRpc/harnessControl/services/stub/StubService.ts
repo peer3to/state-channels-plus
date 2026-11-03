@@ -5971,17 +5971,7 @@ export class StubService extends ANetworkRpcService<
      */
     private gatePersistenceFlushes(gate: () => Promise<void>): boolean {
         // private internals: the storage's controller and its live database
-        const controller = (
-            this.sm.storage as unknown as {
-                controller: {
-                    databaseHandle?: PersistenceDatabaseHandle;
-                    open(
-                        databaseHandle: PersistenceDatabaseHandle,
-                        onFailure: (error: Error) => void
-                    ): Promise<void>;
-                };
-            }
-        ).controller;
+        const controller = this.sm.storage["controller"];
         const install = (database: PersistenceDatabaseHandle["database"]) => {
             const batch = database.batch.bind(database) as (
                 operations: PersistenceBatchOperation[],
@@ -5995,15 +5985,15 @@ export class StubService extends ANetworkRpcService<
                 return batch(operations, options);
             }) as typeof database.batch;
         };
-        const bound = controller.databaseHandle?.database;
+        const bound = controller["databaseHandle"]?.database;
         if (bound) {
             install(bound);
             return true;
         }
         const open = controller.open.bind(controller);
-        controller.open = (databaseHandle, onFailure) => {
+        controller.open = (databaseHandle, onFailure, verifyLoad) => {
             install(databaseHandle.database);
-            return open(databaseHandle, onFailure);
+            return open(databaseHandle, onFailure, verifyLoad);
         };
         return false;
     }

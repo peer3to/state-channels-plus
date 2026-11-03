@@ -89,13 +89,15 @@ export class PersistenceController {
     /**
      * Loads every collection from disk in one all-or-nothing pass. An empty
      * disk keeps what memory holds and writes it; records on both sides are
-     * refused. On failure the database is closed and memory is left as it was.
+     * refused. `verifyLoad` checks the loaded records. On failure the database
+     * is closed and memory is left as it was.
      * Nothing writes a persisted collection while the load runs: the bind
      * happens before the channel's first write.
      */
     public async open(
         databaseHandle: PersistenceDatabaseHandle,
-        onFailure: (error: Error) => void
+        onFailure: (error: Error) => void,
+        verifyLoad: () => void = () => undefined
     ): Promise<void> {
         const records = new Map<CollectionId, Array<[string, EncodedRecord]>>();
         try {
@@ -133,7 +135,7 @@ export class PersistenceController {
                 );
             }
             if (records.size) {
-                this.load(records);
+                this.load(records, verifyLoad);
             }
         } catch (error) {
             await databaseHandle.close().catch(() => undefined);
@@ -205,11 +207,15 @@ export class PersistenceController {
         return this.closePromise;
     }
 
-    private load(records: Map<CollectionId, Array<[string, EncodedRecord]>>) {
+    private load(
+        records: Map<CollectionId, Array<[string, EncodedRecord]>>,
+        verifyLoad: () => void
+    ) {
         try {
             for (const [collectionId, collection] of this.collections) {
                 collection.load(records.get(collectionId) ?? []);
             }
+            verifyLoad();
         } catch (error) {
             // every collection was empty before the load
             for (const collection of this.collections.values()) {
