@@ -16,11 +16,13 @@ import type { AbstractBatchOptions } from "abstract-level";
 const RECORD_PREFIX = "records!v1!";
 const DEFAULT_FLUSH_INTERVAL_MS = 50;
 const PENDING_WARNING_RECORDS = 2_000;
+// a synced batch with nothing pending deletes this absent key
+const SYNC_KEY = "metadata!sync";
 
 type RegisteredCollection = PersistentCollection<unknown, CollectionId>;
 /** `records!v1!<collection id>!<map key>` */
 type RecordKey = string;
-/** Counts writes; a flush waits until the disk holds its revision. */
+/** Counts writes; a flush waits until a synced batch holds its revision. */
 type Revision = number;
 type FlushWaiter = {
     revision: Revision;
@@ -65,7 +67,7 @@ export class PersistenceController {
     private drainPromise?: Promise<void>;
     private closePromise?: Promise<void>;
     private nextRevision: Revision = 0;
-    private persistedRevision: Revision = 0;
+    private syncedRevision: Revision = 0;
     private pendingWarningEmitted = false;
 
     constructor(options: PersistenceControllerOptions = {}) {
@@ -95,11 +97,12 @@ export class PersistenceController {
         databaseHandle: PersistenceDatabaseHandle,
         onFailure: (error: Error) => void
     ): Promise<void> {
-        if (this.databaseHandle || this.closePromise) {
-            throw new Error("Persistence controller is already opened");
-        }
         const records = new Map<CollectionId, Array<[string, EncodedRecord]>>();
         try {
+            // a refused handle is closed too: nothing else holds it
+            if (this.databaseHandle || this.closePromise) {
+                throw new Error("Persistence controller is already opened");
+            }
             await databaseHandle.database.open();
             for await (const [
                 recordKey,
@@ -138,6 +141,9 @@ export class PersistenceController {
         }
         this.databaseHandle = databaseHandle;
         this.failureHandler = onFailure;
+        // the partition's own records (identity, signer secret) were written
+        // unsynced: the first flush syncs them
+        this.nextRevision++;
         if (records.size) return;
         for (const collection of this.collections.values()) {
             for (const key of collection.keys()) this.enqueue(collection, key);
@@ -158,7 +164,7 @@ export class PersistenceController {
         this.scheduleDrain();
     }
 
-    /** Resolves once the disk holds every write made before the call. */
+    /** Resolves once a synced batch holds every write made before the call. */
     public flush(): Promise<void> {
         // after close starts nothing new reaches disk: wait for close's drain
         if (this.closePromise) return this.closePromise;
@@ -180,7 +186,7 @@ export class PersistenceController {
         this.failureHandler = undefined;
         this.clearFlushTimer();
         this.pending.clear();
-        this.persistedRevision = this.nextRevision;
+        this.syncedRevision = this.nextRevision;
         this.resolveWaiters();
         await databaseHandle.close();
     }
@@ -214,7 +220,7 @@ export class PersistenceController {
     }
 
     private flushThrough(revision: Revision): Promise<void> {
-        if (!this.databaseHandle || revision <= this.persistedRevision) {
+        if (!this.databaseHandle || revision <= this.syncedRevision) {
             return Promise.resolve();
         }
         if (this.poisonedError) return Promise.reject(this.poisonedError);
@@ -239,29 +245,34 @@ export class PersistenceController {
         const databaseHandle = this.databaseHandle;
         if (this.drainPromise || this.poisonedError || !databaseHandle) return;
         const revision = this.nextRevision;
-        if (!this.pending.size) {
-            // nothing pending and no drain in flight: the disk holds it all
-            this.persistedRevision = revision;
-            this.resolveWaiters();
-            return;
-        }
-        let operations;
-        try {
-            operations = [...this.pending].map(
-                ([recordKey, { collection, key }]) => {
-                    const value = collection.encodeRecord(key);
-                    return value === undefined
-                        ? { type: "del" as const, key: recordKey }
-                        : { type: "put" as const, key: recordKey, value };
-                }
-            );
-        } catch (error) {
-            this.poison(error);
-            return;
-        }
-        this.pending.clear();
         // a batch someone waits for is fsynced on node
-        const options = { sync: this.waiters.length > 0 } as BatchOptions;
+        const sync = this.waiters.length > 0;
+        let operations: Array<
+            | { type: "put"; key: RecordKey; value: EncodedRecord }
+            | { type: "del"; key: RecordKey }
+        >;
+        if (!this.pending.size) {
+            // the disk holds it all, maybe in an unsynced timer batch: a
+            // waiter beyond the last synced batch gets a synced one
+            if (!sync || revision <= this.syncedRevision) return;
+            operations = [{ type: "del", key: SYNC_KEY }];
+        } else {
+            try {
+                operations = [...this.pending].map(
+                    ([recordKey, { collection, key }]) => {
+                        const value = collection.encodeRecord(key);
+                        return value === undefined
+                            ? { type: "del" as const, key: recordKey }
+                            : { type: "put" as const, key: recordKey, value };
+                    }
+                );
+            } catch (error) {
+                this.poison(error);
+                return;
+            }
+            this.pending.clear();
+        }
+        const options = { sync } as BatchOptions;
         this.drainPromise = retry(
             () => databaseHandle.database.batch(operations, options),
             {
@@ -277,7 +288,7 @@ export class PersistenceController {
         )
             .then(
                 () => {
-                    this.persistedRevision = revision;
+                    if (sync) this.syncedRevision = revision;
                     this.resolveWaiters();
                 },
                 (error) => this.poison(error)
@@ -292,7 +303,7 @@ export class PersistenceController {
     private resolveWaiters(): void {
         for (let index = this.waiters.length - 1; index >= 0; index--) {
             const waiter = this.waiters[index];
-            if (waiter.revision > this.persistedRevision) continue;
+            if (waiter.revision > this.syncedRevision) continue;
             this.waiters.splice(index, 1);
             waiter.resolve();
         }

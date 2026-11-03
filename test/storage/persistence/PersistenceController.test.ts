@@ -148,7 +148,7 @@ describe("PersistenceController", function () {
         await controller.close();
     });
 
-    it("syncs the batch a flush waits for and not a timer batch", async () => {
+    it("syncs the batch a flush waits for, also when a timer batch already wrote the flush's writes, and never a timer batch", async () => {
         const database = new GatedMemoryLevel();
         const { controller, states, open } = build(5);
         await open(database);
@@ -162,10 +162,34 @@ describe("PersistenceController", function () {
         states.set("flushed", "0x02");
         await controller.flush();
 
+        // the timer wrote this one too: the flush still waits for a synced batch
+        states.set("timer-again", "0x03");
+        await waitFor(
+            () => database.batches[2]?.committed === true,
+            undefined,
+            5
+        );
+        database.hold();
+        let flushed = false;
+        const flush = controller.flush().then(() => {
+            flushed = true;
+        });
+        await tick();
+        expect(flushed).to.equal(false);
+        database.release();
+        await flush;
+
         expect(database.batches.map(({ sync }) => sync)).to.deep.equal([
+            false,
+            true,
             false,
             true
         ]);
+        expect(database.batches[3].committed).to.equal(true);
+        // that synced batch writes no record
+        expect(
+            database.batches[3].operations.map(({ type }) => type)
+        ).to.deep.equal(["del"]);
         await controller.close();
     });
 
@@ -253,7 +277,11 @@ describe("PersistenceController", function () {
         await controller.flush();
 
         expect(states.get("late")).to.equal("0x01");
-        expect(database.batches).to.have.length(0);
+        expect(
+            database.batches.flatMap(({ operations }) =>
+                operations.map(({ key }) => key)
+            )
+        ).to.not.include(`${RECORD}late`);
         await database.open();
         expect(await database.get(`${RECORD}late`)).to.equal(undefined);
         await database.close();
@@ -369,6 +397,18 @@ describe("PersistenceController", function () {
 
         expect(error.message).to.include("already opened");
         await controller.close();
+    });
+
+    it("closes a database handed to an open that begins after close started", async () => {
+        const database = new GatedMemoryLevel();
+        await database.open();
+        const { controller, open } = build();
+        await controller.close();
+
+        const error = await rejection(open(database));
+
+        expect(error.message).to.include("already opened");
+        expect(database.status).to.equal("closed");
     });
 
     it("unbinds after draining pending writes, keeps a database that holds records and binds another one with what memory holds", async () => {
