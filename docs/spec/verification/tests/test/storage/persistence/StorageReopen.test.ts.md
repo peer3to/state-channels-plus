@@ -12,6 +12,7 @@ The suite writes through the production `Storage` (its stores behind the copy pr
 - `restores blocks at their coordinates with their on-chain timestamps`: none
 - `restores inbound and outbound message blocks with their heads`: none
 - `restores state snapshots under caller-supplied keys and the genesis index`: none
+- `restores the genesis index as memory held it after an earlier genesis is stored again`: none
 - `restores state machine states under caller-supplied keys`: none
 - `restores participant change points per fork`: none
 - `restores disputes with their merged signatures and the disputed-fork markers`: none

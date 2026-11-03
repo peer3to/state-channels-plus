@@ -44,11 +44,12 @@ export class StateSnapshotStorage {
     ): StateSnapshotHash {
         const hash = options?.hash ?? snapshot.hash;
 
-        this.snapshotsByHash.set(hash, snapshot);
-
-        if (snapshot.isGenesis) {
+        // a stored hash keeps its place -> the index follows first insertion, as a reload does
+        if (snapshot.isGenesis && !this.snapshotsByHash.has(hash)) {
             this.genesisSnapshotByForkId.set(snapshot.forkID, hash);
         }
+
+        this.snapshotsByHash.set(hash, snapshot);
 
         return hash;
     }

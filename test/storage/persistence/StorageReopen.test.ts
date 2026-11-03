@@ -195,6 +195,34 @@ describe("Storage reopen", function () {
             await storage.close();
         });
 
+        it("restores the genesis index as memory held it after an earlier genesis is stored again", async () => {
+            const database = new GatedMemoryLevel();
+            let storage = await openStorage(database);
+            const first = genesisSnapshot();
+            const later = factory.stateSnapshot({
+                snapshotData: first.snapshotData,
+                forkId: first.forkID,
+                blockHeight: first.blockHeight,
+                timestamp: first.timestamp + 1
+            });
+            storage.stateSnapshots.storeStateSnapshot(first);
+            storage.stateSnapshots.storeStateSnapshot(later);
+            storage.stateSnapshots.storeStateSnapshot(first);
+            const beforeReopen =
+                storage.stateSnapshots.getGenesisSnapshotByForkId(
+                    first.forkID
+                )?.hash;
+
+            storage = await reopen(database, storage);
+
+            expect(beforeReopen).to.equal(later.hash);
+            expect(
+                storage.stateSnapshots.getGenesisSnapshotByForkId(first.forkID)
+                    ?.hash
+            ).to.equal(beforeReopen);
+            await storage.close();
+        });
+
         it("restores state machine states under caller-supplied keys", async () => {
             const database = new GatedMemoryLevel();
             let storage = await openStorage(database);
