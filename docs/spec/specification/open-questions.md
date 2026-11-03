@@ -718,8 +718,9 @@ Related finding: a chain block that lands during one sync verification can fail 
 
 Restart (2026-11-02): a restarted participant could make an honest restart-sync payload stale by
 itself, authoring or co-signing on its restored head while that payload was in flight, and then
-exclude its responder. It now authors, executes, co-signs and countersigns nothing until its restart
-synchronization settles
+exclude its responder. It now authors, executes, co-signs, countersigns and disputes nothing from its
+restored head until its restart synchronization settles (that synchronization's own install may
+co-sign on the newer state it brings)
 ([`REQ-STOR-3-4RJGER` (Restart recovery without trust)](storage/durability.md#req-stor-3-4rjger)), so that self-made race is gone; the
 honest stale and fork-adoption cases above stay open.
 

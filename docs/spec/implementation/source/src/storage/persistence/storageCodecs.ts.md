@@ -2,8 +2,6 @@
 
 > **Source:** [src/storage/persistence/storageCodecs.ts](../../../../../../../src/storage/persistence/storageCodecs.ts)
 
-One ABI codec per persisted collection; the codec object's keys are the collection ids.
-
 ## Requirements
 
 - [`REQ-STOR-5-T6EQSA` (Isolation, integrity, and versioned encoding)](../../../../../specification/storage/durability.md#req-stor-5-t6eqsa)

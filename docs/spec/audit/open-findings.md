@@ -1700,12 +1700,23 @@ as an observer does. Persistence is off by default
 ([`REQ-STOR-10-XY96KG` (Persistence is opt-in)](../specification/storage/durability.md#req-stor-10-xy96kg)),
 so no default runtime reaches these cases.
 
-Restart decisions, Luke 2026-11-02: a held head also countersigns no join request, so the hold
-covers every slashable signature; a chain RPC failure at the restore read fails the persistent start
+Restart decisions, Luke 2026-11-02: a held head also countersigns no join request; a chain RPC failure at the restore read fails the persistent start
 instead of resuming unreconciled; any failed restart-sync answer aborts, silence and a lost
 transport included; a dispute marker kept behind a pending transaction is not rechecked until the
 next restart (accepted); and the re-armed calldata post of an own latest block may land during the
 hold (safe: the block was signed before the crash, and the chain refuses a block it moved past).
+
+Restart decisions, Luke 2026-11-03 (delegated): a held head authors no dispute until its restart
+synchronization settles, checked once in `DisputeManager.dispute`; a dispute wanted during the hold
+comes back through the path that re-evaluates it (the participant timeout armed at release, the next
+chain event), with no retry machinery. Kills, fraud proofs and audits stay allowed: they carry signed
+evidence the chain checks, so a stale head cannot make them slashable. The hold therefore refuses
+block co-signatures, authored or executed blocks, join countersignatures and disputes. Two planned
+restart cases are descoped to this follow-up and stay planned, untested permutations:
+[`REQ-STOR-3-4RJGER.T1.P8`](../specification/storage/durability.md#req-stor-3-4rjger.t1.p8) (a timeout
+dispute audited before any peer connects) and
+[`REQ-STOR-3-4RJGER.T1.P11`](../specification/storage/durability.md#req-stor-3-4rjger.t1.p11) (a fork
+change while the node was down).
 
 <a id="find-runtime-1-gapy72"></a>
 

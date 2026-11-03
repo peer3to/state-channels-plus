@@ -2,8 +2,6 @@
 
 > **Source:** [src/storage/persistence/PersistenceController.ts](../../../../../../../src/storage/persistence/PersistenceController.ts)
 
-Copies collection writes to disk behind memory as one `database.batch` per drain. Drains start from the timer, `flush()` or `close()`; a batch a flush waits for is written with `sync`. Retries a failed batch, then fails for good and runs the failure handler once. `open` loads every collection in one all-or-nothing pass and refuses unknown collections, undecodable records, and records on both disk and memory. `unbind` drains and lets the database go (deleted when it holds no record) so a later `open` binds another; a failed batch does not make `close` reject.
-
 ## Requirements
 
 - [`REQ-STOR-7-K1J7EA` (Write-behind disk copy loaded once)](../../../../../specification/storage/durability.md#req-stor-7-k1j7ea)

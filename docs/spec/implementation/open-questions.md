@@ -201,8 +201,8 @@ stored is flushed after every signature whose loss could get the node slashed, b
 process ([`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](../specification/storage/durability.md#req-stor-8-25d06n)); the
 one disposal closes the medium ([`REQ-STOR-9-ZR8A92` (Closed by the one disposal)](../specification/storage/durability.md#req-stor-9-zr8a92)); a restarted
 participant installs its durable head, reconciles it with one chain read (a failed read fails the
-persistent start), stays `SYNCED`, co-signs no block and countersigns no join until its
-first sync settles, aborts when that sync fails or no participant answers it, and recovers lost peer writes
+persistent start), stays `SYNCED`, co-signs no block, countersigns no join and authors no dispute
+from that head until its first sync settles, aborts when that sync fails or no participant answers it, and recovers lost peer writes
 through it
 ([`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../specification/storage/durability.md#req-stor-3-4rjger)). Chain-event replay and
 pending-join resume are descoped by Luke (2026-11-02)

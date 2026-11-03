@@ -11,6 +11,7 @@
 - [`REQ-ID-3-KR0BE3` (Confined signing authority)](../../../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)
 - [`REQ-MSG-10-7JS45Q` (Joining MUST carry the joiner's signature plus the full threshold set's…)](../../../../../../../specification/settlement/cross-layer-messages.md#req-msg-10-7js45q)
 - [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../../../../../../../specification/storage/durability.md#req-stor-3-4rjger)
+- [`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](../../../../../../../specification/storage/durability.md#req-stor-8-25d06n)
 
 ## UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS
 

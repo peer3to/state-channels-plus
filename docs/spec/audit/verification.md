@@ -147,6 +147,16 @@ submits a top-up with a made-up snapshot pin. No runtime stores that pin, so the
 both the pinned and the new snapshot stored, is not met, and the test still returns `false` (passed in the
 full gate).
 
+## Test timing inputs — 2026-11-03
+
+Measured (Luke 2026-11-03, delegated: keep `p2pTime: 30` only if the default fails): the persistence restart and
+durability tests ran with the harness default timing instead of the `p2pTime: 30` override
+(`RESTART_TIME_CONFIG` in `test/fixtures/PersistenceRestartStaging.ts`, `DURABILITY_TIME_CONFIG` in
+`test/e2e/E2E-PersistenceDurability.test.ts`). With the default, all 12 tests in `E2E-PersistenceRestart` and
+`E2E-PersistenceDurability` passed on the distributed runner (persist-measure run-1, 12/12), and so did the 7
+restore cases of `BlockQueueManager`, `StateManager` and `JoinChannelSignatureRequest` (run-2, 7/7). Both
+overrides are dropped; no per-test widening remains for persistence.
+
 ## Test timing inputs — 2026-10-15
 
 Engineer decision (Luka, 2026-10-15, PR #551): raise the test evidence windows by a few seconds;
