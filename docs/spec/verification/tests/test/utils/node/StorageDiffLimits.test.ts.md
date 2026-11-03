@@ -30,4 +30,7 @@ Each case starts the service with small limits in front of an isolated anvil tes
 - `cuts a peer that does not read its answers once its unsent bytes pass the limit`: REQ-SDS-11-QV2VPT.T1.P16
 - `traces only the blocks that stay retained after an outage longer than the window, and pushes them`: REQ-SDS-11-QV2VPT.T1.P15
 - `pushes a first record after a restart whose parent the subscriber was never sent, and refuses a catch-up over the skipped blocks with the pruned error`: REQ-SDS-1-TXEY33.T1.P8
+- `keeps a contract watched while its backfill runs after its subscription ended, and refuses a new account meanwhile`: REQ-SDS-12-JDW71Y.T1.P17
+- `subscribes a complete contract that was dropped from the watched set as syncing and pushes its snapshot again`: REQ-SDS-12-JDW71Y.T1.P18
+- `subscribes a lazy contract that was dropped from the watched set as syncing and backfills it again`: REQ-SDS-12-JDW71Y.T1.P19
 - `refuses to start with a limit that is not a positive integer`: UNIT-TEST-SDS-SERVICE-1-E7VQBH.P1

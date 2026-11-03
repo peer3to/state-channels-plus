@@ -347,34 +347,37 @@ describe("StorageDiffService blocks", function () {
 
     // Mutation: every wait asks the upstream for its block number.
     it("asks the upstream for its block number once for many reads waiting for a block it has not seen", async function () {
-        await withStorageDiffSession(async ({ client, relay }) => {
-            await client.subscribe([]);
-            const head = (await client.request("scp_getHead", [])) as {
-                number: string;
-                hash: string;
-            };
-            const asked = toQuantity(BigInt(head.number) + 100n);
-            const before = relay.requestCount("eth_blockNumber");
+        await withStorageDiffSession(
+            async ({ client, relay }) => {
+                await client.subscribe([]);
+                const head = (await client.request("scp_getHead", [])) as {
+                    number: string;
+                    hash: string;
+                };
+                const asked = toQuantity(BigInt(head.number) + 100n);
+                const before = relay.requestCount("eth_blockNumber");
 
-            const answers = (await Promise.all(
-                Array.from({ length: 200 }, () =>
-                    client.request("scp_getHead", [asked])
-                )
-            )) as { number: string }[];
+                const answers = (await Promise.all(
+                    Array.from({ length: 200 }, () =>
+                        client.request("scp_getHead", [asked])
+                    )
+                )) as { number: string }[];
 
-            expect(answers.map((answer) => answer.number)).to.deep.equal(
-                answers.map(() => head.number)
-            );
-            // one ask, one more for reads that came during it, and a heartbeat at most
-            expect(
-                relay.requestCount("eth_blockNumber") - before
-            ).to.be.at.most(3);
-            expect(await client.nextDelay()).to.deep.equal({
-                reason: "upstream-behind",
-                requested: asked,
-                head: { number: head.number, hash: head.hash }
-            });
-        });
+                expect(answers.map((answer) => answer.number)).to.deep.equal(
+                    answers.map(() => head.number)
+                );
+                // one ask, one more for reads that came during it, and a heartbeat at most
+                expect(
+                    relay.requestCount("eth_blockNumber") - before
+                ).to.be.at.most(3);
+                expect(await client.nextDelay()).to.deep.equal({
+                    reason: "upstream-behind",
+                    requested: asked,
+                    head: { number: head.number, hash: head.hash }
+                });
+            },
+            { maxInFlightRequests: 200 }
+        );
     });
 
     // Mutation: every upstream-behind is pushed, the same one again included.

@@ -509,6 +509,12 @@ Each request past a limit gets its error and the connection keeps working; refus
 
 <a id="req-sds-12-jdw71y.t1.p16"></a>`REQ-SDS-12-JDW71Y.T1.P16` — an unsubscribe and an answered read free the connection's share
 
+<a id="req-sds-12-jdw71y.t1.p17"></a>`REQ-SDS-12-JDW71Y.T1.P17` — a running backfill holds its account after the subscription ended, so a new account is refused until it is done
+
+<a id="req-sds-12-jdw71y.t1.p18"></a>`REQ-SDS-12-JDW71Y.T1.P18` — a complete account dropped from the watched set is subscribed again as syncing and its snapshot is pushed again
+
+<a id="req-sds-12-jdw71y.t1.p19"></a>`REQ-SDS-12-JDW71Y.T1.P19` — a lazy account dropped from the watched set is subscribed again as syncing and backfilled again
+
 #### <a id="req-sds-12-n40mkr.t1"></a>`REQ-SDS-12-N40MKR.T1`
 
 **Requirements / invariants:**

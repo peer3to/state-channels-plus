@@ -32,6 +32,7 @@ import {
     SEND_BUFFER_OVERFLOW_CLOSE_CODE
 } from "@/utils/node/storageDiff/PeerHub";
 import { expect } from "chai";
+import { toQuantity } from "ethers";
 
 const SLOT = { slots: [VALUE_SLOT] };
 const X = "0x" + "11".repeat(20);
@@ -209,12 +210,14 @@ describe("StorageDiffService limits", function () {
                 const a = await recordKey(await deployNumberStorage(signer));
                 const b = await recordKey(await deployNumberStorage(signer));
                 const subscription = await client.subscribe([a]);
+                await client.nextSnapshot(subscription);
                 const { hash } = await headOf(client);
 
                 await client.unsubscribe(subscription);
-                const state = await client.getState(hash, [
-                    { address: b, ...SLOT }
-                ]);
+                // the backfill holds the contract until a moment after its push
+                const state = await eventually(() =>
+                    client.getState(hash, [{ address: b, ...SLOT }])
+                );
 
                 expect(state.accounts[b].storage).to.have.key(VALUE_SLOT);
             },
@@ -559,6 +562,107 @@ describe("StorageDiffService limits", function () {
                 expect(code).to.equal(PRUNED_ERROR_CODE);
             },
             { retention: 3 }
+        );
+    });
+
+    // Mutation: a backfill that does not hold its account -> the other
+    // account is watched in its place while the backfill still runs.
+    it("keeps a contract watched while its backfill runs after its subscription ended, and refuses a new account meanwhile", async function () {
+        await withStorageDiffSession(
+            async ({ client, relay, signer }) => {
+                const writer = await deploySlotWriter(signer);
+                const other = await deploySlotWriter(signer);
+                const witness = await client.subscribe([]);
+                const first = await writeSlot(signer, writer, 1, 5n);
+                await client.recordAt(witness, first.blockNumber);
+                const held = relay.holdNext(
+                    "debug_traceBlockByNumber",
+                    toQuantity(first.blockNumber)
+                );
+                const subscription = await client.subscribe([writer]);
+                await held.arrived;
+                await client.unsubscribe(subscription);
+                const { hash } = await headOf(client);
+
+                const code = await errorCodeOf(
+                    client.getState(hash, [
+                        { address: other, slots: [slotKey(1)] }
+                    ])
+                );
+                held.release();
+                const state = await eventually(() =>
+                    client.getState(hash, [
+                        { address: other, slots: [slotKey(1)] }
+                    ])
+                );
+
+                expect(code).to.equal(LIMIT_EXCEEDED_ERROR_CODE);
+                expect(state.accounts[other].storage).to.have.key(slotKey(1));
+            },
+            { maxWatchedAddresses: 1 }
+        );
+    });
+
+    // Mutation: a dropped account stays complete -> it is subscribed as ready.
+    it("subscribes a complete contract that was dropped from the watched set as syncing and pushes its snapshot again", async function () {
+        await withStorageDiffSession(
+            async ({ client, signer }) => {
+                const writer = await deploySlotWriter(signer);
+                const other = await deploySlotWriter(signer);
+                await writeSlot(signer, writer, 1, 5n);
+                const first = await client.subscribe([writer]);
+                await client.nextSnapshot(first);
+                await client.unsubscribe(first);
+                const { hash } = await headOf(client);
+                // the backfill holds the contract until a moment after its push
+                await eventually(() =>
+                    client.getState(hash, [
+                        { address: other, slots: [slotKey(1)] }
+                    ])
+                );
+
+                const again = await client.subscribeWithStatus([writer]);
+                const snapshot = await client.nextSnapshot(again.subscription);
+
+                expect(again.accounts).to.deep.equal({ [writer]: "syncing" });
+                expect(snapshot.accounts[writer].storage).to.deep.include({
+                    [slotKey(1)]: storageWord(5n)
+                });
+            },
+            { maxWatchedAddresses: 1 }
+        );
+    });
+
+    // Mutation: a dropped account stays lazy -> it is subscribed as lazy.
+    it("subscribes a lazy contract that was dropped from the watched set as syncing and backfills it again", async function () {
+        await withStorageDiffSession(
+            async ({ client, relay, signer }) => {
+                const writer = await deploySlotWriter(signer);
+                const other = await deploySlotWriter(signer);
+                await writeSlot(signer, writer, 1, 5n);
+                relay.tamper("eth_getStorageAt", () => null);
+                const first = await client.subscribe([writer]);
+                const notice = await client.nextSnapshot(first);
+                relay.tamper("eth_getStorageAt", (result) => result);
+                await client.unsubscribe(first);
+                const { hash } = await headOf(client);
+                // the backfill holds the contract until a moment after its push
+                await eventually(() =>
+                    client.getState(hash, [
+                        { address: other, slots: [slotKey(1)] }
+                    ])
+                );
+
+                const again = await client.subscribeWithStatus([writer]);
+                const snapshot = await client.nextSnapshot(again.subscription);
+
+                expect(notice.lazy).to.deep.equal([writer]);
+                expect(again.accounts).to.deep.equal({ [writer]: "syncing" });
+                expect(snapshot.accounts[writer].storage).to.deep.include({
+                    [slotKey(1)]: storageWord(5n)
+                });
+            },
+            { maxWatchedAddresses: 1 }
         );
     });
 
