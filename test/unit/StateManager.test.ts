@@ -1,5 +1,4 @@
 import { Status } from "@/types";
-import { RESTART_TIME_CONFIG } from "@test/fixtures/PersistenceRestartStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
@@ -74,8 +73,7 @@ describe("StateManager.setChannelId restore", function () {
     it("a restored head clears a persisted dispute marker whose dispute never reached the chain", async function () {
         const h = TestSession.getHarness();
         const forkId = await h.lifecycle.start(2, 1, {
-            persistentPeers: [1],
-            timeConfig: RESTART_TIME_CONFIG
+            persistentPeers: [1]
         });
         // the marker reached disk, then the process died before the upload
         await h.execOnHost(h.getPeer(1), async (sm) => {
@@ -93,11 +91,40 @@ describe("StateManager.setChannelId restore", function () {
         ).to.equal(false);
     });
 
+    it("a chain that cannot be read fails the persistent start and releases the partition; the next start resumes from it", async function () {
+        const h = TestSession.getHarness();
+        const forkId = await h.lifecycle.start(2, 1, {
+            persistentPeers: [1],
+            rpcNodeProxiesByPeer: { 1: 1 }
+        });
+        const height = await h
+            .control(h.getPeer(1))
+            .query.getLatestBlockHeight(forkId)
+            .request();
+
+        // the restarted runtime's only RPC node is down
+        h.options.rpcNodeProxiesCutAtStart = { 1: [0] };
+        let startError: unknown;
+        try {
+            await h.lifecycle.restartPeer(1);
+        } catch (error) {
+            startError = error;
+        }
+        expect(startError).to.be.instanceOf(Error);
+
+        h.options.rpcNodeProxiesCutAtStart = undefined;
+        const restarted = await h.lifecycle.restartPeer(1);
+        const query = h.control(restarted).query;
+        expect(await query.getLatestBlockHeight(forkId).request()).to.equal(
+            height
+        );
+        expect(await query.getStatus().request()).to.equal(Status.SYNCED);
+    });
+
     it("a restored head refills the local mirror with the chain's snapshot before any sync", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 1, {
-            persistentPeers: [1],
-            timeConfig: RESTART_TIME_CONFIG
+            persistentPeers: [1]
         });
 
         const restarted = await h.lifecycle.restartPeer(1);

@@ -11,10 +11,7 @@ import {
     stagePrunedObserver,
     withQueuedBlockMadePast
 } from "@test/fixtures/PastBlockStaging";
-import {
-    authorWhileDown,
-    RESTART_TIME_CONFIG
-} from "@test/fixtures/PersistenceRestartStaging";
+import { authorWhileDown } from "@test/fixtures/PersistenceRestartStaging";
 import { assertDeployedMaximum } from "@test/fixtures/QueueDeploymentFixture";
 import {
     assertStoredTipCopyDrainsNextBlock,
@@ -42,8 +39,7 @@ describe("Unit: BlockQueueManager", () => {
     it("a held restored head executes no queued gossip or proof copy, by drain or by an elapsed queue timeout, so it co-signs nothing, until the restart sync settles", async () => {
         const h = MathTestSession.getHarness();
         const forkId = await h.lifecycle.start(3, 3, {
-            persistentPeers: [2],
-            timeConfig: RESTART_TIME_CONFIG
+            persistentPeers: [2]
         });
         await h.getPeer(2).p2pInstance.dispose();
         await authorWhileDown(h, forkId, 2, 2);
@@ -82,10 +78,7 @@ describe("Unit: BlockQueueManager", () => {
         );
         // the gossip copy sits at the next height: its queue timeout would
         // execute it directly
-        await sleep(
-            (resolveTestTimeConfig(RESTART_TIME_CONFIG).agreementTime + 1) *
-                1000
-        );
+        await sleep((resolveTestTimeConfig().agreementTime + 1) * 1000);
 
         expect(await control.query.isBlockQueued(gossip.hash).request()).to.be
             .true;

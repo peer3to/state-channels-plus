@@ -8,7 +8,6 @@ import { prepareFirstJoinDeadline } from "@test/fixtures/JoinDeadlineStaging";
 import { collectAcrossSnapshotMove } from "@test/fixtures/JoinPinRaceStaging";
 import { remoteThresholdPeerIndices } from "@test/fixtures/JoinSnapshotRetryStaging";
 import { assertJoinSignatureDeadlineBoundary } from "@test/fixtures/node/JoinSignatureDeadlineStaging";
-import { RESTART_TIME_CONFIG } from "@test/fixtures/PersistenceRestartStaging";
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
@@ -94,8 +93,7 @@ describe("JoinChannel signature requests", function () {
     it("a threshold member held at its restored head refuses to countersign a join until its restart sync settles, then signs it", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 2, {
-            persistentPeers: [1],
-            timeConfig: RESTART_TIME_CONFIG
+            persistentPeers: [1]
         });
         const joiner = await h.join.addSpectatorWait();
         const joinChannel = {

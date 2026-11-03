@@ -118,6 +118,19 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.failPersistenceFlushes();
     }
 
+    public holdPersistenceFlushes(): boolean {
+        return this.service.holdPersistenceFlushes();
+    }
+
+    public getHeldPersistenceFlushCount(): number {
+        return this.service.getHeldPersistenceFlushCount();
+    }
+
+    public releasePersistenceFlushes(): boolean {
+        this.service.releasePersistenceFlushes();
+        return true;
+    }
+
     /** sets and clears `channelId` as a failed negotiation attempt does */
     public async setAndClearChannelId(channelId: string): Promise<boolean> {
         await this.service.setAndClearChannelId(channelId);

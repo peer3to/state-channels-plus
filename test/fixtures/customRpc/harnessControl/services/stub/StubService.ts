@@ -619,6 +619,9 @@ export class StubService extends ANetworkRpcService<
     private syncWindowHold?: HeldRpcReply;
     private restoreSyncWindow?: () => void;
     private syncInstallHold?: HeldRpcReply;
+    // flushes parked at the persistence gate, and what lets them through
+    private heldPersistenceFlushes = 0;
+    private releasePersistenceGate?: () => void;
     // accepted discovery sockets this realm's listeners stopped reading
     private heldAcceptedSockets: WebSocket[] = [];
     // listener port -> the listener read at that port; a closed listener
@@ -1159,30 +1162,38 @@ export class StubService extends ANetworkRpcService<
 
     /**
      * Fail every disk batch a flush waits for (the runtime then aborts);
-     * timer batches still reach disk. False without a bound partition.
+     * timer batches still reach disk. Applies to the partition bound now or,
+     * without one, to the next one bound; true when one is bound now.
      */
     public failPersistenceFlushes(): boolean {
-        // private internals: the storage's controller and its live database
-        const controller = (
-            this.sm.storage as unknown as {
-                controller: { databaseHandle?: PersistenceDatabaseHandle };
-            }
-        ).controller;
-        const database = controller.databaseHandle?.database;
-        if (!database) return false;
-        const batch = database.batch.bind(database) as (
-            operations: PersistenceBatchOperation[],
-            options?: object
-        ) => Promise<void>;
-        // classic-level's `sync` option marks the batch a flush waits for
-        database.batch = ((
-            operations: PersistenceBatchOperation[],
-            options?: { sync?: boolean }
-        ) =>
-            options?.sync
-                ? Promise.reject(new Error("injected flush failure"))
-                : batch(operations, options)) as typeof database.batch;
-        return true;
+        return this.gatePersistenceFlushes(() =>
+            Promise.reject(new Error("injected flush failure"))
+        );
+    }
+
+    /**
+     * Park every disk batch a flush waits for until
+     * `releasePersistenceFlushes`; timer batches still reach disk. Applies
+     * like `failPersistenceFlushes`.
+     */
+    public holdPersistenceFlushes(): boolean {
+        const released = new Promise<void>((resolve) => {
+            this.releasePersistenceGate = resolve;
+        });
+        return this.gatePersistenceFlushes(async () => {
+            this.heldPersistenceFlushes++;
+            await released;
+        });
+    }
+
+    /** Flushes parked at the gate so far. */
+    public getHeldPersistenceFlushCount(): number {
+        return this.heldPersistenceFlushes;
+    }
+
+    /** Lets every parked and later flush through. */
+    public releasePersistenceFlushes(): void {
+        this.releasePersistenceGate?.();
     }
 
     public async setAndClearChannelId(channelId: string): Promise<void> {
@@ -5943,6 +5954,50 @@ export class StubService extends ANetworkRpcService<
             if (hide) return [];
             return original(filter);
         }) as typeof provider.getLogs;
+    }
+
+    /**
+     * Routes every synced batch (classic-level's `sync` marks the batch a
+     * flush waits for) of the bound partition, or of the next one bound,
+     * through `gate`.
+     */
+    private gatePersistenceFlushes(gate: () => Promise<void>): boolean {
+        // private internals: the storage's controller and its live database
+        const controller = (
+            this.sm.storage as unknown as {
+                controller: {
+                    databaseHandle?: PersistenceDatabaseHandle;
+                    open(
+                        databaseHandle: PersistenceDatabaseHandle,
+                        onFailure: (error: Error) => void
+                    ): Promise<void>;
+                };
+            }
+        ).controller;
+        const install = (database: PersistenceDatabaseHandle["database"]) => {
+            const batch = database.batch.bind(database) as (
+                operations: PersistenceBatchOperation[],
+                options?: object
+            ) => Promise<void>;
+            database.batch = (async (
+                operations: PersistenceBatchOperation[],
+                options?: { sync?: boolean }
+            ) => {
+                if (options?.sync) await gate();
+                return batch(operations, options);
+            }) as typeof database.batch;
+        };
+        const bound = controller.databaseHandle?.database;
+        if (bound) {
+            install(bound);
+            return true;
+        }
+        const open = controller.open.bind(controller);
+        controller.open = (databaseHandle, onFailure) => {
+            install(databaseHandle.database);
+            return open(databaseHandle, onFailure);
+        };
+        return false;
     }
 }
 
