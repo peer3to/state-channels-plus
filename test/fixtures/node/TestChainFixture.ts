@@ -4,11 +4,27 @@ import { repoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
 import { spawn } from "child_process";
 import { HDNodeWallet, Provider } from "ethers";
+import fs from "fs";
 import { once } from "node:events";
 import http from "node:http";
+import os from "os";
 import path from "path";
 
 export const LAUNCHER = "scripts/infra/start-hardhat-node.js";
+
+/** A fresh project and runner directory, neither pinning anvil yet. */
+export function withPinRoots(
+    use: (project: string, runner: string) => void
+): void {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), "anvil-pin-"));
+    const runner = fs.mkdtempSync(path.join(os.tmpdir(), "anvil-runner-"));
+    try {
+        use(project, runner);
+    } finally {
+        fs.rmSync(project, { recursive: true, force: true });
+        fs.rmSync(runner, { recursive: true, force: true });
+    }
+}
 export const DIFF_TRACE = {
     tracer: "prestateTracer",
     tracerConfig: { diffMode: true }

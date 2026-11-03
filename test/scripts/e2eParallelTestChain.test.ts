@@ -15,7 +15,8 @@ import {
     receiptOf,
     StateDiff,
     transferOneWei,
-    walletOf
+    walletOf,
+    withPinRoots
 } from "../fixtures/node/TestChainFixture";
 import {
     provisionSlots,
@@ -49,17 +50,6 @@ const { anvilArgs, pinnedAnvilMismatch } =
 /** Time is the input: the interval a slot node mines at, one block a second. */
 const SLOT_BLOCK_TIME_MS = 1000;
 
-/** A fresh project and runner directory, neither pinning anvil yet. */
-function withPinRoots(use: (project: string, runner: string) => void): void {
-    const project = fs.mkdtempSync(path.join(os.tmpdir(), "anvil-pin-"));
-    const runner = fs.mkdtempSync(path.join(os.tmpdir(), "anvil-runner-"));
-    try {
-        use(project, runner);
-    } finally {
-        fs.rmSync(project, { recursive: true, force: true });
-        fs.rmSync(runner, { recursive: true, force: true });
-    }
-}
 const { pinnedFoundryMismatch } =
     require("../../scripts/e2e-parallel/shared/forgeConfig.js") as {
         pinnedFoundryMismatch: (

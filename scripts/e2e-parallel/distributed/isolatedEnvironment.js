@@ -17,6 +17,8 @@ const {
     isolationCapability
 } = require("./egressPolicy");
 const { ResourceAllocationError } = require("./executionProfile");
+/** The runner's module that owns the browser gates' Chromium check. */
+const TASK_RUNNERS_MODULE = path.join(__dirname, "../shared/taskRunners.js");
 const { staleRunnerImageReason } = require("./runnerImage");
 
 const RUNTIME_LABEL = "peer3.distributed-environment";
@@ -968,20 +970,14 @@ class UnsafeHostBackend {
     }
 
     /**
-     * Whether the browser gates can launch Chromium here: the host's
-     * Playwright launches it from the cache the guest is pointed at.
+     * Whether the browser gates can launch Chromium here: the runner's own
+     * pre-check, which launches it the way every gate does, run from the
+     * cache the guest is pointed at.
      */
     async browserRuntime(env = process.env) {
-        let playwright;
-        try {
-            playwright = require.resolve("playwright");
-        } catch {
-            return { available: false, reason: "playwright is not installed" };
-        }
         const probe =
-            `require(${JSON.stringify(playwright)}).chromium` +
-            ".launch({ headless: true }).then((browser) => browser.close())" +
-            '.catch((error) => { process.stderr.write(String(error.message).split("\\n")[0]); process.exit(1); })';
+            `require(${JSON.stringify(TASK_RUNNERS_MODULE)}).browserChromiumFailure()` +
+            ".then((failure) => { if (failure) { process.stderr.write(failure.message); process.exit(1); } })";
         try {
             await runProcess(process.execPath, ["-e", probe], {
                 env: {

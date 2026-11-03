@@ -1229,8 +1229,9 @@ describe("unsafe-host browser runtime", function () {
             });
 
             expect(runtime.available).to.equal(false);
-            expect(runtime.reason).to.include("Executable doesn't exist");
-            expect(runtime.reason).to.include(empty);
+            expect(runtime.reason).to.include(
+                "Chromium for this Playwright version is missing"
+            );
         } finally {
             fs.rmSync(empty, { recursive: true, force: true });
         }
