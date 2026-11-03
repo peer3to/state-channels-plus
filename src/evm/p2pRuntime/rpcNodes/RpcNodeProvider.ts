@@ -179,15 +179,15 @@ function getSocketConnectionError(event: unknown): Error {
     return new Error("WebSocket connection failed");
 }
 
-/**
- * Resolves with the reason once the socket errors or closes. ethers never
- * reconnects its socket.
- */
 /** The params of a JSON-RPC `request` as a list. */
 export function paramsOf(request: JsonRpcPayload): unknown[] {
     return Array.isArray(request.params) ? request.params : [request.params];
 }
 
+/**
+ * Resolves with the reason once the socket errors or closes. ethers never
+ * reconnects its socket.
+ */
 export function watchSocketEnd(socket: WebSocketProvider): Promise<Error> {
     // ethers does not install an `onerror` handler on its underlying socket.
     // In Node, `ws` therefore promotes a failed initial connection to an
