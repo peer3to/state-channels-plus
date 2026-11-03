@@ -24,3 +24,4 @@ This file covers the snapshots of accounts the service has ready, syncing or laz
 - `stops waiting for a snapshot at once when the service connection drops`: REQ-RPCMIRROR-3-7MQH88.T1.P9
 - `drops a complete account to lazy reads when the service finds its cached entries short after a block, and reads the omitted slot`: REQ-RPCMIRROR-3-7MQH88.T1.P11
 - `asks the service for exactly the missing fields, at the head block, for an account that is syncing`: REQ-RPCMIRROR-3-7MQH88.T1.P10
+- `places no snapshot on a chain its catch-up cleared, and answers the read`: REQ-RPCMIRROR-3-7MQH88.T1.P16

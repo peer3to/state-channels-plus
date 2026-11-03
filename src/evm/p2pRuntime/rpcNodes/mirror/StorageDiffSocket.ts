@@ -1,4 +1,5 @@
 import {
+    LIMIT_EXCEEDED_ERROR_CODE,
     NOT_RETAINED_ERROR_CODE,
     PRUNED_ERROR_CODE,
     type AccountAddress,
@@ -24,6 +25,16 @@ export class StorageDiffNotRetainedError extends Error {}
 
 /** The feed did not answer a request in the time its caller had. */
 export class StorageDiffTimeoutError extends Error {}
+
+/** JSON-RPC code of a request whose params the feed refuses, as one naming too many addresses. */
+const INVALID_PARAMS_ERROR_CODE = -32602;
+
+/**
+ * The feed refused a request it will answer again later (past one of its
+ * limits) or never in this shape (too many addresses): the request changed
+ * nothing on the feed, and the connection stays open.
+ */
+export class StorageDiffRefusedError extends Error {}
 
 /** What a feed pushes. */
 export type MirrorFeedHandlers = {
@@ -295,6 +306,13 @@ export class StorageDiffSocket extends WebSocketProvider {
                 if (error.error.code === NOT_RETAINED_ERROR_CODE)
                     throw new StorageDiffNotRetainedError(
                         "Block is not retained"
+                    );
+                if (
+                    error.error.code === LIMIT_EXCEEDED_ERROR_CODE ||
+                    error.error.code === INVALID_PARAMS_ERROR_CODE
+                )
+                    throw new StorageDiffRefusedError(
+                        String(error.error.message ?? "Request refused")
                     );
             }
             throw error;

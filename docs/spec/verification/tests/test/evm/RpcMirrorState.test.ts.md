@@ -30,3 +30,8 @@ This file covers the cached state of storage slots: first reads, cache hits, reo
 - `reads from the node at the head block number only while the service answers that the block is not retained`: REQ-RPCMIRROR-5-KDRWDZ.T1.P5
 - `keeps the service connection and the cache when the node fails a state read`: REQ-RPCMIRROR-8-1PA83T.T1.P3
 - `takes the block environment from the service without reading blocks from the node`: REQ-RPCMIRROR-5-KDRWDZ.T1.P6
+- `keeps its copy and the connection when the service refuses a subscribe with its limit error, and the node answers that read`: REQ-RPCMIRROR-8-1PA83T.T1.P12
+- `keeps its copy and the connection when the service refuses a subscribe naming more accounts than it allows`: REQ-RPCMIRROR-8-1PA83T.T1.P13
+- `stops following the least recently read contract to follow a new one past its bound, and keeps answering the others locally`: REQ-RPCMIRROR-3-7MQH88.T1.P17
+- `does not follow an account without code: reads it again at a new head, without subscribing to it`: REQ-RPCMIRROR-3-7MQH88.T1.P18
+- `keeps its copy and the connection when the service refuses a pushed record's catch-up, and catches up with a later record`: REQ-RPCMIRROR-8-1PA83T.T1.P14

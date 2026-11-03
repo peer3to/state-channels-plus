@@ -64,6 +64,10 @@ export class MirrorStateManager extends RPCStateManager {
     private readonly accounts = new Map<AccountAddress, MirrorAccount>();
     /** What the running pass found missing, by address. */
     private readonly misses = new Map<AccountAddress, StateRequestParams>();
+    /** Accounts the chain state was read of since the last {@link takeAccessed}. */
+    private readonly accessed = new Set<AccountAddress>();
+    /** Accounts not followed: what is cached of them holds at the head only. */
+    private readonly unfollowed = new Set<AccountAddress>();
 
     constructor(options: MirrorStateManagerOptions) {
         super({ provider: UNUSED_PROVIDER_URL, blockTag: 0n });
@@ -81,6 +85,7 @@ export class MirrorStateManager extends RPCStateManager {
         super.clearCaches();
         this.accounts.clear();
         this.misses.clear();
+        this.unfollowed.clear();
     }
 
     // Overrides RPCStateManager.shallowCopy: a copy would read through the
@@ -104,6 +109,7 @@ export class MirrorStateManager extends RPCStateManager {
         if (this.isLocalOnly(accountAddress)) return new Uint8Array(32);
         this.assertRunsHere(accountAddress);
         const slot = hexlify(key);
+        this.accessed.add(accountAddress);
         const account = this.accountOf(accountAddress);
         const known = account.storage.get(slot);
         if (known !== undefined) return known;
@@ -123,6 +129,7 @@ export class MirrorStateManager extends RPCStateManager {
         const accountAddress = toAccountAddress(address);
         if (this.isLocalOnly(accountAddress)) return undefined;
         this.assertRunsHere(accountAddress);
+        this.accessed.add(accountAddress);
         const account = this.accountOf(accountAddress);
         if (account.balance === undefined || account.nonce === undefined) {
             this.missing(accountAddress).account = true;
@@ -172,6 +179,32 @@ export class MirrorStateManager extends RPCStateManager {
     // Overrides RPCStateManager.getProof: the node has no eth_getProof.
     override async getProof(): Promise<never> {
         throw new Error("The mirror cannot prove state");
+    }
+
+    /** The accounts read since the last call, in no order; the next call starts with none. */
+    takeAccessed(): AccountAddress[] {
+        const taken = [...this.accessed];
+        this.accessed.clear();
+        return taken;
+    }
+
+    /**
+     * Keeps what is cached of `address` only until the head moves: no record
+     * updates it, so it is read again at the next head.
+     */
+    unfollow(address: AccountAddress): void {
+        this.unfollowed.add(address);
+    }
+
+    /** The head moved: forgets the accounts that are not followed. */
+    forgetUnfollowed(): void {
+        for (const address of this.unfollowed) this.accounts.delete(address);
+        this.unfollowed.clear();
+    }
+
+    /** Whether `address` is cached as an account with no code. */
+    hasNoCode(address: AccountAddress): boolean {
+        return this.accounts.get(address)?.code?.length === 0;
     }
 
     /** What the pass found missing; the next pass starts with none. */
@@ -232,6 +265,7 @@ export class MirrorStateManager extends RPCStateManager {
     /** Forgets everything cached of `address`: its fields are read again when needed. */
     dropToLazy(address: AccountAddress): void {
         this.accounts.delete(address);
+        this.unfollowed.delete(address);
     }
 
     /** Forgets the fields and slots of `address` that `diff` names. */
@@ -325,6 +359,7 @@ export class MirrorStateManager extends RPCStateManager {
 
     // The cached code, or undefined with the code recorded as missing.
     private readCode(address: AccountAddress): Uint8Array | undefined {
+        this.accessed.add(address);
         const code = this.accountOf(address).code;
         if (code === undefined) this.missing(address).code = true;
         return code;

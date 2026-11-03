@@ -1,11 +1,10 @@
-import type { MirrorBlock } from "./mirror/FollowedChain";
 import {
     isQuantity,
     LOCAL_READ_METHODS,
     paramsOf,
     parseLocalRead
 } from "./mirror/LocalReadParser";
-import { Mirror } from "./mirror/Mirror";
+import { Mirror, type MirrorRead } from "./mirror/Mirror";
 import type { MirrorUpstream } from "./mirror/MirrorChain";
 import { MirrorSampler } from "./mirror/MirrorSampler";
 import { MirrorUnavailableError } from "./mirror/MirrorUnavailableError";
@@ -35,6 +34,12 @@ export type MirrorProviderOptions = {
      * {@link DEFAULT_MIRROR_SAMPLE_RATE}, the configuration's default.
      */
     sampleRate?: number;
+    /**
+     * Contracts the mirror follows at once, at most the storage diff
+     * service's limit of addresses per request; 1,000, the service's
+     * default, unless set.
+     */
+    maxFollowedAccounts?: number;
 };
 
 /**
@@ -86,6 +91,7 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
                 customPrecompiles: options.customPrecompiles ?? [],
                 owner: options.owner,
                 nodeRoundTrips: this.nodeRoundTrips,
+                maxFollowedAccounts: options.maxFollowedAccounts,
                 getChainId: async () => (await this.getNetwork()).chainId
             });
         }
@@ -131,14 +137,14 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
         const read = mirror ? parseLocalRead(request) : undefined;
         if (mirror && read) {
             try {
-                let head: MirrorBlock | undefined;
+                let seen: MirrorRead | undefined;
                 const answer = {
                     id: request.id,
-                    ...(await read(mirror, (seen) => (head = seen)))
+                    ...(await read(mirror, (read) => (seen = read)))
                 } as JsonRpcResult | JsonRpcError;
                 if ("result" in answer)
                     this.noteOwnTransaction(request, answer);
-                this.sampler.sample(mirror, request, answer, head);
+                this.sampler.sample(mirror, request, answer, seen);
                 return answer;
             } catch (error) {
                 if (!(error instanceof MirrorUnavailableError))

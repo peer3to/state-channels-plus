@@ -445,4 +445,50 @@ describe("MirrorRpcProvider snapshots", function () {
             expect(nodeStateReads(session)).to.equal(0);
         });
     });
+
+    // Mutation: an awaited snapshot is placed after its catch-up cleared the
+    // chain -> it fails on the cleared chain and is logged as unplaceable.
+    it("places no snapshot on a chain its catch-up cleared, and answers the read", async function () {
+        await withMirrorSession(
+            async (session) => {
+                const first = await deployMirroredStorage(session);
+                expect(await first.storage.getValue()).to.equal(0n);
+                // the mirror's head stays where it is from here on
+                session.service.dropNotifications("scp_subscription");
+                const { chainStorage, address } =
+                    await deployMirroredStorage(session);
+                await (await chainStorage.setValue(5n)).wait();
+                await backfillAtService(session, [address]);
+                const snapshots =
+                    session.service.deliveredCount("scp_snapshot");
+                // the read's catch-up, and the one the awaited snapshot asks for, wait
+                const release = session.service.holdRequests(
+                    "scp_getContractStorageDiffs"
+                );
+
+                const read = session.provider.getStorage(address, 0);
+                await waitFor(
+                    () =>
+                        session.service.deliveredCount("scp_snapshot") >
+                        snapshots,
+                    5_000,
+                    20
+                );
+                await sleep(200);
+                // past the one block the service retains: both catch-ups are pruned
+                await session.chain.send("evm_mine", []);
+                await session.chain.send("evm_mine", []);
+                await sleep(200);
+                release();
+
+                expect(BigInt(await read)).to.equal(5n);
+                expect(
+                    session.warnings.some(({ message }) =>
+                        message.includes("Mirror cannot apply a snapshot")
+                    )
+                ).to.equal(false);
+            },
+            { retention: 1 }
+        );
+    });
 });

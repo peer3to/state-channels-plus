@@ -18,3 +18,5 @@ This file covers the fraction of local answers re-asked of the node, and what a 
 - `reads the account from the node from then on after a mismatch between a cached value and the node`: REQ-RPCMIRROR-7-4A6NJN.T1.P4, REQ-RPCMIRROR-7-4A6NJN.T1.P8
 - `checks a sampled eth_call against the node and drops the called account on a mismatch`: REQ-RPCMIRROR-7-4A6NJN.T1.P5, REQ-RPCMIRROR-7-4A6NJN.T1.P9
 - `keeps reading a dropped account from the node after a block writes it and after the service connection comes back`: REQ-RPCMIRROR-7-4A6NJN.T1.P7
+- `drops the called account when the node reverts a call the mirror returned`: REQ-RPCMIRROR-7-4A6NJN.T1.P10
+- `drops every account a sampled call used when the node answers differently, the callee's too`: REQ-RPCMIRROR-7-4A6NJN.T1.P11

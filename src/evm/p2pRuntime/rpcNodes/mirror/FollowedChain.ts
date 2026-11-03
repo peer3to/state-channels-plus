@@ -33,6 +33,8 @@ export interface FollowedChainHandlers {
     onSnapshotPlaced(address: AccountAddress): void;
     /** Whether `address` is read from the node: the feed's values for it are not kept. */
     isNodeRead(address: AccountAddress): boolean;
+    /** Whether `address` is followed, or about to be: records and snapshots of others change nothing. */
+    isFollowed(address: AccountAddress): boolean;
 }
 
 /**
@@ -95,6 +97,11 @@ export class FollowedChain {
         for (const address of addresses) this.trackedSince.set(address, number);
     }
 
+    /** Stops following `addresses`: records and snapshots no longer change their state. */
+    untrack(addresses: AccountAddress[]): void {
+        for (const address of addresses) this.trackedSince.delete(address);
+    }
+
     hashAt(number: bigint): string | undefined {
         if (this.base!.number === number) return this.base!.hash;
         const record = this.applied[Number(number - this.base!.number) - 1];
@@ -129,9 +136,11 @@ export class FollowedChain {
             return;
         }
         if (this.hashAt(number) !== snapshot.block.hash) return;
-        // an account read from the node takes no state from the feed
+        // an account read from the node, or no longer followed, takes no state from the feed
         const addresses = Object.keys(snapshot.accounts).filter(
-            (address) => !this.handlers.isNodeRead(address)
+            (address) =>
+                this.handlers.isFollowed(address) &&
+                !this.handlers.isNodeRead(address)
         );
         this.state.applySnapshot(
             Object.fromEntries(
@@ -162,7 +171,15 @@ export class FollowedChain {
     }
 
     private applyBlock(record: BlockStorageDiff): void {
-        this.state.fill(record.post);
+        // what is cached of an account not followed holds at the old head only
+        this.state.forgetUnfollowed();
+        this.state.fill(
+            Object.fromEntries(
+                Object.entries(record.post).filter(([address]) =>
+                    this.handlers.isFollowed(address)
+                )
+            )
+        );
         this.forgetNodeRead(record);
         this.applied.push(record);
         this.handlers.onArrived(BigInt(record.number));
@@ -182,6 +199,7 @@ export class FollowedChain {
     private rollBack(): void {
         const record = this.applied.pop();
         if (!record) throw new Error("Cannot roll back below the first block");
+        this.state.forgetUnfollowed();
         this.state.revertBlock(record);
         this.forgetNodeRead(record);
         // a block rolled back is no longer the chain's: nothing to wait for

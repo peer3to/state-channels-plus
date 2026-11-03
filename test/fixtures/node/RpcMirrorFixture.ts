@@ -68,6 +68,8 @@ export type MirrorSessionSettings = StorageDiffServiceSettings & {
      * provider's own default.
      */
     sampleRate?: number;
+    /** Contracts the mirror follows at once. */
+    maxFollowedAccounts?: number;
 };
 
 /**
@@ -82,6 +84,7 @@ export async function withMirrorSession<T>(
         customPrecompiles,
         withoutService,
         sampleRate: named,
+        maxFollowedAccounts,
         ...serviceSettings
     } = settings;
     const sampleRate = "sampleRate" in settings ? named : 0;
@@ -115,7 +118,8 @@ export async function withMirrorSession<T>(
             const provider = new MirrorRpcProvider([rpcNode], logger, {
                 storageDiffUrl: withoutService ? undefined : service.url,
                 sampleRate,
-                customPrecompiles
+                customPrecompiles,
+                maxFollowedAccounts
             });
             try {
                 await rpcNode.firstAttempt;
@@ -267,6 +271,24 @@ export function mismatchLog(
     return session.warnings.find(({ message }) =>
         message.includes("answered locally differs from the node's")
     )?.meta[0] as Record<string, unknown> | undefined;
+}
+
+/**
+ * State reads the provider sent the storage diff service that name
+ * `address`; an account the mirror does not follow, as a call's sender, is
+ * read again at each head.
+ */
+export function serviceStateReadsOf(
+    session: MirrorSession,
+    address: string
+): number {
+    const account = address.toLowerCase();
+    // scp_getState params: [blockHash, [{ address, ... }]]
+    return serviceRequests(session, "scp_getState").filter((request) =>
+        ((request.params as [string, { address: string }[]])[1] ?? []).some(
+            (read) => read.address === account
+        )
+    ).length;
 }
 
 /** Requests of `method` the provider sent to the storage diff service. */

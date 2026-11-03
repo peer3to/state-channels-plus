@@ -1,3 +1,5 @@
+import { Mirror } from "@/evm/p2pRuntime/rpcNodes/mirror/Mirror";
+import { createLogger } from "@/utils/logging";
 import {
     deployCommitProbe,
     deployMirroredStorage,
@@ -5,6 +7,7 @@ import {
     nodeRequests,
     withMirrorSession
 } from "@test/fixtures/node/RpcMirrorFixture";
+import { deployRuntimeCode } from "@test/fixtures/node/StorageDiffContracts";
 import { rejectionOf } from "@test/fixtures/node/StorageDiffSession";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -44,6 +47,117 @@ describe("MirrorRpcProvider routing", function () {
             expect(BigInt(await call())).to.equal(5n);
             // a call without a limit stays local
             expect(nodeCalls() - before).to.equal(1);
+        });
+    });
+
+    // Mutation: the fee fields are honoured locally -> the node is not asked.
+    it("answers a call that sets EIP-1559 fee fields from the node, which prices it against its base fee", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, address } = await deployMirroredStorage(session);
+            await (await storage.setValue(5n)).wait();
+            await storage.getValue();
+            const before = nodeRequests(session, "eth_call").length;
+
+            const answer = await session.provider.send("eth_call", [
+                {
+                    // a sender that can pay the fee the node charges against
+                    from: await session.signer.getAddress(),
+                    to: address,
+                    data: storage.interface.encodeFunctionData("getValue"),
+                    maxFeePerGas: toQuantity(2_000_000_000n),
+                    maxPriorityFeePerGas: toQuantity(1n)
+                },
+                "latest"
+            ]);
+
+            expect(BigInt(answer)).to.equal(5n);
+            expect(nodeRequests(session, "eth_call").length - before).to.equal(
+                1
+            );
+        });
+    });
+
+    // Mutation: a failure that is no revert is answered locally -> the node is not asked.
+    it("answers a call that fails without reverting from the node, which keeps the chain's gas accounting", async function () {
+        await withMirrorSession(async (session) => {
+            // INVALID: the call fails without reverting
+            const invalid = await deployRuntimeCode(session.signer, "fe");
+            const before = nodeRequests(session, "eth_call").length;
+
+            const failure = await rejectionOf(
+                session.provider.send("eth_call", [
+                    { to: invalid, data: "0x" },
+                    "latest"
+                ])
+            );
+
+            expect(failure).to.be.instanceOf(Error);
+            expect(nodeRequests(session, "eth_call").length - before).to.equal(
+                1
+            );
+        });
+    });
+
+    // Mutation: a failed start of the local EVM is kept -> every later call
+    // fails with the first start's error.
+    it("starts the local EVM again for a call after a start that failed", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, address } = await deployMirroredStorage(session);
+            await (await storage.setValue(5n)).wait();
+            const logger = createLogger(
+                {},
+                {},
+                { level: "error", attachErrorListener: false }
+            );
+            const read = (method: string, params: unknown[]) =>
+                session.chain.send(method, params) as Promise<string>;
+            let chainIdReads = 0;
+            const mirror = new Mirror({
+                serviceUrl: session.service.url,
+                upstream: {
+                    getStorageAt: (account, slot, block) =>
+                        read("eth_getStorageAt", [
+                            account,
+                            slot,
+                            toQuantity(block)
+                        ]),
+                    getBalance: (account, block) =>
+                        read("eth_getBalance", [account, toQuantity(block)]),
+                    getTransactionCount: (account, block) =>
+                        read("eth_getTransactionCount", [
+                            account,
+                            toQuantity(block)
+                        ]),
+                    getCode: (account, block) =>
+                        read("eth_getCode", [account, toQuantity(block)])
+                },
+                logger,
+                customPrecompiles: [],
+                getChainId: async () => {
+                    // the first start finds the chain id unreadable
+                    if (++chainIdReads === 1)
+                        throw new Error("The chain id is not readable yet");
+                    return (await session.chain.getNetwork()).chainId;
+                }
+            });
+            const call = () =>
+                mirror.call({
+                    to: address.toLowerCase(),
+                    data: storage.interface.encodeFunctionData("getValue")
+                });
+            try {
+                const first = await rejectionOf(call());
+                const second = await call();
+
+                expect((first as Error).message).to.equal(
+                    "The chain id is not readable yet"
+                );
+                expect(second.kind).to.equal("return");
+                expect(BigInt((second as { data: string }).data)).to.equal(5n);
+            } finally {
+                await mirror.close();
+                logger.dispose();
+            }
         });
     });
 

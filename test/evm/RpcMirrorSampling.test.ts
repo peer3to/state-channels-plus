@@ -1,11 +1,13 @@
 import { sleep } from "@/utils";
 import {
     deployMirroredStorage,
+    callerRuntime,
     mismatchLog,
     nodeRequests,
     nodeStateReads,
     withMirrorSession
 } from "@test/fixtures/node/RpcMirrorFixture";
+import { deployRuntimeCode } from "@test/fixtures/node/StorageDiffContracts";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { toBeHex, ZeroHash } from "ethers";
@@ -246,6 +248,108 @@ describe("MirrorRpcProvider sampling", function () {
                 expect(JSON.stringify(logged)).to.not.include(
                     toBeHex(6n, 32).slice(2)
                 );
+            },
+            { sampleRate: 1 }
+        );
+    });
+
+    // Mutation: a node revert counts as no answer -> the sample is skipped
+    // and the call keeps returning locally.
+    it("drops the called account when the node reverts a call the mirror returned", async function () {
+        await withMirrorSession(
+            async (session) => {
+                // reverts while slot 0 holds 5; a call with data stores its first word in slot 0
+                const guard = await deployRuntimeCode(
+                    session.signer,
+                    "36601857" + // JUMPI to the store when there is calldata
+                        "600054600514601257" + // JUMPI to the revert when slot 0 is 5
+                        "60006000f3" + // RETURN nothing
+                        "5b60006000fd" + // REVERT
+                        "5b6000356000" +
+                        "5500" // SSTORE(0, calldata word) STOP
+                );
+                await (
+                    await session.signer.sendTransaction({
+                        to: guard,
+                        data: toBeHex(5n, 32)
+                    })
+                ).wait();
+                // the service reads slot values wrongly: the copy holds 6
+                session.relay.tamper("eth_getStorageAt", (result) =>
+                    toBeHex(BigInt(result as string) + 1n, 32)
+                );
+                const call = () =>
+                    session.provider.send("eth_call", [
+                        { to: guard.toLowerCase(), data: "0x" },
+                        "latest"
+                    ]);
+
+                const local = await call();
+                // the mismatch drops the account: the call then sees the node's 5 and reverts
+                await waitFor(
+                    async () =>
+                        (await call().then(
+                            () => false,
+                            () => true
+                        )) === true,
+                    5_000,
+                    20
+                );
+
+                expect(local).to.equal("0x");
+                expect(mismatchLog(session)).to.include({
+                    method: "eth_call",
+                    account: guard.toLowerCase()
+                });
+            },
+            { sampleRate: 1 }
+        );
+    });
+
+    // Mutation: a mismatch drops only the called account -> the callee's
+    // wrong slot stays cached.
+    it("drops every account a sampled call used when the node answers differently, the callee's too", async function () {
+        await withMirrorSession(
+            async (session) => {
+                // reverts while slot 0 holds 5; a call with data stores its first word in slot 0
+                const guard = await deployRuntimeCode(
+                    session.signer,
+                    "36601857" +
+                        "600054600514601257" +
+                        "60006000f3" +
+                        "5b60006000fd" +
+                        "5b6000356000" +
+                        "5500"
+                );
+                await (
+                    await session.signer.sendTransaction({
+                        to: guard,
+                        data: toBeHex(5n, 32)
+                    })
+                ).wait();
+                // returns whether its call to the guard succeeded
+                const caller = await deployRuntimeCode(
+                    session.signer,
+                    callerRuntime(guard)
+                );
+                // the service reads slot values wrongly: the copy holds 6
+                session.relay.tamper("eth_getStorageAt", (result) =>
+                    toBeHex(BigInt(result as string) + 1n, 32)
+                );
+
+                const call = async () =>
+                    BigInt(
+                        await session.provider.send("eth_call", [
+                            { to: caller.toLowerCase(), data: "0x" },
+                            "latest"
+                        ])
+                    );
+
+                const local = await call();
+                // the mismatch drops the guard as well: the call then sees the node's 5, and the guard reverts
+                await waitFor(async () => (await call()) === 0n, 5_000, 20);
+
+                expect(local).to.equal(1n);
             },
             { sampleRate: 1 }
         );

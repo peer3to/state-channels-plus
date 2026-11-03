@@ -9,6 +9,7 @@ import {
     nodeRequests,
     nodeStateReads,
     serviceRequests,
+    serviceStateReadsOf,
     withMirrorSession
 } from "@test/fixtures/node/RpcMirrorFixture";
 import { waitFor } from "@test/utils/waitFor";
@@ -23,17 +24,15 @@ const ABSENCE_WINDOW_MS = 500;
 describe("MirrorRpcProvider state", function () {
     it("reads a slot written on chain after the block's record arrives without an eth_getStorageAt", async function () {
         await withMirrorSession(async (session) => {
-            const { storage } = await deployMirroredStorage(session);
+            const { storage, address } = await deployMirroredStorage(session);
             await (await storage.setValue(5n)).wait();
             expect(await storage.getValue()).to.equal(5n);
-            const fetched = serviceRequests(session, "scp_getState").length;
+            const fetched = serviceStateReadsOf(session, address);
 
             await (await storage.setValue(7n)).wait();
 
             expect(await storage.getValue()).to.equal(7n);
-            expect(serviceRequests(session, "scp_getState")).to.have.length(
-                fetched
-            );
+            expect(serviceStateReadsOf(session, address)).to.equal(fetched);
             expect(nodeStateReads(session)).to.equal(0);
         });
     });
@@ -319,10 +318,10 @@ describe("MirrorRpcProvider state", function () {
 
     it("reads the replacement branch's value after a reorg", async function () {
         await withMirrorSession(async (session) => {
-            const { storage } = await deployMirroredStorage(session);
+            const { storage, address } = await deployMirroredStorage(session);
             await (await storage.setValue(5n)).wait();
             expect(await storage.getValue()).to.equal(5n);
-            const fetched = serviceRequests(session, "scp_getState").length;
+            const fetched = serviceStateReadsOf(session, address);
             const snapshot = await session.chain.send("evm_snapshot", []);
             await (await storage.setValue(6n)).wait();
             expect(await storage.getValue()).to.equal(6n);
@@ -331,19 +330,17 @@ describe("MirrorRpcProvider state", function () {
             await (await storage.setValue(9n)).wait();
 
             expect(await storage.getValue()).to.equal(9n);
-            expect(serviceRequests(session, "scp_getState")).to.have.length(
-                fetched
-            );
+            expect(serviceStateReadsOf(session, address)).to.equal(fetched);
             expect(nodeStateReads(session)).to.equal(0);
         });
     });
 
     it("restores a slot the orphaned block wrote when the replacement block does not write it", async function () {
         await withMirrorSession(async (session) => {
-            const { storage } = await deployMirroredStorage(session);
+            const { storage, address } = await deployMirroredStorage(session);
             await (await storage.setValue(5n)).wait();
             expect(await storage.getValue()).to.equal(5n);
-            const fetched = serviceRequests(session, "scp_getState").length;
+            const fetched = serviceStateReadsOf(session, address);
             const snapshot = await session.chain.send("evm_snapshot", []);
             await (await storage.setValue(6n)).wait();
             expect(await storage.getValue()).to.equal(6n);
@@ -352,9 +349,7 @@ describe("MirrorRpcProvider state", function () {
             await session.chain.send("evm_mine", []);
 
             await waitFor(async () => (await storage.getValue()) === 5n);
-            expect(serviceRequests(session, "scp_getState")).to.have.length(
-                fetched
-            );
+            expect(serviceStateReadsOf(session, address)).to.equal(fetched);
             expect(nodeStateReads(session)).to.equal(0);
         });
     });
@@ -489,5 +484,224 @@ describe("MirrorRpcProvider state", function () {
                 nodeRequests(session, "eth_getBlockByNumber")
             ).to.have.length(0);
         });
+    });
+
+    // Mutation: the limit error is a lost connection -> the copy is dropped
+    // and the next read of the first contract follows it again.
+    it("keeps its copy and the connection when the service refuses a subscribe with its limit error, and the node answers that read", async function () {
+        await withMirrorSession(
+            async (session) => {
+                const [a, b, c] = [
+                    await deployMirroredStorage(session),
+                    await deployMirroredStorage(session),
+                    await deployMirroredStorage(session)
+                ];
+                await (await a.chainStorage.setValue(5n)).wait();
+                await (await c.chainStorage.setValue(7n)).wait();
+                expect(
+                    BigInt(await session.provider.getStorage(a.address, 0))
+                ).to.equal(5n);
+                await session.provider.getStorage(b.address, 0);
+                const subscribes = serviceRequests(
+                    session,
+                    "scp_subscribeContractStorage"
+                ).length;
+                const reads = serviceStateReadsOf(session, a.address);
+
+                // the service watches two accounts, both followed: a third is refused
+                const third = BigInt(
+                    await session.provider.getStorage(c.address, 0)
+                );
+                const nodeReads = nodeRequests(
+                    session,
+                    "eth_getStorageAt"
+                ).length;
+                const again = BigInt(
+                    await session.provider.getStorage(a.address, 0)
+                );
+
+                expect(third).to.equal(7n);
+                expect(nodeReads).to.equal(1);
+                expect(again).to.equal(5n);
+                expect(
+                    nodeRequests(session, "eth_getStorageAt")
+                ).to.have.length(1);
+                expect(serviceStateReadsOf(session, a.address)).to.equal(reads);
+                // the refused subscribe only: no reconnect follows again
+                expect(
+                    serviceRequests(session, "scp_subscribeContractStorage")
+                ).to.have.length(subscribes + 1);
+            },
+            { maxWatchedAddresses: 2 }
+        );
+    });
+
+    // Mutation: an invalid-params answer is a lost connection -> the copy is dropped.
+    it("keeps its copy and the connection when the service refuses a subscribe naming more accounts than it allows", async function () {
+        await withMirrorSession(
+            async (session) => {
+                const [a, b, c] = [
+                    await deployMirroredStorage(session),
+                    await deployMirroredStorage(session),
+                    await deployMirroredStorage(session)
+                ];
+                await (await a.chainStorage.setValue(5n)).wait();
+                await session.provider.getStorage(a.address, 0);
+                await session.provider.getStorage(b.address, 0);
+                const reads = serviceStateReadsOf(session, a.address);
+
+                await session.provider.getStorage(c.address, 0);
+                const again = BigInt(
+                    await session.provider.getStorage(a.address, 0)
+                );
+
+                expect(again).to.equal(5n);
+                expect(serviceStateReadsOf(session, a.address)).to.equal(reads);
+                expect(
+                    nodeRequests(session, "eth_getStorageAt")
+                ).to.have.length(1);
+            },
+            { maxAddressesPerRequest: 2 }
+        );
+    });
+
+    // Mutation: the followed set is not bounded -> the third subscribe names all three.
+    it("stops following the least recently read contract to follow a new one past its bound, and keeps answering the others locally", async function () {
+        await withMirrorSession(
+            async (session) => {
+                const [a, b, c] = [
+                    await deployMirroredStorage(session),
+                    await deployMirroredStorage(session),
+                    await deployMirroredStorage(session)
+                ];
+                await (await a.chainStorage.setValue(5n)).wait();
+                for (const contract of [a, b, c])
+                    await session.provider.getStorage(contract.address, 0);
+                const subscribed = serviceRequests(
+                    session,
+                    "scp_subscribeContractStorage"
+                ).at(-1)!.params as [string[]];
+                const reads = [b, c].map((contract) =>
+                    serviceStateReadsOf(session, contract.address)
+                );
+
+                await session.provider.getStorage(b.address, 0);
+                await session.provider.getStorage(c.address, 0);
+                const evicted = BigInt(
+                    await session.provider.getStorage(a.address, 0)
+                );
+
+                expect(subscribed[0]).to.have.members(
+                    [b.address, c.address].map((address) =>
+                        address.toLowerCase()
+                    )
+                );
+                expect(
+                    [b, c].map((contract) =>
+                        serviceStateReadsOf(session, contract.address)
+                    )
+                ).to.deep.equal(reads);
+                expect(evicted).to.equal(5n);
+                expect(nodeStateReads(session)).to.equal(0);
+            },
+            { maxFollowedAccounts: 2 }
+        );
+    });
+
+    // Mutation: an account without code is followed -> its next read comes
+    // from the record, with no state read; one found without code is
+    // followed again -> a subscribe for each of its reads.
+    it("does not follow an account without code: reads it again at a new head, without subscribing to it", async function () {
+        await withMirrorSession(async (session) => {
+            const account = Wallet.createRandom().address;
+            await (
+                await session.signer.sendTransaction({ to: account, value: 1n })
+            ).wait();
+            expect(await session.provider.getBalance(account)).to.equal(1n);
+            const subscribes = serviceRequests(
+                session,
+                "scp_subscribeContractStorage"
+            ).length;
+            const reads = serviceStateReadsOf(session, account);
+
+            await (
+                await session.signer.sendTransaction({ to: account, value: 2n })
+            ).wait();
+            const { address } = await deployMirroredStorage(session);
+            await session.provider.getStorage(address, 0);
+            const balance = await session.provider.getBalance(account);
+
+            expect(balance).to.equal(3n);
+            expect(serviceStateReadsOf(session, account)).to.equal(reads + 1);
+            const subscribed = serviceRequests(
+                session,
+                "scp_subscribeContractStorage"
+            );
+            // the contract's subscribe only, and it names no account without code
+            expect(subscribed).to.have.length(subscribes + 1);
+            expect((subscribed.at(-1)!.params as [string[]])[0]).to.not.include(
+                account.toLowerCase()
+            );
+            expect(nodeStateReads(session)).to.equal(0);
+        });
+    });
+
+    // Mutation: a refused catch-up of a pushed record is a lost connection ->
+    // the mirror follows again with a new subscribe.
+    it("keeps its copy and the connection when the service refuses a pushed record's catch-up, and catches up with a later record", async function () {
+        await withMirrorSession(
+            async (session) => {
+                const { chainStorage, address } =
+                    await deployMirroredStorage(session);
+                const written = await (await chainStorage.setValue(5n)).wait();
+                expect(
+                    BigInt(await session.provider.getStorage(address, 0))
+                ).to.equal(5n);
+                const subscribes = serviceRequests(
+                    session,
+                    "scp_subscribeContractStorage"
+                ).length;
+                // a receipts read held at the upstream takes the one request the service answers at once
+                const held = session.relay.holdNext(
+                    "eth_getBlockReceipts",
+                    written!.blockHash
+                );
+                const receipt = session.provider.getTransactionReceipt(
+                    written!.hash
+                );
+                await held.arrived;
+
+                // a lost push leaves a gap: the next record's catch-up is refused
+                session.service.dropNotifications("scp_subscription");
+                await (await chainStorage.setValue(6n)).wait();
+                session.service.stopDroppingNotifications("scp_subscription");
+                await (await chainStorage.setValue(7n)).wait();
+                await waitFor(
+                    () =>
+                        serviceRequests(session, "scp_getContractStorageDiffs")
+                            .length > 0,
+                    5_000,
+                    20
+                );
+                await sleep(200);
+                held.release();
+                await receipt;
+                await (await chainStorage.setValue(8n)).wait();
+
+                await waitFor(
+                    async () =>
+                        BigInt(
+                            await session.provider.getStorage(address, 0)
+                        ) === 8n,
+                    5_000,
+                    20
+                );
+                expect(
+                    serviceRequests(session, "scp_subscribeContractStorage")
+                ).to.have.length(subscribes);
+                expect(nodeStateReads(session)).to.equal(0);
+            },
+            { maxInFlightRequests: 1 }
+        );
     });
 });

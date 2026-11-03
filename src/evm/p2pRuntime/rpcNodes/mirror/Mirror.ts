@@ -8,6 +8,7 @@ import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
 import type { Logger } from "@/utils/logging/Logger";
 import type { RecentSlowest } from "@/utils/storageDiff/LearnedBackstop";
 import type {
+    AccountAddress,
     BlockEnvironment,
     BlockSelector,
     RpcBlock
@@ -25,6 +26,9 @@ export type MirrorCall = {
     gasPrice?: bigint;
 };
 
+/** What a local answer was read from: the head, and the accounts the read used. */
+export type MirrorRead = { head: MirrorBlock; accounts: AccountAddress[] };
+
 /** How a call ended, as an RPC node would report it. */
 export type MirrorCallOutcome =
     | { kind: "return"; data: string }
@@ -41,6 +45,8 @@ export type MirrorOptions = {
     owner?: AInternalRpcRoot;
     /** How long the nodes took lately to answer; the waits leave room for it. */
     nodeRoundTrips?: RecentSlowest;
+    /** Contracts followed at once, at most the service's limit of addresses per request. */
+    maxFollowedAccounts?: number;
     getChainId: () => Promise<bigint>;
 };
 
@@ -67,6 +73,7 @@ export class Mirror {
             state: this.state,
             upstream: options.upstream,
             nodeRoundTrips: options.nodeRoundTrips,
+            maxFollowedAccounts: options.maxFollowedAccounts,
             logger: options.logger
         });
     }
@@ -83,11 +90,10 @@ export class Mirror {
 
     async call(
         request: MirrorCall,
-        observe?: (head: MirrorBlock) => void
+        observe?: (seen: MirrorRead) => void
     ): Promise<MirrorCallOutcome> {
         const evm = await this.getEvm();
-        return await this.chain.run(async (head) => {
-            observe?.(head);
+        return await this.observed(observe, async (head) => {
             const header = this.chain.headEnvironment();
             try {
                 const result = await evm.runCall({
@@ -118,11 +124,10 @@ export class Mirror {
     async getStorageAt(
         address: string,
         slot: string,
-        observe?: (head: MirrorBlock) => void
+        observe?: (seen: MirrorRead) => void
     ): Promise<string> {
         const key = getBytes(zeroPadValue(toBeHex(BigInt(slot)), 32));
-        return await this.chain.run(async (head) => {
-            observe?.(head);
+        return await this.observed(observe, async (head) => {
             return hexlify(
                 await this.state.getContractStorage(
                     Address.fromString(address),
@@ -134,10 +139,9 @@ export class Mirror {
 
     async getBalance(
         address: string,
-        observe?: (head: MirrorBlock) => void
+        observe?: (seen: MirrorRead) => void
     ): Promise<bigint> {
-        return await this.chain.run(async (head) => {
-            observe?.(head);
+        return await this.observed(observe, async (head) => {
             return (
                 (await this.state.getAccount(Address.fromString(address)))
                     ?.balance ?? 0n
@@ -147,10 +151,9 @@ export class Mirror {
 
     async getTransactionCount(
         address: string,
-        observe?: (head: MirrorBlock) => void
+        observe?: (seen: MirrorRead) => void
     ): Promise<bigint> {
-        return await this.chain.run(async (head) => {
-            observe?.(head);
+        return await this.observed(observe, async (head) => {
             return (
                 (await this.state.getAccount(Address.fromString(address)))
                     ?.nonce ?? 0n
@@ -160,10 +163,9 @@ export class Mirror {
 
     async getCode(
         address: string,
-        observe?: (head: MirrorBlock) => void
+        observe?: (seen: MirrorRead) => void
     ): Promise<string> {
-        return await this.chain.run(async (head) => {
-            observe?.(head);
+        return await this.observed(observe, async (head) => {
             return hexlify(this.state.readCodeOf(Address.fromString(address)));
         });
     }
@@ -229,8 +231,27 @@ export class Mirror {
         return answer;
     }
 
+    /** Runs `read` at the head, then tells `observe` the head and the accounts it used. */
+    private async observed<T>(
+        observe: ((seen: MirrorRead) => void) | undefined,
+        read: (head: MirrorBlock) => Promise<T>
+    ): Promise<T> {
+        let at: MirrorBlock | undefined;
+        return await this.chain.run(
+            async (head) => {
+                at = head;
+                return await read(head);
+            },
+            (accounts) => observe?.({ head: at!, accounts })
+        );
+    }
+
     private getEvm(): Promise<EVM> {
-        this.evm ??= this.createLocalEvm();
+        // a failed start is not kept: the next call starts the EVM again
+        this.evm ??= this.createLocalEvm().catch((error) => {
+            this.evm = undefined;
+            throw error;
+        });
         return this.evm;
     }
 

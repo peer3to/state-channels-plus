@@ -7,6 +7,7 @@ import { SnapshotWaits } from "./SnapshotWaits";
 import {
     StorageDiffNotRetainedError,
     StorageDiffPrunedError,
+    StorageDiffRefusedError,
     StorageDiffSocket
 } from "./StorageDiffSocket";
 import type { Logger } from "@/utils/logging/Logger";
@@ -36,6 +37,12 @@ import type {
 const MAX_DISCOVERY_PASSES = 256;
 /** A block number above any head: a catch-up from it answers the head alone. */
 const BEYOND_HEAD = 1n << 64n;
+/**
+ * Accounts the mirror follows at most unless told otherwise: the service's
+ * default limit of addresses one subscribe may name, as every subscribe
+ * names them all.
+ */
+const DEFAULT_MAX_FOLLOWED_ACCOUNTS = 1000;
 
 /**
  * What the mirror reads from the RPC node when the service does not retain
@@ -62,6 +69,11 @@ export type MirrorChainOptions = {
     upstream: MirrorUpstream;
     /** How long the nodes took lately to answer; the waits leave room for it. */
     nodeRoundTrips?: RecentSlowest;
+    /**
+     * Contracts followed at once, at most the service's limit of addresses
+     * per request; past it the least recently read one is no longer followed.
+     */
+    maxFollowedAccounts?: number;
     logger: Logger;
 };
 
@@ -80,8 +92,16 @@ export class MirrorChain {
     /** How long the nodes took lately to answer what the provider forwarded. */
     private readonly nodeRoundTrips: RecentSlowest;
     private readonly lock = new Mutex();
-    /** Addresses the open subscription follows. */
+    /** Addresses the open subscription follows, least recently read first. */
     private readonly tracked = new Set<AccountAddress>();
+    /** Addresses a subscribe in flight adds: their snapshots may come before its reply. */
+    private readonly tracking = new Set<AccountAddress>();
+    /**
+     * Accounts found to have no code, least recently found first: they are
+     * not followed, and what a read needs of them is read at each head.
+     */
+    private readonly codeless = new Set<AccountAddress>();
+    private readonly maxFollowed: number;
     /** The chain the cached state follows. */
     private readonly followed: FollowedChain;
     /** What reads wait for before they run on the head. */
@@ -106,6 +126,8 @@ export class MirrorChain {
         this.state = options.state;
         this.upstream = options.upstream;
         this.nodeRoundTrips = options.nodeRoundTrips ?? new RecentSlowest();
+        this.maxFollowed =
+            options.maxFollowedAccounts ?? DEFAULT_MAX_FOLLOWED_ACCOUNTS;
         this.logger = options.logger.child({ component: "RpcMirror" });
         this.followed = new FollowedChain(this.state, {
             onArrived: (number) => this.freshness.noteArrived(number),
@@ -117,7 +139,9 @@ export class MirrorChain {
             },
             onSnapshotPlaced: (address) =>
                 this.snapshotWaits.end(address, "arrived"),
-            isNodeRead: (address) => this.nodeRead.has(address)
+            isNodeRead: (address) => this.nodeRead.has(address),
+            isFollowed: (address) =>
+                this.tracked.has(address) || this.tracking.has(address)
         });
         this.freshness = new HeadFreshness(
             this.followed,
@@ -215,13 +239,20 @@ export class MirrorChain {
      * Runs `read` with the state at the head. State the read finds missing
      * is read from the service in one request, tracking the new addresses
      * first, and the read runs again from the start, so one read sees one head.
+     * `accessed` is told the accounts the answered read used.
      */
-    async run<T>(read: (head: MirrorBlock) => Promise<T>): Promise<T> {
+    async run<T>(
+        read: (head: MirrorBlock) => Promise<T>,
+        accessed?: (accounts: AccountAddress[]) => void
+    ): Promise<T> {
         // what the read may spend on the mirror, leaving the node room to answer
         const deadline = Date.now() + this.waitCapMs;
         await this.freshness.waitForRequiredBlock();
         await this.lockBy(deadline);
         this.readDeadline = deadline;
+        // The accounts this read used, over all its passes.
+        const inUse = new Set<AccountAddress>();
+        this.state.takeAccessed();
         try {
             for (let pass = 0; pass < MAX_DISCOVERY_PASSES; pass++) {
                 const head = await this.ensureFollowing();
@@ -237,12 +268,19 @@ export class MirrorChain {
                     outcome = { error };
                 }
                 const misses = this.state.takeMisses();
+                for (const address of this.state.takeAccessed())
+                    inUse.add(address);
                 if (misses.length === 0) {
                     if ("error" in outcome) throw outcome.error;
+                    // the accounts this read used are the most recently read
+                    for (const address of inUse)
+                        if (this.tracked.delete(address))
+                            this.tracked.add(address);
+                    accessed?.([...inUse]);
                     return outcome.value;
                 }
                 // the pass ran on placeholders: its outcome is discarded
-                await this.fillMisses(misses);
+                await this.fillMisses(misses, inUse);
             }
             throw new MirrorUnavailableError(
                 "The read keeps finding state missing"
@@ -396,11 +434,24 @@ export class MirrorChain {
      * after following the addresses it touched; the node answers only when
      * the service does not retain that block.
      */
-    private async fillMisses(misses: StateRequestParams[]): Promise<void> {
+    private async fillMisses(
+        misses: StateRequestParams[],
+        inUse: ReadonlySet<AccountAddress>
+    ): Promise<void> {
         this.assertTimeLeft();
-        const added = misses
-            .map((miss) => miss.address)
-            .filter((address) => !this.tracked.has(address));
+        for (const miss of misses)
+            if (this.codeless.has(miss.address))
+                this.state.unfollow(miss.address);
+        const added = this.makeRoom(
+            misses
+                .map((miss) => miss.address)
+                .filter(
+                    (address) =>
+                        !this.tracked.has(address) &&
+                        !this.codeless.has(address)
+                ),
+            inUse
+        );
         // registered before following, so a snapshot that comes during it is applied at once
         const snapshots = this.snapshotWaits.expectSnapshots(added);
         try {
@@ -415,7 +466,10 @@ export class MirrorChain {
             const head = this.followed.head;
             if (!head) return;
             const lacking = this.state.stillMissing(misses);
-            if (lacking.length === 0) return;
+            if (lacking.length === 0) {
+                this.unfollowCodeless(added);
+                return;
+            }
             const fields = lacking.reduce(
                 (sum, miss) =>
                     sum +
@@ -449,8 +503,20 @@ export class MirrorChain {
                     throw error;
                 this.state.fill(await this.readFromNode(head.number, fromFeed));
             }
+            this.unfollowCodeless(added);
         } catch (error) {
             if (error instanceof MirrorUnavailableError) throw error;
+            // a refused request changed nothing: the copy stays, the node answers this read
+            if (error instanceof StorageDiffRefusedError) {
+                this.log(
+                    "info",
+                    "The storage diff service refused a request; the node answers the read",
+                    { error }
+                );
+                throw new MirrorUnavailableError(
+                    "Storage diff service refused the request"
+                );
+            }
             this.log("warn", "Mirror cannot read state", { error });
             await this.disconnect();
             throw new MirrorUnavailableError(
@@ -509,11 +575,9 @@ export class MirrorChain {
             while (BigInt(snapshot.block.number) > this.followed.head!.number) {
                 const before = this.followed.head!.number;
                 await this.catchUp(before + 1n);
-                if (
-                    !this.followed.base ||
-                    this.followed.head!.number === before
-                )
-                    break;
+                // a catch-up that cleared the chain leaves no block to place it on
+                if (!this.followed.base) return;
+                if (this.followed.head!.number === before) break;
             }
             this.followed.placeSnapshot(snapshot);
         } catch (error) {
@@ -581,6 +645,57 @@ export class MirrorChain {
         return accounts;
     }
 
+    /**
+     * Makes room among the followed accounts for `added`: the least recently
+     * read ones the running read does not use are no longer followed, and
+     * their cached state is forgotten. Returns those of `added` to follow;
+     * any others are read at the head only.
+     */
+    private makeRoom(
+        added: AccountAddress[],
+        inUse: ReadonlySet<AccountAddress>
+    ): AccountAddress[] {
+        let excess = this.tracked.size + added.length - this.maxFollowed;
+        const evicted: AccountAddress[] = [];
+        for (const address of this.tracked) {
+            if (excess <= 0) break;
+            if (inUse.has(address)) continue;
+            evicted.push(address);
+            excess--;
+        }
+        for (const address of evicted) {
+            this.tracked.delete(address);
+            this.state.dropToLazy(address);
+        }
+        this.followed.untrack(evicted);
+        const follow =
+            excess > 0 ? added.slice(0, added.length - excess) : added;
+        for (const address of added.slice(follow.length))
+            this.state.unfollow(address);
+        return follow;
+    }
+
+    /**
+     * Only contracts stay followed: of `addresses`, an account the cache
+     * holds without code is read again at each head instead.
+     */
+    private unfollowCodeless(addresses: AccountAddress[]): void {
+        const codeless = addresses.filter((address) =>
+            this.state.hasNoCode(address)
+        );
+        for (const address of codeless) {
+            this.tracked.delete(address);
+            this.state.unfollow(address);
+            this.codeless.add(address);
+        }
+        this.followed.untrack(codeless);
+        // as many as the followed ones, the oldest forgotten first
+        for (const address of this.codeless) {
+            if (this.codeless.size <= this.maxFollowed) break;
+            this.codeless.delete(address);
+        }
+    }
+
     /** Follows `addresses` too: one subscription for the whole set, then a catch-up. */
     private async track(
         addresses: AccountAddress[]
@@ -591,12 +706,18 @@ export class MirrorChain {
         if (!head || !feed)
             throw new MirrorUnavailableError("Mirror is not following");
         const previous = this.subscription;
-        const subscribed = await feed.subscribe(
-            [...this.tracked, ...addresses],
-            this.serviceTimeoutMs()
-        );
-        this.subscription = subscribed.subscription;
-        for (const address of addresses) this.tracked.add(address);
+        for (const address of addresses) this.tracking.add(address);
+        let subscribed: SubscribeResult;
+        try {
+            subscribed = await feed.subscribe(
+                [...this.tracked, ...addresses],
+                this.serviceTimeoutMs()
+            );
+            this.subscription = subscribed.subscription;
+            for (const address of addresses) this.tracked.add(address);
+        } finally {
+            for (const address of addresses) this.tracking.delete(address);
+        }
         this.followed.trackFrom(addresses, head.number);
         // the service keeping a superseded subscription costs only pushes the
         // new one also carries, so a failed unsubscribe keeps the connection
@@ -612,7 +733,16 @@ export class MirrorChain {
                         }
                     );
                 });
-        await this.catchUp(head.number + 1n);
+        try {
+            await this.catchUp(head.number + 1n);
+        } catch (error) {
+            if (!(error instanceof StorageDiffRefusedError)) throw error;
+            // the records after the head may lack the accounts just followed:
+            // the copy cannot be trusted, so the connection starts over
+            throw new Error(
+                "The catch-up of newly followed accounts was refused"
+            );
+        }
         return subscribed.accounts;
     }
 
@@ -623,6 +753,15 @@ export class MirrorChain {
             if (!this.followed.base || this.closed) return;
             await this.apply(record);
         } catch (error) {
+            // a refused catch-up changed nothing: the next record or read catches up
+            if (error instanceof StorageDiffRefusedError) {
+                this.log(
+                    "info",
+                    "The storage diff service refused a catch-up",
+                    { error }
+                );
+                return;
+            }
             this.log("warn", "Mirror cannot apply a pushed record", { error });
             await this.disconnect();
         } finally {

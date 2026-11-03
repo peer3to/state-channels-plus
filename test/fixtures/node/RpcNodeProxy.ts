@@ -422,7 +422,8 @@ export class RpcNodeProxy {
                 if (failures === 1) this.failingMethods.delete(method);
                 else this.failingMethods.set(method, failures - 1);
                 this.failedRequests.push({ method, params });
-                reply({ error: { code: -32005, message: "request failed" } });
+                // an internal error: -32005 is the storage diff service's limit refusal
+                reply({ error: { code: -32603, message: "request failed" } });
                 return;
             }
             const erroring = method

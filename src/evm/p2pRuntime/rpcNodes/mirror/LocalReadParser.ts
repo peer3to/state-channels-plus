@@ -1,5 +1,5 @@
-import type { MirrorBlock } from "./FollowedChain";
-import type { Mirror, MirrorCall } from "./Mirror";
+import type { Mirror, MirrorCall, MirrorRead } from "./Mirror";
+import { NotLocalError } from "./MirrorUnavailableError";
 import {
     isHexString,
     toQuantity,
@@ -12,23 +12,22 @@ export type LocalAnswer =
     | { result: unknown }
     | { error: JsonRpcError["error"] };
 
-/** A request the mirror can answer, ready to run; `observe` is told the head the answer is of. */
+/** A request the mirror can answer, ready to run; `observe` is told what the answer was read from. */
 export type LocalRead = (
     mirror: Mirror,
-    observe: (head: MirrorBlock) => void
+    observe: (seen: MirrorRead) => void
 ) => Promise<LocalAnswer>;
 
 /** JSON-RPC error code nodes use for a reverted call. */
-const REVERT_ERROR_CODE = 3;
-/** JSON-RPC error code of a call that failed without reverting. */
-const EXECUTION_ERROR_CODE = -32000;
+export const REVERT_ERROR_CODE = 3;
 
 /**
  * The `eth_call` fields the local EVM honours. `gas` is deliberately absent:
  * a call that carries a gas limit runs whole on the node as well: the local
  * EVM charges no transaction gas (21,000 and calldata), and the chain's gas
  * accounting is the chain's own, so only the node can tell the least limit at
- * which a call succeeds.
+ * which a call succeeds. The EIP-1559 fee fields are absent too: the gas
+ * price a call sees from them is the node's to work out against its base fee.
  */
 const SUPPORTED_CALL_FIELDS: ReadonlySet<string> = new Set([
     "from",
@@ -37,8 +36,6 @@ const SUPPORTED_CALL_FIELDS: ReadonlySet<string> = new Set([
     "input",
     "value",
     "gasPrice",
-    "maxFeePerGas",
-    "maxPriorityFeePerGas",
     "type",
     "chainId"
 ]);
@@ -136,12 +133,11 @@ export function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
                             data: outcome.data
                         }
                     };
-                return {
-                    error: {
-                        code: EXECUTION_ERROR_CODE,
-                        message: outcome.message
-                    }
-                };
+                // out of gas, an invalid opcode: the local EVM keeps no
+                // gas accounting of the chain's, so only the node can say
+                throw new NotLocalError(
+                    `The local call failed without reverting: ${outcome.message}`
+                );
             };
         }
         case "eth_getStorageAt": {

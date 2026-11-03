@@ -22,3 +22,6 @@ This file covers which reads are answered locally and which go to the node whole
 - `answers the chain id from its first answer without asking a node again`: REQ-RPCMIRROR-6-MHV1QD.T1.P1
 - `answers the block number, blocks, transactions and receipts as the node does, without asking a node`: REQ-RPCMIRROR-6-MHV1QD.T1.P2
 - `asks the node for a transaction, receipt or block the service does not hold`: REQ-RPCMIRROR-6-MHV1QD.T1.P3
+- `answers a call that sets EIP-1559 fee fields from the node, which prices it against its base fee`: REQ-RPCMIRROR-2-1P38E2.T1.P9
+- `answers a call that fails without reverting from the node, which keeps the chain's gas accounting`: REQ-RPCMIRROR-2-1P38E2.T1.P10
+- `starts the local EVM again for a call after a start that failed`: REQ-RPCMIRROR-8-1PA83T.T1.P11
