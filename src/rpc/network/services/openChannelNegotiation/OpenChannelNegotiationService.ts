@@ -436,8 +436,6 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             decoded,
             this.p2pManager.stateManager.signer
         );
-        // pending writes reach disk before our opening signature leaves
-        await this.p2pManager.stateManager.storage.flush();
         if (this.state.channelOpened) {
             await attempt.classifyObservedOpening;
         }
@@ -582,9 +580,6 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             );
             attempt.localOpeningSignatureIssued = true;
             this.scheduleDeadlineObservation(attempt, deadlineTimestamp);
-            // pending writes reach disk before our opening signature leaves;
-            // set after the issued flag: a disk failure is no fault of the peer
-            await this.p2pManager.stateManager.storage.flush();
             attempt.proposalRequestInFlight = true;
             await this.remoteRpc.openChannelNegotiationService
                 .openProposal(

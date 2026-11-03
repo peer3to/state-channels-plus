@@ -1161,10 +1161,9 @@ export class StubService extends ANetworkRpcService<
     }
 
     /**
-     * Fail every disk batch a flush waits for (the runtime then aborts, or
-     * with `holdAbort` parks that abort in `heldAbort`); timer batches still
-     * reach disk. Applies to the partition bound now or, without one, to the
-     * next one bound; true when one is bound now.
+     * Fail every disk batch (the runtime then aborts, or with `holdAbort`
+     * parks that abort in `heldAbort`). Applies to the partition bound now
+     * or, without one, to the next one bound; true when one is bound now.
      */
     public failPersistenceFlushes(holdAbort = false): boolean {
         if (holdAbort) {
@@ -1180,9 +1179,8 @@ export class StubService extends ANetworkRpcService<
     }
 
     /**
-     * Park every disk batch a flush waits for until
-     * `releasePersistenceFlushes`; timer batches still reach disk. Applies
-     * like `failPersistenceFlushes`.
+     * Park every disk batch until `releasePersistenceFlushes`. Applies like
+     * `failPersistenceFlushes`.
      */
     public holdPersistenceFlushes(): boolean {
         const released = new Promise<void>((resolve) => {
@@ -5979,9 +5977,9 @@ export class StubService extends ANetworkRpcService<
             ) => Promise<void>;
             database.batch = (async (
                 operations: PersistenceBatchOperation[],
-                options?: { sync?: boolean }
+                options?: object
             ) => {
-                if (options?.sync) await gate();
+                await gate();
                 return batch(operations, options);
             }) as typeof database.batch;
         };

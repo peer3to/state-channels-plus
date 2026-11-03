@@ -3,6 +3,7 @@ import {
     PersistentCollection,
     type PersistenceController
 } from "./persistence";
+import type { PersistedBlockRecord } from "./persistence/storageCodecs";
 import { Block, BlockCoordinates } from "@/models";
 import { Hash, ForkId, BlockHeight, Signature, Timestamp } from "@/types/types";
 type StoreOptions = {
@@ -24,7 +25,7 @@ export class BlockStorage {
     // the record also keeps whether the block's first store advanced the tip
     private readonly coordinatesToBlockMap: PersistentCollection<
         CoordinateKey,
-        "blocks"
+        PersistedBlockRecord
     >;
 
     // NEW: Track highest height for each forkId

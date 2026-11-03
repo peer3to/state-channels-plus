@@ -2,6 +2,7 @@ import * as factory from "../../factory";
 import { Block } from "@/models";
 import type StateSnapshot from "@/models/StateSnapshot";
 import Storage from "@/storage";
+import { BlockOrigin } from "@/storage/QueueStorage";
 import type { BlockHeight, ForkId, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { GatedMemoryLevel } from "@test/fixtures/GatedMemoryLevel";
@@ -650,6 +651,95 @@ describe("Storage reopen", function () {
             storage = await reopen(database, storage);
 
             expect(storage.inboundMessages.getLatestBlockHash()).to.equal(head);
+            await storage.close();
+        });
+    });
+
+    describe("queue", function () {
+        /** a queued network entry whose source supplied the author's signature and one confirmation */
+        function queuedEntry(storage: Storage) {
+            const block = factory.block();
+            block.onChainTimestamp = 7;
+            const confirmation = signBlock(block);
+            const source = ethers.getAddress(String(factory.randomAddress()));
+            storage.queues.restoreEntry({
+                block,
+                firstSeenAt: 11,
+                origin: BlockOrigin.NETWORK,
+                sourcesToSignatures: new Map([
+                    [source, new Set([block.originalSignature, confirmation])]
+                ])
+            });
+            return { block, confirmation, source };
+        }
+
+        it("restores a queued entry with its first-seen time, origin, sources and their signatures, and on-chain timestamp", async () => {
+            const database = new GatedMemoryLevel();
+            let storage = await openStorage(database);
+            const { block, confirmation, source } = queuedEntry(storage);
+
+            storage = await reopen(database, storage);
+
+            const restored = storage.queues.getQueuedEntry(block.hash)!;
+            expect(encodedBlock(restored.block)).to.equal(encodedBlock(block));
+            expect(restored.block.onChainTimestamp).to.equal(7);
+            expect(restored.firstSeenAt).to.equal(11);
+            expect(restored.origin).to.equal(BlockOrigin.NETWORK);
+            expect([...restored.sourcesToSignatures.keys()]).to.deep.equal([
+                source
+            ]);
+            expect([
+                ...restored.sourcesToSignatures.get(source)!
+            ]).to.have.members([block.originalSignature, confirmation]);
+            await storage.close();
+        });
+
+        it("rebuilds the coordinate index on load: a restored entry dequeues by its coordinates", async () => {
+            const database = new GatedMemoryLevel();
+            let storage = await openStorage(database);
+            const { block } = queuedEntry(storage);
+
+            storage = await reopen(database, storage);
+
+            expect(
+                storage.queues
+                    .tryDequeueAt(block.forkId, block.height)
+                    .map((entry) => entry.block.hash)
+            ).to.deep.equal([block.hash]);
+            await storage.close();
+        });
+
+        it("keeps a dequeued entry off the disk after a reopen", async () => {
+            const database = new GatedMemoryLevel();
+            let storage = await openStorage(database);
+            const { block } = queuedEntry(storage);
+            await storage.flush();
+            storage.queues.tryDequeueAt(block.forkId, block.height);
+
+            storage = await reopen(database, storage);
+
+            expect(storage.queues.getQueuedEntry(block.hash)).to.equal(
+                undefined
+            );
+            expect(
+                storage.queues.tryDequeueAt(block.forkId, block.height)
+            ).to.deep.equal([]);
+            await storage.close();
+        });
+
+        it("writes an entry queued and dequeued in one window as one delete", async () => {
+            const database = new GatedMemoryLevel();
+            const storage = await openStorage(database, 60_000);
+            const { block } = queuedEntry(storage);
+            storage.queues.removeBlock(block.hash);
+
+            await storage.flush();
+
+            expect(
+                database.batches.map(({ operations }) => operations)
+            ).to.deep.equal([
+                [{ type: "del", key: `records!v1!queues!${block.hash}` }]
+            ]);
             await storage.close();
         });
     });

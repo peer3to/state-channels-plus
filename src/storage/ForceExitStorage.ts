@@ -6,7 +6,7 @@ import {
 type ForceExitKey = "value";
 
 export class ForceExitStorage {
-    private readonly value: PersistentCollection<ForceExitKey, "forceExit">;
+    private readonly value: PersistentCollection<ForceExitKey, boolean>;
 
     constructor(controller?: PersistenceController) {
         this.value = new PersistentCollection("forceExit", controller);

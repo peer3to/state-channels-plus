@@ -2,13 +2,14 @@ import {
     PersistenceController,
     PersistentCollection
 } from "@/storage/persistence";
+import type { Bytes } from "@/types/types";
 import { GatedMemoryLevel } from "@test/fixtures/GatedMemoryLevel";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 const RECORD = "records!v1!stateMachineStates!";
 
-type States = PersistentCollection<string, "stateMachineStates">;
+type States = PersistentCollection<string, Bytes>;
 
 /** a controller with one collection over a gated memory database; the timer is off unless asked */
 function build(flushIntervalMs = 60_000, onLoad?: () => void) {
@@ -148,7 +149,7 @@ describe("PersistenceController", function () {
         await controller.close();
     });
 
-    it("syncs the batch a flush waits for, also when a timer batch already wrote the flush's writes, and never a timer batch", async () => {
+    it("syncs every batch, timer batches included, and writes no sync marker", async () => {
         const database = new GatedMemoryLevel();
         const { controller, states, open } = build(5);
         await open(database);
@@ -161,35 +162,55 @@ describe("PersistenceController", function () {
         );
         states.set("flushed", "0x02");
         await controller.flush();
+        states.set("closed", "0x03");
+        await controller.close();
 
-        // the timer wrote this one too: the flush still waits for a synced batch
-        states.set("timer-again", "0x03");
-        await waitFor(
-            () => database.batches[2]?.committed === true,
-            undefined,
-            5
-        );
-        database.hold();
-        let flushed = false;
-        const flush = controller.flush().then(() => {
-            flushed = true;
-        });
-        await tick();
-        expect(flushed).to.equal(false);
-        database.release();
-        await flush;
-
+        expect(database.batches).to.have.length(3);
         expect(database.batches.map(({ sync }) => sync)).to.deep.equal([
-            false,
             true,
-            false,
+            true,
             true
         ]);
-        expect(database.batches[3].committed).to.equal(true);
-        // that synced batch writes no record
         expect(
-            database.batches[3].operations.map(({ type }) => type)
-        ).to.deep.equal(["del"]);
+            database.batches.flatMap(({ operations }) =>
+                operations.map(({ key }) => key)
+            )
+        ).to.deep.equal([
+            `${RECORD}timer`,
+            `${RECORD}flushed`,
+            `${RECORD}closed`
+        ]);
+    });
+
+    it("resolves two flushes waiting on one batch in the order they were issued", async () => {
+        const database = new GatedMemoryLevel();
+        const { controller, states, open } = build();
+        await open(database);
+        database.hold();
+        states.set("a", "0x01");
+        const inFlight = controller.flush();
+        await tick();
+        states.set("b", "0x02");
+        const order: string[] = [];
+        const first = controller.flush().then(() => order.push("first"));
+        const second = controller.flush().then(() => order.push("second"));
+
+        database.release();
+        await Promise.all([inFlight, first, second]);
+
+        expect(database.batches).to.have.length(2);
+        expect(order).to.deep.equal(["first", "second"]);
+        await controller.close();
+    });
+
+    it("resolves a flush right after open at once: nothing waits for the partition's own records", async () => {
+        const database = new GatedMemoryLevel();
+        const { controller, open } = build();
+        await open(database);
+
+        await controller.flush();
+
+        expect(database.batches).to.have.length(0);
         await controller.close();
     });
 
@@ -365,7 +386,7 @@ describe("PersistenceController", function () {
         const error = await rejection(open(database));
 
         expect(error.message).to.include(
-            "Unknown persisted collection unknown"
+            "Unknown persistence collection unknown"
         );
         expect(database.status).to.equal("closed");
     });

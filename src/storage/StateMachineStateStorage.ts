@@ -10,10 +10,7 @@ type StoreOptions = {
 };
 
 export class StateMachineStateStorage {
-    private readonly statesByHash: PersistentCollection<
-        Hash,
-        "stateMachineStates"
-    >;
+    private readonly statesByHash: PersistentCollection<Hash, Bytes>;
 
     constructor(controller?: PersistenceController) {
         this.statesByHash = new PersistentCollection(

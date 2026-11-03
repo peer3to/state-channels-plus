@@ -20,11 +20,11 @@ export class DisputeStorage {
     // ====================================
     // STORAGE MAPS
     // ====================================
-    private readonly disputes: PersistentCollection<Hash, "disputes">;
-    private readonly disputedForks: PersistentCollection<
-        ForkId,
-        "disputedForks"
+    private readonly disputes: PersistentCollection<
+        Hash,
+        DisputeConfirmationStruct
     >;
+    private readonly disputedForks: PersistentCollection<ForkId, DidIDispute>;
 
     constructor(controller?: PersistenceController) {
         this.disputes = new PersistentCollection("disputes", controller);

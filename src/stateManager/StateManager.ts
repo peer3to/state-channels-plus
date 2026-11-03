@@ -521,7 +521,8 @@ class StateManager<
      * genesis) through the normal install, held at `SYNCED` until the restart
      * sync settles, then reconciles it with the chain: refills the local
      * mirror, clears a dispute marker whose dispute never landed and re-arms
-     * the calldata post of an own latest block. Nothing persisted -> nothing
+     * the calldata post of an own latest block. Restored queue entries wait
+     * out the rest of their window. Nothing persisted -> nothing
      * to restore; a head this process already installed is live, not restored.
      */
     private async restoreLocalHead(): Promise<void> {
@@ -545,6 +546,7 @@ class StateManager<
                 ),
             { taskName: "restoreLocalHead" }
         );
+        this.blockQueueManager.armRestoredQueue();
 
         // the local mirror of the chain's snapshot and dispute windows is
         // empty after a restart

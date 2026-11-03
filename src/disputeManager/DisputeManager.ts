@@ -136,13 +136,9 @@ class DisputeManager {
                 );
                 return {};
             }
-            // a restored head authors no dispute until the restart sync
-            // settled
+            // a restored head authors no dispute until the restart sync settled
             if (this.stateManager.stateApplicationService.holdsRestoredHead) {
-                this.logger.info(
-                    "no dispute: restored head waits for the restart sync",
-                    { forkId, channelId: this.channelId }
-                );
+                this.logger.info("no dispute: restored head held", { forkId });
                 return {};
             }
 
@@ -193,9 +189,6 @@ class DisputeManager {
                 dispute,
                 fraudProofsToApply
             );
-
-            // the dispute marker reaches disk before the signed dispute is uploaded
-            await this.storage.flush();
 
             // Without fraud proofs no gas limit is passed: the chain signer
             // sends each upload with its estimate plus headroom (see

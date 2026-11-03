@@ -29,7 +29,7 @@ export type JoinUpdate = Partial<
 type ForceJoinKey = "value";
 
 export class ForceJoinStorage {
-    private readonly value: PersistentCollection<ForceJoinKey, "forceJoin">;
+    private readonly value: PersistentCollection<ForceJoinKey, JoinRecord>;
     private nextJoinId = 0;
 
     constructor(controller?: PersistenceController) {

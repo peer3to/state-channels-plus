@@ -15,25 +15,21 @@ type StoreOptions = {
 export class StateSnapshotStorage {
     private readonly snapshotsByHash: PersistentCollection<
         StateSnapshotHash,
-        "stateSnapshots"
+        StateSnapshot
     >;
     // Store genesis SnapshotData by forkId (forkId = hash(snapshotData)
-    // -> the latest stored genesis snapshot's hash: two candidates for one fork can be held
-    private readonly genesisSnapshotByForkId: PersistentCollection<
+    private readonly genesisSnapshotByForkId = new Map<
         ForkId,
-        "genesisSnapshots"
-    >;
+        StateSnapshotHash
+    >();
     // the fork of the installed state; fork heights restart at 0, so it is not derived
-    private readonly headForkId: PersistentCollection<HeadKey, "headFork">;
+    private readonly headForkId: PersistentCollection<HeadKey, ForkId>;
 
     constructor(controller?: PersistenceController) {
         this.snapshotsByHash = new PersistentCollection(
             "stateSnapshots",
-            controller
-        );
-        this.genesisSnapshotByForkId = new PersistentCollection(
-            "genesisSnapshots",
-            controller
+            controller,
+            () => this.rebuildIndexes()
         );
         this.headForkId = new PersistentCollection("headFork", controller);
     }
@@ -81,5 +77,15 @@ export class StateSnapshotStorage {
 
     getHeadForkId(): ForkId | undefined {
         return this.headForkId.get("value");
+    }
+
+    // after a load, in store order: the latest stored genesis per fork
+    private rebuildIndexes(): void {
+        this.genesisSnapshotByForkId.clear();
+        for (const [hash, snapshot] of this.snapshotsByHash.entries()) {
+            if (snapshot.isGenesis) {
+                this.genesisSnapshotByForkId.set(snapshot.forkID, hash);
+            }
+        }
     }
 }

@@ -89,6 +89,41 @@ export async function holdFlushes(h: Harness, peer: Peer) {
 }
 
 /**
+ * The others author the next block while `peerIndex` keeps it queued: its
+ * queue drain is held, so the block reaches its queue and stays there.
+ */
+export async function queueHeldBlock(
+    h: Harness,
+    forkId: ForkId,
+    peerIndex: number
+) {
+    await h.rpcStub.holdBlockWork(peerIndex, "queueDequeue");
+    const other = h.peers.find((peer) => peer.index !== peerIndex)!;
+    const height =
+        ((await h
+            .control(other)
+            .query.getLatestBlockHeight(forkId)
+            .request()) ?? -1) + 1;
+    await authorWhileDown(h, forkId, 1, peerIndex);
+    const hash = (await h
+        .control(other)
+        .query.getBlockHashAt(forkId, height)
+        .request())!;
+    const query = h.control(h.getPeer(peerIndex)).query;
+    await waitFor(async () => await query.isBlockQueued(hash).request());
+    return { hash, height };
+}
+
+/** re-stores `peer`'s latest block: a write its next batch must carry */
+export async function leavePendingWrite(h: Harness, peer: Peer) {
+    await h.execOnHost(peer, (sm) => {
+        const latest = sm.storage.blocks.getLatestBlock(sm.forkId);
+        if (!latest) throw new Error("no stored block to write again");
+        sm.storage.blocks.storeBlock(latest);
+    });
+}
+
+/**
  * Four participants, peer 2 persistent; peer 0 signs an invalid state
  * transition and the honest peers dispute and reduce the fork without it.
  */

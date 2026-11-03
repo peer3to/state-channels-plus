@@ -3,6 +3,7 @@ import {
     type CollectionId,
     type PersistenceController
 } from "./persistence";
+import type { PersistedMessageBlockRecord } from "./persistence/storageCodecs";
 import { BlockHeight, Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -25,26 +26,24 @@ export type MessageBlockRun = {
     missingBlockHash?: Hash;
 };
 
-type MessageCollectionId = Extract<
-    CollectionId,
-    "inboundMessages" | "outboundMessages"
->;
-type HeadKey = "value";
-
 export class MessageBlockStorage {
-    private readonly blockMap: PersistentCollection<Hash, MessageCollectionId>;
-    // the latest pointers, written in the same step as the block
-    private readonly head: PersistentCollection<
-        HeadKey,
-        `${MessageCollectionId}Head`
+    private readonly blockMap: PersistentCollection<
+        Hash,
+        PersistedMessageBlockRecord
     >;
+    private latestBlockHash?: Hash;
+    private latestBlockHeight?: BlockHeight;
 
     constructor(
-        collectionId: MessageCollectionId = "inboundMessages",
+        collectionId: Extract<
+            CollectionId,
+            "inboundMessages" | "outboundMessages"
+        > = "inboundMessages",
         controller?: PersistenceController
     ) {
-        this.blockMap = new PersistentCollection(collectionId, controller);
-        this.head = new PersistentCollection(`${collectionId}Head`, controller);
+        this.blockMap = new PersistentCollection(collectionId, controller, () =>
+            this.rebuildIndexes()
+        );
     }
 
     // ====================================
@@ -57,9 +56,13 @@ export class MessageBlockStorage {
             hash(Codec.encode(messageBlock, Type.MessageBlock));
 
         const blockHeight = this.normalizeBlockHeight(messageBlock.blockHeight);
-
-        if (!this.blockMap.has(blockHash)) {
-            this.blockMap.set(blockHash, messageBlock);
+        // a later store of a held hash keeps its first content
+        const record = this.blockMap.get(blockHash);
+        if (!record || (!record.advancesTip && !options?.justPersist)) {
+            this.blockMap.set(blockHash, {
+                block: record?.block ?? messageBlock,
+                advancesTip: !options?.justPersist
+            });
         }
 
         if (options?.justPersist) return blockHash;
@@ -68,7 +71,8 @@ export class MessageBlockStorage {
             this.latestBlockHeight === undefined ||
             blockHeight >= this.latestBlockHeight
         ) {
-            this.head.set("value", { hash: blockHash, height: blockHeight });
+            this.latestBlockHeight = blockHeight;
+            this.latestBlockHash = blockHash;
         }
         return blockHash;
     }
@@ -108,7 +112,7 @@ export class MessageBlockStorage {
     }
 
     getMessageBlock(blockHash: Hash): MessageBlockStruct | undefined {
-        return this.blockMap.get(blockHash);
+        return this.blockMap.get(blockHash)?.block;
     }
 
     // [upperBlockHash, lowerBlockHash) - oldest first, truncated at the first
@@ -130,7 +134,7 @@ export class MessageBlockStorage {
 
     getLatestMessageBlock(): MessageBlockStruct | undefined {
         if (!this.latestBlockHash) return undefined;
-        return this.blockMap.get(this.latestBlockHash);
+        return this.blockMap.get(this.latestBlockHash)?.block;
     }
 
     getLatestBlockHash(): Hash | undefined {
@@ -141,12 +145,21 @@ export class MessageBlockStorage {
         return this.latestBlockHeight;
     }
 
-    private get latestBlockHash(): Hash | undefined {
-        return this.head.get("value")?.hash;
-    }
-
-    private get latestBlockHeight(): BlockHeight | undefined {
-        return this.head.get("value")?.height;
+    // after a load: the latest pointers
+    private rebuildIndexes(): void {
+        this.latestBlockHash = undefined;
+        this.latestBlockHeight = undefined;
+        for (const [hashValue, record] of this.blockMap.entries()) {
+            if (!record.advancesTip) continue;
+            const height = this.normalizeBlockHeight(record.block.blockHeight);
+            if (
+                this.latestBlockHeight === undefined ||
+                height >= this.latestBlockHeight
+            ) {
+                this.latestBlockHeight = height;
+                this.latestBlockHash = hashValue;
+            }
+        }
     }
 
     // newest-first walk over [upperBlockHash, lowerBlockHash), stopping at the
@@ -168,7 +181,7 @@ export class MessageBlockStorage {
         let currentHash = startBlockHash;
         while (currentHash != ZeroHash) {
             if (lowerBlockHash && currentHash === lowerBlockHash) break;
-            const messageBlock = this.blockMap.get(currentHash);
+            const messageBlock = this.blockMap.get(currentHash)?.block;
             if (!messageBlock)
                 return { newestFirst, missingBlockHash: currentHash };
             newestFirst.push(messageBlock);

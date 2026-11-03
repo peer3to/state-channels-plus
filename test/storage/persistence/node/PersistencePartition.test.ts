@@ -10,7 +10,7 @@ import type { ForkId } from "@/types/types";
 import { expect } from "chai";
 import { ClassicLevel } from "classic-level";
 import { ethers } from "ethers";
-import { chmod, mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -99,12 +99,24 @@ describe("Node persistence partition", function () {
         ).to.equal(channel.channelId.toLowerCase());
     });
 
-    it("leaves the mode of a location the caller supplied as it was", async () => {
-        await chmod(root, 0o755);
+    it("writes a new partition's records in one synced batch", async () => {
+        // record-only: the real classic-level batch still runs
+        const prototype = ClassicLevel.prototype as unknown as {
+            _batch: (...args: unknown[]) => unknown;
+        };
+        const batch = prototype._batch;
+        const syncs: unknown[] = [];
+        prototype._batch = function (this: unknown, ...args: unknown[]) {
+            syncs.push((args[1] as { sync?: boolean }).sync);
+            return batch.apply(this, args);
+        };
+        try {
+            await open(identity());
+        } finally {
+            prototype._batch = batch;
+        }
 
-        await open(identity());
-
-        expect((await stat(root)).mode & 0o777).to.equal(0o755);
+        expect(syncs).to.deep.equal([true]);
     });
 
     it("maps checksummed and lowercase addresses, and decimal and hex chain ids, to one partition", async () => {

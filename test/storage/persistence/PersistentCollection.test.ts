@@ -1,12 +1,12 @@
 import { PersistentCollection } from "@/storage/persistence";
+import type { BlockHeight, Bytes } from "@/types/types";
 import { expect } from "chai";
 
 describe("PersistentCollection", function () {
     it("keeps map semantics without a disk: set, overwrite, delete and iteration order", () => {
-        const collection = new PersistentCollection<
-            string,
+        const collection = new PersistentCollection<string, Bytes>(
             "stateMachineStates"
-        >("stateMachineStates");
+        );
         collection.set("a", "0x01");
         collection.set("b", "0x02");
         collection.set("c", "0x03");
@@ -26,10 +26,9 @@ describe("PersistentCollection", function () {
     });
 
     it("deletes the key when an update returns nothing", () => {
-        const collection = new PersistentCollection<
-            string,
+        const collection = new PersistentCollection<string, Bytes>(
             "stateMachineStates"
-        >("stateMachineStates");
+        );
         collection.set("a", "0x01");
 
         expect(collection.update("a", (value) => `${value}02`)).to.equal(
@@ -42,10 +41,9 @@ describe("PersistentCollection", function () {
     });
 
     it("holds values by reference", () => {
-        const collection = new PersistentCollection<
-            string,
+        const collection = new PersistentCollection<string, Set<BlockHeight>>(
             "participantSetChanges"
-        >("participantSetChanges");
+        );
         const heights = new Set([1]);
         collection.set("fork", heights);
         heights.add(2);

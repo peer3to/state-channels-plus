@@ -2,12 +2,12 @@ import { Status } from "@/types";
 import { sleep } from "@/utils";
 import {
     failNextWritersFlush,
-    holdFlushes
+    holdFlushes,
+    leavePendingWrite
 } from "@test/fixtures/PersistenceRestartStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { ethers } from "ethers";
 
 // the absence window: a signature sent without waiting for its held flush
 // reaches the peer well within it
@@ -105,8 +105,11 @@ describe("E2E: persistence durability", function () {
             persistentPeers: [1]
         });
         const disputer = h.getPeer(1);
+        const observer = h.control(h.getPeer(0)).query;
+        // the upload is called for real: only the chain gate holds it back
         const submissions = await h.rpcStub.recordDisputeSubmissions(
-            disputer.index
+            disputer.index,
+            { forward: true }
         );
         const gate = await holdFlushes(h, disputer);
 
@@ -117,53 +120,20 @@ describe("E2E: persistence durability", function () {
             { timeoutMs: h.event.hostExecTimeoutMs() }
         );
         await gate.waitUntilHeld();
+        await waitFor(async () => (await submissions.submissions()).length > 0);
         await sleep(ABSENCE_WINDOW_MS);
-        expect(await submissions.submissions()).to.have.length(0);
+        expect(
+            await observer.getDisputeWindowCommitments(forkId).request()
+        ).to.deep.equal([]);
 
         await gate.release();
         await disputing;
-        expect(await submissions.submissions()).to.have.length(1);
-        await submissions.restore();
-    });
-
-    it("a join signature leaves neither the joiner nor a countersigning member until its write is confirmed, and the join then lands", async () => {
-        const h = TestSession.getHarness();
-        await h.lifecycle.start(2, 2, {
-            persistentPeers: [1, 2]
-        });
-        const joiner = await h.join.addSpectatorWait();
-        const member = h.getPeer(1);
-        const joinerGate = await holdFlushes(h, h.getPeer(joiner.index));
-        const memberGate = await holdFlushes(h, member);
-        expect([joinerGate.bound, memberGate.bound]).to.deep.equal([
-            true,
-            true
-        ]);
-
-        const joining = h.join.joinChannelWait({ joiner }).then(
-            () => ({}),
-            (error: unknown) => ({ error: String(error) })
-        );
-        await joinerGate.waitUntilHeld();
-        await sleep(ABSENCE_WINDOW_MS);
-        // the request carrying the joiner's signature reached no member
-        expect(await memberGate.held()).to.equal(0);
-
-        await joinerGate.release();
-        await memberGate.waitUntilHeld();
-        await sleep(ABSENCE_WINDOW_MS);
-        // no countersignature reached the joiner: nothing was submitted
-        expect(await h.control(joiner).query.getStatus().request()).to.equal(
-            Status.SYNCED
-        );
-
-        await memberGate.release();
-        expect(await joining).to.deep.equal({});
         await waitFor(
             async () =>
-                (await h.control(joiner).query.getStatus().request()) ===
-                Status.PENDING_PARTICIPANT
+                (await observer.getDisputeWindowCommitments(forkId).request())
+                    .length > 0
         );
+        await submissions.restore();
     });
 
     it("a seated joiner turns PARTICIPATING only once the flush after it signs its promoting block is confirmed", async () => {
@@ -191,54 +161,7 @@ describe("E2E: persistence durability", function () {
         await h.event.waitUntilPeerStatus(joiner.index, Status.PARTICIPATING);
     });
 
-    it("an open-channel signature leaves neither the lower nor the higher address until its write is confirmed, and the channel then opens", async () => {
-        const h = TestSession.getHarness();
-        await h.setup(2, {
-            autoConnect: false,
-            persistentPeers: [0, 1]
-        });
-        const [lowerIndex] = h.network.lobbyRoleIndices();
-        const lower = h.getPeer(lowerIndex);
-        const higher = h.getPeer(1 - lowerIndex);
-        // no channel yet: each hold applies to the partition the negotiation binds
-        const lowerGate = await holdFlushes(h, lower);
-        const higherGate = await holdFlushes(h, higher);
-        expect([lowerGate.bound, higherGate.bound]).to.deep.equal([
-            false,
-            false
-        ]);
-
-        await h.network.joinLobby(
-            [0, 1],
-            ethers.id("e2e-persistence-open-channel-flush")
-        );
-        await lowerGate.waitUntilHeld();
-        await sleep(ABSENCE_WINDOW_MS);
-        // the proposal carrying the lower signature reached the higher peer not
-        expect(await higherGate.held()).to.equal(0);
-
-        await lowerGate.release();
-        await higherGate.waitUntilHeld();
-        await sleep(ABSENCE_WINDOW_MS);
-        // the higher signature was neither submitted nor answered
-        expect(
-            (await h.control(higher).query.getNegotiationAttempt().request())
-                ?.localOpeningSignatureIssued
-        ).to.equal(false);
-
-        await higherGate.release();
-        await waitFor(async () =>
-            (
-                await Promise.all(
-                    h.peers.map((peer) =>
-                        h.control(peer).query.getStatus().request()
-                    )
-                )
-            ).every((status) => status === Status.PARTICIPATING)
-        );
-    });
-
-    it("a spectator signs nothing, so a disk that fails every flush never stops it from following the channel", async () => {
+    it("a spectator signs nothing, so a disk that confirms no write never stops it from following the channel", async () => {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 1, {
             persistentPeers: [2]
@@ -249,9 +172,8 @@ describe("E2E: persistence durability", function () {
             maximumBlocks: 20
         });
         await h.assert.sync.peersInSyncWait({ waitForFinalization: true });
-        expect(
-            await h.control(spectator).stub.failPersistenceFlushes().request()
-        ).to.equal(true);
+        const gate = await holdFlushes(h, h.getPeer(spectator.index));
+        expect(gate.bound).to.equal(true);
 
         await h.transition.increment(1, {
             waitForPeers: [0, 1, spectator.index]
@@ -271,7 +193,59 @@ describe("E2E: persistence durability", function () {
                 .query.getLatestBlockHeight(forkId)
                 .request()
         ).to.equal(height);
+        expect(await gate.held()).to.be.greaterThan(0);
         expect(spectator.eventSpies.onAbort?.callCount ?? 0).to.equal(0);
+        await gate.release();
+    });
+
+    it("a spectator gets no sync answer from participants whose disks have not confirmed their writes, and syncs once they have", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 1, {
+            persistentPeers: [0, 1]
+        });
+        const participants = [h.getPeer(0), h.getPeer(1)];
+        const gates = [];
+        for (const participant of participants) {
+            const gate = await holdFlushes(h, participant);
+            expect(gate.bound).to.equal(true);
+            await leavePendingWrite(h, participant);
+            await gate.waitUntilHeld();
+            gates.push(gate);
+        }
+
+        const spectator = h.getPeer((await h.join.addSpectator()).index);
+        await sleep(ABSENCE_WINDOW_MS);
+        expect(
+            await h.control(spectator).query.getStatus().request()
+        ).to.not.equal(Status.SYNCED);
+
+        for (const gate of gates) await gate.release();
+        await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
+        await h.transition.increment(1, {
+            waitForPeers: [0, 1, spectator.index]
+        });
+    });
+
+    it("a snapshot post leaves for the chain only once the poster's disk confirms the writes made before it", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 2, {
+            persistentPeers: [0]
+        });
+        const poster = h.getPeer(0);
+        const before = await h.query.getOnChainSnapshotHash();
+        const gate = await holdFlushes(h, poster);
+        expect(gate.bound).to.equal(true);
+        await leavePendingWrite(h, poster);
+        await gate.waitUntilHeld();
+
+        const posting = h.transition.postSnapshot({ peerIndex: 0 });
+        await sleep(ABSENCE_WINDOW_MS);
+        expect(await h.query.getOnChainSnapshotHash()).to.equal(before);
+
+        await gate.release();
+        const posted = await posting;
+        expect(posted).to.not.equal(undefined);
+        expect(await h.query.getOnChainSnapshotHash()).to.equal(posted!.hash);
     });
 
     it("a node restarted after a failed flush of its signed block authors that height again and the channel advances", async () => {

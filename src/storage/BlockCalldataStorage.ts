@@ -14,7 +14,7 @@ export class BlockCalldataStorage {
     // ====================================
     private readonly coordinatesToBlockMap: PersistentCollection<
         CalldataCoordinateKey,
-        "blockCalldata"
+        BlockCalldata
     >;
 
     constructor(controller?: PersistenceController) {

@@ -10,7 +10,7 @@ export class TimeoutStorage {
     // ====================================
     // STORAGE MAP
     // ====================================
-    private readonly timeouts: PersistentCollection<ForkId, "timeout">;
+    private readonly timeouts: PersistentCollection<ForkId, TimeoutStruct>;
 
     constructor(controller?: PersistenceController) {
         this.timeouts = new PersistentCollection("timeout", controller);

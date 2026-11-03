@@ -522,7 +522,8 @@ export class P2pRuntimeHostRoot<
         // the read-only Clock stay on the raw signer.
         const chainSigner = (this.managedSigner = new HostNonceManager(
             signer,
-            logger
+            logger,
+            () => this.runtimeHandle?.storage.flush() ?? Promise.resolve()
         ));
 
         // Connect the managed signer to the state channel manager contract so every

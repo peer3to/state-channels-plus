@@ -15,7 +15,7 @@ export class DisputeFraudProofStorage {
     // ====================================
     private readonly disputeFraudProofs: PersistentCollection<
         DisputeHash,
-        "disputeFraudProofs"
+        DisputeFraudProofStruct
     >;
 
     constructor(controller?: PersistenceController) {

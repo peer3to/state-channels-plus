@@ -1,4 +1,8 @@
 import { coordinateKey, CoordinateKey } from "./keys";
+import {
+    PersistentCollection,
+    type PersistenceController
+} from "./persistence";
 import Clock from "@/Clock";
 import { Block, StateSnapshot } from "@/models";
 import {
@@ -67,11 +71,16 @@ const DEFAULT_MAX_CHANNEL_PARTICIPANTS = 32;
 
 export class QueueStorage {
     public readonly maxChannelParticipants: number;
-    private readonly queuedBlocks: Map<Hash, QueuedBlockEntry> = new Map();
+    // an entry reaches disk when it is created or restored; a merge into it
+    // reaches disk only with a later write of the entry
+    private readonly queuedBlocks: PersistentCollection<Hash, QueuedBlockEntry>;
     private readonly blocksByCoordinates: Map<CoordinateKey, Set<Hash>> =
         new Map();
 
-    constructor(maxChannelParticipants = DEFAULT_MAX_CHANNEL_PARTICIPANTS) {
+    constructor(
+        maxChannelParticipants = DEFAULT_MAX_CHANNEL_PARTICIPANTS,
+        controller?: PersistenceController
+    ) {
         if (
             !Number.isSafeInteger(maxChannelParticipants) ||
             maxChannelParticipants < 1
@@ -81,6 +90,9 @@ export class QueueStorage {
             );
         }
         this.maxChannelParticipants = maxChannelParticipants;
+        this.queuedBlocks = new PersistentCollection("queues", controller, () =>
+            this.rebuildIndexes()
+        );
     }
 
     createEntry(block: Block, options: QueueBlockOptions): QueuedBlockEntry {
@@ -138,13 +150,13 @@ export class QueueStorage {
                 entry.firstSeenAt
             );
         } else {
-            this.queuedBlocks.set(entry.block.hash, entry);
             this.addHashToCoordinateIndex(
                 entry.block.hash,
                 entry.block.forkId,
                 entry.block.height
             );
         }
+        this.queuedBlocks.set(entry.block.hash, existing ?? entry);
     }
 
     private mergeEntry(
@@ -247,6 +259,10 @@ export class QueueStorage {
         return this.queuedBlocks.get(blockHash);
     }
 
+    getEntries(): QueuedBlockEntry[] {
+        return [...this.queuedBlocks.values()];
+    }
+
     removeBlock(blockHash: Hash): QueuedBlockEntry | undefined {
         const entry = this.queuedBlocks.get(blockHash);
         if (!entry) return undefined;
@@ -277,8 +293,22 @@ export class QueueStorage {
     }
 
     clear(): void {
-        this.queuedBlocks.clear();
+        for (const hash of [...this.queuedBlocks.keys()]) {
+            this.queuedBlocks.delete(hash);
+        }
         this.blocksByCoordinates.clear();
+    }
+
+    // after a load: the coordinate index
+    private rebuildIndexes(): void {
+        this.blocksByCoordinates.clear();
+        for (const [hash, entry] of this.queuedBlocks.entries()) {
+            this.addHashToCoordinateIndex(
+                hash,
+                entry.block.forkId,
+                entry.block.height
+            );
+        }
     }
 
     private addHashToCoordinateIndex(

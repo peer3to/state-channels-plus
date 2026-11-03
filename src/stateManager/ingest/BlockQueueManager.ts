@@ -224,6 +224,17 @@ export default class BlockQueueManager {
         this.recoverySuppressedUntil.clear();
     }
 
+    /**
+     * After a restart load: an entry whose window passed while the node was
+     * down is dropped unprobed; the rest wait out what is left of theirs.
+     */
+    public armRestoredQueue(): void {
+        for (const entry of this.stateManager.storage.queues.getEntries()) {
+            if (!this.scheduleQueueTimeout(entry.block.hash))
+                this.stateManager.storage.queues.removeBlock(entry.block.hash);
+        }
+    }
+
     /** Ingest a block posted as calldata; the chain, not a peer, supplied it. */
     public async ingestPostedBlock(
         blockCalldata: BlockCalldata

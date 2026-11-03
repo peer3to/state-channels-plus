@@ -4,6 +4,7 @@ import { sleep } from "@/utils";
 import { stripDisputeReasons } from "@test/fixtures/DisputeAuditStaging";
 import {
     authorWhileDown,
+    queueHeldBlock,
     startAndReduce
 } from "@test/fixtures/PersistenceRestartStaging";
 import {
@@ -512,6 +513,76 @@ describe("E2E: persistence restart", function () {
                 `peer ${peer.index} blacklisted the restarted peer`
             ).to.equal(false);
         }
+    });
+
+    it("a participant restarted with a queued block inside its window keeps it queued and unexecuted until its restart sync settles, then the channel continues", async () => {
+        const h = TestSession.getHarness();
+        const forkId = await h.lifecycle.start(3, 3, {
+            persistentPeers: [2],
+            timeConfig: { agreementTime: 20 }
+        });
+        const { hash, height } = await queueHeldBlock(h, forkId, 2);
+
+        const restarted = await h.lifecycle.restartPeer(2);
+        const query = h.control(restarted).query;
+
+        // not connected yet: the entry came back from disk and waits
+        expect(await query.isBlockQueued(hash).request()).to.equal(true);
+        await sleep(500);
+        expect(await query.isBlockQueued(hash).request()).to.equal(true);
+        expect(await query.getLatestBlockHeight(forkId).request()).to.equal(
+            height - 1
+        );
+
+        await h.network.connectPeers([2]);
+        await waitFor(
+            async () =>
+                (await query.getStatus().request()) === Status.PARTICIPATING
+        );
+        await waitFor(async () => !(await query.isBlockQueued(hash).request()));
+        expect(await query.getBlockHashAt(forkId, height).request()).to.equal(
+            hash
+        );
+        await h.transition.advanceState({ count: 2 });
+        const hashes = await Promise.all(
+            h.peers.map((peer) =>
+                h
+                    .control(peer)
+                    .query.getBlockHashAt(forkId, height + 2)
+                    .request()
+            )
+        );
+        expect(hashes[0]).to.not.equal(null);
+        expect(new Set(hashes).size).to.equal(1);
+    });
+
+    it("a participant restarted after its queued block's window passed drops the entry, blames no source and the channel continues", async () => {
+        const h = TestSession.getHarness();
+        const agreementTime = 8;
+        const forkId = await h.lifecycle.start(3, 3, {
+            persistentPeers: [2],
+            timeConfig: { agreementTime }
+        });
+        const { hash } = await queueHeldBlock(h, forkId, 2);
+
+        // down until the entry's window has passed
+        await h.getPeer(2).p2pInstance.dispose();
+        await sleep((agreementTime + 1) * 1000);
+        const restarted = await h.lifecycle.restartPeer(2);
+        const query = h.control(restarted).query;
+        expect(await query.isBlockQueued(hash).request()).to.equal(false);
+
+        await h.network.connectPeers([2]);
+        await waitFor(
+            async () =>
+                (await query.getStatus().request()) === Status.PARTICIPATING
+        );
+        for (const peer of [h.getPeer(0), h.getPeer(1)]) {
+            expect(await query.isBlacklisted(peer.address).request()).to.equal(
+                false
+            );
+        }
+        await h.transition.advanceState({ count: 2 });
     });
 
     it("a runtime without persistence restarts as a fresh node", async () => {

@@ -2,7 +2,7 @@ import type {
     CreatePersistenceDatabaseOptions,
     PersistenceDatabaseHandle
 } from "../PersistenceDatabase";
-import { mkdir } from "node:fs/promises";
+import { mkdir, chmod } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -12,6 +12,7 @@ export async function createPersistenceDatabase(
     const root = options.location ?? getDefaultRoot();
     const location = path.join(root, options.namespace);
     await mkdir(root, { recursive: true, mode: 0o700 });
+    await chmod(root, 0o700);
 
     let ClassicLevel: typeof import("classic-level").ClassicLevel;
     try {

@@ -74,7 +74,9 @@ export class Storage {
         this.participantSetChanges = deepCopyProxy(
             new ParticipantSetChangeStorage(this.controller)
         );
-        this.queues = deepCopyProxy(new QueueStorage(maxChannelParticipants));
+        this.queues = deepCopyProxy(
+            new QueueStorage(maxChannelParticipants, this.controller)
+        );
         this.disputes = deepCopyProxy(new DisputeStorage(this.controller));
         this.fraudProofs = deepCopyProxy(
             new FraudProofStorage(this.controller)
@@ -129,6 +131,10 @@ export class Storage {
     public close(): Promise<void> {
         return this.controller.close();
     }
+
+    // TODO(persistence): add proof-aware pruning in a separate design. It must
+    // protect active proof roots, disputes, queue entries, heads, and stale-fork
+    // tombstones, then revalidate writes that raced its reachability scan.
 
     /**
      * Get the state snapshot for given block coordinates.

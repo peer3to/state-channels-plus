@@ -1243,6 +1243,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 await stateManager.eventSyncService.readViewBlock(channelId)
         };
         this.logger.debug(`Generated syncpayload`, syncPayload);
+        // the payload carries stored signed blocks: they leave only from disk
+        await stateManager.storage.flush();
         return syncPayload;
     }
 

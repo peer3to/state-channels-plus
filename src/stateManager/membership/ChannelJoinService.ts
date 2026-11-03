@@ -285,6 +285,8 @@ export default class ChannelJoinService {
             sm.storage.blocks.getLatestBlockHeight(sm.forkId),
             Number(deadlineTimestamp)
         );
+        // TODO(persistence): reconcile a crash after this durable marker but
+        // before the join transaction is accepted on-chain.
         sm.setStatus(Status.PENDING_PARTICIPANT);
         this.armUntilJoinExpiry(join);
         this.logger.info("Submitting the join", {
@@ -292,8 +294,6 @@ export default class ChannelJoinService {
         });
         let tx: ContractTransactionResponse | undefined;
         try {
-            // the join record is on disk before the signed join is sent
-            await sm.storage.flush();
             tx = await sm.stateChannelManagerContract.joinChannel(
                 confirmation,
                 expectedSnapshotHash,

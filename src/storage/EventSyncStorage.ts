@@ -9,7 +9,7 @@ type BlockNumber = number;
 export class EventSyncStorage {
     private readonly latestProcessedBlocks: PersistentCollection<
         ChannelKey,
-        "eventSync"
+        BlockNumber
     >;
 
     constructor(controller?: PersistenceController) {

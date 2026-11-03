@@ -1,3 +1,4 @@
+import { SYNCED } from "./PersistenceController";
 import type {
     PersistenceDatabase,
     PersistenceDatabaseHandle
@@ -94,23 +95,28 @@ export async function openPersistencePartition(
             storedSignerSecret !== undefined;
 
         if (!exists) {
-            await databaseHandle.database.batch([
-                {
-                    type: "put",
-                    key: IDENTITY_KEY,
-                    value: JSON.stringify(identity)
-                },
-                {
-                    type: "put",
-                    key: SCHEMA_VERSION_KEY,
-                    value: String(CURRENT_SCHEMA_VERSION)
-                },
-                {
-                    type: "put",
-                    key: SIGNER_SECRET_KEY,
-                    value: options.signerSecret
-                }
-            ]);
+            // TODO(persistence): encrypt signer secrets with a caller-supplied
+            // key before writing them to backend metadata.
+            await databaseHandle.database.batch(
+                [
+                    {
+                        type: "put",
+                        key: IDENTITY_KEY,
+                        value: JSON.stringify(identity)
+                    },
+                    {
+                        type: "put",
+                        key: SCHEMA_VERSION_KEY,
+                        value: String(CURRENT_SCHEMA_VERSION)
+                    },
+                    {
+                        type: "put",
+                        key: SIGNER_SECRET_KEY,
+                        value: options.signerSecret
+                    }
+                ],
+                SYNCED
+            );
             return {
                 databaseHandle,
                 signerSecret: options.signerSecret,

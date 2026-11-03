@@ -1,9 +1,5 @@
 import type { PersistenceController } from "./PersistenceController";
-import {
-    codecs,
-    type CollectionId,
-    type CollectionValue
-} from "./storageCodecs";
+import { codecs, type CollectionId } from "./storageCodecs";
 
 import { ethers } from "ethers";
 
@@ -19,9 +15,9 @@ export type EncodedRecord = string;
  * is a plain `Map`. Values are held by reference: the store proxies copy at
  * the boundary.
  */
-export class PersistentCollection<TKey, TId extends CollectionId> {
-    public readonly id: TId;
-    private readonly cache = new Map<TKey, CollectionValue<TId>>();
+export class PersistentCollection<TKey, TValue> {
+    public readonly id: CollectionId;
+    private readonly cache = new Map<TKey, TValue>();
     private readonly sequences = new Map<TKey, InsertionSequence>();
     private readonly controller?: PersistenceController;
     // rebuilds the owning store's derived indexes after a load
@@ -29,7 +25,7 @@ export class PersistentCollection<TKey, TId extends CollectionId> {
     private nextSequence = 0;
 
     constructor(
-        id: TId,
+        id: CollectionId,
         controller?: PersistenceController,
         onLoad?: () => void
     ) {
@@ -43,7 +39,7 @@ export class PersistentCollection<TKey, TId extends CollectionId> {
         return this.cache.size;
     }
 
-    public get(key: TKey): CollectionValue<TId> | undefined {
+    public get(key: TKey): TValue | undefined {
         return this.cache.get(key);
     }
 
@@ -51,7 +47,7 @@ export class PersistentCollection<TKey, TId extends CollectionId> {
         return this.cache.has(key);
     }
 
-    public entries(): IterableIterator<[TKey, CollectionValue<TId>]> {
+    public entries(): IterableIterator<[TKey, TValue]> {
         return this.cache.entries();
     }
 
@@ -59,12 +55,12 @@ export class PersistentCollection<TKey, TId extends CollectionId> {
         return this.cache.keys();
     }
 
-    public values(): IterableIterator<CollectionValue<TId>> {
+    public values(): IterableIterator<TValue> {
         return this.cache.values();
     }
 
     /** An overwrite keeps the key's place in the order. */
-    public set(key: TKey, value: CollectionValue<TId>): CollectionValue<TId> {
+    public set(key: TKey, value: TValue): TValue {
         this.cache.set(key, value);
         if (!this.sequences.has(key)) {
             this.sequences.set(key, this.nextSequence++);
@@ -76,10 +72,8 @@ export class PersistentCollection<TKey, TId extends CollectionId> {
     /** Writes what `updater` returns; `undefined` deletes the key. */
     public update(
         key: TKey,
-        updater: (
-            current: CollectionValue<TId> | undefined
-        ) => CollectionValue<TId> | undefined
-    ): CollectionValue<TId> | undefined {
+        updater: (current: TValue | undefined) => TValue | undefined
+    ): TValue | undefined {
         const next = updater(this.cache.get(key));
         if (next === undefined) this.delete(key);
         else this.set(key, next);
@@ -97,9 +91,7 @@ export class PersistentCollection<TKey, TId extends CollectionId> {
     public encodeRecord(key: TKey): EncodedRecord | undefined {
         const value = this.cache.get(key);
         if (value === undefined) return undefined;
-        const codec = codecs[this.id] as {
-            encode(value: CollectionValue<TId>): string;
-        };
+        const codec = codecs[this.id] as { encode(value: TValue): string };
         return abiCoder.encode(
             ["uint256", "bytes"],
             [this.sequences.get(key), codec.encode(value)]
@@ -117,9 +109,7 @@ export class PersistentCollection<TKey, TId extends CollectionId> {
                 return {
                     key,
                     sequence: Number(sequence),
-                    value: codecs[this.id].decode(
-                        encodedValue
-                    ) as CollectionValue<TId>
+                    value: codecs[this.id].decode(encodedValue) as TValue
                 };
             } catch (error) {
                 throw new Error(

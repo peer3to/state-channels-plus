@@ -132,8 +132,6 @@ export default class JoinChannelService extends ANetworkRpcService<JoinChannelRp
         const encodedSignedJoinChannel = String(
             Codec.encode(signedJoinChannel, Type.SignedJoinChannel)
         );
-        // pending writes reach disk before our join signature leaves
-        await sm.storage.flush();
         const outcomes = await Promise.all(
             thresholdParticipants.map(
                 async (participant): Promise<CountersignatureOutcome> =>
@@ -240,8 +238,6 @@ export default class JoinChannelService extends ANetworkRpcService<JoinChannelRp
             encodedJoinChannel,
             sm.signer
         );
-        // pending writes reach disk before our countersignature leaves
-        await sm.storage.flush();
         return { signature: String(signature) };
     }
 
