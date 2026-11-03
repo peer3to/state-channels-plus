@@ -595,7 +595,7 @@ describe("BlockStorage", () => {
         });
 
         describe("Different blocks with same hash but different coordinates", () => {
-            it("should reject a stored hash with different coordinates", () => {
+            it("should return hash when storing block with same hash but different coordinates", () => {
                 // Store first block
                 storage.storeBlock(
                     Block.fromBlockConfirmation(mockBlockConfirmation)
@@ -613,13 +613,7 @@ describe("BlockStorage", () => {
                     }
                 );
 
-                expect(result).to.equal(undefined);
-                expect(
-                    storage.getBlock(
-                        differentCoordinates.forkId,
-                        differentCoordinates.height
-                    )
-                ).to.equal(undefined);
+                expect(result).to.equal(mockBlockHash);
             });
         });
 

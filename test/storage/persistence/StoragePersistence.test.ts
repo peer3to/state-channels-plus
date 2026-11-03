@@ -1,5 +1,6 @@
 import * as factory from "../../factory";
 import Storage from "@/storage";
+import { coordinateKey } from "@/storage/keys";
 import type { PersistenceDatabaseHandle } from "@/storage/persistence";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import { Codec, Type } from "@/utils";
@@ -119,12 +120,16 @@ describe("Storage persistence", function () {
         expect(storage.blocks.getLatestBlock(block.forkId)?.hash).to.equal(
             block.hash
         );
-        expect(await database.get(`records!v1!blocks!${block.hash}`)).to.equal(
-            undefined
-        );
+        expect(
+            await database.get(
+                `records!v1!blocks!${coordinateKey(block.forkId, block.height)}`
+            )
+        ).to.equal(undefined);
         await storage.flush();
         expect(
-            await database.get(`records!v1!blocks!${block.hash}`)
+            await database.get(
+                `records!v1!blocks!${coordinateKey(block.forkId, block.height)}`
+            )
         ).to.not.equal(undefined);
         await storage.close();
     });

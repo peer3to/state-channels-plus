@@ -54,7 +54,7 @@ drives, so they stay unassigned.
 - `getIterator through the proxy yields nothing for a fork with no blocks`: UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P8
 - `should return undefined when storing different blocks with same coordinates`: REQ-BLKSTORE-1-KYHTWT.T1.P1, UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P3
 - `should not store conflicting block in coordinates map`: REQ-BLKSTORE-1-KYHTWT.T1.P3
-- `should reject a stored hash with different coordinates`: none
+- `should return hash when storing block with same hash but different coordinates`: none
 - `keeps the tip when a held block is stored again normally`: none
 - `moves the tip when a normal block is held again`: none
 - `should apply a signature inserted by coordinates to the block read by hash`: none

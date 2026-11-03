@@ -3,9 +3,10 @@ import {
     type PersistenceController
 } from "./persistence";
 import StateSnapshot from "@/models/StateSnapshot";
-import type { ForkId, Hash } from "@/types/types";
+import { Hash, ForkId } from "@/types/types";
 
 type StateSnapshotHash = Hash;
+
 type StoreOptions = {
     hash?: StateSnapshotHash;
 };
@@ -15,7 +16,6 @@ export class StateSnapshotStorage {
         StateSnapshotHash,
         StateSnapshot
     >;
-
     // Store genesis SnapshotData by forkId (forkId = hash(snapshotData)
     private readonly genesisSnapshotByForkId = new Map<
         ForkId,
@@ -34,11 +34,12 @@ export class StateSnapshotStorage {
     // CREATE
     // ====================================
 
-    public storeStateSnapshot(
+    storeStateSnapshot(
         snapshot: StateSnapshot,
         options?: StoreOptions
     ): StateSnapshotHash {
         const hash = options?.hash ?? snapshot.hash;
+
         this.snapshotsByHash.set(hash, snapshot);
         return hash;
     }
@@ -50,24 +51,19 @@ export class StateSnapshotStorage {
     /**
      * Get a state snapshot by its hash
      */
-    public getStateSnapshotByHash(
+    getStateSnapshotByHash(
         snapshotHash: StateSnapshotHash
     ): StateSnapshot | undefined {
         return this.snapshotsByHash.get(snapshotHash);
     }
 
-    public getGenesisSnapshotByForkId(
-        forkId: ForkId
-    ): StateSnapshot | undefined {
+    getGenesisSnapshotByForkId(forkId: ForkId): StateSnapshot | undefined {
         const hash = this.genesisSnapshotByForkId.get(forkId);
-        return hash ? this.snapshotsByHash.get(hash) : undefined;
+        return hash === undefined ? undefined : this.snapshotsByHash.get(hash);
     }
 
-    public getSnapshotCount(): number {
-        return this.snapshotsByHash.size;
-    }
-
-    public rebuildIndexes(): void {
+    // after every change: the genesis index
+    private rebuildIndexes(): void {
         this.genesisSnapshotByForkId.clear();
         for (const [hash, snapshot] of this.snapshotsByHash.entries()) {
             if (snapshot.isGenesis) {
