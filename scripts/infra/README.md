@@ -34,10 +34,11 @@ yarn infra:storage-diff --upstream ws://127.0.0.1:8546
 | `--max-connections` | `256` | Connections open at once; one more is refused with HTTP 503. |
 | `--max-in-flight-requests` | `32` | Requests of one connection answered at once. |
 | `--max-watched-addresses` | `10000` | Accounts whose values the service keeps (see below). |
+| `--max-watched-addresses-per-connection` | `2000` | Accounts one connection's subscriptions and requests may hold at once, so one peer cannot fill the watched set. |
 | `--allow-origin` | (none) | A browser origin that may connect; repeat it for more. Connections without an `Origin` header (node clients) are always admitted, browser origins not listed get HTTP 403. |
 
 A request past the address limit fails as invalid params; one past a
-subscription, in-flight or watched limit fails with code `-32005`. The
+subscription, in-flight, watched or per-connection share limit fails with code `-32005`. The
 connection stays open either way.
 
 The cache lives in memory only: a restarted service loads the last
@@ -47,7 +48,11 @@ request reads it, and stays watched afterwards until its place is needed: past
 `--max-watched-addresses` the least recently used account that no
 subscription or request holds is dropped together with its cached values.
 After an outage longer than the retention window only the newest `retention`
-blocks are traced, and the history restarts at them.
+blocks are traced, and the history restarts at them. Subscribers are not
+told: the first record after the restart names a parent they never received,
+and a catch-up over the skipped blocks fails with code `-32001`. A client must
+check each record's `parentHash` against its last block and resync on a gap,
+as the RPC mirror does.
 
 Once it is serving, it prints one line to stdout and nothing else:
 `{"event":"listening","url":"ws://127.0.0.1:19778"}`. The URL is the bound

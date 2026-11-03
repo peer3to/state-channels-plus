@@ -40,6 +40,8 @@ export interface StorageDiffPeer {
     socket: WebSocket;
     subscriptions: Map<SubscriptionId, AccountAddress[]>;
     nextSubscription: number;
+    /** Accounts this peer's subscriptions and requests hold, and how many holds of each. */
+    held: Map<AccountAddress, number>;
     /** Requests of this peer being answered now. */
     inFlight: number;
     /** Cut for falling behind; gets nothing more. */
@@ -175,6 +177,7 @@ export class PeerHub {
             socket,
             subscriptions: new Map(),
             nextSubscription: 0,
+            held: new Map(),
             inFlight: 0,
             closing: false
         };

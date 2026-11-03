@@ -51,6 +51,7 @@ const DEFAULT_MAX_SUBSCRIPTIONS_PER_CONNECTION = 64;
 const DEFAULT_MAX_CONNECTIONS = 256;
 const DEFAULT_MAX_IN_FLIGHT_REQUESTS = 32;
 const DEFAULT_MAX_WATCHED_ADDRESSES = 10_000;
+const DEFAULT_MAX_WATCHED_ADDRESSES_PER_CONNECTION = 2000;
 const DEFAULT_PORT = 19778;
 /** How long one upstream request may take, a reconnect included. */
 const DEFAULT_UPSTREAM_REQUEST_TIMEOUT_MS = 10_000;
@@ -103,6 +104,8 @@ export interface StorageDiffServiceOptions {
     maxInFlightRequests?: number;
     /** Accounts whose values the service keeps; 10,000 by default. */
     maxWatchedAddresses?: number;
+    /** Accounts one connection's subscriptions and requests may hold at once; 2,000 by default. */
+    maxWatchedAddressesPerConnection?: number;
     /** Browser origins that may connect; a connection without an `Origin` header always may. */
     allowedOrigins?: string[];
     logger: Logger;
@@ -169,6 +172,7 @@ export class StorageDiffService {
     private readonly maxAddressesPerRequest: number;
     private readonly maxSubscriptionsPerConnection: number;
     private readonly maxWatchedAddresses: number;
+    private readonly maxWatchedAddressesPerConnection: number;
     private readonly stopping = new AbortController();
     private readonly upstream: RpcNodeProvider;
     private canonical: StagedBlock[] = [];
@@ -213,6 +217,9 @@ export class StorageDiffService {
             DEFAULT_MAX_SUBSCRIPTIONS_PER_CONNECTION;
         this.maxWatchedAddresses =
             options.maxWatchedAddresses ?? DEFAULT_MAX_WATCHED_ADDRESSES;
+        this.maxWatchedAddressesPerConnection =
+            options.maxWatchedAddressesPerConnection ??
+            DEFAULT_MAX_WATCHED_ADDRESSES_PER_CONNECTION;
         this.upstream = new RpcNodeProvider(options.upstreamUrl, this.logger);
         this.peerHub = new PeerHub({
             host: options.host ?? "127.0.0.1",
@@ -266,7 +273,9 @@ export class StorageDiffService {
                 options.maxSubscriptionsPerConnection,
             maxConnections: options.maxConnections,
             maxInFlightRequests: options.maxInFlightRequests,
-            maxWatchedAddresses: options.maxWatchedAddresses
+            maxWatchedAddresses: options.maxWatchedAddresses,
+            maxWatchedAddressesPerConnection:
+                options.maxWatchedAddressesPerConnection
         };
         for (const [name, limit] of Object.entries(limits)) {
             if (limit !== undefined && (!Number.isInteger(limit) || limit < 1))
@@ -303,7 +312,7 @@ export class StorageDiffService {
                     `A connection may hold at most ${this.maxSubscriptionsPerConnection} subscriptions`
                 );
             // the records keep these accounts' values from the next block on
-            this.hold(addresses).catch(() => undefined);
+            this.hold(peer, addresses).catch(() => undefined);
             const id = "0x" + (++peer.nextSubscription).toString(16);
             peer.subscriptions.set(id, addresses);
             return { subscription: id };
@@ -315,22 +324,23 @@ export class StorageDiffService {
         const addresses = peer.subscriptions.get(id);
         if (!addresses) return false;
         peer.subscriptions.delete(id);
-        this.release(addresses);
+        this.release(peer, addresses);
         return true;
     }
 
     async getDiffs(
+        peer: StorageDiffPeer,
         addresses: AccountAddress[],
         fromBlock: bigint
     ): Promise<StorageDiffCatchUp> {
         this.assertAddressCount(addresses);
         // the records hold the requested accounts, filled in if need be
-        const filled = this.hold(addresses);
+        const filled = this.hold(peer, addresses);
         try {
             await filled;
             return await this.readDiffs(addresses, fromBlock);
         } finally {
-            this.release(addresses);
+            this.release(peer, addresses);
         }
     }
 
@@ -341,18 +351,19 @@ export class StorageDiffService {
      * by undoing the later blocks' writes with their `pre` values.
      */
     async getState(
+        peer: StorageDiffPeer,
         blockHash: string,
         requests: StateRequest[]
     ): Promise<StorageDiffState> {
         const addresses = requests.map((request) => request.address);
         this.assertAddressCount(addresses);
         // the records hold the requested accounts, which a value read needs
-        const filled = this.hold(addresses);
+        const filled = this.hold(peer, addresses);
         try {
             await filled;
             return await this.readState(blockHash, requests);
         } finally {
-            this.release(addresses);
+            this.release(peer, addresses);
         }
     }
 
@@ -791,10 +802,22 @@ export class StorageDiffService {
      * in every record staged from now on, and the retained records staged
      * before are filled. Settles when they hold them all. Past the watched
      * limit the least recently used accounts nobody holds are dropped, with
-     * their cached values; when those are too few, nothing is held.
+     * their cached values; when those are too few, or `peer` would hold more
+     * than its share, nothing is held.
      */
-    private hold(addresses: AccountAddress[]): Promise<void> {
+    private hold(
+        peer: StorageDiffPeer,
+        addresses: AccountAddress[]
+    ): Promise<void> {
         const wanted = new Set(addresses);
+        const added = [...wanted].filter(
+            (address) => !peer.held.has(address)
+        ).length;
+        if (peer.held.size + added > this.maxWatchedAddressesPerConnection)
+            throw rpcError(
+                LIMIT_EXCEEDED_ERROR_CODE,
+                `A connection may hold at most ${this.maxWatchedAddressesPerConnection} addresses`
+            );
         let excess =
             this.watched.size +
             [...wanted].filter((address) => !this.watched.has(address)).length -
@@ -829,6 +852,7 @@ export class StorageDiffService {
                 });
             }
             account.holders++;
+            peer.held.set(address, (peer.held.get(address) ?? 0) + 1);
             // most recently used last
             this.watched.delete(address);
             this.watched.set(address, account);
@@ -839,17 +863,20 @@ export class StorageDiffService {
     }
 
     /** Ends one hold of each of `addresses`; they stay watched until dropped. */
-    private release(addresses: AccountAddress[]): void {
+    private release(peer: StorageDiffPeer, addresses: AccountAddress[]): void {
         for (const address of new Set(addresses)) {
             const account = this.watched.get(address);
             if (account) account.holders--;
+            const holds = peer.held.get(address)! - 1;
+            if (holds === 0) peer.held.delete(address);
+            else peer.held.set(address, holds);
         }
     }
 
     /** A closed connection's subscriptions hold their accounts no more. */
     private disconnected(peer: StorageDiffPeer): void {
         for (const addresses of peer.subscriptions.values())
-            this.release(addresses);
+            this.release(peer, addresses);
         peer.subscriptions.clear();
     }
 

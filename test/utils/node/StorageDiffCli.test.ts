@@ -52,7 +52,9 @@ describe("storage diff service flags", function () {
             "--max-in-flight-requests",
             "14",
             "--max-watched-addresses",
-            "15"
+            "15",
+            "--max-watched-addresses-per-connection",
+            "16"
         ]);
 
         expect(options).to.deep.equal({
@@ -61,7 +63,8 @@ describe("storage diff service flags", function () {
             maxSubscriptionsPerConnection: 12,
             maxConnections: 13,
             maxInFlightRequests: 14,
-            maxWatchedAddresses: 15
+            maxWatchedAddresses: 15,
+            maxWatchedAddressesPerConnection: 16
         });
     });
 

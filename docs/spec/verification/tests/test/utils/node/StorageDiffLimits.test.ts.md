@@ -15,6 +15,9 @@ Each case starts the service with small limits in front of an isolated anvil tes
 - `refuses a state read of a new account with the limit error while every watched account is subscribed, and keeps the connection`: REQ-SDS-12-JDW71Y.T1.P3
 - `watches a new account once the subscription that held the last one is unsubscribed`: REQ-SDS-12-JDW71Y.T1.P4
 - `watches a new account once the connection whose subscription held the last one closed`: REQ-SDS-12-JDW71Y.T1.P5
+- `refuses a connection's state read of an account past its share with the limit error while another connection reads it`: REQ-SDS-12-JDW71Y.T1.P14
+- `refuses a subscription that would take the connection past its share of watched accounts with the limit error`: REQ-SDS-12-JDW71Y.T1.P15
+- `frees a connection's share once its subscription is unsubscribed and its read is answered`: REQ-SDS-12-JDW71Y.T1.P16
 - `refuses a subscription past the connection's subscription limit with the limit error and takes one again after an unsubscribe`: REQ-SDS-12-JDW71Y.T1.P6
 - `refuses a subscription naming more addresses than the request limit with invalid params and takes one at the limit`: REQ-SDS-12-JDW71Y.T1.P7
 - `refuses a catch-up naming more addresses than the request limit with invalid params`: REQ-SDS-12-JDW71Y.T1.P7
@@ -26,4 +29,5 @@ Each case starts the service with small limits in front of an isolated anvil tes
 - `answers scp_getHead sent without params`: REQ-SDS-12-JDW71Y.T1.P12
 - `cuts a peer that does not read its answers once its unsent bytes pass the limit`: REQ-SDS-11-QV2VPT.T1.P16
 - `traces only the blocks that stay retained after an outage longer than the window, and pushes them`: REQ-SDS-11-QV2VPT.T1.P15
+- `pushes a first record after a restart whose parent the subscriber was never sent, and refuses a catch-up over the skipped blocks with the pruned error`: REQ-SDS-1-TXEY33.T1.P8
 - `refuses to start with a limit that is not a positive integer`: UNIT-TEST-SDS-SERVICE-1-E7VQBH.P1

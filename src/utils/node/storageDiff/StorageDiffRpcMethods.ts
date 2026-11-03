@@ -54,6 +54,7 @@ export class StorageDiffRpcMethods {
             throw invalidParams("Expected [addresses, fromBlock]");
         }
         return await this.service.getDiffs(
+            this.peer,
             parseAddresses(params[0]),
             parseFromBlock(params[1])
         );
@@ -76,6 +77,7 @@ export class StorageDiffRpcMethods {
             throw invalidParams("Expected [blockHash, accounts]");
         }
         return await this.service.getState(
+            this.peer,
             parseBlockHash(params[0]),
             parseStateRequests(params[1])
         );

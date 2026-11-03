@@ -13,7 +13,8 @@ const COUNT_FLAGS = {
     "max-subscriptions-per-connection": "maxSubscriptionsPerConnection",
     "max-connections": "maxConnections",
     "max-in-flight-requests": "maxInFlightRequests",
-    "max-watched-addresses": "maxWatchedAddresses"
+    "max-watched-addresses": "maxWatchedAddresses",
+    "max-watched-addresses-per-connection": "maxWatchedAddressesPerConnection"
 } as const;
 
 function parseCount(name: string, value: string): number {
@@ -47,7 +48,8 @@ export function parseStorageDiffArgs(
             "max-subscriptions-per-connection": { type: "string" },
             "max-connections": { type: "string" },
             "max-in-flight-requests": { type: "string" },
-            "max-watched-addresses": { type: "string" }
+            "max-watched-addresses": { type: "string" },
+            "max-watched-addresses-per-connection": { type: "string" }
         },
         strict: true,
         allowPositionals: false

@@ -24,6 +24,7 @@ import { UPSTREAM_FAULT } from "../../fixtures/node/UpstreamRelay";
 import {
     INVALID_PARAMS,
     LIMIT_EXCEEDED_ERROR_CODE,
+    PRUNED_ERROR_CODE,
     type BlockEnvironment
 } from "@/utils/node/storageDiff/blockStorageDiff";
 import {
@@ -242,6 +243,77 @@ describe("StorageDiffService limits", function () {
         );
     });
 
+    // Mutation: no per-connection check -> the client's read of b is
+    // answered; the share counted over every connection -> the other
+    // connection's read of b is refused; an account the connection holds
+    // counted again -> the client's read of a is refused.
+    it("refuses a connection's state read of an account past its share with the limit error while another connection reads it", async function () {
+        await withStorageDiffSession(
+            async ({ client, service, signer }) => {
+                const a = await recordKey(await deployNumberStorage(signer));
+                const b = await recordKey(await deployNumberStorage(signer));
+                const other = await StorageDiffClient.connect(service.url);
+                try {
+                    await client.subscribe([a]);
+                    const { hash } = await headOf(client);
+
+                    const held = await client.getState(hash, [
+                        { address: a, ...SLOT }
+                    ]);
+                    const code = await errorCodeOf(
+                        client.getState(hash, [{ address: b, ...SLOT }])
+                    );
+                    const read = await other.getState(hash, [
+                        { address: b, ...SLOT }
+                    ]);
+
+                    expect(held.accounts[a].storage).to.have.key(VALUE_SLOT);
+                    expect(code).to.equal(LIMIT_EXCEEDED_ERROR_CODE);
+                    expect(read.accounts[b].storage).to.have.key(VALUE_SLOT);
+                } finally {
+                    other.close();
+                }
+            },
+            { maxWatchedAddressesPerConnection: 1 }
+        );
+    });
+
+    // Mutation: the share checked for reads only -> the subscription is taken.
+    it("refuses a subscription that would take the connection past its share of watched accounts with the limit error", async function () {
+        await withStorageDiffSession(
+            async ({ client }) => {
+                const code = await errorCodeOf(client.subscribe([X, Y]));
+                const atShare = await client.subscribe([X]);
+
+                expect(code).to.equal(LIMIT_EXCEEDED_ERROR_CODE);
+                expect(atShare).to.be.a("string");
+            },
+            { maxWatchedAddressesPerConnection: 1 }
+        );
+    });
+
+    // Mutation: a release that keeps the connection's hold -> b is refused.
+    it("frees a connection's share once its subscription is unsubscribed and its read is answered", async function () {
+        await withStorageDiffSession(
+            async ({ client, signer }) => {
+                const a = await recordKey(await deployNumberStorage(signer));
+                const b = await recordKey(await deployNumberStorage(signer));
+                const c = await recordKey(await deployNumberStorage(signer));
+                const subscription = await client.subscribe([a]);
+                const { hash } = await headOf(client);
+
+                await client.unsubscribe(subscription);
+                await client.getState(hash, [{ address: b, ...SLOT }]);
+                const state = await client.getState(hash, [
+                    { address: c, ...SLOT }
+                ]);
+
+                expect(state.accounts[c].storage).to.have.key(VALUE_SLOT);
+            },
+            { maxWatchedAddressesPerConnection: 1 }
+        );
+    });
+
     it("refuses a subscription past the connection's subscription limit with the limit error and takes one again after an unsubscribe", async function () {
         await withStorageDiffSession(
             async ({ client }) => {
@@ -451,6 +523,40 @@ describe("StorageDiffService limits", function () {
                 expect(
                     relay.requestCount("debug_traceBlockByNumber") - traces
                 ).to.equal(6);
+            },
+            { retention: 3 }
+        );
+    });
+
+    // Mutation: every block of the outage pushed -> the first record's
+    // parent is the last record the subscriber was sent.
+    it("pushes a first record after a restart whose parent the subscriber was never sent, and refuses a catch-up over the skipped blocks with the pruned error", async function () {
+        await withStorageDiffSession(
+            async ({ client, relay, signer }) => {
+                const storage = await deployNumberStorage(signer);
+                const address = await recordKey(storage);
+                const subscription = await client.subscribe([address]);
+                const before = await setValue(storage, 1n);
+                const seen = await client.recordAt(
+                    subscription,
+                    before.blockNumber
+                );
+
+                relay.refuseConnections(true);
+                relay.disconnect();
+                for (let value = 2n; value <= 7n; value++)
+                    await setValue(storage, value);
+                relay.refuseConnections(false);
+                const first = await client.nextRecord(subscription);
+                const code = await errorCodeOf(
+                    client.catchUp([address], before.blockNumber + 1)
+                );
+
+                expect(first.parentHash).to.not.equal(seen.hash);
+                expect(Number(first.number)).to.be.greaterThan(
+                    before.blockNumber + 1
+                );
+                expect(code).to.equal(PRUNED_ERROR_CODE);
             },
             { retention: 3 }
         );
