@@ -792,7 +792,7 @@ Specification cases tested: 9/9.
 Specification cases tested: 8/8.
 
 [`REQ-RPCMIRROR-3-7MQH88` (A snapshot is waited for only when the service says it is ready)](../specification/runtime/rpc-mirror.md#req-rpcmirror-3-7mqh88)
-Specification cases tested: 13/13.
+Specification cases tested: 15/15.
 
 [`REQ-RPCMIRROR-4-H35NFC` (A read is never older than a block the peer already saw)](../specification/runtime/rpc-mirror.md#req-rpcmirror-4-h35nfc)
 Specification cases tested: 17/17.
@@ -807,7 +807,7 @@ Specification cases tested: 3/3.
 Specification cases tested: 9/9.
 
 [`REQ-RPCMIRROR-8-1PA83T` (Trouble with the service degrades reads to the node, never fails them)](../specification/runtime/rpc-mirror.md#req-rpcmirror-8-1pa83t)
-Specification cases tested: 9/9.
+Specification cases tested: 10/10.
 
 [`REQ-RUN-2-GBCZ5B` (No shared mutable memory across contexts)](../specification/runtime/execution.md#req-run-2-gbcz5b)
 Specification cases tested: 0/1.

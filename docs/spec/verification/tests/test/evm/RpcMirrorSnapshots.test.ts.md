@@ -18,6 +18,8 @@ This file covers the snapshots of accounts the service has ready, syncing or laz
 - `keeps an account lazy when the backfill of a syncing account ends without a snapshot`: REQ-RPCMIRROR-3-7MQH88.T1.P6
 - `keeps an account lazy when the backfill of a syncing account fails`: REQ-RPCMIRROR-3-7MQH88.T1.P7
 - `asks the node, after a backstop learned from snapshot arrivals, for a snapshot the service has ready and never delivers`: REQ-RPCMIRROR-3-7MQH88.T1.P8
+- `takes the snapshot of a ready account after a reconnect when the read that followed it failed its catch-up`: REQ-RPCMIRROR-3-7MQH88.T1.P14
+- `holds the mirror past the snapshot backstop until a snapshot being placed for the read is placed`: REQ-RPCMIRROR-3-7MQH88.T1.P15
 - `does not shorten the wait for a snapshot because blocks arrived fast`: REQ-RPCMIRROR-3-7MQH88.T1.P13
 - `stops waiting for a snapshot at once when the service connection drops`: REQ-RPCMIRROR-3-7MQH88.T1.P9
 - `drops a complete account to lazy reads when the service finds its cached entries short after a block, and reads the omitted slot`: REQ-RPCMIRROR-3-7MQH88.T1.P11

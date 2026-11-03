@@ -19,6 +19,7 @@ This file covers the cached state of storage slots: first reads, cache hits, reo
 - `answers eth_blockNumber from the node within the SDK deadline when the service never answers its head`: REQ-RPCMIRROR-8-1PA83T.T1.P7
 - `answers two concurrent reads from the node within the SDK deadline when the service goes silent`: REQ-RPCMIRROR-8-1PA83T.T1.P8
 - `answers a read from the node within its deadline while a pushed record's catch-up holds the mirror on a silent service`: REQ-RPCMIRROR-8-1PA83T.T1.P9
+- `answers a read from the node within the SDK deadline when it waited for a block and then for a snapshot the service never pushes`: REQ-RPCMIRROR-8-1PA83T.T1.P10
 - `keeps the service connection and the cache when the service fails to drop a superseded subscription`: REQ-RPCMIRROR-8-1PA83T.T1.P1
 - `sends no scp_getState and no node read for a second read of the same slot`: REQ-RPCMIRROR-1-XQNZ4J.T1.P3
 - `reads a slot cleared on chain as zero without an eth_getStorageAt`: REQ-RPCMIRROR-1-XQNZ4J.T1.P4
