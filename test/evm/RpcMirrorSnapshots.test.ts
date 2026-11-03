@@ -262,6 +262,9 @@ describe("MirrorRpcProvider snapshots", function () {
             // the mirror's head stays behind the service's, so the snapshot is ahead of it
             const releaseRecords =
                 session.service.holdNotifications("scp_subscription");
+            // nor does the node's head push tell the mirror it is behind
+            const releaseHeads =
+                session.node.holdNotifications("eth_subscription");
             await (await chainStorage.setValue(4n)).wait();
             // the snapshot's catch-up is held; the read's own one passes after it
             const releaseUnsubscribe =
@@ -295,6 +298,7 @@ describe("MirrorRpcProvider snapshots", function () {
             releaseCatchUp();
             const word = await read;
             releaseRecords();
+            releaseHeads();
 
             expect(BigInt(word)).to.equal(4n);
         });

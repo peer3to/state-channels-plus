@@ -154,6 +154,31 @@ describe("MirrorRpcProvider freshness", function () {
         });
     });
 
+    it("holds a call until the mirror reaches a block the node announced, with no block listener of its own", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, chainStorage } =
+                await deployMirroredStorage(session);
+            expect(await storage.getValue()).to.equal(0n);
+            const release =
+                session.service.holdNotifications("scp_subscription");
+
+            await (await chainStorage.setValue(3n)).wait();
+            // time is the input: the node's announcement reaches the provider
+            await sleep(ABSENCE_WINDOW_MS);
+            let settled = false;
+            const read = storage.getValue().finally(() => (settled = true));
+            await sleep(ABSENCE_WINDOW_MS);
+            // Mutation: no head subscription of the provider's own, the read answers from the older copy
+            expect(settled, "the read waits for the announced block").to.equal(
+                false
+            );
+            release();
+
+            expect(await read).to.equal(3n);
+            expect(nodeRequests(session, "eth_call")).to.have.length(0);
+        });
+    });
+
     // Mutation: a backstop seeded with a short default ends the first wait early.
     it("waits the whole cap, then asks the node, for an announced block before any record has reached the copy", async function () {
         await withMirrorSession(async (session) => {

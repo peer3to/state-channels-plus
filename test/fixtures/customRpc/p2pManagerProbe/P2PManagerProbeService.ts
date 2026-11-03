@@ -386,14 +386,14 @@ export type AttemptClearedDuringTermsProbe = {
     error: string;
     status: Status;
     channelId: string;
-    /** subscriptions per node for the cleared attempt's channel */
-    subscriptionCounts: (number | null)[];
+    /** watches of the cleared attempt's channel */
+    subscriptionCount: number;
 };
 
 export type LowerTermsPendingProbe = {
     channelId: string;
-    /** subscriptions per node for the attempt's channel */
-    subscriptionCounts: (number | null)[];
+    /** watches of the attempt's channel */
+    subscriptionCount: number;
 };
 
 export type NegotiationFailureProbe = {
@@ -5027,8 +5027,8 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 error,
                 status: this.p2pManager.stateManager.status,
                 channelId: String(this.p2pManager.stateManager.channelId),
-                subscriptionCounts:
-                    await this.p2pManager.localRpc.validation.getChannelSubscriptionCounts(
+                subscriptionCount:
+                    await this.p2pManager.localRpc.validation.getChannelWatchCount(
                         channelId
                     )
             };
@@ -5074,8 +5074,8 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             if (!requested()) throw new Error("Terms request was never sent");
             return {
                 channelId: String(this.p2pManager.stateManager.channelId),
-                subscriptionCounts:
-                    await this.p2pManager.localRpc.validation.getChannelSubscriptionCounts(
+                subscriptionCount:
+                    await this.p2pManager.localRpc.validation.getChannelWatchCount(
                         channelId
                     )
             };

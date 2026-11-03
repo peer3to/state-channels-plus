@@ -17,7 +17,6 @@ import { setupP2pRuntime } from "@/evm/p2pRuntime/setupP2pRuntime";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
 import { createLogger } from "@/utils/logging";
 import { RootCreationControl } from "@test/fixtures/runtimeRpc/RootCreationControl";
-import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { WebSocketProvider } from "ethers";
 import { ethers } from "ethers";
@@ -187,9 +186,7 @@ export async function assertStartupReplayGasReadFailure(
     }
 }
 
-export async function assertSubscriptionCleanup(
-    subscribed: boolean
-): Promise<void> {
+export async function assertSubscriptionCleanup(): Promise<void> {
     await startRuntimeTransportModesFixture();
     const setup = await prepareRuntimeSetup({
         runSdkInThread: false,
@@ -216,21 +213,6 @@ export async function assertSubscriptionCleanup(
     if (!socket) throw new Error("Expected the node's open socket");
     const nodeSocket = socket;
     try {
-        if (subscribed) {
-            // block events reach this provider through the node's socket
-            const send = nodeSocket.send.bind(nodeSocket);
-            let subscriptionReady: Promise<unknown> | undefined;
-            nodeSocket.send = (...args) => {
-                const pending = send(...args);
-                if (args[0] === "eth_subscribe") subscriptionReady = pending;
-                return pending;
-            };
-            await provider.on("block", () => {});
-            // the relay subscribes on the socket after on() resolves
-            await waitFor(() => subscriptionReady !== undefined);
-            await subscriptionReady;
-            nodeSocket.send = send;
-        }
         await provider.destroy();
         expect(provider.destroyed).to.equal(true);
         expect(await provider.listenerCount()).to.equal(0);

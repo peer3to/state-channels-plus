@@ -6,6 +6,7 @@ import {
     MirrorUnavailableError,
     NotLocalError
 } from "./MirrorUnavailableError";
+import { StorageDiffPrunedError } from "./StorageDiffSocket";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
 import { createEvm } from "@/evm/EvmFactory";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
@@ -15,7 +16,8 @@ import type {
     AccountAddress,
     BlockEnvironment,
     BlockSelector,
-    RpcBlock
+    RpcBlock,
+    StorageDiffCatchUp
 } from "@/utils/storageDiff/storageDiffWire";
 import type { EVM, EVMOpts } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
@@ -99,6 +101,30 @@ export class Mirror {
     /** Calls issued from now on see the chain with `block` applied. */
     requireBlock(block: MirrorBlock): void {
         this.chain.requireBlock(block);
+    }
+
+    /** Calls `watcher` each time the head moves or the cache is cleared. */
+    watchHead(watcher: () => void): () => void {
+        return this.chain.watchHead(watcher);
+    }
+
+    /**
+     * The service's records of `addresses` from `fromBlock` to its best head,
+     * logs included; `undefined` when the service no longer retains
+     * `fromBlock`.
+     */
+    async readRecords(
+        addresses: string[],
+        fromBlock: bigint
+    ): Promise<StorageDiffCatchUp | undefined> {
+        return await this.chain.queryService(async (socket, timeoutMs) => {
+            try {
+                return await socket.catchUp(addresses, fromBlock, timeoutMs);
+            } catch (error) {
+                if (error instanceof StorageDiffPrunedError) return undefined;
+                throw error;
+            }
+        });
     }
 
     async call(

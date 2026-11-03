@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: shared abort assertions exercised by StateManagerAbort and P2PManager tests
 import { clientRootFor, inlineHostFor } from "./RuntimeRootObservation";
 import Clock from "@/Clock";
+import MirrorRpcProvider from "@/evm/p2pRuntime/rpcNodes/MirrorRpcProvider";
 import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
@@ -365,9 +366,26 @@ export async function assertProviderShutdownOrder(): Promise<void> {
     const host = inlineHostFor(peer.p2pInstance);
     const sm = host.hostRpc.requireManager().stateManager;
     const provider = sm.stateChannelManagerContract.runner!.provider!;
-    if (!(provider instanceof MultiRpcProvider))
+    if (!(provider instanceof MirrorRpcProvider))
         throw new Error("Expected the host RPC node provider");
-    // each node's open socket carries the channel's event subscription
+    const logs = provider.logs;
+    // Record-only probe: counts the channel's running log watches,
+    // calling through to the feed. The channel is set again so the probe
+    // sees the watch start.
+    let runningWatches = 0;
+    const watch = logs.watch.bind(logs);
+    logs.watch = (filter, fromBlock, listener) => {
+        runningWatches++;
+        const unwatch = watch(filter, fromBlock, listener);
+        return () => {
+            runningWatches--;
+            unwatch();
+        };
+    };
+    await sm.stateChannelEventListener.clearChannelId();
+    await sm.stateChannelEventListener.setChannelId(sm.channelId);
+    // the channel's events come from the provider's log feed
+    expect(runningWatches).to.equal(1);
     const sockets = provider.nodes.map((node) => {
         let socket: WebSocketProvider | undefined;
         node.watchSockets((open) => {
@@ -376,11 +394,6 @@ export async function assertProviderShutdownOrder(): Promise<void> {
         if (!socket) throw new Error("Expected every node to be connected");
         return socket;
     });
-    const socketListenerCounts = await Promise.all(
-        sockets.map((socket) => socket.listenerCount())
-    );
-    for (const count of socketListenerCounts)
-        expect(count).to.be.greaterThan(0);
     await sm.stop();
     expect(provider.destroyed).to.equal(false);
     expect(provider.nodes.map((node) => node.destroyed)).to.deep.equal(
@@ -389,12 +402,12 @@ export async function assertProviderShutdownOrder(): Promise<void> {
     expect(sockets.map((socket) => socket.destroyed)).to.deep.equal(
         sockets.map(() => false)
     );
-    expect(
-        await Promise.all(sockets.map((socket) => socket.listenerCount()))
-    ).to.deep.equal(socketListenerCounts);
+    // stopping the host leaves the watch for the final listener removal
+    expect(runningWatches).to.equal(1);
     await peer.p2pInstance.dispose();
     expect(provider.destroyed).to.equal(true);
     expect(await provider.listenerCount()).to.equal(0);
+    expect(runningWatches).to.equal(0);
     expect(provider.nodes.map((node) => node.destroyed)).to.deep.equal(
         provider.nodes.map(() => true)
     );

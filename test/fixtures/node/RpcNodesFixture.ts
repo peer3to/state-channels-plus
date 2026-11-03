@@ -33,6 +33,9 @@ import {
     type WebSocketProvider
 } from "ethers";
 
+/** A storage diff service the case never reads from: only the node behaviour is under test. */
+const UNREACHED_STORAGE_DIFF_URL = "ws://127.0.0.1:9";
+
 /**
  * An absence window: long enough for a request, a reconnect or a block
  * event that must not happen to have happened (the first reconnect waits
@@ -684,6 +687,7 @@ export async function assertStartupWithOneUnreachableNode(): Promise<void> {
             const context = await createRuntimeChainContext(
                 {
                     ...config,
+                    STORAGE_DIFF_URL: UNREACHED_STORAGE_DIFF_URL,
                     PROVIDER_URLS: [unreachable.url, reachable.url]
                 },
                 Wallet.createRandom().privateKey,
@@ -719,6 +723,7 @@ export async function assertStartupFailsWithoutReachableNode(): Promise<void> {
             const failure = await createRuntimeChainContext(
                 {
                     ...config,
+                    STORAGE_DIFF_URL: UNREACHED_STORAGE_DIFF_URL,
                     // a hosted endpoint's path and query carry its API key
                     PROVIDER_URLS: proxies.map(
                         (proxy) => `${proxy.url}/v2/secret-path?key=secret-key`
@@ -762,7 +767,11 @@ export async function assertRpcNodesProviderFailsWithoutReachableNode(): Promise
                 (proxy) => `${proxy.url}/v2/secret-path?key=secret-key`
             );
             const failure = await createRpcNodesProvider(
-                { PROVIDER_URL: urls[0], PROVIDER_URLS: urls },
+                {
+                    PROVIDER_URL: urls[0],
+                    PROVIDER_URLS: urls,
+                    STORAGE_DIFF_URL: UNREACHED_STORAGE_DIFF_URL
+                },
                 logger
             ).then(
                 () => undefined,
@@ -802,7 +811,11 @@ export async function assertStartupDoesNotWaitForASilentNode(): Promise<void> {
         silent.blackhole();
         try {
             const context = await createRuntimeChainContext(
-                { ...config, PROVIDER_URLS: [silent.url, reachable.url] },
+                {
+                    ...config,
+                    STORAGE_DIFF_URL: UNREACHED_STORAGE_DIFF_URL,
+                    PROVIDER_URLS: [silent.url, reachable.url]
+                },
                 Wallet.createRandom().privateKey,
                 logger
             );
@@ -1279,6 +1292,7 @@ export async function assertMalformedEndpointRejectsStartupQuietly(): Promise<vo
             const failure = await createRuntimeChainContext(
                 {
                     ...config,
+                    STORAGE_DIFF_URL: UNREACHED_STORAGE_DIFF_URL,
                     PROVIDER_URLS: [
                         "ws://127.0.0.1:99999/v2?key=secret-key",
                         reachable.url
@@ -1309,7 +1323,11 @@ export async function assertInvalidSecretOpensNoNode(): Promise<void> {
         const reachable = await RpcNodeProxy.start(node._getConnection().url);
         try {
             const failure = await createRuntimeChainContext(
-                { ...config, PROVIDER_URLS: [reachable.url] },
+                {
+                    ...config,
+                    STORAGE_DIFF_URL: UNREACHED_STORAGE_DIFF_URL,
+                    PROVIDER_URLS: [reachable.url]
+                },
                 "not a valid mnemonic phrase",
                 logger
             ).then(
@@ -1455,6 +1473,7 @@ export async function assertInvalidLogWindowRejectsStartup(): Promise<void> {
                     createRuntimeChainContext(
                         {
                             ...config,
+                            STORAGE_DIFF_URL: UNREACHED_STORAGE_DIFF_URL,
                             PROVIDER_URLS: [reachable.url],
                             LOG_QUERY_MAX_BLOCKS: maxBlocks
                         },
@@ -1494,6 +1513,7 @@ export async function assertBoundaryMirrorSampleRatesStart(): Promise<void> {
                 const context = await createRuntimeChainContext(
                     {
                         ...config,
+                        STORAGE_DIFF_URL: UNREACHED_STORAGE_DIFF_URL,
                         PROVIDER_URLS: [reachable.url],
                         MIRROR_SAMPLE_RATE: sampleRate
                     },
@@ -1525,6 +1545,7 @@ export async function assertInvalidMirrorSampleRateRejectsStartup(): Promise<voi
                     createRuntimeChainContext(
                         {
                             ...config,
+                            STORAGE_DIFF_URL: UNREACHED_STORAGE_DIFF_URL,
                             PROVIDER_URLS: [reachable.url],
                             MIRROR_SAMPLE_RATE: sampleRate
                         },

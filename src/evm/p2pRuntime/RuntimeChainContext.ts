@@ -83,18 +83,17 @@ function anyNodeConnected(nodes: readonly RpcNodeProvider[]): Promise<boolean> {
  * Build the multi-endpoint provider over the configured RPC nodes. Returns
  * once one node connected; the others keep connecting in the background.
  * Throws once every node's first attempt failed. The provider answers
- * latest-block reads from the local mirror when `config.STORAGE_DIFF_URL` is
- * set; `mirror` supplies the precompiles and owner of its EVM.
+ * latest-block reads from the local mirror kept by the storage diff service
+ * at `config.STORAGE_DIFF_URL` (required); `mirror` supplies the precompiles
+ * and owner of its EVM.
  */
 export async function createRpcNodesProvider(
-    config: Pick<Config, "PROVIDER_URL" | "PROVIDER_URLS"> &
+    config: Pick<
+        Config,
+        "PROVIDER_URL" | "PROVIDER_URLS" | "STORAGE_DIFF_URL"
+    > &
         Partial<
-            Pick<
-                Config,
-                | "STORAGE_DIFF_URL"
-                | "MIRROR_SAMPLE_RATE"
-                | "MIRROR_MAX_FOLLOWED_CONTRACTS"
-            >
+            Pick<Config, "MIRROR_SAMPLE_RATE" | "MIRROR_MAX_FOLLOWED_CONTRACTS">
         >,
     logger: Logger,
     mirror: Pick<MirrorProviderOptions, "customPrecompiles" | "owner"> = {}
@@ -133,7 +132,11 @@ export async function createRpcNodesProvider(
 
 /**
  * Build and verify the real-chain provider and wallet owned by one runtime
- * host.
+ * host. The provider answers latest-block reads from the local mirror kept
+ * by the storage diff service at `config.STORAGE_DIFF_URL` (required);
+ * `mirror` supplies the precompiles and owner
+ * of its EVM. Startup returns once one node connected; the others keep connecting
+ * in the background.
  */
 export async function createRuntimeChainContext(
     config: Config,
@@ -143,6 +146,11 @@ export async function createRuntimeChainContext(
 ): Promise<RuntimeChainContext> {
     // a bad window size would only surface at the first catch-up
     assertLogQueryMaxBlocks(config.LOG_QUERY_MAX_BLOCKS);
+    // checked before any node opens, so a missing service leaves nothing behind
+    if (!config.STORAGE_DIFF_URL)
+        throw new Error(
+            "STORAGE_DIFF_URL is required: set the ws:// URL of the storage diff service"
+        );
     const secret = signerSecret.trim();
     // derived before any node opens, so a bad secret leaves nothing behind
     const wallet = /^0x[0-9a-fA-F]{64}$/.test(secret)

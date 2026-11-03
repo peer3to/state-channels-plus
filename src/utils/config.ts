@@ -11,8 +11,9 @@ export type Config = {
     LOG_QUERY_MAX_BLOCKS: number;
     // ws:// URL of the storage diff service whose records keep the runtime's
     // local copy of the chain current. The runtime answers eth_call and
-    // state reads at the latest block from that copy. Empty means no copy:
-    // every read goes to the RPC nodes.
+    // state reads at the latest block from that copy, and takes contract
+    // events from its records. Required: the runtime does not start without
+    // it.
     STORAGE_DIFF_URL: string;
     // Fraction (0 to 1) of the reads the local copy answers that are also
     // asked of the RPC node, at the same block hash, and compared; a

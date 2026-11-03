@@ -203,6 +203,11 @@ export class RpcNodeProxy {
         return `ws://127.0.0.1:${address.port}`;
     }
 
+    /** Client sockets open on this proxy now. */
+    get openSockets(): number {
+        return this.links.size;
+    }
+
     /** Drop every open socket and refuse new ones until {@link restore}. */
     cut(): void {
         this.isCut = true;

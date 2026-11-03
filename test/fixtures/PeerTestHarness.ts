@@ -446,13 +446,9 @@ export class PeerTestHarness<
         // the chain that the process's service of this node keeps current:
         // it serves every peer of every test that runs on the node.
         this.nodeWsUrl = nodeUrl.replace(/^http/, "ws");
-        // A test of node failover can switch the mirror off with an empty
-        // STORAGE_DIFF_URL override: every read then goes to the nodes.
         const storageDiffUrl =
-            this.options.configOverrides?.STORAGE_DIFF_URL === ""
-                ? ""
-                : process.env.STORAGE_DIFF_URL ||
-                  (await sharedStorageDiffUrl(this.nodeWsUrl));
+            process.env.STORAGE_DIFF_URL ||
+            (await sharedStorageDiffUrl(this.nodeWsUrl));
 
         this.harnessConfig.PROVIDER_URL = nodeUrl;
         this.harnessConfig.LOCAL_DISCOVERY_REGISTRY_URL = discoveryUrl;

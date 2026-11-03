@@ -62,8 +62,6 @@ export type MirrorSession = {
 
 export type MirrorSessionSettings = StorageDiffServiceSettings & {
     customPrecompiles?: EvmCustomPrecompileManifest[];
-    /** Build the provider without a storage diff URL. */
-    withoutService?: boolean;
     /**
      * Fraction of local answers the provider re-asks of the node. Absent means
      * 0, so a test is deterministic; `undefined` named explicitly leaves the
@@ -86,7 +84,6 @@ export async function withMirrorSession<T>(
 ): Promise<T> {
     const {
         customPrecompiles,
-        withoutService,
         sampleRate: named,
         maxFollowedAccounts,
         secondNode,
@@ -129,7 +126,7 @@ export async function withMirrorSession<T>(
             };
             const nodes = second ? [rpcNode, second.rpcNode] : [rpcNode];
             const provider = new MirrorRpcProvider(nodes, logger, {
-                storageDiffUrl: withoutService ? undefined : service.url,
+                storageDiffUrl: service.url,
                 sampleRate,
                 customPrecompiles,
                 maxFollowedAccounts

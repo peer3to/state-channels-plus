@@ -3,6 +3,7 @@ import {
     LOCAL_READ_METHODS,
     parseLocalRead
 } from "./mirror/LocalReadParser";
+import { LogFeed } from "./mirror/LogFeed";
 import { Mirror, type MirrorRead } from "./mirror/Mirror";
 import { MirrorSampler } from "./mirror/MirrorSampler";
 import { MirrorUnavailableError } from "./mirror/MirrorUnavailableError";
@@ -15,14 +16,15 @@ import { DEFAULT_MIRROR_SAMPLE_RATE } from "@/utils/config";
 import type { Logger } from "@/utils/logging/Logger";
 import { RecentSlowest } from "@/utils/storageDiff/LearnedBackstop";
 import {
+    getNumber,
     type JsonRpcError,
     type JsonRpcPayload,
     type JsonRpcResult
 } from "ethers";
 
 export type MirrorProviderOptions = {
-    /** `ws://` URL of the storage diff service. Without it nothing is mirrored. */
-    storageDiffUrl?: string;
+    /** `ws://` URL of the storage diff service (`STORAGE_DIFF_URL`). Required. */
+    storageDiffUrl: string;
     customPrecompiles?: EvmCustomPrecompileManifest[];
     /** The root that owns the precompiles' child roots, if the host has one. */
     owner?: AInternalRpcRoot;
@@ -45,15 +47,17 @@ export type MirrorProviderOptions = {
  * `eth_getCode`, `eth_getBalance` and the latest `eth_getTransactionCount`
  * at the latest block from a local EVM kept current by the storage diff
  * service, instead of asking a node. It answers `eth_blockNumber`, blocks,
- * transactions and receipts from the service's retained data, and the chain
- * id from the first answer. Everything else, and every read the mirror cannot
- * answer, goes to the nodes as before: sent transactions, `eth_estimateGas`
- * (Asset Hub gas is weight based), logs, reads at an older block, a pending
+ * transactions and receipts from the service's retained data, the chain id
+ * from the first answer, and contract logs from the service's records (see
+ * {@link logs}). Everything else, and every read the mirror cannot answer,
+ * goes to the nodes as before: sent transactions, `eth_estimateGas` (Asset
+ * Hub gas is weight based), `eth_getLogs`, reads at an older block, a pending
  * nonce, and a block, transaction or receipt the service does not hold.
- * Without a storage diff URL it is a plain {@link MultiRpcProvider}.
+ * The storage diff service is required.
  */
 export default class MirrorRpcProvider extends MultiRpcProvider {
-    private readonly mirror?: Mirror;
+    private readonly mirror: Mirror;
+    private readonly logFeed: LogFeed;
     /** Hashes of the transactions this provider sent and has not seen mined. */
     private readonly ownTransactions = new Set<string>();
     /** The chain id the nodes answered; it never changes. */
@@ -66,7 +70,7 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
     constructor(
         nodes: readonly RpcNodeProvider[],
         logger: Logger,
-        options: MirrorProviderOptions = {}
+        options: MirrorProviderOptions
     ) {
         super(nodes, logger);
         this.sampler = new MirrorSampler(
@@ -74,30 +78,44 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
             logger,
             options.sampleRate ?? DEFAULT_MIRROR_SAMPLE_RATE
         );
-        if (options.storageDiffUrl) {
-            // an event a node announced at block N must find the mirror at N
-            for (const node of nodes)
-                this.unwatchNodes.push(
-                    node.watchAnnouncedBlocks((blockNumber, isHead) =>
-                        this.mirror?.requireNumber(
-                            node.url,
-                            blockNumber,
-                            isHead
-                        )
-                    )
-                );
-            this.mirror = new Mirror({
-                serviceUrl: options.storageDiffUrl,
-                requestNode: (method, params) =>
-                    this.requestNode(method, params),
-                logger,
-                customPrecompiles: options.customPrecompiles ?? [],
-                owner: options.owner,
-                nodeRoundTrips: this.nodeRoundTrips,
-                maxFollowedAccounts: options.maxFollowedAccounts,
-                getChainId: async () => (await this.getNetwork()).chainId
-            });
-        }
+        if (!options.storageDiffUrl)
+            throw new Error(
+                "STORAGE_DIFF_URL is required: set the ws:// URL of the storage diff service"
+            );
+        // an event a node announced at block N must find the mirror at N
+        for (const node of nodes)
+            this.unwatchNodes.push(
+                node.watchAnnouncedBlocks((blockNumber, isHead) =>
+                    this.mirror.requireNumber(node.url, blockNumber, isHead)
+                )
+            );
+        this.mirror = new Mirror({
+            serviceUrl: options.storageDiffUrl,
+            requestNode: (method, params) => this.requestNode(method, params),
+            logger,
+            customPrecompiles: options.customPrecompiles ?? [],
+            owner: options.owner,
+            nodeRoundTrips: this.nodeRoundTrips,
+            maxFollowedAccounts: options.maxFollowedAccounts,
+            getChainId: async () => (await this.getNetwork()).chainId
+        });
+        this.logFeed = new LogFeed(
+            this.mirror,
+            this,
+            async () =>
+                getNumber(
+                    (await this.requestNode("eth_blockNumber", [])) as string
+                ),
+            logger
+        );
+        // Logs come from the service, so the nodes' head pushes are what
+        // announce how far the chain has reached.
+        void this.on("block", () => undefined);
+    }
+
+    /** Contract logs, from the storage diff service's records. */
+    get logs(): LogFeed {
+        return this.logFeed;
     }
 
     // Overrides MultiRpcProvider._send: reads the mirror can answer are
@@ -112,7 +130,8 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
     // Overrides MultiRpcProvider.destroy: also closes the mirror.
     override destroy(): void {
         for (const unwatch of this.unwatchNodes.splice(0)) unwatch();
-        void this.mirror?.close();
+        this.logFeed.close();
+        void this.mirror.close();
         super.destroy();
     }
 
@@ -137,8 +156,8 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
         )
             return { id: request.id, result: this.chainIdAnswer };
         const mirror = this.mirror;
-        const read = mirror ? parseLocalRead(request) : undefined;
-        if (mirror && read) {
+        const read = parseLocalRead(request);
+        if (read) {
             try {
                 let seen: MirrorRead | undefined;
                 const answer = {
@@ -190,7 +209,7 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
         )
             return;
         this.ownTransactions.delete(hash);
-        this.mirror?.requireBlock({
+        this.mirror.requireBlock({
             number: BigInt(receipt.blockNumber),
             hash: receipt.blockHash.toLowerCase()
         });

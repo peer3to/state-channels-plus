@@ -108,6 +108,8 @@ export class MirrorChain {
     private subscription?: SubscriptionId;
     /** Accounts whose missing state is read from the node: the feed's copy was found wrong. */
     private readonly nodeRead = new Set<AccountAddress>();
+    /** Called when the head moves or the cache is cleared. */
+    private readonly headWatchers = new Set<() => void>();
     /**
      * When the read holding the lock must have its answer, its wait for the
      * service included; unset while a pushed record or snapshot holds it.
@@ -127,11 +129,15 @@ export class MirrorChain {
         this.logger = options.logger.child({ component: "RpcMirror" });
         this.followed = new FollowedChain(this.state, {
             onArrived: (number) => this.freshness.noteArrived(number),
-            onHeadChanged: () => this.freshness.notifyHeadWaiters(),
+            onHeadChanged: () => {
+                this.freshness.notifyHeadWaiters();
+                this.notifyHeadWatchers();
+            },
             onRolledBack: (hash) => this.freshness.forgetRequiredBlock(hash),
             onCleared: () => {
                 this.freshness.forgetAnnouncements();
                 this.freshness.notifyHeadWaiters();
+                this.notifyHeadWatchers();
             },
             onSnapshotPlaced: (address) =>
                 this.snapshotWaits.end(address, "arrived"),
@@ -223,6 +229,18 @@ export class MirrorChain {
         } finally {
             this.lock.unlock();
         }
+    }
+
+    /**
+     * Calls `watcher` each time the head moves or the cache is cleared, until
+     * the returned function runs. A clear calls it too: a watcher that asks
+     * the service next opens the connection again.
+     */
+    watchHead(watcher: () => void): () => void {
+        this.headWatchers.add(watcher);
+        return () => {
+            this.headWatchers.delete(watcher);
+        };
     }
 
     /** The block number a service read names as the one its caller saw, if any. */
@@ -358,6 +376,11 @@ export class MirrorChain {
             throw new MirrorUnavailableError(
                 "No time is left to ask the storage diff service"
             );
+    }
+
+    private notifyHeadWatchers(): void {
+        if (this.closed) return;
+        for (const watcher of [...this.headWatchers]) watcher();
     }
 
     // Nothing is logged once closed: the owner's logger may be disposed first.

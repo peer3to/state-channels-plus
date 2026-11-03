@@ -127,10 +127,7 @@ describe("OpenChannelNegotiationService", function () {
         expect(result.error).to.equal("");
         expect(result.channelId).to.equal(ethers.ZeroHash);
         expect(result.status).to.equal(Status.DISCOVERING);
-        expect(result.subscriptionCounts).to.include(0);
-        expect(result.subscriptionCounts.every((count) => !count)).to.equal(
-            true
-        );
+        expect(result.subscriptionCount).to.equal(0);
     });
 
     it("a terms request whose attempt is cleared during the channel selection keeps the reset status and subscribes nothing", async function () {
@@ -141,10 +138,7 @@ describe("OpenChannelNegotiationService", function () {
         expect(result.error).to.equal("");
         expect(result.status).to.equal(Status.DISCOVERING);
         expect(result.channelId).to.equal(ethers.ZeroHash);
-        expect(result.subscriptionCounts).to.include(0);
-        expect(result.subscriptionCounts.every((count) => !count)).to.equal(
-            true
-        );
+        expect(result.subscriptionCount).to.equal(0);
     });
 
     it("the lower address selects no channel while its terms request is pending", async function () {
@@ -153,10 +147,7 @@ describe("OpenChannelNegotiationService", function () {
             .p2pManagerProbe.probeLowerSelectionDuringTerms()
             .request();
         expect(result.channelId).to.equal(ethers.ZeroHash);
-        expect(result.subscriptionCounts).to.include(0);
-        expect(result.subscriptionCounts.every((count) => !count)).to.equal(
-            true
-        );
+        expect(result.subscriptionCount).to.equal(0);
     });
 
     it("replays an early committed request and clears an unsigned abandoned attempt", async function () {
