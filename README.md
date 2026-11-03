@@ -709,7 +709,11 @@ worker, and keeps the in-process `hardhat` network on EDR. A distributed run
 sends the setting to its workers with the rest of its environment. This
 repository's own tests need anvil. The anvil test chain must be the version in
 the project's `.forge-version`, or in the runner's own when the project has
-none; any other anvil is refused.
+none; any other anvil is refused. Each slot's storage diff service traces
+every block with `debug_traceBlockByNumber` and `prestateTracer`, so a project
+chain that cannot is refused when the slot starts; stock Hardhat cannot. A
+project with no `scripts/infra/storage-diff-service.js` of its own runs the
+runner's.
 
 Dial diagnostics include the Noise handshake hash for each stream. Close lines
 state whether this application closed the stream, Hyperswarm reported duplicate

@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { withIsolatedHardhatNode } from "../fixtures/node/IsolatedHardhatNode";
+import { StorageDiffClient } from "../fixtures/node/StorageDiffClient";
 import {
     Block,
     call,
@@ -18,6 +19,10 @@ import {
     walletOf,
     withPinRoots
 } from "../fixtures/node/TestChainFixture";
+import {
+    closeSharedStorageDiff,
+    sharedStorageDiffUrl
+} from "@test/fixtures/HarnessStorageDiff";
 import {
     provisionSlots,
     startHardhatNode,
@@ -80,6 +85,37 @@ describe("e2e parallel test chain", function () {
         await expectStopped(slots[0].nodeUrl);
     });
 
+    it("a runner slot starts a storage diff service that follows its chain up to the newest block", async function () {
+        const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "chain-slot-"));
+        const { slots, infra } = await provisionSlots(1, logDir);
+        const service = infra.services[0];
+        try {
+            const rpc = call(slots[0].nodeUrl);
+            const transfer = await transferOneWei(rpc);
+            const client = await StorageDiffClient.connect(
+                slots[0].storageDiffUrl
+            );
+            try {
+                const mined = BigInt(transfer.receipt.blockNumber);
+                let followed = -1n;
+                for (let attempt = 0; attempt < 100; attempt++) {
+                    const answer = await client.catchUp([], 1 << 30);
+                    followed = BigInt(answer.head.number);
+                    if (followed >= mined) break;
+                    await new Promise((resolve) => setTimeout(resolve, 100));
+                }
+                expect(followed >= mined).to.equal(true);
+            } finally {
+                client.close();
+            }
+        } finally {
+            teardownInfra(infra);
+            await service.exited;
+            for (const node of infra.nodes) await node.exited;
+            fs.rmSync(logDir, { recursive: true, force: true });
+        }
+    });
+
     // Mutation: the --block-time argument dropped from anvilArgs -> the slot node automines and mines no empty block.
     it("a runner slot node mines blocks without transactions, at most one a second, with automine off", async function () {
         const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "chain-slot-"));
@@ -137,6 +173,75 @@ describe("e2e parallel test chain", function () {
             teardownInfra(infra);
             await node.exited;
             fs.rmSync(logDir, { recursive: true, force: true });
+        }
+    });
+
+    // Mutation: startStorageDiffService skips its trace probe -> the slot starts its service on the hardhat node.
+    // Mutation: provisionSlots drops its env -> the slot chain is anvil, which traces.
+    it("a runner slot on a test chain that cannot trace blocks is refused before its storage diff service starts", async function () {
+        const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "chain-slot-"));
+        let failure: Error | undefined;
+        try {
+            const { infra } = await provisionSlots(1, logDir, {
+                E2E_TEST_CHAIN: "project"
+            });
+            teardownInfra(infra);
+        } catch (error) {
+            failure = error as Error;
+        } finally {
+            fs.rmSync(logDir, { recursive: true, force: true });
+        }
+        expect(failure?.message).to.equal(
+            "slot 0 storage diff service cannot start: its test chain does not trace blocks with prestateTracer (debug_traceBlockByNumber: Method debug_traceBlockByNumber is not supported)"
+        );
+    });
+
+    it("stops a slot's storage diff service with the slot", async function () {
+        const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "chain-slot-"));
+        const { slots, infra } = await provisionSlots(1, logDir);
+        const service = infra.services[0];
+        const url = slots[0].storageDiffUrl;
+
+        teardownInfra(infra);
+        await service.exited;
+        for (const node of infra.nodes) await node.exited;
+
+        fs.rmSync(logDir, { recursive: true, force: true });
+        let refusal: unknown;
+        try {
+            await StorageDiffClient.connect(url);
+        } catch (error) {
+            refusal = error;
+        }
+        expect(refusal).to.be.instanceOf(Error);
+        expect(infra.services).to.have.length(0);
+    });
+
+    it("the harness uses the slot's storage diff service for the slot's node and starts its own for another node", async function () {
+        const slotNode = "ws://127.0.0.1:18999";
+        const slotService = "ws://127.0.0.1:18998";
+        const saved = {
+            provider: process.env.PROVIDER_URL,
+            service: process.env.STORAGE_DIFF_URL
+        };
+        process.env.PROVIDER_URL = slotNode.replace(/^ws/, "http");
+        process.env.STORAGE_DIFF_URL = slotService;
+        let other = "";
+        try {
+            expect(await sharedStorageDiffUrl(slotNode)).to.equal(slotService);
+            await withIsolatedHardhatNode(async (provider) => {
+                other = provider._getConnection().url.replace(/^http/, "ws");
+                const own = await sharedStorageDiffUrl(other);
+                expect(own).to.not.equal(slotService);
+                expect(own).to.match(/^ws:\/\//);
+                await closeSharedStorageDiff(other);
+            });
+        } finally {
+            if (saved.provider === undefined) delete process.env.PROVIDER_URL;
+            else process.env.PROVIDER_URL = saved.provider;
+            if (saved.service === undefined)
+                delete process.env.STORAGE_DIFF_URL;
+            else process.env.STORAGE_DIFF_URL = saved.service;
         }
     });
 

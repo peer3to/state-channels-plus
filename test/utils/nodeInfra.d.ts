@@ -26,6 +26,18 @@ export interface DiscoveryHandle {
     logClosed?: Promise<void>;
 }
 
+export interface StorageDiffServiceHandle {
+    child: ChildProcess;
+    /** The `ws://` URL the service listens on. */
+    url: string;
+    stop: () => void;
+    label?: string;
+    slotId?: number;
+    logPath?: string;
+    exited?: Promise<{ code: number | null; signal: string | null }>;
+    logClosed?: Promise<void>;
+}
+
 export interface StartInfraOptions {
     port?: number;
     logPath?: string;
@@ -42,12 +54,14 @@ export interface Slot {
     id: number;
     nodeUrl: string;
     discoveryUrl: string;
+    storageDiffUrl: string;
     cacheDir: string;
 }
 
 export interface Infra {
     nodes: NodeHandle[];
     discoveries: DiscoveryHandle[];
+    services: StorageDiffServiceHandle[];
 }
 
 export interface GasPeak {
@@ -77,6 +91,13 @@ export function waitForHardhatNode(
     timeoutMs?: number,
     cancelled?: () => boolean
 ): Promise<void>;
+export function startStorageDiffService(options: {
+    /** `ws://` URL of the chain node the service follows. */
+    upstreamUrl: string;
+    logPath?: string;
+    label?: string;
+    retention?: number;
+}): Promise<StorageDiffServiceHandle>;
 export function startDiscoveryRegistry(
     opts?: StartInfraOptions
 ): Promise<DiscoveryHandle>;

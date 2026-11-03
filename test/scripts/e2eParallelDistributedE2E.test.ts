@@ -1,7 +1,10 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
 import { LeasePoolHarness } from "../fixtures/distributed/leasePool";
-import { createRealWorkerWorkspace } from "../fixtures/distributed/realWorkerWorkspace";
+import {
+    createRealWorkerWorkspace,
+    runSlotProbe
+} from "../fixtures/distributed/realWorkerWorkspace";
 import {
     createLocalDhtNetwork,
     createSocketPair,
@@ -51,9 +54,6 @@ const {
     readCpuSnapshot
 } = require("../../scripts/e2e-parallel/shared/cpuAccounting.js");
 const { runTask } = require("../../scripts/e2e-parallel/shared/runTask.js");
-const {
-    buildDistributedBaseEnv
-} = require("../../scripts/test-e2e-parallel.js");
 const { startDiscoveryRegistry } = require("../utils/nodeInfra.js");
 
 describe("distributed parallel runner", function () {
@@ -1083,71 +1083,60 @@ describe("shipped outputs", function () {
         }
     });
 
-    // Mutation: buildDistributedBaseEnv leaves E2E_TEST_CHAIN out -> the worker's slot chain is anvil.
-    // Mutation: the worker provisions its slots without the run's E2E_TEST_CHAIN -> the slot chain is anvil.
-    // Mutation: provisionSlots drops its env -> the slot chain is anvil.
-    it("a real worker starts its slot chain on the project test chain the run names", async function () {
+    // Mutation: buildDistributedBaseEnv leaves E2E_TEST_CHAIN out -> the worker's slot chain is anvil, which traces.
+    // Mutation: the worker provisions its slots without the run's E2E_TEST_CHAIN -> the slot chain is anvil, which traces.
+    // Mutation: provisionSlots drops its env -> the slot chain is anvil, which traces.
+    // Mutation: startStorageDiffService skips its trace probe -> the service starts on the hardhat node and the run completes.
+    it("a real worker refuses a project test chain that cannot trace blocks for its storage diff service", async function () {
         const pool = await LeasePoolHarness.create();
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "real-chain-"));
         const originalPath = process.env.PATH;
         const originalChain = process.env.E2E_TEST_CHAIN;
         const workspace = await createRealWorkerWorkspace(root, []);
-        fs.writeFileSync(
-            workspace.testFile,
-            `const assert = require("assert");
-describe("slot chain", function () {
-    it("is the project's hardhat node", async function () {
-        const answer = await fetch(process.env.PROVIDER_URL, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "web3_clientVersion", params: [] })
-        });
-        assert.match((await answer.json()).result, /^HardhatNetwork\\//);
-    });
-});
-`
-        );
+        let failure: Error | undefined;
         try {
             process.env.PATH = `${workspace.binDir}${path.delimiter}${originalPath}`;
             process.env.E2E_TEST_CHAIN = "project";
             await pool.startServer("chain-worker");
-            const result = await runDistributed({
-                tasks: [
-                    {
-                        label: "test:cost.test.js:is the project's hardhat node",
-                        args: [
-                            "test",
-                            "--no-compile",
-                            workspace.testFile,
-                            "--grep",
-                            "^slot chain is the project's hardhat node$"
-                        ],
-                        logName: "chain__project",
-                        fullTitle: "slot chain is the project's hardhat node",
-                        runner: "hardhat",
-                        isE2E: false
-                    }
-                ],
-                projectRoot: workspace.projectRoot,
-                archivePath: path.join(root, "bundle.tgz"),
-                manifest: await buildRuntimeManifest(workspace.projectRoot),
-                logDir: path.join(root, "logs"),
-                poolSecret: pool.poolSecret,
-                discoveryTimeoutMs: 5000,
-                discoveryRefreshMs: 25,
-                baseEnv: buildDistributedBaseEnv([], {
-                    sdkThread: false,
-                    vmThread: false
-                }),
-                dht: pool.createOrchestratorDht(),
-                executionProfile: { slots: 1, workers: 1, schedulerTickMs: 50 }
-            });
-            expect(result.failed).to.deep.equal([]);
-            expect(result.completed).to.equal(1);
+            await runSlotProbe(pool, root, workspace, "");
+        } catch (error) {
+            failure = error as Error;
         } finally {
             process.env.PATH = originalPath;
             if (originalChain === undefined) delete process.env.E2E_TEST_CHAIN;
             else process.env.E2E_TEST_CHAIN = originalChain;
+            await pool.close();
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+        expect(failure?.message).to.include(
+            "slot 0 storage diff service cannot start: its test chain does not trace blocks with prestateTracer (debug_traceBlockByNumber: Method debug_traceBlockByNumber is not supported)"
+        );
+    });
+
+    // Mutation: the storage diff service always runs from the project -> a project without one cannot start its slot.
+    // Mutation: the service script always registers ts-node -> the compiled runner tree's copy finds no tsconfig and exits.
+    it("a real worker runs the runner's storage diff service for a project that has none", async function () {
+        const pool = await LeasePoolHarness.create();
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "real-service-"));
+        const originalPath = process.env.PATH;
+        const originalChain = process.env.E2E_TEST_CHAIN;
+        const workspace = await createRealWorkerWorkspace(root, []);
+        try {
+            process.env.PATH = `${workspace.binDir}${path.delimiter}${originalPath}`;
+            delete process.env.E2E_TEST_CHAIN;
+            await pool.startServer("service-worker");
+            const result = await runSlotProbe(
+                pool,
+                root,
+                workspace,
+                `        assert.match(process.env.STORAGE_DIFF_URL, /^ws:\\/\\/127\\.0\\.0\\.1:\\d+$/);`
+            );
+            expect(result.failed).to.deep.equal([]);
+            expect(result.completed).to.equal(1);
+        } finally {
+            process.env.PATH = originalPath;
+            if (originalChain !== undefined)
+                process.env.E2E_TEST_CHAIN = originalChain;
             await pool.close();
             fs.rmSync(root, { recursive: true, force: true });
         }

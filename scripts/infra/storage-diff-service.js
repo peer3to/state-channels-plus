@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 
+const fs = require("node:fs");
 const path = require("node:path");
 
-process.env.TS_NODE_PROJECT ||= path.join(
-    __dirname,
-    "..",
-    "..",
-    "tsconfig.json"
-);
-require("ts-node/register");
+// A source checkout runs the service's TypeScript through ts-node; the
+// compiled tree (dist/scripts/infra) has no tsconfig and loads the compiled
+// modules instead.
+const tsconfig = path.join(__dirname, "..", "..", "tsconfig.json");
+if (fs.existsSync(tsconfig)) {
+    process.env.TS_NODE_PROJECT ||= tsconfig;
+    require("ts-node/register");
+}
 const {
     StorageDiffService
 } = require("../../src/utils/node/storageDiff/StorageDiffService");

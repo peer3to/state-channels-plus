@@ -446,9 +446,7 @@ export class PeerTestHarness<
         // the chain that the process's service of this node keeps current:
         // it serves every peer of every test that runs on the node.
         this.nodeWsUrl = nodeUrl.replace(/^http/, "ws");
-        const storageDiffUrl =
-            process.env.STORAGE_DIFF_URL ||
-            (await sharedStorageDiffUrl(this.nodeWsUrl));
+        const storageDiffUrl = await sharedStorageDiffUrl(this.nodeWsUrl);
 
         this.harnessConfig.PROVIDER_URL = nodeUrl;
         this.harnessConfig.LOCAL_DISCOVERY_REGISTRY_URL = discoveryUrl;
