@@ -6,6 +6,8 @@
 
 - [`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../../../../../../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)
 - [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../../../../../../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)
+- [`REQ-RPCMIRROR-2-1P38E2` (Reads the copy cannot answer correctly go to the node whole)](../../../../../../specification/runtime/rpc-mirror.md#req-rpcmirror-2-1p38e2)
+- [`REQ-RPCMIRROR-4-H35NFC` (A read is never older than a block the peer already saw)](../../../../../../specification/runtime/rpc-mirror.md#req-rpcmirror-4-h35nfc)
 
 ## UNIT-TEST-MULTI-RPC-1-SVGGZ5
 

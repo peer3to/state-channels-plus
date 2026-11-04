@@ -17,7 +17,7 @@ wait is tested once, with two confirmations, after both sockets reconnected. Fur
 Later cases check that a node destroyed during a pending attempt logs nothing and raises no
 unhandled rejection (a logger whose entries the test reads), that a heartbeat answered with an
 error keeps the socket, that an error answer is returned without failover, that the provider warns
-once per outage of every node, that malformed endpoints, an invalid signer secret and a `LOG_QUERY_MAX_BLOCKS` of zero or a fraction open no node,
+once per outage of every node, that malformed endpoints, an invalid signer secret and a `LOG_QUERY_MAX_BLOCKS` of zero or a fraction, and a `MIRROR_SAMPLE_RATE` outside 0 to 1, open no node,
 and that `readLogPages` reads a private chain longer than three windows through a proxy that rejects
 wider reads, window by window, and answers the failed window for a retry.
 
@@ -95,3 +95,7 @@ within the one-second window (every node was destroyed).
 - `reads logs in ascending windows and hands each window over before reading the next`: UNIT-TEST-LOG-PAGES-1-39HC9S.P1, REQ-CHAINOBS-3-N137ZP.T1.P14
 - `answers the failed window so a retry reads only from there`: UNIT-TEST-LOG-PAGES-1-39HC9S.P2, REQ-CHAINOBS-3-N137ZP.T1.P15
 - `rejects startup over a log window that is not a positive integer without opening a node`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P12, REQ-CHAINOBS-1-5JTHY8.T1.P11
+- `rejects startup over a mirror sampling fraction outside 0 to 1 without opening a node`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P14, REQ-CHAINOBS-1-5JTHY8.T1.P12
+- `starts with a mirror sample rate of 0 and of 1, the ends of the range`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P15, REQ-CHAINOBS-1-5JTHY8.T1.P13
+- `rejects startup over a mirror bound on followed contracts that is not a positive integer, without opening a node`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P16
+- `follows at most the configured number of contracts, so a service with that address limit refuses no subscribe`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P17

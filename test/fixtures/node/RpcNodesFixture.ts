@@ -1,6 +1,8 @@
 // @spec-test-coverage-ignore: private nodes behind cuttable proxies for the RPC node provider cases; declarations live in RpcNodes.test.ts
 import { withIsolatedHardhatNode } from "./IsolatedHardhatNode";
 import { RpcNodeProxy } from "./RpcNodeProxy";
+import { deployNumberStorage } from "./StorageDiffContracts";
+import { withStorageDiffUpstream } from "./StorageDiffSession";
 import {
     RECORDED_ACCOUNT_INFO,
     withSubstrateNode
@@ -1480,4 +1482,171 @@ export async function assertInvalidLogWindowRejectsStartup(): Promise<void> {
             logger.dispose();
         }
     });
+}
+
+export async function assertBoundaryMirrorSampleRatesStart(): Promise<void> {
+    await withIsolatedHardhatNode(async (node) => {
+        const logger = quietLogger();
+        const reachable = await RpcNodeProxy.start(node._getConnection().url);
+        try {
+            // both ends of the range are legal: never sample, sample every read
+            for (const sampleRate of [0, 1]) {
+                const context = await createRuntimeChainContext(
+                    {
+                        ...config,
+                        PROVIDER_URLS: [reachable.url],
+                        MIRROR_SAMPLE_RATE: sampleRate
+                    },
+                    Wallet.createRandom().privateKey,
+                    logger
+                );
+                try {
+                    expect(await context.provider.getBlockNumber()).to.equal(
+                        await node.getBlockNumber()
+                    );
+                } finally {
+                    await context.provider.destroy();
+                }
+            }
+        } finally {
+            await reachable.close();
+            logger.dispose();
+        }
+    });
+}
+
+export async function assertInvalidMirrorSampleRateRejectsStartup(): Promise<void> {
+    await withIsolatedHardhatNode(async (node) => {
+        const logger = quietLogger();
+        const reachable = await RpcNodeProxy.start(node._getConnection().url);
+        try {
+            const failures = await Promise.all(
+                [Number.NaN, -0.5, 5].map((sampleRate) =>
+                    createRuntimeChainContext(
+                        {
+                            ...config,
+                            PROVIDER_URLS: [reachable.url],
+                            MIRROR_SAMPLE_RATE: sampleRate
+                        },
+                        Wallet.createRandom().privateKey,
+                        logger
+                    ).then(
+                        () => undefined,
+                        (error: unknown) => error
+                    )
+                )
+            );
+            // time is the input: long enough for a node to connect
+            await sleep(ABSENCE_WINDOW_MS);
+
+            for (const failure of failures) {
+                if (!(failure instanceof Error))
+                    throw new Error("Expected startup to fail");
+                expect(failure.message).to.include(
+                    "MIRROR_SAMPLE_RATE must be a number from 0 to 1"
+                );
+            }
+            expect(reachable.forwardedMethods).to.deep.equal([]);
+        } finally {
+            await reachable.close();
+            logger.dispose();
+        }
+    });
+}
+
+export async function assertInvalidMirrorBoundRejectsStartup(): Promise<void> {
+    await withIsolatedHardhatNode(async (node) => {
+        const logger = quietLogger();
+        const reachable = await RpcNodeProxy.start(node._getConnection().url);
+        try {
+            const failures = await Promise.all(
+                [0, 2.5, Number.NaN].map((bound) =>
+                    createRuntimeChainContext(
+                        {
+                            ...config,
+                            PROVIDER_URLS: [reachable.url],
+                            MIRROR_MAX_FOLLOWED_CONTRACTS: bound
+                        },
+                        Wallet.createRandom().privateKey,
+                        logger
+                    ).then(
+                        () => undefined,
+                        (error: unknown) => error
+                    )
+                )
+            );
+            // time is the input: long enough for a node to connect
+            await sleep(ABSENCE_WINDOW_MS);
+
+            for (const failure of failures) {
+                if (!(failure instanceof Error))
+                    throw new Error("Expected startup to fail");
+                expect(failure.message).to.include(
+                    "MIRROR_MAX_FOLLOWED_CONTRACTS must be a positive integer"
+                );
+            }
+            expect(reachable.forwardedMethods).to.deep.equal([]);
+        } finally {
+            await reachable.close();
+            logger.dispose();
+        }
+    });
+}
+
+/**
+ * A service that takes two addresses per request, and a runtime configured
+ * to follow two contracts: the third contract read makes the mirror stop
+ * following the first, and every read stays local.
+ */
+export async function assertConfiguredMirrorBoundReachesTheMirror(): Promise<void> {
+    await withStorageDiffUpstream(
+        async ({ provider: chain, signer, start }) => {
+            const storageDiff = await start({ maxAddressesPerRequest: 2 });
+            const node = await RpcNodeProxy.start(chain._getConnection().url);
+            const service = await RpcNodeProxy.start(storageDiff.url);
+            const logger = quietLogger();
+            const provider = await createRpcNodesProvider(
+                {
+                    PROVIDER_URL: node.url,
+                    PROVIDER_URLS: [node.url],
+                    STORAGE_DIFF_URL: service.url,
+                    MIRROR_SAMPLE_RATE: 0,
+                    MIRROR_MAX_FOLLOWED_CONTRACTS: 2
+                },
+                logger
+            );
+            try {
+                const contracts: string[] = [];
+                for (let i = 0; i < 3; i++)
+                    contracts.push(
+                        (
+                            await (
+                                await deployNumberStorage(signer)
+                            ).getAddress()
+                        ).toLowerCase()
+                    );
+
+                for (const contract of contracts)
+                    await provider.getStorage(contract, 0);
+
+                const subscribes = service.forwardedRequests.filter(
+                    (request) =>
+                        request.method === "scp_subscribeContractStorage"
+                );
+                expect(
+                    (subscribes.at(-1)!.params as [string[]])[0]
+                ).to.have.members(contracts.slice(1));
+                // no subscribe was refused: no read went to the node
+                expect(
+                    node.forwardedRequests.filter(
+                        (request) => request.method === "eth_getStorageAt"
+                    )
+                ).to.deep.equal([]);
+            } finally {
+                provider.destroy();
+                await Promise.all([node.close(), service.close()]);
+                logger.dispose();
+            }
+        }
+    );
 }

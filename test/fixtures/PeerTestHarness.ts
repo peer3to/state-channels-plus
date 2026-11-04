@@ -7,6 +7,10 @@ import type {
 } from "./customRpc/harnessControl/HarnessControlRpc";
 
 import { HarnessDebug } from "./HarnessDebug";
+import {
+    closeSharedStorageDiff,
+    sharedStorageDiffUrl
+} from "./HarnessStorageDiff";
 import { RpcNodeProxy } from "./node/RpcNodeProxy";
 import { RootCreationControl } from "./runtimeRpc/RootCreationControl";
 import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../scripts/V1/deploy";
@@ -126,6 +130,7 @@ export class PeerTestHarness<
     public provider!: ethers.WebSocketProvider;
     private ownNode?: { stop: () => void };
     private ownDiscovery?: { stop: () => void };
+    private nodeWsUrl?: string;
     /** Peer index -> the RPC node proxies its runtime connects through. */
     private readonly rpcNodeProxies = new Map<number, RpcNodeProxy[]>();
 
@@ -435,10 +440,27 @@ export class PeerTestHarness<
             this.logger.debug(`Started harness discovery at ${discoveryUrl}`);
         }
 
+        // The peers' providers answer latest-block reads from a local copy of
+        // the chain that the process's service of this node keeps current:
+        // it serves every peer of every test that runs on the node.
+        this.nodeWsUrl = nodeUrl.replace(/^http/, "ws");
+        // A test of node failover can switch the mirror off with an empty
+        // STORAGE_DIFF_URL override: every read then goes to the nodes.
+        const storageDiffUrl =
+            this.options.configOverrides?.STORAGE_DIFF_URL === ""
+                ? ""
+                : process.env.STORAGE_DIFF_URL ||
+                  (await sharedStorageDiffUrl(this.nodeWsUrl));
+
         this.harnessConfig.PROVIDER_URL = nodeUrl;
         this.harnessConfig.LOCAL_DISCOVERY_REGISTRY_URL = discoveryUrl;
+        this.harnessConfig.STORAGE_DIFF_URL = storageDiffUrl;
+        // no peer re-asks the nodes
+        this.harnessConfig.MIRROR_SAMPLE_RATE = 0;
         config.PROVIDER_URL = nodeUrl;
         config.LOCAL_DISCOVERY_REGISTRY_URL = discoveryUrl;
+        config.STORAGE_DIFF_URL = storageDiffUrl;
+        config.MIRROR_SAMPLE_RATE = 0;
 
         // WebSocket so block/event subscriptions are push-based (eth_subscribe)
         // rather than HTTP polling — far less main-thread event-loop pressure.
@@ -1048,6 +1070,8 @@ export class PeerTestHarness<
 
         // Drop the provider's pollers; stop the node/discovery we started (if any).
         await this.provider?.destroy();
+        // a node this harness stops takes its service with it
+        if (this.ownNode) await closeSharedStorageDiff(this.nodeWsUrl!);
         this.ownNode?.stop();
         this.ownDiscovery?.stop();
         this.ownNode = undefined;

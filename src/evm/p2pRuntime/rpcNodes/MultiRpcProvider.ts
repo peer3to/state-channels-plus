@@ -1,4 +1,4 @@
-import { NodeSocketSubscriptions } from "./RpcNodeProvider";
+import { NodeSocketSubscriptions, paramsOf } from "./RpcNodeProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
@@ -146,7 +146,7 @@ class RpcNodesLogSubscriber extends RpcNodesSocketSubscriber {
  */
 export default class MultiRpcProvider extends JsonRpcApiProvider {
     readonly nodes: readonly RpcNodeProvider[];
-    private readonly logger: Logger;
+    protected readonly logger: Logger;
     /** Requests waiting for any node to connect. */
     private readonly connectionWaiters = new Set<() => void>();
     /** False once the owning runtime is gone; waiting requests are rejected. */
@@ -155,6 +155,7 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     private allNodesDownWarned = false;
     /** Requests sent so far; a slow setup's step timings count them. */
     private sentRequestCount = 0;
+    private nextNodeRequestId = 0;
 
     get requestCount(): number {
         return this.sentRequestCount;
@@ -221,18 +222,37 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
         this.releaseConnectionWaiters();
     }
 
-    private async forward(request: JsonRpcPayload): Promise<JsonRpcResult> {
-        const params = Array.isArray(request.params)
-            ? request.params
-            : [request.params];
+    /** Sends one request to the nodes as {@link forward} does; a node's rejection is thrown. */
+    protected async requestNode(
+        method: string,
+        params: unknown[]
+    ): Promise<unknown> {
+        const { result } = await this.forward({
+            jsonrpc: "2.0",
+            id: this.nextNodeRequestId++,
+            method,
+            params
+        });
+        return result;
+    }
+
+    /** Told how long a node took to answer a forwarded `method` request; a subclass may learn from it. */
+    protected noteNodeAnswer(_method: string, _durationMs: number): void {}
+
+    protected async forward(request: JsonRpcPayload): Promise<JsonRpcResult> {
+        const params = paramsOf(request);
         for (;;) {
             this.assertServing(request.method);
             for (const node of this.nodes) {
+                const started = Date.now();
                 const sent = await node.trySendOnCurrentSocket(
                     request.method,
                     params
                 );
-                if (sent) return { id: request.id, result: sent.result };
+                if (sent) {
+                    this.noteNodeAnswer(request.method, Date.now() - started);
+                    return { id: request.id, result: sent.result };
+                }
             }
             // destroyed while the request was on a node
             this.assertServing(request.method);

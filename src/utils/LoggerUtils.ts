@@ -227,6 +227,30 @@ export class LoggerUtils {
     }
 
     /**
+     * A mirror read the node answered differently: what was read, at which
+     * block, never the values. A call is named by its selector.
+     */
+    static getMirrorSampleMetadata(
+        method: string,
+        params: unknown[],
+        blockHash: string,
+        account: string
+    ) {
+        const call =
+            (params[0] as { data?: unknown; input?: unknown })?.data ??
+            (params[0] as { input?: unknown })?.input;
+        return {
+            method,
+            blockHash,
+            account,
+            ...(method === "eth_call" && typeof call === "string"
+                ? this.getContractCallMetadata(call, account)
+                : {}),
+            ...(method === "eth_getStorageAt" ? { slot: params[1] } : {})
+        };
+    }
+
+    /**
      * One RPC node endpoint without its path, query or credentials: provider
      * URLs often carry an API key there, and logs are shipped off the host.
      */

@@ -7,6 +7,8 @@
 - [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz)
 - [`REQ-CHAINOBS-1-5JTHY8` (Ordered endpoint set)](../../../../../specification/runtime/chain-observation.md#req-chainobs-1-5jthy8)
 - [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../../../../../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)
+- [`REQ-RPCMIRROR-1-XQNZ4J` (Latest-block reads are answered from a local copy of the chain)](../../../../../specification/runtime/rpc-mirror.md#req-rpcmirror-1-xqnz4j)
+- [`REQ-RPCMIRROR-2-1P38E2` (Reads the copy cannot answer correctly go to the node whole)](../../../../../specification/runtime/rpc-mirror.md#req-rpcmirror-2-1p38e2)
 
 ## UNIT-TEST-RUNTIME-CHAIN-CLEANUP-1-3H7PT8
 
@@ -38,3 +40,7 @@ Endpoint list resolution and startup
 - [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P11` — invalid signing key opens no node
 - [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P12` — a `LOG_QUERY_MAX_BLOCKS` of zero or a fraction rejects startup and opens no node
 - [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P13` — `createRpcNodesProvider` called directly with no reachable endpoint rejects with `Chain access requires a reachable WebSocket provider at …`, naming every endpoint by scheme and host
+- [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P14` — a `MIRROR_SAMPLE_RATE` outside 0 to 1 or not a number rejects startup and opens no node
+- [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P15` — a `MIRROR_SAMPLE_RATE` of 0 or of 1 starts and reaches the node
+- [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P16` — a `MIRROR_MAX_FOLLOWED_CONTRACTS` that is not a positive integer rejects startup before any node is opened
+- [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P17` — the configured `MIRROR_MAX_FOLLOWED_CONTRACTS` bounds the contracts the mirror follows

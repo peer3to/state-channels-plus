@@ -65,6 +65,8 @@ finds nothing left to remove and resumes first. It keeps the listener's key and 
 both node sockets, the event sync service's channel is its channel, and the older select subscribes
 nothing.
 
+The two lagging-node cases set `STORAGE_DIFF_URL` to empty so the peer's mirror is off: their subject is the nodes' own head answers, which the service would otherwise answer.
+
 ## Tests
 
 - `delivers an event emitted while the peer's only RPC node was cut through the reconnect catch-up`: REQ-CHAINOBS-3-N137ZP.T1.P5, REQ-CHAINOBS-3-N137ZP.T1.P2

@@ -13,11 +13,13 @@ import type {
     RpcBlock,
     StorageDiffLog
 } from "../../storageDiff/storageDiffWire";
+import { isObject } from "../../storageDiff/storageDiffWire";
 import { getBytes, keccak256 } from "ethers";
 
 // The wire types live in a shared module, which the mirror in the browser
 // build imports too; they are re-exported here for the service's own files.
 export {
+    isObject,
     LIMIT_EXCEEDED_ERROR_CODE,
     NOT_RETAINED_ERROR_CODE,
     PRUNED_ERROR_CODE
@@ -95,10 +97,6 @@ export const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const LOGS_BLOOM = /^0x[0-9a-fA-F]{512}$/;
 export const HEX_DATA = /^0x([0-9a-fA-F]{2})*$/;
 export const HEX_QUANTITY_LOOSE = /^0x[0-9a-fA-F]+$/;
-
-export function isObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 export function rpcError(code: number, message: string): Error {
     return Object.assign(new Error(message), { code });

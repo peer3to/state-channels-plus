@@ -392,7 +392,8 @@ export class P2pRuntimeHostRoot<
         this.chainContext = await createRuntimeChainContext(
             payload.config,
             payload.signerSecret,
-            logger
+            logger,
+            { customPrecompiles: payload.customPrecompiles, owner: this }
         );
         steps.mark("provider");
         const { signer } = this.chainContext;

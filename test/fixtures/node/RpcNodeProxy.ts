@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: test-owned WebSocket proxy in front of the test node; executable evidence belongs to its calling test declarations
+import { toQuantity } from "ethers";
 import { once } from "node:events";
 import { type RawData, WebSocket, WebSocketServer } from "ws";
 
@@ -8,8 +9,17 @@ type JsonRpcMethod = string;
 /** A JSON-RPC request or response id. */
 type JsonRpcId = number | string;
 
-/** A subscription notification held at the proxy, and the log's transaction. */
-type WithheldNotification = { transactionHash: unknown; send: () => void };
+/**
+ * A subscription notification held at the proxy, and the log's transaction
+ * or the head's block number; `sendRemoved` sends it as a node reports a log
+ * of an orphaned block.
+ */
+type WithheldNotification = {
+    transactionHash: unknown;
+    headNumber: unknown;
+    send: () => void;
+    sendRemoved: () => void;
+};
 
 /** One request a client sent through the proxy. */
 export type ForwardedRequest = { method: JsonRpcMethod; params: unknown };
@@ -38,6 +48,24 @@ function readJsonRpcFrame(data: RawData): {
         // not JSON: forwarded unread
         return {};
     }
+}
+
+/** A log notification, marked `removed` as a node sends it after a reorganization. */
+function removedLogFrame(data: RawData): string {
+    const frame = JSON.parse(data.toString()) as {
+        params: { result: Record<string, unknown> };
+    };
+    frame.params.result.removed = true;
+    return JSON.stringify(frame);
+}
+
+/** The block number of the head an eth_subscription notification carries. */
+function notifiedHeadNumber(params: unknown): unknown {
+    if (typeof params !== "object" || params === null || !("result" in params))
+        return undefined;
+    const { result } = params;
+    if (typeof result !== "object" || result === null) return undefined;
+    return "number" in result ? result.number : undefined;
 }
 
 /** The transaction hash of the log an eth_subscription notification carries. */
@@ -95,6 +123,8 @@ export class RpcNodeProxy {
     readonly forwardedMethods: JsonRpcMethod[] = [];
     /** The requests behind {@link forwardedMethods}, with their params. */
     readonly forwardedRequests: ForwardedRequest[] = [];
+    /** Methods of the node's pushes this proxy sent on to a client, in order. */
+    readonly deliveredNotifications: JsonRpcMethod[] = [];
     private readonly server: WebSocketServer;
     private readonly upstreamUrl: string;
     /** Each client socket and its upstream socket to the node. */
@@ -120,6 +150,18 @@ export class RpcNodeProxy {
     private readonly failedRequests: ForwardedRequest[] = [];
     /** Method -> the result this proxy answers its requests with, unforwarded. */
     private readonly answeredMethods = new Map<JsonRpcMethod, unknown>();
+    /** Method -> the error this proxy answers every one of its requests with. */
+    private readonly erroringMethods = new Map<
+        JsonRpcMethod,
+        { code: number; message: string }
+    >();
+    /** Notification methods the node pushes that this proxy drops. */
+    private readonly droppedNotifications = new Set<JsonRpcMethod>();
+    /** Notification method -> the pushes waiting here until released. */
+    private readonly heldNotifications = new Map<
+        JsonRpcMethod,
+        (() => void)[]
+    >();
     /** Most blocks an eth_getLogs may span before this proxy rejects it. */
     private maxLogSpan?: number;
     /**
@@ -211,6 +253,15 @@ export class RpcNodeProxy {
         this.failingMethods.delete(method);
     }
 
+    /** Answer every `method` request with this JSON-RPC error, unforwarded, until {@link stopErroringRequests}. */
+    errorRequests(method: JsonRpcMethod, code: number, message: string): void {
+        this.erroringMethods.set(method, { code, message });
+    }
+
+    stopErroringRequests(method: JsonRpcMethod): void {
+        this.erroringMethods.delete(method);
+    }
+
     /** Answer every `method` request with `result` itself, unforwarded. */
     answerRequests(method: JsonRpcMethod, result: unknown): void {
         this.answeredMethods.set(method, result);
@@ -229,6 +280,12 @@ export class RpcNodeProxy {
     /** The [fromBlock, toBlock] of every eth_getLogs request, in order. */
     forwardedLogWindows(): [number, number][] {
         return toLogWindows(this.forwardedRequests);
+    }
+
+    /** How many pushes of `method` this proxy delivered to a client. */
+    deliveredCount(method: JsonRpcMethod): number {
+        return this.deliveredNotifications.filter((sent) => sent === method)
+            .length;
     }
 
     /** How many `method` requests clients sent through this proxy. */
@@ -278,31 +335,70 @@ export class RpcNodeProxy {
 
     /**
      * Keep the node's subscription notifications at the proxy until
-     * `release` sends the one carrying the log of a transaction; `stop` lets
-     * later notifications pass again and keeps the withheld ones.
+     * `release` sends the one carrying the log of a transaction, or
+     * `releaseRemoved` sends it marked removed, and `releaseHead` sends the
+     * head of a block; `stop` lets later notifications pass again and keeps
+     * the withheld ones.
      */
     withholdNotifications(): {
         release: (transactionHash: string) => void;
+        releaseRemoved: (transactionHash: string) => void;
+        releaseHead: (blockNumber: number) => void;
         stop: () => void;
     } {
         const withheld: WithheldNotification[] = [];
         this.withheldNotifications = withheld;
+        const take = (transactionHash: string) => {
+            const index = withheld.findIndex(
+                (notification) =>
+                    notification.transactionHash === transactionHash
+            );
+            if (index < 0)
+                throw new Error(
+                    `No withheld notification for ${transactionHash}`
+                );
+            return withheld.splice(index, 1)[0];
+        };
         return {
-            release: (transactionHash) => {
+            release: (transactionHash) => take(transactionHash).send(),
+            releaseRemoved: (transactionHash) =>
+                take(transactionHash).sendRemoved(),
+            releaseHead: (blockNumber) => {
                 const index = withheld.findIndex(
                     (notification) =>
-                        notification.transactionHash === transactionHash
+                        notification.headNumber === toQuantity(blockNumber)
                 );
                 if (index < 0)
-                    throw new Error(
-                        `No withheld notification for ${transactionHash}`
-                    );
+                    throw new Error(`No withheld head of block ${blockNumber}`);
                 withheld.splice(index, 1)[0].send();
             },
             stop: () => {
                 if (this.withheldNotifications === withheld)
                     this.withheldNotifications = undefined;
             }
+        };
+    }
+
+    /** Drop the node's pushes of `method` (a notification, e.g. a subscription's) until {@link stopDroppingNotifications}. */
+    dropNotifications(method: JsonRpcMethod): void {
+        this.droppedNotifications.add(method);
+    }
+
+    stopDroppingNotifications(method: JsonRpcMethod): void {
+        this.droppedNotifications.delete(method);
+    }
+
+    /**
+     * Keep the node's pushes of `method` at the proxy until the returned
+     * release sends them in order.
+     */
+    holdNotifications(method: JsonRpcMethod): () => void {
+        const sends: (() => void)[] = [];
+        this.heldNotifications.set(method, sends);
+        return () => {
+            if (this.heldNotifications.get(method) === sends)
+                this.heldNotifications.delete(method);
+            for (const send of sends.splice(0)) send();
         };
     }
 
@@ -370,7 +466,15 @@ export class RpcNodeProxy {
                 if (failures === 1) this.failingMethods.delete(method);
                 else this.failingMethods.set(method, failures - 1);
                 this.failedRequests.push({ method, params });
-                reply({ error: { code: -32005, message: "request failed" } });
+                // an internal error: -32005 is the storage diff service's limit refusal
+                reply({ error: { code: -32603, message: "request failed" } });
+                return;
+            }
+            const erroring = method
+                ? this.erroringMethods.get(method)
+                : undefined;
+            if (erroring && id !== undefined) {
+                reply({ error: erroring });
                 return;
             }
             if (
@@ -418,15 +522,28 @@ export class RpcNodeProxy {
             const { method, id, params } = readJsonRpcFrame(data);
             if (!method && id !== undefined && this.swallowedReplyIds.has(id))
                 return;
-            const send = () => {
-                if (client.readyState === WebSocket.OPEN)
-                    client.send(data, { binary: isBinary });
+            if (method && this.droppedNotifications.has(method)) return;
+            const sendFrame = (frame: RawData | string, binary: boolean) => {
+                if (client.readyState !== WebSocket.OPEN) return;
+                client.send(frame, { binary });
+                if (method && id === undefined)
+                    this.deliveredNotifications.push(method);
             };
+            const send = () => sendFrame(data, isBinary);
             if (method === "eth_subscription" && this.withheldNotifications) {
                 this.withheldNotifications.push({
                     transactionHash: notifiedTransactionHash(params),
-                    send
+                    headNumber: notifiedHeadNumber(params),
+                    send,
+                    sendRemoved: () => sendFrame(removedLogFrame(data), false)
                 });
+                return;
+            }
+            const heldPushes = method
+                ? this.heldNotifications.get(method)
+                : undefined;
+            if (heldPushes) {
+                heldPushes.push(send);
                 return;
             }
             const heldReplies =

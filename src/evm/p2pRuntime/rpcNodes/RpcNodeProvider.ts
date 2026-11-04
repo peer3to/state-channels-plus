@@ -40,6 +40,12 @@ export type RpcNodeSocketWatcher = (
     reopened: boolean
 ) => void;
 
+/** Called with the block a node's notification names: a new head (`isHead`) or a log's block. */
+export type AnnouncedBlockWatcher = (
+    blockNumber: bigint,
+    isHead: boolean
+) => void;
+
 /** One open socket and the end of its life. */
 type NodeConnection = {
     socket: WebSocketProvider;
@@ -70,6 +76,21 @@ const NOT_ETHEREUM_NETWORK = new Network("not-ethereum", 0n);
 
 /** A node's WebSocket. */
 class NodeSocket extends WebSocketProvider {
+    /**
+     * Called with the block number of each subscription notification the node
+     * pushes (a new head or a log), before the subscriber hears of it.
+     */
+    announced?: AnnouncedBlockWatcher;
+
+    // Overrides SocketProvider._processMessage: also reports the block each
+    // subscription notification belongs to.
+    override async _processMessage(message: string): Promise<void> {
+        // only subscription notifications are parsed here; RPC replies are not
+        if (this.announced && message.includes("eth_subscription"))
+            this.reportAnnouncedBlock(message, this.announced);
+        await super._processMessage(message);
+    }
+
     // Overrides JsonRpcApiProvider.send: ethers sends a removed subscription's
     // eth_unsubscribe unawaited, so any failure (e.g. the socket destroyed
     // before the answer) is settled here; the subscription ends with the socket.
@@ -88,6 +109,36 @@ class NodeSocket extends WebSocketProvider {
             });
         return answer;
     }
+
+    private reportAnnouncedBlock(
+        message: string,
+        announced: AnnouncedBlockWatcher
+    ): void {
+        try {
+            const parsed: unknown = JSON.parse(message);
+            if (typeof parsed !== "object" || parsed === null) return;
+            const { method, params } = parsed as {
+                method?: unknown;
+                params?: {
+                    result?: {
+                        blockNumber?: unknown;
+                        number?: unknown;
+                        removed?: unknown;
+                    };
+                };
+            };
+            if (method !== "eth_subscription") return;
+            const result = params?.result;
+            // a removed log belongs to an orphaned block: it announces nothing
+            if (result?.removed === true) return;
+            if (typeof result?.blockNumber === "string")
+                announced(BigInt(result.blockNumber), false);
+            else if (typeof result?.number === "string")
+                announced(BigInt(result.number), true);
+        } catch {
+            // not a notification this hook understands: the socket handles it
+        }
+    }
 }
 
 /**
@@ -95,7 +146,7 @@ class NodeSocket extends WebSocketProvider {
  * that names the endpoint by scheme and host only: its text would carry the
  * whole URL, credentials included.
  */
-function openSocket(url: string, ethereum: boolean): WebSocketProvider {
+function openSocket(url: string, ethereum: boolean): NodeSocket {
     try {
         return ethereum
             ? new NodeSocket(url)
@@ -142,11 +193,16 @@ function getSocketConnectionError(event: unknown): Error {
     return new Error("WebSocket connection failed");
 }
 
+/** The params of a JSON-RPC `request` as a list. */
+export function paramsOf(request: JsonRpcPayload): unknown[] {
+    return Array.isArray(request.params) ? request.params : [request.params];
+}
+
 /**
  * Resolves with the reason once the socket errors or closes. ethers never
  * reconnects its socket.
  */
-function watchSocketEnd(socket: WebSocketProvider): Promise<Error> {
+export function watchSocketEnd(socket: WebSocketProvider): Promise<Error> {
     // ethers does not install an `onerror` handler on its underlying socket.
     // In Node, `ws` therefore promotes a failed initial connection to an
     // uncaught Error instead of rejecting the provider readiness request.
@@ -217,6 +273,8 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
     readonly firstAttempt: Promise<Error | undefined>;
     private readonly logger: Logger;
     private readonly watchers = new Set<RpcNodeSocketWatcher>();
+    /** Called with the block of each notification a socket of this node pushes. */
+    private readonly announcedWatchers = new Set<AnnouncedBlockWatcher>();
     /** Called when an open socket of this node ends. */
     private readonly lossWatchers = new Set<() => void>();
     /** Requests waiting for this node to reconnect. */
@@ -267,6 +325,19 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
         if (this.connection) watcher(this.connection.socket, false);
         return () => {
             this.watchers.delete(watcher);
+        };
+    }
+
+    /**
+     * Calls `watcher` with the block number of every subscription
+     * notification (a new head or a log) this node's sockets receive, before
+     * their subscribers hear of it; a removed log is not reported. Returns
+     * the function that stops the calls.
+     */
+    watchAnnouncedBlocks(watcher: AnnouncedBlockWatcher): () => void {
+        this.announcedWatchers.add(watcher);
+        return () => {
+            this.announcedWatchers.delete(watcher);
         };
     }
 
@@ -344,9 +415,7 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
     private async forward(request: JsonRpcPayload): Promise<JsonRpcResult> {
         for (;;) {
             const connection = await this.awaitConnection(request.method);
-            const params = Array.isArray(request.params)
-                ? request.params
-                : [request.params];
+            const params = paramsOf(request);
             const outcome = await this.sendOn(
                 connection,
                 request.method,
@@ -409,7 +478,12 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
             "RPC node connection attempt timed out"
         );
         try {
-            socket = openSocket(this.url, this.ethereum);
+            const opened = openSocket(this.url, this.ethereum);
+            opened.announced = (blockNumber, isHead) => {
+                for (const watcher of this.announcedWatchers)
+                    watcher(blockNumber, isHead);
+            };
+            socket = opened;
             const socketEnd = watchSocketEnd(socket);
             const network = await Promise.race([
                 this.ethereum ? socket.getNetwork() : this.firstAnswer(socket),

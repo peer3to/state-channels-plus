@@ -58,7 +58,7 @@ operational limits. It hosts every other system without changing their observabl
 - **Invariants (owned).** [`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](execution.md#inv-runtime-1-akrhak), `REQ-RUNTIME-*` ([execution.md](./execution.md));
   [`INV-SDK-ARCH-1-KNAX7F` (Coherent participant state)](sdk.md#inv-sdk-arch-1-knax7f), `REQ-SDK-ARCH-*` ([sdk.md](./sdk.md)); `REQ-CONFIG-*`
   ([configuration.md](./configuration.md)); `INV-CHAINOBS-*`, `REQ-CHAINOBS-*`
-  ([chain-observation.md](./chain-observation.md)); `INV-LOG-*`, `REQ-LOG-*` ([log-collection.md](./log-collection.md)); `REQ-SDS-*` ([storage-diff-service.md](./storage-diff-service.md)). Durable storage is its own system:
+  ([chain-observation.md](./chain-observation.md)); `INV-LOG-*`, `REQ-LOG-*` ([log-collection.md](./log-collection.md)); `REQ-SDS-*` ([storage-diff-service.md](./storage-diff-service.md)); `REQ-RPCMIRROR-*` ([rpc-mirror.md](./rpc-mirror.md)). Durable storage is its own system:
   [../storage/README.md](../storage/README.md).
 - **Failure and recovery outcomes.** Context failure is contained at its boundary; restart recovers
   from the storage system's durable set and re-enters the block-progression pipeline without
@@ -82,6 +82,7 @@ operational limits. It hosts every other system without changing their observabl
 | [chain-observation.md](./chain-observation.md) | Chain access through an ordered list of RPC endpoints: per-request failover, per-endpoint event streams with reconnect and catch-up, exactly-once event processing. |
 | [log-collection.md](./log-collection.md) | Gathering a session's logs from every execution context into one stored log: coverage, termination, truthful outcome, attribution, effectively-once delivery, bounded expansion. |
 | [storage-diff-service.md](./storage-diff-service.md) | A shared observer of one upstream chain that serves which storage slots changed, snapshots, state, blocks and receipts to peers keeping a local mirror: record content, catch-up, trusted values, logs, shared state cache, snapshot statuses, waits for late blocks, failure policy. |
+| [rpc-mirror.md](./rpc-mirror.md) | The client's local copy of contract state, kept current by the storage diff service, that answers latest-block reads with a local EVM: what is answered locally, what always goes to the node, snapshot waits, freshness, following the chain, sampled cross-checks, degradation. |
 
 Durable storage and recovery were factored out into [System 9 — Storage](../storage/README.md),
 which nearly every system calls; this system consumes it like the others.
