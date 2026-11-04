@@ -24,6 +24,7 @@ import {
     sharedStorageDiffUrl
 } from "@test/fixtures/HarnessStorageDiff";
 import {
+    emptyInfra,
     provisionSlots,
     startHardhatNode,
     teardownInfra,
@@ -194,6 +195,20 @@ describe("e2e parallel test chain", function () {
         expect(failure?.message).to.equal(
             "slot 0 storage diff service cannot start: its test chain does not trace blocks with prestateTracer (debug_traceBlockByNumber: Method debug_traceBlockByNumber is not supported)"
         );
+    });
+
+    // Mutation: an empty infra without its services list -> the teardown of a
+    // run whose slots never started throws and hides the startup error.
+    it("tears down an infra no slot was provisioned into", function () {
+        const infra = emptyInfra();
+
+        teardownInfra(infra);
+
+        expect(infra).to.deep.equal({
+            nodes: [],
+            discoveries: [],
+            services: []
+        });
     });
 
     it("stops a slot's storage diff service with the slot", async function () {

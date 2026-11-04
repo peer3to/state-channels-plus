@@ -559,6 +559,11 @@ function resetSlotCacheDir(dir) {
 // Slot pool (used by the parallel runner)
 // ---------------------------------------------------------------------------
 
+/** An infra with nothing started yet: the shape {@link teardownInfra} takes. */
+function emptyInfra() {
+    return { nodes: [], discoveries: [], services: [] };
+}
+
 /** Tear down all nodes + discoveries in `infra`. Idempotent (clears the lists). */
 function teardownInfra(infra) {
     // the services follow the nodes: stop them first
@@ -592,7 +597,7 @@ function teardownInfra(infra) {
  * before we act, so a partial failure tears down cleanly with no orphans.
  */
 async function provisionSlots(slotCount, logDir, env = {}) {
-    const infra = { nodes: [], discoveries: [], services: [] };
+    const infra = emptyInfra();
     const infraPath = (name) => path.join(path.resolve(logDir), "infra", name);
 
     // Don't hand the same just-freed ephemeral port to two concurrent
@@ -741,6 +746,7 @@ module.exports = {
     startStorageDiffService,
     jsonRpc,
     resetSlotCacheDir,
+    emptyInfra,
     teardownInfra,
     provisionSlots,
     startGasMonitor

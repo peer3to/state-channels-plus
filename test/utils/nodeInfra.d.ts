@@ -109,6 +109,7 @@ export function jsonRpc(
 export function resetSlotCacheDir(dir: string): void;
 
 // Runner-only slot orchestration.
+export function emptyInfra(): Infra;
 export function teardownInfra(infra: Infra): void;
 export function provisionSlots(
     slotCount: number,
