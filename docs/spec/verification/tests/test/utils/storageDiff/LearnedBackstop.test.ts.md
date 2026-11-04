@@ -22,4 +22,5 @@ Cases build a `LearnedBackstop` with a clock the test moves by hand, record arri
 - `keeps announcements inside the window`: REQ-RPCMIRROR-4-H35NFC.T1.P17
 - `forgets every announcement on clear`: REQ-RPCMIRROR-4-H35NFC.T1.P17
 - `hands over how long each announced block up to the arrived one took, and keeps later ones`: REQ-RPCMIRROR-4-H35NFC.T1.P17
+- `forgets the announcements from an orphaned height up, and times the block announced again there from its own announcement`: REQ-RPCMIRROR-4-H35NFC.T1.P27
 - `does not hand over an announcement older than the window`: REQ-RPCMIRROR-4-H35NFC.T1.P17

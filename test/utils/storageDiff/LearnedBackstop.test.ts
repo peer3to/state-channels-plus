@@ -173,6 +173,24 @@ describe("AnnouncedBlocks", function () {
         expect(announced.size).to.equal(1);
     });
 
+    // Mutation: forgetFrom keeps the orphaned height -> the block announced
+    // again there is timed from the orphan's announcement.
+    it("forgets the announcements from an orphaned height up, and times the block announced again there from its own announcement", function () {
+        const clock = manualClock();
+        const announced = new AnnouncedBlocks(clock.now);
+        announced.announce(10n);
+        announced.announce(11n);
+        announced.announce(13n);
+        clock.advance(5_000);
+
+        announced.forgetFrom(11n);
+        announced.announce(11n);
+        clock.advance(100);
+
+        expect(announced.arrivedUpTo(13n).sort()).to.deep.equal([100, 5_100]);
+        expect(announced.size).to.equal(0);
+    });
+
     it("does not hand over an announcement older than the window", function () {
         const clock = manualClock();
         const announced = new AnnouncedBlocks(clock.now);

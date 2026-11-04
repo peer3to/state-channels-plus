@@ -29,6 +29,9 @@ const SLOW_LOG_QUERY_MS = 1_000;
 /** Time is the input: how long after its announcement the slowest taught block reaches the copy. */
 const SLOW_RECORD_MS = 100;
 
+/** Time is the input: how old an orphaned block's announcement is when the copy reaches its height again. */
+const ORPHAN_AGE_MS = 1_500;
+
 /**
  * Lets the mirror learn how long records take: blocks a node announces reach
  * the copy a few milliseconds later, and one of them SLOW_RECORD_MS later,
@@ -771,6 +774,160 @@ describe("MirrorRpcProvider freshness", function () {
             release();
 
             expect(BigInt(await read)).to.equal(2n);
+        });
+    });
+
+    // Mutation: any head lower than the node's announced block lowers it ->
+    // the late head of the block before lets the read answer from the older copy.
+    it("keeps a read waiting for the block of the node's log when the node's head of the block before arrives after that log", async function () {
+        await withMirrorSession(async (session) => {
+            const emitter = await deployLogEmitter(session.signer);
+            await emitValue(session.signer, emitter, 1n);
+            expect(
+                BigInt(await session.provider.getStorage(emitter, 0))
+            ).to.equal(1n);
+            await session.provider.on("block", () => undefined);
+            session.rpcNode.watchSockets((socket) => {
+                void socket.on({ address: emitter }, () => undefined);
+            });
+            // time is the input: the subscriptions' answers reach the provider
+            await sleep(ABSENCE_WINDOW_MS);
+            // the node's heads and logs stay at the proxy, so no announcement is timed
+            const withheld = session.node.withholdNotifications();
+            const earlier = await emitValue(session.signer, emitter, 2n);
+            await waitFor(
+                async () =>
+                    BigInt(await session.provider.getStorage(emitter, 0)) ===
+                    2n,
+                5_000,
+                20
+            );
+            const release =
+                session.service.holdNotifications("scp_subscription");
+            const later = await emitValue(session.signer, emitter, 3n);
+            withheld.stop();
+
+            // the later block's log arrives first, then the earlier block's head
+            withheld.release(later.hash);
+            withheld.releaseHead(earlier.blockNumber);
+            // time is the input: both reach the provider
+            await sleep(ABSENCE_WINDOW_MS);
+            let settled = false;
+            const read = session.provider
+                .getStorage(emitter, 0)
+                .finally(() => (settled = true));
+            await sleep(ABSENCE_WINDOW_MS);
+            expect(settled, "the read waits for the log's block").to.equal(
+                false
+            );
+            release();
+
+            expect(BigInt(await read)).to.equal(3n);
+        });
+    });
+
+    // Mutation: lowering the block reads wait for wakes no waiting read -> the
+    // read waits out the backstop and goes to the node.
+    it("answers a read already waiting for an orphaned block from the copy once the node's lower head arrives", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, chainStorage } =
+                await deployMirroredStorage(session);
+            expect(await storage.getValue()).to.equal(0n);
+            await session.provider.on("block", () => undefined);
+            // the node's heads stay at the proxy until the copy has their blocks, so none is timed
+            const releaseHeads =
+                session.node.holdNotifications("eth_subscription");
+            await (await chainStorage.setValue(5n)).wait();
+            const checkpoint = await session.chain.send("evm_snapshot", []);
+            await (await chainStorage.setValue(6n)).wait();
+            await waitFor(
+                async () => (await storage.getValue()) === 6n,
+                5_000,
+                20
+            );
+            releaseHeads();
+            // time is the input: the heads reach the provider
+            await sleep(ABSENCE_WINDOW_MS);
+            // the copy never gets the next block the node announces
+            session.service.dropNotifications("scp_subscription");
+            await (await chainStorage.setValue(7n)).wait();
+            // time is the input: the node's announcement reaches the provider
+            await sleep(ABSENCE_WINDOW_MS);
+            const releaseLowerHead =
+                session.node.holdNotifications("eth_subscription");
+            const asked = nodeRequests(session, "eth_call").length;
+            let settled = false;
+            const read = storage.getValue().finally(() => (settled = true));
+            await sleep(ABSENCE_WINDOW_MS);
+            expect(settled, "the read waits for the announced block").to.equal(
+                false
+            );
+
+            // the copy follows a shorter replacement branch before the node's head shows it
+            session.service.stopDroppingNotifications("scp_subscription");
+            await session.chain.send("evm_revert", [checkpoint]);
+            await (await chainStorage.setValue(9n)).wait();
+            // time is the input: the replacement block reaches the copy
+            await sleep(ABSENCE_WINDOW_MS);
+            releaseLowerHead();
+            // time is the input: the lower head reaches the provider
+            await sleep(ABSENCE_WINDOW_MS);
+
+            expect(settled, "the lower head ends the wait").to.equal(true);
+            expect(await read).to.equal(9n);
+            expect(nodeRequests(session, "eth_call")).to.have.length(asked);
+        });
+    });
+
+    // Mutation: lowering keeps the orphaned heights' announcements -> the
+    // replacement block is timed from the orphan's, and the backstop is the cap.
+    it("keeps the learned backstop after a reorganization to a shorter branch, timing the replacement block from its own announcement", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, chainStorage } =
+                await deployMirroredStorage(session);
+            await teachBackstop(session, chainStorage);
+            // the copy has the taught blocks
+            expect(await storage.getValue()).to.equal(4n);
+            const checkpoint = await session.chain.send("evm_snapshot", []);
+            // two blocks the node announces and the copy never gets
+            session.service.dropNotifications("scp_subscription");
+            await (await chainStorage.setValue(5n)).wait();
+            await session.chain.send("evm_mine", []);
+            await sleep(ORPHAN_AGE_MS);
+            // the replacement block reaches the copy after the node's lower head
+            const releaseReplacement =
+                session.service.holdNotifications("scp_subscription");
+            session.service.stopDroppingNotifications("scp_subscription");
+            const heads = session.node.deliveredCount("eth_subscription");
+
+            // the replacement branch is one block, at the first orphaned height
+            await session.chain.send("evm_revert", [checkpoint]);
+            await (await chainStorage.setValue(9n)).wait();
+            await waitFor(
+                () => session.node.deliveredCount("eth_subscription") > heads,
+                5_000,
+                5
+            );
+            // time is the input: the provider handles the head it was sent
+            await sleep(50);
+            releaseReplacement();
+            await waitForLocalAnswer(
+                session,
+                "eth_call",
+                () => storage.getValue(),
+                9n
+            );
+            const release =
+                session.service.holdNotifications("scp_subscription");
+            await (await storage.setValue(7n)).wait();
+            const started = Date.now();
+            const value = await storage.getValue();
+            const elapsed = Date.now() - started;
+
+            expect(value).to.equal(7n);
+            // the wait is the learned bound, not the cap
+            expect(elapsed).to.be.lessThan((SDK_RPC_DEADLINE_MS * 2) / 3);
+            release();
         });
     });
 });

@@ -97,6 +97,12 @@ export class AnnouncedBlocks {
         return durations;
     }
 
+    /** Forgets the announcements of `number` and above: their blocks were orphaned. */
+    forgetFrom(number: bigint): void {
+        for (const announced of this.announcedAt.keys())
+            if (announced >= number) this.announcedAt.delete(announced);
+    }
+
     /** Forgets every announcement. */
     clear(): void {
         this.announcedAt.clear();

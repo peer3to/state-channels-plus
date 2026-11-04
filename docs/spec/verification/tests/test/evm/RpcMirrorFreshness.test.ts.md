@@ -29,3 +29,6 @@ This file covers the waits for a block the peer saw or a node announced, their l
 - `keeps a read waiting for one node's newer head when another node announces an older head after it`: REQ-RPCMIRROR-4-H35NFC.T1.P22
 - `answers from the copy at once after a reorganization when the node reports an orphaned block's log as removed`: REQ-RPCMIRROR-4-H35NFC.T1.P23
 - `keeps a read waiting for the node's newer head when the node's log of the block before arrives after it`: REQ-RPCMIRROR-4-H35NFC.T1.P24
+- `keeps a read waiting for the block of the node's log when the node's head of the block before arrives after that log`: REQ-RPCMIRROR-4-H35NFC.T1.P25
+- `answers a read already waiting for an orphaned block from the copy once the node's lower head arrives`: REQ-RPCMIRROR-4-H35NFC.T1.P26
+- `keeps the learned backstop after a reorganization to a shorter branch, timing the replacement block from its own announcement`: REQ-RPCMIRROR-4-H35NFC.T1.P27

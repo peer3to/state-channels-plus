@@ -30,13 +30,16 @@ export class HeadFreshness {
     private readonly headWaiters = new Set<() => void>();
     /** When a node announced each block number the head has not reached yet. */
     private readonly announced = new AnnouncedBlocks();
-    /** Each node's newest head, or a later block one of its logs named. */
-    private readonly nodeHeads = new Map<AnnouncingNode, BlockNumber>();
+    /** Each node's newest head, and a later block one of its logs named since. */
+    private readonly nodeAnnouncements = new Map<
+        AnnouncingNode,
+        { head: BlockNumber; logBlock?: BlockNumber }
+    >();
     /** How long a wait for a block lasts when no event ends it, learned from how long records took. */
     private readonly backstop: LearnedBackstop;
     /** Block of the peer's newest own transaction seen mined. */
     private requiredBlock?: MirrorBlock;
-    /** Newest of the nodes' heads; reads wait for the head to reach it. */
+    /** Newest block the nodes announced; reads wait for the head to reach it. */
     private requiredNumber = 0n;
     /** The block the service was last asked about at the start of a wait; reset when the head holds what the peer saw. */
     private probedNumber?: BlockNumber;
@@ -62,27 +65,46 @@ export class HeadFreshness {
     }
 
     /**
-     * A read issued from now on waits until the head reaches the newest of
-     * the nodes' heads, so it never answers from before an event the peer
-     * already saw. A new head (`isHead`) is the node's chain from now on, so a
-     * lower one after a reorganization lowers that node's; a log only raises it.
+     * A read issued from now on waits until the head reaches the newest block
+     * the nodes announced, so it never answers from before an event the peer
+     * already saw. A node's announced block is its newest head (`isHead`), or
+     * a later block one of its logs named. Only a head below the node's
+     * previous head, a reorganization, lowers it; a late head does not.
      */
     requireNumber(
         node: AnnouncingNode,
         number: BlockNumber,
         isHead: boolean
     ): void {
-        const previous = this.nodeHeads.get(node);
-        if (isHead || previous === undefined || number > previous)
-            this.nodeHeads.set(node, number);
+        const known = this.nodeAnnouncements.get(node) ?? { head: 0n };
+        if (!isHead) {
+            if (number > (known.logBlock ?? known.head))
+                known.logBlock = number;
+        } else if (number < known.head) {
+            // a reorganization: what the node announced above is orphaned
+            known.head = number;
+            known.logBlock = undefined;
+        } else {
+            known.head = number;
+            if (known.logBlock !== undefined && known.logBlock <= number)
+                known.logBlock = undefined;
+        }
+        this.nodeAnnouncements.set(node, known);
         let newest = 0n;
-        for (const head of this.nodeHeads.values())
-            if (head > newest) newest = head;
-        // the blocks above a lower newest head are on no node's chain now
-        if (newest <= this.requiredNumber) {
+        for (const { head, logBlock } of this.nodeAnnouncements.values()) {
+            const announced = logBlock ?? head;
+            if (announced > newest) newest = announced;
+        }
+        if (newest < this.requiredNumber) {
+            // the blocks above are on no node's chain now: their announcements
+            // teach the backstop nothing, and the waits look at the head again
             this.requiredNumber = newest;
+            this.announced.forgetFrom(newest);
+            this.noteAnnounced(newest);
+            this.notifyHeadWaiters();
             return;
         }
+        if (newest === this.requiredNumber) return;
         // the node moved on while the mirror still lacks the block it announced
         // before: the service is a whole block behind, so reads go to the node
         const lacking = !this.holds(this.requiredBlock);
@@ -91,7 +113,7 @@ export class HeadFreshness {
         if (lacking) this.giveUpWaiting();
     }
 
-    /** The newest of the nodes' heads announced to this runtime. */
+    /** The newest block the nodes announced to this runtime. */
     get announcedNumber(): bigint {
         return this.requiredNumber;
     }

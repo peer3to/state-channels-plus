@@ -84,9 +84,9 @@ export class Mirror {
     }
 
     /**
-     * Calls issued from now on see the chain at least up to the newest of
-     * the nodes' heads: a node's new head (`isHead`), or a later block one of
-     * its logs named.
+     * Calls issued from now on see the chain at least up to the newest block
+     * the nodes announced: a node's new head (`isHead`), or a later block one
+     * of its logs named; see {@link HeadFreshness.requireNumber}.
      */
     requireNumber(
         node: AnnouncingNode,

@@ -153,8 +153,8 @@ export class MirrorChain {
     }
 
     /**
-     * A read issued from now on waits until the head reaches the newest of
-     * the nodes' heads, so it never answers from before an event the peer
+     * A read issued from now on waits until the head reaches the newest block
+     * the nodes announced, so it never answers from before an event the peer
      * already saw; see {@link HeadFreshness.requireNumber}.
      */
     requireNumber(
@@ -165,7 +165,7 @@ export class MirrorChain {
         this.freshness.requireNumber(node, number, isHead);
     }
 
-    /** The newest of the nodes' heads announced to this runtime. */
+    /** The newest block the nodes announced to this runtime. */
     get announcedNumber(): bigint {
         return this.freshness.announcedNumber;
     }

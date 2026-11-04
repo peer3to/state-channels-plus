@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: test-owned WebSocket proxy in front of the test node; executable evidence belongs to its calling test declarations
+import { toQuantity } from "ethers";
 import { once } from "node:events";
 import { type RawData, WebSocket, WebSocketServer } from "ws";
 
@@ -9,11 +10,13 @@ type JsonRpcMethod = string;
 type JsonRpcId = number | string;
 
 /**
- * A subscription notification held at the proxy, and the log's transaction;
- * `sendRemoved` sends it as a node reports a log of an orphaned block.
+ * A subscription notification held at the proxy, and the log's transaction
+ * or the head's block number; `sendRemoved` sends it as a node reports a log
+ * of an orphaned block.
  */
 type WithheldNotification = {
     transactionHash: unknown;
+    headNumber: unknown;
     send: () => void;
     sendRemoved: () => void;
 };
@@ -54,6 +57,15 @@ function removedLogFrame(data: RawData): string {
     };
     frame.params.result.removed = true;
     return JSON.stringify(frame);
+}
+
+/** The block number of the head an eth_subscription notification carries. */
+function notifiedHeadNumber(params: unknown): unknown {
+    if (typeof params !== "object" || params === null || !("result" in params))
+        return undefined;
+    const { result } = params;
+    if (typeof result !== "object" || result === null) return undefined;
+    return "number" in result ? result.number : undefined;
 }
 
 /** The transaction hash of the log an eth_subscription notification carries. */
@@ -324,12 +336,14 @@ export class RpcNodeProxy {
     /**
      * Keep the node's subscription notifications at the proxy until
      * `release` sends the one carrying the log of a transaction, or
-     * `releaseRemoved` sends it marked removed; `stop` lets later
-     * notifications pass again and keeps the withheld ones.
+     * `releaseRemoved` sends it marked removed, and `releaseHead` sends the
+     * head of a block; `stop` lets later notifications pass again and keeps
+     * the withheld ones.
      */
     withholdNotifications(): {
         release: (transactionHash: string) => void;
         releaseRemoved: (transactionHash: string) => void;
+        releaseHead: (blockNumber: number) => void;
         stop: () => void;
     } {
         const withheld: WithheldNotification[] = [];
@@ -349,6 +363,15 @@ export class RpcNodeProxy {
             release: (transactionHash) => take(transactionHash).send(),
             releaseRemoved: (transactionHash) =>
                 take(transactionHash).sendRemoved(),
+            releaseHead: (blockNumber) => {
+                const index = withheld.findIndex(
+                    (notification) =>
+                        notification.headNumber === toQuantity(blockNumber)
+                );
+                if (index < 0)
+                    throw new Error(`No withheld head of block ${blockNumber}`);
+                withheld.splice(index, 1)[0].send();
+            },
             stop: () => {
                 if (this.withheldNotifications === withheld)
                     this.withheldNotifications = undefined;
@@ -510,6 +533,7 @@ export class RpcNodeProxy {
             if (method === "eth_subscription" && this.withheldNotifications) {
                 this.withheldNotifications.push({
                     transactionHash: notifiedTransactionHash(params),
+                    headNumber: notifiedHeadNumber(params),
                     send,
                     sendRemoved: () => sendFrame(removedLogFrame(data), false)
                 });
