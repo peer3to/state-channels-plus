@@ -1585,6 +1585,7 @@ export async function assertInvalidMirrorBoundRejectsStartup(): Promise<void> {
                     createRuntimeChainContext(
                         {
                             ...config,
+                            STORAGE_DIFF_URL: UNREACHED_STORAGE_DIFF_URL,
                             PROVIDER_URLS: [reachable.url],
                             MIRROR_MAX_FOLLOWED_CONTRACTS: bound
                         },
