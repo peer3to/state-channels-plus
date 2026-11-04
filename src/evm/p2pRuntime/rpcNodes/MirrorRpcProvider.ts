@@ -78,8 +78,12 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
             // an event a node announced at block N must find the mirror at N
             for (const node of nodes)
                 this.unwatchNodes.push(
-                    node.watchAnnouncedBlocks((blockNumber) =>
-                        this.mirror?.requireNumber(blockNumber)
+                    node.watchAnnouncedBlocks((blockNumber, isHead) =>
+                        this.mirror?.requireNumber(
+                            node.url,
+                            blockNumber,
+                            isHead
+                        )
                     )
                 );
             this.mirror = new Mirror({

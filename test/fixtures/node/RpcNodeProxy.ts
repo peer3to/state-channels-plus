@@ -8,8 +8,15 @@ type JsonRpcMethod = string;
 /** A JSON-RPC request or response id. */
 type JsonRpcId = number | string;
 
-/** A subscription notification held at the proxy, and the log's transaction. */
-type WithheldNotification = { transactionHash: unknown; send: () => void };
+/**
+ * A subscription notification held at the proxy, and the log's transaction;
+ * `sendRemoved` sends it as a node reports a log of an orphaned block.
+ */
+type WithheldNotification = {
+    transactionHash: unknown;
+    send: () => void;
+    sendRemoved: () => void;
+};
 
 /** One request a client sent through the proxy. */
 export type ForwardedRequest = { method: JsonRpcMethod; params: unknown };
@@ -38,6 +45,15 @@ function readJsonRpcFrame(data: RawData): {
         // not JSON: forwarded unread
         return {};
     }
+}
+
+/** A log notification, marked `removed` as a node sends it after a reorganization. */
+function removedLogFrame(data: RawData): string {
+    const frame = JSON.parse(data.toString()) as {
+        params: { result: Record<string, unknown> };
+    };
+    frame.params.result.removed = true;
+    return JSON.stringify(frame);
 }
 
 /** The transaction hash of the log an eth_subscription notification carries. */
@@ -307,27 +323,32 @@ export class RpcNodeProxy {
 
     /**
      * Keep the node's subscription notifications at the proxy until
-     * `release` sends the one carrying the log of a transaction; `stop` lets
-     * later notifications pass again and keeps the withheld ones.
+     * `release` sends the one carrying the log of a transaction, or
+     * `releaseRemoved` sends it marked removed; `stop` lets later
+     * notifications pass again and keeps the withheld ones.
      */
     withholdNotifications(): {
         release: (transactionHash: string) => void;
+        releaseRemoved: (transactionHash: string) => void;
         stop: () => void;
     } {
         const withheld: WithheldNotification[] = [];
         this.withheldNotifications = withheld;
-        return {
-            release: (transactionHash) => {
-                const index = withheld.findIndex(
-                    (notification) =>
-                        notification.transactionHash === transactionHash
+        const take = (transactionHash: string) => {
+            const index = withheld.findIndex(
+                (notification) =>
+                    notification.transactionHash === transactionHash
+            );
+            if (index < 0)
+                throw new Error(
+                    `No withheld notification for ${transactionHash}`
                 );
-                if (index < 0)
-                    throw new Error(
-                        `No withheld notification for ${transactionHash}`
-                    );
-                withheld.splice(index, 1)[0].send();
-            },
+            return withheld.splice(index, 1)[0];
+        };
+        return {
+            release: (transactionHash) => take(transactionHash).send(),
+            releaseRemoved: (transactionHash) =>
+                take(transactionHash).sendRemoved(),
             stop: () => {
                 if (this.withheldNotifications === withheld)
                     this.withheldNotifications = undefined;
@@ -479,16 +500,18 @@ export class RpcNodeProxy {
             if (!method && id !== undefined && this.swallowedReplyIds.has(id))
                 return;
             if (method && this.droppedNotifications.has(method)) return;
-            const send = () => {
+            const sendFrame = (frame: RawData | string, binary: boolean) => {
                 if (client.readyState !== WebSocket.OPEN) return;
-                client.send(data, { binary: isBinary });
+                client.send(frame, { binary });
                 if (method && id === undefined)
                     this.deliveredNotifications.push(method);
             };
+            const send = () => sendFrame(data, isBinary);
             if (method === "eth_subscription" && this.withheldNotifications) {
                 this.withheldNotifications.push({
                     transactionHash: notifiedTransactionHash(params),
-                    send
+                    send,
+                    sendRemoved: () => sendFrame(removedLogFrame(data), false)
                 });
                 return;
             }

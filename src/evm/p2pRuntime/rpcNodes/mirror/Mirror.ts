@@ -1,4 +1,5 @@
-import type { MirrorBlock } from "./FollowedChain";
+import type { BlockNumber, MirrorBlock } from "./FollowedChain";
+import type { AnnouncingNode } from "./HeadFreshness";
 import { MirrorChain, type NodeRequest } from "./MirrorChain";
 import { MirrorStateManager } from "./MirrorStateManager";
 import {
@@ -82,9 +83,17 @@ export class Mirror {
         });
     }
 
-    /** Calls issued from now on see the chain at least up to block `number`. */
-    requireNumber(number: bigint): void {
-        this.chain.requireNumber(number);
+    /**
+     * Calls issued from now on see the chain at least up to the newest of
+     * the nodes' heads: a node's new head (`isHead`), or a later block one of
+     * its logs named.
+     */
+    requireNumber(
+        node: AnnouncingNode,
+        number: BlockNumber,
+        isHead: boolean
+    ): void {
+        this.chain.requireNumber(node, number, isHead);
     }
 
     /** Calls issued from now on see the chain with `block` applied. */

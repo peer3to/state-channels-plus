@@ -1,6 +1,10 @@
 import { getReconnectDelayMs } from "../RpcNodeProvider";
-import { FollowedChain, type MirrorBlock } from "./FollowedChain";
-import { HeadFreshness } from "./HeadFreshness";
+import {
+    type BlockNumber,
+    FollowedChain,
+    type MirrorBlock
+} from "./FollowedChain";
+import { type AnnouncingNode, HeadFreshness } from "./HeadFreshness";
 import type { MirrorStateManager } from "./MirrorStateManager";
 import { MirrorUnavailableError } from "./MirrorUnavailableError";
 import { SnapshotWaits } from "./SnapshotWaits";
@@ -149,15 +153,19 @@ export class MirrorChain {
     }
 
     /**
-     * A read issued from now on waits until the head reaches the block
-     * `number` a node announced, so it never answers from before an event
-     * the peer already saw.
+     * A read issued from now on waits until the head reaches the newest of
+     * the nodes' heads, so it never answers from before an event the peer
+     * already saw; see {@link HeadFreshness.requireNumber}.
      */
-    requireNumber(number: bigint): void {
-        this.freshness.requireNumber(number);
+    requireNumber(
+        node: AnnouncingNode,
+        number: BlockNumber,
+        isHead: boolean
+    ): void {
+        this.freshness.requireNumber(node, number, isHead);
     }
 
-    /** The newest block number a node announced to this runtime. */
+    /** The newest of the nodes' heads announced to this runtime. */
     get announcedNumber(): bigint {
         return this.freshness.announcedNumber;
     }

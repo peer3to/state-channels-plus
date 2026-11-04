@@ -49,6 +49,26 @@ async function teachBackstop(
     slow.release();
 }
 
+/** Waits until `read` returns `value` without asking the node `method`. */
+async function waitForLocalAnswer(
+    session: MirrorSession,
+    method: string,
+    read: () => Promise<bigint>,
+    value: bigint
+): Promise<void> {
+    await waitFor(
+        async () => {
+            const asked = nodeRequests(session, method).length;
+            return (
+                (await read()) === value &&
+                nodeRequests(session, method).length === asked
+            );
+        },
+        5_000,
+        20
+    );
+}
+
 describe("MirrorRpcProvider freshness", function () {
     it("holds a call issued after the peer's own transaction is mined until the mirror has that block", async function () {
         await withMirrorSession(async (session) => {
@@ -295,10 +315,16 @@ describe("MirrorRpcProvider freshness", function () {
             // the node's announcements name the block a read waits for from here
             releaseNode();
 
-            // the node rolls back below the block the next read waits for
+            // the node rolls back below the block the first read waited for
             await session.chain.send("anvil_rollback", [2]);
             await session.chain.send("evm_mine", []);
             // time is the input: the new head reaches the copy
+            await sleep(ABSENCE_WINDOW_MS);
+            const releaseAgain =
+                session.service.holdNotifications("scp_subscription");
+            // the replacement branch reaches the same block number again
+            await session.chain.send("evm_mine", []);
+            // time is the input: the node's announcement reaches the provider
             await sleep(ABSENCE_WINDOW_MS);
             const probesBefore = serviceRequests(session, "scp_getHead").length;
             const second = storage.getValue();
@@ -308,7 +334,8 @@ describe("MirrorRpcProvider freshness", function () {
             expect(serviceRequests(session, "scp_getHead")).to.have.length(
                 probesBefore + 1
             );
-            // the block never reaches the copy again: the node answers
+            releaseAgain();
+            // the replacement branch does not hold the orphaned write
             expect(await second).to.equal(0n);
         });
     });
@@ -543,6 +570,207 @@ describe("MirrorRpcProvider freshness", function () {
             release();
 
             expect(BigInt(await read)).to.equal(9n);
+        });
+    });
+    // Mutation: the block a node announced is never lowered -> after the
+    // reorganization every read goes to the node.
+    it("answers from the copy again once the node's new head falls below the block it announced before, as after a reorganization to a shorter branch", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, chainStorage } =
+                await deployMirroredStorage(session);
+            expect(await storage.getValue()).to.equal(0n);
+            await session.provider.on("block", () => undefined);
+            await (await chainStorage.setValue(5n)).wait();
+            const checkpoint = await session.chain.send("evm_snapshot", []);
+            await (await chainStorage.setValue(6n)).wait();
+            await session.chain.send("anvil_mine", [toQuantity(3)]);
+            await waitForLocalAnswer(
+                session,
+                "eth_call",
+                () => storage.getValue(),
+                6n
+            );
+
+            // the replacement branch is three blocks shorter than the announced head
+            await session.chain.send("evm_revert", [checkpoint]);
+            await (await chainStorage.setValue(9n)).wait();
+
+            await waitForLocalAnswer(
+                session,
+                "eth_call",
+                () => storage.getValue(),
+                9n
+            );
+        });
+    });
+
+    // Mutation: the latest announcement of any node replaces the others' ->
+    // the lagging node's older head lets the read answer from the older copy.
+    it("keeps a read waiting for one node's newer head when another node announces an older head after it", async function () {
+        await withMirrorSession(
+            async (session) => {
+                const lagging = session.second!;
+                const { storage, chainStorage } =
+                    await deployMirroredStorage(session);
+                expect(await storage.getValue()).to.equal(0n);
+                // the lagging node's heads wait at its proxy, so no announcement is timed
+                const releaseLagging =
+                    lagging.node.holdNotifications("eth_subscription");
+                lagging.rpcNode.watchSockets((socket) => {
+                    void socket.on("block", () => undefined);
+                });
+                await waitFor(
+                    () => lagging.node.forwardedCount("eth_subscribe") === 1,
+                    5_000,
+                    20
+                );
+                // time is the input: the subscription's answer reaches the provider
+                await sleep(ABSENCE_WINDOW_MS);
+                await (await chainStorage.setValue(5n)).wait();
+                await waitFor(
+                    async () => (await storage.getValue()) === 5n,
+                    5_000,
+                    20
+                );
+
+                let announced = 0;
+                session.rpcNode.watchSockets((socket) => {
+                    void socket.on("block", (number: number) => {
+                        announced = number;
+                    });
+                });
+                await waitFor(
+                    () => session.node.forwardedCount("eth_subscribe") === 1,
+                    5_000,
+                    20
+                );
+                // time is the input: the subscription's answer reaches the provider
+                await sleep(ABSENCE_WINDOW_MS);
+                lagging.node.dropNotifications("eth_subscription");
+                const releaseService =
+                    session.service.holdNotifications("scp_subscription");
+                const written = await (await chainStorage.setValue(6n)).wait();
+                await waitFor(
+                    () => announced === written!.blockNumber,
+                    5_000,
+                    20
+                );
+                // the lagging node announces the block before, after the newer head
+                releaseLagging();
+                // time is the input: the older head reaches the provider
+                await sleep(ABSENCE_WINDOW_MS);
+                let settled = false;
+                const read = storage.getValue().finally(() => (settled = true));
+                await sleep(ABSENCE_WINDOW_MS);
+                expect(settled, "the read waits for the newer head").to.equal(
+                    false
+                );
+                releaseService();
+
+                expect(await read).to.equal(6n);
+                lagging.node.stopDroppingNotifications("eth_subscription");
+            },
+            { secondNode: true }
+        );
+    });
+
+    // Mutation: a removed log announces its orphaned block -> the read waits
+    // for a block number the replacement branch has not reached.
+    it("answers from the copy at once after a reorganization when the node reports an orphaned block's log as removed", async function () {
+        await withMirrorSession(async (session) => {
+            const emitter = await deployLogEmitter(session.signer);
+            await emitValue(session.signer, emitter, 1n);
+            expect(
+                BigInt(await session.provider.getStorage(emitter, 0))
+            ).to.equal(1n);
+            await session.provider.on("block", () => undefined);
+            session.rpcNode.watchSockets((socket) => {
+                void socket.on({ address: emitter }, () => undefined);
+            });
+            // time is the input: the subscriptions' answers reach the provider
+            await sleep(ABSENCE_WINDOW_MS);
+            const checkpoint = await session.chain.send("evm_snapshot", []);
+            await session.chain.send("anvil_mine", [toQuantity(2)]);
+            // the log stays at the proxy, to come back removed after the reorganization
+            const withheld = session.node.withholdNotifications();
+            const orphaned = await emitValue(session.signer, emitter, 2n);
+            withheld.stop();
+            // the replacement branch is two blocks shorter than the orphaned log's block
+            await session.chain.send("evm_revert", [checkpoint]);
+            await emitValue(session.signer, emitter, 3n);
+            await waitForLocalAnswer(
+                session,
+                "eth_getStorageAt",
+                async () =>
+                    BigInt(await session.provider.getStorage(emitter, 0)),
+                3n
+            );
+
+            withheld.releaseRemoved(orphaned.hash);
+            // time is the input: the removed log reaches the provider
+            await sleep(ABSENCE_WINDOW_MS);
+            const asked = nodeRequests(session, "eth_getStorageAt").length;
+            let settled = false;
+            const read = session.provider
+                .getStorage(emitter, 0)
+                .finally(() => (settled = true));
+            await sleep(ABSENCE_WINDOW_MS);
+
+            expect(settled, "the read is answered at once").to.equal(true);
+            expect(BigInt(await read)).to.equal(3n);
+            expect(nodeRequests(session, "eth_getStorageAt")).to.have.length(
+                asked
+            );
+        });
+    });
+
+    // Mutation: a node's log lowers its head as a new head does -> the log of
+    // the block before lets the read answer from the older copy.
+    it("keeps a read waiting for the node's newer head when the node's log of the block before arrives after it", async function () {
+        await withMirrorSession(async (session) => {
+            const emitter = await deployLogEmitter(session.signer);
+            await emitValue(session.signer, emitter, 1n);
+            expect(
+                BigInt(await session.provider.getStorage(emitter, 0))
+            ).to.equal(1n);
+            await session.provider.on("block", () => undefined);
+            session.rpcNode.watchSockets((socket) => {
+                void socket.on({ address: emitter }, () => undefined);
+            });
+            // time is the input: the subscriptions' answers reach the provider
+            await sleep(ABSENCE_WINDOW_MS);
+            // the block's head and log stay at the proxy, so no announcement is timed
+            const withheld = session.node.withholdNotifications();
+            const logged = await emitValue(session.signer, emitter, 2n);
+            withheld.stop();
+            await waitFor(
+                async () =>
+                    BigInt(await session.provider.getStorage(emitter, 0)) ===
+                    2n,
+                5_000,
+                20
+            );
+            const release =
+                session.service.holdNotifications("scp_subscription");
+            await session.chain.send("evm_mine", []);
+            // time is the input: the node's newer head reaches the provider
+            await sleep(ABSENCE_WINDOW_MS);
+
+            // the log of the block before arrives after the newer head
+            withheld.release(logged.hash);
+            // time is the input: the log reaches the provider
+            await sleep(ABSENCE_WINDOW_MS);
+            let settled = false;
+            const read = session.provider
+                .getStorage(emitter, 0)
+                .finally(() => (settled = true));
+            await sleep(ABSENCE_WINDOW_MS);
+            expect(settled, "the read waits for the newer head").to.equal(
+                false
+            );
+            release();
+
+            expect(BigInt(await read)).to.equal(2n);
         });
     });
 });

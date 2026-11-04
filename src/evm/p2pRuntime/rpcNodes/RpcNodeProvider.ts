@@ -40,6 +40,12 @@ export type RpcNodeSocketWatcher = (
     reopened: boolean
 ) => void;
 
+/** Called with the block a node's notification names: a new head (`isHead`) or a log's block. */
+export type AnnouncedBlockWatcher = (
+    blockNumber: bigint,
+    isHead: boolean
+) => void;
+
 /** One open socket and the end of its life. */
 type NodeConnection = {
     socket: WebSocketProvider;
@@ -74,7 +80,7 @@ class NodeSocket extends WebSocketProvider {
      * Called with the block number of each subscription notification the node
      * pushes (a new head or a log), before the subscriber hears of it.
      */
-    announced?: (blockNumber: bigint) => void;
+    announced?: AnnouncedBlockWatcher;
 
     // Overrides SocketProvider._processMessage: also reports the block each
     // subscription notification belongs to.
@@ -106,7 +112,7 @@ class NodeSocket extends WebSocketProvider {
 
     private reportAnnouncedBlock(
         message: string,
-        announced: (blockNumber: bigint) => void
+        announced: AnnouncedBlockWatcher
     ): void {
         try {
             const parsed: unknown = JSON.parse(message);
@@ -114,13 +120,21 @@ class NodeSocket extends WebSocketProvider {
             const { method, params } = parsed as {
                 method?: unknown;
                 params?: {
-                    result?: { blockNumber?: unknown; number?: unknown };
+                    result?: {
+                        blockNumber?: unknown;
+                        number?: unknown;
+                        removed?: unknown;
+                    };
                 };
             };
             if (method !== "eth_subscription") return;
-            const number =
-                params?.result?.blockNumber ?? params?.result?.number;
-            if (typeof number === "string") announced(BigInt(number));
+            const result = params?.result;
+            // a removed log belongs to an orphaned block: it announces nothing
+            if (result?.removed === true) return;
+            if (typeof result?.blockNumber === "string")
+                announced(BigInt(result.blockNumber), false);
+            else if (typeof result?.number === "string")
+                announced(BigInt(result.number), true);
         } catch {
             // not a notification this hook understands: the socket handles it
         }
@@ -260,9 +274,7 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
     private readonly logger: Logger;
     private readonly watchers = new Set<RpcNodeSocketWatcher>();
     /** Called with the block of each notification a socket of this node pushes. */
-    private readonly announcedWatchers = new Set<
-        (blockNumber: bigint) => void
-    >();
+    private readonly announcedWatchers = new Set<AnnouncedBlockWatcher>();
     /** Called when an open socket of this node ends. */
     private readonly lossWatchers = new Set<() => void>();
     /** Requests waiting for this node to reconnect. */
@@ -319,9 +331,10 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
     /**
      * Calls `watcher` with the block number of every subscription
      * notification (a new head or a log) this node's sockets receive, before
-     * their subscribers hear of it. Returns the function that stops the calls.
+     * their subscribers hear of it; a removed log is not reported. Returns
+     * the function that stops the calls.
      */
-    watchAnnouncedBlocks(watcher: (blockNumber: bigint) => void): () => void {
+    watchAnnouncedBlocks(watcher: AnnouncedBlockWatcher): () => void {
         this.announcedWatchers.add(watcher);
         return () => {
             this.announcedWatchers.delete(watcher);
@@ -466,9 +479,9 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
         );
         try {
             const opened = openSocket(this.url, this.ethereum);
-            opened.announced = (blockNumber) => {
+            opened.announced = (blockNumber, isHead) => {
                 for (const watcher of this.announcedWatchers)
-                    watcher(blockNumber);
+                    watcher(blockNumber, isHead);
             };
             socket = opened;
             const socketEnd = watchSocketEnd(socket);

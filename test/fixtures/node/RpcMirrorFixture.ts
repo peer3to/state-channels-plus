@@ -56,6 +56,8 @@ export type MirrorSession = {
     wallet: HDNodeWallet;
     /** Warnings the provider's logger got, oldest first. */
     warnings: LoggedWarning[];
+    /** A second node of the provider on the same chain, when the settings ask for one. */
+    second?: { node: RpcNodeProxy; rpcNode: RpcNodeProvider };
 };
 
 export type MirrorSessionSettings = StorageDiffServiceSettings & {
@@ -70,6 +72,8 @@ export type MirrorSessionSettings = StorageDiffServiceSettings & {
     sampleRate?: number;
     /** Contracts the mirror follows at once. */
     maxFollowedAccounts?: number;
+    /** Give the provider a second node, through a proxy of its own. */
+    secondNode?: boolean;
 };
 
 /**
@@ -85,6 +89,7 @@ export async function withMirrorSession<T>(
         withoutService,
         sampleRate: named,
         maxFollowedAccounts,
+        secondNode,
         ...serviceSettings
     } = settings;
     const sampleRate = "sampleRate" in settings ? named : 0;
@@ -93,6 +98,9 @@ export async function withMirrorSession<T>(
             const storageDiff = await start(serviceSettings);
             const node = await RpcNodeProxy.start(chain._getConnection().url);
             const service = await RpcNodeProxy.start(storageDiff.url);
+            const secondProxy = secondNode
+                ? await RpcNodeProxy.start(chain._getConnection().url)
+                : undefined;
             const logger = createLogger(
                 {},
                 {},
@@ -115,14 +123,19 @@ export async function withMirrorSession<T>(
             };
             capture(logger);
             const rpcNode = new RpcNodeProvider(node.url, logger);
-            const provider = new MirrorRpcProvider([rpcNode], logger, {
+            const second = secondProxy && {
+                node: secondProxy,
+                rpcNode: new RpcNodeProvider(secondProxy.url, logger)
+            };
+            const nodes = second ? [rpcNode, second.rpcNode] : [rpcNode];
+            const provider = new MirrorRpcProvider(nodes, logger, {
                 storageDiffUrl: withoutService ? undefined : service.url,
                 sampleRate,
                 customPrecompiles,
                 maxFollowedAccounts
             });
             try {
-                await rpcNode.firstAttempt;
+                await Promise.all(nodes.map((each) => each.firstAttempt));
                 return await use({
                     provider,
                     rpcNode,
@@ -133,11 +146,16 @@ export async function withMirrorSession<T>(
                     chain,
                     signer,
                     wallet: Wallet.fromPhrase(ANVIL_MNEMONIC).connect(provider),
-                    warnings
+                    warnings,
+                    second
                 });
             } finally {
                 provider.destroy();
-                await Promise.all([node.close(), service.close()]);
+                await Promise.all([
+                    node.close(),
+                    service.close(),
+                    secondProxy?.close()
+                ]);
                 logger.dispose();
             }
         }
