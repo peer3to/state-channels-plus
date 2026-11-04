@@ -457,8 +457,11 @@ describe("MirrorRpcProvider snapshots", function () {
             async (session) => {
                 const first = await deployMirroredStorage(session);
                 expect(await first.storage.getValue()).to.equal(0n);
-                // the mirror's head stays where it is from here on
+                // the mirror's head stays where it is from here on, and the
+                // node's heads wait at its proxy, so the read waits for no later block
                 session.service.dropNotifications("scp_subscription");
+                const releaseHeads =
+                    session.node.holdNotifications("eth_subscription");
                 const { chainStorage, address } =
                     await deployMirroredStorage(session);
                 await (await chainStorage.setValue(5n)).wait();
@@ -491,6 +494,7 @@ describe("MirrorRpcProvider snapshots", function () {
                         message.includes("Mirror cannot apply a snapshot")
                     )
                 ).to.equal(false);
+                releaseHeads();
             },
             { retention: 1 }
         );

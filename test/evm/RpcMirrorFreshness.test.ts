@@ -716,36 +716,24 @@ describe("MirrorRpcProvider freshness", function () {
                 // the lagging node's heads wait at its proxy, so no announcement is timed
                 const releaseLagging =
                     lagging.node.holdNotifications("eth_subscription");
-                lagging.rpcNode.watchSockets((socket) => {
-                    void socket.on("block", () => undefined);
-                });
-                await waitFor(
-                    () => lagging.node.forwardedCount("eth_subscribe") === 1,
-                    5_000,
-                    20
-                );
-                // time is the input: the subscription's answer reaches the provider
-                await sleep(ABSENCE_WINDOW_MS);
+                // the other node's head of this block comes once the copy has it, so it is not timed either
+                const releaseHead =
+                    session.node.holdNotifications("eth_subscription");
                 await (await chainStorage.setValue(5n)).wait();
                 await waitFor(
                     async () => (await storage.getValue()) === 5n,
                     5_000,
                     20
                 );
+                releaseHead();
 
+                // the provider's own head subscription on the node carries this listener too
                 let announced = 0;
                 session.rpcNode.watchSockets((socket) => {
                     void socket.on("block", (number: number) => {
                         announced = number;
                     });
                 });
-                await waitFor(
-                    () => session.node.forwardedCount("eth_subscribe") === 1,
-                    5_000,
-                    20
-                );
-                // time is the input: the subscription's answer reaches the provider
-                await sleep(ABSENCE_WINDOW_MS);
                 lagging.node.dropNotifications("eth_subscription");
                 const releaseService =
                     session.service.holdNotifications("scp_subscription");
