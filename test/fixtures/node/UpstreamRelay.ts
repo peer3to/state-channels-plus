@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: upstream fault staging; executable evidence belongs to its calling test declarations
+import { asNewBlockHeadersNode } from "./NewBlockHeadersNode";
 import WebSocket, { WebSocketServer, type AddressInfo } from "ws";
 
 /** JSON-RPC method name of a request the service sent upstream. */
@@ -79,6 +80,8 @@ export class UpstreamRelay {
     >();
     private connections = 0;
     private refusing = false;
+    // Whether head subscriptions are offered as Asset Hub's eth-rpc offers them.
+    private offersOnlyNewBlockHeaders = false;
     private hold?: Hold;
     private failing?: {
         method: UpstreamMethod;
@@ -200,6 +203,14 @@ export class UpstreamRelay {
     /** Cuts the connection the next `count` `method` requests arrive on. */
     cutNext(method: UpstreamMethod, count: number): void {
         this.cutting = { method, remaining: count };
+    }
+
+    /**
+     * Offers head subscriptions as Asset Hub's eth-rpc does: refuses
+     * newHeads, naming newBlockHeaders, and accepts newBlockHeaders.
+     */
+    offerOnlyNewBlockHeaders(): void {
+        this.offersOnlyNewBlockHeaders = true;
     }
 
     /** Cuts every relayed connection. */
@@ -327,6 +338,12 @@ export class UpstreamRelay {
             }
             const request = parsed;
             this.count(request);
+            const asAssetHub = this.offersOnlyNewBlockHeaders
+                ? asNewBlockHeadersNode(request)
+                : undefined;
+            if (asAssetHub && "answer" in asAssetHub)
+                return void client.send(asAssetHub.answer);
+            if (asAssetHub) return void forward(asAssetHub.forward);
             if (this.cutting?.method === request.method) {
                 if (--this.cutting.remaining === 0) this.cutting = undefined;
                 client.terminate();

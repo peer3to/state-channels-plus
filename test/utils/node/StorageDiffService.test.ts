@@ -62,6 +62,36 @@ describe("StorageDiffService", function () {
         });
     });
 
+    it("pushes the record of a block from an upstream that refuses newHeads and offers newBlockHeaders", async function () {
+        await withStorageDiffUpstream(async ({ relay, signer, start }) => {
+            // the upstream's head subscriptions are Asset Hub eth-rpc's
+            relay.offerOnlyNewBlockHeaders();
+            const service = await start();
+
+            const client = await StorageDiffClient.connect(service.url);
+            try {
+                const storage = await deployNumberStorage(signer);
+                const address = await recordKey(storage);
+                const subscription = await client.subscribe([address]);
+                // Mutation: no newBlockHeaders after the refusal, the service never hears of the block
+                const receipt = await setValue(storage, 7n);
+                const record = await client.recordAt(
+                    subscription,
+                    receipt.blockNumber
+                );
+
+                expect(record.post[address].storage).to.deep.equal({
+                    [VALUE_SLOT]: storageWord(7n)
+                });
+                expect(
+                    relay.paramsOf("eth_subscribe").map((params) => params[0])
+                ).to.include("newBlockHeaders");
+            } finally {
+                client.close();
+            }
+        });
+    });
+
     it("pushes the header and no diff of a block whose transactions leave the subscribed address untouched", async function () {
         await withStorageDiffSession(async ({ client, provider, signer }) => {
             const watched = await deployNumberStorage(signer);

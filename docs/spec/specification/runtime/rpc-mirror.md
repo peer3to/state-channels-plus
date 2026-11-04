@@ -198,7 +198,7 @@ No read waits for a snapshot that is not ready; ready waits end by snapshot, a l
 
 **Setup and stimulus:**
 
-Mine the peer's own transaction, or a block a node announces, while the service's pushes are held; read; release the pushes; let the service stay behind a block the node announced; announce a later block while the copy lacks the one before; make the service's tracing fail or its upstream lag, with several reads waiting for the same block; cut the service connection; make a node slow to answer a forwarded request; and let a block never reach the copy after fast arrivals. Wait for an announced block before any record has arrived, and after a slow log query. Reorganize the chain to a branch shorter than the head a node announced; have a second node announce an older head after the first node's newer one; have a node report an orphaned block's log as removed after a reorganization; deliver a node's log of a block after its newer head, and a node's head of a block after the next block's log; let the copy follow a shorter replacement branch while a read waits for an orphaned block, before the node's lower head arrives.
+Mine the peer's own transaction, or a block a node announces (one with Asset Hub eth-rpc's head subscriptions too), while the service's pushes are held; read; release the pushes; let the service stay behind a block the node announced; announce a later block while the copy lacks the one before; make the service's tracing fail or its upstream lag, with several reads waiting for the same block; cut the service connection; make a node slow to answer a forwarded request; and let a block never reach the copy after fast arrivals. Wait for an announced block before any record has arrived, and after a slow log query. Reorganize the chain to a branch shorter than the head a node announced; have a second node announce an older head after the first node's newer one; have a node report an orphaned block's log as removed after a reorganization; deliver a node's log of a block after its newer head, and a node's head of a block after the next block's log; let the copy follow a shorter replacement branch while a read waits for an orphaned block, before the node's lower head arrives.
 
 **Expected result:**
 
@@ -253,6 +253,10 @@ The read stays pending while the pushes are held and then returns the post-block
 <a id="req-rpcmirror-4-h35nfc.t1.p26"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P26` — a read already waiting for a block a reorganization orphaned is answered from the copy once the node's lower head arrives, without waiting out the backstop
 
 <a id="req-rpcmirror-4-h35nfc.t1.p27"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P27` — the announcements of the heights a reorganization orphaned are forgotten, so a block announced again at such a height is timed from its own announcement
+
+<a id="req-rpcmirror-4-h35nfc.t1.p28"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P28` — a read waits for a block announced by a node that refuses `newHeads` and offers `newBlockHeaders`
+
+<a id="req-rpcmirror-4-h35nfc.t1.p29"></a>`REQ-RPCMIRROR-4-H35NFC.T1.P29` — the block of a `newBlockHeaders` push as Asset Hub's eth-rpc sends it is announced
 
 #### <a id="req-rpcmirror-5-kdrwdz.t1"></a>`REQ-RPCMIRROR-5-KDRWDZ.T1`
 

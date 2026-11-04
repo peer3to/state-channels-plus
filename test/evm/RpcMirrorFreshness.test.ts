@@ -95,6 +95,39 @@ describe("MirrorRpcProvider freshness", function () {
         });
     });
 
+    it("holds a call until the mirror reaches a block a node that offers only newBlockHeaders announced", async function () {
+        await withMirrorSession(async (session) => {
+            // the node's head subscriptions are Asset Hub eth-rpc's
+            session.node.offerOnlyNewBlockHeaders();
+            const { storage, chainStorage } =
+                await deployMirroredStorage(session);
+            expect(await storage.getValue()).to.equal(0n);
+            // the runtime listens to blocks; the provider relays what it hears
+            await session.provider.on("block", () => undefined);
+            const release =
+                session.service.holdNotifications("scp_subscription");
+
+            await (await chainStorage.setValue(3n)).wait();
+            // time is the input: the node's announcement reaches the provider
+            await sleep(ABSENCE_WINDOW_MS);
+            let settled = false;
+            const read = storage.getValue().finally(() => (settled = true));
+            await sleep(ABSENCE_WINDOW_MS);
+            // Mutation: no newBlockHeaders after the refusal, nothing announced, the read returns 0n
+            expect(settled, "the read waits for the announced block").to.equal(
+                false
+            );
+            release();
+
+            expect(await read).to.equal(3n);
+            expect(
+                nodeRequests(session, "eth_subscribe").map(
+                    (request) => (request.params as unknown[])[0]
+                )
+            ).to.include("newBlockHeaders");
+        });
+    });
+
     it("holds a call until the mirror reaches a block the node announced", async function () {
         await withMirrorSession(async (session) => {
             const { storage, chainStorage } =
