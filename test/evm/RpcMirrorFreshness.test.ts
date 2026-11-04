@@ -13,6 +13,7 @@ import {
     deployLogEmitter,
     emitValue
 } from "@test/fixtures/node/StorageDiffContracts";
+import { recordUnhandledRejections } from "@test/fixtures/UnhandledRejectionRecorder";
 import { waitFor } from "@test/utils/waitFor";
 import type { SimpleNumberStorage } from "@typechain-types";
 import { expect } from "chai";
@@ -152,6 +153,69 @@ describe("MirrorRpcProvider freshness", function () {
             expect(await read).to.equal(3n);
             expect(nodeRequests(session, "eth_call")).to.have.length(0);
         });
+    });
+
+    it("holds a call until the mirror reaches a block the node announced, with no block listener of its own", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, chainStorage } =
+                await deployMirroredStorage(session);
+            expect(await storage.getValue()).to.equal(0n);
+            const release =
+                session.service.holdNotifications("scp_subscription");
+
+            await (await chainStorage.setValue(3n)).wait();
+            // time is the input: the node's announcement reaches the provider
+            await sleep(ABSENCE_WINDOW_MS);
+            let settled = false;
+            const read = storage.getValue().finally(() => (settled = true));
+            await sleep(ABSENCE_WINDOW_MS);
+            // Mutation: no head subscription of the provider's own, the read answers from the older copy
+            expect(settled, "the read waits for the announced block").to.equal(
+                false
+            );
+            release();
+
+            expect(await read).to.equal(3n);
+            expect(nodeRequests(session, "eth_call")).to.have.length(0);
+        });
+    });
+
+    it("keeps answering reads from the mirror when its only node refuses every subscription, with one warning and no unhandled rejection", async function () {
+        const recorder = recordUnhandledRejections();
+        try {
+            await withMirrorSession(
+                async (session) => {
+                    const { storage, chainStorage } =
+                        await deployMirroredStorage(session);
+                    await (await chainStorage.setValue(7n)).wait();
+
+                    await waitFor(
+                        async () => (await storage.getValue()) === 7n
+                    );
+                    const refusals = session.warnings.filter(
+                        (warning) =>
+                            warning.message ===
+                            "RPC node refused a subscription"
+                    );
+
+                    expect(nodeRequests(session, "eth_call")).to.have.length(0);
+                    // the provider's own head subscription, refused once
+                    expect(refusals).to.have.length(1);
+                    // Mutation: the refusal rethrown, as ethers leaves it unhandled
+                    expect(await recorder.settled()).to.deep.equal([]);
+                },
+                {
+                    prepareNode: (node) =>
+                        node.errorRequests(
+                            "eth_subscribe",
+                            -32602,
+                            "Invalid params"
+                        )
+                }
+            );
+        } finally {
+            recorder.stop();
+        }
     });
 
     // Mutation: a backstop seeded with a short default ends the first wait early.
@@ -652,36 +716,24 @@ describe("MirrorRpcProvider freshness", function () {
                 // the lagging node's heads wait at its proxy, so no announcement is timed
                 const releaseLagging =
                     lagging.node.holdNotifications("eth_subscription");
-                lagging.rpcNode.watchSockets((socket) => {
-                    void socket.on("block", () => undefined);
-                });
-                await waitFor(
-                    () => lagging.node.forwardedCount("eth_subscribe") === 1,
-                    5_000,
-                    20
-                );
-                // time is the input: the subscription's answer reaches the provider
-                await sleep(ABSENCE_WINDOW_MS);
+                // the other node's head of this block comes once the copy has it, so it is not timed either
+                const releaseHead =
+                    session.node.holdNotifications("eth_subscription");
                 await (await chainStorage.setValue(5n)).wait();
                 await waitFor(
                     async () => (await storage.getValue()) === 5n,
                     5_000,
                     20
                 );
+                releaseHead();
 
+                // the provider's own head subscription on the node carries this listener too
                 let announced = 0;
                 session.rpcNode.watchSockets((socket) => {
                     void socket.on("block", (number: number) => {
                         announced = number;
                     });
                 });
-                await waitFor(
-                    () => session.node.forwardedCount("eth_subscribe") === 1,
-                    5_000,
-                    20
-                );
-                // time is the input: the subscription's answer reaches the provider
-                await sleep(ABSENCE_WINDOW_MS);
                 lagging.node.dropNotifications("eth_subscription");
                 const releaseService =
                     session.service.holdNotifications("scp_subscription");

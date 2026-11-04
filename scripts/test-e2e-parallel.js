@@ -45,6 +45,7 @@ const {
     runScheduler
 } = require("./e2e-parallel/local/scheduler");
 const {
+    emptyInfra,
     provisionSlots,
     testChain,
     teardownInfra,
@@ -487,7 +488,8 @@ async function main(options = {}) {
     console.log(`Logs: ${path.resolve(logDir)}`);
 
     // ---- run ----
-    let infra = { nodes: [], discoveries: [] };
+    // a run that fails before its slots are provisioned still tears this down
+    let infra = emptyInfra();
     let gasMonitor = null;
     const teardown = () => {
         gasMonitor?.stop();
@@ -618,7 +620,8 @@ async function main(options = {}) {
             [
                 process.pid,
                 ...infra.nodes.map((n) => n.proc.pid),
-                ...infra.discoveries.map((d) => d.child.pid)
+                ...infra.discoveries.map((d) => d.child.pid),
+                ...infra.services.map((s) => s.child.pid)
             ].filter(Boolean);
 
         const stats = await runScheduler({

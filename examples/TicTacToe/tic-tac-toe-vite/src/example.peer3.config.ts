@@ -8,6 +8,8 @@
 
 const config = {
     PROVIDER_URL: "http://localhost:8545",
+    // Required: ws:// URL of the storage diff service that follows the chain.
+    STORAGE_DIFF_URL: "ws://127.0.0.1:19778",
 
     // Logger defaults for this app
     LOG_LEVEL: "debug",

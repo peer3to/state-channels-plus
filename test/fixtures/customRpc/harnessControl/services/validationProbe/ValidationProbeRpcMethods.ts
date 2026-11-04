@@ -65,39 +65,9 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
         return this.service.probeInboundLogRedelivery(redelivery);
     }
 
-    public async runCatchUpFromFirstNode(): Promise<boolean> {
-        return this.service.runCatchUpFromFirstNode();
-    }
-
-    public async runCatchUpThroughNode(
-        nodeUrl: string,
-        resumeFrom?: number,
-        targetHead?: number
-    ): Promise<number | null> {
-        return this.service.runCatchUpThroughNode(
-            nodeUrl,
-            resumeFrom,
-            targetHead
-        );
-    }
-
-    public async holdEventWatermark(fromBlock?: number): Promise<number> {
-        return this.service.holdEventWatermark(fromBlock);
-    }
-
-    public async releaseEventWatermark(holdId: number): Promise<number | null> {
-        return this.service.releaseEventWatermark(holdId);
-    }
-
-    public async getEventWatermark(): Promise<number | null> {
-        return this.service.getEventWatermark();
-    }
-
     /** `channelId` defaults to the selected channel. */
-    public async getChannelSubscriptionCounts(
-        channelId?: string
-    ): Promise<(number | null)[]> {
-        return this.service.getChannelSubscriptionCounts(channelId);
+    public async getChannelWatchCount(channelId?: string): Promise<number> {
+        return this.service.getChannelWatchCount(channelId);
     }
 
     public async clearChannelListener(): Promise<boolean> {

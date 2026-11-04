@@ -62,8 +62,6 @@ export type MirrorSession = {
 
 export type MirrorSessionSettings = StorageDiffServiceSettings & {
     customPrecompiles?: EvmCustomPrecompileManifest[];
-    /** Build the provider without a storage diff URL. */
-    withoutService?: boolean;
     /**
      * Fraction of local answers the provider re-asks of the node. Absent means
      * 0, so a test is deterministic; `undefined` named explicitly leaves the
@@ -74,6 +72,8 @@ export type MirrorSessionSettings = StorageDiffServiceSettings & {
     maxFollowedAccounts?: number;
     /** Give the provider a second node, through a proxy of its own. */
     secondNode?: boolean;
+    /** Sets up the node's proxy before the provider opens its socket. */
+    prepareNode?: (node: RpcNodeProxy) => void;
 };
 
 /**
@@ -86,10 +86,10 @@ export async function withMirrorSession<T>(
 ): Promise<T> {
     const {
         customPrecompiles,
-        withoutService,
         sampleRate: named,
         maxFollowedAccounts,
         secondNode,
+        prepareNode,
         ...serviceSettings
     } = settings;
     const sampleRate = "sampleRate" in settings ? named : 0;
@@ -101,6 +101,7 @@ export async function withMirrorSession<T>(
             const secondProxy = secondNode
                 ? await RpcNodeProxy.start(chain._getConnection().url)
                 : undefined;
+            prepareNode?.(node);
             const logger = createLogger(
                 {},
                 {},
@@ -129,7 +130,7 @@ export async function withMirrorSession<T>(
             };
             const nodes = second ? [rpcNode, second.rpcNode] : [rpcNode];
             const provider = new MirrorRpcProvider(nodes, logger, {
-                storageDiffUrl: withoutService ? undefined : service.url,
+                storageDiffUrl: service.url,
                 sampleRate,
                 customPrecompiles,
                 maxFollowedAccounts

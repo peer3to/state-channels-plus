@@ -12,3 +12,4 @@
 - [`REQ-LOG-11-F5TJQC` (An aborting runtime uploads its logs before it disposes)](../../../../specification/runtime/log-collection.md#req-log-11-f5tjqc)
 - [`REQ-RPCMIRROR-1-XQNZ4J` (Latest-block reads are answered from a local copy of the chain)](../../../../specification/runtime/rpc-mirror.md#req-rpcmirror-1-xqnz4j)
 - [`REQ-RPCMIRROR-7-4A6NJN` (A fraction of local answers is checked against the node)](../../../../specification/runtime/rpc-mirror.md#req-rpcmirror-7-4a6njn)
+- [`REQ-RPCMIRROR-9-5VD1GG` (The storage diff service is required)](../../../../specification/runtime/rpc-mirror.md#req-rpcmirror-9-5vd1gg)

@@ -10,11 +10,8 @@ import {
 import { expect } from "chai";
 
 describe("RuntimeChainContext", () => {
-    it("destroys its provider without subscriptions and permits repeated cleanup", async () => {
-        await assertSubscriptionCleanup(false);
-    });
-    it("destroys its provider with a block subscription and permits repeated cleanup", async () => {
-        await assertSubscriptionCleanup(true);
+    it("destroys its provider and its nodes and permits repeated cleanup", async () => {
+        await assertSubscriptionCleanup();
     });
     it("accepts WebSocket URLs and optimistically converts HTTP URLs", () => {
         expect(resolveWebSocketProviderUrl("ws://localhost:8545")).to.equal(

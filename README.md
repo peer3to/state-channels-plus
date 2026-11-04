@@ -78,6 +78,7 @@ Create a `peer3.config.json` file in the root of your project (next to `package.
 {
   "PROVIDER_URL": "http://localhost:8545",
   "PROVIDER_URLS": [],
+  "STORAGE_DIFF_URL": "ws://127.0.0.1:19778",
   "LOG_QUERY_MAX_BLOCKS": 1000,
   "DEBUG_STATE_MANAGER": false,
   "DEBUG_DISPUTE_HANDLER": false,
@@ -92,7 +93,17 @@ Create a `peer3.config.json` file in the root of your project (next to `package.
 yarn && yarn build
 ```
 
-`PROVIDER_URLS` lists several RPC endpoints of the same chain in priority order, for example `["wss://primary.example", "wss://backup.example"]`. Requests go to the first connected endpoint and fail over to the next; events are observed on every endpoint. When the list is empty, `PROVIDER_URL` is the only endpoint. Every listed endpoint is trusted. `LOG_QUERY_MAX_BLOCKS` is the most blocks one `eth_getLogs` read may span; set it at or below the smallest range limit of your endpoints (default 1000).
+`PROVIDER_URLS` lists several RPC endpoints of the same chain in priority order, for example `["wss://primary.example", "wss://backup.example"]`. Requests go to the first connected endpoint and fail over to the next; an application's log subscriptions are made on every endpoint. When the list is empty, `PROVIDER_URL` is the only endpoint. Every listed endpoint is trusted. `STORAGE_DIFF_URL` is required: the `ws://` URL of the storage diff service that follows the chain. Contract events come from the service's records, not from the endpoints, and startup fails without it. `LOG_QUERY_MAX_BLOCKS` is the most blocks one `eth_getLogs` read may span; set it at or below the smallest range limit of your endpoints (default 1000).
+
+### Run the storage diff service
+
+The service follows one `ws://` endpoint of the chain and listens on `ws://127.0.0.1:19778` by default. Its endpoint must trace blocks with `prestateTracer` (anvil does). For a local node on port 8545, run from this repository:
+
+```shell
+yarn infra:storage-diff --upstream ws://127.0.0.1:8545
+```
+
+Its flags are described in [scripts/infra/README.md](scripts/infra/README.md#storage-diff-service).
 
 ## Run Tests
 Install local dependencies
@@ -708,7 +719,11 @@ worker, and keeps the in-process `hardhat` network on EDR. A distributed run
 sends the setting to its workers with the rest of its environment. This
 repository's own tests need anvil. The anvil test chain must be the version in
 the project's `.forge-version`, or in the runner's own when the project has
-none; any other anvil is refused.
+none; any other anvil is refused. Each slot's storage diff service traces
+every block with `debug_traceBlockByNumber` and `prestateTracer`, so a project
+chain that cannot is refused when the slot starts; stock Hardhat cannot. A
+project with no `scripts/infra/storage-diff-service.js` of its own runs the
+runner's.
 
 Dial diagnostics include the Noise handshake hash for each stream. Close lines
 state whether this application closed the stream, Hyperswarm reported duplicate

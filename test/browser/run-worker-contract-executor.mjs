@@ -149,6 +149,15 @@ try {
         if (error.message.includes(BROWSER_WORKER_CRASH_MESSAGE)) return;
         if (error.message.includes(FAILURE_LOG_WRITE_ERROR)) return;
         if (error.message.includes(DRAIN_WARNING_WRITE_ERROR)) return;
+        // the mirror's EVM on this page loads the smoke's precompile too, and
+        // that copy throws its signalled failure here
+        if (
+            isNonErrorSmokeRunning &&
+            NON_ERROR_FAILURE_MESSAGES.some((text) =>
+                error.message.includes(text)
+            )
+        )
+            return;
         browserErrors.push(error);
     });
     page.on("console", (message) => {

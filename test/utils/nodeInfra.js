@@ -25,6 +25,20 @@ const DISCOVERY_SCRIPT = path.join(
     "infra",
     "local-discovery-registry.js"
 );
+// The storage diff service is the SDK's own TypeScript (src/utils/node), so
+// in the SDK it runs from the project beside the tests; a project with no copy
+// of its own runs the runner's.
+const storageDiffScriptFrom = (root) =>
+    path.join(root, "scripts", "infra", "storage-diff-service.js");
+const STORAGE_DIFF_SCRIPT = fs.existsSync(storageDiffScriptFrom(PROJECT_ROOT))
+    ? storageDiffScriptFrom(PROJECT_ROOT)
+    : storageDiffScriptFrom(PACKAGE_ROOT);
+// The trace the service asks for every block (BlockStager's TRACE_OPTIONS),
+// here of the genesis block.
+const STORAGE_DIFF_TRACE_PROBE = [
+    "0x0",
+    { tracer: "prestateTracer", tracerConfig: { diffMode: true } }
+];
 // The trusted copy, never PROJECT_ROOT's: the project is untrusted.
 const { ANVIL_BIN, ANVIL_WATCHDOG, anvilArgs, pinnedAnvilMismatch } = require(
     path.join(PACKAGE_ROOT, "scripts", "infra", "anvilNode.js")
@@ -325,28 +339,82 @@ async function startHardhatNode({
 }
 
 /**
- * Spawn the LocalDiscovery registry (on `port` or a free one), wait for its
- * ready line, and return `{ child, url, stop }`.
+ * Resolves with the first match of `pattern` in `child`'s stdout, and rejects
+ * when the child exits, errors or stays silent for `timeoutMs`. Once settled the
+ * stdout handler is removed and the stream keeps draining: later output goes only
+ * to the log pipe, if any, and is never held here.
  */
-async function startDiscoveryRegistry({
-    port,
-    logPath,
-    label = "discovery"
-} = {}) {
-    const discPort = port ?? (await getFreePort());
-    const child = spawn(
-        process.execPath,
-        [...infraNodeFlags(), DISCOVERY_SCRIPT],
-        {
-            cwd: PROJECT_ROOT,
-            env: {
-                ...process.env,
-                LOCAL_DISCOVERY_HOST: "127.0.0.1",
-                LOCAL_DISCOVERY_PORT: String(discPort)
-            },
-            stdio: ["ignore", "pipe", "pipe"]
-        }
-    );
+function waitForStdoutMatch({
+    child,
+    pattern,
+    label,
+    timeoutMs,
+    stop,
+    logStream
+}) {
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        let buffer = "";
+        const settle = (finish) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            child.stdout.off("data", onData);
+            child.off("exit", onExit);
+            // keep draining so the child's pipe never fills
+            child.stdout.resume();
+            finish();
+        };
+        const timer = setTimeout(
+            () =>
+                settle(() => {
+                    stop();
+                    reject(
+                        new Error(
+                            `${label} did not become ready within ${timeoutMs / 1000}s`
+                        )
+                    );
+                }),
+            timeoutMs
+        );
+        const onData = (chunk) => {
+            buffer += chunk.toString();
+            const match = pattern.exec(buffer);
+            if (match) settle(() => resolve(match));
+        };
+        const onExit = (code) =>
+            settle(() =>
+                reject(
+                    new Error(`${label} exited with code ${code} before ready`)
+                )
+            );
+        child.stdout.on("data", onData);
+        child.on("exit", onExit);
+        child.on("error", (err) => {
+            logStream?.end();
+            settle(() => reject(err));
+        });
+    });
+}
+
+/**
+ * Spawns a node script of the test infra with its output piped to `logPath`
+ * and waits for the first match of `pattern` in its stdout. Returns `{ child,
+ * ready, stop, exited, logClosed }`; `ready` is the regexp match.
+ */
+async function startInfraProcess({
+    args,
+    env,
+    pattern,
+    label,
+    timeoutMs,
+    logPath
+}) {
+    const child = spawn(process.execPath, args, {
+        cwd: PROJECT_ROOT,
+        env,
+        stdio: ["ignore", "pipe", "pipe"]
+    });
     let resolveExit;
     const exited = new Promise((resolve) => {
         resolveExit = resolve;
@@ -360,48 +428,88 @@ async function startDiscoveryRegistry({
           })
         : Promise.resolve();
     child.once("close", () => logStream?.end());
+    // with no log to pipe to, stderr is drained so its pipe never fills
+    if (!logStream) child.stderr.resume();
     const stop = () => {
         if (!child.killed) child.kill("SIGTERM");
     };
-
-    return new Promise((resolve, reject) => {
-        const READY_RE = /LocalDiscovery registry listening on (ws:\/\/\S+)/;
-        let settled = false;
-        let buffer = "";
-        const timer = setTimeout(() => {
-            if (!settled) {
-                settled = true;
-                stop();
-                reject(new Error(`${label} did not become ready within 15s`));
-            }
-        }, 15000);
-        child.stdout.on("data", (chunk) => {
-            buffer += chunk.toString();
-            const m = READY_RE.exec(buffer);
-            if (m && !settled) {
-                settled = true;
-                clearTimeout(timer);
-                resolve({ child, url: m[1], stop, exited, logClosed });
-            }
-        });
-        child.on("exit", (code) => {
-            clearTimeout(timer);
-            if (!settled) {
-                settled = true;
-                reject(
-                    new Error(`${label} exited with code ${code} before ready`)
-                );
-            }
-        });
-        child.on("error", (err) => {
-            clearTimeout(timer);
-            logStream?.end();
-            if (!settled) {
-                settled = true;
-                reject(err);
-            }
-        });
+    const ready = await waitForStdoutMatch({
+        child,
+        pattern,
+        label,
+        timeoutMs,
+        stop,
+        logStream
     });
+    return { child, ready, stop, exited, logClosed };
+}
+
+/**
+ * Spawn the LocalDiscovery registry (on `port` or a free one), wait for its
+ * ready line, and return `{ child, url, stop }`.
+ */
+async function startDiscoveryRegistry({
+    port,
+    logPath,
+    label = "discovery"
+} = {}) {
+    const discPort = port ?? (await getFreePort());
+    const { ready, ...spawned } = await startInfraProcess({
+        args: [...infraNodeFlags(), DISCOVERY_SCRIPT],
+        env: {
+            ...process.env,
+            LOCAL_DISCOVERY_HOST: "127.0.0.1",
+            LOCAL_DISCOVERY_PORT: String(discPort)
+        },
+        pattern: /LocalDiscovery registry listening on (ws:\/\/\S+)/,
+        label,
+        timeoutMs: 15000,
+        logPath
+    });
+    return { ...spawned, url: ready[1] };
+}
+
+/**
+ * Spawn the storage diff service following the chain node at `upstreamUrl`
+ * (`ws://`), wait for its listening line, and return `{ child, url, stop,
+ * exited, logClosed }`. A chain that cannot trace blocks as the service does
+ * is refused first.
+ */
+async function startStorageDiffService({
+    upstreamUrl,
+    logPath,
+    label = "storage diff service",
+    retention = 64
+} = {}) {
+    try {
+        await jsonRpc(
+            upstreamUrl.replace(/^ws/, "http"),
+            "debug_traceBlockByNumber",
+            STORAGE_DIFF_TRACE_PROBE
+        );
+    } catch (error) {
+        throw new Error(
+            `${label} cannot start: its test chain does not trace blocks with prestateTracer (debug_traceBlockByNumber: ${error.message})`
+        );
+    }
+    const { ready, ...spawned } = await startInfraProcess({
+        args: [
+            ...infraNodeFlags(),
+            STORAGE_DIFF_SCRIPT,
+            "--upstream",
+            upstreamUrl,
+            "--port",
+            "0",
+            "--retention",
+            String(retention)
+        ],
+        env: process.env,
+        pattern: /"event":"listening","url":"(ws:\/\/[^"]+)"/,
+        label,
+        timeoutMs: 60000,
+        logPath
+    });
+    return { ...spawned, url: ready[1] };
 }
 
 /** Single JSON-RPC call against a node url. Resolves the `result` field. */
@@ -451,8 +559,21 @@ function resetSlotCacheDir(dir) {
 // Slot pool (used by the parallel runner)
 // ---------------------------------------------------------------------------
 
+/** An infra with nothing started yet: the shape {@link teardownInfra} takes. */
+function emptyInfra() {
+    return { nodes: [], discoveries: [], services: [] };
+}
+
 /** Tear down all nodes + discoveries in `infra`. Idempotent (clears the lists). */
 function teardownInfra(infra) {
+    // the services follow the nodes: stop them first
+    for (const service of infra.services) {
+        if (!service.child.killed) {
+            console.log(`Tearing down ${service.label}`);
+            service.child.kill("SIGTERM");
+        }
+    }
+    infra.services.length = 0;
     for (const n of infra.nodes) {
         if (!n.proc.killed) {
             console.log(`Tearing down ${n.label}`);
@@ -476,7 +597,7 @@ function teardownInfra(infra) {
  * before we act, so a partial failure tears down cleanly with no orphans.
  */
 async function provisionSlots(slotCount, logDir, env = {}) {
-    const infra = { nodes: [], discoveries: [] };
+    const infra = emptyInfra();
     const infraPath = (name) => path.join(path.resolve(logDir), "infra", name);
 
     // Don't hand the same just-freed ephemeral port to two concurrent
@@ -522,17 +643,38 @@ async function provisionSlots(slotCount, logDir, env = {}) {
         infra.discoveries.push(disc);
         return disc;
     };
+    // one service per slot chain, shared by every test process of the slot
+    const bootStorageDiff = async (id, node) => {
+        console.log(`Starting slot ${id} storage diff service...`);
+        const service = await startStorageDiffService({
+            upstreamUrl: node.url.replace(/^http/, "ws"),
+            logPath: infraPath(`storage-diff-slot${id}.log`),
+            label: `slot ${id} storage diff service`
+        });
+        service.label = `slot ${id} storage diff service`;
+        service.slotId = id;
+        service.logPath = infraPath(`storage-diff-slot${id}.log`);
+        infra.services.push(service);
+        return service;
+    };
     const provisionSlot = async (id) => {
         const [node, disc] = await Promise.all([
             bootNode(id),
             bootDiscovery(id)
         ]);
+        const service = await bootStorageDiff(id, node);
         const cacheDir = infraPath(`manager-cache-slot${id}`);
         resetSlotCacheDir(cacheDir);
         console.log(
-            `Slot ${id} ready (node ${node.url}, discovery ${disc.url})`
+            `Slot ${id} ready (node ${node.url}, discovery ${disc.url}, storage diff ${service.url})`
         );
-        return { id, nodeUrl: node.url, discoveryUrl: disc.url, cacheDir };
+        return {
+            id,
+            nodeUrl: node.url,
+            discoveryUrl: disc.url,
+            storageDiffUrl: service.url,
+            cacheDir
+        };
     };
 
     const settled = await Promise.allSettled(
@@ -601,8 +743,10 @@ module.exports = {
     startHardhatNode,
     testChain,
     startDiscoveryRegistry,
+    startStorageDiffService,
     jsonRpc,
     resetSlotCacheDir,
+    emptyInfra,
     teardownInfra,
     provisionSlots,
     startGasMonitor

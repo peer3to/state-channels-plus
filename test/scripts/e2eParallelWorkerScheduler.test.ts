@@ -2292,6 +2292,7 @@ describe("distributed worker scheduler", function () {
                 {
                     nodeUrl: "node",
                     discoveryUrl: "discovery",
+                    storageDiffUrl: "service",
                     cacheDir: "cache"
                 },
                 3
@@ -2300,6 +2301,7 @@ describe("distributed worker scheduler", function () {
             PROVIDER_URL: "node",
             HARDHAT_NODE_URL: "node",
             LOCAL_DISCOVERY_REGISTRY_URL: "discovery",
+            STORAGE_DIFF_URL: "service",
             E2E_MANAGER_CACHE_DIR: "cache",
             E2E_INTERVAL_MINING: undefined,
             E2E_SLOT_INDEX: "3"

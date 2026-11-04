@@ -1,4 +1,4 @@
-import { deployStack, setupBrowserPeer } from "./sdkSetup.js";
+import { deployStack, setupBrowserPeer, storageDiffUrlOf } from "./sdkSetup.js";
 // @spec-test-coverage-ignore: browser page driver for the WebRTC E2E run; evidence is mapped from run-p2p-webrtc-e2e.mjs
 
 import { installWebRTCMainThreadBridge } from "@/rpc/internal/roots/WebRTCMainThreadBridge";
@@ -326,6 +326,7 @@ globalThis.runP2pWebRTCWorkerBubbleUpE2E = async () => {
             worker.postMessage({
                 type: "start",
                 providerUrl: config.providerUrl,
+                storageDiffUrl: storageDiffUrlOf(config.providerUrl),
                 scmAddress,
                 channelId,
                 signerSecret: peerWallets[index].privateKey,

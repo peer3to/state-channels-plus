@@ -7,7 +7,8 @@ const RESULT_OUTPUT_TAIL_BYTES = 4 * 1024 * 1024;
 const INFRA_PROCESS_FILES = {
     discovery: "discovery-server.ansi",
     hardhat: "hardhat-node.ansi",
-    "isolated-runtime": "isolated-runtime.ansi"
+    "isolated-runtime": "isolated-runtime.ansi",
+    "storage-diff": "storage-diff-service.ansi"
 };
 const INFRASTRUCTURE_FAILURE_MARKER = ".failure";
 

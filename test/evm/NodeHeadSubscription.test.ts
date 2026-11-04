@@ -4,6 +4,7 @@ import {
     PUSHED_BLOCK,
     withNewBlockHeadersProvider
 } from "@test/fixtures/node/NewBlockHeadersNode";
+import { recordUnhandledRejections } from "@test/fixtures/UnhandledRejectionRecorder";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
@@ -101,5 +102,20 @@ describe("Node head subscription", function () {
             // Mutation: any refusal of newHeads retried as newBlockHeaders
             expect(node.subscribeKinds).to.deep.equal(["newHeads"]);
         });
+    });
+
+    it("leaves no unhandled rejection when a node refuses newHeads without offering newBlockHeaders", async function () {
+        const recorder = recordUnhandledRejections();
+        try {
+            await withNewBlockHeadersProvider(false, async (node, provider) => {
+                await provider.on("block", () => undefined);
+                await waitFor(() => node.subscribeKinds.length === 1);
+
+                // Mutation: the refusal rethrown, as ethers leaves it unhandled
+                expect(await recorder.settled()).to.deep.equal([]);
+            });
+        } finally {
+            recorder.stop();
+        }
     });
 });

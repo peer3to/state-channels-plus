@@ -222,19 +222,6 @@ describe("MirrorRpcProvider routing", function () {
         });
     });
 
-    it("sends every read to the node without a storage diff service", async function () {
-        await withMirrorSession(
-            async (session) => {
-                const { storage } = await deployMirroredStorage(session);
-
-                expect(await storage.getValue()).to.equal(0n);
-
-                expect(nodeRequests(session, "eth_call")).to.have.length(1);
-            },
-            { withoutService: true }
-        );
-    });
-
     it("sends a pending nonce read to the node and answers the latest one itself", async function () {
         await withMirrorSession(async (session) => {
             const address = session.wallet.address;

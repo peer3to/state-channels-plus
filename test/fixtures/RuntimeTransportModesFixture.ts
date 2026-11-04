@@ -1,3 +1,7 @@
+import {
+    closeAllSharedStorageDiffs,
+    sharedStorageDiffUrl
+} from "./HarnessStorageDiff";
 import { RootWorkerControl } from "./node/RootWorkerControl";
 import { assertRuntimeTwoPeerTransition } from "./RuntimePlacementWorkflowFixture";
 // @spec-test-coverage-ignore: Runtime transport fixture exercised by owning E2E declarations.
@@ -135,6 +139,9 @@ export async function prepareRuntimeSetup(options: {
     const setupOptions: P2pSetupOptions = {
         config: {
             PROVIDER_URL: hardhatNodeUrl,
+            STORAGE_DIFF_URL: await sharedStorageDiffUrl(
+                hardhatNodeUrl.replace(/^http/, "ws")
+            ),
             RUN_SDK_IN_THREAD: runSdkInThread,
             VM_DEDICATED_THREAD: vmDedicatedThread,
             ...(crashLogUploadEndpoint
@@ -246,6 +253,7 @@ export async function startRuntimeTransportModesFixture(): Promise<void> {
 }
 
 export function stopRuntimeTransportModesFixture(): void {
+    void closeAllSharedStorageDiffs();
     if (!nodeHandle) return;
     nodeHandle.stop();
     // the node is gone: the next fixture starts its own

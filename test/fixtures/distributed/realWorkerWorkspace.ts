@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import type { LeasePoolHarness } from "./leasePool";
 import fs from "fs";
 import { execFileSync } from "node:child_process";
 import path from "path";
@@ -8,8 +9,15 @@ const HARDHAT_NODE_MODULES = path.dirname(
     path.dirname(require.resolve("hardhat/package.json"))
 );
 const {
-    buildRuntimeBundle
+    runDistributed
+} = require("../../../scripts/e2e-parallel/distributed/orchestrator.js");
+const {
+    buildRuntimeBundle,
+    buildRuntimeManifest
 } = require("../../../scripts/e2e-parallel/distributed/runtimeBundle.js");
+const {
+    buildDistributedBaseEnv
+} = require("../../../scripts/test-e2e-parallel.js");
 
 /**
  * A git project the real `unsafe-host` worker can prepare and run: a Hardhat
@@ -65,4 +73,58 @@ export async function createRealWorkerWorkspace(
     const archivePath = path.join(root, "bundle.tgz");
     const manifest = await buildRuntimeBundle(projectRoot, archivePath);
     return { projectRoot, testFile, archivePath, manifest, binDir };
+}
+
+/**
+ * Runs `probe`, the body of one Mocha test, on a real worker with one slot,
+ * with the env a distributed run of this process would send, and resolves
+ * the run's result.
+ */
+export async function runSlotProbe(
+    pool: LeasePoolHarness,
+    root: string,
+    workspace: { projectRoot: string; testFile: string },
+    probe: string
+) {
+    fs.writeFileSync(
+        workspace.testFile,
+        `const assert = require("assert");
+describe("slot", function () {
+    it("probes", async function () {
+${probe}
+    });
+});
+`
+    );
+    return runDistributed({
+        tasks: [
+            {
+                label: "test:cost.test.js:probes",
+                args: [
+                    "test",
+                    "--no-compile",
+                    workspace.testFile,
+                    "--grep",
+                    "^slot probes$"
+                ],
+                logName: "slot__probes",
+                fullTitle: "slot probes",
+                runner: "hardhat",
+                isE2E: false
+            }
+        ],
+        projectRoot: workspace.projectRoot,
+        archivePath: path.join(root, "bundle.tgz"),
+        manifest: await buildRuntimeManifest(workspace.projectRoot),
+        logDir: path.join(root, "logs"),
+        poolSecret: pool.poolSecret,
+        discoveryTimeoutMs: 5000,
+        discoveryRefreshMs: 25,
+        baseEnv: buildDistributedBaseEnv([], {
+            sdkThread: false,
+            vmThread: false
+        }),
+        dht: pool.createOrchestratorDht(),
+        executionProfile: { slots: 1, workers: 1, schedulerTickMs: 50 }
+    });
 }

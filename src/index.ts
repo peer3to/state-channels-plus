@@ -83,6 +83,8 @@ export type { default as P2pInstance } from "@/evm/P2pInstance";
 export type { P2pSetupOptions } from "@/evm/p2pRuntime/setupP2pRuntime";
 export { createRpcNodesProvider } from "@/evm/p2pRuntime/RuntimeChainContext";
 export type { default as MultiRpcProvider } from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
+export type { default as MirrorRpcProvider } from "@/evm/p2pRuntime/rpcNodes/MirrorRpcProvider";
+export type { LogFeed } from "@/evm/p2pRuntime/rpcNodes/mirror/LogFeed";
 export {
     EventBus,
     attachContractEvents,

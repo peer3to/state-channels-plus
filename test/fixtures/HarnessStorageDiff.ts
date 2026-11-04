@@ -41,11 +41,17 @@ async function start(nodeUrl: NodeUrl): Promise<SharedService> {
 }
 
 /**
- * The URL of the process's storage diff service of `nodeUrl`, started on first
+ * The URL of the storage diff service of `nodeUrl`. The runner starts one
+ * beside each slot's chain node and passes it in `STORAGE_DIFF_URL`; that one
+ * serves `nodeUrl` when it is the slot's node. Otherwise (the legacy in-process
+ * `yarn test`, or a node of the harness's own) the process starts one on first
  * use. A service that has ended (its node was reset, or its upstream failed) is
  * replaced.
  */
 export async function sharedStorageDiffUrl(nodeUrl: NodeUrl): Promise<string> {
+    const slotUrl = process.env.STORAGE_DIFF_URL;
+    const slotNode = process.env.PROVIDER_URL?.replace(/^http/, "ws");
+    if (slotUrl && slotNode === nodeUrl) return slotUrl;
     for (let attempt = 0; attempt < 2; attempt++) {
         let entry = shared.get(nodeUrl);
         if (!entry) {

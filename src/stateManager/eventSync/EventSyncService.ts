@@ -89,8 +89,9 @@ export type LogPageReadFailure = { failedFrom: BlockNumber; error: unknown };
  * most `maxSpan` blocks, and hand each window's logs to `onPage` before the
  * next window is read. Stops at the first window whose read fails and
  * answers where it starts, so a retry reads only from there; `undefined`
- * once every window was read. The single log reader of the event sync: the
- * reconnect catch-up and the recovery queries both page through it.
+ * once every window was read. The single node log reader: the log feed's
+ * reads below the service's retention and the recovery queries both page
+ * through it.
  */
 export async function readLogPages(
     provider: Provider,
@@ -194,11 +195,11 @@ export default class EventSyncService {
     }
 
     /**
-     * Schedule a log one RPC node's stream (live or catch-up) delivered. A
-     * log below the completed-block watermark is dropped: its block is fully
-     * processed and its dedup key may already be pruned, so a lagging node
-     * would otherwise dispatch it again. Recovery queries still use
-     * scheduleLog: they deliberately re-read blocks below the watermark.
+     * Schedule a log the provider's log feed delivered. A log below the
+     * completed-block watermark is dropped: its block is fully processed and
+     * its dedup key may already be pruned, so a second delivery of it would
+     * otherwise dispatch it again. Recovery queries still use scheduleLog:
+     * they deliberately re-read blocks below the watermark.
      */
     scheduleStreamedLog(
         log: Log,
@@ -264,104 +265,6 @@ export default class EventSyncService {
         this.eventPromises.set(eventKey, promise);
         this.eventBlockNumbers.set(eventKey, log.blockNumber);
         return promise;
-    }
-
-    /**
-     * Re-read this channel's subscribed logs through `reader` (the RPC node
-     * whose socket reopened, or the runtime's provider once a read through
-     * that node failed), from the completed-block watermark (or `fromBlock`
-     * before one exists) up to `reader`'s head, page by page, and schedule
-     * each page's logs before reading the next. scheduleStreamedLog
-     * deduplicates the logs another stream delivered. A `targetHead` (the
-     * reopened node's head while another node reads for it) is the least
-     * head the read must reach: a reader still behind it reads nothing and
-     * answers where to resume. Never throws: answers `undefined` once
-     * caught up, or the block a retry resumes from (`resumeFrom` of the next
-     * call) when a read failed or the reader is behind `targetHead`.
-     */
-    async catchUpLogs(
-        reader: Provider,
-        channelId: ChannelId,
-        fromBlock: BlockNumber,
-        resumeFrom?: BlockNumber,
-        targetHead?: BlockNumber
-    ): Promise<BlockNumber | undefined> {
-        const watermark =
-            this.storage.eventSync.getLatestProcessedBlock(channelId);
-        const catchUpFrom = resumeFrom ?? watermark ?? fromBlock;
-        let toBlock: BlockNumber;
-        try {
-            toBlock = await reader.getBlockNumber();
-        } catch (error) {
-            this.logger.warn("Contract event catch-up read failed", {
-                channelId,
-                fromBlock: catchUpFrom,
-                error
-            });
-            return catchUpFrom;
-        }
-        if (targetHead !== undefined && toBlock < targetHead) {
-            this.logger.warn("Contract event catch-up reader is behind", {
-                channelId,
-                fromBlock: catchUpFrom,
-                readerHead: toBlock,
-                targetHead
-            });
-            return catchUpFrom;
-        }
-        if (toBlock < catchUpFrom) return undefined;
-        const failure = await readLogPages(
-            reader,
-            this.getSubscriptionFilter(channelId),
-            catchUpFrom,
-            toBlock,
-            (logs) => {
-                for (const log of logs) {
-                    DetachedPromises.collect(
-                        this.scheduleStreamedLog(log, channelId)
-                    );
-                }
-            },
-            config.LOG_QUERY_MAX_BLOCKS
-        );
-        if (failure) {
-            this.logger.warn("Contract event catch-up read failed", {
-                channelId,
-                fromBlock: failure.failedFrom,
-                toBlock,
-                error: failure.error
-            });
-            return failure.failedFrom;
-        }
-        this.logger.info("Contract event catch-up read", {
-            channelId,
-            fromBlock: catchUpFrom,
-            toBlock
-        });
-        return undefined;
-    }
-
-    /**
-     * Keep the channel's completed-block watermark from passing the block a
-     * catch-up starts at (the watermark, or `fromBlock` before one exists)
-     * until the returned release runs. While a catch-up still has windows to
-     * read, a log another path schedules and completes in a later block
-     * cannot move the watermark past blocks the catch-up has not read, so
-     * their logs are never dropped as below it. The release is idempotent
-     * and publishes the blocks completed meanwhile.
-     */
-    holdWatermark(channelId: ChannelId, fromBlock: BlockNumber): () => void {
-        const channelKey = toChannelKey(channelId);
-        const heldAt =
-            this.storage.eventSync.getLatestProcessedBlock(channelId) ??
-            fromBlock;
-        const state = this.acquireBlock(channelKey, heldAt);
-        let released = false;
-        return () => {
-            if (released) return;
-            released = true;
-            this.releaseBlock(channelId, channelKey, state);
-        };
     }
 
     async tryRecoverBlockCalldataAndScheduleValidation(

@@ -24,7 +24,7 @@ const {
 } = require("./infrastructureLogTransfer");
 
 let scheduler;
-let infra = { nodes: [], discoveries: [] };
+let infra = { nodes: [], discoveries: [], services: [] };
 let slots = [];
 let configuration;
 let resources;
@@ -96,6 +96,14 @@ async function reportInfrastructureLogs() {
             reportInfrastructureProcessLog(
                 "discovery",
                 discovery,
+                "run completed; collecting infrastructure logs",
+                ""
+            )
+        ),
+        ...infra.services.map((service) =>
+            reportInfrastructureProcessLog(
+                "storage-diff",
+                service,
                 "run completed; collecting infrastructure logs",
                 ""
             )
@@ -187,6 +195,9 @@ async function start(config) {
     for (const node of infra.nodes) {
         monitorInfrastructureProcess("hardhat", node);
     }
+    for (const service of infra.services) {
+        monitorInfrastructureProcess("storage-diff", service);
+    }
     const taskResources = new TaskResourcePool({
         baseEnv: config.baseEnv,
         slots
@@ -200,7 +211,8 @@ async function start(config) {
             [
                 process.pid,
                 ...infra.nodes.map((node) => node.proc.pid),
-                ...infra.discoveries.map((entry) => entry.child.pid)
+                ...infra.discoveries.map((entry) => entry.child.pid),
+                ...infra.services.map((service) => service.child.pid)
             ].filter(Boolean),
         cpuLimit: config.cpuLimit,
         targetLoad: config.targetLoad,

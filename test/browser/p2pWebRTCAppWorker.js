@@ -49,6 +49,7 @@ self.onmessage = async (event) => {
 
     const {
         providerUrl,
+        storageDiffUrl,
         scmAddress,
         channelId,
         signerSecret,
@@ -79,6 +80,7 @@ self.onmessage = async (event) => {
                 signerSecret,
                 config: {
                     PROVIDER_URL: providerUrl,
+                    STORAGE_DIFF_URL: storageDiffUrl,
                     // Inline host in this worker realm — no nested SDK worker.
                     RUN_SDK_IN_THREAD: false,
                     DEBUG_LOCAL_TRANSPORT: true,

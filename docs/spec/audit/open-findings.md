@@ -2502,25 +2502,18 @@ tryVerifyStateProof/CALL_EXCEPTION policy is not the current rule.
 
 ### FIND-RPC-1-E5ZHAR
 
-**Defect:** Known limit (2026-10-07), PR #511. Every endpoint listed in `PROVIDER_URLS` is trusted.
-A malicious endpoint can forge logs; the participant processes them and moves its completed-block
-watermark forward, so real events below it are no longer streamed
-([`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp),
-[`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1),
+**Defect:** Known limit (2026-10-07), PR #511. Every endpoint listed in `PROVIDER_URLS` is trusted,
+and so is the storage diff service whose records carry the manager's events (2026-11-03). A malicious
+endpoint or service can forge logs; the participant processes them and moves its completed-block
+watermark forward, so real events below it are no longer processed
+([`REQ-CHAINOBS-3-N137ZP` (Manager events from the storage diff service, through connection loss)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp),
+[`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1),
 [EventSyncService.ts](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)).
-Cross-checking logs between endpoints is out of scope; the limit is documented in the
+Cross-checking logs between sources is out of scope; the limit is documented in the
 [trust model](../specification/security/trust-model.md) (A6) and the
-[security assessment](security-assessment.md). A trusted endpoint can also stall the watermark: a
-reopened endpoint's catch-up holds it until the read finishes. An endpoint that drops during its
-catch-up releases the hold, and a reopened endpoint that fails a window hands the rest to the first
-connected endpoint (engineer decision, 2026-10-07). The first connected endpoint (with one endpoint,
-that endpoint) can still hold the watermark without end by failing every `eth_getLogs` of the
-catch-up, or by staying behind the reopened endpoint's head, while the reopened socket stays open;
-the reopened endpoint can hold it the same way by failing every head request on its open socket,
-since the catch-up retries that request with the backoff and never falls back to the first connected
-endpoint's head (engineer decision, 2026-10-07); as can an honest one that rate-limits or has a
-range limit below `LOG_QUERY_MAX_BLOCKS`; meanwhile dedup entries and block states are not pruned
-and recovery queries read from the held block.
+[security assessment](security-assessment.md). The watermark stall through a reopened endpoint's
+catch-up that this finding also recorded is gone with that catch-up (2026-11-03): the runtime no
+longer re-reads an endpoint after a reconnect.
 
 **Proposed direction:** Keep out of scope for this change. Cross-check logs between endpoints only
 if the trust model drops the honest-endpoint assumption.
@@ -2569,8 +2562,9 @@ provider throws, is a separate design decision.
 [MultiRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md)) relays only what the node sockets deliver live. `RpcNodesLogSubscriber`
 subscribes again on a reopened socket but does not read the logs that node missed while it was
 disconnected. A log emitted while every node was disconnected is never delivered. The runtime's own
-event pipeline has the re-read ([`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)); this subscription
-does not.
+events come from the storage diff service and are delivered after a lost connection is back
+([`REQ-CHAINOBS-3-N137ZP` (Manager events from the storage diff service, through connection loss)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)); this subscription
+has no such recovery.
 
 **Disposition:** Recorded, not addressed now; revisit later (Luka, 2026-10-26).
 
@@ -2578,13 +2572,18 @@ does not.
 
 ### FIND-RPC-5-G4WNX5
 
-**Defect:** Open (2026-10-26). A node that answers `eth_subscribe` with an error on a live socket
-leaves an unhandled rejection: ethers does not handle that answer, and `NodeSocket.send`
-([RpcNodeProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md)) settles only an `eth_subscribe` answer that the socket's destroy
-cancelled (that one never settles). No test answers `eth_subscribe` with an error on a live socket.
+**Defect:** Resolved (2026-11-03). A node that answered `eth_subscribe` with an error on a live
+socket left an unhandled rejection: ethers does not handle that answer. Since the client keeps a
+head subscription on every connected node ([`REQ-RPCMIRROR-4-H35NFC` (A read is never older than a block the peer already saw)](../specification/runtime/rpc-mirror.md#req-rpcmirror-4-h35nfc)), every runtime reached it
+through a node that refuses `newHeads` without offering `newBlockHeaders`. `NodeSocket.send`
+([RpcNodeProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md)) now logs such a refusal with the node's scheme and host and
+returns an answer that never settles, as it already did for a subscription the socket's destroy
+cancelled; that subscription gets no events. The engineer chose this fix (2026-11-03).
 Relates to [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8).
 
-**Disposition:** Recorded, not addressed now; revisit later.
+**Proposed direction:** Current evidence is mapped under
+[`REQ-CHAINOBS-3-N137ZP.T1.P49`](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp.t1.p49) and
+[`REQ-RPCMIRROR-4-H35NFC.T1.P25`](../specification/runtime/rpc-mirror.md#req-rpcmirror-4-h35nfc.t1.p25).
 
 <a id="find-rpc-6-cz4gcv"></a>
 
@@ -2594,7 +2593,7 @@ Relates to [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endp
 reorganization removal: `RpcNodesLogSubscriber` relays every socket log as a new log, keyed by block
 hash and log index, and a removed log is not reported as removed. An application that applies logs
 keeps the effect of a log the chain removed. The runtime's own pipeline logs and ignores removals
-([`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)).
+([`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)).
 Relates to [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8).
 
 **Disposition:** Recorded, not addressed now; revisit later.

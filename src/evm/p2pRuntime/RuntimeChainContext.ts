@@ -1,7 +1,6 @@
 import MirrorRpcProvider, {
     type MirrorProviderOptions
 } from "@/evm/p2pRuntime/rpcNodes/MirrorRpcProvider";
-import type MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import RpcNodeProvider, {
     type ExpectedChain
 } from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
@@ -9,6 +8,7 @@ import {
     assertLogQueryMaxBlocks,
     assertMirrorMaxFollowedContracts,
     assertMirrorSampleRate,
+    assertStorageDiffUrl,
     type Config
 } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -16,7 +16,7 @@ import type { Logger } from "@/utils/logging/Logger";
 import { Signer, Wallet } from "ethers";
 
 export interface RuntimeChainContext {
-    provider: MultiRpcProvider;
+    provider: MirrorRpcProvider;
     signer: Signer;
 }
 
@@ -83,22 +83,23 @@ function anyNodeConnected(nodes: readonly RpcNodeProvider[]): Promise<boolean> {
  * Build the multi-endpoint provider over the configured RPC nodes. Returns
  * once one node connected; the others keep connecting in the background.
  * Throws once every node's first attempt failed. The provider answers
- * latest-block reads from the local mirror when `config.STORAGE_DIFF_URL` is
- * set; `mirror` supplies the precompiles and owner of its EVM.
+ * latest-block reads from the local mirror kept by the storage diff service
+ * at `config.STORAGE_DIFF_URL` (required); `mirror` supplies the precompiles
+ * and owner of its EVM.
  */
 export async function createRpcNodesProvider(
-    config: Pick<Config, "PROVIDER_URL" | "PROVIDER_URLS"> &
+    config: Pick<
+        Config,
+        "PROVIDER_URL" | "PROVIDER_URLS" | "STORAGE_DIFF_URL"
+    > &
         Partial<
-            Pick<
-                Config,
-                | "STORAGE_DIFF_URL"
-                | "MIRROR_SAMPLE_RATE"
-                | "MIRROR_MAX_FOLLOWED_CONTRACTS"
-            >
+            Pick<Config, "MIRROR_SAMPLE_RATE" | "MIRROR_MAX_FOLLOWED_CONTRACTS">
         >,
     logger: Logger,
     mirror: Pick<MirrorProviderOptions, "customPrecompiles" | "owner"> = {}
-): Promise<MultiRpcProvider> {
+): Promise<MirrorRpcProvider> {
+    // checked before any node opens, so a missing service leaves nothing behind
+    assertStorageDiffUrl(config.STORAGE_DIFF_URL);
     // a bad fraction would only mis-sample reads
     if (config.MIRROR_SAMPLE_RATE !== undefined)
         assertMirrorSampleRate(config.MIRROR_SAMPLE_RATE);
@@ -133,7 +134,11 @@ export async function createRpcNodesProvider(
 
 /**
  * Build and verify the real-chain provider and wallet owned by one runtime
- * host.
+ * host. The provider answers latest-block reads from the local mirror kept
+ * by the storage diff service at `config.STORAGE_DIFF_URL` (required);
+ * `mirror` supplies the precompiles and owner
+ * of its EVM. Startup returns once one node connected; the others keep connecting
+ * in the background.
  */
 export async function createRuntimeChainContext(
     config: Config,

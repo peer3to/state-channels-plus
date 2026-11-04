@@ -3,6 +3,7 @@ function buildSlotEnv(slot, accountPartition) {
         PROVIDER_URL: slot?.nodeUrl,
         HARDHAT_NODE_URL: slot?.nodeUrl,
         LOCAL_DISCOVERY_REGISTRY_URL: slot?.discoveryUrl,
+        STORAGE_DIFF_URL: slot?.storageDiffUrl,
         E2E_MANAGER_CACHE_DIR: slot?.cacheDir,
         E2E_INTERVAL_MINING: undefined,
         E2E_SLOT_INDEX: String(accountPartition)

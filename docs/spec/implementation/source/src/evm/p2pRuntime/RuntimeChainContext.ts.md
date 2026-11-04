@@ -9,16 +9,16 @@
 - [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../../../../../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)
 - [`REQ-RPCMIRROR-1-XQNZ4J` (Latest-block reads are answered from a local copy of the chain)](../../../../../specification/runtime/rpc-mirror.md#req-rpcmirror-1-xqnz4j)
 - [`REQ-RPCMIRROR-2-1P38E2` (Reads the copy cannot answer correctly go to the node whole)](../../../../../specification/runtime/rpc-mirror.md#req-rpcmirror-2-1p38e2)
+- [`REQ-RPCMIRROR-9-5VD1GG` (The storage diff service is required)](../../../../../specification/runtime/rpc-mirror.md#req-rpcmirror-9-5vd1gg)
 
 ## UNIT-TEST-RUNTIME-CHAIN-CLEANUP-1-3H7PT8
 
 Provider cleanup
 
 - Setup: Real runtime construction and public cleanup.
-- Oracle: The provider closes, has no listeners and permits repeated destruction.
+- Oracle: The provider and its nodes close and repeated destruction is harmless.
 
-- [x] `UNIT-TEST-RUNTIME-CHAIN-CLEANUP-1-3H7PT8.P3` — Cleanup without subscriptions
-- [x] `UNIT-TEST-RUNTIME-CHAIN-CLEANUP-1-3H7PT8.P4` — Cleanup with a block subscription
+- [x] `UNIT-TEST-RUNTIME-CHAIN-CLEANUP-1-3H7PT8.P3` — Cleanup closes the provider and its nodes and permits repeated cleanup
 
 ## UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW
 
