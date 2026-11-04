@@ -28,18 +28,22 @@ describe("Node head subscription", function () {
         });
     });
 
-    it("announces the blocks of newBlockHeaders pushes to the node's announcement watchers", async function () {
+    // Mutation: a newBlockHeaders push announced as a log's block -> a lower
+    // head after a reorganization would not lower the node's announced block.
+    it("announces the blocks of newBlockHeaders pushes to the node's announcement watchers as heads", async function () {
         await withNewBlockHeadersProvider(
             true,
             async (node, provider, rpcNode) => {
-                const announced: bigint[] = [];
-                rpcNode.watchAnnouncedBlocks((block) => announced.push(block));
+                const heads: bigint[] = [];
+                rpcNode.watchAnnouncedBlocks((block, isHead) => {
+                    if (isHead) heads.push(block);
+                });
                 await provider.on("block", () => undefined);
                 await waitFor(() => node.subscribedSockets === 1);
 
                 node.pushHeader();
 
-                await waitFor(() => announced.includes(PUSHED_BLOCK));
+                await waitFor(() => heads.includes(PUSHED_BLOCK));
             }
         );
     });

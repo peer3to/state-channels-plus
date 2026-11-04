@@ -10,7 +10,7 @@ Each case runs a `MultiRpcProvider` over one WebSocket node that replays frames 
 ## Tests
 
 - `emits block events from newBlockHeaders on a node that refuses newHeads and offers newBlockHeaders`: REQ-CHAINOBS-3-N137ZP.T1.P34
-- `announces the blocks of newBlockHeaders pushes to the node's announcement watchers`: REQ-RPCMIRROR-4-H35NFC.T1.P29
+- `announces the blocks of newBlockHeaders pushes to the node's announcement watchers as heads`: REQ-RPCMIRROR-4-H35NFC.T1.P29
 - `subscribes to newBlockHeaders again on the socket a node reopens, and emits its block events`: REQ-CHAINOBS-3-N137ZP.T1.P35
 - `unsubscribes the newBlockHeaders subscription when the last block listener is removed`: REQ-CHAINOBS-3-N137ZP.T1.P38
 - `asks for no other kind when a node refuses newHeads without offering newBlockHeaders`: REQ-CHAINOBS-3-N137ZP.T1.P36
