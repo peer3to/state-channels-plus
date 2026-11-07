@@ -11,7 +11,7 @@
 
 Request routing and failover
 
-- Setup: Two real nodes behind cuttable proxies of one private chain; reads, transactions, block subscriptions and contract-log subscriptions on a log-emitting contract.
+- Setup: Two real nodes behind cuttable proxies of one private chain; reads, transactions, block subscriptions and contract-log subscriptions on a log-emitting contract; a proxy can answer a request with the JSON-RPC internal error without forwarding it.
 - Oracle: The proxies record which node received each method; answers equal the node's own; no transaction reaches a second node while the first is connected; block events and logs come from the node sockets without polling, each once, as logs bound to this provider; removing the last log listener sends one `eth_unsubscribe` to every node.
 
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P1` — transaction to the first node only
@@ -26,9 +26,11 @@ Request routing and failover
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P10` — destroy rejects a waiting request
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P11` — stopReconnecting rejects a waiting request
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P12` — silent node marked dead and the read failed over
-- [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P13` — first node's error answer returned without failover
+- [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P13` — first node's error answer, other than its internal error, returned without failover
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P14` — one warning per outage of every node, again after a reconnect
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P15` — each matching log relayed once from both node sockets, bound to the provider, with no `eth_newFilter`
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P16` — logs keep coming through the second node socket after the first node drops, each once
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P17` — removing the last log listener unsubscribes every node socket with no unhandled rejection and leaves no listener
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P18` — a log 128 or more blocks below the highest delivered log is not relayed, and a log 127 blocks below it is
+- [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P19` — a call answered with the first node's internal error fails over to the second node
+- [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P20` — a call answered with every node's internal error rejects with it as a `CALL_EXCEPTION`

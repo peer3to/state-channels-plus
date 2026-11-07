@@ -3151,6 +3151,18 @@
       "peakRssGb": 0.587,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-RuntimeContractEvents.test.ts|E2E: Runtime contract events delivers each onTurn with the runtime's current chain time": {
+      "durationMs": 7607,
+      "avgCores": 0.757,
+      "peakRssGb": 0.536,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-RuntimeContractEvents.test.ts|E2E: Runtime contract events delivers each onTurn with the runtime's current chain time from an SDK worker": {
+      "durationMs": 9397,
+      "avgCores": 0.928,
+      "peakRssGb": 0.559,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-RuntimeTransportModes.test.ts|E2E: p2pSetup runtime modes a closed session releases its roots and detaches its logger service": {
       "durationMs": 16079,
       "avgCores": 0.199,
@@ -6325,6 +6337,12 @@
       "peakRssGb": 0.632,
       "measurementReason": null
     },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider fails a call over to the next node when the first answers with its internal error": {
+      "durationMs": 2077,
+      "avgCores": 0.944,
+      "peakRssGb": 0.422,
+      "measurementReason": null
+    },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider fails a read over to the next node when the first drops mid-request": {
       "durationMs": 8533,
       "avgCores": 1.168,
@@ -6389,6 +6407,12 @@
       "durationMs": 11710,
       "avgCores": 1.101,
       "peakRssGb": 1.14,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects a call with the internal error when every node answers with it": {
+      "durationMs": 2425,
+      "avgCores": 0.755,
+      "peakRssGb": 0.366,
       "measurementReason": null
     },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects a read in flight when destroyed": {

@@ -16,7 +16,9 @@ wait is tested once, with two confirmations, after both sockets reconnected. Fur
 
 Later cases check that a node destroyed during a pending attempt logs nothing and raises no
 unhandled rejection (a logger whose entries the test reads), that a heartbeat answered with an
-error keeps the socket, that an error answer is returned without failover, that the provider warns
+error keeps the socket, that an error answer is returned without failover, that a call answered
+with a node's internal error (code -32603) goes to the next node and rejects with that error when
+every node answers it, that the provider warns
 once per outage of every node, that malformed endpoints, an invalid signer secret and a `LOG_QUERY_MAX_BLOCKS` of zero or a fraction open no node,
 and that `readLogPages` reads a private chain longer than three windows through a proxy that rejects
 wider reads, window by window, and answers the failed window for a retry.
@@ -87,6 +89,8 @@ within the one-second window (every node was destroyed).
 - `logs nothing and leaves no unhandled rejection when destroyed during a connection attempt`: UNIT-TEST-RPC-NODE-1-VTXH1M.P9
 - `keeps a node whose heartbeat is answered with an error`: UNIT-TEST-RPC-NODE-1-VTXH1M.P10, REQ-CHAINOBS-3-N137ZP.T1.P16
 - `passes the first node's error answer to the caller without failing over`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P13, REQ-CHAINOBS-2-2NCSQ3.T1.P11
+- `fails a call over to the next node when the first answers with its internal error`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P19, REQ-CHAINOBS-2-2NCSQ3.T1.P13
+- `rejects a call with the internal error when every node answers with it`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P20, REQ-CHAINOBS-2-2NCSQ3.T1.P14
 - `warns once per outage of every node and again after a reconnect`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P14, REQ-CHAINOBS-2-2NCSQ3.T1.P12
 - `rejects startup over a malformed endpoint before any node opens and without its secret`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P10, REQ-CHAINOBS-1-5JTHY8.T1.P9
 - `rejects startup over an invalid signer secret without opening a node`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P11, REQ-CHAINOBS-1-5JTHY8.T1.P10

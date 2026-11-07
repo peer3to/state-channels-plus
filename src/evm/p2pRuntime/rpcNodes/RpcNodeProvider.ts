@@ -27,6 +27,21 @@ const RECONNECT_WARNING_INTERVAL_MS = 60_000;
 /** Marks a request whose socket ended before it answered. */
 const SOCKET_ENDED = Symbol("socket ended");
 
+/** JSON-RPC's error code for a node that failed to process a request. */
+const JSON_RPC_INTERNAL_ERROR = -32603;
+
+/** The errors of requests a node answered with its internal error. */
+const nodeInternalErrors = new WeakSet<Error>();
+
+/**
+ * Whether `error` is a node's answer that it failed internally, not an answer
+ * about the request. Besu sends it e.g. for a call at a head block whose
+ * state it has not stored yet; another node of the chain can answer.
+ */
+export function isNodeInternalError(error: unknown): boolean {
+    return error instanceof Error && nodeInternalErrors.has(error);
+}
+
 /**
  * Called with each open socket of a node. `reopened` is false for the call
  * made at registration on an already open socket, and true for every socket
@@ -72,6 +87,16 @@ class NodeSocket extends WebSocketProvider {
                 throw error;
             });
         return answer;
+    }
+
+    // Overrides JsonRpcApiProvider.getRpcError: ethers turns every error
+    // answer to a call into a CALL_EXCEPTION, so the answer's code is read
+    // here, where the node's own answer is still at hand.
+    override getRpcError(payload: JsonRpcPayload, error: JsonRpcError): Error {
+        const converted = super.getRpcError(payload, error);
+        if (error.error.code === JSON_RPC_INTERNAL_ERROR)
+            nodeInternalErrors.add(converted);
+        return converted;
     }
 }
 

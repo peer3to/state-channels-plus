@@ -273,7 +273,7 @@ Specification cases tested: 0/4.
 Specification cases tested: 11/11.
 
 [`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)
-Specification cases tested: 12/12.
+Specification cases tested: 14/14.
 
 [`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)
 Specification cases tested: 33/33.
@@ -973,6 +973,9 @@ Specification cases tested: 0/15.
 
 [`REQ-TIME-5-S9NQXK` (Every local contract execution observes the runtime's current estimated chain…)](../specification/protocol-model/time.md#req-time-5-s9nqxk)
 Specification cases tested: 3/3.
+
+[`REQ-TIME-6-61C1EV` (The turn hook passes the runtime's current estimated chain time next to the…)](../specification/protocol-model/time.md#req-time-6-61c1ev)
+Specification cases tested: 2/2.
 
 [`REQ-TJOIN-1-5VGR1F` (Independent public options)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f)
 Specification cases tested: 8/8.

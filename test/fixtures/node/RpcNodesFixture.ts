@@ -1148,6 +1148,39 @@ export async function assertFirstNodeErrorAnswerIsFinal(): Promise<void> {
     });
 }
 
+export async function assertNodeInternalErrorFailsCallOver(): Promise<void> {
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        const funded = (await node.getSigner(0)).address;
+        proxies[0].failNextRequestInternally("eth_call");
+
+        const result = await provider.call({ to: funded, data: "0x" });
+
+        expect(result).to.equal("0x");
+        expect(proxies[0].failedCount("eth_call")).to.equal(1);
+        expect(proxies[1].forwardedCount("eth_call")).to.equal(1);
+    });
+}
+
+export async function assertNodeInternalErrorOfEveryNodeIsFinal(): Promise<void> {
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        const funded = (await node.getSigner(0)).address;
+        for (const proxy of proxies)
+            proxy.failNextRequestInternally("eth_call");
+
+        const error = await provider.call({ to: funded, data: "0x" }).then(
+            () => undefined,
+            (failure: unknown) => failure
+        );
+
+        expect(isError(error, "CALL_EXCEPTION")).to.equal(true);
+        expect(
+            proxies.map((proxy) => proxy.failedCount("eth_call"))
+        ).to.deep.equal([1, 1]);
+    });
+}
+
 export async function assertOneWarningPerOutageOfEveryNode(): Promise<void> {
     await withIsolatedHardhatNode(async (node) => {
         const nodeUrl = node._getConnection().url;

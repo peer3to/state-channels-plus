@@ -285,6 +285,65 @@ passed in the recorded full SDK gate. The RO1 retirement of already-running chec
 its interleaving case is added in this pass, and its verification is pending the next gate. Review
 six FR1 is implemented separately (`checkJoinDropped`).
 
+## Reduction transaction size
+
+<a id="find-reduction-2-vr8r8h"></a>
+
+### FIND-REDUCTION-2-VR8R8H
+
+**Current defect:** The reduce transaction carries every dispute of the window in full, and nothing
+bounds its size. A chain node refuses a transaction above its size limit (Besu
+`--tx-pool-max-tx-bytes`, default 131,072 bytes; Ethereum clients use the same 128 KiB), so the
+window cannot be reduced and the fork stays disputed. Relates to
+[`REQ-DIS-4-6J6YYG` (Reduction consumes exactly the committed dispute set)](../specification/disputes/disputes.md#req-dis-4-6j6yyg).
+
+Observed 2026-11-02 on peer3-testnet, poker table `game1`
+(`0xd016dfa328a2eb2c94537d1fc92db2b4bdba9998666f7655036ff009f5ec281a`, three bot participants):
+
+- One participant timed out at block 17798. Each of the three remaining participants uploaded its
+  own dispute for it (block 259293): 40,864, 41,024 and 40,864 bytes.
+- Each dispute's state proof is about 40 KB: four milestones with five signed blocks, four of them
+  8.3–9.1 KB each. Each of those four blocks holds one poker `applyOrderedContribution`
+  transaction whose proof argument is 7,776 bytes.
+- The biggest cause: the three disputes repeat the same four contribution proofs, so twelve
+  7,776-byte proofs (93,312 bytes) make up 68 % of the reduce transaction. The three disputes
+  together are about 123 KB of its 136,300 bytes.
+- The `multicall([reduceAndFinalize(...)])` with the three disputes, the latest snapshot, the
+  encoded state and the inbound blocks was 136,300 bytes. Besu refused it: `-32000 Transaction
+size exceeds the maximum allowed size`.
+- The refusal reached `ReductionExecutor.submitDetached` as an unclassified error and ended every
+  participant's runtime fatally at once. With no participant left, no newcomer could pass the
+  initial sync, so the table stayed dead.
+
+The size grows with the number of disputes in the window (up to one per participant for the same
+fault), with the milestones per state proof, and with the application's block size. The local
+Hardhat chain has no size limit, so no test reaches this.
+
+**Status:** Open; high. Engineer decision pending on the direction.
+
+## Transaction size limit
+
+<a id="find-calldata-1-sz02tk"></a>
+
+### FIND-CALLDATA-1-SZ02TK
+
+**Current defect:** The SDK does not keep its chain transactions under the size Ethereum execution
+clients accept. Geth and Besu refuse a transaction above 128 KiB (131,072 bytes) into their
+transaction pool (Besu `--tx-pool-max-tx-bytes`), so an oversized transaction is never mined.
+Nothing in the protocol or the SDK bounds the calldata of the transactions it sends to the channel
+manager: block calldata posts, snapshot posts, dispute uploads (with or without block calldata),
+fraud-proof applications, the kill and dispute multicalls, and the reduce multicall. Their size
+grows with application block size, state proof length, the number of disputes and the number of
+participants. The local Hardhat chain accepts any size, so the test suite never checks this limit.
+A first observed failure is
+[`FIND-REDUCTION-2-VR8R8H` (Reduction transaction size)](open-findings.md#find-reduction-2-vr8r8h).
+
+**Required:** every transaction the SDK sends MUST stay within 128 KiB of encoded size for any
+reachable protocol state, by design and not by chance: each submission path needs a stated bound
+that holds for the worst case it can reach, and a test chain that enforces the limit.
+
+**Status:** Open; high. Engineer decision pending on the direction.
+
 ## Membership-read ownership consolidation
 
 <a id="find-membership-read-owner-1-8826as"></a>

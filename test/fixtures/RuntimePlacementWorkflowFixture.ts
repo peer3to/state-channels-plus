@@ -99,3 +99,50 @@ export async function assertRuntimeContractEvent(
     expect(b).to.equal(1n); // the added number
     expect(result).to.equal(a + b); // real Math semantics, not a canned value
 }
+
+export async function assertRuntimeTurnClock(
+    runSdkInThread?: boolean
+): Promise<void> {
+    const h = TestSession.getHarness();
+    await h.lifecycle.start(
+        2,
+        0,
+        runSdkInThread === undefined
+            ? undefined
+            : { configOverrides: { RUN_SDK_IN_THREAD: runSdkInThread } }
+    );
+
+    const turns: Array<{
+        turnTime: number;
+        startedAt?: number;
+        currentTimestamp?: number;
+    }> = [];
+    // Subscribe like the app: on the main-thread runtime events, across the port.
+    h.peers[0].p2pInstance.events.on(
+        "p2pEventHooks",
+        "onTurn",
+        (
+            _address,
+            turnTime,
+            _agreement,
+            _fallback,
+            startedAt,
+            currentTimestamp
+        ) => {
+            turns.push({ turnTime, startedAt, currentTimestamp });
+        }
+    );
+
+    await h.transition.advanceState({ count: 2 });
+    await waitFor(() => turns.length >= 2, h.event.protocolEventTimeoutMs());
+
+    for (const { turnTime, startedAt, currentTimestamp } of turns) {
+        expect(startedAt).to.be.a("number");
+        expect(currentTimestamp).to.be.a("number");
+        // Both come from the runtime's chain clock, in whole seconds: the
+        // turn has just started, give or take the rounding.
+        const elapsed = currentTimestamp! - startedAt!;
+        expect(elapsed).to.be.at.least(-3);
+        expect(elapsed).to.be.at.most(turnTime + 3);
+    }
+}

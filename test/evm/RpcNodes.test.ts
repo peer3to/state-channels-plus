@@ -27,6 +27,8 @@ import {
     assertDestroyFailsHeldRequest,
     assertHeldRequestAnsweredAfterRestore,
     assertNeverConnectedNodeFailsAtOnce,
+    assertNodeInternalErrorFailsCallOver,
+    assertNodeInternalErrorOfEveryNodeIsFinal,
     assertReadFailsOverWhenNodeDropsMidRequest,
     assertReadsFailOverToNextNode,
     assertRefusedNodeKeepsReconnecting,
@@ -136,6 +138,14 @@ describe("MultiRpcProvider", () => {
 
     it("passes the first node's error answer to the caller without failing over", async () => {
         await assertFirstNodeErrorAnswerIsFinal();
+    });
+
+    it("fails a call over to the next node when the first answers with its internal error", async () => {
+        await assertNodeInternalErrorFailsCallOver();
+    });
+
+    it("rejects a call with the internal error when every node answers with it", async () => {
+        await assertNodeInternalErrorOfEveryNodeIsFinal();
     });
 
     it("warns once per outage of every node and again after a reconnect", async () => {

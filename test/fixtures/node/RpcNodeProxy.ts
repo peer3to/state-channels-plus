@@ -116,6 +116,8 @@ export class RpcNodeProxy {
     private readonly failingMethods = new Map<JsonRpcMethod, number>();
     /** Method -> how many of its next requests pass before one fails. */
     private readonly delayedFailures = new Map<JsonRpcMethod, number>();
+    /** Methods whose next request is answered with the node's internal error. */
+    private readonly internallyFailingMethods = new Set<JsonRpcMethod>();
     /** Requests this proxy answered with an error, in order. */
     private readonly failedRequests: ForwardedRequest[] = [];
     /** Method -> the result this proxy answers its requests with, unforwarded. */
@@ -184,6 +186,14 @@ export class RpcNodeProxy {
     /** Answer the next `method` request with a JSON-RPC error, unforwarded. */
     failNextRequest(method: JsonRpcMethod): void {
         this.failingMethods.set(method, 1);
+    }
+
+    /**
+     * Answer the next `method` request, unforwarded, with JSON-RPC's internal
+     * error, as Besu does for a call at a head block it has not stored yet.
+     */
+    failNextRequestInternally(method: JsonRpcMethod): void {
+        this.internallyFailingMethods.add(method);
     }
 
     /** Let `passing` `method` requests through, then fail the next one. */
@@ -362,6 +372,15 @@ export class RpcNodeProxy {
                     this.delayedFailures.delete(method);
                     this.failingMethods.set(method, 1);
                 } else this.delayedFailures.set(method, passing - 1);
+            }
+            if (
+                method &&
+                id !== undefined &&
+                this.internallyFailingMethods.delete(method)
+            ) {
+                this.failedRequests.push({ method, params });
+                reply({ error: { code: -32603, message: "Internal error" } });
+                return;
             }
             const failures = method
                 ? this.failingMethods.get(method)

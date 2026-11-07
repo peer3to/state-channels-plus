@@ -1,4 +1,7 @@
-import { assertRuntimeContractEvent } from "@test/fixtures/RuntimePlacementWorkflowFixture";
+import {
+    assertRuntimeContractEvent,
+    assertRuntimeTurnClock
+} from "@test/fixtures/RuntimePlacementWorkflowFixture";
 
 /**
  * A contract event emitted by the host EVM must reach a subscriber on the
@@ -24,5 +27,11 @@ describe("E2E: Runtime contract events", function () {
     });
     it("delivers a real Addition event from an SDK worker", async function () {
         await assertRuntimeContractEvent(true);
+    });
+    it("delivers each onTurn with the runtime's current chain time", async function () {
+        await assertRuntimeTurnClock();
+    });
+    it("delivers each onTurn with the runtime's current chain time from an SDK worker", async function () {
+        await assertRuntimeTurnClock(true);
     });
 });
