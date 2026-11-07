@@ -1,8 +1,7 @@
 // @spec-test-coverage-ignore: staged sync install staging exercised by explicit SpectateService declarations
-import { runtimeEndpointFor } from "./RuntimeRootObservation";
+import { disposeAndRelease } from "./DisposeCutOffStaging";
 import { stageSpectatorBehindUnfinalizedTail } from "./SyncReplayBaseStaging";
 import { Block } from "@/models";
-import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import type { SyncPayload } from "@/types";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
@@ -171,59 +170,43 @@ export async function assertConflictWhileHoldingBase(
 }
 
 /**
- * The spectator's sync is held at its install entry; its runtime stops in
- * that window (parked before the custom RPC root disposes). After the
- * release the install commits nothing, the VM is restored, and the sync
- * returns false with no verdict on the responder.
+ * The spectator's sync is held at its install entry when its runtime is
+ * disposed; the install is released after the cut. Nothing the released
+ * install does reaches the responder or any other peer, and the disposal is
+ * not held by the sync (see `disposeAndRelease`).
  */
 export async function assertDisposalDuringSyncInstall(
     h: MathPeerTestHarness
 ): Promise<void> {
     const { forkId, spectator, responder, tip } =
         await stageSpectatorBehindUnfinalizedTail(h, {
-            finalBlocksWhileCutOff: 1,
-            inline: true
+            finalBlocksWhileCutOff: 1
         });
-    const { host, sm, stub, query } = runtimeEndpointFor(spectator.p2pInstance);
-    const state = async () => ({
-        vmState: await sm.diamondStateMachine.getState(),
-        stateHash: query.getLatestStateMachineStateHash(forkId),
-        latestHeight: query.getLatestBlockHeight(forkId),
-        forkId: sm.forkId
-    });
-    const before = await state();
-    const localRpc = sm.p2pManager.localRpc;
-    const disposeLocalRpc = localRpc.dispose;
-    let releaseTeardown!: () => void;
-    const teardown = new Promise<void>((resolve) => {
-        releaseTeardown = resolve;
-    });
-    localRpc.dispose = async () => {
-        await teardown;
-        return disposeLocalRpc.call(localRpc);
-    };
-    stub.holdSyncInstall();
-    try {
-        const sync = localRpc.spectateService.requestSync(
-            responder.address,
-            sm.channelId,
-            forkId,
-            tip
-        );
-        await waitFor(async () => stub.getSyncInstallEntered() === 1);
-        const stopping = sm.stop();
-        stub.releaseSyncInstall();
-        expect(await sync).not.to.equal(SyncResult.Synced);
-        expect(await state()).to.deep.equal(before);
-        expect(sm.p2pManager.isBlacklisted(responder.address)).to.equal(false);
-        releaseTeardown();
-        await stopping;
-    } finally {
-        stub.releaseSyncInstall();
-        releaseTeardown();
-        localRpc.dispose = disposeLocalRpc;
-    }
-    await host.dispose();
+    const stub = h.control(spectator).stub;
+    await stub.holdSyncInstall().request();
+    // the released install runs on in the disposed runtime; its outcome
+    // is nobody's
+    await h.execOnHost(
+        spectator,
+        (sm, args) => {
+            void sm.p2pManager.localRpc.spectateService
+                .requestSync(
+                    args.responder,
+                    sm.channelId,
+                    args.forkId,
+                    args.tip
+                )
+                .catch(() => undefined);
+            return true;
+        },
+        { responder: responder.address, forkId, tip }
+    );
+    await waitFor(
+        async () => (await stub.getSyncInstallEntered().request()) === 1
+    );
+    await disposeAndRelease(h, spectator, () =>
+        stub.releaseSyncInstall().request()
+    );
 }
 
 /**
@@ -237,48 +220,67 @@ export async function assertThrowDuringSyncCommit(
 ): Promise<void> {
     const { forkId, spectator, responder, tip } =
         await stageSpectatorBehindUnfinalizedTail(h, {
-            finalBlocksWhileCutOff: 1,
-            inline: true
+            finalBlocksWhileCutOff: 1
         });
-    const { host, sm, query } = runtimeEndpointFor(spectator.p2pInstance);
-    const state = async () => ({
-        vmState: await sm.diamondStateMachine.getState(),
-        stateHash: query.getLatestStateMachineStateHash(forkId),
-        latestHeight: query.getLatestBlockHeight(forkId),
-        forkId: sm.forkId
-    });
-    const before = await state();
-    const application = sm.stateApplicationService;
-    const install = application.unsafeSetLatestState;
-    const vm = sm.diamondStateMachine;
-    const setState = vm.setState;
-    const vmWrites: string[] = [];
-    const failure = new Error("sync commit callback failed");
-    vm.setState = (serializedState) => {
-        vmWrites.push(String(serializedState));
-        return setState.call(vm, serializedState);
-    };
-    application.unsafeSetLatestState = (snapshot, encodedState, outbound) =>
-        install.call(application, snapshot, encodedState, outbound, () => {
-            throw failure;
-        });
-    try {
-        const error = await sm.p2pManager.localRpc.spectateService
-            .requestSync(responder.address, sm.channelId, forkId, tip)
-            .then(
-                () => undefined,
-                (thrown: unknown) => thrown
-            );
-        expect(error).to.equal(failure);
-    } finally {
-        application.unsafeSetLatestState = install;
-        vm.setState = setState;
-    }
+    const before = await installState(h, spectator, forkId);
+    const failure = "sync commit callback failed";
+    const { error, vmWrites } = await h.execOnHost(
+        spectator,
+        async (sm, args) => {
+            const application = sm.stateApplicationService;
+            const install = application.unsafeSetLatestState;
+            const vm = sm.diamondStateMachine;
+            const setState = vm.setState;
+            const vmWrites: string[] = [];
+            vm.setState = (serializedState) => {
+                vmWrites.push(String(serializedState));
+                return setState.call(vm, serializedState);
+            };
+            application.unsafeSetLatestState = (
+                snapshot,
+                encodedState,
+                outbound
+            ) =>
+                install.call(
+                    application,
+                    snapshot,
+                    encodedState,
+                    outbound,
+                    () => {
+                        throw new Error(args.failure);
+                    }
+                );
+            try {
+                const error = await sm.p2pManager.localRpc.spectateService
+                    .requestSync(
+                        args.responder,
+                        sm.channelId,
+                        args.forkId,
+                        args.tip
+                    )
+                    .then(
+                        () => null,
+                        (thrown: unknown) =>
+                            thrown instanceof Error ? thrown.message : "?"
+                    );
+                return { error, vmWrites };
+            } finally {
+                application.unsafeSetLatestState = install;
+                vm.setState = setState;
+            }
+        },
+        { responder: responder.address, forkId, tip, failure }
+    );
+    expect(error).to.equal(failure);
     // premise - the install wrote the served base before the callback threw
     expect(vmWrites).to.have.length(2);
     expect(vmWrites[0]).to.not.equal(before.vmState);
     expect(vmWrites[1]).to.equal(before.vmState);
-    expect(await state()).to.deep.equal(before);
-    expect(sm.p2pManager.isBlacklisted(responder.address)).to.equal(false);
-    await host.dispose();
+    expect(await installState(h, spectator, forkId)).to.deep.equal(before);
+    expect(
+        await h
+            .control(spectator)
+            .query.isBlacklisted(responder.address)
+            .request()
+    ).to.equal(false);
 }

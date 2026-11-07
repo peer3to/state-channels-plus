@@ -82,17 +82,15 @@ export default class StateApplicationService {
     }
 
     /**
-     * Reduction genesis with the same staged commit. One final
-     * `shouldCommit` check follows the prepare. Returns false when the
-     * commit was cancelled (disposal) or when a read after the canonical
-     * `setState` failed, in which case the runtime is aborted so it never
-     * keeps serving with the VM and storage describing different states.
+     * Reduction genesis with the same staged commit. Returns false when a
+     * read after the canonical `setState` failed, in which case the runtime
+     * is aborted so it never keeps serving with the VM and storage
+     * describing different states.
      */
     public async unsafeApplyReductionGenesis(
         genesisSnapshot: StateSnapshotStruct,
         encodedState: Bytes,
-        outboundMessageBlock: MessageBlockStruct | undefined,
-        shouldCommit: () => boolean
+        outboundMessageBlock: MessageBlockStruct | undefined
     ): Promise<boolean> {
         const sm = this.stateManager;
         const { forkId, snapshotData } = genesisSnapshot;
@@ -115,7 +113,6 @@ export default class StateApplicationService {
             sm.abort();
             return false;
         }
-        if (!shouldCommit()) return false;
         this.commit(
             genesisSnapshot,
             encodedState,

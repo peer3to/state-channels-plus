@@ -53,31 +53,6 @@ export function runtimeEndpointFor(instance: { events: EventBus }) {
     };
 }
 
-/** Observe real domain teardown without requesting a reply through the disposed network. */
-export async function observeRuntimeDisposal(instance: { events: EventBus }) {
-    const { sm } = runtimeEndpointFor(instance);
-    const root = sm.p2pManager.localRpc;
-    const originalDispose = root.dispose;
-    let connectionsAtRootDispose = -1;
-    root.dispose = async () => {
-        connectionsAtRootDispose = sm.p2pManager.getConnectedPeers().size;
-        await originalDispose.call(root);
-    };
-    let message = "";
-    try {
-        await sm.dispose();
-    } catch (error) {
-        message = error instanceof Error ? error.message : String(error);
-    } finally {
-        root.dispose = originalDispose;
-    }
-    return {
-        connectionsAtRootDispose,
-        connectionsAfter: sm.p2pManager.getConnectedPeers().size,
-        message
-    };
-}
-
 /** Records the errors a root reports (instead of reporting them) and when; returns the restore. */
 export function recordReportedErrors(root: AInternalRpcRoot) {
     const errors: unknown[] = [];

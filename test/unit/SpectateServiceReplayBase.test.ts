@@ -147,7 +147,7 @@ describe("Unit: SpectateService replay base", function () {
             await assertConflictWhileHoldingBase(TestSession.getHarness());
         });
 
-        it("runtime stops while the install is held → nothing installed, no verdict on the responder", async function () {
+        it("runtime disposed while the install is held → nothing reaches the responder or another peer after the cut, the disposal is not held", async function () {
             await assertDisposalDuringSyncInstall(TestSession.getHarness());
         });
 

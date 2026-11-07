@@ -22,5 +22,5 @@ Serializable discovery control
 - [x] `UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P6` — client join chains matching and negotiation on the host, returns one opened ID, and leaves the topic
 - [x] `UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P7` — explicit timeout crosses the port while absent or null remains caller-controlled
 - [x] `UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P8` — post-handoff leave waits for the held negotiation, which opens, and then returns false
-- [x] `UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P9` — disposal after local signing settles the pending join as cancelled
+- [x] `UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P9` — disposal after local signing answers nothing: the pending join rejects with RootDisposedError
 - [x] `UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P10` — a targeted connect returns false while the ordinary lobby remains active; explicit leave settles that lobby and leaves the selected target with NOT_OPENED status

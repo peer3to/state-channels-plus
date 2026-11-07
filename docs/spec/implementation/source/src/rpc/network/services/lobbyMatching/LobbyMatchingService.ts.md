@@ -35,7 +35,7 @@ Exclusive lobby protocol
 - [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P2` — final profile loss of a reserved selector keeps the reservation until its bound, counts one close against the absent selector there, and repeated wrong-topic traffic closes the abusive transport
 - [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P3` — both-none and one-none bootstrap, current epoch, topic, self, malformed, and reputation admission
 - [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P4` — production and configured jitter, held-reservation transition, one counted close at expiry, and re-advertisement without timer reset
-- [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P5` — replacement, matching leave, no implicit timeout, explicit timeout, and disposal settle once and close every session transport
+- [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P5` — replacement, matching leave, no implicit timeout, and explicit timeout settle once and close every session transport
 - [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P6` — role epoch stays monotonic across same-topic retry and a peer holding the earlier epoch accepts the retried advertisement
 - [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P7` — repeated empty-candidate advertisements retain one exhaustion switch
 - [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P8` — a post-commit correlated pick returns rejected without blacklist
@@ -50,7 +50,6 @@ Exclusive lobby protocol
 - [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P19` — peers that met in an earlier session bootstrap roles again in a later session on the same service
 - [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P20` — releasing the handoff after commitment closes the promoted selected transport, removes it from ordinary connection tracking, and reports a connection set without the peer
 - [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P21` — disconnecting the lobby transports during the handoff closes the promoted selected transport, removes it from ordinary connection tracking, and reports a connection set without the peer
-- [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P22` — disposing the service during the handoff closes the promoted selected transport, removes it from ordinary connection tracking, and reports a connection set without the peer
 - [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P23` — a replacement transport of the selected peer authenticated twice during the handoff is promoted once with one more connection hook, and the release closes and removes it with the selected transport
 
 ## INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B

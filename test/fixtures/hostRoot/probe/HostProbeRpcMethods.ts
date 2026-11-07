@@ -1,9 +1,5 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
-import type {
-    HostProbeService,
-    ProbeEcho,
-    ProbeSlowReply
-} from "./HostProbeService";
+import type { HostProbeService, ProbeEcho } from "./HostProbeService";
 import { AInternalRpcMethods } from "@/rpc/internal/AInternalRpcMethods";
 import { config, type Config } from "@/utils/config";
 
@@ -24,12 +20,9 @@ export class HostProbeRpcMethods extends AInternalRpcMethods<HostProbeService> {
         throw Object.assign(new Error(message), { name, code });
     }
 
-    /** Replies only once its root's disposal drains in-flight replies. */
-    public async slow(value: string): Promise<ProbeSlowReply> {
-        return {
-            value,
-            isDrainHolding: await this.service.isDrainHoldingAfterStart()
-        };
+    /** Never replies. */
+    public hang(): Promise<never> {
+        return new Promise<never>(() => undefined);
     }
 
     /** A value of the config module copy this probe was compiled with. */

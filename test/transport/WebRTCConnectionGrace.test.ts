@@ -154,6 +154,23 @@ describe("WebRTC connection grace", function () {
         expect(result.factoryCloses).to.deep.equal([]);
     });
 
+    it("closes at dispose a connection still negotiating, and one whose data channel arrives after the network cut", async function () {
+        const negotiating = fixture.address(1);
+        const late = fixture.address(0);
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeWebRTCNegotiatingAtDispose(negotiating, late)
+            .request();
+
+        expect(result.factoryClosesAfterCut).to.deep.equal([late]);
+        expect(result.lateChannelClosed).to.equal(true);
+        expect(result.factoryClosesAfterRelease).to.deep.equal([
+            late,
+            negotiating
+        ]);
+        expect(result.trackedPeers).to.deep.equal([]);
+    });
+
     it("closes and forgets a connection that fails or closes during a grace before it has a transport", async function () {
         const finalStates: WebRTCConnectionStateSnapshot[] = [
             { connectionState: "failed", iceState: "failed" },

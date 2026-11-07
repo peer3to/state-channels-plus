@@ -687,15 +687,12 @@ observation hook sees every root created while it is active. A consumer
 that imports it runs in the same process as the SDK, so the residual risk is local only: that code
 could reach an SDK host it could already affect in-process, but no remote peer gains anything.
 
-Executor disposal now closes admission and waits for admitted work before children close. By engineer
-decision [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/open-questions.md#oq-impl-executor-drain-1-5d71ym) the wait is bounded by the same five-second limit as the in-flight reply drain, so a precompile
-call that never returns delays that executor's disposal only that long. Work still admitted at the limit is
-abandoned without a host error. By the engineer's later decision (option a after the second
-implementation review), every caller still waiting at the limit receives the disposal rejection, and the
+Executor disposal closes admission and rejects every admitted caller at once with the disposal rejection
+before children close; by Luke's decision of 2026-10-31 on [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/open-questions.md#oq-impl-executor-drain-1-5d71ym) it waits for
+no admitted work, so a precompile call that never returns cannot delay that executor's disposal. The
 operation's later outcome is dropped: it may keep running and succeed, or fail against a closed child, but
-neither result reaches the caller or the host, so a caller never sees a result produced after the executor
-declared it abandoned. The residual risk is local: only local executor calls are admitted, and an application whose
-executor work regularly exceeds the limit loses those results at shutdown. Engineer approval and risk
+neither result reaches the caller or the host. The residual risk is local: only local executor calls are
+admitted, and an application with executor work still running at shutdown loses those results. Engineer approval and risk
 acceptance remain pending.
 
 ## Application host root — 2026-10-16

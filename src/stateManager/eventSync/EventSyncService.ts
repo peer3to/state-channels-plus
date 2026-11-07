@@ -149,9 +149,6 @@ export default class EventSyncService {
     private readonly logger: Logger;
     private channelId: ChannelId;
 
-    /** Set by `stop`: no log is dispatched after it. */
-    private isStopped = false;
-
     constructor(
         channelId: ChannelId,
         private readonly stateChannelManagerContract: StateChannelManagerInterface,
@@ -167,16 +164,6 @@ export default class EventSyncService {
 
     setChannelId(channelId: ChannelId): void {
         this.channelId = channelId;
-    }
-
-    /**
-     * Starts no further log dispatch, then drains the scheduled ones. A
-     * recovery still running in the stopping runtime schedules nothing after
-     * this, so no dispatch needs a dependency the disposal closes next.
-     */
-    async stop(timeoutMs: number): Promise<void> {
-        this.isStopped = true;
-        await this.waitForScheduled(timeoutMs);
     }
 
     async waitForScheduled(timeoutMs: number): Promise<void> {
@@ -220,13 +207,6 @@ export default class EventSyncService {
         log: Log,
         scheduledChannelId: ChannelId = this.channelId
     ): Promise<void> {
-        if (this.isStopped) {
-            this.logger.debug(
-                "Contract event after stop not dispatched",
-                LoggerUtils.getContractLogMetadata(log)
-            );
-            return Promise.resolve();
-        }
         // a reorg removed this log; its effects are not undone
         if (log.removed) {
             this.logger.warn(

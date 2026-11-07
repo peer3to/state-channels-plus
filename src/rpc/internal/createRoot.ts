@@ -553,7 +553,7 @@ export function startRootWorker<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
             // the upload settles, within the flush bound, before the report. A
             // root that never got a logger has none to upload.
             const logger = receivingRoot?.logger.attachedLogger;
-            if (logger && !logger.isDisposed) {
+            if (logger) {
                 logger.error("Root worker startup failed", {
                     error,
                     wasm: serialized.wasmDiagnostics

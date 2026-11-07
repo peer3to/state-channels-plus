@@ -59,3 +59,4 @@ Ban-handle and authenticated fallback lifecycle
 
 - [x] `UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P1` — real WebRTC channel before authentication
 - [x] `UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P2` — A throwing transport does not prevent later unpromoted transports or Holepunch from closing; repeated manager disposal shares the first failure
+- [x] `UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P3` — a Holepunch connection and an open WebRTC channel that arrive after the network cut close at registration, in a worker and an inline runtime: both sockets close, no frame leaves and a received frame dispatches nothing

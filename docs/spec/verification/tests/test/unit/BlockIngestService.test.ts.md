@@ -39,9 +39,9 @@ keep-connection `false` with no error and the `invalidStateTransitionDetected` h
 assembly logs exactly one "failed to restore … aborting" error, one abort is held, and once it is
 released the observer's `onAbort` fires.
 
-One test parks a valid off-wire block (`runBlockIngest`) on an observer's held state mutex with the
-runtime disposal held, aborts the runtime for real and then frees the mutex: the probe returns
-keep-connection `true` with no error and no hook, and the observer's next height is unchanged.
+The parked-delivery case parks a valid block on an observer's held state mutex, disposes the observer
+with its disposal held and then frees the mutex: no frame from the observer reaches the other peers,
+its nonce is unchanged and a rebuilt runtime for its signer engages.
 
 ## Tests
 
@@ -58,8 +58,8 @@ keep-connection `true` with no error and no hook, and the observer's next height
 - `a block one peer's local EVM refuses to run throws out of its ingest with no fraud proof, no dispute and the VM restored, while another peer commits it`: UNIT-TEST-BLOCK-INGEST-1-JV64AS.P9, REQ-ENFSM-1-DKJCY2.T1.P13
 - `a run linked to a held inbound block → the store head advances with the snapshot`: UNIT-TEST-BLOCK-INGEST-2-8ZE5Z8.P1
 - `runs with no reachable ancestor → persisted, the head never moves above the gap`: UNIT-TEST-BLOCK-INGEST-2-8ZE5Z8.P2
-- `a valid block parked on the state mutex when the runtime aborts → true, nothing judged or stored once the mutex frees`: UNIT-TEST-BLOCK-INGEST-3-V70TFY.P1, INV-BLOCK-PIPE-1-1AB2ME.T1.P15
 - `a linked writer block with a wrong snapshot hash → invalid transition, VM turn restored`: none
 - `a linked writer block with a wrong snapshot hash whose restore fails → invalid transition, the runtime aborts`: UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P14
 - `a forged inbound message block → forged hook fires, block rejected`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P28
 - `a rejected block carrying a real inbound run → the run is not stored, the head stays put`: none
+- `a valid block parked on the state mutex when the runtime is disposed → nothing leaves the runtime once the mutex frees`: UNIT-TEST-BLOCK-INGEST-1-JV64AS.P15
