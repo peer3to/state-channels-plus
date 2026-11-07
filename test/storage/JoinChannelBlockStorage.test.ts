@@ -34,7 +34,7 @@ describe("MessageBlockStorage - inbound blocks", () => {
             expect(hash).to.equal(mockBlockHash);
 
             const storedBlock = storage.getMessageBlock(hash);
-            expect(storedBlock).to.equal(mockMessageBlock);
+            expect(storedBlock).to.deep.equal(mockMessageBlock);
         });
 
         it("respects provided hash override", () => {
@@ -44,7 +44,7 @@ describe("MessageBlockStorage - inbound blocks", () => {
             });
 
             expect(hash).to.equal(customHash);
-            expect(storage.getMessageBlock(customHash)).to.equal(
+            expect(storage.getMessageBlock(customHash)).to.deep.equal(
                 mockMessageBlock
             );
         });

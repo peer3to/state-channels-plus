@@ -1,3 +1,7 @@
+import {
+    PersistentCollection,
+    type PersistenceController
+} from "./persistence";
 import StateSnapshot from "@/models/StateSnapshot";
 import { Hash, ForkId } from "@/types/types";
 
@@ -8,13 +12,22 @@ type StoreOptions = {
 };
 
 export class StateSnapshotStorage {
-    private snapshotsByHash: Map<StateSnapshotHash, StateSnapshot>;
+    private readonly snapshotsByHash: PersistentCollection<
+        StateSnapshotHash,
+        StateSnapshot
+    >;
     // Store genesis SnapshotData by forkId (forkId = hash(snapshotData)
-    private genesisSnapshotByForkId: Map<ForkId, StateSnapshot>;
+    private readonly genesisSnapshotByForkId = new Map<
+        ForkId,
+        StateSnapshotHash
+    >();
 
-    constructor() {
-        this.snapshotsByHash = new Map();
-        this.genesisSnapshotByForkId = new Map();
+    constructor(controller?: PersistenceController) {
+        this.snapshotsByHash = new PersistentCollection(
+            "stateSnapshots",
+            controller,
+            () => this.rebuildIndexes()
+        );
     }
 
     // ====================================
@@ -28,11 +41,6 @@ export class StateSnapshotStorage {
         const hash = options?.hash ?? snapshot.hash;
 
         this.snapshotsByHash.set(hash, snapshot);
-
-        if (snapshot.isGenesis) {
-            this.genesisSnapshotByForkId.set(snapshot.forkID, snapshot);
-        }
-
         return hash;
     }
 
@@ -50,6 +58,17 @@ export class StateSnapshotStorage {
     }
 
     getGenesisSnapshotByForkId(forkId: ForkId): StateSnapshot | undefined {
-        return this.genesisSnapshotByForkId.get(forkId);
+        const hash = this.genesisSnapshotByForkId.get(forkId);
+        return hash === undefined ? undefined : this.snapshotsByHash.get(hash);
+    }
+
+    // after every change: the genesis index
+    private rebuildIndexes(): void {
+        this.genesisSnapshotByForkId.clear();
+        for (const [hash, snapshot] of this.snapshotsByHash.entries()) {
+            if (snapshot.isGenesis) {
+                this.genesisSnapshotByForkId.set(snapshot.forkID, hash);
+            }
+        }
     }
 }

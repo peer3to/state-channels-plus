@@ -185,6 +185,8 @@ class DisputeManager {
                 fraudProofsToApply
             );
 
+            await this.storage.flush();
+
             // Without fraud proofs no gas limit is passed: the chain signer
             // sends each upload with its estimate plus headroom (see
             // GAS_ESTIMATE_HEADROOM_PERCENT for the concurrent-dispute race

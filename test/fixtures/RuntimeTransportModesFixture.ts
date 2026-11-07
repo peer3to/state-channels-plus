@@ -36,10 +36,13 @@ import {
 import { waitFor } from "@test/utils/waitFor";
 import { MathStateMachine, MathStateMachine__factory } from "@typechain-types";
 import { expect } from "chai";
+import { ClassicLevel } from "classic-level";
 import { ethers, NonceManager } from "ethers";
 import { ContractFactory } from "ethers";
 import type { Artifact } from "hardhat/types";
 
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 // a port hop plus one POST per realm -> above the fixture's 2s default
@@ -455,6 +458,129 @@ export async function assertGeneratedHostSigner(): Promise<void> {
         ).to.have.length(4);
     } finally {
         await p2pInstance.dispose();
+    }
+}
+
+/** a persisted runtime restarted with no secret signs as the channel's stored signer */
+export async function assertPersistedSignerRecovered(
+    runSdkInThread: boolean
+): Promise<void> {
+    await withPersistedChannel(runSdkInThread, async (startInChannel) => {
+        const first = await startInChannel(
+            ethers.Wallet.createRandom().privateKey
+        );
+        const persistedAddress = await first.chainSigner
+            .getAddress()
+            .finally(() => first.dispose());
+
+        const second = await startInChannel(undefined);
+        try {
+            expect(await second.chainSigner.getAddress()).to.equal(
+                persistedAddress
+            );
+        } finally {
+            await second.dispose();
+        }
+    });
+}
+
+/** a persisted runtime restarted with another explicit secret is refused */
+export async function assertPersistedPartitionRefusesAnotherSigner(
+    runSdkInThread: boolean
+): Promise<void> {
+    await withPersistedChannel(runSdkInThread, async (startInChannel) => {
+        const first = await startInChannel(
+            ethers.Wallet.createRandom().privateKey
+        );
+        await first.dispose();
+
+        let refusal: unknown;
+        try {
+            const second = await startInChannel(
+                ethers.Wallet.createRandom().privateKey
+            );
+            await second.dispose();
+        } catch (error) {
+            refusal = error;
+        }
+        expect(refusal).to.be.instanceOf(Error);
+        expect((refusal as Error).message).to.contain(
+            "belongs to another signer"
+        );
+    });
+}
+
+/** runs `body` with a setup that starts a persistent runtime in one channel and location */
+async function withPersistedChannel(
+    runSdkInThread: boolean,
+    body: (
+        startInChannel: (
+            signerSecret: string | undefined
+        ) => ReturnType<typeof EvmStateMachine.p2pSetup>
+    ) => Promise<void>
+): Promise<void> {
+    const location = await mkdtemp(path.join(tmpdir(), "scp-persistence-"));
+    const { scm, deployedStateMachine, deployStateMachine, setupOptions } =
+        await prepareRuntimeSetup({ runSdkInThread, vmDedicatedThread: false });
+    const channelId = ethers.hexlify(ethers.randomBytes(32));
+    try {
+        await body((signerSecret) =>
+            EvmStateMachine.p2pSetup(
+                scm,
+                deployedStateMachine,
+                deployStateMachine,
+                {
+                    ...setupOptions,
+                    persistence: { location },
+                    channelId,
+                    signerSecret
+                }
+            )
+        );
+    } finally {
+        await rm(location, { recursive: true, force: true });
+    }
+}
+
+/** a partition with an undecodable record fails the setup naming its location; `reset` starts it over */
+export async function assertCorruptPartitionResetsOnRequest(
+    runSdkInThread: boolean
+): Promise<void> {
+    const location = await mkdtemp(path.join(tmpdir(), "scp-persistence-"));
+    const { scm, deployedStateMachine, deployStateMachine, setupOptions } =
+        await prepareRuntimeSetup({ runSdkInThread, vmDedicatedThread: false });
+    const channelId = ethers.hexlify(ethers.randomBytes(32));
+    const start = (reset?: boolean) =>
+        EvmStateMachine.p2pSetup(
+            scm,
+            deployedStateMachine,
+            deployStateMachine,
+            { ...setupOptions, persistence: { location, reset }, channelId }
+        );
+    try {
+        await (await start()).dispose();
+        const [namespace] = await readdir(location);
+        const partitionLocation = path.join(location, namespace);
+        const database = new ClassicLevel<string, string>(partitionLocation, {
+            keyEncoding: "utf8",
+            valueEncoding: "utf8"
+        });
+        await database.open();
+        await database.put("records!v1!unknown!record", "corrupt");
+        await database.close();
+
+        let recoveryError: Error | undefined;
+        try {
+            await (await start()).dispose();
+        } catch (error) {
+            recoveryError = error as Error;
+        }
+        expect(recoveryError?.message).to.include(partitionLocation);
+
+        // the failed setup released the partition: a reset opens it again
+        await (await start(true)).dispose();
+    } finally {
+        await rm(location, { recursive: true, force: true });
     }
 }
 
