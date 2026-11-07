@@ -17,8 +17,8 @@ describe("Unit: FraudProofStorage", function () {
 
         expect(storage.getFraudProofByHash(proofHash)).to.deep.equal(proof);
         expect(
-            storage.getFraudProofForParticipant(proof.participant as string)
-        ).to.deep.equal(proof);
+            storage.getFraudProofsForParticipant(proof.participant as string)
+        ).to.deep.equal([proof]);
     });
 
     it("re-storing the identical proof is a no-op", function () {
@@ -46,12 +46,12 @@ describe("Unit: FraudProofStorage", function () {
         const restoreHash = storage.storeFraudProof(collidingRestore);
 
         expect(restoreHash).to.equal(proofHash);
-        expect(storage.getFraudProofForParticipant(participantA)).to.deep.equal(
-            original
-        );
-        expect(storage.getFraudProofForParticipant(participantB)).to.equal(
-            undefined
-        );
+        expect(
+            storage.getFraudProofsForParticipant(participantA)
+        ).to.deep.equal([original]);
+        expect(
+            storage.getFraudProofsForParticipant(participantB)
+        ).to.deep.equal([]);
         expect(storage.getFraudProofByHash(proofHash)!.participant).to.equal(
             participantA
         );
@@ -69,20 +69,17 @@ describe("Unit: FraudProofStorage", function () {
         expect(hashOne).to.not.equal(hashTwo);
         expect(storage.getFraudProofByHash(hashOne)).to.deep.equal(proofOne);
         expect(storage.getFraudProofByHash(hashTwo)).to.deep.equal(proofTwo);
-        const indexed = storage.getFraudProofForParticipant(participant);
-        expect(indexed).to.satisfy(
-            (p: typeof proofOne) =>
-                JSON.stringify(p) === JSON.stringify(proofOne) ||
-                JSON.stringify(p) === JSON.stringify(proofTwo)
+        expect(storage.getFraudProofsForParticipant(participant)).to.deep.equal(
+            [proofOne, proofTwo]
         );
     });
 
-    it("returns undefined for a participant with no stored proof", function () {
+    it("returns no proofs for a participant with no stored proof", function () {
         const storage = new FraudProofStorage();
 
-        expect(storage.getFraudProofForParticipant(randomAddress())).to.equal(
-            undefined
-        );
+        expect(
+            storage.getFraudProofsForParticipant(randomAddress())
+        ).to.deep.equal([]);
     });
 
     it("DisputeFraudProofStorage: second proof for the same dispute is dropped", function () {

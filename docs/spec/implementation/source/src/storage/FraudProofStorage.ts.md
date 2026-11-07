@@ -11,7 +11,7 @@
 Store and index
 
 - Setup: Store proofs incl. repeats and multiple per participant
-- Oracle: Round trips exact; repeats idempotent; index returns a stored proof for exactly the indexed participants; index survives a re-store under a differing participant
+- Oracle: Round trips exact; repeats idempotent; index returns every stored proof, in insertion order, for exactly the indexed participants; index survives a re-store under a differing participant
 
 - [x] `UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P1` — store/read by hash
 - [x] `UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P2` — repeat idempotent

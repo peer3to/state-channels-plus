@@ -240,3 +240,5 @@ Kill application
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P211` — a `TimeoutCalldataPosted` proof whose inbound block skips a height is invalid and slashes its submitter
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P212` — a `TimeoutCalldataPosted` proof whose inbound message the state machine rejects reverts `ErrorDisputeStateMachineInboundProcessingFailed` with no verdict and no slash
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P213` — a `TimeoutCalldataPosted` proof whose posted block consumes a join of a new participant commits to a snapshot admitting the joiner and kills the timeout
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P214` — `DisputeInvalidBlockInStateProofApplyFraudProof` embedding a forged-inbound proof that cites a genuine inbound block pruned by same-fork adoption reverts `RaceConditionBlockHeightTooOld`; the dispute stays committed and nobody is slashed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P215` — the same nested route embedding a fabricated inbound block above the snapshot's inbound head kills the dispute and slashes the disputer; the killer is not slashed

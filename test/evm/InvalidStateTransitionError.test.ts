@@ -101,8 +101,11 @@ describe("isInvalidStateTransitionError", function () {
 
     it("stateTransition returns an invalid transition for a transition that reverts", async function () {
         const executor = new ContractExecutor(
-            // the runtime's EVM option: the local diamond exceeds EIP-170
-            await EVM.create({ allowUnlimitedContractSize: true })
+            // the runtime's EVM options: the local diamond exceeds EIP-170/3860
+            await EVM.create({
+                allowUnlimitedContractSize: true,
+                allowUnlimitedInitCodeSize: true
+            })
         );
         const machine = await deployMathMachine(executor, DEFAULT_BUDGET);
         const stateMachine = await createDiamondStateMachine(
@@ -123,8 +126,11 @@ describe("isInvalidStateTransitionError", function () {
 
     it("stateTransition throws a refusal to run under-funded instead of returning an invalid transition", async function () {
         const executor = new ContractExecutor(
-            // the runtime's EVM option: the local diamond exceeds EIP-170
-            await EVM.create({ allowUnlimitedContractSize: true })
+            // the runtime's EVM options: the local diamond exceeds EIP-170/3860
+            await EVM.create({
+                allowUnlimitedContractSize: true,
+                allowUnlimitedInitCodeSize: true
+            })
         );
         const machine = await deployMathMachine(executor, BUDGET_ABOVE_DEFAULT);
         const stateMachine = await createDiamondStateMachine(
