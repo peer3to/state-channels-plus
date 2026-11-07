@@ -119,12 +119,7 @@ export class DeferredAdmissionGuard extends AGuard<
 
         const deferredRpcs = [...queue.deferredRpcs];
         this.clear(transport);
-        if (
-            ready &&
-            !this.service.p2pManager.isDisposed &&
-            !this.service.p2pManager.stateManager.isDisposed &&
-            !transport.isClosed
-        ) {
+        if (ready && !transport.isClosed) {
             // Start every admitted invocation in arrival order without serializing completion.
             await Promise.all(
                 deferredRpcs.map((rpc) => this.service.runRPC(rpc, transport))

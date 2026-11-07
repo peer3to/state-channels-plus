@@ -94,8 +94,8 @@ signer it fails: the runtime aborts to `OPENED`.
 - `matches a handoff leave across topic letter case and keeps it after a leave of another topic`: UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P3
 - `ends a lobby join left before its matching started`: REQ-LOBBY-9-N894C0.T1.P28
 - `joinLobby starts ordinary negotiation from the returned match`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P6
-- `settles joinLobby when the runtime is disposed after local signing`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P9, REQ-NEG-4-ZQ0985.T1.P11
-- `disposal during a held watchdog upload stops the runtime and the late completion reports nothing`: REQ-TJOIN-7-NNGTAY.T1.P11, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P15
+- `rejects joinLobby with RootDisposedError when the runtime is disposed after local signing`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P9, REQ-NEG-4-ZQ0985.T1.P11
+- `disposal during a held watchdog upload stops the runtime without waiting for the upload and reports no leave`: REQ-TJOIN-7-NNGTAY.T1.P11, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P15
 - `authored leave watchdog fallback is fatal on unrecognized-upload-failure`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P16, REQ-LIF-10-QR8NQ9.T1.P7
 - `authored leave watchdog fallback on evidence-expired waits for the reduction and emits onLeftChannel`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P17, REQ-LIF-10-QR8NQ9.T1.P8, REQ-TJOIN-7-NNGTAY.T1.P10
 

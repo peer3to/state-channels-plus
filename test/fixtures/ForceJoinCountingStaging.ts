@@ -1,9 +1,6 @@
 // @spec-test-coverage-ignore: force-join and join-check staging shared by the join unit and E2E cases
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
-import type { LeaveChannelState } from "@/stateManager/membership/LeaveChannelService";
-import type StateManager from "@/stateManager/StateManager";
 import type { JoinRecord } from "@/storage/ForceJoinStorage";
-import type { Status } from "@/types";
 import type { ForkId } from "@/types/types";
 import { waitFor } from "@test/utils/waitFor";
 
@@ -326,12 +323,13 @@ export async function holdForceJoinMembershipRead(
                 });
             });
             if (hostArgs.releaseOnDispose) {
-                const stop = sm.stop.bind(sm);
-                Reflect.set(sm, "stop", () => {
-                    const stopping = stop();
+                // the spectate release opens the runtime's release
+                const spectate = sm.p2pManager.localRpc.spectateService;
+                const dispose = spectate.dispose.bind(spectate);
+                spectate.dispose = () => {
+                    dispose();
                     release();
-                    return stopping;
-                });
+                };
             }
             Object.defineProperties(owner, {
                 forceJoinReadEntered: {
@@ -453,105 +451,4 @@ export async function observeDisputeRequests(
                 return true;
             })
     };
-}
-
-/** Join timer names `ChannelJoinService` schedules. */
-export const JOIN_TIMER_NAMES = [
-    "join authorization expiry",
-    "force join deadline"
-] as const;
-
-/**
- * Holds the participant-count read of the joiner's next force-join deadline
- * setup after the read answered; the setup continues once released. It
- * patches the retained inline host (see `runtimeEndpointFor`), so it can be
- * released after the runtime disposed.
- */
-export function holdForceJoinDeadlineParticipantRead(sm: StateManager) {
-    const joinService = sm.channelJoinService;
-    const diamond = sm.diamondStateMachine;
-    const armDeadline = Reflect.get(
-        joinService,
-        "armUntilForceJoinDeadline"
-    ) as (...args: unknown[]) => Promise<void>;
-    const readParticipants = diamond.getParticipants.bind(diamond);
-    let open!: () => void;
-    const gate = new Promise<void>((resolve) => {
-        open = resolve;
-    });
-    let isEntered = false;
-    let isDeadlineSetup = false;
-    Object.defineProperty(diamond, "getParticipants", {
-        configurable: true,
-        value: async () => {
-            const isHeld = isDeadlineSetup && !isEntered;
-            if (isHeld) isEntered = true;
-            const participants = await readParticipants();
-            if (isHeld) await gate;
-            return participants;
-        }
-    });
-    Reflect.set(
-        joinService,
-        "armUntilForceJoinDeadline",
-        (...args: unknown[]) => {
-            // the setup reads the participant count synchronously at its start
-            isDeadlineSetup = true;
-            try {
-                return armDeadline.apply(joinService, args);
-            } finally {
-                isDeadlineSetup = false;
-            }
-        }
-    );
-    return {
-        isEntered: () => isEntered,
-        release: () => {
-            Reflect.deleteProperty(diamond, "getParticipants");
-            Reflect.deleteProperty(joinService, "armUntilForceJoinDeadline");
-            open();
-        }
-    };
-}
-
-/** The joiner's host state right after it emitted `onLeftChannel`. */
-export type MembershipEndObservation = {
-    status: Status;
-    trackedJoin: TrackedJoin | null;
-    leaveState: LeaveChannelState | null;
-    /** Whether the last read of the installed local state before the event listed the signer; null without a read. */
-    isSignerInLocalState: boolean | null;
-};
-
-/**
- * Record-only: on the retained inline host (see `runtimeEndpointFor`),
- * records the answer of each real read of the installed local state's
- * participants (every membership drop decides on one) and, once the runtime
- * emits `onLeftChannel` and its synchronous subscribers ran, the host state.
- * The record stays readable after the runtime disposes itself.
- */
-export function observeMembershipEnd(sm: StateManager) {
-    const diamond = sm.diamondStateMachine;
-    const readParticipants = diamond.getParticipants.bind(diamond);
-    let isSignerInLocalState: boolean | null = null;
-    let atLeft: MembershipEndObservation | undefined;
-    Object.defineProperty(diamond, "getParticipants", {
-        configurable: true,
-        value: async () => {
-            const participants = await readParticipants();
-            isSignerInLocalState = participants.includes(sm.signerAddress);
-            return participants;
-        }
-    });
-    sm.events.on("p2pEventHooks", "onLeftChannel", () => {
-        queueMicrotask(() => {
-            atLeft ??= {
-                status: sm.status,
-                trackedJoin: sm.storage.forceJoin.getJoin() ?? null,
-                leaveState: sm.leaveChannelService.state ?? null,
-                isSignerInLocalState
-            };
-        });
-    });
-    return { atLeft: () => atLeft };
 }

@@ -25,16 +25,14 @@ describe("E2E: worker shutdown", function () {
             configOverrides: { RUN_SDK_IN_THREAD: true }
         });
         const stub = harness.control(harness.getPeer(0)).stub;
-        // the task runs until the timeout manager's dispose starts its wait
+        // the task runs until the timeout manager's dispose ran; disposal
+        // does not wait for it
         await stub.holdScheduledTaskUntilDispose().request();
         await waitFor(
             async () =>
                 (await stub.getDisposeWaitTask().request()).entered === 1,
             harness.event.hostExecTimeoutMs()
         );
-        const inFlight = await stub.getDisposeWaitTask().request();
-        expect(inFlight.entered).to.equal(1);
-        expect(inFlight.running).to.be.greaterThan(0);
 
         const startedAt = Date.now();
         await harness.cleanup();

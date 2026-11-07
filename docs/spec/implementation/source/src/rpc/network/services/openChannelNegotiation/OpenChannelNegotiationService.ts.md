@@ -69,7 +69,7 @@ Negotiation admission and balance
 
 Opening-data hook and stale-attempt rule
 
-- Setup: Run a committed ordinary negotiation with a probe peer on each side of the address order, through the base service (default hook) and a root service that derives, fails, or holds `buildOpeningData`; cancel a held attempt with `dispose`, start a replacement with another peer, then settle the held hook
+- Setup: Run a committed ordinary negotiation with a probe peer on each side of the address order, through the base service (default hook) and a root service that derives, fails, or holds `buildOpeningData`; cancel a held attempt, start a replacement with another peer, then settle the held hook
 - Oracle: The proposal or accepted data equals the hook result for the exact agreed terms in address order; a hook failure ends the attempt locally with no proposal, co-signature, strike or close; a late hook result or failure after cancellation leaves the replacement current with its channel, deadline and pending outcome, and the replacement opens while the old peer gets no signature and no penalty
 
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P1` — lower role, default hook: proposes empty data, no deriving hook is called, the channel opens

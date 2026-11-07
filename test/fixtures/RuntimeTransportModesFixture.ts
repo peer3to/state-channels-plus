@@ -599,9 +599,9 @@ export async function assertFailedSetupLeavesNoRootOnTheFlushBus(): Promise<void
         }
         expect(message).to.equal("root ready boom");
         expect(applicationChild).to.not.equal(undefined);
-        expect(() => applicationChild!.info("after failed setup")).to.throw(
-            "disposed"
-        );
+        expect(applicationChild!.isDisposed).to.equal(true);
+        // a released logger still writes to its console, never fails
+        applicationChild!.info("after failed setup");
         expect(() =>
             sibling.info("caller still owns this logger")
         ).not.to.throw();

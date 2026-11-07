@@ -378,17 +378,18 @@ export async function assertInlineCleanupAfterDomainFailure(): Promise<void> {
                     root instanceof P2pRuntimeHostRoot
             );
             if (!host) throw new Error("Expected actual SDK host");
-            const sm = host.hostRpc.requireManager().stateManager;
-            const dispose = sm.dispose.bind(sm);
+            const spectate =
+                host.hostRpc.requireManager().localRpc.spectateService;
+            const dispose = spectate.dispose;
             const children = [...host.connections.values()]
                 .filter((connection) => connection.remoteRelation === "child")
                 .map((connection) => ({
                     transport: connection["transport"],
                     root: connection["localPeerRemoteRoot"]!["owner"]
                 }));
-            // Run real cleanup, then make its awaited boundary report a failure.
-            sm.dispose = async () => {
-                await dispose();
+            // Run the real release, then make its awaited boundary report a failure.
+            spectate.dispose = async () => {
+                dispose.call(spectate);
                 throw new Error("domain cleanup failed");
             };
             try {
@@ -413,7 +414,7 @@ export async function assertInlineCleanupAfterDomainFailure(): Promise<void> {
                     await second.remote.runtimeProbe.sum(4, 5).request()
                 ).to.equal(9);
             } finally {
-                sm.dispose = dispose;
+                spectate.dispose = dispose;
             }
         });
     });

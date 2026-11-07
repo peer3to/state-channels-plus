@@ -1,13 +1,12 @@
 import { CONSOLE_ADDRESS, createEvm, type EvmCustomPrecompile } from "@/evm";
 import { Address } from "@ethereumjs/util";
 import {
+    assertDisposalAbandonsAdmittedWork,
     assertDisposalAbandonsStuckAdmittedWork,
-    assertDisposalKeepsAdmittedFailure,
-    assertLateFailureAfterDrainLimitStaysRejected,
-    assertLateSuccessAfterDrainLimitStaysRejected,
-    assertQueuedWorkAfterDrainLimitStaysRejected,
+    assertLateFailureAfterDisposalStaysRejected,
+    assertLateSuccessAfterDisposalStaysRejected,
+    assertQueuedWorkAfterDisposalStaysRejected,
     assertDisposalRejectsLaterAdmission,
-    assertDisposalWaitsForAdmittedWork,
     assertInlineExecutorOwnerContext,
     assertRepeatedExecutorDisposalSharesCompletion,
     assertWorkerExecutorOwnerContext
@@ -158,35 +157,31 @@ describe("EvmFactory", function () {
         await assertWorkerExecutorOwnerContext();
     });
 
-    it("finishes an admitted precompile call and queued deploy and simulation before disposing the precompile child", async function () {
-        await assertDisposalWaitsForAdmittedWork();
+    it("rejects an admitted precompile call and its queued deploy and simulation at once and disposes the precompile child", async function () {
+        await assertDisposalAbandonsAdmittedWork();
     });
 
     it("rejects executor calls, deploys and simulations that arrive after disposal began without entering the EVM", async function () {
         await assertDisposalRejectsLaterAdmission();
     });
 
-    it("keeps an admitted operation's failure while disposal waits for it", async function () {
-        await assertDisposalKeepsAdmittedFailure();
-    });
-
     it("shares one completion across repeated executor disposal during admitted work", async function () {
         await assertRepeatedExecutorDisposalSharesCompletion();
     });
 
-    it("abandons an admitted call stuck past the drain limit, closes the child, and reports no error", async function () {
+    it("abandons an admitted call stuck on its precompile at once, closes the child, and reports no error", async function () {
         await assertDisposalAbandonsStuckAdmittedWork();
     });
 
-    it("keeps the disposal rejection for an admitted call that succeeds after the drain limit", async function () {
-        await assertLateSuccessAfterDrainLimitStaysRejected();
+    it("keeps the disposal rejection for an admitted call that succeeds after disposal", async function () {
+        await assertLateSuccessAfterDisposalStaysRejected();
     });
 
-    it("keeps the disposal rejection for an admitted call that fails after the drain limit", async function () {
-        await assertLateFailureAfterDrainLimitStaysRejected();
+    it("keeps the disposal rejection for an admitted call that fails after disposal", async function () {
+        await assertLateFailureAfterDisposalStaysRejected();
     });
 
-    it("rejects queued deploy and simulation callers released after the drain limit", async function () {
-        await assertQueuedWorkAfterDrainLimitStaysRejected();
+    it("rejects queued deploy and simulation callers released after disposal", async function () {
+        await assertQueuedWorkAfterDisposalStaysRejected();
     });
 });

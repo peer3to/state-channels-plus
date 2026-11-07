@@ -159,8 +159,7 @@ export type HarnessOptions<
      * Gas granted to every local EVM call of the listed peers (peer index ->
      * gas), in place of the limit the runtime derives from the manager.
      * Stages a peer whose local EVM cannot fund a transition the others run.
-     * A listed peer runs its host inline, where the executor factory is
-     * reachable.
+     * Applied host-side once the peer is built.
      */
     executorCallGasLimitByPeer?: Record<number, number>;
     /**
