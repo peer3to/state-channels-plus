@@ -62,3 +62,4 @@ Delegatecalled proxy-storage views
 - [ ] `UNIT-TEST-UTILITY-FACET-2-89EC3Q.P7` — `isKillPeriodExpired`/`isReduceChallengePeriodExpired` on both sides of their deadlines
 - [ ] `UNIT-TEST-UTILITY-FACET-2-89EC3Q.P8` — `verifyOutboundMessageBlocks`/`pruneOutboundMessageBlocks` on a linked and a broken chain
 - [ ] `UNIT-TEST-UTILITY-FACET-2-89EC3Q.P9` — the same selector read directly on the facet deployment returns the facet's empty storage, not the manager's
+- [x] `UNIT-TEST-UTILITY-FACET-2-89EC3Q.P10` — `isUncommittedInboundMessageBlock` through the manager after a same-fork prune: false for a pruned block below the snapshot's inbound head, for the pruned head itself and for a stored block above it; true for a fabricated block above it

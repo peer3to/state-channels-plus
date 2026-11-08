@@ -29,6 +29,7 @@ import { channelKey } from "@/utils/channelKey";
 import { errorMessage } from "@/utils/errorMessage";
 import * as factory from "@test/factory";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import type { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { ethers, id, Log, type WebSocketProvider } from "ethers";
 
 /** The bound of the wait for logs a catch-up scheduled; the drain is local. */
@@ -213,6 +214,8 @@ type RecordedValidationRun = {
         calldataRecoveryQueries: number;
         subjectiveWarningCount: number;
         lastHookResult: BlockValidationResult | undefined;
+        // fraud proofs this run stored, deduplicated re-stores included
+        storedFraudProofs: FraudProofStruct[];
     };
     restore: () => void;
 };
@@ -1231,6 +1234,25 @@ export class ValidationProbeService extends ANetworkRpcService<
         }
     }
 
+    public async detectForgedInboundMessageBlock(
+        encodedBlockConfirmation: string
+    ): Promise<{ encodedForgedInboundMessageBlock: string } | null> {
+        const block = Block.fromBlockConfirmation(
+            Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation)
+        );
+        const forged =
+            await this.sm.validationService.detectForgedInboundMessageBlock(
+                block
+            );
+        if (!forged) return null;
+        return {
+            encodedForgedInboundMessageBlock: Codec.encode(
+                forged,
+                Type.MessageBlock
+            ) as string
+        };
+    }
+
     /**
      * White-box: run the whole onBlockConfirmation pipeline (assembly, hash
      * compare, VM restore) under the same record-only side-effect wrappers as
@@ -1370,7 +1392,16 @@ export class ValidationProbeService extends ANetworkRpcService<
             abortCalled: false,
             calldataRecoveryQueries: 0,
             subjectiveWarningCount: 0,
-            lastHookResult: undefined
+            lastHookResult: undefined,
+            storedFraudProofs: []
+        };
+
+        const fraudProofs = sm.storage.fraudProofs;
+        const originalStoreFraudProof =
+            fraudProofs.storeFraudProof.bind(fraudProofs);
+        fraudProofs.storeFraudProof = (fraudProof) => {
+            recorded.storedFraudProofs.push(fraudProof);
+            return originalStoreFraudProof(fraudProof);
         };
 
         const logStore = sm.logger["logStore"];
@@ -1464,6 +1495,7 @@ export class ValidationProbeService extends ANetworkRpcService<
             recorded,
             restore: () => {
                 logStore.store = originalStoreLog;
+                fraudProofs.storeFraudProof = originalStoreFraudProof;
                 if (disputeManager && originalDispute) {
                     disputeManager.dispute = originalDispute;
                 }
@@ -1481,10 +1513,10 @@ export class ValidationProbeService extends ANetworkRpcService<
         run: RecordedValidationRun,
         result: BlockValidationResult
     ): BlockValidationProbe {
-        const fraudProof =
-            this.sm.storage.fraudProofs.getFraudProofForParticipant(
-                run.block.signerAddress
-            );
+        // only a proof this run stored counts, not one already held for the signer
+        const fraudProof = run.recorded.storedFraudProofs
+            .filter((proof) => proof.participant === run.block.signerAddress)
+            .at(-1);
         return {
             result,
             resultName: BlockValidationResult[result] ?? `UNKNOWN(${result})`,
