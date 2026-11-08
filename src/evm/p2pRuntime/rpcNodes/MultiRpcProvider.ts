@@ -198,7 +198,7 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
 
     // Implements JsonRpcApiProvider._send: each request goes to the first
     // connected node and fails over to the next one when that node drops or
-    // answers that it failed internally.
+    // answers a read with its internal error and no revert data.
     async _send(
         payload: JsonRpcPayload | Array<JsonRpcPayload>
     ): Promise<Array<JsonRpcResult | JsonRpcError>> {

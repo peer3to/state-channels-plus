@@ -122,6 +122,7 @@ export type StubKey =
     | "auditingDataBuild"
     | "disputeKillMulticall"
     | "stateProofBuilds"
+    | "completeWithGenesis"
     | "discoveryJoinHold"
     | "auditingDataRebuild"
     | "snapshotPostSend"
@@ -608,6 +609,9 @@ export class StubService extends ANetworkRpcService<
     private restoreChainCallRecording?: () => void;
     private chainMembershipReadCount = 0;
     private restoreChainMembership?: () => void;
+    /** Answers of the recorded `isSignerOnChain` reads, in settle order. */
+    private signerOnChainAnswers: boolean[] = [];
+    private membershipDropCount = 0;
     private heldParticipantChecks?: {
         entered: number;
         /** One answer resolver per parked check, oldest first. */
@@ -917,6 +921,8 @@ export class StubService extends ANetworkRpcService<
     recordedDisputeAuditCount = 0;
     // full state-proof builds counted by stubCountStateProofBuilds
     stateProofBuildCount = 0;
+    // reductionManager.completeWithGenesis calls counted by stubCountCompleteWithGenesis
+    completeWithGenesisCount = 0;
     // replayGasLimit block reads rejected by stubFailReplayGasBlockRead
     replayGasBlockReadFailures = 0;
     /** The state the state-mutex hold installed, while it is held. */
@@ -2448,6 +2454,34 @@ export class StubService extends ANetworkRpcService<
         this.restoreChainMembership = undefined;
     }
 
+    /** Record each `isSignerOnChain` answer and each `dropMembership` call; both still run. */
+    public recordMembershipEndChecks(): void {
+        const membership = this.sm.membershipService;
+        const isSignerOnChain = membership.isSignerOnChain.bind(membership);
+        const dropMembership = membership.dropMembership.bind(membership);
+        this.signerOnChainAnswers = [];
+        this.membershipDropCount = 0;
+        membership.isSignerOnChain = async () => {
+            const isOnChain = await isSignerOnChain();
+            this.signerOnChainAnswers.push(isOnChain);
+            return isOnChain;
+        };
+        membership.dropMembership = () => {
+            this.membershipDropCount += 1;
+            dropMembership();
+        };
+    }
+
+    public getMembershipEndChecks(): {
+        signerOnChainAnswers: boolean[];
+        dropCount: number;
+    } {
+        return {
+            signerOnChainAnswers: [...this.signerOnChainAnswers],
+            dropCount: this.membershipDropCount
+        };
+    }
+
     /** Parks every handshake participant check (`canParticipateInDisputes`) until released. */
     public holdParticipantCheck(): void {
         this.releaseParticipantCheck("chain");
@@ -3906,13 +3940,16 @@ export class StubService extends ANetworkRpcService<
 
     /**
      * A provider that lags the chain: the head and every `latest` read stay at
-     * the current block until released. `holdLogs`: streamed logs above that
-     * block are held too, as when every node lags; otherwise another node
-     * keeps streaming them. Returns the pinned block.
+     * `atBlock` (default: the current block) until released. `holdLogs`:
+     * streamed logs above that block are held too, as when every node lags;
+     * otherwise another node keeps streaming them. Returns the pinned block.
      */
-    public async lagChainView(holdLogs: boolean): Promise<number> {
+    public async lagChainView(
+        holdLogs: boolean,
+        atBlock?: number
+    ): Promise<number> {
         const provider = this.jsonRpcChainProvider;
-        const pinned = await provider.getBlockNumber();
+        const pinned = atBlock ?? (await provider.getBlockNumber());
         const pinnedTag = toQuantity(pinned);
         const send = provider.send.bind(provider);
         this.stubOriginals.set("chainViewSend", send);

@@ -4,7 +4,6 @@ import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
 import {
     forgedOutboundBlock,
     localDiamondOutboundHeight,
-    withChainSnapshotLag,
     stageAnchorAdvancedPastFirstExit,
     stageAnchoredSyncPayload,
     stageOutboundAroundAnchor
@@ -230,15 +229,17 @@ describe("Unit: SpectateService sync proof verification order", function () {
                     (await localDiamondOutboundHeight(h, requester)) === 2,
                 h.event.protocolEventTimeoutMs()
             );
-            const outcome = await withChainSnapshotLag(
+            const lag = await h.rpcStub.lagChainView(requester.index, {
+                holdLogs: false,
+                atBlock: blockBeforePost
+            });
+            const outcome = await applyPayloads(
                 h,
                 requester,
-                blockBeforePost,
-                () =>
-                    applyPayloads(h, requester, String(forkId), ["served"], {
-                        responderIndex: remaining[0]
-                    })
-            );
+                String(forkId),
+                ["served"],
+                { responderIndex: remaining[0] }
+            ).finally(lag.release);
             expect(outcome.outcomes[0]).to.deep.include({
                 accepted: false,
                 threw: ""
@@ -260,11 +261,15 @@ describe("Unit: SpectateService sync proof verification order", function () {
                     (await localDiamondOutboundHeight(h, requester)) === 2,
                 h.event.protocolEventTimeoutMs()
             );
-            await withChainSnapshotLag(h, requester, blockBeforePost, () =>
-                h.execOnHost(requester, async (sm) => {
+            const lag = await h.rpcStub.lagChainView(requester.index, {
+                holdLogs: false,
+                atBlock: blockBeforePost
+            });
+            await h
+                .execOnHost(requester, async (sm) => {
                     await sm.refreshOpenedStatusFromChain();
                 })
-            );
+                .finally(lag.release);
 
             expect(await localDiamondOutboundHeight(h, requester)).to.equal(2);
         });

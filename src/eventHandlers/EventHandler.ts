@@ -44,6 +44,8 @@ export const END_OF_BLOCK_LOG_INDEX = Number.MAX_SAFE_INTEGER;
 export class EventHandler {
     private logger: Logger;
     private disputeHandlingPromises = new Map<Hash, Promise<void>>();
+    // aborted by `dispose`: ends the window reads' chain-head waits
+    private readonly disposal = new AbortController();
 
     constructor(
         private storage: Storage,
@@ -53,6 +55,11 @@ export class EventHandler {
         logger: Logger
     ) {
         this.logger = logger.child({ component: "EventHandler" });
+    }
+
+    /** End every window read's wait for the chain head (timer and block listener). */
+    public dispose(): void {
+        this.disposal.abort();
     }
 
     async onChannelOpened(
@@ -177,6 +184,7 @@ export class EventHandler {
         disputeCreationTimestamp: Timestamp,
         isFinal: boolean,
         windowCreationTimestamp: Timestamp,
+        coordinate: EventCoordinate,
         disputeAuditingData?: DisputeAuditingDataStruct
     ): Promise<void> {
         const disputeHash = hash(
@@ -191,6 +199,7 @@ export class EventHandler {
             disputeCreationTimestamp,
             isFinal,
             windowCreationTimestamp,
+            coordinate,
             disputeAuditingData
         ).finally(() => {
             if (this.disputeHandlingPromises.get(disputeHash) === handling) {
@@ -487,6 +496,7 @@ export class EventHandler {
         disputeCreationTimestamp: Timestamp,
         isFinal: boolean,
         windowCreationTimestamp: Timestamp,
+        coordinate: EventCoordinate,
         disputeAuditingData?: DisputeAuditingDataStruct
     ): Promise<void> {
         const dispute = Codec.decode(
@@ -514,7 +524,12 @@ export class EventHandler {
             windowCreationTimestamp
         );
 
-        const window = await this.getRelevantWindow(channelId, forkId, isFinal);
+        const window = await this.getRelevantWindow(
+            channelId,
+            forkId,
+            isFinal,
+            coordinate
+        );
         if (!window) return;
         const { isExpired, killPeriodEnd } = window;
 
@@ -796,23 +811,41 @@ export class EventHandler {
      * upload opens its window. The chain deletes the windows only when it
      * closes the channel, or on a snapshot update that clears storage and
      * whose fork has no window, so a dispute without its window was settled
-     * while its event waited to be handled.
+     * while its event waited to be handled. Logs arrive from every RPC node
+     * but the read goes to one: a missing window counts only at a read at or
+     * after the event's block, so a node behind it is waited for, never
+     * trusted. A window that exists is acted on at once.
      */
     private async getRelevantWindow(
         channelId: ChannelId,
         forkId: ForkId,
-        isFinal: boolean
+        isFinal: boolean,
+        coordinate: EventCoordinate
     ) {
         const isTracked =
             this.stateManager.forkId === forkId ||
             (isFinal &&
                 this.stateManager.reductionManager.hasOperation(forkId));
         if (!isTracked) return undefined;
-        const window =
-            await this.stateManager.stateChannelManagerContract.isKillPeriodExpired(
-                channelId,
-                forkId
+        const contract = this.stateManager.stateChannelManagerContract;
+        const latest = await contract.isKillPeriodExpired(channelId, forkId);
+        if (latest.windowExists) return latest;
+        const eventSyncService = this.stateManager.eventSyncService;
+        const readWindow = () =>
+            eventSyncService.readAtHead((blockTag) =>
+                contract.isKillPeriodExpired(channelId, forkId, { blockTag })
             );
+        let read = await readWindow();
+        while (read.blockNumber < coordinate.blockNumber) {
+            await eventSyncService.waitForChainHead(
+                coordinate.blockNumber,
+                this.stateManager.timeConfig.agreementTime * 1000,
+                this.disposal.signal
+            );
+            if (this.disposal.signal.aborted) return undefined;
+            read = await readWindow();
+        }
+        const window = read.value;
         if (window.windowExists) return window;
         this.logger.warn(
             "Ignoring a dispute whose window the chain already cleared",

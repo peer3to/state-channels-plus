@@ -6463,10 +6463,28 @@
       "peakRssGb": 1.203,
       "measurementReason": null
     },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider passes a transaction's internal error to the caller without sending it to the next node": {
+      "durationMs": 3095,
+      "avgCores": 0.85,
+      "peakRssGb": 0.559,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider passes an internal error carrying revert data to the caller without failing over": {
+      "durationMs": 2175,
+      "avgCores": 0.759,
+      "peakRssGb": 0.405,
+      "measurementReason": null
+    },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider passes the first node's error answer to the caller without failing over": {
       "durationMs": 11710,
       "avgCores": 1.101,
       "peakRssGb": 1.14,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects a call with the internal error at once when no other node is connected": {
+      "durationMs": 2659,
+      "avgCores": 0.914,
+      "peakRssGb": 0.621,
       "measurementReason": null
     },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects a call with the internal error when every node answers with it": {
@@ -14167,6 +14185,30 @@
       "peakRssGb": 0.081,
       "measurementReason": null
     },
+    "hardhat|test/scripts/packageHarnessControlExport.test.ts|package test-harness/control export exports the harness controls, as the same values as the test-harness entry": {
+      "durationMs": 960,
+      "avgCores": 0.781,
+      "peakRssGb": 0.141,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageHarnessControlExport.test.ts|package test-harness/control export loads neither the peer harness nor a test session": {
+      "durationMs": 1287,
+      "avgCores": 0.567,
+      "peakRssGb": 0.159,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageHarnessControlExport.test.ts|package test-harness/control export loads the peer harness and the test session through the test-harness entry": {
+      "durationMs": 1104,
+      "avgCores": 0.67,
+      "peakRssGb": 0.179,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageHarnessControlExport.test.ts|package test-harness/control export resolves the test-harness/control subpath to the built entry": {
+      "durationMs": 496,
+      "avgCores": 0.585,
+      "peakRssGb": 0.075,
+      "measurementReason": null
+    },
     "hardhat|test/scripts/packageHostRootExport.test.ts|package host-root export exports exactly the host root, as the same value as the package index": {
       "durationMs": 799,
       "avgCores": 1.039,
@@ -14269,10 +14311,34 @@
       "peakRssGb": 0.974,
       "measurementReason": null
     },
+    "hardhat|test/stateManager/DisputeWindowClearedEvent.test.ts|Dispute window cleared before handling a double signer whose chain events were held through a threshold-final dispute, its reduction and a same-fork snapshot update ignores the final dispute without installing its output, and leaves": {
+      "durationMs": 10685,
+      "avgCores": 1.121,
+      "peakRssGb": 0.97,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/DisputeWindowClearedEvent.test.ts|Dispute window cleared before handling a synced spectator whose chain events were held through a dispute cycle and a same-fork snapshot update ignores the disputes: nothing persisted, no reduction scheduled, and its mirror holds the chain's snapshot": {
+      "durationMs": 28603,
+      "avgCores": 0.622,
+      "peakRssGb": 0.93,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/DisputeWindowClearedEvent.test.ts|Dispute window cleared before handling a timed-out peer removed by a same-fork snapshot update it never installed stays a participant while the chain lists it as a pending joiner": {
+      "durationMs": 37493,
+      "avgCores": 0.405,
+      "peakRssGb": 0.747,
+      "measurementReason": null
+    },
     "hardhat|test/stateManager/DisputeWindowClearedEvent.test.ts|Dispute window cleared before handling a timed-out peer whose chain events were held through the disputes, the reduction and a same-fork snapshot update ignores the disputes and leaves": {
       "durationMs": 36175,
       "avgCores": 0.389,
       "peakRssGb": 0.75,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/DisputeWindowClearedEvent.test.ts|Dispute window not yet visible on a lagging read node an auditor whose read node is behind the block of a fork's first dispute waits for it, then acknowledges, audits and kills the invalid dispute": {
+      "durationMs": 16873,
+      "avgCores": 1.146,
+      "peakRssGb": 0.979,
       "measurementReason": null
     },
     "hardhat|test/stateManager/EventBus.test.ts|EventBus (worker + main thread) delivers nothing to the client after runtime disposal": {

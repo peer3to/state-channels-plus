@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
+import { wallSeconds } from "./ExecutorTimestamp.fixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -100,6 +101,13 @@ export async function assertRuntimeContractEvent(
     expect(result).to.equal(a + b); // real Math semantics, not a canned value
 }
 
+/** Runtime clock offset for the onTurn test, below the height-0 timestamp window. */
+const TURN_CLOCK_OFFSET_SECONDS = 8;
+
+/**
+ * Every runtime's Clock runs `TURN_CLOCK_OFFSET_SECONDS` ahead of the wall
+ * clock, so a `currentTimestamp` read from the wall clock fails the oracle.
+ */
 export async function assertRuntimeTurnClock(
     runSdkInThread?: boolean
 ): Promise<void> {
@@ -111,38 +119,80 @@ export async function assertRuntimeTurnClock(
             ? undefined
             : { configOverrides: { RUN_SDK_IN_THREAD: runSdkInThread } }
     );
-
-    const turns: Array<{
-        turnTime: number;
-        startedAt?: number;
-        currentTimestamp?: number;
-    }> = [];
-    // Subscribe like the app: on the main-thread runtime events, across the port.
-    h.peers[0].p2pInstance.events.on(
-        "p2pEventHooks",
-        "onTurn",
-        (
-            _address,
-            turnTime,
-            _agreement,
-            _fallback,
-            startedAt,
-            currentTimestamp
-        ) => {
-            turns.push({ turnTime, startedAt, currentTimestamp });
-        }
+    const query = h.control(h.peers[0]).query;
+    const baselineOffset =
+        (await query.getClockTimeInSeconds().request()) - wallSeconds();
+    // Each worker has its own Clock; inline peers share one.
+    await Promise.all(
+        h.peers.map((peer) =>
+            h
+                .control(peer)
+                .stub.holdClockOffset(TURN_CLOCK_OFFSET_SECONDS)
+                .request()
+        )
     );
+    try {
+        const runtimeOffset =
+            (await query.getClockTimeInSeconds().request()) - wallSeconds();
+        // Each offset sample rounds to whole seconds on two clocks.
+        expect(runtimeOffset - baselineOffset).to.be.within(
+            TURN_CLOCK_OFFSET_SECONDS - 2,
+            TURN_CLOCK_OFFSET_SECONDS + 2
+        );
 
-    await h.transition.advanceState({ count: 2 });
-    await waitFor(() => turns.length >= 2, h.event.protocolEventTimeoutMs());
+        const turns: Array<{
+            turnTime: number;
+            startedAt?: number;
+            currentTimestamp?: number;
+            wallTimestamp: number;
+        }> = [];
+        // Subscribe like the app: on the main-thread runtime events, across the port.
+        h.peers[0].p2pInstance.events.on(
+            "p2pEventHooks",
+            "onTurn",
+            (
+                _address,
+                turnTime,
+                _agreement,
+                _fallback,
+                startedAt,
+                currentTimestamp
+            ) => {
+                turns.push({
+                    turnTime,
+                    startedAt,
+                    currentTimestamp,
+                    wallTimestamp: wallSeconds()
+                });
+            }
+        );
 
-    for (const { turnTime, startedAt, currentTimestamp } of turns) {
-        expect(startedAt).to.be.a("number");
-        expect(currentTimestamp).to.be.a("number");
-        // Both come from the runtime's chain clock, in whole seconds: the
-        // turn has just started, give or take the rounding.
-        const elapsed = currentTimestamp! - startedAt!;
-        expect(elapsed).to.be.at.least(-3);
-        expect(elapsed).to.be.at.most(turnTime + 3);
+        await h.transition.advanceState({ count: 2 });
+        await waitFor(
+            () => turns.length >= 2,
+            h.event.protocolEventTimeoutMs()
+        );
+
+        for (const turn of turns) {
+            const { turnTime, startedAt, currentTimestamp } = turn;
+            expect(startedAt).to.be.a("number");
+            expect(currentTimestamp).to.be.a("number");
+            // The runtime Clock, not the wall clock: whole-second sampling
+            // on both sides of the delivery.
+            expect(
+                currentTimestamp! - turn.wallTimestamp - runtimeOffset
+            ).to.be.within(-2, 2);
+            // Both come from the runtime's chain clock, in whole seconds: the
+            // turn has just started, give or take the rounding.
+            const elapsed = currentTimestamp! - startedAt!;
+            expect(elapsed).to.be.at.least(-3);
+            expect(elapsed).to.be.at.most(turnTime + 3);
+        }
+    } finally {
+        await Promise.all(
+            h.peers.map((peer) =>
+                h.control(peer).stub.releaseClockOffset().request()
+            )
+        );
     }
 }

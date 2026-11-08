@@ -1009,6 +1009,7 @@ export default class EventSyncService {
                     Number(args.disputeCreationTimestamp),
                     args.isFinal,
                     Number(args.windowCreationTimestamp),
+                    coordinate,
                     eventName === "DisputeCommittedWithAuditingData"
                         ? args.disputeAuditingData
                         : undefined

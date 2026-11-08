@@ -204,18 +204,6 @@ describe("Unit: DisputeValidationService replay persistence", function () {
             const staged = await stageFrozenViewBehindDisputeTail(h);
             const frozen = h.getPeer(staged.frozenIndex);
             await h.network.reconnectPeers([staged.frozenIndex]);
-            // the reconnect returns before the transports are up: a block
-            // broadcast earlier never reaches the reconnected peer
-            await Promise.all(
-                h.peers
-                    .filter((peer) => peer.index !== staged.frozenIndex)
-                    .map((peer) =>
-                        h.rpc.waitForHandshakeCompleted(
-                            peer.index,
-                            frozen.address
-                        )
-                    )
-            );
             // it catches up by sync, and a synced block carries no signature
             // of its own; the block after that it receives and signs live
             await h.transition.advanceState({

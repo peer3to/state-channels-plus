@@ -408,10 +408,16 @@ export const stripDisputeReasons: DisputeTamper = (dispute) => {
  * honest auditor finds it invalid. Peers 1-3 stay out of the kill race:
  * peer 0 is the auditor under test, and its dispute uploads are recorded and
  * forwarded (`hold` parks each at its send). Timeout checks are suppressed.
+ * `lagChainView`: peer 0's read node stays at the block before the dispute's
+ * while another node keeps streaming its log, until `chainView.release`.
  */
 export async function stageReasonlessInitialDispute(
     h: MathPeerTestHarness,
-    options: { hold: boolean; countStateProofBuilds?: { failFirst: boolean } }
+    options: {
+        hold: boolean;
+        countStateProofBuilds?: { failFirst: boolean };
+        lagChainView?: boolean;
+    }
 ) {
     await h.scenario.preDisputeSetup({ peerCount: 4 });
     for (const peer of h.peers)
@@ -428,11 +434,15 @@ export async function stageReasonlessInitialDispute(
               options.countStateProofBuilds
           )
         : undefined;
+    const chainView = options.lagChainView
+        ? await h.rpcStub.lagChainView(0, { holdLogs: false })
+        : undefined;
     await h.tamper.postTamperedDispute(spammer.index, stripDisputeReasons);
     return {
         spammer,
         submissions,
         stateProofBuilds,
+        chainView,
         /** Until a recorded upload was mined or reverted. */
         waitUntilSettled: () =>
             waitFor(

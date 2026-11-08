@@ -71,12 +71,6 @@ export async function assertPeerRpcRecovery(): Promise<void> {
             ).to.equal(undefined);
             await second.p2pManagerProbe.releaseNetworkReply(token).request();
             await harness.network.reconnectPeers([0, 1]);
-            await waitFor(
-                async () =>
-                    await first.query
-                        .isConnectedTo(fixture.address(1))
-                        .request()
-            );
             const result = await first.pingService
                 .sum(4, 7, token)
                 .request(fixture.address(1));

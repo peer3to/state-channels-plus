@@ -1181,6 +1181,80 @@ export async function assertNodeInternalErrorOfEveryNodeIsFinal(): Promise<void>
     });
 }
 
+export async function assertTransactionInternalErrorIsFinal(): Promise<void> {
+    await withProxiedNodes(2, async ({ proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        const encodedTransaction = await Wallet.createRandom().signTransaction({
+            to: Wallet.createRandom().address,
+            value: 1n,
+            nonce: 0,
+            gasLimit: 21_000n,
+            maxFeePerGas: ethers.parseUnits("10", "gwei"),
+            maxPriorityFeePerGas: 1n,
+            chainId: HARDHAT_CHAIN_ID,
+            type: 2
+        });
+        proxies[0].failNextRequestInternally("eth_sendRawTransaction");
+
+        const error = await provider
+            .broadcastTransaction(encodedTransaction)
+            .then(
+                () => undefined,
+                (failure: unknown) => failure
+            );
+
+        if (!isError(error, "UNKNOWN_ERROR"))
+            throw new Error("Expected the node's internal error");
+        // the node's own answer, as ethers keeps it
+        expect(error.error).to.deep.equal({
+            code: -32603,
+            message: "Internal error"
+        });
+        expect(proxies[0].failedCount("eth_sendRawTransaction")).to.equal(1);
+        expect(proxies[1].forwardedMethods).not.to.include(
+            "eth_sendRawTransaction"
+        );
+    });
+}
+
+export async function assertInternalErrorWithRevertDataIsFinal(): Promise<void> {
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        const funded = (await node.getSigner(0)).address;
+        proxies[0].revertNextRequestInternally("eth_call");
+
+        const error = await provider.call({ to: funded, data: "0x" }).then(
+            () => undefined,
+            (failure: unknown) => failure
+        );
+
+        expect(isError(error, "CALL_EXCEPTION")).to.equal(true);
+        expect(proxies[0].failedCount("eth_call")).to.equal(1);
+        expect(proxies[1].forwardedMethods).not.to.include("eth_call");
+    });
+}
+
+export async function assertNodeInternalErrorFinalWithoutConnectedNextNode(): Promise<void> {
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        const funded = (await node.getSigner(0)).address;
+        await cutAndWaitForDrop(proxies[1], nodes[1]);
+        proxies[0].failNextRequestInternally("eth_call");
+        const startedAt = Date.now();
+
+        const error = await provider.call({ to: funded, data: "0x" }).then(
+            () => undefined,
+            (failure: unknown) => failure
+        );
+
+        // time is the oracle: no wait for the cut node to reconnect
+        expect(Date.now() - startedAt).to.be.below(ABSENCE_WINDOW_MS);
+        expect(isError(error, "CALL_EXCEPTION")).to.equal(true);
+        expect(proxies[0].forwardedCount("eth_call")).to.equal(1);
+        expect(proxies[1].forwardedMethods).not.to.include("eth_call");
+    });
+}
+
 export async function assertOneWarningPerOutageOfEveryNode(): Promise<void> {
     await withIsolatedHardhatNode(async (node) => {
         const nodeUrl = node._getConnection().url;

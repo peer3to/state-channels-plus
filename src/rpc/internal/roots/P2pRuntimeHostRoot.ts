@@ -395,6 +395,8 @@ export class P2pRuntimeHostRoot<
         return (this.runtimeRelease ??= runCleanup(
             // ends the chain-head waits (timer and block listener)
             () => localRpc.spectateService.dispose(),
+            // ends the dispute window reads' chain-head waits
+            () => stateManager.eventHandler.dispose(),
             // pending handshake waits settle and their timers clear
             () => localRpc.initHandshakeService.dispose(),
             // every local discovery session of this runtime

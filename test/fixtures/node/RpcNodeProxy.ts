@@ -11,6 +11,25 @@ type JsonRpcId = number | string;
 /** A subscription notification held at the proxy, and the log's transaction. */
 type WithheldNotification = { transactionHash: unknown; send: () => void };
 
+/** The `error` object of a JSON-RPC error answer. */
+type JsonRpcErrorObject = { code: number; message: string; data?: unknown };
+
+/** JSON-RPC's internal error, as Besu sends it: no revert data. */
+const NODE_INTERNAL_ERROR: JsonRpcErrorObject = {
+    code: -32603,
+    message: "Internal error"
+};
+
+/** Hardhat's answer to a revert without a reason: -32603 with data "0x". */
+const HARDHAT_REVERT_ERROR: JsonRpcErrorObject = {
+    code: -32603,
+    message: "Error: Transaction reverted without a reason string",
+    data: {
+        message: "Error: Transaction reverted without a reason string",
+        data: "0x"
+    }
+};
+
 /** One request a client sent through the proxy. */
 export type ForwardedRequest = { method: JsonRpcMethod; params: unknown };
 
@@ -116,8 +135,11 @@ export class RpcNodeProxy {
     private readonly failingMethods = new Map<JsonRpcMethod, number>();
     /** Method -> how many of its next requests pass before one fails. */
     private readonly delayedFailures = new Map<JsonRpcMethod, number>();
-    /** Methods whose next request is answered with the node's internal error. */
-    private readonly internallyFailingMethods = new Set<JsonRpcMethod>();
+    /** Method -> the -32603 error its next request is answered with. */
+    private readonly internallyFailingMethods = new Map<
+        JsonRpcMethod,
+        JsonRpcErrorObject
+    >();
     /** Requests this proxy answered with an error, in order. */
     private readonly failedRequests: ForwardedRequest[] = [];
     /** Method -> the result this proxy answers its requests with, unforwarded. */
@@ -193,7 +215,15 @@ export class RpcNodeProxy {
      * error, as Besu does for a call at a head block it has not stored yet.
      */
     failNextRequestInternally(method: JsonRpcMethod): void {
-        this.internallyFailingMethods.add(method);
+        this.internallyFailingMethods.set(method, NODE_INTERNAL_ERROR);
+    }
+
+    /**
+     * Answer the next `method` request, unforwarded, with a revert as
+     * Hardhat sends it: JSON-RPC's internal error carrying revert data.
+     */
+    revertNextRequestInternally(method: JsonRpcMethod): void {
+        this.internallyFailingMethods.set(method, HARDHAT_REVERT_ERROR);
     }
 
     /** Let `passing` `method` requests through, then fail the next one. */
@@ -373,13 +403,13 @@ export class RpcNodeProxy {
                     this.failingMethods.set(method, 1);
                 } else this.delayedFailures.set(method, passing - 1);
             }
-            if (
-                method &&
-                id !== undefined &&
-                this.internallyFailingMethods.delete(method)
-            ) {
+            const internalError = method
+                ? this.internallyFailingMethods.get(method)
+                : undefined;
+            if (method && id !== undefined && internalError) {
+                this.internallyFailingMethods.delete(method);
                 this.failedRequests.push({ method, params });
-                reply({ error: { code: -32603, message: "Internal error" } });
+                reply({ error: internalError });
                 return;
             }
             const failures = method

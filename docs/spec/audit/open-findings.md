@@ -295,7 +295,7 @@ six FR1 is implemented separately (`checkJoinDropped`).
 bounds its size. A chain node refuses a transaction above its size limit (Besu
 `--tx-pool-max-tx-bytes`, default 131,072 bytes; Ethereum clients use the same 128 KiB), so the
 window cannot be reduced and the fork stays disputed. Relates to
-[`REQ-DIS-4-6J6YYG` (Reduction consumes exactly the committed dispute set)](../specification/disputes/disputes.md#req-dis-4-6j6yyg).
+[`REQ-DIS-4-6J6YYG` (Reduction runs only after the kill period expires and consumes exactly the…)](../specification/disputes/disputes.md#req-dis-4-6j6yyg).
 
 Observed 2026-11-02 on peer3-testnet, poker table `game1`
 (`0xd016dfa328a2eb2c94537d1fc92db2b4bdba9998666f7655036ff009f5ec281a`, three bot participants):
@@ -336,7 +336,7 @@ fraud-proof applications, the kill and dispute multicalls, and the reduce multic
 grows with application block size, state proof length, the number of disputes and the number of
 participants. The local Hardhat chain accepts any size, so the test suite never checks this limit.
 A first observed failure is
-[`FIND-REDUCTION-2-VR8R8H` (Reduction transaction size)](open-findings.md#find-reduction-2-vr8r8h).
+[`FIND-REDUCTION-2-VR8R8H`](open-findings.md#find-reduction-2-vr8r8h).
 
 **Required:** every transaction the SDK sends MUST stay within 128 KiB of encoded size for any
 reachable protocol state, by design and not by chance: each submission path needs a stated bound
@@ -1033,7 +1033,7 @@ the phone was the removed peer, on channel
 `0xba7b073a1a062661814979c9968eb4bf2cdc07033bce1ac06ebf29e0b4bb7675`. Before
 `getRelevantWindow`, it failed earlier: it audited the old disputes against the pruned chain, tried
 to kill them, and failed to build its own state proof. The resume hook of
-[`OQ-AUDIT-RUNTIME-2-BC6Q5G`](open-questions.md#oq-audit-runtime-2-bc6q5g) does not solve this
+[`OQ-AUDIT-RUNTIME-2-BC6Q5G` (Resume after a frozen page or process)](open-questions.md#oq-audit-runtime-2-bc6q5g) does not solve this
 alone: a peer that missed the cycle has no local data for the new fork.
 
 **Proposed direction:** Luka (2026-10-30): solve it later with persistence. The peer rebuilds the
@@ -2871,25 +2871,44 @@ one when the last transport closes`
 
 ### FIND-RPC-8-59FKS6
 
-**Defect:** Open (2026-10-31). The provider fails over only when a node's socket drops. A node that
-answers a request with a JSON-RPC error on a live socket hands that error to the caller, and no other
-node is asked
+**Defect:** Open (2026-10-31), narrowed (2026-11-08). The provider failed over only when a node's
+socket dropped. A node that answered a request with a JSON-RPC error on a live socket handed that
+error to the caller, and no other node was asked
 ([MultiRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md),
 [`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)).
 By Luka's provider rule (see
 [`FIND-RPC-3-FY8YV3`](open-findings.md#find-rpc-3-fy8yv3)) callers do not handle provider failures,
-so one node's transient internal error is fatal for the runtime.
+so one node's transient error is fatal for the runtime.
 
 **Observed (2026-10-31, liquidity table game1, `bot2`):** at block confirmation the block validation
 read `getBlockCallDataCommitment` (`eth_call`). The node answered `-32603 Internal error`; ethers
 reported it as "missing revert data" (`CALL_EXCEPTION`). The runtime failed fatally and the bot
 stopped. Other nodes of the same set were connected.
 
-**Open design point:** which node errors are node faults that fail over to the next node (internal
-errors, rate limits, a node behind the requested block) and which are answers every node gives (a real
-revert, invalid parameters); and how a node fault is told apart from a revert without revert data.
+**Fix (Luka, 2026-11-08, narrow rule):** a read answered with the internal error (code -32603) that
+carries no revert data goes to the next connected node; when no other node answers, that error is
+the read's answer at once. Revert data is a hex `data` on the error, or a `data` object holding a hex
+`data`, `0x` included: Hardhat answers every revert, with or without a reason, as -32603 with such
+data, so a revert without a reason string is answered and final, while Besu's internal error carries
+none. A transaction answered with the internal error is final and never re-sent, since the node may
+have pooled it. Regressions:
+[`UNIT-TEST-MULTI-RPC-1-SVGGZ5.P19`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5),
+[`UNIT-TEST-MULTI-RPC-1-SVGGZ5.P20`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5),
+[`UNIT-TEST-MULTI-RPC-1-SVGGZ5.P21`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5),
+[`UNIT-TEST-MULTI-RPC-1-SVGGZ5.P22`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5),
+[`UNIT-TEST-MULTI-RPC-1-SVGGZ5.P23`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5),
+[`REQ-CHAINOBS-2-2NCSQ3.T1.P13`](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3.t1.p13),
+[`REQ-CHAINOBS-2-2NCSQ3.T1.P14`](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3.t1.p14),
+[`REQ-CHAINOBS-2-2NCSQ3.T1.P15`](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3.t1.p15),
+[`REQ-CHAINOBS-2-2NCSQ3.T1.P16`](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3.t1.p16),
+[`REQ-CHAINOBS-2-2NCSQ3.T1.P17`](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3.t1.p17).
 
-**Disposition:** Recorded, not addressed now (Luka, 2026-10-31).
+**Open design point:** which other node errors are node faults that fail over to the next node (rate
+limits, a node behind the requested block) and which are answers every node gives (a real revert,
+invalid parameters). Until decided, those answers stay final and fatal for the runtime.
+
+**Disposition:** -32603 failover for reads fixed (Luka, 2026-11-08); the remaining design points are
+recorded, not addressed now (Luka, 2026-10-31).
 
 <a id="find-integrator-1-5mf8n9"></a>
 

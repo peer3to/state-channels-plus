@@ -1708,6 +1708,19 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    /** Record each `isSignerOnChain` answer and each `dropMembership` call; both still run. */
+    public recordMembershipEndChecks(): boolean {
+        this.service.recordMembershipEndChecks();
+        return true;
+    }
+
+    public getMembershipEndChecks(): {
+        signerOnChainAnswers: boolean[];
+        dropCount: number;
+    } {
+        return this.service.getMembershipEndChecks();
+    }
+
     /** Hold a sync's chain-window step before its fetch or after its persist. */
     public holdSyncWindowPersistence(
         at: "beforeFetch" | "afterPersist"
@@ -2947,6 +2960,29 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.stateProofBuildCount;
     }
 
+    /** Record-only: count `reductionManager.completeWithGenesis` calls, each forwarded. */
+    public stubCountCompleteWithGenesis(): boolean {
+        const reductionManager = this.service.sm.reductionManager;
+        if (!this.service.stubOriginals.has("completeWithGenesis"))
+            this.service.stubOriginals.set(
+                "completeWithGenesis",
+                reductionManager.completeWithGenesis.bind(reductionManager)
+            );
+        const complete = this.service.stubOriginals.get(
+            "completeWithGenesis"
+        ) as typeof reductionManager.completeWithGenesis;
+        this.service.completeWithGenesisCount = 0;
+        reductionManager.completeWithGenesis = (...args) => {
+            this.service.completeWithGenesisCount += 1;
+            return complete(...args);
+        };
+        return true;
+    }
+
+    public getCompleteWithGenesisCount(): number {
+        return this.service.completeWithGenesisCount;
+    }
+
     public getReplayGasBlockReadFailures(): number {
         return this.service.replayGasBlockReadFailures;
     }
@@ -3481,9 +3517,15 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.releaseContractLogs(events);
     }
 
-    /** Pin this peer's chain view at the current block. Returns that block. */
-    public stubLagChainView(holdLogs: boolean): Promise<number> {
-        return this.service.lagChainView(holdLogs);
+    /**
+     * Pin this peer's chain view at `atBlock` (default: the current block).
+     * Returns that block.
+     */
+    public stubLagChainView(
+        holdLogs: boolean,
+        atBlock?: number
+    ): Promise<number> {
+        return this.service.lagChainView(holdLogs, atBlock);
     }
 
     public getLaggedHeadReads(): number {

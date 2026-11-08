@@ -671,13 +671,14 @@ export class RpcStubActions<
 
     /**
      * Make this peer's provider lag the chain: its head and `latest` reads
-     * stay at the current block. `holdLogs` (default true): its streamed logs
-     * above that block are held too; false models another node that keeps
-     * streaming them. `release` lets it catch up and announces nothing.
+     * stay at `atBlock` (default: the current block). `holdLogs` (default
+     * true): its streamed logs above that block are held too; false models
+     * another node that keeps streaming them. `release` lets it catch up and
+     * announces nothing.
      */
     async lagChainView(
         peerIndex: number,
-        options: { holdLogs?: boolean } = {}
+        options: { holdLogs?: boolean; atBlock?: number } = {}
     ): Promise<{
         pinnedBlock: number;
         headReads: () => Promise<number>;
@@ -686,7 +687,7 @@ export class RpcStubActions<
     }> {
         const ctl = () => this.peerStub(peerIndex);
         const pinnedBlock = await ctl()
-            .stubLagChainView(options.holdLogs ?? true)
+            .stubLagChainView(options.holdLogs ?? true, options.atBlock)
             .request();
         return {
             pinnedBlock,
@@ -1580,6 +1581,15 @@ export class RpcStubActions<
         const ctl = () => this.peerStub(peerIndex);
         await ctl().stubCountStateProofBuilds(options).request();
         return { count: () => ctl().getStateProofBuildCount().request() };
+    }
+
+    /** Record-only: count a peer's direct final-dispute reductions (`completeWithGenesis`). */
+    async countCompleteWithGenesis(
+        peerIndex: number
+    ): Promise<{ count: () => Promise<number> }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubCountCompleteWithGenesis().request();
+        return { count: () => ctl().getCompleteWithGenesisCount().request() };
     }
 
     private async disputeMutexWaiterCount(peerIndex: number): Promise<number> {

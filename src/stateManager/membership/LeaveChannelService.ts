@@ -190,7 +190,6 @@ export default class LeaveChannelService {
         // a pending joiner is not listed until its join lands: its join
         // service ends that membership
         if (
-            sm.isDisposed ||
             this.exit ||
             sm.status !== Status.PARTICIPATING ||
             sm.channelJoinService.isJoinInProgress()
@@ -207,7 +206,6 @@ export default class LeaveChannelService {
         );
         if (mirrored.hash !== hash) return;
         if (await sm.membershipService.isSignerOnChain()) return;
-        if (sm.isDisposed) return;
         this.logger.warn(
             "Removed by a snapshot this peer never installed: leaving",
             { forkId: sm.forkId, snapshotForkId: snapshot.forkId }

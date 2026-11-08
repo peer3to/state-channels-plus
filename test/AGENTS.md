@@ -136,7 +136,9 @@ P2pRuntimeHostRoot<HarnessControlRpc>, TStateMachine>` — typed by the peer's
   transport failure. It blacklists the peer pair in both directions and closes
   the current transports, so joined Holepunch topics cannot reconnect it.
 - `network.reconnectPeers(indices)` is the explicit inverse. It clears the
-  pairwise harness blacklist on both hosts before it rejoins discovery.
+  pairwise harness blacklist on both hosts before it rejoins discovery, and
+  returns once the reconnected peers have completed their handshakes with each
+  other and with every connected peer. Add no own reconnect wait after it.
 - `network.connectPeers(indices)` performs initial connection only and does not
   change blacklist policy.
 - Raw transport-close controls are only for component tests that exercise
