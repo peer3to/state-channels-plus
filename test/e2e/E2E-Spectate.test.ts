@@ -1956,7 +1956,11 @@ describe("E2E: Spectate Service", function () {
                     )
                     .request();
                 await staged.reduce();
-                await waitFor(async () => staged.aborts() > 0);
+                // the abort event and the failed connect's host error
+                // arrive on separate paths, in either order
+                await waitFor(
+                    async () => staged.aborts() > 0 && hostErrors.length > 0
+                );
                 expect(staged.aborts()).to.equal(1);
                 // only the harness's report that the connect resolved false:
                 // no internal failure reached the top level

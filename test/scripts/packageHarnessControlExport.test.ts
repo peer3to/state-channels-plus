@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: test-harness package entry check; the entry is test support outside src/ with no specification or implementation IDs
 import { loadedModules } from "@test/utils/loadedModules";
 import { repoRoot as findRepoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
