@@ -59,7 +59,7 @@ once the chain is past genesis, does not abort and stores no proof.
 - `pending participant records live double-sign fraud and stays pending`: UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P21, REQ-BLOCK-PIPE-3-WW2SB7.T1.P12
 - `observer live arrivals abort on double-sign fraud without requesting a dispute`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P15
 - `observer wrongGenesisDetected keeps the spectator reaction without submitting a dispute`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P30
-- `observer wrongGenesisDetected while the chain holds the fork past genesis → no abort, no fraud proof, no dispute`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P36
+- `observer wrongGenesisDetected while the chain holds the fork past genesis, no block 0 stored → dropped, no abort, no fraud proof, no dispute, nobody disconnected`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P36
 - `observer invalidStateTransitionDetected keeps the spectator reaction without submitting a dispute`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P31
 - `observer objectiveInvalidTimestampDetected keeps the spectator reaction without submitting a dispute`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P32
 - `observer forgedInboundMessageBlockDetected keeps the spectator reaction without submitting a dispute`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P33

@@ -7,6 +7,8 @@
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`REQ-SM-4-Z32M0W` (Ordering/encoding/round-trip defined explicitly)](../../../specification/protocol-model/state-machines.md#req-sm-4-z32m0w)
 - [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
+- [`INV-ENFFP-1-BGVZN4` (Slash set integrity)](../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4)
+- [`REQ-BLOCK-PIPE-8-N529VH` (Evidence precedes escalation)](../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)
 
 ## UNIT-TEST-SM-INTERFACE-1-P7RP93
 
@@ -42,3 +44,16 @@ Adapter substitutability
 - Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1), [`INV-SM-2-0FTJ2T.T1`](../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
 - [ ] `UNIT-TEST-SM-INTERFACE-3-VD5ZBB.P1` — Every concrete adapter can be used through this abstraction without changing deterministic transition or state semantics
+
+## UNIT-TEST-PAST-GENESIS-1-1MXHJP
+
+Past-genesis decision
+
+- Setup: `isForkPastGenesis(chainSnapshot, forkId)` with the channel's on-chain snapshot, reached through the WrongGenesis callers (validation strategies and the dispute builder).
+- Oracle: True only when the chain snapshot is on `forkId` and fails the contract's genesis test; a WrongGenesis proof is then neither filed nor bundled.
+- Specification: [`INV-ENFFP-1-BGVZN4` (Slash set integrity)](../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4), [`REQ-BLOCK-PIPE-8-N529VH` (Evidence precedes escalation)](../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)
+
+- [ ] `UNIT-TEST-PAST-GENESIS-1-1MXHJP.P1` — chain snapshot on another fork → false
+- [x] `UNIT-TEST-PAST-GENESIS-1-1MXHJP.P2` — chain snapshot still the fork's genesis → false: the proof is bundled
+- [ ] `UNIT-TEST-PAST-GENESIS-1-1MXHJP.P3` — chain snapshot is block 0's own height-0 snapshot → true
+- [x] `UNIT-TEST-PAST-GENESIS-1-1MXHJP.P4` — chain snapshot at height 1 or more on the fork → true: the proof is left out

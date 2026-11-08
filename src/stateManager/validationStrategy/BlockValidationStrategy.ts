@@ -216,21 +216,8 @@ export default class BlockValidationStrategy extends AValidationStrategy {
                 ),
                 block.forkId
             )
-        ) {
-            // another author's block 0 against the stored one -> cut, nothing to prove
-            if (this.storage.blocks.getBlock(block.forkId, 0)) {
-                this.p2pManager.disconnectAndBlacklistPeers(
-                    getSourcePeersAndAuthor(entry)
-                );
-                return BlockValidationResult.DISCONNECT;
-            }
-            // our own genesis may be the wrong one (a past-genesis sync cannot check its timestamp) -> drop, no verdict
-            this.logger.warn(
-                "Unlinked block 0 on a fork the chain holds past genesis - dropped",
-                { block: LoggerUtils.getBlockMetadata(block, this.storage) }
-            );
-            return BlockValidationResult.DUPLICATE;
-        }
+        )
+            return this.handlePastGenesisBlockZero(entry);
         this.logger.warn("Wrong genesis detected", {
             blockAuthor: block.author,
             blockHeight: block.height
@@ -238,6 +225,25 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         this.fraudProofService.createWrongGenesisProof(block);
         this.disputeManager.requestDispute(block.forkId);
         return BlockValidationResult.DISPUTE;
+    }
+    /** An unlinked block 0 on a fork the chain holds past genesis: nothing is provable, so cut or drop it. */
+    public handlePastGenesisBlockZero(
+        entry: QueuedBlockEntry
+    ): BlockValidationResult {
+        const block = entry.block;
+        // another author's block 0 against the stored one -> cut, nothing to prove
+        if (this.storage.blocks.getBlock(block.forkId, 0)) {
+            this.p2pManager.disconnectAndBlacklistPeers(
+                getSourcePeersAndAuthor(entry)
+            );
+            return BlockValidationResult.DISCONNECT;
+        }
+        // our own genesis may be the wrong one (a past-genesis sync cannot check its timestamp) -> drop, no verdict
+        this.logger.warn(
+            "Unlinked block 0 on a fork the chain holds past genesis - dropped",
+            { block: LoggerUtils.getBlockMetadata(block, this.storage) }
+        );
+        return BlockValidationResult.DUPLICATE;
     }
     public async forgedInboundMessageBlockDetected(
         block: Block,

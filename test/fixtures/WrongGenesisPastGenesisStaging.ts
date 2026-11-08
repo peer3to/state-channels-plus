@@ -87,9 +87,10 @@ export async function storeWrongGenesisProofAndConstruct(
 
 /**
  * A synced spectator, then peer 0 posts the latest snapshot so the chain holds
- * the genesis fork past its genesis; another author than block 0's feeds the
- * spectator an unlinked block 0 through the spectating `wrongGenesisDetected`
- * hook. Returns the probe and whether the spectator stores a block 0.
+ * the genesis fork past its genesis, and the spectator's history below the
+ * anchor is pruned so it stores no block 0; another author than block 0's
+ * feeds it an unlinked block 0 through the spectating `wrongGenesisDetected`
+ * hook. Returns the probe.
  */
 export async function runSpectatorWrongGenesisPastGenesis(
     h: MathPeerTestHarness
@@ -114,6 +115,15 @@ export async function runSpectatorWrongGenesisPastGenesis(
     const other = h.peers.find(
         (p) => p.address !== blockZero.author && p.index !== spectator.index
     )!;
+    // history below the anchor pruned, as a sync above the anchor leaves it
+    await h
+        .control(spectator)
+        .stub.pruneStoredBlocksBelowAnchor(forkId, 1)
+        .request();
+    expect(
+        await h.control(spectator).query.getBlockByHeight(forkId, 0).request(),
+        "spectator stores no block 0"
+    ).to.equal(null);
     const encoded = await encodeUnlinkedBlockZero(h, other, forkId);
     const probe = await h
         .control(spectator)
@@ -122,10 +132,5 @@ export async function runSpectatorWrongGenesisPastGenesis(
             hook: "wrongGenesisDetected"
         })
         .request();
-    const storesBlockZero =
-        (await h
-            .control(spectator)
-            .query.getBlockByHeight(forkId, 0)
-            .request()) !== null;
-    return { probe, storesBlockZero, other };
+    return { probe };
 }
