@@ -6,7 +6,7 @@ import {
 import { installEcrecoverCache } from "@/cache/EcrecoverCache";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
 import type { Logger } from "@/utils";
-import { EVM, EVMOpts } from "@ethereumjs/evm";
+import type { EVM, EVMOpts } from "@ethereumjs/evm";
 import { DefaultStateManager } from "@ethereumjs/statemanager";
 import { Trie } from "@ethereumjs/trie";
 import { Address } from "@ethereumjs/util";
@@ -38,6 +38,9 @@ export async function createEvm(
         }
     ];
 
+    // Loaded here, not at import: only the thread that creates the EVM pays
+    // for its module graph (its bls12-381 precompile builds tables at load).
+    const { EVM } = await import("@ethereumjs/evm");
     // See TODO(evm-upgrade) in ContractExecutor: v10 still re-scans per call,
     // so the cache is the fix regardless of the package version.
     installEvmJumpdestCache();

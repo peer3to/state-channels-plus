@@ -20,3 +20,13 @@ Precompile composition, the executor owner context, and bounded state memory
 - [x] `UNIT-TEST-EVM-FACTORY-1-002C8D.P4` — bare EVM: 50 calls that rewrite the same 8 storage slots leave the trie database at its size after the first call
 - [x] `UNIT-TEST-EVM-FACTORY-1-002C8D.P5` — bare EVM: two contracts hold identical storage; after 5 rewrites of the first, the second reads back every slot through an uncached state manager, and its next write succeeds and reads back
 - [x] `UNIT-TEST-EVM-FACTORY-1-002C8D.P6` — bare EVM: a call that rewrites every slot inside a journal checkpoint that is then reverted leaves the state root and every slot, read through an uncached state manager, at their committed values
+
+## UNIT-TEST-EVM-FACTORY-2-16ZPQX
+
+The EVM package loads only when an EVM is created
+
+- Setup: Load the package index in a fresh node process; in another, load the EVM factory module and create a bare EVM.
+- Oracle: Whether the process holds an `@ethereumjs/evm` module. Forbidden: the index loading the EVM package, which every thread that imports it (the SDK thread, the browser main thread) would then pay for.
+
+- [x] `UNIT-TEST-EVM-FACTORY-2-16ZPQX.P1` — node loading the package index holds no `@ethereumjs/evm` module
+- [x] `UNIT-TEST-EVM-FACTORY-2-16ZPQX.P2` — node that created an EVM through `createEvm` holds `@ethereumjs/evm` (control for P1)

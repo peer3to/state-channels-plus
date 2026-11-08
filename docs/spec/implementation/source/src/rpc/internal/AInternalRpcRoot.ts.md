@@ -42,8 +42,9 @@ One endpoint root shared by multiple registered connections.
 
 Worker root event-loop monitor start
 
-- Setup: A worker-mode root with the monitor enabled, started with `EVENT_LOOP_MONITOR_STARTUP` off and on
-- Oracle: Off (the default, which tests rely on), the monitor starts after the root's start; on, it already runs when the start begins; in both it runs once the root started
+- Setup: A worker-mode root with the monitor enabled, started with `EVENT_LOOP_MONITOR_STARTUP` off and on; a worker-mode compute root that sets its monitor options
+- Oracle: Off (the default, which tests rely on), the monitor starts after the root's start; on, it already runs when the start begins; in both it runs once the root started. The monitor starts with the root's `performanceMonitorOptions` and the thread label
 
 - [x] `UNIT-TEST-ROOT-MONITOR-START-1-MAY5GB.P1` — default: the monitor starts once the start is done
 - [x] `UNIT-TEST-ROOT-MONITOR-START-1-MAY5GB.P2` — `EVENT_LOOP_MONITOR_STARTUP`: the monitor runs during the start
+- [x] `UNIT-TEST-ROOT-MONITOR-START-1-MAY5GB.P3` — a compute root's monitor starts with its options (`delayErrorThresholdMs: 0`, fatal delay off) and the thread label

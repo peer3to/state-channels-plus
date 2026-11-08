@@ -12,13 +12,16 @@ export function safeJson(value: any): string {
     );
 }
 
+// One formatter for every line: `toLocaleTimeString` builds a new one per call.
+const TIME_FORMAT = new Intl.DateTimeFormat("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+});
+
 export function formatTimeFromSeconds(timeSeconds: string): string {
     const time = Number(timeSeconds);
     if (!Number.isFinite(time)) return "";
-    return new Date(time * 1000).toLocaleTimeString("en-US", {
-        hour12: false,
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit"
-    });
+    return TIME_FORMAT.format(new Date(time * 1000));
 }

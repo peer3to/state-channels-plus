@@ -3,6 +3,8 @@ import StateSnapshot from "@/models/StateSnapshot";
 import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
 import {
     forgedOutboundBlock,
+    localDiamondOutboundHeight,
+    stageAnchorAdvancedPastFirstExit,
     stageAnchoredSyncPayload,
     stageOutboundAroundAnchor
 } from "@test/fixtures/HistoricSyncStaging";
@@ -214,6 +216,62 @@ describe("Unit: SpectateService sync proof verification order", function () {
                     auditingData
                 )
             ).to.equal(true);
+        });
+    });
+
+    it("a fresh requester whose RPC node lags the second exit's snapshot that its local diamond already applied → the sync waits for the responder's chain block and ends with no verdict: no rejection, the responder not blacklisted, the local diamond keeps the newer anchor", async function () {
+        const h = TestSession.getHarness();
+        const { forkId, remaining, blockBeforePost } =
+            await stageAnchorAdvancedPastFirstExit(h, { finalBlocks: 2 });
+        await withHeldFreshRequester(h, async (requester) => {
+            await waitFor(
+                async () =>
+                    (await localDiamondOutboundHeight(h, requester)) === 2,
+                h.event.protocolEventTimeoutMs()
+            );
+            const lag = await h.rpcStub.lagChainView(requester.index, {
+                holdLogs: false,
+                atBlock: blockBeforePost
+            });
+            const outcome = await applyPayloads(
+                h,
+                requester,
+                String(forkId),
+                ["served"],
+                { responderIndex: remaining[0] }
+            ).finally(lag.release);
+            expect(outcome.outcomes[0]).to.deep.include({
+                accepted: false,
+                threw: ""
+            });
+            expect(outcome.rejections).to.deep.equal([]);
+            expect(outcome.blacklisted).to.equal(false);
+            expect(await localDiamondOutboundHeight(h, requester)).to.equal(2);
+        });
+    });
+
+    it("a peer whose RPC node lags the second exit's snapshot that its local diamond already applied refreshes its opened status → the lagged read does not move its local anchor back", async function () {
+        const h = TestSession.getHarness();
+        const { blockBeforePost } = await stageAnchorAdvancedPastFirstExit(h, {
+            finalBlocks: 2
+        });
+        await withHeldFreshRequester(h, async (requester) => {
+            await waitFor(
+                async () =>
+                    (await localDiamondOutboundHeight(h, requester)) === 2,
+                h.event.protocolEventTimeoutMs()
+            );
+            const lag = await h.rpcStub.lagChainView(requester.index, {
+                holdLogs: false,
+                atBlock: blockBeforePost
+            });
+            await h
+                .execOnHost(requester, async (sm) => {
+                    await sm.refreshOpenedStatusFromChain();
+                })
+                .finally(lag.release);
+
+            expect(await localDiamondOutboundHeight(h, requester)).to.equal(2);
         });
     });
 

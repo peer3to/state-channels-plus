@@ -30,7 +30,10 @@ import CalldataCommittedStrategy from "./validationStrategy/CalldataCommittedStr
 import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidationStrategy";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import DisputeManager from "@/disputeManager";
-import { EventHandler } from "@/eventHandlers/EventHandler";
+import {
+    END_OF_BLOCK_LOG_INDEX,
+    EventHandler
+} from "@/eventHandlers/EventHandler";
 import { createBusPublishingHooks, EventBus } from "@/events/EventBus";
 import type HostNonceManager from "@/evm/signer/HostNonceManager";
 import { StateSnapshot } from "@/models";
@@ -374,10 +377,15 @@ class StateManager<
         }
 
         try {
-            const [isOpen, snapshotStruct] =
-                await this.stateChannelManagerContract.isChannelOpen(
-                    this.channelId
-                );
+            // Cached as its block's last log: an older answer loses the ordering.
+            const {
+                blockNumber,
+                value: [isOpen, snapshotStruct]
+            } = await this.eventSyncService.readAtHead((blockTag) =>
+                this.stateChannelManagerContract.isChannelOpen(this.channelId, {
+                    blockTag
+                })
+            );
 
             if (isOpen) {
                 // Best-effort cache: store the latest on-chain snapshot in LocalDiamond
@@ -385,8 +393,8 @@ class StateManager<
                     await this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
                         this.channelId,
                         snapshotStruct,
-                        0,
-                        0
+                        blockNumber,
+                        END_OF_BLOCK_LOG_INDEX
                     );
                     const snapshotMeta = LoggerUtils.getSnapshotMetadata(
                         StateSnapshot.from(snapshotStruct)

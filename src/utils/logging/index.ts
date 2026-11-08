@@ -20,3 +20,7 @@ export type {
 export { decodeLogs, decompressFromBase64 };
 export type { LogThreadName } from "./Logger";
 export type { LogUploadOutcome } from "./LogUploader";
+export {
+    getErrorEventLoopDelay,
+    type EventLoopDelayDetails
+} from "./performanceMonitorInternal";

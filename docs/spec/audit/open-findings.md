@@ -285,6 +285,65 @@ passed in the recorded full SDK gate. The RO1 retirement of already-running chec
 its interleaving case is added in this pass, and its verification is pending the next gate. Review
 six FR1 is implemented separately (`checkJoinDropped`).
 
+## Reduction transaction size
+
+<a id="find-reduction-2-vr8r8h"></a>
+
+### FIND-REDUCTION-2-VR8R8H
+
+**Current defect:** The reduce transaction carries every dispute of the window in full, and nothing
+bounds its size. A chain node refuses a transaction above its size limit (Besu
+`--tx-pool-max-tx-bytes`, default 131,072 bytes; Ethereum clients use the same 128 KiB), so the
+window cannot be reduced and the fork stays disputed. Relates to
+[`REQ-DIS-4-6J6YYG` (Reduction runs only after the kill period expires and consumes exactly the…)](../specification/disputes/disputes.md#req-dis-4-6j6yyg).
+
+Observed 2026-11-02 on peer3-testnet, poker table `game1`
+(`0xd016dfa328a2eb2c94537d1fc92db2b4bdba9998666f7655036ff009f5ec281a`, three bot participants):
+
+- One participant timed out at block 17798. Each of the three remaining participants uploaded its
+  own dispute for it (block 259293): 40,864, 41,024 and 40,864 bytes.
+- Each dispute's state proof is about 40 KB: four milestones with five signed blocks, four of them
+  8.3–9.1 KB each. Each of those four blocks holds one poker `applyOrderedContribution`
+  transaction whose proof argument is 7,776 bytes.
+- The biggest cause: the three disputes repeat the same four contribution proofs, so twelve
+  7,776-byte proofs (93,312 bytes) make up 68 % of the reduce transaction. The three disputes
+  together are about 123 KB of its 136,300 bytes.
+- The `multicall([reduceAndFinalize(...)])` with the three disputes, the latest snapshot, the
+  encoded state and the inbound blocks was 136,300 bytes. Besu refused it: `-32000 Transaction
+size exceeds the maximum allowed size`.
+- The refusal reached `ReductionExecutor.submitDetached` as an unclassified error and ended every
+  participant's runtime fatally at once. With no participant left, no newcomer could pass the
+  initial sync, so the table stayed dead.
+
+The size grows with the number of disputes in the window (up to one per participant for the same
+fault), with the milestones per state proof, and with the application's block size. The local
+Hardhat chain has no size limit, so no test reaches this.
+
+**Status:** Open; high. Engineer decision pending on the direction.
+
+## Transaction size limit
+
+<a id="find-calldata-1-sz02tk"></a>
+
+### FIND-CALLDATA-1-SZ02TK
+
+**Current defect:** The SDK does not keep its chain transactions under the size Ethereum execution
+clients accept. Geth and Besu refuse a transaction above 128 KiB (131,072 bytes) into their
+transaction pool (Besu `--tx-pool-max-tx-bytes`), so an oversized transaction is never mined.
+Nothing in the protocol or the SDK bounds the calldata of the transactions it sends to the channel
+manager: block calldata posts, snapshot posts, dispute uploads (with or without block calldata),
+fraud-proof applications, the kill and dispute multicalls, and the reduce multicall. Their size
+grows with application block size, state proof length, the number of disputes and the number of
+participants. The local Hardhat chain accepts any size, so the test suite never checks this limit.
+A first observed failure is
+[`FIND-REDUCTION-2-VR8R8H`](open-findings.md#find-reduction-2-vr8r8h).
+
+**Required:** every transaction the SDK sends MUST stay within 128 KiB of encoded size for any
+reachable protocol state, by design and not by chance: each submission path needs a stated bound
+that holds for the worst case it can reach, and a test chain that enforces the limit.
+
+**Status:** Open; high. Engineer decision pending on the direction.
+
 ## Membership-read ownership consolidation
 
 <a id="find-membership-read-owner-1-8826as"></a>
@@ -682,6 +741,42 @@ backoff). Gaps seen in the code:
 
 **Disposition:** Open; engineer decision on the trigger needed before implementation.
 
+## Sync rejection blacklist
+
+<a id="find-sync-blacklist-1-63namv"></a>
+
+### FIND-SYNC-BLACKLIST-1-63NAMV
+
+**Defect:** _Open (2026-10-31, engineer reassessment requested; not implemented)._ Every rejected
+sync payload blacklists its responder for the rest of the runtime's life.
+`SpectateService.rejectSync`
+([SpectateService.ts](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md))
+calls `P2PManager.disconnectAndBlacklistPeerByEvmAddress` for each rejection reason, and nothing
+outside tests calls `ProfileManager.unblacklistPeer`
+([ProfileManager.ts](../implementation/source/src/ProfileManager.ts.md)). Every later handshake
+from that address fails with "response signer is blacklisted", including the handshakes of a new
+runtime of the same identity that joins again. So one false rejection of an honest responder locks
+it out until the rejecting runtime is disposed.
+
+**Observed (2026-10-31, liquidity table game1):** a runtime that joined right after the table was
+reopened rejected a seated peer's payload as "latest-fork outbound blocks invalid" in the same
+second the temporary opener posted a state snapshot. The responder went bust later, and every
+rejoin of the same identity failed for about 3 hours (about 400 attempts, "the join confirmation
+could not be collected") until the rejecting bot was restarted. The rejection itself is most likely
+the outbound-run anchor race (the responder trims the latest fork's outbound blocks at its own
+anchor while the requester checks them from its older chain anchor); that defect is tracked and
+fixed separately.
+
+**Engineer note (Luka, 2026-10-31):** a permanent blacklist is probably too harsh; take it easier
+and reassess whether blacklisting on a rejected sync is a good idea at all. No change now.
+
+**Open design point:** which rejections prove misbehavior (a payload that cannot be honest from any
+point of view) and which can follow from a timing difference between two honest views (anchors,
+snapshot posts, RPC node lag); whether a timing-dependent rejection should only disconnect, or
+blacklist for a bounded time; and whether a new runtime of the same identity should start clean.
+
+**Disposition:** Open; engineer decision needed before implementation.
+
 ## Implementation defects with a proposed direction
 
 Distinct from open questions: for these, the finding is verified in code and a reasonable
@@ -902,6 +997,48 @@ cost is one error line per swallowed network fault (two on the sync-application 
 the accepted frame rate until the general rate limit lands; no state grows. The one attacker-shaped
 cost remains the absent-sender sync-application loop, bounded by per-peer in-flight sync coalescing
 until rate limiting; a crafted payload that throws there is not demonstrated.
+
+<a id="find-runtime-4-5zzd5t"></a>
+
+### FIND-RUNTIME-4-5ZZD5T
+
+**Defect:** _Open (2026-10-30, engineer: deferred)._ A seated peer whose runtime was paused, with
+no event handling, cannot catch up with a whole dispute cycle it missed and fails fatally. Example:
+a background tab or a frozen process. Sequence, while the peer is away:
+
+1. Other peers dispute the current fork (for example a timeout of another participant), reduce it,
+   and post the state snapshot update of the new fork.
+2. That update deletes the dispute windows and prunes the old inbound message blocks
+   (`_clearStorage` in `StateSnapshotFacet.sol`).
+3. On return, [`EventHandler`](../implementation/source/src/eventHandlers/EventHandler.ts.md)
+   handles the missed events in order:
+    - the old disputes are ignored, because their windows are gone (`getRelevantWindow`);
+    - the reduction event's challenge period reads as not expired, because the window is gone. Its
+      validation passes, and `tryReduce` stands down on the missing window;
+    - `onStateSnapshotUpdated` then meets a snapshot it does not know. The peer is still listed
+      (`signerRemoved` is false), so it throws "unknown snapshot while participant/pending, fatal".
+
+The same holds for a missed final dispute. Before `getRelevantWindow`, its event still ran
+`completeWithGenesis`, which could rebuild the new fork from the event's auditing data. It is now
+ignored like the others (engineer decision 2026-10-30: same deferral).
+
+This failure of a seated peer is derived from the code, not observed. A peer that the update
+removed leaves: `LeaveChannelService.dropIfRemovedWhileAway` ends its membership when a snapshot
+update it never installed removed it and the chain no longer lists it. `checkLeft` alone cannot,
+because it reads the participants of the stale local fork, which still lists the peer (fixed
+2026-10-30). After that drop the stale fork still runs locally: the participant-timeout check reads
+the local participants, not the status, and a committed block of that fork can set the status back
+to participating. Deferred with this finding. Seen 2026-10-30 on the poker web app:
+the phone was the removed peer, on channel
+`0xba7b073a1a062661814979c9968eb4bf2cdc07033bce1ac06ebf29e0b4bb7675`. Before
+`getRelevantWindow`, it failed earlier: it audited the old disputes against the pruned chain, tried
+to kill them, and failed to build its own state proof. The resume hook of
+[`OQ-AUDIT-RUNTIME-2-BC6Q5G` (Resume after a frozen page or process)](open-questions.md#oq-audit-runtime-2-bc6q5g) does not solve this
+alone: a peer that missed the cycle has no local data for the new fork.
+
+**Proposed direction:** Luka (2026-10-30): solve it later with persistence. The peer rebuilds the
+new fork from the state it already has and the on-chain snapshot, instead of failing. Deferred until
+then.
 
 <a id="find-inbound-gas-1-2bz8de"></a>
 
@@ -2159,6 +2296,32 @@ outcome. Related:
 [`FIND-SYNC-7-SHT5K7`](open-findings.md#find-sync-7-sht5k7), open question
 [`OQ-SPEC-SYNC-STALE-1-CJTJ6S` (Too-old sync and fork-adoption blacklist policy)](../specification/open-questions.md#oq-spec-sync-stale-1-cjtj6s).
 
+**Fixed variant (2026-10-31):** a lagging RPC node moved the requester's local anchor back. Chain
+logs reach a peer from every node, but a read goes to one node, which can be behind a snapshot log
+already applied. `fetchAndPersistOnChainSnapshot` and `StateManager.refreshOpenedStatusFromChain`
+wrote their reads to the local diamond as `(0, 0)`, which `LocalDiamond` applies without ordering, so
+the older answer replaced the newer anchor. The responder had served the latest-fork outbound run
+above that newer anchor, the check from the older one failed "latest-fork outbound blocks invalid",
+and the honest responder was blacklisted (seen on liquidity table game1; the lockout itself is
+[`FIND-SYNC-BLACKLIST-1-63NAMV`](open-findings.md#find-sync-blacklist-1-63namv)). Both reads now go
+through `EventSyncService.readAtHead`, pinned to one chain block, and are applied as that block's last
+log (`END_OF_BLOCK_LOG_INDEX`), so an older answer loses the event ordering and the local diamond
+never moves back. The sync still checks from the fetched onChainSnapshot, after it waits until its
+node reaches the responder's `chainBlock`
+([`FIND-SYNC-5-7W9TWW`](open-findings.md#find-sync-5-7w9tww)): a lagging node ends the sync with no
+verdict. `LocalDiamond` no longer applies a `(0, 0)` coordinate unconditionally: no caller is left.
+Tests: [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P130`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct)
+(the sync) and [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P131`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct) (the opened-status refresh).
+
+**Remaining variants (code-traced, not executed):**
+
+1. A pinned read whose node fails over between the block-number read and the read reaches a node
+   behind that block, and the read fails: the sync throws, and the opened-status refresh keeps its
+   status (its catch). `readPinnedChainMembership` already takes the same risk.
+2. The ordering is per event family: a `ChannelStorageCleared` log does not move the snapshot family's
+   coordinate, so a pinned read from a node behind the clear block, but after the last snapshot log,
+   writes back the cleared snapshot. Not new: the old `(0, 0)` write did the same.
+
 **Candidate directions (not chosen; the fix must stay simple):**
 
 1. Read the whole verification at one chain block. Tried and reverted (2026-10-28): it threaded a
@@ -2703,6 +2866,49 @@ disconnection when the remote retires the original transport while the replaceme
 one when the last transport closes`
 ([`UNIT-TEST-ATRANSPORT-1-7DGX9R.P13`](../implementation/source/src/transport/NetworkTransport.ts.md#unit-test-atransport-1-7dgx9r),
 [`REQ-UPG-2-WH7BC7.T1.P6`](../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7.t1.p6)).
+
+<a id="find-rpc-8-59fks6"></a>
+
+### FIND-RPC-8-59FKS6
+
+**Defect:** Open (2026-10-31), narrowed (2026-11-08). The provider failed over only when a node's
+socket dropped. A node that answered a request with a JSON-RPC error on a live socket handed that
+error to the caller, and no other node was asked
+([MultiRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md),
+[`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)).
+By Luka's provider rule (see
+[`FIND-RPC-3-FY8YV3`](open-findings.md#find-rpc-3-fy8yv3)) callers do not handle provider failures,
+so one node's transient error is fatal for the runtime.
+
+**Observed (2026-10-31, liquidity table game1, `bot2`):** at block confirmation the block validation
+read `getBlockCallDataCommitment` (`eth_call`). The node answered `-32603 Internal error`; ethers
+reported it as "missing revert data" (`CALL_EXCEPTION`). The runtime failed fatally and the bot
+stopped. Other nodes of the same set were connected.
+
+**Fix (Luka, 2026-11-08, narrow rule):** a read answered with the internal error (code -32603) that
+carries no revert data goes to the next connected node; when no other node answers, that error is
+the read's answer at once. Revert data is a hex `data` on the error, or a `data` object holding a hex
+`data`, `0x` included: Hardhat answers every revert, with or without a reason, as -32603 with such
+data, so a revert without a reason string is answered and final, while Besu's internal error carries
+none. A transaction answered with the internal error is final and never re-sent, since the node may
+have pooled it. Regressions:
+[`UNIT-TEST-MULTI-RPC-1-SVGGZ5.P19`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5),
+[`UNIT-TEST-MULTI-RPC-1-SVGGZ5.P20`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5),
+[`UNIT-TEST-MULTI-RPC-1-SVGGZ5.P21`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5),
+[`UNIT-TEST-MULTI-RPC-1-SVGGZ5.P22`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5),
+[`UNIT-TEST-MULTI-RPC-1-SVGGZ5.P23`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5),
+[`REQ-CHAINOBS-2-2NCSQ3.T1.P13`](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3.t1.p13),
+[`REQ-CHAINOBS-2-2NCSQ3.T1.P14`](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3.t1.p14),
+[`REQ-CHAINOBS-2-2NCSQ3.T1.P15`](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3.t1.p15),
+[`REQ-CHAINOBS-2-2NCSQ3.T1.P16`](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3.t1.p16),
+[`REQ-CHAINOBS-2-2NCSQ3.T1.P17`](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3.t1.p17).
+
+**Open design point:** which other node errors are node faults that fail over to the next node (rate
+limits, a node behind the requested block) and which are answers every node gives (a real revert,
+invalid parameters). Until decided, those answers stay final and fatal for the runtime.
+
+**Disposition:** -32603 failover for reads fixed (Luka, 2026-11-08); the remaining design points are
+recorded, not addressed now (Luka, 2026-10-31).
 
 <a id="find-integrator-1-5mf8n9"></a>
 

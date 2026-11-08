@@ -29,6 +29,16 @@ export type EventLoopDelayDetails = {
     delayErrorThresholdMs: number;
 };
 
+/** The watchdog details an error carries from the thread it tripped in, if any. */
+export function getErrorEventLoopDelay(
+    error: unknown
+): EventLoopDelayDetails | undefined {
+    if (typeof error !== "object" || error === null) return undefined;
+    const details = (error as { eventLoopDelay?: unknown }).eventLoopDelay;
+    if (typeof details !== "object" || details === null) return undefined;
+    return details as EventLoopDelayDetails;
+}
+
 /**
  * One event-loop sample in the shape both monitors report. `utilization` is
  * measured on Node and estimated in the browser; the long-task fields exist

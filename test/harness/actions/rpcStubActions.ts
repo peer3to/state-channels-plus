@@ -671,28 +671,32 @@ export class RpcStubActions<
 
     /**
      * Make this peer's provider lag the chain: its head and `latest` reads
-     * stay at the current block. `holdLogs` (default true): its streamed logs
-     * above that block are held too; false models another node that keeps
-     * streaming them. `release` lets it catch up and announces nothing.
+     * stay at `atBlock` (default: the current block). `holdLogs` (default
+     * true): its streamed logs above that block are held too; false models
+     * another node that keeps streaming them. `release` lets it catch up and
+     * announces nothing.
      */
     async lagChainView(
         peerIndex: number,
-        options: { holdLogs?: boolean } = {}
+        options: { holdLogs?: boolean; atBlock?: number } = {}
     ): Promise<{
         pinnedBlock: number;
         headReads: () => Promise<number>;
         chainHeadWaitsEntered: () => Promise<number>;
+        chainHeadWaitsSettled: () => Promise<number>;
         release: () => Promise<boolean>;
     }> {
         const ctl = () => this.peerStub(peerIndex);
         const pinnedBlock = await ctl()
-            .stubLagChainView(options.holdLogs ?? true)
+            .stubLagChainView(options.holdLogs ?? true, options.atBlock)
             .request();
         return {
             pinnedBlock,
             headReads: () => ctl().getLaggedHeadReads().request(),
             chainHeadWaitsEntered: () =>
                 ctl().getChainHeadWaitsEntered().request(),
+            chainHeadWaitsSettled: () =>
+                ctl().getChainHeadWaitsSettled().request(),
             release: () => ctl().restoreChainView().request()
         };
     }
@@ -1582,6 +1586,15 @@ export class RpcStubActions<
         return { count: () => ctl().getStateProofBuildCount().request() };
     }
 
+    /** Record-only: count a peer's direct final-dispute reductions (`completeWithGenesis`). */
+    async countCompleteWithGenesis(
+        peerIndex: number
+    ): Promise<{ count: () => Promise<number> }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubCountCompleteWithGenesis().request();
+        return { count: () => ctl().getCompleteWithGenesisCount().request() };
+    }
+
     private async disputeMutexWaiterCount(peerIndex: number): Promise<number> {
         return await this.harness
             .control(this.harness.getPeer(peerIndex))
@@ -1764,6 +1777,26 @@ export class RpcStubActions<
                 await ctl().restoreHoldSpectateSyncApplication().request();
             }
         };
+    }
+
+    /**
+     * Hold every contract log of a peer, as a paused runtime that handles no
+     * chain event. The returned release starts them in arrival order, running
+     * concurrently as the resumed runtime does, and resolves with the error
+     * message of each dispatch that failed. A release of named `events`
+     * starts only their logs and keeps the rest held; a release without
+     * events starts all and ends the hold.
+     */
+    async holdContractLogs(
+        peerIndex: number
+    ): Promise<(events?: string[]) => Promise<string[]>> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl().stubHoldContractLogs().request();
+        return async (keptEvents = []) =>
+            await ctl().releaseContractLogs(keptEvents).request({
+                timeoutMs: this.harness.event.protocolEventTimeoutMs()
+            });
     }
 
     /**

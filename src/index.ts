@@ -138,9 +138,4 @@ export { default as ATransport } from "./transport/ATransport";
 export * from "@/internalRoot";
 // Applications extend the runtime host root with internal services and
 // declared events, loaded by a host root manifest.
-export {
-    P2pRuntimeHostRoot,
-    type ApplicationOf,
-    type HostEventsOf
-} from "@/rpc/internal/roots/P2pRuntimeHostRoot";
-export type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";
+export * from "@/hostRoot";

@@ -1,4 +1,7 @@
-import { NodeSocketSubscriptions } from "./RpcNodeProvider";
+import {
+    isNodeInternalError,
+    NodeSocketSubscriptions
+} from "./RpcNodeProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
@@ -136,8 +139,10 @@ class RpcNodesLogSubscriber extends RpcNodesSocketSubscriber {
 /**
  * The runtime's chain provider over several RPC nodes in list order. Every
  * request, read or transaction, goes to the first node with an open socket
- * and moves to the next one only when that node has no open socket or loses
- * it before answering. While no node is connected a request waits for the
+ * and moves to the next one when that node has no open socket, loses it
+ * before answering or answers that it failed internally; when no other node
+ * answers, that internal error is the request's. While no node is connected
+ * a request waits for the
  * first one to reconnect; the wait is warned about once per outage and ends
  * with a rejection on destroy or stopReconnecting. Block events and contract
  * log subscriptions come from every node's socket, each block and each log
@@ -192,7 +197,8 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     }
 
     // Implements JsonRpcApiProvider._send: each request goes to the first
-    // connected node and fails over to the next one when that node drops.
+    // connected node and fails over to the next one when that node drops or
+    // answers a read with its internal error and no revert data.
     async _send(
         payload: JsonRpcPayload | Array<JsonRpcPayload>
     ): Promise<Array<JsonRpcResult | JsonRpcError>> {
@@ -227,13 +233,27 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
             : [request.params];
         for (;;) {
             this.assertServing(request.method);
+            let internalError: unknown;
             for (const node of this.nodes) {
-                const sent = await node.trySendOnCurrentSocket(
-                    request.method,
-                    params
-                );
-                if (sent) return { id: request.id, result: sent.result };
+                try {
+                    const sent = await node.trySendOnCurrentSocket(
+                        request.method,
+                        params
+                    );
+                    if (sent) return { id: request.id, result: sent.result };
+                } catch (error) {
+                    if (!isNodeInternalError(error)) throw error;
+                    internalError = error;
+                    this.logger.warn(
+                        "RPC node failed a request internally; the next node gets it",
+                        {
+                            method: request.method,
+                            ...LoggerUtils.getRpcNodeMetadata(node.url)
+                        }
+                    );
+                }
             }
+            if (internalError) throw internalError;
             // destroyed while the request was on a node
             this.assertServing(request.method);
             if (!this.reconnects)

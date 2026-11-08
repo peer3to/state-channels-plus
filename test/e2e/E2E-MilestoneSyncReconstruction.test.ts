@@ -466,7 +466,6 @@ describe("E2E: Milestone sync and reconstruction", function () {
         ]);
 
         await h.network.reconnectPeers([spectator.index]);
-        await waitForMutualConnection(h, spectator, responder);
         expect(await latestHeight(h, spectator, forkId)).to.equal(finalHeight);
         expect(
             await syncFromResponder(h, spectator, responder, forkId, tip)
@@ -576,7 +575,6 @@ describe("E2E: Milestone sync and reconstruction", function () {
         const finalHeight = await latestHeight(h, requester, forkId);
         expect(laggingHeight).to.be.lessThan(finalHeight);
         await h.network.reconnectPeers([lagging.index]);
-        await waitForMutualConnection(h, requester, lagging);
         expect(await latestHeight(h, lagging, forkId)).to.equal(laggingHeight);
 
         // The lagging responder serves its own honest head.

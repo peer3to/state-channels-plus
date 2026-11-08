@@ -35,9 +35,17 @@ export type EventCoordinate = {
     logIndex: number;
 };
 
+/**
+ * A log index after every log of its block: a chain read pinned at a block
+ * holds all of that block's logs, so it orders as that block's last log.
+ */
+export const END_OF_BLOCK_LOG_INDEX = Number.MAX_SAFE_INTEGER;
+
 export class EventHandler {
     private logger: Logger;
     private disputeHandlingPromises = new Map<Hash, Promise<void>>();
+    // aborted by `dispose`: ends the window reads' chain-head waits
+    private readonly disposal = new AbortController();
 
     constructor(
         private storage: Storage,
@@ -47,6 +55,11 @@ export class EventHandler {
         logger: Logger
     ) {
         this.logger = logger.child({ component: "EventHandler" });
+    }
+
+    /** End every window read's wait for the chain head (timer and block listener). */
+    public dispose(): void {
+        this.disposal.abort();
     }
 
     async onChannelOpened(
@@ -171,6 +184,7 @@ export class EventHandler {
         disputeCreationTimestamp: Timestamp,
         isFinal: boolean,
         windowCreationTimestamp: Timestamp,
+        coordinate: EventCoordinate,
         disputeAuditingData?: DisputeAuditingDataStruct
     ): Promise<void> {
         const disputeHash = hash(
@@ -185,6 +199,7 @@ export class EventHandler {
             disputeCreationTimestamp,
             isFinal,
             windowCreationTimestamp,
+            coordinate,
             disputeAuditingData
         ).finally(() => {
             if (this.disputeHandlingPromises.get(disputeHash) === handling) {
@@ -481,6 +496,7 @@ export class EventHandler {
         disputeCreationTimestamp: Timestamp,
         isFinal: boolean,
         windowCreationTimestamp: Timestamp,
+        coordinate: EventCoordinate,
         disputeAuditingData?: DisputeAuditingDataStruct
     ): Promise<void> {
         const dispute = Codec.decode(
@@ -508,18 +524,14 @@ export class EventHandler {
             windowCreationTimestamp
         );
 
-        const isCurrentFork = this.stateManager.forkId === forkId;
-        // isDisputeWindowRelevant?
-        // A final dispute can complete an operation after its locally computed
-        // candidate changed the current fork. Late non-final events must not
-        // restart validation or evidence construction for the resolved fork.
-        const isRelevant =
-            isCurrentFork ||
-            (isFinal &&
-                this.stateManager.reductionManager.hasOperation(forkId));
-        if (!isRelevant) {
-            return;
-        }
+        const window = await this.getRelevantWindow(
+            channelId,
+            forkId,
+            isFinal,
+            coordinate
+        );
+        if (!window) return;
+        const { isExpired, killPeriodEnd } = window;
 
         this.stateManager.blockQueueManager.clearFork(forkId);
 
@@ -635,14 +647,6 @@ export class EventHandler {
             return;
         }
 
-        // Use the authoritative on-chain window for this current-time race
-        // decision. Only an existing, expired window changes the normal audit
-        // path: challenging is then forbidden, so persist for reduction.
-        const { windowExists, isExpired, killPeriodEnd } =
-            await this.stateManager.stateChannelManagerContract.isKillPeriodExpired(
-                channelId,
-                forkId
-            );
         // only participants and pending participants audit: data
         // availability is guaranteed to them alone
         if (!isCommittedParticipantStatus(this.stateManager.status)) {
@@ -657,7 +661,8 @@ export class EventHandler {
             );
             return;
         }
-        if (windowExists && isExpired) {
+        // The window read above decides this current-time race.
+        if (isExpired) {
             // The kill period is over, so this dispute can no longer be
             // challenged. Preserve all available data and reduce from it.
             this.logger.warn(
@@ -795,6 +800,58 @@ export class EventHandler {
             forkId,
             Number(killPeriodEnd)
         );
+    }
+
+    /**
+     * The on-chain window of a relevant dispute, or undefined for one that is
+     * not. A dispute is relevant on the current fork, or when final and it
+     * completes an operation after its locally computed candidate changed the
+     * current fork: late non-final events must not restart validation or
+     * evidence construction for the resolved fork. The fork's first dispute
+     * upload opens its window. The chain deletes the windows only when it
+     * closes the channel, or on a snapshot update that clears storage and
+     * whose fork has no window, so a dispute without its window was settled
+     * while its event waited to be handled. Logs arrive from every RPC node
+     * but the read goes to one: a missing window counts only at a read at or
+     * after the event's block, so a node behind it is waited for, never
+     * trusted. A window that exists is acted on at once.
+     */
+    private async getRelevantWindow(
+        channelId: ChannelId,
+        forkId: ForkId,
+        isFinal: boolean,
+        coordinate: EventCoordinate
+    ) {
+        const isTracked =
+            this.stateManager.forkId === forkId ||
+            (isFinal &&
+                this.stateManager.reductionManager.hasOperation(forkId));
+        if (!isTracked) return undefined;
+        const contract = this.stateManager.stateChannelManagerContract;
+        const latest = await contract.isKillPeriodExpired(channelId, forkId);
+        if (latest.windowExists) return latest;
+        const eventSyncService = this.stateManager.eventSyncService;
+        const readWindow = () =>
+            eventSyncService.readAtHead((blockTag) =>
+                contract.isKillPeriodExpired(channelId, forkId, { blockTag })
+            );
+        let read = await readWindow();
+        while (read.blockNumber < coordinate.blockNumber) {
+            await eventSyncService.waitForChainHead(
+                coordinate.blockNumber,
+                this.stateManager.timeConfig.agreementTime * 1000,
+                this.disposal.signal
+            );
+            if (this.disposal.signal.aborted) return undefined;
+            read = await readWindow();
+        }
+        const window = read.value;
+        if (window.windowExists) return window;
+        this.logger.warn(
+            "Ignoring a dispute whose window the chain already cleared",
+            { channelId, forkId }
+        );
+        return undefined;
     }
 
     private async persistDisputeAndNotify(

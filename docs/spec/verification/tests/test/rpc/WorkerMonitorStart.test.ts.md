@@ -6,9 +6,10 @@ Exercises: [AInternalRpcRoot](../../../../implementation/source/src/rpc/internal
 ## Overview
 
 Verifies when a worker root starts its thread's event-loop monitor, with and without the opt-in
-startup monitoring.
+startup monitoring, and that it starts with the root's own monitor options.
 
 ## Tests
 
 - `starts a worker root's monitor once its start is done by default`: UNIT-TEST-ROOT-MONITOR-START-1-MAY5GB.P1
 - `starts a worker root's monitor before its start with EVENT_LOOP_MONITOR_STARTUP`: UNIT-TEST-ROOT-MONITOR-START-1-MAY5GB.P2
+- `starts a worker root's monitor with the root's monitor options and its thread label: a compute root's fatal delay is off`: REQ-RUNTIME-3-VQXW59.T2.P4, UNIT-TEST-ROOT-MONITOR-START-1-MAY5GB.P3

@@ -108,6 +108,7 @@ export type SignatureBlockMatch = {
 type DisputeCommittedEventKey = string;
 type CalldataPostedEventKey = string;
 type InboundMessageLogKey = string;
+type ContractLogKey = string;
 
 /** The manager contract runner's gas estimate, as the estimate stubs wrap it. */
 type EstimateGas = (tx: TransactionRequest) => Promise<bigint>;
@@ -121,6 +122,7 @@ export type StubKey =
     | "auditingDataBuild"
     | "disputeKillMulticall"
     | "stateProofBuilds"
+    | "completeWithGenesis"
     | "discoveryJoinHold"
     | "auditingDataRebuild"
     | "snapshotPostSend"
@@ -151,6 +153,7 @@ export type StubKey =
     | "inboundMessageStorage"
     | "disputeCommittedEvents"
     | "calldataPostedEvents"
+    | "contractLogs"
     | "disputeInitiation"
     | "disputeAudits"
     | "reducedCommitEvents"
@@ -606,6 +609,9 @@ export class StubService extends ANetworkRpcService<
     private restoreChainCallRecording?: () => void;
     private chainMembershipReadCount = 0;
     private restoreChainMembership?: () => void;
+    /** Answers of the recorded `isSignerOnChain` reads, in settle order. */
+    private signerOnChainAnswers: boolean[] = [];
+    private membershipDropCount = 0;
     private heldParticipantChecks?: {
         entered: number;
         /** One answer resolver per parked check, oldest first. */
@@ -850,6 +856,8 @@ export class StubService extends ANetworkRpcService<
     laggedHeadReads = 0;
     /** `waitForChainHead` calls entered while the chain view lags. */
     chainHeadWaitsEntered = 0;
+    /** Those calls that returned, either way. */
+    chainHeadWaitsSettled = 0;
     /** Streamed logs above the lagging chain view's block, with their channel. */
     private readonly heldChainViewLogs: [Log, ChannelId][] = [];
     /** getLogs spans recorded by the current chain-log-query patch. */
@@ -860,6 +868,11 @@ export class StubService extends ANetworkRpcService<
     disputeCommittedHandlingGate?: StubGate;
     /** Resolvers waiting for the first held calldata log. */
     private readonly heldCalldataPostedWaiters: (() => void)[] = [];
+    /** Every contract log held by `holdContractLogs`, first delivery each, in arrival order. */
+    private readonly heldContractLogs = new Map<
+        ContractLogKey,
+        Parameters<StateManager["eventSyncService"]["scheduleLog"]>
+    >();
     /** Whether the dispute-event hold stub should pass its first new log. */
     passFirstDisputeCommittedEvent = true;
     readonly heldReducedCommitArgs: unknown[][] = [];
@@ -910,6 +923,8 @@ export class StubService extends ANetworkRpcService<
     recordedDisputeAuditCount = 0;
     // full state-proof builds counted by stubCountStateProofBuilds
     stateProofBuildCount = 0;
+    // reductionManager.completeWithGenesis calls counted by stubCountCompleteWithGenesis
+    completeWithGenesisCount = 0;
     // replayGasLimit block reads rejected by stubFailReplayGasBlockRead
     replayGasBlockReadFailures = 0;
     /** The state the state-mutex hold installed, while it is held. */
@@ -2441,6 +2456,34 @@ export class StubService extends ANetworkRpcService<
         this.restoreChainMembership = undefined;
     }
 
+    /** Record each `isSignerOnChain` answer and each `dropMembership` call; both still run. */
+    public recordMembershipEndChecks(): void {
+        const membership = this.sm.membershipService;
+        const isSignerOnChain = membership.isSignerOnChain.bind(membership);
+        const dropMembership = membership.dropMembership.bind(membership);
+        this.signerOnChainAnswers = [];
+        this.membershipDropCount = 0;
+        membership.isSignerOnChain = async () => {
+            const isOnChain = await isSignerOnChain();
+            this.signerOnChainAnswers.push(isOnChain);
+            return isOnChain;
+        };
+        membership.dropMembership = () => {
+            this.membershipDropCount += 1;
+            dropMembership();
+        };
+    }
+
+    public getMembershipEndChecks(): {
+        signerOnChainAnswers: boolean[];
+        dropCount: number;
+    } {
+        return {
+            signerOnChainAnswers: [...this.signerOnChainAnswers],
+            dropCount: this.membershipDropCount
+        };
+    }
+
     /** Parks every handshake participant check (`canParticipateInDisputes`) until released. */
     public holdParticipantCheck(): void {
         this.releaseParticipantCheck("chain");
@@ -3830,6 +3873,62 @@ export class StubService extends ANetworkRpcService<
         };
     }
 
+    /**
+     * Hold every contract log before the scheduler sees it, as a paused
+     * runtime that handles no chain event: each log is kept once, in arrival
+     * order, for `releaseContractLogs`. Unlike the calldata hold, recovery
+     * reads are held too: a paused runtime reads nothing.
+     */
+    public holdContractLogs(): void {
+        const eventSyncService = this.sm.eventSyncService;
+        if (!this.stubOriginals.has("contractLogs")) {
+            this.stubOriginals.set(
+                "contractLogs",
+                eventSyncService.scheduleLog.bind(eventSyncService)
+            );
+        }
+        eventSyncService.scheduleLog = async (...args) => {
+            const key = `${args[0].transactionHash}:${args[0].index}`;
+            if (!this.heldContractLogs.has(key))
+                this.heldContractLogs.set(key, args);
+        };
+    }
+
+    /**
+     * Start the held logs in arrival order, running concurrently as a resumed
+     * runtime handles the events it missed. With `events`, only their logs
+     * start and every other log, later ones included, stays held; without
+     * (none, or an empty list: the control RPC sends a missing argument as
+     * one), all start and the hold ends. A released dispatch must not wait on
+     * a log that is still held. Resolves with the error message of each
+     * dispatch that failed.
+     */
+    public async releaseContractLogs(events?: string[]): Promise<string[]> {
+        const eventSyncService = this.sm.eventSyncService;
+        const original = this.stubOriginals.get("contractLogs") as
+            | typeof eventSyncService.scheduleLog
+            | undefined;
+        if (original === undefined) return [];
+        const isReleasingAll = !events?.length;
+        if (isReleasingAll) {
+            eventSyncService.scheduleLog = original;
+            this.stubOriginals.delete("contractLogs");
+        }
+        const contract = this.sm.stateChannelManagerContract;
+        const released = [...this.heldContractLogs].filter(
+            ([, [log]]) =>
+                isReleasingAll ||
+                events.includes(contract.interface.parseLog(log)?.name ?? "")
+        );
+        for (const [key] of released) this.heldContractLogs.delete(key);
+        const outcomes = await Promise.allSettled(
+            released.map(([, args]) => original(...args))
+        );
+        return outcomes.flatMap((outcome) =>
+            outcome.status === "rejected" ? [errorMessage(outcome.reason)] : []
+        );
+    }
+
     public restoreCalldataPostedEvents(): boolean {
         const eventSyncService = this.sm.eventSyncService;
         const original = this.stubOriginals.get("calldataPostedEvents");
@@ -3843,18 +3942,22 @@ export class StubService extends ANetworkRpcService<
 
     /**
      * A provider that lags the chain: the head and every `latest` read stay at
-     * the current block until released. `holdLogs`: streamed logs above that
-     * block are held too, as when every node lags; otherwise another node
-     * keeps streaming them. Returns the pinned block.
+     * `atBlock` (default: the current block) until released. `holdLogs`:
+     * streamed logs above that block are held too, as when every node lags;
+     * otherwise another node keeps streaming them. Returns the pinned block.
      */
-    public async lagChainView(holdLogs: boolean): Promise<number> {
+    public async lagChainView(
+        holdLogs: boolean,
+        atBlock?: number
+    ): Promise<number> {
         const provider = this.jsonRpcChainProvider;
-        const pinned = await provider.getBlockNumber();
+        const pinned = atBlock ?? (await provider.getBlockNumber());
         const pinnedTag = toQuantity(pinned);
         const send = provider.send.bind(provider);
         this.stubOriginals.set("chainViewSend", send);
         this.laggedHeadReads = 0;
         this.chainHeadWaitsEntered = 0;
+        this.chainHeadWaitsSettled = 0;
         provider.send = async (method, params) => {
             if (method === "eth_blockNumber") {
                 this.laggedHeadReads++;
@@ -3868,13 +3971,15 @@ export class StubService extends ANetworkRpcService<
             );
         };
         const eventSyncService = this.sm.eventSyncService;
-        // record-only: counts the waits, forwards each unchanged
+        // record-only: counts the waits and their returns, forwards each unchanged
         const waitForChainHead =
             eventSyncService.waitForChainHead.bind(eventSyncService);
         this.stubOriginals.set("chainViewWait", waitForChainHead);
         eventSyncService.waitForChainHead = (...args) => {
             this.chainHeadWaitsEntered++;
-            return waitForChainHead(...args);
+            return waitForChainHead(...args).finally(
+                () => this.chainHeadWaitsSettled++
+            );
         };
         if (holdLogs) {
             const scheduleStreamedLog =
