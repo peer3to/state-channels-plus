@@ -72,6 +72,20 @@ contract LocalDiamondInboundMirrorTest is DiamondHarness {
         assertTrue(mirror.hasInboundMessageBlock(CHANNEL_ID, keccak256(abi.encode(second))));
     }
 
+    function test_onChannelStorageCleared_prunesFromTheFirstPrunedBlockAndKeepsTheBlocksAbove() public {
+        MessageBlock memory first = _inboundBlock(bytes32(0), 1, 100);
+        MessageBlock memory second = _inboundBlock(keccak256(abi.encode(first)), 2, 250);
+        localDiamond.onInboundMessagesProcessed(CHANNEL_ID, first);
+        localDiamond.onInboundMessagesProcessed(CHANNEL_ID, second);
+
+        // the chain kept the snapshot head `second` and pruned from `first`
+        localDiamond.onChannelStorageCleared(CHANNEL_ID, keccak256(abi.encode(first)), 1, 0);
+
+        assertFalse(mirror.hasInboundMessageBlock(CHANNEL_ID, keccak256(abi.encode(first))));
+        assertTrue(mirror.hasInboundMessageBlock(CHANNEL_ID, keccak256(abi.encode(second))));
+        _assertHead(second, 250);
+    }
+
     function test_openReplay_eitherOrder_storesTheGenesisInboundBlockOnlyThroughTheInboundEvent() public {
         (MessageBlock memory genesisBlock, StateSnapshot memory genesisSnapshot, bytes memory genesisState) =
             _openAndRecordGenesis();

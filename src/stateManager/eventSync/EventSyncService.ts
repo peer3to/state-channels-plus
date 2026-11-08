@@ -1042,7 +1042,7 @@ export default class EventSyncService {
             case "ChannelStorageCleared":
                 await this.eventHandler.onChannelStorageCleared(
                     args.channelId,
-                    args.latestInboundMessageBlockHash,
+                    args.firstPrunedInboundMessageBlockHash,
                     coordinate
                 );
                 break;

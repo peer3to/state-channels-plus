@@ -59,6 +59,7 @@ Reduction algebra
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P28` — a child fork whose reduction sees the parent fork's already applied slash as a candidate plus a timeout removes the timed-out participant: the slashed signer is no participant of the child fork, so the slash is not applied and does not suppress the timeout
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P29` — `reduceAndFinalize` with the committed set plus one dispute the window never committed reverts naming both commitment hash arrays, so the extra hash is identifiable
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P30` — `reduceAndFinalize` with only one of two committed disputes reverts naming both commitment hash arrays, so the missing hash is identifiable
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P31` — `reduce` after an open-channel storage clearing reports the snapshot's inbound head with its real height, not zero
 
 ## UNIT-TEST-SM-DISPUTE-VERIFICATION-1-ZAJQV6
 

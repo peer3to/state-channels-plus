@@ -699,7 +699,7 @@ Specification cases tested: 0/12.
 Specification cases tested: 0/12.
 
 [`REQ-MSG-3-YY569F` (Packaged inbound blocks MUST chain from the previous snapshot tip and exist…)](../specification/settlement/cross-layer-messages.md#req-msg-3-yy569f)
-Specification cases tested: 0/12.
+Specification cases tested: 1/13. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12.
 
 [`REQ-MSG-4-SC1FEX` (Outbound processing MUST verify the linked range and skip the processed prefix…)](../specification/settlement/cross-layer-messages.md#req-msg-4-sc1fex)
 Specification cases tested: 0/8.

@@ -120,9 +120,9 @@ Source identity: `csf_dc2174473e0ce47f18083689`; rule `unbound-snapshot`; occurr
 
 Source identity: `csf_f664a2f1629d842430826ec3`; rule `pruned-inbound`; occurrence `occ_60d59b4ec6fb0b8576e03989`.
 
-**Current evidence and path.** The forged-inbound handler still equates absence from the live map with forgery. Normal snapshot adoption deletes the consumed inbound head and its ancestors. After a later head is adopted, a retained honest signed block containing an earlier genuine head can satisfy the false-fraud verdict.
+**Current evidence and path.** The forged-inbound handler still equates absence from the live map with forgery. Normal snapshot adoption deletes the consumed inbound head's ancestors and keeps the head until the next adoption deletes it. After a later head is adopted, a retained honest signed block containing an earlier genuine head can satisfy the false-fraud verdict.
 
-**Locations:** [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:327–365](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L327-L365); [contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol:207–216](../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L207-L216).
+**Locations:** [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:327–365](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L327-L365); [contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol:189–221](../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L189-L221).
 
 **Boundary:** any chain account, through the routed `applyFraudProofs` entrypoint. The only material needed is one retained honest signed block that includes the earlier inbound head. Ranking class: unauthenticated on-chain path.
 

@@ -79,6 +79,12 @@
       "peakRssGb": 0.261,
       "measurementReason": null
     },
+    "forge|test/V1/StateChannelDiamondProxy/InboundHeadPruning.t.sol|InboundHeadPruningTest": {
+      "durationMs": 1267,
+      "avgCores": 0.639,
+      "peakRssGb": 0.134,
+      "measurementReason": null
+    },
     "forge|test/V1/StateChannelDiamondProxy/InvalidStateProofStep.t.sol|InvalidStateProofStepTest": {
       "durationMs": 1408,
       "avgCores": 0.504,
@@ -3101,6 +3107,12 @@
       "durationMs": 16518,
       "avgCores": 0.709,
       "peakRssGb": 0.8,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Join path a spectator joins after a timeout reduction that followed a snapshot post pruning the inbound history: the reduced fork keeps the chain's inbound height and the joiner is seated": {
+      "durationMs": 38596,
+      "avgCores": 0.252,
+      "peakRssGb": 0.75,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Join path pending join fault preserves the successful on-chain join and inbound message": {
@@ -17864,9 +17876,9 @@
       "measurementReason": null
     },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes force-join time bound U74: observing its own join arms the force-join deadline at once, one full turn window per pending turn, while the counting grace still runs": {
-      "durationMs": 19412,
-      "avgCores": 1.155,
-      "peakRssGb": 0.989,
+      "durationMs": 13951,
+      "avgCores": 1.615,
+      "peakRssGb": 1.202,
       "measurementReason": null
     },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes force-join time bound U74: the force-join deadline passing with no new block requests the force-join dispute": {
@@ -18080,9 +18092,9 @@
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeAuditOlderDispute.test.ts|Unit: DisputeValidationService data availability and older disputes auditor without the older state U41: an auditor missing older application states but holding a newer finalized state audits a current dispute -> no missing-state failure, true": {
-      "durationMs": 19445,
-      "avgCores": 1.003,
-      "peakRssGb": 1.016,
+      "durationMs": 19728,
+      "avgCores": 1.571,
+      "peakRssGb": 1.245,
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeAuditOlderDispute.test.ts|Unit: DisputeValidationService data availability and older disputes auditor without the older state U94: the disputer signed a newer block than its dispute's latest state, which the auditor never held -> DisputeNotLatestState from that signature, no backward replay": {

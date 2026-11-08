@@ -241,7 +241,7 @@ contract LocalDiamond is StateChannelManagerProxy {
 
     function onChannelStorageCleared(
         bytes32 channelId,
-        bytes32 latestInboundMessageBlockHash,
+        bytes32 firstPrunedInboundMessageBlockHash,
         uint256 blockNumber,
         uint256 logIndex
     ) external {
@@ -257,8 +257,8 @@ contract LocalDiamond is StateChannelManagerProxy {
         }
         delete disputeData.disputedForks;
 
-        // Clear old inbound message blocks (prune the snapshot head too)
-        bytes32 keyToDelete = latestInboundMessageBlockHash;
+        // Clear old inbound message blocks from the first block the chain pruned
+        bytes32 keyToDelete = firstPrunedInboundMessageBlockHash;
         while (keyToDelete != bytes32(0)) {
             bytes32 nextKeyToDelete = inboundMessageBlockMap[channelId][keyToDelete].previousBlockHash;
             delete inboundMessageBlockMap[channelId][keyToDelete];

@@ -240,3 +240,5 @@ Kill application
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P211` — a `TimeoutCalldataPosted` proof whose inbound block skips a height is invalid and slashes its submitter
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P212` — a `TimeoutCalldataPosted` proof whose inbound message the state machine rejects reverts `ErrorDisputeStateMachineInboundProcessingFailed` with no verdict and no slash
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P213` — a `TimeoutCalldataPosted` proof whose posted block consumes a join of a new participant commits to a snapshot admitting the joiner and kills the timeout
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P214` — after an open-channel storage clearing, `isDisputeInboundHashValid` accepts a dispute anchored at the kept snapshot head with its real height and refuses height zero
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P215` — after an open-channel storage clearing, the historic threshold set of a dispute anchored at the kept snapshot head counts no JOIN of that head (a joiner who left since is not pending); a JOIN above the head is pending

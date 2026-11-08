@@ -68,6 +68,10 @@ Advance paths
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P45` — An overlapping last milestone targets its separate later final point
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P46` — The preceding change-point snapshot cannot replace the final snapshot in an overlapping proof
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P47` — a snapshot post whose new snapshot has its outbound head at an overflowing block right above the anchor reverts `ErrorOutboundMessageBlocksInvalid` (invalid run), not an arithmetic panic
+- [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P48` — storage clearing on an open channel keeps the snapshot's inbound head with its height, deletes the blocks below it and keeps the blocks above it; `ChannelStorageCleared` names the first deleted block
+- [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P49` — storage clearing on a closing channel deletes the snapshot's inbound head too; `ChannelStorageCleared` names the head
+- [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P50` — the next storage clearing on an open channel deletes the head the previous clearing kept and keeps the new snapshot head
+- [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P51` — storage clearing on an open channel with no inbound block deletes nothing and names the zero hash
 
 ## INTEGRATION-TEST-OPEN-CHANNEL-REGISTRY-1-A8M2KP
 
