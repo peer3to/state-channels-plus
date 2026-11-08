@@ -6,7 +6,6 @@ import {
     postSpamDispute
 } from "./DisputeWindowWorkflowStaging";
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
-import { runtimeEndpointFor } from "./RuntimeRootObservation";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
@@ -22,42 +21,8 @@ export async function assertDisputeRefreshPolicy(
         | "concurrent"
         | "read-failure"
         | "unrelated"
-        | "disposed"
         | "ineligible"
 ): Promise<void> {
-    if (mode === "disposed") {
-        await h.lifecycle.start(3, 0, {
-            configOverrides: { RUN_SDK_IN_THREAD: false }
-        });
-        const { host, sm, stub } = runtimeEndpointFor(h.getPeer(0).p2pInstance);
-        stub.stubRecordDisputeSubmissions(
-            true,
-            {
-                customError: "RaceConditionDisputeWindowNotOpen",
-                at: "send"
-            },
-            false
-        );
-        stub.recordSlashRecoveries();
-        try {
-            const attempt = sm.disputeManager.dispute(sm.forkId);
-            await waitFor(() => stub.getRecordedDisputeSubmissions().held > 0);
-            sm.abort();
-            stub.releaseDisputeSubmissions();
-            await attempt;
-            expect(sm.storage.disputes.didIDispute(sm.forkId)).to.equal(false);
-            expect(stub.getSlashRecoveryCount()).to.equal(0);
-            expect(
-                stub.getRecordedDisputeSubmissions().submissions
-            ).to.have.length(1);
-        } finally {
-            stub.releaseDisputeSubmissions();
-            stub.restoreDisputeSubmissions();
-            stub.restoreSlashRecoveries();
-            await host.dispose();
-        }
-        return;
-    }
     if (mode === "ineligible") {
         await h.lifecycle.start(4, 2);
         await h.scenario.disputeAndResolve({ maliciousPeerIndex: 1 });

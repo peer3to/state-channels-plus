@@ -2,10 +2,8 @@ import { Status } from "@/types";
 import { addressesEqual, Codec, sleep, Type } from "@/utils";
 import {
     authorUntilForceJoinCountingStarted,
-    observeMembershipEnd,
     readForceJoinBounds
 } from "@test/fixtures/ForceJoinCountingStaging";
-import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -185,12 +183,7 @@ describe("E2E: Force Join Dispute", function () {
         const h = TestSession.getHarness();
         const watchdogMs = 3_000;
         await h.lifecycle.start(2, 0, {
-            configOverrides: {
-                LEAVE_CHANNEL_WATCHDOG_MS: watchdogMs,
-                // the retained inline host keeps its records after the
-                // runtime disposes itself
-                RUN_SDK_IN_THREAD: false
-            }
+            configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: watchdogMs }
         });
         const { peer: joiner } = await h.join.addSpectatorAuthoring({
             authoringPeerIndices: [0, 1],
@@ -210,8 +203,6 @@ describe("E2E: Force Join Dispute", function () {
             { forward: true }
         );
         await h.join.joinChannelWait({ joiner });
-        const endpoint = runtimeEndpointFor(joiner.p2pInstance);
-        const membershipEnd = observeMembershipEnd(endpoint.sm);
 
         // the leave comes before the force-join trigger; the instance
         // disposes itself once the runtime reports onLeftChannel
@@ -251,39 +242,56 @@ describe("E2E: Force Join Dispute", function () {
         await restoreInbound0();
         await restoreInbound1();
 
-        // record-only scheduling probe on the retained host
-        endpoint.stub.stubRecordScheduledTasks();
-        const leaveWatchdogs = () =>
-            endpoint.stub
-                .getRecordedScheduledTasks()
-                .tasks.filter(
-                    (task) => task.taskName === "channel leave watchdog"
-                ).length;
-        await h.dispute.resolveDisputeWait({
-            forkId,
-            honestPeerIndices: [0, 1]
-        });
-        await h.event.waitUntilLeftChannel(joiner.index);
-        const watchdogsAtLeft = leaveWatchdogs();
+        // record-only scheduling probe
+        const stub = h.control(joinerPeer).stub;
+        await stub.stubRecordScheduledTasks().request();
+        const leaveWatchdogs = async () =>
+            (await stub.getRecordedScheduledTasks().request()).tasks.filter(
+                (task) => task.taskName === "channel leave watchdog"
+            ).length;
+        // the self-disposal is held after its cut, so the joiner's host
+        // stays readable after onLeftChannel
+        const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
+            joiner.index
+        );
+        try {
+            await h.dispute.resolveDisputeWait({
+                forkId,
+                honestPeerIndices: [0, 1]
+            });
+            await h.event.waitUntilLeftChannel(joiner.index);
+            const watchdogsAtLeft = await leaveWatchdogs();
+
+            // the joiner's host state once it reported onLeftChannel
+            expect(
+                await h.execOnHost(joinerPeer, async (sm) => ({
+                    status: sm.status,
+                    trackedJoin: sm.storage.forceJoin.getJoin() ?? null,
+                    leaveState: sm.leaveChannelService.state ?? null,
+                    isSignerInLocalState: (
+                        await sm.diamondStateMachine.getParticipants()
+                    ).includes(sm.signerAddress)
+                }))
+            ).to.deep.equal({
+                status: Status.SYNCED,
+                trackedJoin: null,
+                leaveState: null,
+                isSignerInLocalState: false
+            });
+            // absence window: a re-armed watchdog is scheduled within one period
+            await sleep(watchdogMs + 1_000);
+            expect(await leaveWatchdogs()).to.equal(watchdogsAtLeft);
+        } finally {
+            await releaseDisposal();
+        }
         // no dispose() call: the public leave disposes the runtime
         await h.event.waitUntilDisposed(joiner.index);
-
-        // the joiner's host state when it reported onLeftChannel
-        expect(membershipEnd.atLeft()).to.deep.equal({
-            status: Status.SYNCED,
-            trackedJoin: null,
-            leaveState: null,
-            isSignerInLocalState: false
-        });
         expect(
             await h.channelManager.getParticipants(h.channelId)
         ).to.not.include(joiner.address);
         expect(
             await h.channelManager.getPendingParticipants(h.channelId)
         ).to.not.include(joiner.address);
-        // absence window: a re-armed watchdog is scheduled within one period
-        await sleep(watchdogMs + 1_000);
-        expect(leaveWatchdogs()).to.equal(watchdogsAtLeft);
         expect(joiner.eventSpies.onLeftChannel?.callCount).to.equal(1);
     });
 });

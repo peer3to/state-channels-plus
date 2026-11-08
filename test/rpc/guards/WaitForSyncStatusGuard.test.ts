@@ -8,10 +8,7 @@ import {
     readLiveBlockRetention,
     wrongForkBlock
 } from "@test/fixtures/LiveBlockRetentionStaging";
-import {
-    runtimeEndpointFor,
-    runtimeIsClosed
-} from "@test/fixtures/RuntimeRootObservation";
+import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -167,42 +164,48 @@ describe("WaitForSyncStatusGuard", function () {
     it("an abort during the initial sync drops the retained live blocks without running them", async function () {
         const h = MathTestSession.getHarness();
         const { observer, forkId, heldHeight, release, spectateRequests } =
-            await addObserverWithHeldInitialSync(h, "failingResponse", {
-                // the retention is read on the local endpoint after the
-                // abort removed the observer's RPC connection
-                configOverrides: { RUN_SDK_IN_THREAD: false }
-            });
-        const endpoint = runtimeEndpointFor(observer.p2pInstance);
+            await addObserverWithHeldInitialSync(h, "failingResponse");
+        // keeps the control RPC reachable after the abort
+        const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
+            observer.index
+        );
         try {
-            await h.transition.advanceState({ count: 1, waitForPeers: [0, 1] });
-            await waitFor(async () =>
-                (await readLiveBlockRetention(h, observer)).deliveries.some(
-                    (delivery) =>
-                        delivery.forkId === forkId &&
-                        delivery.height === heldHeight + 1
-                )
-            );
-            expect(
-                (await readLiveBlockRetention(h, observer)).retainedCount
-            ).to.be.greaterThan(0);
-        } finally {
-            // the held sync answer fails: the initial sync aborts the runtime
-            await release();
-        }
+            try {
+                await h.transition.advanceState({
+                    count: 1,
+                    waitForPeers: [0, 1]
+                });
+                await waitFor(async () =>
+                    (await readLiveBlockRetention(h, observer)).deliveries.some(
+                        (delivery) =>
+                            delivery.forkId === forkId &&
+                            delivery.height === heldHeight + 1
+                    )
+                );
+                expect(
+                    (await readLiveBlockRetention(h, observer)).retainedCount
+                ).to.be.greaterThan(0);
+            } finally {
+                // the held sync answer fails: the initial sync aborts the runtime
+                await release();
+            }
 
-        await h.event.waitForPeers("onAbort", [observer.index], 1);
+            await h.event.waitForPeers("onAbort", [observer.index], 1);
+            const after = await readLiveBlockRetention(h, observer);
+            expect(after.retainedCount).to.equal(0);
+            expect(after.deliveries.length).to.be.greaterThan(0);
+            for (const delivery of after.deliveries) {
+                expect(delivery.runs).to.equal(1);
+                expect(delivery.intakes).to.deep.equal([]);
+            }
+            expect(await spectateRequests()).to.equal(1);
+        } finally {
+            await releaseDisposal();
+        }
         await waitFor(
             () => runtimeIsClosed(observer.p2pInstance),
             h.event.protocolEventTimeoutMs()
         );
-        const after = endpoint.stub.getRecordedLiveBlockRetention();
-        expect(after.retainedCount).to.equal(0);
-        expect(after.deliveries.length).to.be.greaterThan(0);
-        for (const delivery of after.deliveries) {
-            expect(delivery.runs).to.equal(1);
-            expect(delivery.intakes).to.deep.equal([]);
-        }
-        expect(await spectateRequests()).to.equal(1);
         // the aborted runtime's connect settles false
         await MathTestSession.settleDetached({
             expectedErrorIncludes: "connectToChannel failed"

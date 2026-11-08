@@ -46,13 +46,6 @@ export class OwnerContextRpc extends ReadyLifecycleRpc {
             child: this.child
         });
     }
-
-    // Overrides MainRpcService.dispose: the creator also releases its child;
-    // the owner's cascade may already have done so.
-    public override async dispose(): Promise<void> {
-        await (await this.child.catch(() => undefined))?.dispose();
-        await super.dispose();
-    }
 }
 
 export default OwnerContextRpc;

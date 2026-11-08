@@ -2,7 +2,7 @@ import {
     assertApplicationEventReachesClient,
     assertBundledHostRootAppliesPeerConfig,
     assertDefaultHostRootStarts,
-    assertDisposalDrainsThenRejects,
+    assertDisposalRejectsRunningCall,
     assertFailedBuildRepliesPromptly,
     assertManifestHostRootServesProbe,
     assertNonClassManifestRejects,
@@ -31,10 +31,10 @@ describe("ApplicationHostRoot", function () {
     it("a manifest whose export is not a class rejects setup inline", async function () {
         await assertNonClassManifestRejects(false);
     });
-    it("a failed build answers the setup without waiting out the reply drain in a worker", async function () {
+    it("a failed build answers the setup promptly in a worker", async function () {
         await assertFailedBuildRepliesPromptly(true);
     });
-    it("a failed build answers the setup without waiting out the reply drain inline", async function () {
+    it("a failed build answers the setup promptly inline", async function () {
         await assertFailedBuildRepliesPromptly(false);
     });
     it("rejects with the service error's name, message and code in a worker", async function () {
@@ -50,8 +50,8 @@ describe("ApplicationHostRoot", function () {
             probeHostRootManifest()
         );
     });
-    it("drains a running service call at disposal and rejects a later one in a worker", async function () {
-        await assertDisposalDrainsThenRejects(true);
+    it("rejects a running service call and a later one at disposal in a worker", async function () {
+        await assertDisposalRejectsRunningCall(true);
     });
     it("an application event emitted in the runtime reaches the client listener with its args in a worker", async function () {
         await assertApplicationEventReachesClient(true);

@@ -23,9 +23,10 @@ connection between the two pages and no hub link pair for them over a bounded wi
 release, exactly one new hub link pair and one bootstrap connection on each page. Two last pages,
 also inline, join one lobby topic while the hub holds every link socket's opening handshake; one
 page disposes its runtime and the hub then lets the sockets open, so that page's link opens after
-its runtime is gone; the oracle is a closed link at the hub and no error on the disposed page. Any
+its runtime is gone; the oracle is a closed link at the hub and no error on the disposed page. The
+disposed page then joins a new discovery topic; the oracle is no membership for that topic at the hub. Any
 page error, console error, or relay error fails the run.
 
 ## Tests
 
-- `package script test:browser:transport:local`: REQ-RUNTIME-3-VQXW59.T1.P83, REQ-UPG-4-M2XDBA.T1.P13, REQ-UPG-7-61PHDB.T1.P1, REQ-UPG-7-61PHDB.T1.P3, REQ-UPG-7-61PHDB.T1.P8, REQ-UPG-8-06HTCM.T1.P1
+- `package script test:browser:transport:local`: REQ-RUNTIME-3-VQXW59.T1.P83, REQ-RUNTIME-3-VQXW59.T1.P100, REQ-UPG-4-M2XDBA.T1.P13, REQ-UPG-7-61PHDB.T1.P1, REQ-UPG-7-61PHDB.T1.P3, REQ-UPG-7-61PHDB.T1.P8, REQ-UPG-8-06HTCM.T1.P1

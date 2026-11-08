@@ -1,11 +1,11 @@
 name: Build cache
 
 # PR runs can restore caches saved on their base branch, but CI runs only on
-# pull requests. This saves dispute's build so every PR into dispute starts from it.
+# pull requests. This saves dev's build so every PR into dev starts from it.
 on:
     push:
         branches:
-            - dispute
+            - dev
 
 # a newer push supersedes the running build; a cancelled run saves nothing
 concurrency:

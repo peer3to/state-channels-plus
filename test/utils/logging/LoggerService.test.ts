@@ -1,3 +1,4 @@
+import { LogUploader } from "@/utils/logging/LogUploader";
 import { randomHexId } from "@/utils/randomHexId";
 import {
     applyCrashLogConfig,
@@ -692,7 +693,6 @@ describe("LoggerService", function () {
         // The host's held upload keeps its real flush running.
         await sdk.remote.loggerProbe.write("held host upload").request();
         const host = inlineHostOf(sdk);
-        const hostTransport = host.parent!["transport"];
         const reported = recordReportedErrors(host);
         try {
             const flush = sdk.logger.flushLogs();
@@ -706,8 +706,8 @@ describe("LoggerService", function () {
 
             // The host's flush ends only now and answers a requester that is gone.
             held.resolve();
-            // 5 s is only a bound: the drain ends once the host's flush handler answers.
-            await host.router.drainInFlightHandlers(hostTransport, 5_000);
+            // 5 s is only a bound: the wait ends once the host's upload settles.
+            await LogUploader.settleRealmUploads(5_000);
             await new Promise(setImmediate);
             await flush;
 

@@ -136,7 +136,7 @@ jobs:
                   fi
 
             # The runner builds incrementally before shipping the build to the
-            # workers. A PR into dispute restores dispute's build, any PR its own
+            # workers. A PR into dev restores dev's build, any PR its own
             # previous run. Hardhat and forge rebuild what changed; dist is reused
             # only while its file set is unchanged. Each tool re-checks what it restores.
             - name: Restore the Foundry build

@@ -112,7 +112,7 @@ describe("OpenChannelNegotiationService opening data", function () {
             .probeStaleDerivation("lower", "resolve")
             .request({ timeoutMs: fixture.openingTimeoutMs() });
 
-        expect(result.cancelledOutcome).to.equal("cancelled");
+        expect(result.oldOutcome).to.equal("retry");
         expect(result.replacementCurrent).to.equal(true);
         expect(result.replacementChannelKept).to.equal(true);
         expect(result.replacementTimeoutKept).to.equal(true);
@@ -128,7 +128,7 @@ describe("OpenChannelNegotiationService opening data", function () {
             .probeStaleDerivation("lower", "reject")
             .request({ timeoutMs: fixture.openingTimeoutMs() });
 
-        expect(result.cancelledOutcome).to.equal("cancelled");
+        expect(result.oldOutcome).to.equal("retry");
         expect(result.replacementCurrent).to.equal(true);
         expect(result.replacementChannelKept).to.equal(true);
         expect(result.replacementTimeoutKept).to.equal(true);
@@ -143,7 +143,7 @@ describe("OpenChannelNegotiationService opening data", function () {
             .probeStaleDerivation("higher", "resolve")
             .request({ timeoutMs: fixture.openingTimeoutMs() });
 
-        expect(result.cancelledOutcome).to.equal("cancelled");
+        expect(result.oldOutcome).to.equal("retry");
         expect(result.staleResult).to.equal("submitted");
         expect(result.oldChannelOpen).to.equal(false);
         expect(result.replacementCurrent).to.equal(true);
@@ -160,7 +160,7 @@ describe("OpenChannelNegotiationService opening data", function () {
             .probeStaleDerivation("higher", "reject")
             .request({ timeoutMs: fixture.openingTimeoutMs() });
 
-        expect(result.cancelledOutcome).to.equal("cancelled");
+        expect(result.oldOutcome).to.equal("retry");
         expect(result.staleResult).to.equal("Opening data unavailable");
         expect(result.oldChannelOpen).to.equal(false);
         expect(result.replacementCurrent).to.equal(true);

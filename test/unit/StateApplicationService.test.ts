@@ -20,10 +20,7 @@ describe("Unit: StateApplicationService", function () {
         await assertCacheDuringSnapshotPreparation();
     });
     it("successful reduction replaces the old-fork cache with its committed genesis participants", async () => {
-        await assertReductionCache(false);
-    });
-    it("cancelled reduction cannot publish its prepared participant set or fork", async () => {
-        await assertReductionCache(true);
+        await assertReductionCache();
     });
     it("successful same-fork snapshot replacement publishes its participant set atomically", async () => {
         await assertStateApplicationCache("success");

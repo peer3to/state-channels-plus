@@ -24,8 +24,7 @@ export type P2PManagerFixtureSetup = {
     timeConfig?: HarnessOptions["timeConfig"];
     /** Each peer in its own thread, so a probe's process-wide patch stays in its peer. */
     isolatedPeers?: boolean;
-    /** Every host inline in the test process, so a test reads its log store after abort. */
-    inlineHosts?: boolean;
+    configOverrides?: HarnessOptions["configOverrides"];
 };
 
 export class P2PManagerFixture {
@@ -38,11 +37,10 @@ export class P2PManagerFixture {
         await this.harness.setup(options.peerCount ?? 2, {
             autoConnect: false,
             timeConfig: options.timeConfig,
-            configOverrides: options.isolatedPeers
-                ? { RUN_SDK_IN_THREAD: true }
-                : options.inlineHosts
-                  ? { RUN_SDK_IN_THREAD: false }
-                  : undefined,
+            configOverrides: {
+                ...options.configOverrides,
+                ...(options.isolatedPeers ? { RUN_SDK_IN_THREAD: true } : {})
+            },
             customRpcManifest: {
                 module: path.resolve(
                     __dirname,

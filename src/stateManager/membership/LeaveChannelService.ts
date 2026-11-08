@@ -47,7 +47,6 @@ export type LeaveChannelState = {
  */
 export default class LeaveChannelService {
     private readonly logger: Logger;
-    private readonly unsubscribers: (() => void)[];
     private exit?: LeaveChannelState;
     private watchdog?: ReturnType<typeof setTimeout>;
     // one exit post runs at a time; a finalized block during it posts once more
@@ -64,33 +63,27 @@ export default class LeaveChannelService {
         this.logger = logger.child({ component: "LeaveChannel" });
         const events = stateManager.events;
         const check = () => this.requestCheck();
-        this.unsubscribers = [
-            events.on("p2pEventHooks", "onBlockFinalized", () =>
-                this.postLatestSnapshot()
-            ),
-            events.on("p2pEventHooks", "onSetState", check),
-            events.on("p2pEventHooks", "onStatusChanged", (oldStatus, status) =>
-                this.onStatusChanged(oldStatus, status)
-            ),
-            events.on(
-                "eventHandler",
-                "onStateSnapshotUpdated",
-                (_, snapshot) => {
-                    // a snapshot that still lists this signer removed no
-                    // one: only a pending exit checks it
-                    if (
-                        !this.exit &&
-                        stateManager.membershipService.includesSigner(
-                            snapshot.snapshotData.participants as Address[]
-                        )
-                    )
-                        return;
-                    this.requestCheck();
-                }
-            ),
-            events.on("eventHandler", "onDisputeReducedResultCommitted", check),
-            events.on("eventHandler", "onChannelStorageCleared", check)
-        ];
+        events.on("p2pEventHooks", "onBlockFinalized", () =>
+            this.postLatestSnapshot()
+        );
+        events.on("p2pEventHooks", "onSetState", check);
+        events.on("p2pEventHooks", "onStatusChanged", (oldStatus, status) =>
+            this.onStatusChanged(oldStatus, status)
+        );
+        events.on("eventHandler", "onStateSnapshotUpdated", (_, snapshot) => {
+            // a snapshot that still lists this signer removed no
+            // one: only a pending exit checks it
+            if (
+                !this.exit &&
+                stateManager.membershipService.includesSigner(
+                    snapshot.snapshotData.participants as Address[]
+                )
+            )
+                return;
+            this.requestCheck();
+        });
+        events.on("eventHandler", "onDisputeReducedResultCommitted", check);
+        events.on("eventHandler", "onChannelStorageCleared", check);
     }
 
     private get isLeaving(): boolean {
@@ -146,12 +139,6 @@ export default class LeaveChannelService {
         )
             return;
         (this.exit ?? this.startExit()).isExitBlockCommitted = true;
-    }
-
-    public dispose(): void {
-        for (const unsubscribe of this.unsubscribers.splice(0)) unsubscribe();
-        this.cancelWatchdog();
-        this.exit = undefined;
     }
 
     private startExit(): LeaveChannelState {

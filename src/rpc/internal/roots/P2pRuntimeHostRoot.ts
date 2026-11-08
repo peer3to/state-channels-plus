@@ -26,6 +26,7 @@ import HostNonceManager from "@/evm/signer/HostNonceManager";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
 import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
 import { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
+import { RootDisposedError } from "@/rpc/internal/RemoteRoot";
 import MainRpcService, {
     type ApplicationEventsOf
 } from "@/rpc/network/MainRpcService";
@@ -37,8 +38,9 @@ import Storage from "@/storage";
 import { TimeConfig } from "@/types";
 import { DebugProxy } from "@/utils";
 import { LocalDiscoveryServer } from "@/utils";
-import { config, createConfig, isNodeRuntime } from "@/utils/config";
+import { config, createConfig } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import { runCleanup } from "@/utils/runCleanup";
 
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import { StepTimer } from "@/utils/StepTimer";
@@ -144,6 +146,9 @@ export class P2pRuntimeHostRoot<
     private chainContext?: RuntimeChainContext;
     private contractExecutor?: AContractExecutor;
     private runtimeHandle?: RuntimeHostState;
+    /** The network teardown the cut started. */
+    private networkClose?: Promise<void>;
+    private runtimeRelease?: Promise<void>;
     private managedSigner!: HostNonceManager;
     private localDeploySigner?: LocalContractExecutorSigner;
     private stateMachineContract!: ethers.Contract;
@@ -172,13 +177,9 @@ export class P2pRuntimeHostRoot<
             (error) => {
                 // Parent closure during disposal must not restart the worker error funnel.
                 if (this.isDisposing) {
-                    try {
-                        this.rootLogger.error("SDK error during cleanup", {
-                            error
-                        });
-                    } catch {
-                        // Its logger may already be disposed after the parent closed.
-                    }
+                    this.rootLogger.error("SDK error during cleanup", {
+                        error
+                    });
                     return;
                 }
                 this.rootLogger?.error("Unhandled SDK runtime error", {
@@ -291,38 +292,29 @@ export class P2pRuntimeHostRoot<
         });
     }
 
-    // Overrides AInternalRpcRoot.isDisposed to include domain abort before root cleanup starts.
-    public override get isDisposed(): boolean {
-        return (
-            super.isDisposed ||
-            (this.runtimeHandle?.stateManager.isDisposed ?? false)
-        );
-    }
-
-    // Implements root cleanup through the shared recursive disposal contract.
+    /**
+     * The one disposal: the cut, then each edge of the runtime that outlives
+     * it released once, here. Everything else is in memory and dropped.
+     */
     public override dispose(): Promise<void> {
-        return this.disposeRoot(
-            async () => {
-                const runtimeHandle = this.runtimeHandle;
+        const disposal = this.disposeRoot(
+            () => {
                 const provider = this.chainContext?.provider;
-                const ctx = this.context;
-                // Reported before the provider closes; the settle is bounded
-                // so disposal never hangs on the chain.
-                if (this.managedSigner) {
-                    this.rootLogger.info(
-                        "gas usage",
-                        LoggerUtils.getGasUsageMetadata(
-                            await this.managedSigner.gasUsage.settledSnapshot(
-                                config.GAS_USAGE_SETTLE_MS
+                return runCleanup(
+                    // Reported before the provider closes; the settle is bounded
+                    // so disposal never hangs on the chain.
+                    async () => {
+                        if (!this.managedSigner) return;
+                        this.rootLogger.info(
+                            "gas usage",
+                            LoggerUtils.getGasUsageMetadata(
+                                await this.managedSigner.gasUsage.settledSnapshot(
+                                    config.GAS_USAGE_SETTLE_MS
+                                )
                             )
-                        )
-                    );
-                    // The report is out; end the receipt waits still running
-                    // before the provider that would never end them closes.
-                    this.managedSigner.gasUsage.dispose();
-                }
-                try {
-                    try {
+                        );
+                    },
+                    async () => {
                         // Destroy first so ethers sends no eth_unsubscribe the destroy
                         // would cancel; node sockets settle any that are sent (NodeSocket).
                         if (provider && !Clock.ownsProvider(provider))
@@ -332,36 +324,31 @@ export class P2pRuntimeHostRoot<
                         // the Clock destroys it once a new provider replaces it.
                         else if (provider) {
                             provider.stopReconnecting();
+                            // the Clock registers no listener: every one
+                            // left is this runtime's
+                            await provider.removeAllListeners();
                             Clock.releaseProvider(provider);
                         }
-                    } finally {
-                        if (runtimeHandle) {
-                            await runtimeHandle.stateManager.dispose();
-                        }
-                    }
-                } finally {
-                    this.closeChildConnections();
-                    try {
-                        // TODO: Delegate cleanup through the shared Holepunch/local
-                        // discovery lifecycle API once the backend is injected.
-                        if (
-                            ctx.threadLabel &&
-                            config.DEBUG_LOCAL_TRANSPORT &&
-                            isNodeRuntime() &&
-                            config.LOCAL_DISCOVERY_REGISTRY_URL
-                        ) {
-                            await LocalDiscoveryServer.cleanup();
-                        }
-                    } finally {
-                        // Late network callbacks must not use the disposed parent connection.
-                        runtimeHandle?.stateManager.events.setBridgeTap(
-                            undefined
-                        );
-                    }
-                }
+                    },
+                    // a close failure fails the disposal
+                    () => this.networkClose,
+                    () => this.closeChildConnections(),
+                    // the gas report and the release logs upload while a
+                    // worker thread still runs; after an abort this flush
+                    // ends at the abort flush's deadline, a plain dispose
+                    // waits at most DISPOSE_LOG_FLUSH_MS
+                    () =>
+                        this.rootLogger.flushLogs(
+                            this.runtimeHandle?.stateManager
+                                .abortFlushDeadlineMs ??
+                                Date.now() + config.DISPOSE_LOG_FLUSH_MS
+                        )
+                );
             },
-            () => this.runtimeHandle?.stateManager.stop()
+            () => this.releaseRuntime()
         );
+        this.cutOff(); // before disposeRoot's first await
+        return disposal;
     }
 
     /**
@@ -377,6 +364,51 @@ export class P2pRuntimeHostRoot<
     private requireManager() {
         if (!this.runtimeHandle) throw new Error("Runtime is not ready");
         return this.runtimeHandle.stateManager.p2pManager;
+    }
+
+    /**
+     * Cut network, chain sends and the parent bus in one step;
+     * nothing the runtime does afterwards leaves it. Parent replies and the
+     * logger channel stay open. Every step is idempotent.
+     */
+    private cutOff(): void {
+        const stateManager = this.runtimeHandle?.stateManager;
+        if (stateManager) stateManager.isDisposed = true;
+        // the cleanup awaits the network teardown's outcome
+        this.networkClose = stateManager?.p2pManager.dispose();
+        this.networkClose?.catch(() => undefined);
+        this.managedSigner?.cut();
+        stateManager?.events.setBridgeTap(undefined);
+        this.handlerExecutionContext?.dispose?.();
+        this.rootLogger.updateSharedContext({ disposing: true });
+    }
+
+    /**
+     * Before the children: the runtime's timers, discovery sessions and the
+     * waits that hold timers or chain listeners end, and an abort's log
+     * flush completes while the workers can still upload. Runs once.
+     */
+    private releaseRuntime(): Promise<void> | undefined {
+        const stateManager = this.runtimeHandle?.stateManager;
+        if (!stateManager) return;
+        const localRpc = stateManager.p2pManager.localRpc;
+        return (this.runtimeRelease ??= runCleanup(
+            // ends the chain-head waits (timer and block listener)
+            () => localRpc.spectateService.dispose(),
+            // pending handshake waits settle and their timers clear
+            () => localRpc.initHandshakeService.dispose(),
+            // every local discovery session of this runtime
+            () =>
+                LocalDiscoveryServer.leave(undefined, stateManager.p2pManager),
+            // watched peer connections close, a negotiating one included
+            () => localRpc.webRTCSetupService.dispose(),
+            () => stateManager.timeoutManager.dispose(),
+            () => stateManager.stateChannelEventListener.dispose(),
+            // An abort's log flush, already running: disposal ends the
+            // workers only after it (it never fails; each realm reports its
+            // own flush failures).
+            () => stateManager.abortFlush
+        ));
     }
 
     /**
@@ -564,6 +596,20 @@ export class P2pRuntimeHostRoot<
         }
 
         this.runtimeHandle = { stateManager, evmDiamondStateMachine };
+        // a disposal that began during the build missed this runtime: cut
+        // and dispose it here (both repeat safely), with any child root its
+        // custom RPC created after the children step, and fail the setup
+        if (this.isDisposing) {
+            this.cutOff();
+            await runCleanup(
+                () => this.releaseRuntime(),
+                () => this.networkClose
+            );
+            await Promise.allSettled(
+                [...this.children].map((child) => child.dispose())
+            );
+            throw new RootDisposedError("Runtime disposed during setup");
+        }
         steps.mark("stateManager");
         await stateManager.p2pManager.localRpc.ready();
         steps.mark("applicationReady");

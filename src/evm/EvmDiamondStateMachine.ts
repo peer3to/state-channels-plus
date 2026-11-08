@@ -88,10 +88,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         this.stateManager = stateManager;
     }
 
-    public async dispose(): Promise<void> {
-        // The owning runtime root disposes its executor child.
-    }
-
     /**
      * Process logs from an EVM call and emit corresponding events.
      *

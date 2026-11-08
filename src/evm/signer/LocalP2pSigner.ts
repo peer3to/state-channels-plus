@@ -188,19 +188,7 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         channelId: Bytes,
         options: ConnectToChannelOptions | null = {}
     ): Promise<boolean> {
-        try {
-            return await this.runConnectToChannel(channelId, options ?? {});
-        } catch (error) {
-            // An abort or disposal during the connect is the connect's
-            // outcome: the runtime is gone, so the answer is `false`, not the
-            // error a torn-down dependency raised on the way out.
-            if (!this.p2pManager.stateManager.isDisposed) throw error;
-            this.logger.debug("connectToChannel ended by runtime disposal", {
-                channelId: ethers.hexlify(channelId),
-                error: errorMessage(error)
-            });
-            return false;
-        }
+        return this.runConnectToChannel(channelId, options ?? {});
     }
 
     /**
@@ -473,7 +461,6 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
                 );
                 return outcome.result;
             }
-            if (outcome?.status === "cancelled") return undefined;
             // Unsigned failures start from a clean discovery session. The
             // matching service leaves the old topic and closes all lobby-owned
             // transports before rejoining this caller-owned topic.

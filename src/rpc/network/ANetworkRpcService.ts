@@ -95,24 +95,21 @@ abstract class ANetworkRpcService<
         );
         if (!endpoint) return false;
 
-        // a runtime disposed while its handler ran answers nobody and logs
-        // nothing: its logger and transports are gone
+        // a runtime disposed while its handler ran answers nobody: its
+        // network is cut, so the reply drops
         return invokeRpcEndpoint(rpc, rpcMethods, endpoint, {
             prepareError: (error) => {
-                if (!this.logger.isDisposed)
-                    this.logger.error("Unhandled async RPC request exception", {
-                        method: rpc.method,
-                        error: errorMessage(error),
-                        stack: error instanceof Error ? error.stack : undefined
-                    });
+                this.logger.error("Unhandled async RPC request exception", {
+                    method: rpc.method,
+                    error: errorMessage(error),
+                    stack: error instanceof Error ? error.stack : undefined
+                });
                 return errorMessage(error);
             },
             reply: (response) => {
-                if (this.logger.isDisposed) return;
                 this.sendRpcResponseSafely(rpc, response, transport);
             },
             onAsyncSendError: (error) => {
-                if (this.logger.isDisposed) return;
                 this.logger.error("Unhandled async RPC handler exception", {
                     method: rpc.method,
                     error: errorMessage(error),

@@ -1,4 +1,5 @@
 import StateSnapshot from "@/models/StateSnapshot";
+import { isRootDisposedError } from "@/rpc/internal/RemoteRoot";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
 import {
@@ -23,6 +24,7 @@ import {
     remoteThresholdPeerIndices,
     waitForHeldJoins
 } from "@test/fixtures/JoinSnapshotRetryStaging";
+import { rejectionOf } from "@test/fixtures/ProvenSubmissionFailureStaging";
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
@@ -1680,7 +1682,7 @@ describe("E2E: join snapshot guard", function () {
         }
     });
 
-    it("a join refused and retried once, whose runtime aborts while the retry's submission is held at its send, handles no refusal of that submission: connect returns false, and the status stays OPENED", async function () {
+    it("a join refused and retried once, whose runtime aborts while the retry's submission is held at its send, handles no refusal of that submission: connect rejects with RootDisposedError, and the status stays OPENED", async function () {
         const h = TestSession.getHarness();
         const joiner = await h.scenario.syncSpectator();
         await h.rpcStub.holdMembershipSubmission(joiner.index, "joinChannel");
@@ -1706,7 +1708,7 @@ describe("E2E: join snapshot guard", function () {
             .stub.abortReleasingMembershipSubmission()
             .request();
 
-        expect(await join).to.equal(false);
+        expect(isRootDisposedError(await rejectionOf(join))).to.equal(true);
         const statusesSinceAbort = (
             joiner.eventSpies.onStatusChanged?.getCalls() ?? []
         )

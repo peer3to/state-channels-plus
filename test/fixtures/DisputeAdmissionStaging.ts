@@ -1,6 +1,5 @@
 // @spec-test-coverage-ignore: real dispute admission held behind the state mutex
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
-import { runtimeEndpointFor } from "./RuntimeRootObservation";
 import type {
     ConstructDisputeHold,
     StateMutexHold
@@ -8,34 +7,7 @@ import type {
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
-export async function assertDisputeAdmissionRefuses(
-    h: MathPeerTestHarness,
-    change: "dispose" | "fork"
-) {
-    if (change === "dispose") {
-        await h.lifecycle.start(3, 0, {
-            configOverrides: { RUN_SDK_IN_THREAD: false }
-        });
-        const { host, sm, stub } = runtimeEndpointFor(h.getPeer(2).p2pInstance);
-        const forkId = sm.forkId;
-        stub.stubPauseConstructDisputeAtStateProof(forkId);
-        stub.holdStateMutex();
-        try {
-            await waitFor(() => stub.getStateMutexHeldCount() === 1);
-            const attempt = sm.disputeManager.dispute(forkId);
-            await waitFor(() => stub.getStateMutexWaiterCount() >= 1);
-            sm.abort();
-            stub.releaseStateMutex();
-            await attempt;
-            expect(sm.storage.disputes.didIDispute(forkId)).to.equal(false);
-            expect(stub.getPausedConstructDisputeStatus().entered).to.equal(0);
-        } finally {
-            stub.releaseStateMutex();
-            stub.restorePausedConstructDispute();
-            await host.dispose();
-        }
-        return;
-    }
+export async function assertDisputeAdmissionRefuses(h: MathPeerTestHarness) {
     // peers exist once staging starts them
     const target = () => h.getPeer(2);
     let construction: ConstructDisputeHold | undefined;
