@@ -55,6 +55,10 @@ import {
     killTimeoutCalldataRefutationWithScaledEstimate,
     killWithScaledEstimate
 } from "@test/fixtures/ReplayGasLimitStaging";
+import {
+    stageChainPastGenesis,
+    storeWrongGenesisProofAndConstruct
+} from "@test/fixtures/WrongGenesisPastGenesisStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -1079,6 +1083,82 @@ describe("Unit: DisputeManager", function () {
 
             expect(r.attached).to.equal(ZeroAddress);
             expect(r.stored).to.equal(3);
+        });
+
+        // the chain no longer judges a WrongGenesis proof once it holds the fork past genesis -> it would revert the multicall
+        it("stored WrongGenesis proof while the chain holds the fork past genesis → constructDispute leaves it out, author not marked slashed", async function () {
+            const h = TestSession.getHarness();
+            const { forkId } = await stageChainPastGenesis(h);
+            const r = await storeWrongGenesisProofAndConstruct(
+                h,
+                h.getPeer(1),
+                forkId
+            );
+            expect(r.stored).to.equal(true);
+            expect(r.fraudProofCount).to.equal(0);
+            expect(r.authorMarkedSlashed).to.equal(false);
+        });
+
+        it("stored WrongGenesis proof while the chain still holds the genesis → constructDispute bundles it, author marked slashed", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const r = await storeWrongGenesisProofAndConstruct(
+                h,
+                h.getPeer(1),
+                h.activeForkId!
+            );
+            expect(r.stored).to.equal(true);
+            expect(r.fraudProofCount).to.equal(1);
+            expect(r.authorMarkedSlashed).to.equal(true);
+        });
+
+        // the proof was the dispute's only reason -> construction drops it and asks for an existing window,
+        // which no one opened, so the chain refuses the empty dispute: no fork, nobody slashed
+        it("WrongGenesis proof stored, then the chain passes genesis before dispute() → the empty dispute is refused, nobody slashed", async function () {
+            const h = TestSession.getHarness();
+            const { forkId } = await stageChainPastGenesis(h);
+            const slashedBefore = await h.query.onChainSlashedParticipants();
+            const observer = h.getPeer(1);
+            const probe = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                { forward: true }
+            );
+
+            const r = await h.execOnHost(
+                observer,
+                async (sm, args) => {
+                    const block = sm.storage.blocks.getBlock(args.forkId, 0)!;
+                    sm.fraudProofService.createWrongGenesisProof(block);
+                    let rejected = "";
+                    try {
+                        await sm.disputeManager.dispute(args.forkId);
+                    } catch (e) {
+                        rejected = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        rejected,
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                { timeoutMs: h.event.hostExecTimeoutMs() }
+            );
+
+            const submissions = await probe.submissions();
+            expect(r.rejected).to.equal("");
+            expect(submissions).to.have.length(1);
+            expect(submissions[0].fraudProofParticipants).to.deep.equal([]);
+            expect(
+                Codec.decode(submissions[0].encodedDispute, Type.Dispute).input
+                    .requireExistingDisputeWindow
+            ).to.equal(true);
+            expect(submissions[0].revert?.name).to.equal(
+                "RaceConditionDisputeWindowNotOpen"
+            );
+            expect(r.disputed).to.equal(false);
+            expect(await h.query.onChainSlashedParticipants()).to.deep.equal(
+                slashedBefore
+            );
         });
     });
 

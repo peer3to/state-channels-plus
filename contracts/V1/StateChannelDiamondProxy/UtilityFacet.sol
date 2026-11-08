@@ -263,9 +263,11 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
         returns (bool)
     {
         if (newSnapshot.blockHeight > currentSnapshot.blockHeight) return true;
+        // block 0's snapshot may replace the genesis, but never one that still looks like a genesis -> the chain
+        // would keep judging the fork as at genesis and slash block 0's honest author
         if (
             newSnapshot.blockHeight == 0 && currentSnapshot.blockHeight == 0
-                && isGenesisSnapshotWithoutTimeCheck(currentSnapshot)
+                && isGenesisSnapshotWithoutTimeCheck(currentSnapshot) && !isGenesisSnapshotWithoutTimeCheck(newSnapshot)
                 && keccak256(abi.encode(newSnapshot)) != keccak256(abi.encode(currentSnapshot))
         ) return true;
         return false;

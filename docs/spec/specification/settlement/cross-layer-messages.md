@@ -183,7 +183,8 @@ defense in depth?
   `totalWithdrawals ≤ totalDeposits` (`CantWithdrawMoreThanDeposits`).
 - **[`INV-MSG-5-YC48R5`](cross-layer-messages.md#inv-msg-5-yc48r5) (marker monotonicity).** Processed tips only advance to descendants of the current
   tip; snapshot advance requires strictly newer snapshots (`isSnapshotNewer` /
-  `RaceConditionBlockHeightTooOld`).
+  `RaceConditionBlockHeightTooOld`). A height-0 snapshot replaces the genesis only when it no longer passes
+  the genesis test.
 
 ### 1.7 Verification
 

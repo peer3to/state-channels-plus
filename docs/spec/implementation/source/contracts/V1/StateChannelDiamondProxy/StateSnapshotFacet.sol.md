@@ -68,6 +68,7 @@ Advance paths
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P45` — An overlapping last milestone targets its separate later final point
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P46` — The preceding change-point snapshot cannot replace the final snapshot in an overlapping proof
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P47` — a snapshot post whose new snapshot has its outbound head at an overflowing block right above the anchor reverts `ErrorOutboundMessageBlocksInvalid` (invalid run), not an arithmetic panic
+- [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P48` — a same-fork height-0 snapshot that still passes the genesis test (block 0 left the state data unchanged) is refused `RaceConditionBlockHeightTooOld(0, 0)`; the chain keeps the genesis
 
 ## INTEGRATION-TEST-OPEN-CHANNEL-REGISTRY-1-A8M2KP
 

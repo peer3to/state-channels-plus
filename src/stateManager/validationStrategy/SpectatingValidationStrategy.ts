@@ -185,8 +185,23 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
             );
             return BlockValidationResult.DISCONNECT;
         }
-        if (isCommittedParticipantStatus(this.p2pManager.stateManager.status))
+        const stateManager = this.p2pManager.stateManager;
+        // a participant proves it; past genesis on chain nobody can, so the live handling cuts or drops it and a
+        // spectator keeps spectating
+        if (isCommittedParticipantStatus(stateManager.status))
             return this.blockValidationStrategy.wrongGenesisDetected(entry);
+        // one chain read decides: a second one could disagree and reach the proof and dispute code
+        if (
+            await stateManager.diamondStateMachine.isForkPastGenesis(
+                await stateManager.stateChannelManagerContract.getStateSnapshot(
+                    block.channelId
+                ),
+                block.forkId
+            )
+        )
+            return this.blockValidationStrategy.handlePastGenesisBlockZero(
+                entry
+            );
         this.abort();
         return BlockValidationResult.DISPUTE;
     }

@@ -3,6 +3,7 @@ import { BlockOrigin } from "@/storage/QueueStorage";
 import { FraudProofType } from "@/types/sol-enums";
 import { Codec, tryDecodeCustomError, Type } from "@/utils";
 import type { BlockBundle } from "@test/fixtures/customRpc/harnessControl/services/query/QueryRpcMethods";
+import { stageChainPastGenesis } from "@test/fixtures/WrongGenesisPastGenesisStaging";
 import { MathTestSession as TestSession, sleep } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -671,6 +672,46 @@ describe("E2E: Block Fraud Proofs", function () {
 
         await h.dispute.resolveDisputeWait({ forkId });
         await h.assert.sync.onlyHonestPeersInSync();
+    });
+
+    // the chain no longer judges block 0 once it holds the fork past genesis -> filing the proof would only revert
+    it("wrong genesis after a snapshot moved the fork past genesis → the forger is cut, no fraud proof, no dispute, nobody slashed", async function () {
+        const h = TestSession.getHarness();
+        const { forkId, blockZeroAuthor } = await stageChainPastGenesis(h);
+        const maliciousPeerIndex = h.peers.find(
+            (p) => p.address !== blockZeroAuthor
+        )!.index;
+        const forger = h.getPeer(maliciousPeerIndex);
+        const honestPeerIndices = h.peers
+            .filter((p) => p.index !== maliciousPeerIndex)
+            .map((p) => p.index);
+        const slashedBefore = await h.query.onChainSlashedParticipants();
+
+        await h.byzantine.submitWrongGenesisBlock(maliciousPeerIndex, {
+            forkId
+        });
+
+        // another author's block 0 against the stored one -> each honest peer cuts the forger
+        for (const index of honestPeerIndices)
+            await waitFor(
+                () =>
+                    h
+                        .control(h.getPeer(index))
+                        .query.isBlacklisted(forger.address)
+                        .request(),
+                h.event.protocolEventTimeoutMs()
+            );
+        for (const index of honestPeerIndices)
+            expect(
+                await h
+                    .control(h.getPeer(index))
+                    .query.getFraudProofType(forger.address)
+                    .request()
+            ).to.equal(null);
+        await h.assert.dispute.didNotInitiate({ peers: honestPeerIndices });
+        expect(await h.query.onChainSlashedParticipants()).to.deep.equal(
+            slashedBefore
+        );
     });
 
     it("unexpected next leader → BlockInvalidStateTransition", async function () {
