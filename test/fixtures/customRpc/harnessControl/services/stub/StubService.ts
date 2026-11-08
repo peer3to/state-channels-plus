@@ -856,6 +856,8 @@ export class StubService extends ANetworkRpcService<
     laggedHeadReads = 0;
     /** `waitForChainHead` calls entered while the chain view lags. */
     chainHeadWaitsEntered = 0;
+    /** Those calls that returned, either way. */
+    chainHeadWaitsSettled = 0;
     /** Streamed logs above the lagging chain view's block, with their channel. */
     private readonly heldChainViewLogs: [Log, ChannelId][] = [];
     /** getLogs spans recorded by the current chain-log-query patch. */
@@ -3955,6 +3957,7 @@ export class StubService extends ANetworkRpcService<
         this.stubOriginals.set("chainViewSend", send);
         this.laggedHeadReads = 0;
         this.chainHeadWaitsEntered = 0;
+        this.chainHeadWaitsSettled = 0;
         provider.send = async (method, params) => {
             if (method === "eth_blockNumber") {
                 this.laggedHeadReads++;
@@ -3968,13 +3971,15 @@ export class StubService extends ANetworkRpcService<
             );
         };
         const eventSyncService = this.sm.eventSyncService;
-        // record-only: counts the waits, forwards each unchanged
+        // record-only: counts the waits and their returns, forwards each unchanged
         const waitForChainHead =
             eventSyncService.waitForChainHead.bind(eventSyncService);
         this.stubOriginals.set("chainViewWait", waitForChainHead);
         eventSyncService.waitForChainHead = (...args) => {
             this.chainHeadWaitsEntered++;
-            return waitForChainHead(...args);
+            return waitForChainHead(...args).finally(
+                () => this.chainHeadWaitsSettled++
+            );
         };
         if (holdLogs) {
             const scheduleStreamedLog =

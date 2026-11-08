@@ -14335,6 +14335,12 @@
       "peakRssGb": 0.75,
       "measurementReason": null
     },
+    "hardhat|test/stateManager/DisputeWindowClearedEvent.test.ts|Dispute window not yet visible on a lagging read node an auditor disposed while its window read waits for a lagging read node ends the wait without handling the dispute and with no runtime error": {
+      "durationMs": 11699,
+      "avgCores": 0.998,
+      "peakRssGb": 0.957,
+      "measurementReason": null
+    },
     "hardhat|test/stateManager/DisputeWindowClearedEvent.test.ts|Dispute window not yet visible on a lagging read node an auditor whose read node is behind the block of a fork's first dispute waits for it, then acknowledges, audits and kills the invalid dispute": {
       "durationMs": 16873,
       "avgCores": 1.146,

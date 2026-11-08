@@ -173,4 +173,58 @@ describe("Dispute window not yet visible on a lagging read node", function () {
             (await killedDisputeLogs(h)).map((log) => log.disputer)
         ).to.deep.equal([spammer.address]);
     });
+
+    it("an auditor disposed while its window read waits for a lagging read node ends the wait without handling the dispute and with no runtime error", async function () {
+        const h = TestSession.getHarness();
+        const { submissions, chainView } = await stageReasonlessInitialDispute(
+            h,
+            { hold: false, lagChainView: true }
+        );
+        await waitFor(
+            async () => (await chainView!.chainHeadWaitsEntered()) > 0
+        );
+        const auditor = h.getPeer(0);
+        const stub = h.control(auditor).stub;
+        const agreementMs =
+            (await h.execOnHost(auditor, (sm) => sm.timeConfig.agreementTime)) *
+            1000;
+        const waitsEntered = await chainView!.chainHeadWaitsEntered();
+        const hostErrors: Error[] = [];
+        const unsubscribe = auditor.p2pInstance.onHostError((error) =>
+            hostErrors.push(error)
+        );
+        // parked after the runtime's releases, so its control RPC still answers
+        const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
+            0,
+            "providerRelease"
+        );
+        let disposing: Promise<void> | undefined;
+        try {
+            // the lag is never released: only the disposal can end the wait
+            disposing = auditor.p2pInstance.dispose();
+            await waitFor(
+                async () =>
+                    (await stub.getRuntimeDisposalHoldEntered().request()) > 0
+            );
+            // well before the wait's own deadline of one agreement time
+            await waitFor(
+                async () =>
+                    (await chainView!.chainHeadWaitsSettled()) === waitsEntered,
+                agreementMs / 2
+            );
+            // the ended wait is not followed by another read and wait
+            expect(await chainView!.chainHeadWaitsEntered()).to.equal(
+                waitsEntered
+            );
+            expect(await submissions.submissions()).to.deep.equal([]);
+        } finally {
+            await releaseDisposal();
+            await disposing;
+            unsubscribe();
+        }
+        await h.rpcStub.mineTransferBlock();
+        expect(hostErrors.map((error) => error.message)).to.deep.equal([]);
+        expect(h.event.getEventCallCount(0, "disputeStarted")).to.equal(0);
+        expect(await killedDisputeLogs(h)).to.deep.equal([]);
+    });
 });

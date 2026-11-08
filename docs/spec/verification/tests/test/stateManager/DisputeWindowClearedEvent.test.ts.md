@@ -59,7 +59,11 @@ entered `waitForChainHead`, checks that no `onDisputeStarted` fired and nothing 
 then releases the view and mines a block. Oracles: peer 0's kill-and-dispute multicall lands,
 `onDisputeStarted` fires once (only on the acknowledgment's first request), and the chain holds one
 `DisputeKilled` log, for the spammer. Before the fix the lagging read answered "no window" and the
-dispute was ignored: no acknowledgment, no audit and no kill.
+dispute was ignored: no acknowledgment, no audit and no kill. A second case disposes the auditor
+while its read waits and the lag is never released. The disposal is held after the runtime's
+releases, so the peer's controls still answer: the wait returns within half an agreement time (its
+own deadline is a full one), no further wait starts, and no upload is recorded. After the disposal
+and a new block, no runtime error was reported, `onDisputeStarted` never fired and no kill landed.
 
 ## Tests
 
@@ -68,3 +72,4 @@ dispute was ignored: no acknowledgment, no audit and no kill.
 - `a double signer whose chain events were held through a threshold-final dispute, its reduction and a same-fork snapshot update ignores the final dispute without installing its output, and leaves`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P28, REQ-DISPUTE-PIPE-14-5C2SXH.T1.P3
 - `a synced spectator whose chain events were held through a dispute cycle and a same-fork snapshot update ignores the disputes: nothing persisted, no reduction scheduled, and its mirror holds the chain's snapshot`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P29, REQ-DISPUTE-PIPE-14-5C2SXH.T1.P2
 - `an auditor whose read node is behind the block of a fork's first dispute waits for it, then acknowledges, audits and kills the invalid dispute`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P30, REQ-DISPUTE-PIPE-14-5C2SXH.T1.P4
+- `an auditor disposed while its window read waits for a lagging read node ends the wait without handling the dispute and with no runtime error`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P31

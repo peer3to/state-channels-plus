@@ -683,6 +683,7 @@ export class RpcStubActions<
         pinnedBlock: number;
         headReads: () => Promise<number>;
         chainHeadWaitsEntered: () => Promise<number>;
+        chainHeadWaitsSettled: () => Promise<number>;
         release: () => Promise<boolean>;
     }> {
         const ctl = () => this.peerStub(peerIndex);
@@ -694,6 +695,8 @@ export class RpcStubActions<
             headReads: () => ctl().getLaggedHeadReads().request(),
             chainHeadWaitsEntered: () =>
                 ctl().getChainHeadWaitsEntered().request(),
+            chainHeadWaitsSettled: () =>
+                ctl().getChainHeadWaitsSettled().request(),
             release: () => ctl().restoreChainView().request()
         };
     }

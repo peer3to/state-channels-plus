@@ -3536,6 +3536,10 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.chainHeadWaitsEntered;
     }
 
+    public getChainHeadWaitsSettled(): number {
+        return this.service.chainHeadWaitsSettled;
+    }
+
     public restoreChainView(): boolean {
         return this.service.releaseChainView();
     }
