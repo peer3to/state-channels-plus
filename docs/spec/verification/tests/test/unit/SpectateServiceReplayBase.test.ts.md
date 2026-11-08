@@ -40,7 +40,7 @@ stays `SYNCED`; the pending joiner stays `PENDING_PARTICIPANT` through the sync 
 - `a block conflicting with the served history lands between staging and commit → VM restored, nothing published, fork and status unchanged`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P105
 - `no conflict between staging and commit → the held install commits and the sync reaches the tip`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P106
 - `requester holds the base and a stored block conflicts with the served history → aborted, local state kept`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P107
-- `runtime stops while the install is held → nothing installed, no verdict on the responder`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P101
+- `runtime disposed while the install is held → nothing reaches the responder or another peer after the cut, the disposal is not held`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P101
 - `the install's commit callback throws after the VM write → VM restored to the pre-install state, fork unchanged, the sync rejects with that error and no verdict on the responder`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P18
 - `requester jumped past the base through another source's sync, then a payload based there → local state kept, no install, the next live blocks execute with no fraud proof`: INV-SYNC-3-A7A2ED.T1.P31, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P108
 - `pending joiner jumped past the base through another source's sync, then a payload based there → local state kept, stays pending, the next live blocks execute with no dispute`: INV-SYNC-3-A7A2ED.T1.P32, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P109

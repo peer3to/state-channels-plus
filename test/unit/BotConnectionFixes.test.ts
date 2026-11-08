@@ -34,10 +34,8 @@ import { holdReductions } from "@test/fixtures/DisputeWindowWorkflowStaging";
 import {
     readForceJoinBounds,
     authorUntilForceJoinCountingStarted,
-    holdForceJoinDeadlineParticipantRead,
     holdForceJoinMembershipRead,
     isJoinCheckQueued,
-    JOIN_TIMER_NAMES,
     isJoinPending,
     observeDisputeRequests,
     readTrackedJoin,
@@ -53,7 +51,6 @@ import {
     stageLeavePostClosingBeforeAdoption
 } from "@test/fixtures/NonFinalZeroParticipantReductionStaging";
 import { postSnapshotFrom } from "@test/fixtures/ProofOwnerStaging";
-import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import { waitFor } from "@test/utils/waitFor";
@@ -683,47 +680,44 @@ describe("Unit: bot-connection fixes", function () {
             }
         });
 
-        it("U72: disposing a leaver while its expired leave watchdog's own membership check reads the chain starts no self-removal dispute and raises no runtime error", async function () {
+        it("U72: a leaver aborted while its expired leave watchdog's own membership check reads the chain sends no self-removal dispute and raises no runtime error", async function () {
             const h = TestSession.getHarness();
             const { leaver, expireWatchdog } = await stageInboundBlockedExit(
                 h,
-                { holdWatchdog: true, inlineSdk: true }
+                { holdWatchdog: true }
             );
-            await recordLeaveChannelLogs(h, leaver);
-            const endpoint = runtimeEndpointFor(leaver.p2pInstance);
-            endpoint.stub.recordChainMembershipReads(true);
+            const leaverNonce = await chainNonceReader(h, leaver);
+            const stub = h.control(leaver).stub;
+            await stub.recordChainMembershipReads(true).request();
+            // the abort cuts the runtime; its teardown is held so the
+            // check resumes on a live provider after the cut-off
+            const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
+                leaver.index
+            );
             try {
-                expect(endpoint.stub.getChainMembershipReadCount()).to.equal(0);
+                expect(
+                    await stub.getChainMembershipReadCount().request()
+                ).to.equal(0);
                 await expireWatchdog();
                 // the watchdog's own check is parked on its chain read
                 await waitFor(
-                    () => endpoint.stub.getChainMembershipReadCount() > 0,
+                    async () =>
+                        (await stub.getChainMembershipReadCount().request()) >
+                        0,
                     h.event.protocolEventTimeoutMs()
                 );
-                const leaveLogs = Reflect.get(
-                    endpoint.sm.leaveChannelService,
-                    "logger"
-                );
-                // disposal ends the exit before the check resumes
-                const disposal = endpoint.sm.dispose();
-                endpoint.stub.restoreChainMembershipReads();
-                await disposal;
-                h.contextApi.markAfkPeer({ afkPeerIndex: leaver.index });
-                await TestSession.settleDetached();
-                expect(
-                    (
-                        Reflect.get(leaveLogs, "recordedLeaveLogs") as {
-                            message: string;
-                        }[]
-                    ).map((entry) => entry.message)
-                ).to.not.include("Starting the leave's self-removal dispute");
-                expect(
-                    endpoint.stub.getRecordedDisputeSubmissions().submissions
-                ).to.deep.equal([]);
+                const nonceBefore = await leaverNonce();
+                await stub.abortDetached().request();
+                await h.event.waitForPeers("onAbort", [leaver.index], 1);
+                await stub.restoreChainMembershipReads().request();
+                // absence window: a late dispute would be mined by now
+                await sleep(2_000);
+                expect(await leaverNonce()).to.equal(nonceBefore);
             } finally {
-                endpoint.stub.restoreChainMembershipReads();
-                endpoint.stub.restoreDisputeSubmissions();
+                await releaseDisposal();
             }
+            h.contextApi.markAfkPeer({ afkPeerIndex: leaver.index });
+            await TestSession.settleDetached();
         });
 
         it("U72: disposing a leaver whose exit is blocked stops its posts: the block that consumes the join sends nothing from it", async function () {
@@ -1869,58 +1863,6 @@ describe("Unit: bot-connection fixes", function () {
                     )
                 )
             ).to.equal(0);
-        });
-
-        it("disposing a joiner while its force-join deadline setup is held at its participant-count read arms no join timer once the setup continues", async function () {
-            const h = TestSession.getHarness();
-            const prepared = await h.scenario.syncSpectatorAndPrepareJoin(4, {
-                // the retained inline host stays readable after disposal
-                configOverrides: { RUN_SDK_IN_THREAD: false }
-            });
-            const joiner = prepared.joiner;
-            const endpoint = runtimeEndpointFor(joiner.p2pInstance);
-            // record-only scheduling probe: every task still runs as scheduled
-            endpoint.stub.stubRecordScheduledTasks();
-            const read = holdForceJoinDeadlineParticipantRead(endpoint.sm);
-            try {
-                expect(
-                    await joiner.p2pInstance.p2pSigner.joinChannel(
-                        prepared.confirmation,
-                        prepared.expectedSnapshotHash,
-                        prepared.expectedForkId
-                    )
-                ).to.equal(true);
-                // the observed join's deadline setup read the participants
-                await waitFor(
-                    async () => read.isEntered(),
-                    h.event.protocolEventTimeoutMs()
-                );
-
-                await joiner.p2pInstance.dispose();
-                await waitFor(
-                    async () => endpoint.sm.isDisposed,
-                    h.event.protocolEventTimeoutMs()
-                );
-                const tasksAtDisposal =
-                    endpoint.stub.getRecordedScheduledTasks().tasks.length;
-                read.release();
-                await Reflect.get(endpoint.sm.channelJoinService, "checks");
-
-                expect(
-                    endpoint.stub
-                        .getRecordedScheduledTasks()
-                        .tasks.slice(tasksAtDisposal)
-                        .map((task) => task.taskName)
-                        .filter((name) =>
-                            (JOIN_TIMER_NAMES as readonly string[]).includes(
-                                name
-                            )
-                        )
-                ).to.deep.equal([]);
-            } finally {
-                read.release();
-                endpoint.stub.restoreRecordScheduledTasks();
-            }
         });
     });
 

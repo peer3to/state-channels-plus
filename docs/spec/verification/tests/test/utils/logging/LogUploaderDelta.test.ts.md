@@ -28,6 +28,9 @@ an upload requested while one is in flight resolves only after its own POST; and
 - `an ending thread waits again for a later upload once an abort flush's upload finished`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P21
 - `an ending thread waits for an upload queued by an error behind an abort flush's upload whose deadline passed`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P22
 - `an ending thread waits for an upload queued during a running abort flush only until that flush's deadline`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P23
+- `a flush cuts short the jitter wait of an error's upload already running, so an ending thread sends it`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P28
+- `a flush's upload sleeps its jitter at most half the time left to the flush's deadline`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P27
+- `an ending thread waits for an upload queued without a deadline only until a later flush's deadline`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P26
 - `an ending thread waits for a request during an abort flush queued behind an earlier upload only until that flush's deadline`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P24
 - `re-sends the delta after a failed upload`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P5, REQ-LOG-5-ST6S0G.T1.P2
 - `files an upload under the identity current after the jitter`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P13

@@ -68,13 +68,7 @@ class HandshakeAdmissionPolicy implements DeferredAdmissionPolicy {
     }
 
     private isCurrentTransport(transport: NetworkTransport): boolean {
-        if (
-            this.service.p2pManager.isDisposed ||
-            this.service.p2pManager.stateManager.isDisposed ||
-            transport.isClosed
-        ) {
-            return false;
-        }
+        if (transport.isClosed) return false;
         return (
             this.service.p2pManager.profileManager
                 .getProfileByTransport(transport)

@@ -6,9 +6,9 @@ Exercises: [config.ts](../../../../implementation/source/src/utils/config.ts.md)
 ## Overview
 
 The suite drives `createConfig` in a Node (mocha) runtime with a controlled `process.env` — it
-saves and restores `HOLEPUNCH_RELAYER_URLS`, `DEBUG_LOCAL_TRANSPORT`, and `LOG_LEVEL` around each
+saves and restores `HOLEPUNCH_RELAYER_URLS`, `DEBUG_LOCAL_TRANSPORT`, `LOG_LEVEL` and `RUN_SDK_IN_THREAD` around each
 case, stubs `console.log`, and resets the process-lifespan config in `afterEach`. The oracles read
-fields off the resolved public config object. Covered precedence steps: the checked-in
+fields off the resolved public config object. With no file, environment or override value the runtime host runs in a worker thread. Covered precedence steps: the checked-in
 `peer3.config.ts` file value wins over the built-in default (`DEBUG_LOCAL_TRANSPORT` true vs
 false), an environment value wins over the file value for `HOLEPUNCH_RELAYER_URLS` (the file sets
 a different relay URL) in both the JSON-array and comma-separated spellings, and an explicit
@@ -21,6 +21,7 @@ array spelling have no test in this suite.
 
 ## Tests
 
+- `runs the sdk in a worker thread when nothing sets RUN_SDK_IN_THREAD`: REQ-RUN-13-27YE2T.T1.P2
 - `applies peer3.config.ts as baseConfig`: REQ-CFG-1-W7C6C6.T1.P2
 - `parses HOLEPUNCH_RELAYER_URLS from env JSON array`: REQ-CFG-1-W7C6C6.T1.P3, REQ-CFG-2-FCY3ZR.T1.P3
 - `parses HOLEPUNCH_RELAYER_URLS from env comma-separated list`: REQ-CFG-3-9NKNSV.T1.P1, REQ-CFG-2-FCY3ZR.T1.P18

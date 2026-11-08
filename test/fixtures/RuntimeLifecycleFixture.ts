@@ -1,6 +1,5 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
 import { startLogReceiver } from "./logging/LogUploader.fixture";
-import { createLoggerSdkFixture } from "./node/LoggerServiceFixture";
 import { withRuntimeRpc } from "./RpcRouterFixture";
 import { recordReportedErrors } from "./RuntimeRootObservation";
 import { RootCreationControl } from "./runtimeRpc/RootCreationControl";
@@ -15,6 +14,7 @@ import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { DetachedPromises } from "@/utils/DetachedPromises";
 import { createLogger } from "@/utils/logging";
 import { createRuntimeChannel } from "@platform/p2pRuntimeChannel";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 export async function assertLifecycleReadiness(
@@ -103,8 +103,9 @@ export async function assertLifecycleDisposal(
         const childDispose = childRoot.dispose.bind(childRoot);
         const logger = host.hostRpc.requireManager().stateManager.logger;
         const hostDispose = logger.dispose.bind(logger);
-        const stateManager = host.hostRpc.requireManager().stateManager;
-        const prepare = stateManager.stop.bind(stateManager);
+        // the runtime's release opens with its spectate release
+        const spectate = host.hostRpc.requireManager().localRpc.spectateService;
+        const prepare = spectate.dispose.bind(spectate);
         let preparationStarted = false;
         const preparationError = new Error("Host preparation failed");
         let entered!: () => void;
@@ -115,13 +116,13 @@ export async function assertLifecycleDisposal(
         const held = new Promise<void>((resolve) => {
             release = resolve;
         });
-        stateManager.stop = async () => {
+        spectate.dispose = async () => {
             if (preparationStarted) return;
             preparationStarted = true;
             order.push("prepare");
             entered();
             if (preparation === "held") await held;
-            await prepare();
+            prepare();
             if (preparation === "failed") throw preparationError;
         };
         childRoot.dispose = () => {
@@ -299,9 +300,6 @@ export async function assertRootDisposalTree(
             const disposing = root.dispose();
             expect(root.dispose() === disposing).to.equal(true);
             await disposing;
-            expect(() => root.executor.getExecutor()).to.throw(
-                "has not been initialized"
-            );
             expect(closed[closed.length - 1]).to.equal("root");
             expect(root.children.size).to.equal(0);
             expect(root.connections.size).to.equal(0);
@@ -399,12 +397,11 @@ export async function assertRootLoggerCascade(): Promise<void> {
             );
             await root.dispose();
             await root.dispose();
-            expect(() => child.info("late child")).to.throw(
-                "has been disposed"
-            );
-            expect(() => leaf.info("late grandchild")).to.throw(
-                "has been disposed"
-            );
+            expect(child.isDisposed).to.equal(true);
+            expect(leaf.isDisposed).to.equal(true);
+            // a released logger still writes to its console, never fails
+            child.info("late child");
+            leaf.info("late grandchild");
             expect(process.listenerCount("uncaughtException")).to.equal(before);
             expect(process.listenerCount("unhandledRejection")).to.equal(
                 beforeRejection
@@ -413,9 +410,8 @@ export async function assertRootLoggerCascade(): Promise<void> {
                 component: "application child"
             });
             await sdk.instance.dispose();
-            expect(() => appChild.info("late application child")).to.throw(
-                "has been disposed"
-            );
+            expect(appChild.isDisposed).to.equal(true);
+            appChild.info("late application child");
             sdk.logger.info("supplied caller parent survives");
         } finally {
             await root.dispose();
@@ -423,32 +419,6 @@ export async function assertRootLoggerCascade(): Promise<void> {
             await receiver.close();
         }
     });
-}
-
-export async function assertWorkerDomainDisposal(
-    reject: boolean
-): Promise<void> {
-    const receiver = await startLogReceiver();
-    const sdk = await createLoggerSdkFixture(receiver, {
-        inlineSdk: false,
-        rejectDomainDisposal: reject
-    });
-    try {
-        const result = await sdk.remote.runtimeProbe.disposeDomain().request();
-        expect(result).to.deep.equal({
-            calls: 1,
-            managerWasDisposed: false,
-            managerIsDisposed: true,
-            connectionsAfter: 0,
-            message: reject ? "root dispose boom" : ""
-        });
-    } finally {
-        try {
-            await sdk.dispose();
-        } finally {
-            await receiver.close();
-        }
-    }
 }
 
 export async function assertLostDisposalReply(): Promise<void> {
@@ -459,8 +429,9 @@ export async function assertLostDisposalReply(): Promise<void> {
         );
         if (!host?.parent)
             throw new Error("Expected actual SDK host and parent");
-        const manager = host.hostRpc.requireManager().stateManager;
-        const stop = manager.stop.bind(manager);
+        // holds the runtime's release, which opens with the spectate release
+        const spectate = host.hostRpc.requireManager().localRpc.spectateService;
+        const dispose = spectate.dispose.bind(spectate);
         let release!: () => void;
         let entered!: () => void;
         const held = new Promise<void>((resolve) => {
@@ -469,10 +440,10 @@ export async function assertLostDisposalReply(): Promise<void> {
         const started = new Promise<void>((resolve) => {
             entered = resolve;
         });
-        manager.stop = async () => {
+        spectate.dispose = async () => {
             entered();
             await held;
-            await stop();
+            dispose();
         };
         const parentClosed = new Promise<void>((resolve) =>
             host.parent!.onClosed(resolve)
@@ -513,6 +484,48 @@ export async function assertLostDisposalReply(): Promise<void> {
             expect(reported.errors).to.deep.equal([]);
         } finally {
             reported.restore();
+        }
+    });
+}
+
+/**
+ * A host's own report reaches the application's host-error listener while
+ * the host lives; once the client started disposing the host, a report is
+ * that disposal's outcome: logged at error on the client and raised to no
+ * listener.
+ */
+export async function assertReportDuringDisposalIsLogged(): Promise<void> {
+    await withRuntimeRpc(async (sdk) => {
+        const host = [...sdk.roots].find(
+            (root): root is P2pRuntimeHostRoot =>
+                root instanceof P2pRuntimeHostRoot
+        );
+        if (!host) throw new Error("Expected the real SDK host");
+        const client = sdk.clientRoot;
+        const reported: string[] = [];
+        const unsubscribe = client.onHostError((error) =>
+            reported.push(error.message)
+        );
+        const logger = client.logger.attachedLogger;
+        const logged: unknown[] = [];
+        const error = logger.error.bind(logger);
+        logger.error = (message: unknown, ...meta: unknown[]) => {
+            logged.push(message);
+            error(message, ...meta);
+        };
+        try {
+            host.errors.report(new Error("live report"));
+            await waitFor(() => reported.includes("live report"));
+            const disposal = client.p2pRuntimeHostRemoteRoot!.dispose();
+            host.errors.report(new Error("report during disposal"));
+            await waitFor(() =>
+                logged.includes("Host error report while disposing the host")
+            );
+            await disposal;
+            expect(reported).to.not.include("report during disposal");
+        } finally {
+            logger.error = error;
+            unsubscribe();
         }
     });
 }

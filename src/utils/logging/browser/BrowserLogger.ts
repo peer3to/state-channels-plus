@@ -293,6 +293,8 @@ export class BrowserLogger extends Logger {
 
         // Level
         push(`[${levelUpper}]`, this.levelCss(logEntry.level));
+        if (logEntry.sharedContext.disposing)
+            push("[disposing]", "color: #9ca3af");
 
         // Peer
         const peerId = logEntry.sharedContext.peerId;

@@ -1,30 +1,18 @@
-import type P2PManager from "@/P2PManager";
-import type { ChecksumAddress } from "@/types/types";
 import type { Logger } from "@/utils/logging/Logger";
 import { LocalDiscoveryServer } from "@/utils/node/LocalDiscoveryServer";
+import { localDiscoverySockets } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
-import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
 // @spec-test-coverage-ignore: stages a real accepted socket before runtime disposal
 import { once } from "node:events";
-import WebSocket, { type WebSocketServer } from "ws";
+import WebSocket from "ws";
 
-/** A real private socket registry of the discovery server; read only. */
-function discoverySockets<K extends "peerServers" | "activeClientConnections">(
-    field: K
-): Set<K extends "peerServers" ? WebSocketServer : WebSocket> {
-    const sockets: unknown = Reflect.get(LocalDiscoveryServer, field);
-    if (!(sockets instanceof Set))
-        throw new Error(`LocalDiscoveryServer.${field} is not a Set`);
-    return sockets as Set<
-        K extends "peerServers" ? WebSocketServer : WebSocket
-    >;
-}
+type Peer = MathPeerTestHarness["peers"][number];
 
 export async function stageLocalDiscoveryReady() {
-    const servers = discoverySockets("peerServers");
+    const servers = localDiscoverySockets("peerServers");
     if (servers.size !== 1)
         throw new Error("Expected one local discovery listener");
     const server = [...servers][0];
@@ -67,9 +55,9 @@ export function observeDiscoveryLogger() {
             await Promise.all([first, second]);
         },
         assertDisposed() {
-            expect(() => logger.info("after discovery cleanup")).to.throw(
-                "disposed"
-            );
+            expect(logger.isDisposed).to.equal(true);
+            // a released logger still writes to its console, never fails
+            logger.info("after discovery cleanup");
             expect(logger.loggerService).to.equal(undefined);
             if (service)
                 expect(Reflect.get(service, "stores").has(store)).to.equal(
@@ -79,26 +67,16 @@ export function observeDiscoveryLogger() {
     };
 }
 
-/** The runtime among `managers` with a local dial in flight, once one has. */
+/** The peer among `peers` with a local dial in flight, once one has. */
 export async function waitForPendingLocalDial(
-    managers: P2PManager[]
-): Promise<P2PManager> {
-    // Read the real private topic sessions; do not replace their behavior.
-    // Each runtime's sessions are keyed by rendezvous key (hex topic).
-    const sessions = Reflect.get(
-        LocalDiscoveryServer,
-        "discoverySessions"
-    ) as WeakMap<
-        P2PManager,
-        Map<string, { dialingPeers: Set<ChecksumAddress> }>
-    >;
-    let owner: P2PManager | undefined;
-    await waitFor(() => {
-        owner = managers.find((manager) =>
-            [...(sessions.get(manager)?.values() ?? [])].some(
-                (session) => session.dialingPeers.size > 0
-            )
-        );
+    h: MathPeerTestHarness,
+    peers: Peer[]
+): Promise<Peer> {
+    let owner: Peer | undefined;
+    await waitFor(async () => {
+        for (const peer of peers)
+            if (await h.control(peer).stub.hasPendingLocalDial().request())
+                owner = peer;
         return owner !== undefined;
     });
     return owner!;
@@ -129,10 +107,7 @@ export async function assertDiscoveryEndpointReplacement(
     h: MathPeerTestHarness,
     pendingHandshake: boolean
 ) {
-    await h.setup(2, {
-        autoConnect: false,
-        configOverrides: { RUN_SDK_IN_THREAD: false }
-    });
+    await h.setup(2, { autoConnect: false });
     const dialer = h.getPeer(h.network.lobbyRoleIndices()[0]);
     const acceptor = h.getPeer(1 - dialer.index);
     const topic = ethers.id(
@@ -141,46 +116,49 @@ export async function assertDiscoveryEndpointReplacement(
     await h.control(acceptor).network.joinSelectedKey(topic).request();
     // Observe the real private listener and registry sockets, without replacing
     // announcement handling, dial admission, handshakes, or retry behavior.
-    const servers = discoverySockets("peerServers");
-    const oldServer = [...servers][0];
-    const oldAddress = oldServer.address();
-    if (!oldAddress || typeof oldAddress === "string")
-        throw new Error("Missing old listener");
+    const [oldPort] = await h
+        .control(acceptor)
+        .stub.getLocalDiscoveryListenerPorts()
+        .request();
+    if (oldPort === undefined) throw new Error("Missing old listener");
     if (pendingHandshake)
         await h.rpcStub.stubHandshakeResponse(acceptor.index, {
             delayMs: 600_000
         });
     await h.control(dialer).network.joinSelectedKey(topic).request();
-    const manager = runtimeEndpointFor(dialer.p2pInstance).sm.p2pManager;
-    if (pendingHandshake) await waitForPendingLocalDial([manager]);
+    if (pendingHandshake) await waitForPendingLocalDial(h, [dialer]);
     else await h.network.waitForP2PConnections();
 
     const firstToken = await h
         .control(dialer)
         .network.getTransportToken(acceptor.address)
         .request();
-    const registrySockets = discoverySockets("activeClientConnections");
-    let announced = false;
-    const observe = (data: WebSocket.RawData) => {
-        const announcement = JSON.parse(data.toString());
-        if (
-            announcement.peerAddress === acceptor.address &&
-            announcement.port !== oldAddress.port
-        )
-            announced = true;
-    };
-    const observedSockets = [...registrySockets];
-    for (const socket of observedSockets) socket.on("message", observe);
+    await h
+        .control(dialer)
+        .stub.observeLocalDiscoveryAnnouncements(acceptor.address)
+        .request();
     try {
         await h.control(acceptor).network.leaveSelectedKey(topic).request();
         if (pendingHandshake)
             await h.control(acceptor).stub.restoreHandshakeResponse().request();
         await h.control(acceptor).network.joinSelectedKey(topic).request();
-        await waitFor(() => announced, h.event.protocolEventTimeoutMs());
-        if (pendingHandshake) await waitForPendingLocalDial([manager]);
+        await waitFor(
+            async () =>
+                (
+                    await h
+                        .control(dialer)
+                        .stub.getLocalDiscoveryAnnouncedPorts()
+                        .request()
+                ).some((port) => port !== oldPort),
+            h.event.protocolEventTimeoutMs()
+        );
+        if (pendingHandshake) await waitForPendingLocalDial(h, [dialer]);
         // Close only the obsolete listener's actual sockets after the new
         // endpoint was announced; the real retry must reach its replacement.
-        for (const socket of oldServer.clients) socket.terminate();
+        await h
+            .control(acceptor)
+            .stub.terminateLocalDiscoveryListenerClients(oldPort)
+            .request();
         await waitFor(async () => {
             const token = await h
                 .control(dialer)
@@ -205,40 +183,52 @@ export async function assertDiscoveryEndpointReplacement(
                 .request()
         ).to.equal(false);
     } finally {
-        for (const socket of observedSockets) socket.off("message", observe);
-        for (const socket of oldServer.clients) socket.terminate();
+        await h
+            .control(dialer)
+            .stub.restoreLocalDiscoveryAnnouncements()
+            .request();
+        await h
+            .control(acceptor)
+            .stub.terminateLocalDiscoveryListenerClients(oldPort)
+            .request();
     }
 }
 
 /**
  * Stops every listener from reading its accepted sockets, so a dialer's close
  * of one of them completes only after `release`. `closingDials` counts the
- * peer dial sockets open at the hold that are still closing.
+ * peer dial sockets to a listener open at the hold that are still closing.
  */
-export function holdAcceptedSocketReads() {
+export async function holdAcceptedSocketReads(h: MathPeerTestHarness) {
     // Pause the real private sockets; do not replace their behavior.
-    const listeners = [...discoverySockets("peerServers")];
-    const held = listeners.flatMap((server) => [...server.clients]);
-    if (held.length === 0) throw new Error("No accepted socket to hold");
-    // peer dials target a listener port; registry sockets do not
-    const listenerPorts = new Set(
-        listeners.map((server) => {
-            const address = server.address();
-            if (!address || typeof address === "string")
-                throw new Error("Expected a TCP listener");
-            return String(address.port);
-        })
-    );
-    const outbound = [...discoverySockets("activeClientConnections")].filter(
-        (socket) => listenerPorts.has(new URL(socket.url).port)
-    );
-    for (const socket of held) socket.pause();
+    const listenerPorts: number[] = [];
+    for (const peer of h.peers)
+        listenerPorts.push(
+            ...(await h
+                .control(peer)
+                .stub.getLocalDiscoveryListenerPorts()
+                .request())
+        );
+    let held = 0;
+    for (const peer of h.peers)
+        held += await h.control(peer).stub.holdAcceptedSocketReads().request();
+    if (held === 0) throw new Error("No accepted socket to hold");
     return {
-        closingDials: () =>
-            outbound.filter((socket) => socket.readyState === WebSocket.CLOSING)
-                .length,
-        release: () => {
-            for (const socket of held) socket.resume();
+        closingDials: async () => {
+            let closing = 0;
+            for (const peer of h.peers)
+                closing += await h
+                    .control(peer)
+                    .stub.getClosingLocalDialCount(listenerPorts)
+                    .request();
+            return closing;
+        },
+        release: async () => {
+            for (const peer of h.peers)
+                await h
+                    .control(peer)
+                    .stub.releaseAcceptedSocketReads()
+                    .request();
         }
     };
 }

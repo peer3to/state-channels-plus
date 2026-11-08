@@ -16,6 +16,11 @@ class WebRTCTransport extends NetworkTransport {
     ) {
         super(router);
         this.webRTCChannel = webRTCChannel;
+        // a channel that opens after the network cut closes at once
+        if (this.p2pManager.isDisposed) {
+            this.close(true);
+            return;
+        }
 
         this.webRTCChannel.onmessage = (event: any) => {
             this.onMessage(event.data);

@@ -1,68 +1,62 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
-import { runtimeEndpointFor } from "./RuntimeRootObservation";
-import Clock from "@/Clock";
-import { errorMessage } from "@/utils/errorMessage";
+import { runtimeIsClosed } from "./RuntimeRootObservation";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
+import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 /**
- * An inline responder holds the join-signature handler of a joiner's
- * request, disposes, and then releases the handler into the disposed
- * runtime. Returns the error of each inbound dispatch of the responder
- * that rejected; a dispatch that resolved gives none.
+ * A responder holds the join-signature handler of a joiner's request, is
+ * aborted, and releases the handler after the cut while its disposal is
+ * held. The handler ends in the cut runtime: it answers nobody and no error
+ * leaves the responder; the joiner's collection fails naming the responder.
  */
 export async function releaseHeldHandlerIntoDisposedResponder(
     h: MathPeerTestHarness
-): Promise<string[]> {
-    await h.lifecycle.start(2, 0, {
-        configOverrides: { RUN_SDK_IN_THREAD: false }
-    });
+): Promise<void> {
+    await h.lifecycle.start(2, 0);
     const joiner = await h.join.addSpectatorWait();
     await h.assert.sync.peersInSyncWait();
     const responder = h.getPeer(0);
-    // kept for the assertions after the responder's port closes
-    const runtime = runtimeEndpointFor(responder.p2pInstance);
-    const router = runtime.sm.p2pManager.rpcRouter;
-    const onRpc = router.onRpc;
-    const dispatchErrors: Promise<unknown>[] = [];
-    router.onRpc = (frame, transport) => {
-        const dispatch = onRpc.call(router, frame, transport);
-        dispatchErrors.push(
-            dispatch.then(
-                () => undefined,
-                (error: unknown) => error
-            )
+    const stub = h.control(responder).stub;
+    await stub.holdJoinSignatureResponses().request();
+    const latest = await h.provider.getBlock("latest");
+    if (!latest) throw new Error("Expected the latest block");
+    const collecting = joiner.p2pInstance.p2pSigner
+        .collectJoinChannelConfirmation({
+            participant: joiner.address,
+            channelId: h.channelId,
+            balance: { amount: 500n, data: "0x00" },
+            deadlineTimestamp: BigInt(latest.timestamp + 120)
+        })
+        .then(
+            () => undefined,
+            (error: Error) => error
         );
-        return dispatch;
-    };
+    await waitFor(
+        async () =>
+            (await stub.getJoinSignatureResponsesEntered().request()) > 0
+    );
+    // keeps the control RPC reachable after the abort
+    const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
+        responder.index
+    );
     try {
-        await h.control(responder).stub.holdJoinSignatureResponses().request();
-        const chainTime = await Clock.getBlockchainTime();
-        const collecting = joiner.p2pInstance.p2pSigner
-            .collectJoinChannelConfirmation({
-                participant: joiner.address,
-                channelId: h.channelId,
-                balance: { amount: 500n, data: "0x00" },
-                deadlineTimestamp: BigInt(chainTime.timestamp + 120)
-            })
-            .then(
-                () => undefined,
-                () => undefined
-            );
-        await waitFor(
-            async () =>
-                (await h
-                    .control(responder)
-                    .stub.getJoinSignatureResponsesEntered()
-                    .request()) > 0
+        await stub.abortDetached().request();
+        await h.event.waitForPeers("onAbort", [responder.index], 1);
+        await stub.releaseJoinSignatureResponses().request();
+        // the joiner's collection names the responder as missing
+        const failure = await collecting;
+        expect(failure?.message).to.include("collection failed");
+        expect(failure!.message.toLowerCase()).to.include(
+            responder.address.toLowerCase()
         );
-        await runtime.host.dispose();
-        runtime.stub.releaseJoinSignatureResponses();
-        await collecting;
-        return (await Promise.all(dispatchErrors))
-            .filter((error) => error !== undefined)
-            .map(errorMessage);
+        await TestSession.settleDetached();
     } finally {
-        router.onRpc = onRpc;
+        await releaseDisposal();
     }
+    await waitFor(
+        () => runtimeIsClosed(responder.p2pInstance),
+        h.event.protocolEventTimeoutMs()
+    );
 }

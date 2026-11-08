@@ -59,12 +59,12 @@ Dispatch and correlation
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P28` — no participant handshake within two agreement windows aborts the uncommitted observer and settles connect as `false`
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P29` — chain genesis before any participant handshake settles the observer connect `true` without a sync request
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P30` — a false sync result arriving after chain genesis synced the runtime is ignored: no abort, status stays `SYNCED`
-- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P31` — abort while the initial wait is armed settles connect `false` once
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P31` — abort while the initial wait is armed answers nothing: connect rejects with RootDisposedError
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P32` — chain genesis settling the wait cancels the initial deadline, and a deadline task that still runs after the settle leaves the observer `SYNCED`
-- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P33` — a held sync response released as a success after the abort changes neither status nor disposal
-- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P34` — a held sync response released as a failure after the abort changes neither status nor disposal
-- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P35` — an abort while the discovery join is still in flight settles connect `false` before the join returns
-- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P36` — an abort during the opened-status chain read that precedes the join still answers the pending connect `false`, delivered before the runtime's disposal closes the port
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P33` — a held sync response released as a success after the abort changes neither status nor disposal; the cut fails the in-flight sync request, so connect answers `false`
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P34` — a held sync response released as a failure after the abort changes neither status nor disposal; the cut fails the in-flight sync request, so connect answers `false`
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P35` — an abort while the discovery join is still in flight answers nothing: connect rejects with RootDisposedError
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P36` — an abort during the opened-status chain read that precedes the join answers nothing: connect rejects with RootDisposedError
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P37` — a completed handshake whose participant check is held past the initial deadline holds it: no abort and no sync request until the check answers; the participant answer starts the one sync request and connect settles `true` with the observer `SYNCED`
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P38` — a held participant check that answers "not a participant" after the initial deadline elapsed starts no sync; the held deadline fires when the check ends: the observer aborts and connect settles `false`
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P39` — a held participant check that rejects after the initial deadline elapsed logs each rejection at error level, reaches the top-level error handling, and the observer aborts with connect settling `false`
@@ -77,6 +77,7 @@ Dispatch and correlation
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P46` — a still-syncing participant whose own initial sync then fails aborts and disconnects; a re-ask that reaches it fails, so the observer aborts at once, else at its deadline, adopting nothing
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P47` — an initial sync request still running when the deadline ends holds it: no abort until the request answers, and the request keeps its own two-window timeout
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P48` — the first still-syncing answer from a participant restarts the two-window deadline; a later answer from the same participant does not
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P49` — disposal while the initial wait is armed answers nothing: connect rejects with RootDisposedError, and the frozen connect does not hold the disposal
 
 ## UNIT-TEST-P2P-MANAGER-2-HR5HCB
 

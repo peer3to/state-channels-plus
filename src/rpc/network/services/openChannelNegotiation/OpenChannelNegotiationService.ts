@@ -71,7 +71,7 @@ type MatchedAttempt = LobbyMatch & {
 export type NegotiationOutcome =
     | { status: "opened"; result: LobbyJoinResult }
     | { status: "observed-target-open"; channelId: string }
-    | { status: "retry" | "targeted-failed" | "cancelled" };
+    | { status: "retry" | "targeted-failed" };
 
 export type NegotiationMode = "ordinary" | "targeted";
 
@@ -270,12 +270,6 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             this.startInitiatorDeadline(attempt);
         }
         return attempt.outcomePromise;
-    }
-
-    public async dispose(): Promise<void> {
-        const attempt = this.state.attempt;
-        if (!attempt) return;
-        await this.clearAttempt(attempt, "runtime disposed", "cancelled");
     }
 
     private observeChannelOpened(channelId: string): void {
@@ -833,21 +827,18 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
     private async clearAttempt(
         attempt: MatchedAttempt,
         reason: string,
-        outcome: "retry" | "targeted-failed" | "cancelled"
+        outcome: "retry" | "targeted-failed"
     ): Promise<void> {
         if (this.state.attempt !== attempt) return;
         this.logger.info("Negotiation attempt cleared", { reason });
         this.detachAttempt(attempt);
         if (attempt.mode === "ordinary") {
             await this.p2pManager.stateManager.clearChannelId();
-            if (!this.p2pManager.stateManager.isDisposed) {
-                this.p2pManager.stateManager.setStatus(
-                    this.p2pManager.localRpc.lobbyMatchingService
-                        .rendezvousTopic
-                        ? Status.DISCOVERING
-                        : Status.NOT_OPENED
-                );
-            }
+            this.p2pManager.stateManager.setStatus(
+                this.p2pManager.localRpc.lobbyMatchingService.rendezvousTopic
+                    ? Status.DISCOVERING
+                    : Status.NOT_OPENED
+            );
         }
         attempt.resolveOutcome({ status: outcome });
     }

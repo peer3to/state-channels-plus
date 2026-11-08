@@ -11,6 +11,7 @@ import type { WebRTCDataChannelLike } from "@/rpc/network/services/WebRTCSetup/c
 import { ARpcRouter } from "@/rpc/router/ARpcRouter";
 import { NetworkRpcRouter } from "@/rpc/router/NetworkRpcRouter";
 import { serializeRpc } from "@/rpc/Rpc";
+import LocalPeerInfo from "@/transport/LocalPeerInfo";
 import LocalTransport from "@/transport/LocalTransport";
 import WebRTCTransport from "@/transport/WebRTCTransport";
 import { Buffer } from "buffer";
@@ -370,5 +371,66 @@ export async function assertUnauthenticatedTransportCleanup(): Promise<void> {
         expect(
             bridge.manager.profileManager.getProfileByTransport(transport)
         ).to.equal(undefined);
+    });
+}
+
+/**
+ * Disposing the manager closes its live transports in the same call. A
+ * transport that links after the network cut (a late swarm or discovery
+ * connection) sends no frame and dispatches no inbound frame, so it can
+ * neither handshake nor sync.
+ */
+export async function assertDisposedManagerLateTransport(): Promise<void> {
+    await withRuntimeRpc(async (sdk) => {
+        const host = [...sdk.roots].find(
+            (root): root is P2pRuntimeHostRoot =>
+                root instanceof P2pRuntimeHostRoot
+        );
+        if (!host) throw new Error("Expected the real SDK host");
+        const manager = host.hostRpc.requireManager();
+        await withWebSocketPair(async (liveSocket) => {
+            const live = new LocalTransport(liveSocket, manager.rpcRouter);
+            const disposal = manager.dispose();
+            // the cut is synchronous: nothing waits for a later turn
+            expect(manager.isDisposed).to.equal(true);
+            expect(live.isClosed).to.equal(true);
+            await disposal;
+        });
+        await withWebSocketPair(async (serverSocket) => {
+            const sent = sinon.spy(serverSocket, "send");
+            const service = manager.localRpc.initHandshakeService;
+            const originalRunRpc = service.runRPC;
+            let dispatched = 0;
+            service.runRPC = function (rpc, sender) {
+                dispatched++;
+                return originalRunRpc.call(this, rpc, sender);
+            };
+            try {
+                // registered as the local discovery registers a link
+                const transport = new LocalTransport(
+                    serverSocket,
+                    manager.rpcRouter
+                );
+                manager.profileManager.setBannablePeerInfo(
+                    transport,
+                    new LocalPeerInfo(manager, ethers.ZeroAddress)
+                );
+                expect(transport.isClosed).to.equal(true);
+                expect(serverSocket.readyState).to.not.equal(WebSocket.OPEN);
+                const frame = {
+                    service: "initHandshakeService",
+                    method: "onInitHandshakeRequest",
+                    params: [ethers.ZeroHash, 0],
+                    requestId: "late-link-request"
+                };
+                await manager.rpcRouter.onRpc(serializeRpc(frame), transport);
+                expect(sent.callCount).to.equal(0);
+                expect(dispatched).to.equal(0);
+                expect(manager.rpcRouter.pendingRequestCount).to.equal(0);
+            } finally {
+                sent.restore();
+                service.runRPC = originalRunRpc;
+            }
+        });
     });
 }

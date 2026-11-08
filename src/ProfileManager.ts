@@ -247,12 +247,14 @@ class ProfileManager {
     /**
      * The single writer of a profile's Hyperswarm identity. The key is known
      * before any handshake, so a suspended key that dials back is refused
-     * here, before the handshake spends any work on it.
+     * here, before the handshake spends any work on it. A wire transport
+     * that connects after the network cut closes here.
      */
     public setBannablePeerInfo(
         transport: NetworkTransport,
         peerInfo: BannablePeerInfo
     ): void {
+        if (transport.p2pManager.isDisposed) return transport.close(true);
         const profile = this.registerTransport(transport);
         profile.setHolepunchPeerInfo(peerInfo);
         const hpAddress =

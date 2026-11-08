@@ -19,11 +19,8 @@ provider subscriptions; the same `eventHandler` event delivered to worker and ma
 subscribers; hook-target replacement via `setP2pEventHooks` leaving bus publication intact; the
 producer clone-failure policy (original handler and local delivery complete first, then the
 bridge error throws to the caller, and the main thread never sees the event — FIFO-fenced); no
-client delivery after runtime disposal; and custom RPC root disposal ordered before, and
-surviving rejection during, runtime teardown. Inline (non-worker) runtime mode is not driven
+and no client delivery after runtime disposal. Inline (non-worker) runtime mode is not driven
 here, so the host-protocol permutations that require inline/worker comparison stay unassigned.
-
-The custom-root disposal cases observe the real inline endpoint locally. They preserve cleanup-order and failure assertions without asking the disposed network to return an RPC response.
 
 ## Tests
 
@@ -36,5 +33,3 @@ The custom-root disposal cases observe the real inline endpoint locally. They pr
 - `surfaces a clone error to the hook producer after local delivery, and the main thread never sees the event`: UNIT-TEST-EVENT-BUS-4-1VKNFZ.P6, REQ-RUNTIME-1-RSM6MZ.T1.P10
 - `surfaces a clone error to the real wrapped event-handler producer after the original and local delivery ran`: UNIT-TEST-EVENT-BUS-4-1VKNFZ.P7, REQ-RUNTIME-1-RSM6MZ.T1.P11
 - `delivers nothing to the client after runtime disposal`: UNIT-TEST-EVENT-BUS-4-1VKNFZ.P8
-- `disposes the custom RPC root before runtime teardown`: UNIT-TEST-STATE-MANAGER-4-ECGP8V.P1
-- `still tears the runtime down when the custom root dispose rejects`: UNIT-TEST-STATE-MANAGER-4-ECGP8V.P2

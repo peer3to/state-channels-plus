@@ -70,16 +70,6 @@ async function minedReceiptOf(
     }
 }
 
-/** ethers subscribes its receipt wait asynchronously; mine only after it did. */
-async function awaitReceiptSubscription(
-    provider: JsonRpcProvider
-): Promise<void> {
-    while ((await provider.listenerCount("block")) === 0) {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    await provider.getBlockNumber();
-}
-
 /**
  * Mines until the provider reports a block, for a case whose oracle is that no
  * receipt appears. The block poller bootstraps at whatever number its own first
@@ -241,38 +231,6 @@ export async function assertIsolatedReplacedTransactionAbsent(): Promise<void> {
         expect(
             await manager.gasUsage.settledSnapshot(),
             "a replaced transaction never mined, so it is not counted"
-        ).to.deep.equal([]);
-    });
-}
-
-export async function assertIsolatedDisposalEndsClosedProviderWait(): Promise<void> {
-    await withIsolatedHardhatNode(async (provider) => {
-        provider.pollingInterval = 100;
-        const sender = await fundedWallet(provider);
-        const manager = new HostNonceManager(sender);
-
-        // The node is this call's own and is killed with it, so automine stays
-        // off: the transaction must still be unmined when the provider closes.
-        await provider.send("evm_setAutomine", [false]);
-        await manager.sendTransaction({
-            to: Wallet.createRandom().address,
-            value: 1n,
-            gasLimit: EXPLICIT_GAS_LIMIT
-        });
-        // Let the receipt wait subscribe first: a closed provider then never
-        // ends it, and only disposal can.
-        await awaitReceiptSubscription(provider);
-        provider.destroy();
-        manager.gasUsage.dispose();
-
-        // Disposal ends the wait without a timer or a chain read, so the
-        // settle completes before the event loop runs anything else.
-        const nextTurn = new Promise<"still waiting">((resolve) =>
-            setImmediate(() => resolve("still waiting"))
-        );
-        expect(
-            await Promise.race([manager.gasUsage.settledSnapshot(), nextTurn]),
-            "disposal settles the outstanding wait at once, and a transaction that never mined is not counted"
         ).to.deep.equal([]);
     });
 }

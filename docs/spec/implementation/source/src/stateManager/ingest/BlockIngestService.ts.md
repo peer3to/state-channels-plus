@@ -31,6 +31,7 @@ Origin-aware execution
 - [x] `UNIT-TEST-BLOCK-INGEST-1-JV64AS.P10` — A tail with forged resulting snapshot fails replay; the audit stores the wrapped transition counter at its last-milestone index, stores neither failed block nor snapshot, and a second audit rejects again with one counter
 - [x] `UNIT-TEST-BLOCK-INGEST-1-JV64AS.P11` — A failing tail block also appearing as earlier milestone support still fails actual tail replay at its last-milestone position; the wrapped counter is stored and the failed block is absent
 - [x] `UNIT-TEST-BLOCK-INGEST-1-JV64AS.P12` — An injected internal failure on the second dispute-replay tail block throws without a counter; the failed block is absent while the earlier successful block and its full state remain stored
+- [x] `UNIT-TEST-BLOCK-INGEST-1-JV64AS.P15` — a valid block parked on the state mutex when the runtime is disposed: nothing leaves the runtime once the mutex frees
 
 ## UNIT-TEST-BLOCK-INGEST-2-8ZE5Z8
 
@@ -41,12 +42,3 @@ Carried inbound run storage
 
 - [x] `UNIT-TEST-BLOCK-INGEST-2-8ZE5Z8.P1` — a committed block's carried inbound run, anchored at the previous snapshot's inbound hash, moves the store tip with the snapshot when that hash is the store's tip
 - [x] `UNIT-TEST-BLOCK-INGEST-2-8ZE5Z8.P2` — a committed block's carried inbound run whose anchor is not the store's tip, first unheld and then held above a gap, is persisted each time and sets no tip
-
-## UNIT-TEST-BLOCK-INGEST-3-V70TFY
-
-Stopped runtime
-
-- Setup: Park a valid confirmation on the held state mutex, abort the runtime for real, then free the mutex
-- Oracle: The ingest returns true without judging or storing the block: no hook fires and the height is unchanged
-
-- [x] `UNIT-TEST-BLOCK-INGEST-3-V70TFY.P1` — a valid block parked on the state mutex when the runtime aborts returns true, fires no deviation hook and is not stored

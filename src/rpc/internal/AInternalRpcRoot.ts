@@ -18,13 +18,6 @@ import type { Logger } from "@/utils/logging/Logger";
 import { runCleanup } from "@/utils/runCleanup";
 import { createLogger } from "@platform/createLogger";
 
-// A handler still running when its root disposes usually finishes as soon as
-// domain cleanup releases what it waited on. One stuck on something cleanup
-// does not release holds the disposal open only this long; its request then
-// still ends in the parent's disposed rejection. The contract executor bounds
-// its wait for admitted work at shutdown by the same limit.
-export const IN_FLIGHT_REPLY_DRAIN_MS = 5_000;
-
 type RootRpcServices<T extends AInternalRpcRoot> = {
     [K in keyof T as T[K] extends AInternalRpcService<any>
         ? K
@@ -169,15 +162,6 @@ export abstract class AInternalRpcRoot<
                         this.logger.attachedLogger.stopPerformanceMonitoring();
                 },
                 cleanup,
-                // A request the parent is still waiting on (a connect that an
-                // abort interrupted, for example) replies here, while logging
-                // is still alive and ahead of the disposal notification that
-                // makes the parent close this connection and reject whatever
-                // is still pending on it.
-                () =>
-                    this.parent?.drainInFlightHandlers(
-                        IN_FLIGHT_REPLY_DRAIN_MS
-                    ),
                 // Work the cleanup itself started settles the same way.
                 () => this.adoptDetachedWork(),
                 // Release logging last, even when domain cleanup fails.
@@ -202,7 +186,6 @@ export abstract class AInternalRpcRoot<
      */
     private adoptDetachedWork(): void {
         const origins = DetachedPromises.adoptPending((error, collectedAt) => {
-            if (this.rootLogger.isDisposed) return;
             this.rootLogger.debug("Detached work ended by disposal", {
                 error: errorMessage(error),
                 collectedAt
