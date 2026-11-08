@@ -447,11 +447,7 @@ class DisputeManager {
                 refusedInboundHead: inboundRetry.chainHead
             });
         }
-        if (
-            retryWithoutStaleProof &&
-            !this.stateManager.isDisposed &&
-            this.stateManager.forkId === forkId
-        )
+        if (retryWithoutStaleProof && this.stateManager.forkId === forkId)
             return this.dispute(forkId);
         return { lostEvidenceRace };
     }
