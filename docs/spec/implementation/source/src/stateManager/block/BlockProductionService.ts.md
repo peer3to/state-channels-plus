@@ -10,6 +10,7 @@
 - [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
 - [`REQ-SM-12-J6QD9B` (Every chain-accepted inbound message MUST be processed successfully)](../../../../../specification/protocol-model/state-machines.md#req-sm-12-j6qd9b)
   Missing: `playTransaction` carries the whole pending inbound run and never retries with fewer blocks after an out-of-gas failure; tracked by [`FIND-INBOUND-GAS-1-2BZ8DE`](../../../../../audit/open-findings.md#find-inbound-gas-1-2bz8de).
+- [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../../../../../specification/storage/durability.md#req-stor-3-4rjger)
 
 ## UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB
 

@@ -257,6 +257,13 @@ Engineer decision (Luka, 2026-10-12): left as is. With persisted storage a resyn
 and a turn notification means this runtime is next and has not produced that block yet; revisit when
 persistence is implemented.
 
+**Revisited (2026-11-02, persistence):** with persistence enabled, a restarted participant installs
+its own durable head before it synchronizes, so the resync replays only the tail, and it stays
+`SYNCED` with no turn notification until that first synchronization settles
+([`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../specification/storage/durability.md#req-stor-3-4rjger)). The case remains for
+a runtime without persistence, the default until
+[`FIND-PROOF-PERSISTENCE-1-HYC9DS`](open-findings.md#find-proof-persistence-1-hyc9ds) is fixed.
+
 **Status:** Open; low.
 
 ## Logical join retry lifetime
@@ -389,6 +396,11 @@ unsupported replay accusations.
 **Disposition:** Open; high. Deferred by Luka to a follow-up PR; details and missing regressions
 below.
 
+**Persistence (Luke 2026-11-02).** With the disk medium a poisoned coordinate survives a restart,
+because the load restores the block store as it was. This finding is not fixed first: persistence
+lands off by default ([`REQ-STOR-10-XY96KG` (Persistence is opt-in)](../specification/storage/durability.md#req-stor-10-xy96kg)),
+and the default flips when this finding is fixed.
+
 **Open; high, with a potential honest-auditor slash. Engineer disposition (2026-10-06): defer the
 implementation and regression tests to a follow-up PR.** Luka requested that PR #519's SR1
 finding and its TO1/TO2 coverage gaps remain recorded here. This deferral does not resolve the
@@ -510,9 +522,11 @@ that the VM already holds the new state during prepare, while storage, fork and 
 **Relation to [`FIND-STATE-1-0K7XMY`](open-findings.md#find-state-1-0k7xmy).** Its resolved sync part makes storage, fork and status
 change together. It does not make the VM change together with them.
 
-**Async storage.** The current atomicity of storage, fork and status depends on synchronous storage: `persistHistory()` and `commit()` run
-with no await between them. Once storage becomes async, that step can interleave with other tasks, and a crash can leave part of the
-writes persisted.
+**Storage stays synchronous (2026-11-02).** The atomicity of storage, fork and status depends on synchronous storage: `persistHistory()` and
+`commit()` run with no await between them. The disk medium keeps that: store operations stay synchronous on memory, and each synchronous
+storage step reaches disk as one atomic batch cut only between steps, so a crash leaves disk at a prefix of whole steps
+([`REQ-STOR-7-K1J7EA` (Write-behind disk copy loaded once)](../specification/storage/durability.md#req-stor-7-k1j7ea)). That gives "persisted writes of one update must be atomic
+on crash" below with no change to the install path. The VM half of this finding is unchanged.
 
 **Engineer disposition (Luka, 2026-10-08).** Record the defect and defer the design. Concurrency must be kept: making the readers
 take the state mutex is rejected.
@@ -889,6 +903,13 @@ chain sends and the parent bus (see [`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-finding
 so nothing the imploding runtime does after the cut leaves it as a frame or a transaction. The
 VM child is still disposed under a refresh that is still running; that local failure is tolerated
 by the ingest catch since PR #556.
+
+**Update (2026-11-02, persistence):** the disk medium closes in that one disposal, after the cut:
+writes made before the cut drain to disk, and a write after the cut changes memory only and never
+reaches disk, so nothing the imploding runtime writes after the cut has a lasting effect
+([`REQ-STOR-9-ZR8A92` (Closed by the one disposal)](../specification/storage/durability.md#req-stor-9-zr8a92)). The blacklist stays in
+memory (Luke 2026-11-02, [`FIND-STORAGE-8-CS91XW`](open-findings.md#find-storage-8-cs91xw)), so the
+impact note above still holds.
 
 **Side-effect audit of tolerating more (2026-10-16).** (1) No partial queue state: ingest's
 mutations before a throw point are the pre-mutation block clone, one synchronous queue set/merge
@@ -1616,6 +1637,188 @@ deleted; its only test caller that observed a stored run now reads `tryGetMessag
 which reports `missingBlockHash`, and the tests of the method itself are deleted. Rejected: changing
 it to return a `MessageBlockRun`, which would keep a second walk-from-tip read with no production
 caller.
+
+<a id="find-storage-8-cs91xw"></a>
+
+### FIND-STORAGE-8-CS91XW
+
+**Defect:** _Open (2026-11-02, engineer: deferred)._ Recorded peer verdicts are not persisted.
+[`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)
+says a recorded verdict MUST be persisted with the identity and reason so it outlives the session;
+[`BlacklistStorage`](../implementation/source/src/storage/BlacklistStorage.ts.md) keeps verdicts in
+memory only, also with the disk medium enabled, so a restarted runtime starts with no verdicts.
+
+**Disposition:** Deferred by Luke on 2026-11-02: the blacklist stays in memory (status quo) in the
+persistence change. Reason: [`FIND-RUNTIME-2-4B0D0Q`](open-findings.md#find-runtime-2-4b0d0q) showed
+local failures blacklisting honest peers (fixed in PR #556 for ingest), and the handshake already
+reads the blacklist, so a persisted verdict would refuse that peer at its next handshake after a
+restart, with no way to lift it. Persisting it waits until no local failure path can still record a
+verdict. Then the store takes the disk medium like the other stores, and the verdicts load at start
+(the non-normative future work in rpc.md).
+
+<a id="find-storage-9-0ftpd8"></a>
+
+### FIND-STORAGE-9-0FTPD8
+
+**Defect:** _Open (2026-11-02, engineer: accepted for now)._ The signer secret is stored unencrypted
+in the persistence partition
+([`REQ-STOR-11-Q4AT07` (Partition identity, ownership, and survival)](../specification/storage/durability.md#req-stor-11-q4at07)).
+Anyone who can read the host's storage for that origin (IndexedDB in a browser) or user (the LevelDB
+directory on node) can take the key, and with it the participant's funds in the channel. Luka's
+prototype left a TODO to encrypt it with a caller-supplied key.
+
+**Disposition:** Luke, 2026-11-02: plaintext in the persistence change so the work is not blocked;
+encryption is a follow-up. Its key policy is minimum interruption to the player: ideally the poker
+player never notices that a chain is involved, so the follow-up adds no extra password and no prompt
+on each restore. Exit: the follow-up encrypts the stored secret under that policy and adds its tests
+under [`REQ-STOR-11-Q4AT07.T1`](../specification/storage/durability.md#req-stor-11-q4at07.t1).
+
+<a id="find-storage-10-g3wfj8"></a>
+
+### FIND-STORAGE-10-G3WFJ8
+
+**Defect:** _Open (2026-11-02, engineer: descoped)._ A restarted node recovers from its first
+synchronization only. The first chain subscription after a restart is live only, so chain events
+after the durable observation cursor are not replayed: a dispute, snapshot update, slash or join made
+while the node was down reaches it only when a synchronization covers it. A pending joiner restarted
+before its join landed resumes nothing: its join record is on disk, but no expiry or seating check is
+armed. Replaying the events would also need `onChannelOpened` gated against a restored head, or the
+replayed opening would reset the VM to genesis under the restored blocks.
+
+**Disposition:** Descoped by Luke on 2026-11-02 to a follow-up: chain-event replay from the durable
+cursor with the `onChannelOpened` gate, and pending-join resume. Reason: recovery is sync-only, as in
+Luka's prototype; the protocol assumes always-online clients (A8,
+[`REQ-TRUST-4-KW24NF` (Version one REQUIRES a watchtower or equivalent continuously available delegate…)](../specification/security/trust-model.md#req-trust-4-kw24nf)), and a node
+offline through a contest window is the watchtower's case (spec PR #456, not built yet; until then
+the integrator keeps clients online).
+[`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../specification/storage/durability.md#req-stor-3-4rjger)
+is narrowed to synchronization-only recovery accordingly. The other restart items are built: the
+restore reads the chain's snapshot and dispute windows into the local mirror, clears a dispute marker
+whose dispute never landed, and re-arms the calldata post of an own latest block; a held head executes
+no queued block; and a restart synchronization that no participant answers before its deadline aborts
+as an observer does. Persistence is off by default
+([`REQ-STOR-10-XY96KG` (Persistence is opt-in)](../specification/storage/durability.md#req-stor-10-xy96kg)),
+so no default runtime reaches these cases.
+
+Restart decisions, Luke 2026-11-02: a held head also countersigns no join request; a chain RPC failure at the restore read fails the persistent start
+instead of resuming unreconciled; any failed restart-sync answer aborts, silence and a lost
+transport included; a dispute marker kept behind a pending transaction is not rechecked until the
+next restart (accepted); and the re-armed calldata post of an own latest block may land during the
+hold (safe: the block was signed before the crash, and the chain refuses a block it moved past).
+
+Restart decisions, Luke 2026-11-03 (delegated): a held head authors no dispute until its restart
+synchronization settles, checked once in `DisputeManager.dispute`; a dispute wanted during the hold
+comes back through the path that re-evaluates it (the participant timeout armed at release, the next
+chain event), with no retry machinery. Kills, fraud proofs and audits stay allowed: they carry signed
+evidence the chain checks, so a stale head cannot make them slashable. The hold therefore refuses
+block co-signatures, authored or executed blocks, join countersignatures and disputes.
+
+Correction, Luke 2026-11-03 (delegated): a held head is `SYNCED`, and only a committed participant
+audits a dispute (`EventHandler`), so a held head audits, kills and adds evidence to nothing until its
+restart synchronization settles; the dispute-authoring refusal stays. This supersedes the note above
+that kills, fraud proofs and audits stay allowed. A dispute posted during the hold and
+not audited again at release is
+[`FIND-STORAGE-13-3A4RES`](open-findings.md#find-storage-13-3a4res). Two planned
+restart cases are descoped to this follow-up and stay planned, untested permutations:
+[`REQ-STOR-3-4RJGER.T1.P8`](../specification/storage/durability.md#req-stor-3-4rjger.t1.p8) (a timeout
+dispute posted before any peer connects is not audited while held, nor at release) and
+[`REQ-STOR-3-4RJGER.T1.P11`](../specification/storage/durability.md#req-stor-3-4rjger.t1.p11) (a fork
+change while the node was down).
+
+<a id="find-storage-11-00c45c"></a>
+
+### FIND-STORAGE-11-00C45C
+
+**Defect:** _Open (2026-11-03)._ A load checks that the head fork's blocks link and that a snapshot
+and state are held at the head, but never that a content-addressed record matches the hash it is
+stored under: a state blob is not compared with `keccak256` of its bytes, a snapshot or block with
+its own hash, and the head block's signatures are not verified. A changed byte that still decodes in
+the head's state, the head block, or a snapshot loads into the VM or is served in a synchronization,
+against
+[`REQ-STOR-5-T6EQSA` (Isolation, integrity, and versioned encoding)](../specification/storage/durability.md#req-stor-5-t6eqsa)
+and
+[`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../specification/storage/durability.md#req-stor-3-4rjger).
+Corruption below the head is caught by the link walk. Persistence is off by default
+([`REQ-STOR-10-XY96KG` (Persistence is opt-in)](../specification/storage/durability.md#req-stor-10-xy96kg)).
+
+**Proposed direction:** In the load's head-fork check (`Storage`), compare each content-addressed
+record of the head fork (state, snapshots, blocks) with its recomputed hash and verify the head
+block's signatures through the signer-recovery owner; a mismatch refuses the bind and names the key.
+Tests: corrupt one byte of each record type and expect the bind refused.
+
+<a id="find-storage-12-ee87dd"></a>
+
+### FIND-STORAGE-12-EE87DD
+
+**Defect:** _Open (2026-11-03)._ Nothing prunes: every store keeps every record for the life of
+the channel, in memory and, with persistence on, on disk, so
+[`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](../specification/storage/durability.md#req-stor-4-mf6ft6)
+is not met and both grow with the channel. Deletes already reach disk through the collections, so
+pruning bounds memory and disk together once it exists.
+
+**Proposed direction:** Prune by the obligation rule of that requirement (the proof-store work of #560);
+its tests go under
+[`REQ-STOR-4-MF6FT6.T1`](../specification/storage/durability.md#req-stor-4-mf6ft6.t1).
+
+<a id="find-storage-13-3a4res"></a>
+
+### FIND-STORAGE-13-3A4RES
+
+**Defect:** _Open (2026-11-03, engineer: accepted, Luke 2026-11-03 (delegated))._ A restarted node
+held at its restored head is `SYNCED` and audits no dispute, so a counterparty dispute posted during
+the hold gets no kill and no evidence from it. Release re-arms only the turn, the participant timeout
+and the queue drain; nothing audits the stored dispute window again, so a stale but valid dispute can
+settle without the restarted node's newer state when no later chain event makes it dispute.
+
+**Disposition:** Accepted with no new machinery. The protocol assumes always-online clients (A8,
+[`REQ-TRUST-4-KW24NF` (Version one REQUIRES a watchtower or equivalent continuously available delegate…)](../specification/security/trust-model.md#req-trust-4-kw24nf)):
+a node that restarts through a contest window is the watchtower's case (spec PR #456, not built yet;
+until then the integrator keeps clients online). Persistence is off by default
+([`REQ-STOR-10-XY96KG` (Persistence is opt-in)](../specification/storage/durability.md#req-stor-10-xy96kg)).
+
+<a id="find-storage-14-ma3c9c"></a>
+
+### FIND-STORAGE-14-MA3C9C
+
+**Defect:** _Resolved (2026-11-03)._ Two routes let a signature leave before its write reached disk.
+A synchronization answer carried this node's stored signed blocks without a flush
+(`SpectateService.generateSyncPayload`), and a chain transaction with no flush at its call site
+(a snapshot post, a top-up, a kill, a reduction, a calldata post) was sent with no wait for the
+disk, against
+[`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](../specification/storage/durability.md#req-stor-8-25d06n).
+
+**Disposition:** Decided by Luke on 2026-11-03 (plan 28, design R): every chain transaction waits in
+`HostNonceManager` for the disk to confirm every earlier write, before it takes the nonce lock; the
+synchronization answer flushes before it returns; `BlockCommitService` keeps its flush for a block it
+signs or authors; every disk batch is synced. The call-site flushes behind the dispute, join and open
+transactions, and the join and open-channel signature flushes, are removed (Luke 2026-11-03: those
+off-chain signatures are never stored and are not slashable at a coordinate). Regression:
+[`REQ-STOR-8-25D06N.T1.P17`](../specification/storage/durability.md#req-stor-8-25d06n.t1.p17),
+[`REQ-STOR-8-25D06N.T1.P18`](../specification/storage/durability.md#req-stor-8-25d06n.t1.p18) and
+[`REQ-STOR-8-25D06N.T1.P25`](../specification/storage/durability.md#req-stor-8-25d06n.t1.p25).
+Residual: a future reader that sends stored signed blocks outside the state mutex must flush first;
+that is a written rule, not a type. Signing over the client interface is outside the gate
+([`OQ-AUDIT-STORAGE-1-B5T2QG` (Client-interface signing outside the disk gate)](open-questions.md#oq-audit-storage-1-b5t2qg)).
+
+Further decisions, Luke 2026-11-03: the record envelope that keeps each collection's insertion order
+across a reload is kept (overriding plan 28's drop of it), so the first stored proof per participant
+and the latest stored genesis candidate per fork survive a restart; `releaseRestoredHead` stays as
+it is; a load arms queued entries also when the partition holds no head fork; only the default root
+the SDK creates is set to mode 0700, never a location the caller supplied; and `BlockStorage` keeps
+dev's behaviour for a known hash stored at other coordinates.
+
+<a id="find-storage-15-971mvn"></a>
+
+### FIND-STORAGE-15-971MVN
+
+**Defect:** _Open (2026-11-03, to investigate)._ A block replayed from the restart synchronization's
+tail and settled as a past block is merged without this node's signature. Whether the node
+countersigns it after the hold is released is unchecked against
+[`REQ-STOR-3-4RJGER.T1.P6`](../specification/storage/durability.md#req-stor-3-4rjger.t1.p6) and
+[`REQ-STOR-3-4RJGER.T1.P18`](../specification/storage/durability.md#req-stor-3-4rjger.t1.p18).
+
+**Disposition:** Luke, 2026-11-03: investigate as a separate finding. Re-signing after the release is
+only safe with a deterministic signer.
 
 <a id="find-runtime-1-gapy72"></a>
 
@@ -2817,9 +3020,12 @@ for the valid, invalid, calldata and no-calldata cases. Luke decided the two oth
   arrive in one canonical (block, log index) order, and a lagging auditor receives the same order
   in a burst, so delivery order is not a variable the system can produce.
 - [`INV-DISPUTE-PIPE-1-BN0K81.T1.P4`](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81.t1.p4) (restart) is deferred until persistence exists
-  ([`OQ-23-SDBGYB` (SDK restart and recovery semantics)](../implementation/open-questions.md#oq-23-sdbgyb)). Storage is in memory only and a
+  ([`OQ-23-SDBGYB` (SDK restart and recovery semantics)](../implementation/open-questions.md#oq-23-sdbgyb)). Without persistence a
   restarted peer comes back as a fresh spectator and resyncs, so resuming an audit after a restart
-  does not exist yet.
+  does not exist. With persistence a restarted auditor is held at `SYNCED` and audits nothing until
+  its restart sync settles, and nothing audits the dispute again at release
+  ([`REQ-STOR-3-4RJGER.T1.P26`](../specification/storage/durability.md#req-stor-3-4rjger.t1.p26),
+  [`FIND-STORAGE-13-3A4RES`](open-findings.md#find-storage-13-3a4res)).
 
 What remains is [`REQ-RUNTIME-5-WJ1XKK` (Required host environments: browser and Node)](../specification/runtime/execution.md#req-runtime-5-wj1xkk): the browser, Node, mixed-host and
 worker-less capability matrix is unverified as a whole. The browser gates run transport, executor,

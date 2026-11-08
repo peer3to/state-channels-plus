@@ -69,6 +69,13 @@ signature is released, and the pending nonce stays 0: a send not yet broadcast a
 nothing. A send whose broadcast already reached the node when `cut()` runs, with the node's
 answer held until after the cut, settles, mines and keeps nonce 0.
 
+Five cases gate the manager on a real `Storage` bound to a `GatedMemoryLevel`, with one write left
+pending so a flush needs a batch. While the batch is held the send broadcasts nothing and the
+account's pending nonce stays 0; after the release it broadcasts. Two sends waiting on one held
+batch take nonces 0 and 1 in call order. A send waiting at the gate when the manager is cut, and a
+send whose batch fails its retries, never settle and take no nonce. A storage with no disk bound
+lets the send through at once.
+
 ## Tests
 
 - `reuses a failed middle nonce without colliding with concurrent sends`: none
@@ -89,3 +96,8 @@ answer held until after the cut, settles, mines and keeps nonce 0.
 - `a send after cut takes no nonce and never settles`: REQ-SDK-ARCH-2-QBZAT8.T1.P3
 - `a send holding the nonce mutex before its broadcast at cut, and one queued behind it, take no nonce and never settle`: REQ-SDK-ARCH-2-QBZAT8.T1.P3
 - `a broadcast already sent at cut settles and keeps its nonce`: REQ-SDK-ARCH-2-QBZAT8.T1.P3
+- `broadcasts nothing while the disk has not confirmed the writes made before the send, and broadcasts once it has`: REQ-STOR-8-25D06N.T1.P25
+- `gives two sends waiting on one batch their nonces in call order`: REQ-STOR-8-25D06N.T1.P20
+- `a send waiting for the disk at cut takes no nonce and never settles`: REQ-STOR-8-25D06N.T1.P21
+- `a send whose disk write fails takes no nonce and never settles`: REQ-STOR-8-25D06N.T1.P24
+- `sends at once when the storage has no disk bound`: none

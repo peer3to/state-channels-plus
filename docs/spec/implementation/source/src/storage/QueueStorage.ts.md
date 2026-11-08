@@ -8,6 +8,7 @@
 - [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../../../../specification/storage/queue.md#req-qstore-2-vywjaq)
 - [`REQ-QSTORE-3-DEKYG6` (Queue scheduling)](../../../../specification/storage/queue.md#req-qstore-3-dekyg6)
 - [`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg)
+- [`REQ-STOR-7-K1J7EA` (Write-behind disk copy loaded once)](../../../../specification/storage/durability.md#req-stor-7-k1j7ea)
 
 ## UNIT-TEST-QUEUE-STORAGE-1-6W5SYT
 

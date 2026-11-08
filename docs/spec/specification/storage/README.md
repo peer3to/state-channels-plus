@@ -7,9 +7,9 @@
 Storage is its own protocol system because nearly every other system reads and writes through it: it
 holds the node's canonical local knowledge — blocks, snapshots, states, streams, evidence, queues,
 and progress markers — behind module boundaries with defined keys, merge rules, and consistency
-guarantees. The current realization is in-memory; disk persistence is a planned change of *medium*,
-not of contract: every rule in this system is stated so that swapping the medium changes durability
-strength, never observable semantics.
+guarantees. Memory is the copy every read uses; an optional disk medium is a write-behind copy of it
+that is a change of *medium*, not of contract: every rule in this system is stated so that adding the
+medium changes durability strength, never observable semantics.
 
 ## System contract
 
@@ -23,18 +23,19 @@ strength, never observable semantics.
 - **Public outputs.** Reads: by content hash, by coordinates (fork, height, author), by linkage
   range, by index, and by tip pointer. Reads return what was stored or nothing; storage never
   fabricates, reorders, or reinterprets.
-- **Calls.** Nothing — storage is a leaf. It performs no chain reads, no peer communication, and no
-  state-machine execution.
+- **Calls.** Nothing but its disk medium — storage is a leaf. It performs no chain reads, no peer
+  communication, and no state-machine execution.
 - **Called by.** Block progression (blocks, queue, snapshots, states); settlement (message blocks,
   progress markers); disputes (dispute/fraud-proof evidence, timeouts, calldata); peer communication
   (attribution written through queue intake, sync served from stores); runtime (recovery reads
   everything back at restart).
 - **Trust and availability assumptions.** Stored data is only as trustworthy as its producer's
-  validation; read-back re-enters validation per [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](durability.md#req-stor-3-4rjger). The medium is
-  currently process-lifetime memory: durability across restart is **not yet provided**, and every
-  consumer obligation that presumes it (watchtower duties, restart recovery) is limited accordingly
-  until the disk medium lands — see [durability.md](./durability.md), which specifies the target
-  durability contract the medium change must satisfy.
+  validation; read-back re-enters validation per [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](durability.md#req-stor-3-4rjger). The disk
+  medium is opt-in ([`REQ-STOR-10-XY96KG` (Persistence is opt-in)](durability.md#req-stor-10-xy96kg)): without it storage lives for the
+  process only, and every consumer obligation that presumes durability (watchtower duties, restart
+  recovery) is limited accordingly. With it, a signature that could get the node slashed leaves the
+  process only once the disk has confirmed it
+  ([`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](durability.md#req-stor-8-25d06n)).
 - **Ordering and concurrency.** Module operations are atomic at the single-operation level; merge
   operations (signature sets, source attribution) are monotone and idempotent so concurrent and
   duplicate delivery converge, and a known on-chain posting timestamp is never discarded by a merge
@@ -49,7 +50,9 @@ strength, never observable semantics.
   requirements in the module documents below.
 - **Failure and recovery outcomes.** A read of absent data returns nothing, never a default that
   masquerades as protocol state; a failed or partial multi-module write must be repairable per
-  [`REQ-STOR-2-TARP8S` (Commit-aligned durability)](durability.md#req-stor-2-tarp8s); corruption (once media can corrupt) fails closed per [`REQ-STOR-5-T6EQSA` (Isolation, integrity, and versioned encoding)](durability.md#req-stor-5-t6eqsa).
+  [`REQ-STOR-2-TARP8S` (Commit-aligned durability)](durability.md#req-stor-2-tarp8s); bad disk state fails the bind closed per [`REQ-STOR-5-T6EQSA` (Isolation, integrity, and versioned encoding)](durability.md#req-stor-5-t6eqsa);
+  a failing disk medium aborts the runtime per [`REQ-STOR-7-K1J7EA` (Write-behind disk copy loaded once)](durability.md#req-stor-7-k1j7ea); the
+  runtime's one disposal closes the medium per [`REQ-STOR-9-ZR8A92` (Closed by the one disposal)](durability.md#req-stor-9-zr8a92).
 - **Resource bounds.** Per-entry structural caps where an adversary controls insertion volume (queue
   attribution caps); retention bounded by protocol obligations ([`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](durability.md#req-stor-4-mf6ft6)).
 - **Verification evidence.** Test matrices in the owned documents; the cross-system storage edge is
@@ -63,7 +66,7 @@ what is specific to that module: its key space, data model, merge/update rules, 
 
 | Document | Module(s) | Defines |
 | --- | --- | --- |
-| [durability.md](./durability.md) | shared | Durable data classes, commit-aligned durability, restart recovery without trust, obligation-bounded retention, integrity and versioning. |
+| [durability.md](./durability.md) | shared | Durable data classes, commit-aligned durability, restart recovery without trust, obligation-bounded retention, integrity and versioning, the write-behind disk medium, durability before a slashable signature leaves, closing in the one disposal, opt-in persistence, and partition identity. |
 | [blocks.md](./blocks.md) | Block store | Dual keying (hash and fork/height), signature merge, tip tracking, deletion consistency, bounded traversal. |
 | [queue.md](./queue.md) | Pre-execution queue | Queued-entry model, monotone signature/source attribution with structural caps, coordinate index, dequeue rules, fork clearing. |
 | [message-blocks.md](./message-blocks.md) | Inbound & outbound message-block stores | Hash-linked stream storage, tip pointers, backward range reads. |

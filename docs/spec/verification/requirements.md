@@ -930,22 +930,37 @@ Specification cases tested: 45/45.
 Specification cases tested: 7/8. Untested: T1.P1.
 
 [`REQ-STOR-1-D4XE73` (Complete durable set)](../specification/storage/durability.md#req-stor-1-d4xe73)
-Specification cases tested: 0/4.
+Specification cases tested: 1/4. Untested: T1.P2, T1.P3, T1.P4.
 
 [`REQ-STOR-2-TARP8S` (Commit-aligned durability)](../specification/storage/durability.md#req-stor-2-tarp8s)
 Specification cases tested: 0/19.
 
 [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../specification/storage/durability.md#req-stor-3-4rjger)
-Specification cases tested: 0/4.
+Specification cases tested: 22/26. Untested: T1.P3, T1.P4, T1.P8, T1.P11.
 
 [`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](../specification/storage/durability.md#req-stor-4-mf6ft6)
 Specification cases tested: 0/5.
 
 [`REQ-STOR-5-T6EQSA` (Isolation, integrity, and versioned encoding)](../specification/storage/durability.md#req-stor-5-t6eqsa)
-Specification cases tested: 0/6.
+Specification cases tested: 8/13. Untested: T1.P2, T1.P3, T1.P5, T1.P11, T1.P12.
 
 [`REQ-STOR-6-SKP0KM` (Value semantics at the store boundary)](../specification/storage/durability.md#req-stor-6-skp0km)
-Specification cases tested: 1/6. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6.
+Specification cases tested: 2/7. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6.
+
+[`REQ-STOR-7-K1J7EA` (Write-behind disk copy loaded once)](../specification/storage/durability.md#req-stor-7-k1j7ea)
+Specification cases tested: 23/27. Untested: T1.P2, T1.P12, T1.P19, T1.P21.
+
+[`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](../specification/storage/durability.md#req-stor-8-25d06n)
+Specification cases tested: 20/22. Untested: T1.P13, T1.P19.
+
+[`REQ-STOR-9-ZR8A92` (Closed by the one disposal)](../specification/storage/durability.md#req-stor-9-zr8a92)
+Specification cases tested: 6/6.
+
+[`REQ-STOR-10-XY96KG` (Persistence is opt-in)](../specification/storage/durability.md#req-stor-10-xy96kg)
+Specification cases tested: 0/1.
+
+[`REQ-STOR-11-Q4AT07` (Partition identity, ownership, and survival)](../specification/storage/durability.md#req-stor-11-q4at07)
+Specification cases tested: 6/10. Untested: T1.P2, T1.P5, T1.P6, T1.P7.
 
 [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../specification/peer-communication/synchronization.md#req-sync-1-t2589h)
 Specification cases tested: 17/20. Untested: T1.P2, T1.P4, T1.P7.

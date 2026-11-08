@@ -28,6 +28,55 @@ describe("Unit: BlockCommitService", function () {
     it("dispute replay with a historical union preserves current off-chain eligibility", async () => {
         await assertCommitCachePreserved();
     });
+    it("a flush that fails after the block was stored keeps the VM at that block", async () => {
+        const h = TestSession.getHarness();
+        const forkId = await h.lifecycle.start(3, 1, {
+            persistentPeers: [0, 1, 2]
+        });
+        const author = h.getPeer((await h.query.getNextPeerToWrite()).index);
+        const control = h.control(author);
+        const height = await control.query.getNextBlockHeight(forkId).request();
+        // the runtime's abort waits, so its VM can be read after the failure
+        expect(
+            await control.stub.failPersistenceFlushes(true).request()
+        ).to.equal(true);
+
+        let transactionError: unknown;
+        try {
+            await author.p2pInstance.p2pContractInstance.add(1);
+        } catch (error) {
+            transactionError = error;
+        }
+        expect(transactionError).to.not.equal(undefined);
+
+        const { storedHeight, vmState, storedState } = await h.execOnHost(
+            author,
+            async (sm, args) => {
+                const block = sm.storage.blocks.getLatestBlock(args.forkId);
+                const snapshot = block
+                    ? sm.storage.stateSnapshots.getStateSnapshotByHash(
+                          block.stateSnapshotHash
+                      )
+                    : undefined;
+                return {
+                    storedHeight: block?.height ?? null,
+                    vmState: String(await sm.diamondStateMachine.getState()),
+                    storedState: snapshot
+                        ? String(
+                              sm.storage.stateMachineStates.getStateMachineState(
+                                  snapshot.stateMachineStateHash
+                              )
+                          )
+                        : null
+                };
+            },
+            { forkId }
+        );
+        expect(storedHeight).to.equal(height);
+        expect(vmState).to.equal(storedState);
+        await control.stub.releaseHeldAbort().request();
+    });
+
     describe("shouldSignBlock", function () {
         it("an ordinary block from a participant → signed", async function () {
             const h = TestSession.getHarness();

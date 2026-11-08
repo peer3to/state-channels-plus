@@ -42,6 +42,10 @@ export default class BlockProductionService {
             if (!sm.validationService.isChannelOpen(sm.forkId)) {
                 throw new Error("Channel not open");
             }
+            // a restored head authors nothing until the restart sync settled
+            if (sm.stateApplicationService.holdsRestoredHead) {
+                throw new Error("Restored head waits for the restart sync");
+            }
             if (this.isStaleCoordinate(tx)) return undefined;
             if (!(await this.isMyTurn())) {
                 throw new Error("NOT MY TURN: " + message);

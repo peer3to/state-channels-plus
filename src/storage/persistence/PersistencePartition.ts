@@ -1,11 +1,8 @@
+import { SYNCED } from "./PersistenceController";
 import type {
     PersistenceDatabase,
     PersistenceDatabaseHandle
 } from "./PersistenceDatabase";
-import {
-    PersistenceMigrationRegistry,
-    type PersistenceMigration
-} from "./PersistenceMigrationRegistry";
 import { createPersistenceDatabase } from "@platform/persistenceDatabase";
 import { ethers } from "ethers";
 
@@ -22,7 +19,6 @@ export interface PersistenceOptions {
      */
     location?: string;
     flushIntervalMs?: number;
-    maxBatchOperations?: number;
     reset?: boolean;
 }
 
@@ -37,8 +33,6 @@ export interface OpenPersistencePartitionOptions {
     identity: PersistencePartitionIdentity;
     persistence: PersistenceOptions;
     signerSecret: string;
-    existingPartition: "allow" | "reject";
-    migrations?: readonly PersistenceMigration[];
 }
 
 export interface OpenPersistencePartitionResult {
@@ -100,32 +94,29 @@ export async function openPersistencePartition(
             storedVersion !== undefined ||
             storedSignerSecret !== undefined;
 
-        if (exists && options.existingPartition === "reject") {
-            throw new Error(
-                `Persistence partition already exists: ${namespace}`
-            );
-        }
-
         if (!exists) {
             // TODO(persistence): encrypt signer secrets with a caller-supplied
             // key before writing them to backend metadata.
-            await databaseHandle.database.batch([
-                {
-                    type: "put",
-                    key: IDENTITY_KEY,
-                    value: JSON.stringify(identity)
-                },
-                {
-                    type: "put",
-                    key: SCHEMA_VERSION_KEY,
-                    value: String(CURRENT_SCHEMA_VERSION)
-                },
-                {
-                    type: "put",
-                    key: SIGNER_SECRET_KEY,
-                    value: options.signerSecret
-                }
-            ]);
+            await databaseHandle.database.batch(
+                [
+                    {
+                        type: "put",
+                        key: IDENTITY_KEY,
+                        value: JSON.stringify(identity)
+                    },
+                    {
+                        type: "put",
+                        key: SCHEMA_VERSION_KEY,
+                        value: String(CURRENT_SCHEMA_VERSION)
+                    },
+                    {
+                        type: "put",
+                        key: SIGNER_SECRET_KEY,
+                        value: options.signerSecret
+                    }
+                ],
+                SYNCED
+            );
             return {
                 databaseHandle,
                 signerSecret: options.signerSecret,
@@ -148,13 +139,9 @@ export async function openPersistencePartition(
             );
         }
 
-        const schemaVersion = Number(storedVersion);
-        if (schemaVersion !== CURRENT_SCHEMA_VERSION) {
-            await new PersistenceMigrationRegistry(options.migrations).migrate(
-                databaseHandle.database,
-                schemaVersion,
-                CURRENT_SCHEMA_VERSION,
-                namespace
+        if (Number(storedVersion) !== CURRENT_SCHEMA_VERSION) {
+            throw new Error(
+                `Persistence partition ${namespace} has schema version ${storedVersion}; this build reads version ${CURRENT_SCHEMA_VERSION}`
             );
         }
 

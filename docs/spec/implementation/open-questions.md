@@ -17,7 +17,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-19-Y8FDQX`](open-questions.md#oq-19-y8fdqx)                                                       | Channel-balance invariant not enforced on snapshot update or join                                                                 | Code                                          | [protocol/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md)                                                                                                               | Open                                                   |
 | [`OQ-21-PEZK9X`](open-questions.md#oq-21-pezk9x)                                                       | `_tx.body` is never populated; no state-encoding version marker                                                                   | Code                                          | [concepts/state-machines.md](../specification/protocol-model/state-machines.md)                                                                                                                       | Partially resolved                                     |
 | [`OQ-22-99DDSZ`](open-questions.md#oq-22-99ddsz)                                                       | Inauthentic on-chain block calldata: escalation is signalled but no proof is built                                                | Code                                          | [block-progression/block-processing.md](../specification/block-progression/block-processing.md), [security/open-security-review.md](../audit/security-assessment.md)                                  | Open                                                   |
-| [`OQ-23-SDBGYB`](open-questions.md#oq-23-sdbgyb)                                                       | SDK restart/recovery semantics: storage is fully in-memory                                                                        | Code                                          | [runtime/sdk.md](../specification/runtime/sdk.md)                                                                                                                                                     | Open                                                   |
+| [`OQ-23-SDBGYB`](open-questions.md#oq-23-sdbgyb)                                                       | SDK restart/recovery semantics: storage is fully in-memory                                                                        | Code                                          | [runtime/sdk.md](../specification/runtime/sdk.md), [storage/durability.md](../specification/storage/durability.md)                                                                                    | Partially resolved                                     |
 | [`OQ-24-A4XRTB`](open-questions.md#oq-24-a4xrtb)                                                       | `shouldSignBlock` refuses to sign an on-chain-posted block when the local node is next-to-write                                   | Code                                          | [protocol/finality.md](../specification/protocol-model/finality.md), [protocol/block-processing.md](../specification/block-progression/block-processing.md)                                           | Open                                                   |
 | [`OQ-25-E09XFR`](open-questions.md#oq-25-e09xfr)                                                       | Minor SDK lifecycle races: TS snapshot-event ordering, kill/counter-dispute sequencing                                            | Code                                          | [runtime/sdk.md](../specification/runtime/sdk.md), [disputes/dispute-processing.md](../specification/disputes/dispute-processing.md)                                                                  | Open                                                   |
 | [`OQ-30-2G0Q5M`](open-questions.md#oq-30-2g0q5m)                                                       | Chain-reorg handling and canonical per-channel event ordering in the SDK                                                          | Code                                          | [runtime/sdk.md](../specification/runtime/sdk.md), [security/open-security-review.md](../audit/security-assessment.md), [runtime/chain-observation.md](../specification/runtime/chain-observation.md) | Open (event ordering); reorg pending on chain finality |
@@ -192,16 +192,28 @@ completeness review ([`OQ-5-4Q38M5` (Fraud-proof completeness security review)](
 
 ## OQ-23-SDBGYB — SDK restart and recovery semantics
 
-All SDK storage domains are in-memory; a restarted participant has no persisted history and the
-recovery procedure (resync from peers, from chain calldata, or via dispute) is unspecified.
-
-Two implementation attempts exist and are stalled in review: PR #388 (async persistence port
-behind `BlockStorage`) and PR #392 (`resumeFromBackground`), both changes-requested with no
-activity since early August; separately, the unmerged `persistence` branch prototypes
-LevelDB/IndexedDB write-behind commits with no PR. The blocking decision is the storage approach
-as much as the recovery semantics. This
-also bounds unbounded-memory growth over channel lifetime. See
-[runtime/sdk.md](../specification/runtime/sdk.md) (storage) and the watchtower assumption in
+**Partially resolved (Luke 2026-10-30 and 2026-11-02).** The storage approach and the restart
+semantics are decided and specified in [storage/durability.md](../specification/storage/durability.md):
+memory stays the copy every read uses and disk is a write-behind copy behind `abstract-level`
+(`classic-level` on node, `browser-level` in the browser), loaded once at bind
+([`REQ-STOR-7-K1J7EA` (Write-behind disk copy loaded once)](../specification/storage/durability.md#req-stor-7-k1j7ea)); everything
+stored is flushed after every signature whose loss could get the node slashed, before it leaves the
+process ([`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](../specification/storage/durability.md#req-stor-8-25d06n)); the
+one disposal closes the medium ([`REQ-STOR-9-ZR8A92` (Closed by the one disposal)](../specification/storage/durability.md#req-stor-9-zr8a92)); a restarted
+participant installs its durable head, reconciles it with one chain read (a failed read fails the
+persistent start), stays `SYNCED`, co-signs no block, countersigns no join and authors no dispute
+from that head until its first sync settles, aborts when that sync fails or no participant answers it, and recovers lost peer writes
+through it
+([`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../specification/storage/durability.md#req-stor-3-4rjger)). Chain-event replay and
+pending-join resume are descoped by Luke (2026-11-02)
+([`FIND-STORAGE-10-G3WFJ8`](../audit/open-findings.md#find-storage-10-g3wfj8)). Strongest rejected
+alternative: synchronous writes on every store operation (one disk commit per write on the state
+mutex path). Persistence is off by default until
+[`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../audit/open-findings.md#find-proof-persistence-1-hyc9ds) is fixed
+([`REQ-STOR-10-XY96KG` (Persistence is opt-in)](../specification/storage/durability.md#req-stor-10-xy96kg)), so a runtime without it
+still restarts as a fresh spectator. Pruning (unbounded memory and disk growth over a channel's
+lifetime) stays open under [`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](../specification/storage/durability.md#req-stor-4-mf6ft6).
+See also the watchtower assumption in
 [security/trust-model.md](../specification/security/trust-model.md).
 
 Related running-node case: when a still-participating node observes a
@@ -211,8 +223,11 @@ one reduce attempt. The intended behavior (fetch from untrusted sources, verify 
 chain anchor, resume) needs an algorithm decision.
 
 Verification deferred on this question (Luke, 2026-10-27):
-[`INV-DISPUTE-PIPE-1-BN0K81.T1.P4`](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81.t1.p4) (an auditor's restart) waits for persistence, because a
-restarted peer comes back as a fresh spectator and resyncs.
+[`INV-DISPUTE-PIPE-1-BN0K81.T1.P4`](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81.t1.p4) (an auditor's restart) waits for the persistence
+restart tests, because a restarted peer without persistence comes back as a fresh spectator and
+resyncs. With persistence a restarted auditor is held at `SYNCED`, audits nothing until its restart
+sync settles, and does not audit the dispute again at release
+([`FIND-STORAGE-13-3A4RES`](../audit/open-findings.md#find-storage-13-3a4res)).
 
 <a id="oq-24-a4xrtb"></a>
 

@@ -12,12 +12,16 @@ progress, not a gate on the already completed targeted-connect result.
 Because promotion happens after the connect result, the case assigns no pending-receipt permutation. The
 related requirement is `REQ-TJOIN-3-DCZKS6`.
 Spectator spawns in this suite go through the shared `addSpectatorAuthoring` helper (`test/harness/JoinActions.test.ts.md`): the spawn runs unawaited while the named participants keep authoring, bounded by literal minimum and maximum block counts, so no spawn or promotion sits inside an idle authoring window.
+The flush-failure case makes the next writer's disk fail every batch and holds the runtime abort that
+failure triggers (`stub.failPersistenceFlushes(true)`), lets it author a block, and reads host-side that the
+stored head is the new block and the VM holds that block's stored state, so the failed flush rolled nothing back.
 
 ## Tests
 
 - `a spectator commit persists state and calls success without signing or gossip`: UNIT-TEST-BLOCK-COMMIT-SERVICE-1-V6TP9S.P3
 - `a commit inserting the spectator promotes it and signs and gossips once`: REQ-GOSSIP-3-HQZNQX.T1.P6, UNIT-TEST-BLOCK-COMMIT-SERVICE-1-V6TP9S.P4
 - `dispute replay with a historical union preserves current off-chain eligibility`: UNIT-TEST-BLOCK-COMMIT-SERVICE-1-V6TP9S.P5
+- `a flush that fails after the block was stored keeps the VM at that block`: REQ-STOR-8-25D06N.T1.P14
 - `an ordinary block from a participant → signed`: none
 - `a block authored by a blacklisted peer → not signed`: none
 - `a SYNCED spectator → not signed`: none

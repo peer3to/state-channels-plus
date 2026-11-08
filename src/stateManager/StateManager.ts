@@ -29,6 +29,7 @@ import BlockValidationStrategy from "./validationStrategy/BlockValidationStrateg
 import CalldataCommittedStrategy from "./validationStrategy/CalldataCommittedStrategy";
 import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidationStrategy";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
+import Clock from "@/Clock";
 import DisputeManager from "@/disputeManager";
 import { EventHandler } from "@/eventHandlers/EventHandler";
 import { createBusPublishingHooks, EventBus } from "@/events/EventBus";
@@ -43,7 +44,6 @@ import type {
 } from "@/rpc/network/registry";
 import StateChannelEventListener from "@/StateChannelEventListener";
 import Storage from "@/storage";
-import { validatePersistedRuntimeState } from "@/storage/persistence/validatePersistedRuntimeState";
 
 import { Status, TimeConfig } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
@@ -144,6 +144,11 @@ class StateManager<
         storage: Storage,
         logger: Logger,
         private readonly disposeRuntime: () => Promise<void>,
+        // binds the channel's disk partition (NULL lets it go); a no-op when
+        // persistence is off
+        private readonly bindPersistence: (
+            channelId: ChannelId
+        ) => Promise<void>,
         localContext: CustomRpcContext,
         customRpc?: CustomRpcConstructor<TCustomRpc, TCustomRpcOptions>,
         customRpcOptions?: TCustomRpcOptions
@@ -437,39 +442,10 @@ class StateManager<
         this.eventSyncService.setChannelId(channelId);
         // a disposed runtime subscribes nothing
         if (this.isDisposed) return;
-        await this.restorePersistedState();
+        // the partition loads before the listener replays chain events
+        await this.bindPersistence(channelId);
+        await this.restoreLocalHead();
         await this.stateChannelEventListener.setChannelId(channelId);
-    }
-
-    /**
-     * Restores what a restart CANNOT get from storage. Every storage collection
-     * (blocks, messages, snapshots, disputes, queues, ...) is already hydrated
-     * by `Storage.bind()`, which runs during host construction before this
-     * StateManager exists - so `validatePersistedRuntimeState` only cross-checks
-     * loaded caches, it never loads. What remains is the process-local state:
-     * the local diamond's VM state, the active fork field, the status (derived,
-     * deliberately never persisted), and the queue's timers.
-     */
-    public async restorePersistedState(): Promise<void> {
-        // memory-only storage has nothing loaded from disk to restore
-        if (!this.storage.getPersistenceLocation()) return;
-        const persisted = validatePersistedRuntimeState(
-            this.storage,
-            this.channelId
-        );
-        if (!persisted) return;
-
-        // TODO(persistence): classify and recover legal forward crash prefixes
-        // from multi-record flows instead of failing every inconsistent prefix.
-        await this.diamondStateMachine.setState(persisted.encodedState);
-        this.forkId = persisted.metadata.activeForkId;
-        const participants = await this.diamondStateMachine.getParticipants();
-        this.setStatus(
-            participants.includes(this.signerAddress)
-                ? Status.PARTICIPATING
-                : Status.SYNCED
-        );
-        await this.blockQueueManager.resumePersistedQueue();
     }
 
     public async clearChannelId(): Promise<void> {
@@ -480,6 +456,8 @@ class StateManager<
         this.disputeManager.setChannelId(NULL);
         this.eventSyncService.setChannelId(NULL);
         await this.stateChannelEventListener.clearChannelId();
+        // the attempt's partition is closed, never deleted
+        await this.bindPersistence(NULL);
     }
 
     public get checksumSignerAddress(): string {
@@ -536,6 +514,90 @@ class StateManager<
         return committed?.onChainTimestamp !== undefined
             ? this.calldataCommittedStrategy
             : this.blockValidationStrategy;
+    }
+
+    /**
+     * Reinstalls the persisted head (the head fork's latest block, or its
+     * genesis) through the normal install, held at `SYNCED` until the restart
+     * sync settles, then reconciles it with the chain: refills the local
+     * mirror, clears a dispute marker whose dispute never landed and re-arms
+     * the calldata post of an own latest block. Restored queue entries wait
+     * out the rest of their window. Nothing persisted -> nothing
+     * to restore; a head this process already installed is live, not restored.
+     */
+    private async restoreLocalHead(): Promise<void> {
+        const forkId = this.storage.stateSnapshots.getHeadForkId();
+        if (this.forkId !== NULL) return;
+        // a partition without a head fork can still hold queued entries
+        if (forkId === undefined)
+            return this.blockQueueManager.armRestoredQueue();
+        const latestBlock = this.storage.blocks.getLatestBlock(forkId);
+        const head = this.storage.getPredecessor(forkId, latestBlock);
+        if (!head)
+            throw new Error(
+                `Persisted head fork ${forkId} has no snapshot and state`
+            );
+        this.logger.info("Restoring the persisted local head", {
+            forkId,
+            height: head.block?.height ?? -1
+        });
+        await this.withMutex(
+            () =>
+                this.stateApplicationService.installRestoredHead(
+                    head.snapshot.toStruct(),
+                    head.state
+                ),
+            { taskName: "restoreLocalHead" }
+        );
+        this.blockQueueManager.armRestoredQueue();
+
+        // the local mirror of the chain's snapshot and dispute windows is
+        // empty after a restart
+        const spectate = this.p2pManager.localRpc.spectateService;
+        await spectate.fetchAndPersistOnChainSnapshot(this.channelId);
+        const disputedForkIds = this.storage.disputes.getDisputedForkIds();
+        const forkIds = [...new Set([forkId, ...disputedForkIds])];
+        const disputeWindows =
+            await spectate.fetchAndPersistOnChainDisputeWindows(
+                this.channelId,
+                forkIds
+            );
+        // a marker whose dispute never landed goes, unless a sent, unmined
+        // transaction may still be that dispute's upload
+        if (
+            disputedForkIds.length &&
+            (await this.signer.getNonce("pending")) <=
+                (await this.signer.getNonce("latest"))
+        ) {
+            for (const [index, disputedForkId] of forkIds.entries()) {
+                const posted = disputeWindows[index].evidence.hasPosted.some(
+                    (address) =>
+                        getChecksumAddress(address) ===
+                        this.checksumSignerAddress
+                );
+                if (
+                    !this.storage.disputes.didIDispute(disputedForkId) ||
+                    posted
+                )
+                    continue;
+                this.logger.info(
+                    "Clearing a dispute marker that never landed",
+                    {
+                        forkId: disputedForkId
+                    }
+                );
+                this.storage.disputes.storeDisputedFork(disputedForkId, false);
+            }
+        }
+
+        // the calldata post of an own block died with the process
+        if (latestBlock?.author === this.signerAddress) {
+            const elapsed = Clock.getTimeInSeconds() - latestBlock.timestamp;
+            this.calldataPostingService.schedulePost(
+                latestBlock,
+                Math.max(0, this.timeConfig.agreementTime - elapsed)
+            );
+        }
     }
 }
 export default StateManager;

@@ -109,6 +109,13 @@ export class DisputeStorage {
         return this.disputedForks.get(forkId) ?? false;
     }
 
+    /** The forks this signer marked as disputed. */
+    public getDisputedForkIds(): ForkId[] {
+        return [...this.disputedForks.entries()]
+            .filter(([, disputed]) => disputed)
+            .map(([forkId]) => forkId);
+    }
+
     // ====================================
     // PRIVATE HELPERS
     // ====================================
