@@ -188,5 +188,6 @@ author is added.
 - `stored forged-inbound proof citing a genuine inbound block still held above the head → constructDispute leaves it out`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P20
 - `stored WrongGenesis proof while the chain holds the fork past genesis → constructDispute leaves it out, author not marked slashed`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P21
 - `stored WrongGenesis proof while the chain still holds the genesis → constructDispute bundles it, author marked slashed`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P22
+- `WrongGenesis proof stored, then the chain passes genesis before dispute() → the empty dispute is refused, nobody slashed`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P23
 - `RaceConditionBlockHeightTooOld on the wait → no rejection, one rebuilt dispute is sent`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P56
 - `RaceConditionBlockHeightTooOld on the apply → consumed, no rejection, no detached error`: UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P14

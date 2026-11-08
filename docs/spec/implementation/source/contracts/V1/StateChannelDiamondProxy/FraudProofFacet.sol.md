@@ -72,6 +72,7 @@ Proof application
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P37` — past genesis, a block 0 with any previous-block hash from an eligible submitter or an outsider: always refused, nobody slashed
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P38` — WrongGenesis citing an unlinked block 0 after block 0's own height-0 snapshot (other data than the genesis) was adopted reverts `RaceConditionBlockHeightTooOld(0, 0)`; nobody is slashed
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P39` — WrongGenesis citing another channel's block 0 is invalid in the context channel: the author is not slashed there, the eligible prover is
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P40` — after a genesis look-alike block-0 snapshot was refused, WrongGenesis citing the honest linked block 0 is still judged at genesis and reverts `RaceConditionDisputeWindowNotOpen`; nobody is slashed
 
 ## UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04
 

@@ -67,6 +67,7 @@ Construction correctness
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P20` — a stored forged-inbound proof citing a genuine inbound block still stored above the snapshot's inbound head is left out and its target is not added
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P21` — a stored WrongGenesis proof while the chain holds its fork past genesis is left out and its target is not added
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P22` — a stored WrongGenesis proof while the chain still holds the fork's genesis is bundled and its target is added
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P23` — a stored WrongGenesis proof that was the dispute's only reason, with the chain past genesis before `dispute()`: the proof is left out, the upload asks for an existing window, the chain refuses it `RaceConditionDisputeWindowNotOpen`, nobody is slashed and the fork is not left disputed
 
 ## UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ
 

@@ -1,7 +1,7 @@
 # FraudProofFacetWrongGenesisPastGenesis.t.sol
 
 Test file: [test/V1/StateChannelDiamondProxy/FraudProofFacetWrongGenesisPastGenesis.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/FraudProofFacetWrongGenesisPastGenesis.t.sol)
-Exercises: [FraudProofFacet.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol.md)
+Exercises: [FraudProofFacet.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol.md), [StateSnapshotFacet.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md)
 
 ## Overview
 
@@ -18,7 +18,9 @@ an unlinked block 0 from an eligible submitter and a linked one from an outsider
 `RaceConditionBlockHeightTooOld(1, 0)` with the exact payload, and nobody is slashed. One fuzz case
 spans any previous-block hash with either submitter past genesis: always refused, nobody slashed.
 Adopting block 0's own height-0 snapshot, whose data differs from the genesis data, also counts as
-past genesis: the proof reverts `RaceConditionBlockHeightTooOld(0, 0)`. A block 0 of a second
+past genesis: the proof reverts `RaceConditionBlockHeightTooOld(0, 0)`. A block-0 snapshot with the genesis data
+(only the timestamp differs) is refused by `updateStateSnapshotSameFork`, so the chain keeps the genesis
+and the honest linked block 0 slashes nobody. A block 0 of a second
 channel, applied in this channel's context, is an invalid proof here: its author is not slashed in
 this channel and the eligible prover is.
 
@@ -30,4 +32,5 @@ this channel and the eligible prover is.
 - `test_applyFraudProofs_linkedBlockZeroPastGenesisFromOutsider_revertsAndSlashesNobody`: INV-ENFFP-1-BGVZN4.T1.P23, UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P36
 - `testFuzz_applyFraudProofs_blockZeroPastGenesisNeverSlashes`: UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P37
 - `test_applyFraudProofs_unlinkedBlockZeroPastGenesisAtHeightZero_revertsAndSlashesNobody`: UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P38
+- `test_updateStateSnapshotSameFork_genesisLookalikeAtHeightZero_refusedAndHonestBlockZeroKept`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P48, UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P40
 - `test_applyFraudProofs_blockZeroOfAnotherChannel_neverSlashesItsAuthorInThisChannel`: UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P39

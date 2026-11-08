@@ -92,6 +92,21 @@ contract FraudProofFacetWrongGenesisPastGenesisTest is DiamondHarness {
         _assertNobodySlashed();
     }
 
+    // block 0 left the state data unchanged -> its snapshot still looks like the genesis, so the chain refuses it
+    // and keeps judging the fork at genesis, where the honest linked block 0 slashes nobody
+    function test_updateStateSnapshotSameFork_genesisLookalikeAtHeightZero_refusedAndHonestBlockZeroKept() public {
+        vm.expectRevert(abi.encodeWithSelector(RaceConditionBlockHeightTooOld.selector, 0, 0));
+        _postBlockZeroSnapshot(genesis.snapshotData.stateMachineStateHash);
+        assertEq(
+            keccak256(abi.encode(diamond.getStateSnapshot(CHANNEL))), keccak256(abi.encode(genesis)), "genesis kept"
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(RaceConditionDisputeWindowNotOpen.selector, CHANNEL, bytes32(0)));
+        _applyWrongGenesis(bob, _blockZero(keccak256(abi.encode(genesis))));
+
+        _assertNobodySlashed();
+    }
+
     // judged in one channel, slashed in the context's -> another channel's block 0 is an invalid proof here
     function test_applyFraudProofs_blockZeroOfAnotherChannel_neverSlashesItsAuthorInThisChannel() public {
         bytes32 otherChannel = keccak256("wrong-genesis-other-channel");
@@ -119,8 +134,16 @@ contract FraudProofFacetWrongGenesisPastGenesisTest is DiamondHarness {
 
     /// same-fork adoption of block 0's own snapshot: height 0, with state data other than the genesis'
     function _adoptBlockZeroSnapshot() internal {
+        _postBlockZeroSnapshot(keccak256("block 0 state"));
+        StateSnapshot memory snapshot = diamond.getStateSnapshot(CHANNEL);
+        assertEq(snapshot.blockHeight, 0, "block 0's snapshot adopted");
+        assertTrue(snapshot.forkId != keccak256(abi.encode(snapshot.snapshotData)), "not a genesis");
+    }
+
+    /// posts block 0's own snapshot, height 0 with `stateMachineStateHash`, as a same-fork update
+    function _postBlockZeroSnapshot(bytes32 stateMachineStateHash) internal {
         StateSnapshot memory blockZeroSnapshot = genesis;
-        blockZeroSnapshot.snapshotData.stateMachineStateHash = keccak256("block 0 state");
+        blockZeroSnapshot.snapshotData.stateMachineStateHash = stateMachineStateHash;
         blockZeroSnapshot.timestamp = genesis.timestamp + 1;
 
         Block memory blockZero;
@@ -137,9 +160,6 @@ contract FraudProofFacetWrongGenesisPastGenesisTest is DiamondHarness {
         StateSnapshot[] memory snapshots = new StateSnapshot[](1);
         snapshots[0] = blockZeroSnapshot;
         diamond.updateStateSnapshotSameFork(CHANNEL, proofs, snapshots, new MessageBlock[](0));
-        StateSnapshot memory snapshot = diamond.getStateSnapshot(CHANNEL);
-        assertEq(snapshot.blockHeight, 0, "block 0's snapshot adopted");
-        assertTrue(snapshot.forkId != keccak256(abi.encode(snapshot.snapshotData)), "not a genesis");
     }
 
     /// alice's signed block 0 on the genesis fork with `previousBlockHash`
