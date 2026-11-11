@@ -14,8 +14,8 @@ const {
     parseChunkFileName,
     isSafeSeq,
     decodeChunk,
-    encodeChunk,
-    mergeChunks
+    mergeEncodedEntries,
+    writeEncodedChunk
 } = require("./logChunks");
 
 // bounds what merge-on-read has to inflate; the client store is 10 MB raw
@@ -588,7 +588,22 @@ app.get("/logs/:channelId/:peerAddress/:threadName", async (req, res) => {
     await sendMergedChunks(req, res, req.params.threadName);
 });
 
+// one merged read at a time: each holds a peer's whole inflated log while it
+// sorts, so parallel reads multiply the server's peak memory
+let mergedReadTurn = Promise.resolve();
+
+// a client that stops reading would hold the merged read turn for good
+const MERGED_READ_TIMEOUT_MS = 120_000;
+
+function takeMergedReadTurn() {
+    const previous = mergedReadTurn;
+    let release;
+    mergedReadTurn = new Promise((resolve) => (release = resolve));
+    return previous.then(() => release);
+}
+
 async function sendMergedChunks(req, res, threadName) {
+    let release;
     try {
         const { channelId, peerAddress } = req.params;
         const { dir: channelDir } = await resolveChannelDir(channelId);
@@ -606,20 +621,37 @@ async function sendMergedChunks(req, res, threadName) {
             return;
         }
 
-        const merged = mergeChunks(perThread);
-        res.setHeader("Content-Type", "text/plain");
+        release = await takeMergedReadTurn();
+        // gone while it waited for the turn -> skip its merge
+        if (res.destroyed) return;
+        res.setTimeout(MERGED_READ_TIMEOUT_MS, () => {
+            console.warn(
+                `[CrashLogServer] Merged read stalled past ${MERGED_READ_TIMEOUT_MS}ms channelId=${channelId} peer=${peerAddress}; dropping it`
+            );
+            res.destroy();
+        });
+        const { encodedEntries, skippedChunks } =
+            mergeEncodedEntries(perThread);
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
         // a short log must announce itself: the body is a plain blob, so the
         // count of dropped chunks rides on a header
-        if (mergeChunks.lastSkippedChunks > 0) {
-            res.setHeader(
-                "x-skipped-chunks",
-                String(mergeChunks.lastSkippedChunks)
-            );
+        if (skippedChunks > 0) {
+            res.setHeader("x-skipped-chunks", String(skippedChunks));
         }
-        res.send(encodeChunk(merged));
+        await writeEncodedChunk(encodedEntries, res);
     } catch (err) {
-        console.error("[CrashLogServer] Retrieve failed:", err);
+        // a client that went away is not a server failure
+        if (err?.code !== "ERR_STREAM_PREMATURE_CLOSE") {
+            console.error("[CrashLogServer] Retrieve failed:", err);
+        }
+        // failed mid-body -> a cut connection, never a 200 that looks whole
+        if (res.headersSent) {
+            res.destroy();
+            return;
+        }
         res.status(500).json({ error: "Internal server error" });
+    } finally {
+        release?.();
     }
 }
 

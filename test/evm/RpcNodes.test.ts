@@ -20,8 +20,8 @@ import {
     assertDestroyRejectsWaitingRead,
     assertNodeOnAnotherChainRefused,
     assertSilentNodeMarkedDeadAndReadFailsOver,
-    assertStartupDoesNotWaitForASilentNode,
     assertStopReconnectingRejectsWaitingRead,
+    assertStartupDoesNotWaitForASilentNode,
     assertTransactionFailsOverAfterFirstNodeForwardedIt,
     assertTransactionWaitResolvesAfterReconnect,
     assertDestroyFailsHeldRequest,
@@ -31,6 +31,10 @@ import {
     assertNodeInternalErrorFailsCallOver,
     assertNodeInternalErrorFinalWithoutConnectedNextNode,
     assertNodeInternalErrorOfEveryNodeIsFinal,
+    assertMissingLatestBlockFailsOver,
+    assertMissingLatestBlockOfEveryNodeIsFinal,
+    assertMissingLatestBlockOfEveryNodeRetriedOnce,
+    assertMissingNumberedBlockIsAnswer,
     assertReadFailsOverWhenNodeDropsMidRequest,
     assertReadsFailOverToNextNode,
     assertRefusedNodeKeepsReconnecting,
@@ -161,6 +165,22 @@ describe("MultiRpcProvider", () => {
 
     it("rejects a call with the internal error at once when no other node is connected", async () => {
         await assertNodeInternalErrorFinalWithoutConnectedNextNode();
+    });
+
+    it("fails a latest block read over to the next node when the first answers with no block", async () => {
+        await assertMissingLatestBlockFailsOver();
+    });
+
+    it("answers a latest block read on a second pass when every node first answers with no block", async () => {
+        await assertMissingLatestBlockOfEveryNodeRetriedOnce();
+    });
+
+    it("rejects a latest block read when every node answers with no block twice", async () => {
+        await assertMissingLatestBlockOfEveryNodeIsFinal();
+    });
+
+    it("answers a block read by an unmined number with no block without failing over", async () => {
+        await assertMissingNumberedBlockIsAnswer();
     });
 
     it("warns once per outage of every node and again after a reconnect", async () => {

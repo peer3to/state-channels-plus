@@ -5,15 +5,15 @@
 ## Requirements
 
 - [`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../../../../../../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)
-  Partial: `forward` fails over only on a dropped socket and on a read's internal error without revert data; a node's rate-limit answer or an answer from a node behind the requested block is final, and fatal for the runtime ([`FIND-RPC-8-59FKS6`](../../../../../../audit/open-findings.md#find-rpc-8-59fks6)).
+  Partial: `forward` fails over only on a dropped socket, on a read's internal error without revert data and on the latest block read answered with no block (one more pass after `MISSING_LATEST_BLOCK_RETRY_MS` when every node answers it so); a node's rate-limit answer or an answer from a node behind the requested block is final, and fatal for the runtime ([`FIND-RPC-8-59FKS6`](../../../../../../audit/open-findings.md#find-rpc-8-59fks6)).
 - [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../../../../../../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)
 
 ## UNIT-TEST-MULTI-RPC-1-SVGGZ5
 
 Request routing and failover
 
-- Setup: Two real nodes behind cuttable proxies of one private chain; reads, transactions, block subscriptions and contract-log subscriptions on a log-emitting contract; a proxy can answer a request, unforwarded, with the JSON-RPC internal error, without revert data or carrying revert data `0x` as Hardhat answers a revert; a proxy can be cut while the other answers.
-- Oracle: The proxies record which node received each method; answers equal the node's own; no transaction reaches a second node while the first is connected, also when the first answers it with its internal error; a read answered with the internal error without revert data goes to the next connected node, and with no other node connected it rejects at once; an internal error carrying revert data is final; block events and logs come from the node sockets without polling, each once, as logs bound to this provider; removing the last log listener sends one `eth_unsubscribe` to every node.
+- Setup: Two real nodes behind cuttable proxies of one private chain; reads, transactions, block subscriptions and contract-log subscriptions on a log-emitting contract; a proxy can answer a request, unforwarded, with the JSON-RPC internal error, without revert data or carrying revert data `0x` as Hardhat answers a revert; a proxy can answer a method, unforwarded, with a fixed result once or every time; a proxy can be cut while the other answers.
+- Oracle: The proxies record which node received each method; answers equal the node's own; no transaction reaches a second node while the first is connected, also when the first answers it with its internal error; a read answered with the internal error without revert data goes to the next connected node, and with no other node connected it rejects at once; an internal error carrying revert data is final; the latest block read answered with no block goes to the next node, gets one more pass when every node answers it so, and then rejects, while a block read by an unmined number answered with no block is the answer; block events and logs come from the node sockets without polling, each once, as logs bound to this provider; removing the last log listener sends one `eth_unsubscribe` to every node.
 
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P1` — transaction to the first node only
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P2` — transaction fails over while the first is cut
@@ -38,3 +38,7 @@ Request routing and failover
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P21` — a transaction answered with the first node's internal error rejects with it, and the second node never receives it
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P22` — a call answered with the first node's internal error carrying revert data rejects as a `CALL_EXCEPTION`, and the second node is not asked
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P23` — a call answered with the first node's internal error while the second node is cut rejects as a `CALL_EXCEPTION` within the absence window, without waiting for a reconnect
+- [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P24` — the latest block read answered with no block by the first node fails over to the second node
+- [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P25` — the latest block read answered with no block by both nodes once is answered on a second pass
+- [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P26` — the latest block read answered with no block by both nodes twice rejects as `UNKNOWN_ERROR`
+- [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P27` — a block read by an unmined number answered with no block is returned, and the second node is not asked

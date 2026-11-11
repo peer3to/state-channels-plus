@@ -1255,6 +1255,66 @@ export async function assertNodeInternalErrorFinalWithoutConnectedNextNode(): Pr
     });
 }
 
+export async function assertMissingLatestBlockFailsOver(): Promise<void> {
+    await withProxiedNodes(2, async ({ proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        proxies[0].answerRequests("eth_getBlockByNumber", null);
+
+        const block = await provider.getBlock("latest");
+
+        expect(block).to.not.equal(null);
+        expect(proxies[0].forwardedCount("eth_getBlockByNumber")).to.equal(1);
+        expect(proxies[1].forwardedCount("eth_getBlockByNumber")).to.equal(1);
+    });
+}
+
+export async function assertMissingLatestBlockOfEveryNodeIsFinal(): Promise<void> {
+    await withProxiedNodes(2, async ({ proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        for (const proxy of proxies)
+            proxy.answerRequests("eth_getBlockByNumber", null);
+
+        const error = await provider.getBlock("latest").then(
+            () => undefined,
+            (failure: unknown) => failure
+        );
+
+        expect(isError(error, "UNKNOWN_ERROR")).to.equal(true);
+        // one more pass after a pause, then the failure is final
+        expect(
+            proxies.map((proxy) => proxy.forwardedCount("eth_getBlockByNumber"))
+        ).to.deep.equal([2, 2]);
+    });
+}
+
+export async function assertMissingLatestBlockOfEveryNodeRetriedOnce(): Promise<void> {
+    await withProxiedNodes(2, async ({ proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        for (const proxy of proxies)
+            proxy.answerNextRequest("eth_getBlockByNumber", null);
+
+        const block = await provider.getBlock("latest");
+
+        expect(block).to.not.equal(null);
+        expect(
+            proxies.map((proxy) => proxy.forwardedCount("eth_getBlockByNumber"))
+        ).to.deep.equal([2, 1]);
+    });
+}
+
+export async function assertMissingNumberedBlockIsAnswer(): Promise<void> {
+    await withProxiedNodes(2, async ({ proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+
+        const block = await provider.getBlock(1_000_000);
+
+        expect(block).to.equal(null);
+        expect(
+            proxies.map((proxy) => proxy.forwardedCount("eth_getBlockByNumber"))
+        ).to.deep.equal([1, 0]);
+    });
+}
+
 export async function assertOneWarningPerOutageOfEveryNode(): Promise<void> {
     await withIsolatedHardhatNode(async (node) => {
         const nodeUrl = node._getConnection().url;

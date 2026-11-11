@@ -1,8 +1,12 @@
 /**
  * chunk naming / decoding / merging, shared by the crash-log server and its
- * tests. CommonJS and fflate-only, since the server is a plain node script.
+ * tests. CommonJS, fflate and node's own modules only, since the server is a
+ * plain node script.
  */
 
+const { Readable, Transform } = require("node:stream");
+const { pipeline } = require("node:stream/promises");
+const zlib = require("node:zlib");
 const { compressSync, Decompress, strToU8, strFromU8 } = require("fflate");
 
 // wide enough that seq never overflows the padding -> lexical sort is numeric
@@ -90,7 +94,8 @@ function mergeBudget() {
     return { remaining: maxInflatedBytes() * MERGE_CHUNK_BUDGET };
 }
 
-function decodeChunkWithin(base64, budget) {
+/** base64 -> gunzip -> the chunk's per-entry JSON strings, still encoded */
+function decodeEncodedEntriesWithin(base64, budget) {
     const bytes = Uint8Array.from(Buffer.from(String(base64), "base64"));
     const inflated = inflateBounded(
         bytes,
@@ -101,23 +106,25 @@ function decodeChunkWithin(base64, budget) {
     if (!Array.isArray(parsed)) {
         throw new Error("Chunk is not an array of encoded log entries");
     }
-    return parsed.map((encodedEntry) => JSON.parse(encodedEntry));
+    return parsed;
 }
 
 /** base64 -> gunzip -> array of per-entry JSON strings, as decodeLogs does */
 function decodeChunk(base64) {
-    return decodeChunkWithin(base64, mergeBudget());
+    return decodeEncodedEntriesWithin(base64, mergeBudget()).map(
+        (encodedEntry) => JSON.parse(encodedEntry)
+    );
 }
 
-/** the inverse -> a merged read comes back in the format clients decode */
+/** the inverse, as a client uploads a chunk */
 function encodeChunk(entries) {
     const json = JSON.stringify(entries.map((entry) => JSON.stringify(entry)));
     return Buffer.from(compressSync(strToU8(json))).toString("base64");
 }
 
 function compareMergedEntries(left, right) {
-    const leftWall = Number(left.entry.wallTimeMs);
-    const rightWall = Number(right.entry.wallTimeMs);
+    const leftWall = Number(left.wallTimeMs);
+    const rightWall = Number(right.wallTimeMs);
     if (Number.isFinite(leftWall) && Number.isFinite(rightWall)) {
         if (leftWall !== rightWall) return leftWall - rightWall;
     } else if (Number.isFinite(leftWall) !== Number.isFinite(rightWall)) {
@@ -125,8 +132,8 @@ function compareMergedEntries(left, right) {
         return Number.isFinite(leftWall) ? 1 : -1;
     }
 
-    const leftTime = Number(left.entry.time);
-    const rightTime = Number(right.entry.time);
+    const leftTime = Number(left.time);
+    const rightTime = Number(right.time);
     if (
         Number.isFinite(leftTime) &&
         Number.isFinite(rightTime) &&
@@ -145,14 +152,18 @@ function compareMergedEntries(left, right) {
 }
 
 /**
- * merge every thread's chunks into one ordered stream. `perThread` is
+ * merge every thread's chunks into one ordered stream of per-entry JSON
+ * strings, with the count of chunks skipped. `perThread` is
  * `{ [thread]: [{ fromSeq, toSeq, base64 }, ...] }`, ascending.
  *
  * de-duped by `(thread, fromSeq + index)`, later chunk wins -> a lost 2xx makes
  * the client re-send an overlapping range. an undecodable or oversized chunk is
  * skipped so one bad chunk can't fail the read.
+ *
+ * an entry stays encoded and is parsed only for its checks and sort keys: a
+ * peer's whole log held as objects is two orders of magnitude its stored size
  */
-function mergeChunks(perThread) {
+function mergeEncodedEntries(perThread) {
     const byKey = new Map();
     const budget = mergeBudget();
     let skipped = 0;
@@ -161,7 +172,17 @@ function mergeChunks(perThread) {
         for (const chunk of chunks || []) {
             let entries;
             try {
-                entries = decodeChunkWithin(chunk.base64, budget);
+                entries = decodeEncodedEntriesWithin(chunk.base64, budget).map(
+                    (encoded) => {
+                        const entry = JSON.parse(encoded);
+                        return {
+                            encoded,
+                            isDecodable: isDecodableEntry(entry),
+                            wallTimeMs: entry?.wallTimeMs,
+                            time: entry?.time
+                        };
+                    }
+                );
             } catch {
                 skipped += 1;
                 continue;
@@ -170,11 +191,13 @@ function mergeChunks(perThread) {
             entries.forEach((entry, index) => {
                 // dropped here, not at decode: the index still has to line up
                 // with the declared range, and a bad entry must not 400 a chunk
-                if (!isDecodableEntry(entry)) return;
+                if (!entry.isDecodable) return;
                 const seq = chunk.fromSeq + index;
                 // seq restarts per store -> the store is part of the identity
                 byKey.set(`${threadName}:${storeId}:${seq}`, {
-                    entry,
+                    encoded: entry.encoded,
+                    wallTimeMs: entry.wallTimeMs,
+                    time: entry.time,
                     threadName,
                     storeId,
                     seq
@@ -190,13 +213,63 @@ function mergeChunks(perThread) {
         );
     }
 
-    const entries = Array.from(byKey.values())
-        .sort(compareMergedEntries)
-        .map((item) => item.entry);
-    // the caller has to be able to say the log is short; a quietly truncated
-    // read looks identical to a complete one
-    mergeChunks.lastSkippedChunks = skipped;
-    return entries;
+    return {
+        encodedEntries: Array.from(byKey.values())
+            .sort(compareMergedEntries)
+            .map((item) => item.encoded),
+        // the caller has to be able to say the log is short; a quietly
+        // truncated read looks identical to a complete one
+        skippedChunks: skipped
+    };
+}
+
+/** the merged stream as entries */
+function mergeChunks(perThread) {
+    const { encodedEntries, skippedChunks } = mergeEncodedEntries(perThread);
+    mergeChunks.lastSkippedChunks = skippedChunks;
+    return encodedEntries.map((encoded) => JSON.parse(encoded));
+}
+
+/**
+ * writes encoded entries to `out` as one chunk, compressed and base64'd as
+ * they go: a whole merged log as one string, then as bytes, then compressed,
+ * is several times its inflated size at once
+ */
+function writeEncodedChunk(encodedEntries, out) {
+    return pipeline(
+        Readable.from(jsonArrayPieces(encodedEntries)),
+        zlib.createGzip(),
+        base64Encoder(),
+        out
+    );
+}
+
+function* jsonArrayPieces(encodedEntries) {
+    if (encodedEntries.length === 0) {
+        yield "[]";
+        return;
+    }
+    for (let i = 0; i < encodedEntries.length; i++) {
+        yield (i === 0 ? "[" : ",") + JSON.stringify(encodedEntries[i]);
+    }
+    yield "]";
+}
+
+// base64 in pieces: each piece but the last carries a multiple of 3 bytes, so
+// the concatenation is the base64 of the whole stream
+function base64Encoder() {
+    let rest = Buffer.alloc(0);
+    return new Transform({
+        transform(bytes, _encoding, done) {
+            const all = Buffer.concat([rest, bytes]);
+            const whole = all.length - (all.length % 3);
+            rest = all.subarray(whole);
+            done(null, all.subarray(0, whole).toString("base64"));
+        },
+        flush(done) {
+            done(null, rest.toString("base64"));
+        }
+    });
 }
 
 module.exports = {
@@ -206,5 +279,7 @@ module.exports = {
     isSafeSeq,
     decodeChunk,
     encodeChunk,
-    mergeChunks
+    mergeChunks,
+    mergeEncodedEntries,
+    writeEncodedChunk
 };

@@ -7,7 +7,8 @@ Test file: [test/scripts/crashLogServer.test.ts](../../../../../../test/scripts/
 The suite exercises the crash-log receiver script: its path-segment sanitizer, its upload body
 validation, and the POST and GET routes end to end on a real listening app with a temporary log
 directory. Route oracles are HTTP statuses and the decoded merged read. It covers a chunk stored and
-read back; two stores with the same sequence range kept apart; eight concurrent uploads for one
+read back; a client that leaves a large merged read mid-body raising no unhandled rejection while
+the next read of the same log still answers whole; two stores with the same sequence range kept apart; eight concurrent uploads for one
 channel landing in one directory; a merged read that runs out of inflate budget dropping the oldest
 run and announcing the drop on a header; the index listing; and, with a token configured, a send
 with no token or the wrong one refused and not stored while a later valid send is accepted.
@@ -24,6 +25,7 @@ with no token or the wrong one refused and not stored while a later valid send i
 - `rejects a chunk whose entry count disagrees with its range`: none
 - `rejects a body with no thread name`: none
 - `stores an uploaded chunk and reads it back merged`: none
+- `serves the next merged read, with no unhandled rejection, after a client leaves one mid-body`: none
 - `keeps two stores with the same sequence range apart`: REQ-LOG-6-Q8KY4N.T1.P4
 - `keeps concurrent uploads for one channel in a single directory`: REQ-LOG-5-ST6S0G.T1.P4
 - `keeps the newest store when a merged read runs out of budget`: REQ-LOG-7-M2RC5W.T1.P2

@@ -273,7 +273,7 @@ Specification cases tested: 0/4.
 Specification cases tested: 11/11.
 
 [`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)
-Specification cases tested: 17/17.
+Specification cases tested: 21/21.
 
 [`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)
 Specification cases tested: 33/33.

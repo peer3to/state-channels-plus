@@ -10,8 +10,10 @@ import {
     uploadBody
 } from "@test/fixtures/logging/crashLogServer.fixture";
 import { expect } from "chai";
+import { randomBytes } from "node:crypto";
+import { once } from "node:events";
 import { mkdirSync, readdirSync, rmSync, utimesSync } from "node:fs";
-import type { Server } from "node:http";
+import { get, type Server } from "node:http";
 import path from "path";
 
 const {
@@ -158,6 +160,50 @@ describe("crash-log-server routes", function () {
             "entry 1",
             "entry 2"
         ]);
+    });
+
+    // a merged read streams its body: a client gone mid-body must neither take
+    // the server down nor keep the merged read turn from the next read
+    it("serves the next merged read, with no unhandled rejection, after a client leaves one mid-body", async function () {
+        const channelId = "0x" + "56".repeat(32);
+        const peerAddress = "0x" + "9a".repeat(20);
+        // random stacks do not compress: the body outgrows the socket buffers
+        const entries = logEntries(2_500).map((entry) => ({
+            ...(entry as object),
+            stack: randomBytes(1_400).toString("hex")
+        }));
+        expect(
+            await upload(
+                uploadBody({
+                    channelId,
+                    peerAddress,
+                    compressedLogs: encodeChunk(entries),
+                    toSeq: entries.length - 1
+                })
+            )
+        ).to.equal(200);
+        const url = `${baseUrl}/logs/${channelId}/${peerAddress}`;
+        // the deployed server has no handler: an unhandled rejection exits it
+        const unhandled: unknown[] = [];
+        const record = (reason: unknown) => unhandled.push(reason);
+        process.on("unhandledRejection", record);
+        try {
+            const left = get(url);
+            const [response] = (await once(left, "response")) as [
+                NodeJS.ReadableStream
+            ];
+            await once(response, "data");
+            left.destroy();
+
+            const read = await fetch(url);
+            expect(read.status).to.equal(200);
+            expect(decodeChunk(await read.text())).to.have.length(
+                entries.length
+            );
+        } finally {
+            process.off("unhandledRejection", record);
+        }
+        expect(unhandled).to.deep.equal([]);
     });
 
     it("keeps two stores with the same sequence range apart", async function () {
