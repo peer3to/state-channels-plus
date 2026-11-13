@@ -1,37 +1,37 @@
-import { Address, Hash } from "@/types/types";
+import {
+    PersistentCollection,
+    type PersistenceController
+} from "./persistence";
+import type { Address, Hash } from "@/types/types";
 import { hash } from "@/utils";
-import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import type { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 export class FraudProofStorage {
     // ====================================
     // STORAGE MAPS
     // ====================================
-    private fraudProofs: Map<Hash, FraudProofStruct> = new Map(); // key: fraudProofId
-    private participantToProofs: Map<Address, Set<Hash>> = new Map(); // participant -> set of fraud proof IDs
+    private readonly fraudProofs: PersistentCollection<Hash, FraudProofStruct>;
+    private readonly participantToProofs = new Map<Address, Set<Hash>>();
 
-    constructor() {}
+    constructor(controller?: PersistenceController) {
+        this.fraudProofs = new PersistentCollection(
+            "fraudProofs",
+            controller,
+            () => this.rebuildIndexes()
+        );
+    }
 
     // ====================================
     // CREATE
     // ====================================
 
-    storeFraudProof(fraudProof: FraudProofStruct): Hash {
+    public storeFraudProof(fraudProof: FraudProofStruct): Hash {
         const proofHash = hash(fraudProof.encodedProof);
-
-        const existing = this.fraudProofs.get(proofHash);
-        if (existing) {
-            return proofHash;
-        }
-
-        // Store the fraud proof
-        this.fraudProofs.set(proofHash, fraudProof);
-
-        // Index by participant
-        if (!this.participantToProofs.has(fraudProof.participant)) {
-            this.participantToProofs.set(fraudProof.participant, new Set());
-        }
-        this.participantToProofs.get(fraudProof.participant)!.add(proofHash);
-
+        // Store the fraud proof; a stored one is kept as is
+        this.fraudProofs.update(
+            proofHash,
+            (existing) => existing ?? fraudProof
+        );
         return proofHash;
     }
 
@@ -42,18 +42,30 @@ export class FraudProofStorage {
     /**
      * Get all fraud proofs for a specific participant
      */
-    getFraudProofForParticipant(
+    public getFraudProofForParticipant(
         participant: Address
     ): FraudProofStruct | undefined {
-        const proofIds = this.participantToProofs.get(participant);
-        if (!proofIds || proofIds.size === 0) {
-            return undefined;
-        }
-        const firstId = proofIds.values().next().value;
-        return this.fraudProofs.get(firstId!);
+        const proofIds = this.participantToProofs.get(
+            String(participant).toLowerCase() as Address
+        );
+        const firstId = proofIds?.values().next().value;
+        return firstId ? this.fraudProofs.get(firstId) : undefined;
     }
 
-    getFraudProofByHash(proofHash: Hash): FraudProofStruct | undefined {
+    public getFraudProofByHash(proofHash: Hash): FraudProofStruct | undefined {
         return this.fraudProofs.get(proofHash);
+    }
+
+    public rebuildIndexes(): void {
+        this.participantToProofs.clear();
+        for (const [proofHash, proof] of this.fraudProofs.entries()) {
+            const participant = String(
+                proof.participant
+            ).toLowerCase() as Address;
+            const hashes =
+                this.participantToProofs.get(participant) ?? new Set<Hash>();
+            hashes.add(proofHash);
+            this.participantToProofs.set(participant, hashes);
+        }
     }
 }

@@ -55,7 +55,9 @@ drives, so they stay unassigned.
 - `should return undefined when storing different blocks with same coordinates`: REQ-BLKSTORE-1-KYHTWT.T1.P1, UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P3
 - `should not store conflicting block in coordinates map`: REQ-BLKSTORE-1-KYHTWT.T1.P3
 - `should return hash when storing block with same hash but different coordinates`: none
-- `should maintain reference equality between hash and coordinates maps`: none
+- `keeps the tip when a held block is stored again normally`: none
+- `moves the tip when a normal block is held again`: none
+- `should apply a signature inserted by coordinates to the block read by hash`: none
 - `should update max height when adding block with higher height`: REQ-BLKSTORE-3-S9V2KC.T1.P1, UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P1
 - `should not update max height when adding block with lower height`: UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P4
 - `should handle multiple forks independently`: none
