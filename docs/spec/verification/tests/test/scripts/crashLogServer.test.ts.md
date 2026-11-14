@@ -11,7 +11,7 @@ read back; a client that leaves a large merged read mid-body raising no unhandle
 the next read of the same log still answers whole; two stores with the same sequence range kept apart; eight concurrent uploads for one
 channel landing in one directory; a merged read that runs out of inflate budget dropping the oldest
 run and announcing the drop on a header; a real uploader whose delta is measured past a lowered 0.25 MB server limit getting every chunk accepted and the merged read returning every entry
-in order; the index listing; and, with a token configured, a send
+in order; a chunk of random base64 just under the 10 MiB inflate limit, over 8 MiB once packed, accepted with 200; the index listing; and, with a token configured, a send
 with no token or the wrong one refused and not stored while a later valid send is accepted.
 
 ## Tests
@@ -31,6 +31,7 @@ with no token or the wrong one refused and not stored while a later valid send i
 - `keeps concurrent uploads for one channel in a single directory`: REQ-LOG-5-ST6S0G.T1.P4
 - `keeps the newest store when a merged read runs out of budget`: REQ-LOG-7-M2RC5W.T1.P2
 - `accepts every chunk of a delta the uploader splits at the server's limit`: REQ-LOG-7-M2RC5W.T1.P8
+- `accepts a chunk that does not compress, up to the inflate limit`: REQ-LOG-7-M2RC5W.T1.P10
 - `lists stored chunks in the index`: none
 - `refuses an upload with no token`: REQ-LOG-7-M2RC5W.T1.P4
 - `refuses an upload with the wrong token`: REQ-LOG-7-M2RC5W.T1.P5

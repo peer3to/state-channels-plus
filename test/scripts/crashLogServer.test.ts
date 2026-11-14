@@ -372,6 +372,28 @@ describe("crash-log-server routes", function () {
         ).to.deep.equal(messages);
     });
 
+    it("accepts a chunk that does not compress, up to the inflate limit", async function () {
+        // random base64 barely compresses: packed, the chunk stays about as
+        // large as unpacked, a third larger once base64'd for the body
+        const entries = logEntries(145).map((entry) => ({
+            ...(entry as Record<string, unknown>),
+            message: randomBytes(48 * 1024).toString("base64")
+        }));
+        const compressedLogs = encodeChunk(entries);
+
+        expect(compressedLogs.length).to.be.above(8 * 1024 * 1024);
+        expect(
+            await upload(
+                uploadBody({
+                    channelId: "0x" + "6e".repeat(32),
+                    compressedLogs,
+                    fromSeq: 0,
+                    toSeq: entries.length - 1
+                })
+            )
+        ).to.equal(200);
+    });
+
     it("lists stored chunks in the index", async function () {
         const body = uploadBody({ channelId: "0x" + "56".repeat(32) });
 

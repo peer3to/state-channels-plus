@@ -277,6 +277,7 @@ module.exports = {
     chunkFileName,
     parseChunkFileName,
     isSafeSeq,
+    maxInflatedBytes,
     decodeChunk,
     encodeChunk,
     mergeChunks,
