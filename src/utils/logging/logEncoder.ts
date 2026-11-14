@@ -195,8 +195,35 @@ export function decodeLogEntry(encodedLogEntry: string): LogEntry {
     };
 }
 
-export function compressToBase64(json: string) {
-    const compressed = compressSync(strToU8(json));
+/**
+ * A chunk of entries as the server inflates it: the UTF-8 bytes of
+ * {@link encodeLogs}. Its length is what the server's size limit counts.
+ */
+export function encodeLogChunk(logs: LogEntry[]): Uint8Array {
+    return strToU8(encodeLogs(logs));
+}
+
+/**
+ * `entry` cut down so a chunk of it alone is at most `maxBytes`: its message
+ * and stack keep their start, the message says how large the entry was, and
+ * its meta is dropped.
+ */
+export function trimLogEntry(entry: LogEntry, maxBytes: number): LogEntry {
+    const note = ` [trimmed from ${encodeLogChunk([entry]).length} bytes]`;
+    for (let kept = Math.floor(maxBytes / 4); ; kept = Math.floor(kept / 2)) {
+        const trimmed = {
+            ...entry,
+            message: entry.message.slice(0, kept) + note,
+            meta: [],
+            stack: entry.stack.slice(0, kept)
+        };
+        if (kept === 0 || encodeLogChunk([trimmed]).length <= maxBytes)
+            return trimmed;
+    }
+}
+
+export function compressToBase64(chunk: Uint8Array) {
+    const compressed = compressSync(chunk);
     return Buffer.from(compressed).toString("base64");
 }
 

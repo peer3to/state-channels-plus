@@ -2,7 +2,10 @@ import { LogUploader } from "@/utils/logging/LogUploader";
 import {
     messagesOf,
     createUploaderFixture,
+    createUploaderOverLoggedStore,
     decodeUpload,
+    inflatedBytesOf,
+    paddedMessages,
     loadSeparateNodeLogUploader,
     startLogReceiver,
     type LogReceiver
@@ -10,6 +13,7 @@ import {
 import { deferred } from "@test/utils/deferred";
 import { expect } from "chai";
 import { ethers } from "ethers";
+import sinon from "sinon";
 
 describe("LogUploader delta uploads", function () {
     let receiver: LogReceiver | undefined;
@@ -559,5 +563,122 @@ describe("LogUploader delta uploads", function () {
             held.resolve();
             logger.dispose();
         }
+    });
+    describe("a delta past the server's chunk limit", function () {
+        it("is sent as consecutive chunks, each within the limit", async function () {
+            const messages = paddedMessages(40);
+            const { logUploader, maxChunkBytes } =
+                createUploaderOverLoggedStore({
+                    uploadEndpoint: receiver!.url,
+                    messages,
+                    maxChunkBytes: (deltaBytes) => Math.ceil(deltaBytes / 2.5)
+                });
+
+            const outcome = await logUploader.uploadLogs();
+
+            expect(outcome).to.deep.equal({ ok: true, entries: 40 });
+            const chunks = receiver!.requests;
+            expect(chunks.length).to.be.above(1);
+            for (const chunk of chunks)
+                expect(inflatedBytesOf(chunk)).to.be.at.most(maxChunkBytes);
+            const ranges = chunks.map(({ fromSeq, toSeq }) => [fromSeq, toSeq]);
+            const contiguous = ranges.map(([, toSeq], index) => [
+                index === 0 ? 0 : ranges[index - 1][1] + 1,
+                toSeq
+            ]);
+            expect(ranges).to.deep.equal(contiguous);
+            expect(chunks[chunks.length - 1].toSeq).to.equal(39);
+            expect(
+                chunks.flatMap(decodeUpload).map((e) => e.message)
+            ).to.deep.equal(messages);
+        });
+
+        it("exactly at the limit is sent as one chunk", async function () {
+            const { logUploader } = createUploaderOverLoggedStore({
+                uploadEndpoint: receiver!.url,
+                messages: paddedMessages(10),
+                maxChunkBytes: (deltaBytes) => deltaBytes
+            });
+
+            const outcome = await logUploader.uploadLogs();
+
+            expect(outcome).to.deep.equal({ ok: true, entries: 10 });
+            expect(receiver!.requests).to.have.length(1);
+        });
+
+        it("re-sends from the first chunk the server refused", async function () {
+            await receiver!.close();
+            receiver = await startLogReceiver({
+                // the second chunk fails on both attempts (one retry)
+                respond: (_received, index) =>
+                    index === 1 || index === 2 ? 500 : 200
+            });
+            const messages = paddedMessages(20);
+            const { logUploader } = createUploaderOverLoggedStore({
+                uploadEndpoint: receiver!.url,
+                messages,
+                maxChunkBytes: (deltaBytes) => Math.ceil(deltaBytes / 1.5)
+            });
+
+            const failed = await logUploader.uploadLogs();
+            const firstChunk = receiver!.requests[0];
+            const resent = await logUploader.uploadLogs();
+
+            expect(failed).to.deep.equal({
+                ok: false,
+                entries: firstChunk.toSeq + 1
+            });
+            expect(resent.ok).to.equal(true);
+            const resentChunks = receiver!.requests.slice(3);
+            expect(resentChunks[0].fromSeq).to.equal(firstChunk.toSeq + 1);
+            expect(
+                [firstChunk, ...resentChunks]
+                    .flatMap(decodeUpload)
+                    .map((e) => e.message)
+            ).to.deep.equal(messages);
+        });
+
+        it("trims an entry that alone is past the limit and sends it with the rest", async function () {
+            const small = paddedMessages(3);
+            const oversized = "oversized ".padEnd(200_000, "x");
+            // far above a small entry with any stack depth, far below the oversized one
+            const maxChunkBytes = 100_000;
+            const { logUploader } = createUploaderOverLoggedStore({
+                uploadEndpoint: receiver!.url,
+                messages: [small[0], oversized, small[1], small[2]],
+                maxStoreBytes: 1024 * 1024,
+                maxChunkBytes: () => maxChunkBytes
+            });
+            const warn = sinon.spy(console, "warn");
+            try {
+                const outcome = await logUploader.uploadLogs();
+                const again = await logUploader.uploadLogs();
+
+                expect(outcome).to.deep.equal({ ok: true, entries: 4 });
+                expect(again).to.deep.equal({ ok: true, entries: 0 });
+                for (const chunk of receiver!.requests)
+                    expect(inflatedBytesOf(chunk)).to.be.at.most(maxChunkBytes);
+                const messages = receiver!.requests
+                    .flatMap(decodeUpload)
+                    .map((e) => e.message);
+                expect([messages[0], messages[2], messages[3]]).to.deep.equal(
+                    small
+                );
+                expect(messages[1]).to.match(
+                    /^oversized x+ \[trimmed from \d+ bytes\]$/
+                );
+                expect(
+                    warn
+                        .getCalls()
+                        .filter((call) =>
+                            String(call.args[0]).startsWith(
+                                "Log upload trimmed an entry"
+                            )
+                        )
+                ).to.have.length(1);
+            } finally {
+                warn.restore();
+            }
+        });
     });
 });

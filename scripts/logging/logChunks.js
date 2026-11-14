@@ -19,7 +19,7 @@ const CHUNK_NAME_PATTERN = new RegExp(
 const MERGE_CHUNK_BUDGET = 20;
 
 function maxInflatedBytes() {
-    const configured = Number(process.env.CRASH_LOG_MAX_SIZE_MB);
+    const configured = Number(process.env.CRASH_LOG_MAX_CHUNK_MB);
     const megabytes =
         Number.isFinite(configured) && configured > 0 ? configured : 10;
     return megabytes * 1024 * 1024;

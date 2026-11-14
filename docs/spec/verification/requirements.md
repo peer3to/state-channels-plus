@@ -666,7 +666,7 @@ Specification cases tested: 3/4. Untested: T1.P1.
 Specification cases tested: 3/4. Untested: T1.P1.
 
 [`REQ-LOG-7-M2RC5W` (Nothing unpacks without a limit)](../specification/runtime/log-collection.md#req-log-7-m2rc5w)
-Specification cases tested: 7/7.
+Specification cases tested: 9/9.
 
 [`REQ-LOG-8-B7VN3J` (Works wherever the runtime works)](../specification/runtime/log-collection.md#req-log-8-b7vn3j)
 Specification cases tested: 4/6. Untested: T1.P2, T1.P6.

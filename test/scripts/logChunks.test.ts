@@ -132,8 +132,8 @@ describe("logChunks", function () {
 
     // [PO1] the budget is shared across a whole merged read, not per chunk
     it("stops a merged read at the shared inflate budget and reports it", function () {
-        const previous = process.env.CRASH_LOG_MAX_SIZE_MB;
-        process.env.CRASH_LOG_MAX_SIZE_MB = "1";
+        const previous = process.env.CRASH_LOG_MAX_CHUNK_MB;
+        process.env.CRASH_LOG_MAX_CHUNK_MB = "1";
         try {
             // each chunk fits the per-chunk bound; together they pass it
             // ~400 KB inflated: comfortably under the 1 MB per-chunk bound
@@ -158,14 +158,14 @@ describe("logChunks", function () {
             // a partial read, not an empty one
             expect(merged.length).to.be.greaterThan(0);
         } finally {
-            process.env.CRASH_LOG_MAX_SIZE_MB = previous;
+            process.env.CRASH_LOG_MAX_CHUNK_MB = previous;
         }
     });
 
     // [TO4] the bound must stop the inflate, not check the size after it
     it("refuses a chunk that inflates past the configured maximum", function () {
-        const previous = process.env.CRASH_LOG_MAX_SIZE_MB;
-        process.env.CRASH_LOG_MAX_SIZE_MB = "1";
+        const previous = process.env.CRASH_LOG_MAX_CHUNK_MB;
+        process.env.CRASH_LOG_MAX_CHUNK_MB = "1";
         try {
             const many = Array.from({ length: 40_000 }, (_unused, index) =>
                 entry(`padding ${"x".repeat(200)}`, 1000 + index, "vm")
@@ -175,7 +175,7 @@ describe("logChunks", function () {
                 "inflates past"
             );
         } finally {
-            process.env.CRASH_LOG_MAX_SIZE_MB = previous;
+            process.env.CRASH_LOG_MAX_CHUNK_MB = previous;
         }
     });
 

@@ -100,18 +100,19 @@ export async function upload(
     return response.status;
 }
 
-/** runs `action` with the server's per-chunk inflate ceiling lowered, so a fat
- *  chunk is skipped from a merged read. restores the ceiling afterwards. */
+/** runs `action` with the server's per-chunk inflate ceiling lowered: a fat
+ *  chunk is refused on upload and skipped from a merged read. restores the
+ *  ceiling afterwards. */
 export async function withInflateCeiling<T>(
     maxSizeMb: string,
     action: () => Promise<T>
 ): Promise<T> {
-    const previous = process.env.CRASH_LOG_MAX_SIZE_MB;
-    process.env.CRASH_LOG_MAX_SIZE_MB = maxSizeMb;
+    const previous = process.env.CRASH_LOG_MAX_CHUNK_MB;
+    process.env.CRASH_LOG_MAX_CHUNK_MB = maxSizeMb;
     try {
         return await action();
     } finally {
-        if (previous === undefined) delete process.env.CRASH_LOG_MAX_SIZE_MB;
-        else process.env.CRASH_LOG_MAX_SIZE_MB = previous;
+        if (previous === undefined) delete process.env.CRASH_LOG_MAX_CHUNK_MB;
+        else process.env.CRASH_LOG_MAX_CHUNK_MB = previous;
     }
 }

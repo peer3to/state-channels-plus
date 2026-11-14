@@ -9,6 +9,10 @@ import {
     upload as uploadTo,
     uploadBody
 } from "@test/fixtures/logging/crashLogServer.fixture";
+import {
+    createUploaderOverLoggedStore,
+    paddedMessages
+} from "@test/fixtures/logging/LogUploader.fixture";
 import { expect } from "chai";
 import { randomBytes } from "node:crypto";
 import { once } from "node:events";
@@ -332,6 +336,40 @@ describe("crash-log-server routes", function () {
         expect(
             messages.some((message) => message.startsWith("new run"))
         ).to.equal(true);
+    });
+
+    it("accepts every chunk of a delta the uploader splits at the server's limit", async function () {
+        const channelId = "0x" + "7c".repeat(32);
+        const peerAddress = "0x" + "7d".repeat(20);
+        const maxSizeMb = 0.25;
+        const messages = paddedMessages(400);
+
+        const { deltaBytes, maxChunkBytes, outcome } = await withInflateCeiling(
+            String(maxSizeMb),
+            async () => {
+                const uploader = createUploaderOverLoggedStore({
+                    uploadEndpoint: `${baseUrl}/logs/upload`,
+                    sharedContext: { threadName: "vm", channelId, peerAddress },
+                    messages,
+                    // room for every entry with the harness's unlimited stack depth
+                    maxStoreBytes: 64 * 1024 * 1024,
+                    maxChunkBytes: () => maxSizeMb * 1024 * 1024
+                });
+                return {
+                    ...uploader,
+                    outcome: await uploader.logUploader.uploadLogs()
+                };
+            }
+        );
+
+        // sent as one chunk, the server would refuse it
+        expect(deltaBytes).to.be.above(maxChunkBytes);
+        expect(outcome).to.deep.equal({ ok: true, entries: messages.length });
+        const read = await fetch(`${baseUrl}/logs/${channelId}/${peerAddress}`);
+        expect(read.status).to.equal(200);
+        expect(
+            decodeChunk(await read.text()).map((entry) => entry.message)
+        ).to.deep.equal(messages);
     });
 
     it("lists stored chunks in the index", async function () {
