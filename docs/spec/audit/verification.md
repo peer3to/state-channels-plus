@@ -147,6 +147,13 @@ submits a top-up with a made-up snapshot pin. No runtime stores that pin, so the
 both the pinned and the new snapshot stored, is not met, and the test still returns `false` (passed in the
 full gate).
 
+## Mirrored chain limits — 2026-11-15
+
+Engineer decision (Luke, 2026-11-15): the block time and per-transaction gas cap the SDK mirrors are
+one requirement, [`REQ-SDK-ARCH-8-02EEHA` (Mirrored chain limits match the target chain)](../specification/runtime/sdk.md#req-sdk-arch-8-02eeha). The
+block-time check moved there from the window derivation; the cap's refusal side is demonstrated only on
+the peer3 chain, since Hardhat has no per-transaction cap below its block gas limit.
+
 ## Test timing inputs — 2026-11-14
 
 Engineer decision (Luke, 2026-11-14, plan 29): every protocol window derives from the chain block

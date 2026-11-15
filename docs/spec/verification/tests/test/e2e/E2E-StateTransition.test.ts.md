@@ -25,6 +25,11 @@ top-up. Its `add(1)` rejects with the refusal; after the real processing is rest
 writer's `add(1)` succeeds. Every peer then reaches sync, stores the same block hash at the new
 height, and no peer saw an on-chain dispute start (`onDisputeStarted`) or initiated one.
 
+The chain-limits test reads four consecutive block timestamps from the test chain's node and expects
+each step to be `BLOCK_TIME_MS`, then sends a self-transfer at `MAX_TX_GAS`, which must be mined, and one
+at `MAX_TX_GAS + 1`. The peer3 chain must refuse the second with its transaction gas cap error; Hardhat
+has no such cap and mines it, so the refusal is demonstrated only when the suite runs on the peer3 chain.
+
 ## Tests
 
 - `should handle consecutive blocks between participants`: none
@@ -32,4 +37,4 @@ height, and no peer saw an on-chain dispute start (`onDisputeStarted`) or initia
 - `should handle multiple rotation rounds`: none
 - `should handle honest peer transitions after fork resolution`: REQ-FIN-6-YZWJX2.T1.P7
 - `the writer's state machine refuses a pending top-up → its candidate fails, it recovers and authors, every peer stores the same block and no dispute starts`: REQ-SM-12-J6QD9B.T2.P1
-- `the test chain makes one block per BLOCK_TIME_MS and takes a transaction at MAX_TX_GAS, and the peer3 chain refuses one at MAX_TX_GAS + 1`: REQ-TIME-7-2J5T0J.T1.P6
+- `the test chain makes one block per BLOCK_TIME_MS and takes a transaction at MAX_TX_GAS, and the peer3 chain refuses one at MAX_TX_GAS + 1`: REQ-SDK-ARCH-8-02EEHA.T1.P1, REQ-SDK-ARCH-8-02EEHA.T1.P2

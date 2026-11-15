@@ -6,13 +6,16 @@ import {
 } from "@/utils/evmErrorHandler";
 import { artifacts, errorAbis } from "@/utils/GeneratedArtifacts";
 import { routedFacets } from "@/utils/routedFacets";
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import * as factory from "@test/factory";
+import { MathTestSession as TestSession } from "@test/harness";
+import {
+    slotAccountIndex,
+    slotDeployerIndex
+} from "@test/harness/core/slotAccounts";
 import { deployMathChannelProxyFixture } from "@test/test_utils/testHelpers";
 import { StateChannelManagerInterface } from "@typechain-types";
 import { expect } from "chai";
-import { ethers, ZeroAddress, ZeroHash } from "ethers";
-import { ethers as hre } from "hardhat";
+import { ethers, type HDNodeWallet, ZeroAddress, ZeroHash } from "ethers";
 
 describe("artifacts loading", () => {
     it("should load all required facet artifacts", () => {
@@ -148,18 +151,24 @@ describe("ContractCaller and ContractErrors", () => {
         );
     });
 
+    // runs on the test chain's node through the harness, so the reverts and
+    // the clock are that chain's
     describe("Real contract calls", () => {
+        let provider: ethers.Provider;
         let mathChannelManager: StateChannelManagerInterface;
-        let testSigner: HardhatEthersSigner;
+        // the deployer, which the manager is connected to
+        let testSigner: HDNodeWallet;
         // a second account, so a block author can differ from the sender
-        let blockAuthorSigner: HardhatEthersSigner;
+        let blockAuthorSigner: HDNodeWallet;
 
         beforeEach(async () => {
-            const signers = await hre.getSigners();
-            const contracts = await deployMathChannelProxyFixture(signers[0]);
+            const h = TestSession.getHarness();
+            await h.connectChain();
+            provider = h.provider;
+            testSigner = h.signerFor(slotDeployerIndex());
+            blockAuthorSigner = h.signerFor(slotAccountIndex(0));
+            const contracts = await deployMathChannelProxyFixture(testSigner);
             mathChannelManager = contracts.mathChannelManager;
-            testSigner = signers[0];
-            blockAuthorSigner = signers[1];
         });
 
         it("should handle postBlockCalldata success case", async () => {
@@ -167,7 +176,7 @@ describe("ContractCaller and ContractErrors", () => {
             const signedBlock = factory.signedBlock(undefined, testSigner);
 
             // Set maxTimestamp to be in the future (success case)
-            const currentBlock = await hre.provider.getBlock("latest");
+            const currentBlock = await provider.getBlock("latest");
             const maxTimestamp = currentBlock!.timestamp + 100; // 100 seconds in future
 
             try {
@@ -176,8 +185,9 @@ describe("ContractCaller and ContractErrors", () => {
                     maxTimestamp
                 );
 
-                // Should succeed without throwing
+                // Should succeed without throwing, also once mined
                 expect(result).to.not.be.undefined;
+                expect((await result.wait())!.status).to.equal(1);
             } catch (error: any) {
                 // This should not happen
                 expect.fail(`Unexpected error: ${error.message}`);
@@ -194,7 +204,7 @@ describe("ContractCaller and ContractErrors", () => {
                     .encode()
             });
 
-            const currentBlock = await hre.provider.getBlock("latest");
+            const currentBlock = await provider.getBlock("latest");
             const maxTimestamp = currentBlock!.timestamp + 100;
 
             try {
@@ -221,7 +231,7 @@ describe("ContractCaller and ContractErrors", () => {
             const signedBlock = factory.signedBlock();
 
             // Set maxTimestamp to be in the past (error case)
-            const currentBlock = await hre.provider.getBlock("latest");
+            const currentBlock = await provider.getBlock("latest");
             const maxTimestamp = currentBlock!.timestamp - 100;
 
             try {
@@ -253,7 +263,7 @@ describe("ContractCaller and ContractErrors", () => {
             });
 
             // Set maxTimestamp to be in the future
-            const currentBlock = await hre.provider.getBlock("latest");
+            const currentBlock = await provider.getBlock("latest");
             const maxTimestamp = currentBlock!.timestamp + 100;
 
             // First call should succeed
@@ -262,7 +272,7 @@ describe("ContractCaller and ContractErrors", () => {
                 maxTimestamp
             );
             const firstPostReceipt = await firstPost.wait();
-            const firstPostBlock = await hre.provider.getBlock(
+            const firstPostBlock = await provider.getBlock(
                 firstPostReceipt!.blockNumber
             );
 

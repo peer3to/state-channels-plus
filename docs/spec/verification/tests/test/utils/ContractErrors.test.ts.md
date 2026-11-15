@@ -15,11 +15,13 @@ encoded from each error's own ABI fragment: five named race-condition/error sele
 argument-less and argument-bearing errors — decode to the right `errorDescription.name`, a plain
 `Error` with no revert data returns `null` and passes through unchanged, and a registered handler
 receives the `CustomEvmError` wrapping the original error.
-Third, real hardhat calls through `deployMathChannelProxyFixture` hit `postBlockCalldata` and
-decode genuine on-chain reverts (`ErrorBlockCalldataMsgSenderNotBlockAuthor`,
+Third, real calls on the test chain's node (Hardhat or the peer3 dev node), reached through the
+harness, deploy through `deployMathChannelProxyFixture`, hit `postBlockCalldata` and decode that
+node's genuine reverts (`ErrorBlockCalldataMsgSenderNotBlockAuthor`,
 `RaceConditionBlockCalldataTimestampTooLate`, `ErrorBlockCalldataAlreadyPosted`) plus one success
-case. Two of those reverts are asserted operand by operand. The wrong-author case posts a block
-authored by the second hardhat account from the first, so `expectedAuthor` and `actualSender` are
+case, whose deadlines come from that node's latest block. Two of those reverts are asserted
+operand by operand. The wrong-author case posts a block authored by a slot participant account
+from the slot deployer, so `expectedAuthor` and `actualSender` are
 different accounts and a swapped pair fails. The duplicate-post case posts a block carrying a
 distinctive fork id and transaction count `7`, then re-posts it; the payload must name that fork
 id, that transaction count, the posting account, and the commitment stored by the FIRST post,
