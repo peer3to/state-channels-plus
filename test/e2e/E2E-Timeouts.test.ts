@@ -3,7 +3,7 @@ import {
     MISMATCH_TIMEOUT_RECHECK_REASON,
     PREDECESSOR_POSTED_RECHECK_REASON
 } from "@/stateManager/chainFallback/ParticipantTimeoutService";
-import { timeoutWaitTime } from "@/types";
+import { BLOCK_TIME_MS, deriveTimeConfig, timeoutWaitTime } from "@/types";
 import type { Hash } from "@/types/types";
 import { Codec, sleep, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -13,7 +13,7 @@ import { expect } from "chai";
 import { id, ZeroAddress } from "ethers";
 
 // short windows, so the staged parent post and the moved deadline fit one test
-const MOVED_DEADLINE_TIME_CONFIG = {
+const MOVED_DEADLINE_TIME_BLOCKS = {
     p2pTime: 2,
     agreementTime: 8,
     chainFallbackTime: 10,
@@ -21,8 +21,8 @@ const MOVED_DEADLINE_TIME_CONFIG = {
 };
 // M9: the dispute window must outlive the post-moved deadline, or the fork is
 // reduced before the claim is ever built
-const WINDOW_OUTLIVES_DEADLINE_TIME_CONFIG = {
-    ...MOVED_DEADLINE_TIME_CONFIG,
+const WINDOW_OUTLIVES_DEADLINE_TIME_BLOCKS = {
+    ...MOVED_DEADLINE_TIME_BLOCKS,
     evidenceTime: 60
 };
 
@@ -61,7 +61,7 @@ describe("E2E: Timeouts", function () {
         it("should handle timeout when non-author peer disconnects (calldata posting)", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3, {
-                timeConfig: {
+                timeBlocks: {
                     p2pTime: 1,
                     agreementTime: 2,
                     chainFallbackTime: 4,
@@ -530,7 +530,7 @@ describe("E2E: Timeouts", function () {
             // post really extends the writer's deadline
             const { observer, author, parentAuthor, previous, postParent } =
                 await h.scenario.unpostedParentUnsignedByNextWriter({
-                    timeConfig: MOVED_DEADLINE_TIME_CONFIG
+                    timeBlocks: MOVED_DEADLINE_TIME_BLOCKS
                 });
             const height = previous.height + 1;
             await h.dispute.suppressDisputeInitiation([
@@ -574,7 +574,10 @@ describe("E2E: Timeouts", function () {
                 // rebuilt against the parent's post, not its own timestamp
                 expect(Number(committedTimeout.minTimeStamp)).to.be.at.least(
                     parentPostTimestamp +
-                        timeoutWaitTime(MOVED_DEADLINE_TIME_CONFIG, height)
+                        timeoutWaitTime(
+                            deriveTimeConfig(MOVED_DEADLINE_TIME_BLOCKS),
+                            height
+                        )
                 );
                 // the recheck waited for the moved deadline instead of
                 // resubmitting at once
@@ -596,7 +599,7 @@ describe("E2E: Timeouts", function () {
             const h = TestSession.getHarness();
             const { observer, author, parentAuthor, previous, postParent } =
                 await h.scenario.unpostedParentUnsignedByNextWriter({
-                    timeConfig: MOVED_DEADLINE_TIME_CONFIG
+                    timeBlocks: MOVED_DEADLINE_TIME_BLOCKS
                 });
             const height = previous.height + 1;
             await h.dispute.suppressDisputeInitiation([
@@ -620,7 +623,9 @@ describe("E2E: Timeouts", function () {
                                 .stub.getTimeoutBuildObservation()
                                 .request()
                         ).entered === 1,
-                    protocolEventTimeoutMs(MOVED_DEADLINE_TIME_CONFIG)
+                    protocolEventTimeoutMs(
+                        deriveTimeConfig(MOVED_DEADLINE_TIME_BLOCKS)
+                    )
                 );
                 const parentPostTimestamp = await postParent();
                 await h.control(observer).stub.releaseTimeoutBuild().request();
@@ -646,7 +651,10 @@ describe("E2E: Timeouts", function () {
                 );
                 expect(Number(timeout.minTimeStamp)).to.be.at.least(
                     parentPostTimestamp +
-                        timeoutWaitTime(MOVED_DEADLINE_TIME_CONFIG, height)
+                        timeoutWaitTime(
+                            deriveTimeConfig(MOVED_DEADLINE_TIME_BLOCKS),
+                            height
+                        )
                 );
                 expect(
                     (await tasks.tasks()).some((task) =>
@@ -672,7 +680,7 @@ describe("E2E: Timeouts", function () {
             const h = TestSession.getHarness();
             const { observer, author, parentAuthor, previous, forkId } =
                 await h.scenario.unpostedParentUnsignedByNextWriter({
-                    timeConfig: WINDOW_OUTLIVES_DEADLINE_TIME_CONFIG
+                    timeBlocks: WINDOW_OUTLIVES_DEADLINE_TIME_BLOCKS
                 });
             // the parent author must stay free to open the window below
             await h.dispute.suppressDisputeInitiation([author.index]);
@@ -748,7 +756,7 @@ describe("E2E: Timeouts", function () {
                     async () => (await awaitPost()) !== undefined,
                     h.event.hostExecTimeoutMs()
                 );
-                await sleep((await awaitPost())!.delayMs + 5000);
+                await sleep((await awaitPost())!.delayMs + 5 * BLOCK_TIME_MS);
 
                 // ...then finds the window predates it: nothing stored, and
                 // no claim against the writer ever reaches the chain

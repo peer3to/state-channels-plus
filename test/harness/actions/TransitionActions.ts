@@ -10,7 +10,6 @@ import type {
     HarnessControlRpcShape
 } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import type { TestPeer } from "@test/harness/core/types";
 import { waitFor } from "@test/utils/waitFor";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -135,9 +134,7 @@ export class TransitionActions<
         }
     ): Promise<number> {
         const { until, waitForPeers, excludePeerIndices = [] } = options;
-        const keepAliveMs =
-            resolveTestTimeConfig(this.harness.options.timeConfig).p2pTime *
-            1000;
+        const keepAliveMs = this.harness.options.timeConfig.p2pTime * 1000;
         let blocksAuthored = 0;
         // Writer windows spent waiting, on an excluded writer or on a
         // next-writer answer its own host does not confirm, count against the

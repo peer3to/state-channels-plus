@@ -9,6 +9,7 @@ import { sleep } from "@/utils";
 import type { HarnessControlRpcShape } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { ParticipantCheckAnswer } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import type { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { ABSENCE_WINDOW_MS } from "@test/harness/actions/EventActions";
 
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import type { TestPeer } from "@test/harness/core/types";
@@ -206,7 +207,7 @@ export async function assertLateSyncResultAfterAbortChangesNothing<
 
             // The late result lands on a settled, disposed observer.
             await Promise.all(releases.map((release) => release()));
-            await sleep(500);
+            await sleep(ABSENCE_WINDOW_MS);
             expect(host.isClosed).to.equal(true);
             expect(root.connections.size).to.equal(0);
             expect(

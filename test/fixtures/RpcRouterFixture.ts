@@ -4,10 +4,7 @@ import {
     createLoggerSdkFixture,
     type LoggerSdkFixture
 } from "./node/LoggerServiceFixture";
-import {
-    protocolEventTimeoutMs,
-    MIN_TEST_TIME_CONFIG
-} from "../harness/core/testTimeConfig";
+import { protocolEventTimeoutMs } from "../harness/core/testTimeConfig";
 import { waitFor } from "../utils/waitFor";
 import type { RuntimeProbeRoot } from "./runtimeRpc/probe/runtime/RuntimeProbeService";
 import { RuntimeRpcControl } from "./runtimeRpc/RuntimeRpcControl";
@@ -17,6 +14,7 @@ import type { CustomRpcManifest } from "@/rpc/network/registry";
 import RpcMethodsProxy from "@/rpc/network/RpcHandleProxy";
 import RpcHandler from "@/rpc/network/RpcHandler";
 import InternalTransport from "@/transport/InternalTransport";
+import { deriveTimeConfig } from "@/types";
 import {
     createRuntimeChannel,
     createTransferableChannel
@@ -287,7 +285,7 @@ export async function assertSettlementRace(
                 timeoutMs:
                     first === "timeout"
                         ? 300
-                        : protocolEventTimeoutMs(MIN_TEST_TIME_CONFIG)
+                        : protocolEventTimeoutMs(deriveTimeConfig())
             })
             .then(
                 (value) => {
@@ -325,8 +323,7 @@ export async function assertSettlementRace(
             else
                 await waitFor(
                     () => sdk.clientRoot.router.pendingRequestCount === 0,
-                    protocolEventTimeoutMs(MIN_TEST_TIME_CONFIG),
-                    10
+                    protocolEventTimeoutMs(deriveTimeConfig())
                 );
         };
         await settle(first);

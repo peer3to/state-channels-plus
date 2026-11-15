@@ -1,3 +1,4 @@
+import { BLOCK_TIME_MS } from "@/types";
 import { sleep } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
@@ -7,7 +8,7 @@ describe("StateManager timeout", function () {
         const h = TestSession.getHarness();
         const evidenceTime = 8;
         await h.scenario.preDisputeSetup({
-            timeConfig: { evidenceTime }
+            timeBlocks: { evidenceTime }
         });
         h.contextApi.markAfkPeer({ afkPeerIndex: 2 });
 
@@ -23,7 +24,7 @@ describe("StateManager timeout", function () {
             expectedCount: 1
         });
 
-        await sleep((evidenceTime - 1) * 1000);
+        await sleep(h.options.timeConfig.evidenceTime * 1000 - BLOCK_TIME_MS);
         const timeout = await h
             .control(h.getPeer(1))
             .query.getTimeout(h.activeForkId!)

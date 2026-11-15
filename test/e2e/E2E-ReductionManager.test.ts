@@ -21,7 +21,7 @@ describe("E2E: ReductionManager", function () {
             ({ sourceForkId } = await h.scenario.stageReducibleDisputedFork({
                 peerCount: 4,
                 maliciousPeerIndex: 1,
-                timeConfig: { evidenceTime: 3 }
+                timeBlocks: { evidenceTime: 3 }
             }));
         });
 
@@ -190,8 +190,8 @@ describe("E2E: ReductionManager", function () {
 
     it("an empty dispute set posts replacement evidence and resumes the same reduction", async function () {
         const h = TestSession.getHarness();
-        // Four peers race one automatic kill against a window of one-second
-        // blocks; the harness evidence floor gives that race room.
+        // Four peers race one automatic kill inside the evidence window; the
+        // derived default window gives that race room.
         await h.scenario.preDisputeSetup({ peerCount: 4 });
         const targetPeer = h.getPeer(0);
         const sourceForkId = h.activeForkId!;
@@ -216,8 +216,7 @@ describe("E2E: ReductionManager", function () {
                         sourceForkId
                     )
                 ).length === 0,
-            h.event.protocolEventTimeoutMs(),
-            50
+            h.event.protocolEventTimeoutMs()
         );
 
         // The replacement dispute may include the independently elapsed block
@@ -254,8 +253,7 @@ describe("E2E: ReductionManager", function () {
                         sourceForkId
                     )
                 ).length > 0,
-            h.event.protocolEventTimeoutMs(),
-            50
+            h.event.protocolEventTimeoutMs()
         );
         await waitFor(
             async () =>
@@ -263,8 +261,7 @@ describe("E2E: ReductionManager", function () {
                     .control(targetPeer)
                     .query.getCompletedReductionForkId(sourceForkId)
                     .request()) !== null,
-            h.event.protocolEventTimeoutMs(),
-            50
+            h.event.protocolEventTimeoutMs()
         );
         expect(
             await h

@@ -114,7 +114,7 @@ export async function assertBehindObserverAbortsOnIdleDispute(
  */
 async function stageObserverSyncedFromRemovedResponder(h: MathPeerTestHarness) {
     await h.lifecycle.start(4, 0, {
-        timeConfig: {
+        timeBlocks: {
             p2pTime: 5,
             agreementTime: 2,
             chainFallbackTime: 2,

@@ -1,8 +1,9 @@
 import { deployStack, setupBrowserPeer } from "./sdkSetup.js";
 // @spec-test-coverage-ignore: browser page driver for the WebRTC E2E run; evidence is mapped from run-p2p-webrtc-e2e.mjs
 
+import { protocolEventTimeoutMs } from "../harness/core/testTimeConfig.ts";
 import { installWebRTCMainThreadBridge } from "@/rpc/internal/roots/WebRTCMainThreadBridge";
-import { Status } from "@/types";
+import { deriveTimeConfig, Status } from "@/types";
 
 /**
  * Browser e2e: two REAL p2pSetup peers connect over WebRTC.
@@ -223,7 +224,7 @@ globalThis.runP2pWebRTCMainThreadE2E = async () => {
                                 ).join(",")}`
                             )
                         ),
-                    90_000
+                    protocolEventTimeoutMs(deriveTimeConfig())
                 )
             )
         ]);

@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: shared wait on a peer's scheduled reduction; executable evidence belongs to its calling test declarations
 import type { ForkId } from "@/types/types";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
+import { WAIT_POLL_MS } from "@test/utils/waitFor";
 
 /**
  * Until the reduction attempt `entered` counts reaches `count` on
@@ -34,6 +35,6 @@ export async function waitUntilScheduledReductionEntered(
             throw new Error(
                 `peer ${peerIndex} entered no reduction attempt within ${boundMs}ms of its last scheduled reduction`
             );
-        await new Promise((resolve) => setTimeout(resolve, 250));
+        await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS));
     }
 }

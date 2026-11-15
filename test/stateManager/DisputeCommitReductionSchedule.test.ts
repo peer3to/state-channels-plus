@@ -1,3 +1,4 @@
+import { BLOCK_TIME_MS } from "@/types";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -19,7 +20,7 @@ describe("Dispute commit reduction schedule", function () {
         // audit-valid path under test.
         await h.scenario.preDisputeSetup({
             peerCount: 4,
-            timeConfig: { evidenceTime: 16 }
+            timeBlocks: { evidenceTime: 16 }
         });
         const forkId = h.activeForkId!;
         const nodeIndex = 0;
@@ -84,8 +85,7 @@ describe("Dispute commit reduction schedule", function () {
             );
             await waitFor(
                 async () => (await reductionTasks()) > before,
-                remainingMs - 1000,
-                100
+                remainingMs - BLOCK_TIME_MS
             );
         } finally {
             await h.byzantine.restoreDisputeConstruction(nodeIndex);

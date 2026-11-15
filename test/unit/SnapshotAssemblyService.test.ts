@@ -374,10 +374,10 @@ describe("Unit: SnapshotAssemblyService", function () {
 
         it("pending inbound blocks supplied → the snapshot binds their head and carries their deposits", async function () {
             const h = TestSession.getHarness();
-            // the timeConfig the promotion scenario needs to keep a 2-peer
+            // the timeBlocks the promotion scenario needs to keep a 2-peer
             // channel serving the spectator's sync
             await h.lifecycle.start(2, 2, {
-                timeConfig: {
+                timeBlocks: {
                     p2pTime: 2,
                     agreementTime: 4,
                     chainFallbackTime: 4,

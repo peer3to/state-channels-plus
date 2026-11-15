@@ -61,7 +61,8 @@ export async function assertDisposeCutsHeldDisputeUpload(
     const committedDisputes = async () =>
         (
             await h.channelManager.queryFilter(
-                h.channelManager.filters.DisputeCommitted(h.channelId)
+                h.channelManager.filters.DisputeCommitted(h.channelId),
+                h.channelOpeningBlock
             )
         ).length;
     const disputesBefore = await committedDisputes();

@@ -1,10 +1,13 @@
 import StateSnapshot from "@/models/StateSnapshot";
 import { Bytes } from "@/types/types";
 import { SignatureUtils } from "@/utils";
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { MathTestSession as TestSession } from "@test/harness";
+import {
+    slotAccountIndex,
+    slotDeployerIndex
+} from "@test/harness/core/slotAccounts";
 import {
     deployMathChannelProxyFixture,
-    getSigners,
     createJoinChannelTestObject,
     createOpenChannelTestObject
 } from "@test/test_utils/testHelpers";
@@ -14,15 +17,14 @@ import {
 } from "@typechain-types";
 import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { expect } from "chai";
-import { EventLog } from "ethers";
-import { ethers } from "hardhat";
+import { ethers, EventLog, type HDNodeWallet } from "ethers";
 
 describe("StateChannelManagerProxy", function () {
     let mathChannelManager: StateChannelManagerInterface;
     let mathInstance: MathStateMachine;
-    let firstSigner: HardhatEthersSigner;
-    let secondSigner: HardhatEthersSigner;
-    let thirdSigner: HardhatEthersSigner;
+    let firstSigner: HDNodeWallet;
+    let secondSigner: HDNodeWallet;
+    let thirdSigner: HDNodeWallet;
 
     // Default test objects - can be overridden in individual tests
     let jc1: JoinChannelStruct;
@@ -35,14 +37,17 @@ describe("StateChannelManagerProxy", function () {
     let openChannelSigned: any;
 
     beforeEach(async function () {
-        const contracts = await deployMathChannelProxyFixture(ethers);
+        const h = TestSession.getHarness();
+        await h.connectChain();
+        const contracts = await deployMathChannelProxyFixture(
+            h.signerFor(slotDeployerIndex())
+        );
         mathChannelManager = contracts.mathChannelManager;
         mathInstance = contracts.mathInstance;
 
-        const signers = await getSigners(ethers);
-        firstSigner = signers.firstSigner;
-        secondSigner = signers.secondSigner;
-        thirdSigner = signers.thirdSigner;
+        firstSigner = h.signerFor(slotAccountIndex(0));
+        secondSigner = h.signerFor(slotAccountIndex(1));
+        thirdSigner = h.signerFor(slotAccountIndex(2));
 
         jc1 = createJoinChannelTestObject(firstSigner.address);
         jc2 = createJoinChannelTestObject(secondSigner.address);
@@ -68,50 +73,54 @@ describe("StateChannelManagerProxy", function () {
                 { channelId: "open-channel-registry-second" }
             );
 
-            await mathChannelManager.open({
-                encodedOpenChannel: (
-                    await SignatureUtils.signOpenChannel(
-                        openChannel,
-                        firstSigner
-                    )
-                ).encoded,
-                signatures: [
-                    (
+            await (
+                await mathChannelManager.open({
+                    encodedOpenChannel: (
                         await SignatureUtils.signOpenChannel(
                             openChannel,
                             firstSigner
                         )
-                    ).signature as Bytes,
-                    (
-                        await SignatureUtils.signOpenChannel(
-                            openChannel,
-                            secondSigner
-                        )
-                    ).signature as Bytes
-                ]
-            });
-            await mathChannelManager.open({
-                encodedOpenChannel: (
-                    await SignatureUtils.signOpenChannel(
-                        secondOpenChannel,
-                        firstSigner
-                    )
-                ).encoded,
-                signatures: [
-                    (
+                    ).encoded,
+                    signatures: [
+                        (
+                            await SignatureUtils.signOpenChannel(
+                                openChannel,
+                                firstSigner
+                            )
+                        ).signature as Bytes,
+                        (
+                            await SignatureUtils.signOpenChannel(
+                                openChannel,
+                                secondSigner
+                            )
+                        ).signature as Bytes
+                    ]
+                })
+            ).wait();
+            await (
+                await mathChannelManager.open({
+                    encodedOpenChannel: (
                         await SignatureUtils.signOpenChannel(
                             secondOpenChannel,
                             firstSigner
                         )
-                    ).signature as Bytes,
-                    (
-                        await SignatureUtils.signOpenChannel(
-                            secondOpenChannel,
-                            secondSigner
-                        )
-                    ).signature as Bytes
-                ]
-            });
+                    ).encoded,
+                    signatures: [
+                        (
+                            await SignatureUtils.signOpenChannel(
+                                secondOpenChannel,
+                                firstSigner
+                            )
+                        ).signature as Bytes,
+                        (
+                            await SignatureUtils.signOpenChannel(
+                                secondOpenChannel,
+                                secondSigner
+                            )
+                        ).signature as Bytes
+                    ]
+                })
+            ).wait();
 
             expect(await mathChannelManager.getOpenChannelCount()).to.equal(2);
             expect(
@@ -152,7 +161,7 @@ describe("StateChannelManagerProxy", function () {
                     ).signature as Bytes
                 ]
             };
-            await mathChannelManager.open(confirmation);
+            await (await mathChannelManager.open(confirmation)).wait();
             await expect(mathChannelManager.open(confirmation)).to.be.reverted;
 
             expect(await mathChannelManager.getOpenChannelCount()).to.equal(1);
@@ -408,19 +417,23 @@ describe("StateChannelManagerProxy", function () {
                 initialDeposits + forcedAmount
             );
 
-            await mathInstance
-                .connect(firstSigner)
-                .setState(genesisState as Bytes);
+            await (
+                await mathInstance
+                    .connect(firstSigner)
+                    .setState(genesisState as Bytes)
+            ).wait();
 
-            await mathInstance.connect(firstSigner).processInboundMessage({
-                messageType: forcedMessage.messageType,
-                participant: forcedMessage.participant,
-                balance: {
-                    amount: forcedMessage.balance.amount,
-                    data: forcedMessage.balance.data
-                },
-                data: forcedMessage.data
-            });
+            await (
+                await mathInstance.connect(firstSigner).processInboundMessage({
+                    messageType: forcedMessage.messageType,
+                    participant: forcedMessage.participant,
+                    balance: {
+                        amount: forcedMessage.balance.amount,
+                        data: forcedMessage.balance.data
+                    },
+                    data: forcedMessage.data
+                })
+            ).wait();
 
             const participants = await mathInstance.getParticipants();
             expect(participants).to.have.length(3);
@@ -584,19 +597,21 @@ describe("StateChannelManagerProxy", function () {
 
         it("2 participants channel already exists - fail", async function () {
             // First, open a channel successfully
-            await mathChannelManager.open({
-                encodedOpenChannel: openChannelSigned.encoded,
-                signatures: [
-                    await SignatureUtils.signOpenChannel(
-                        openChannel,
-                        firstSigner
-                    ).then((s) => s.signature as Bytes),
-                    await SignatureUtils.signOpenChannel(
-                        openChannel,
-                        secondSigner
-                    ).then((s) => s.signature as Bytes)
-                ]
-            });
+            await (
+                await mathChannelManager.open({
+                    encodedOpenChannel: openChannelSigned.encoded,
+                    signatures: [
+                        await SignatureUtils.signOpenChannel(
+                            openChannel,
+                            firstSigner
+                        ).then((s) => s.signature as Bytes),
+                        await SignatureUtils.signOpenChannel(
+                            openChannel,
+                            secondSigner
+                        ).then((s) => s.signature as Bytes)
+                    ]
+                })
+            ).wait();
 
             // Try to open the same channel again with the same channelId
             const res = mathChannelManager.open({

@@ -1,6 +1,7 @@
 import { HardhatUserConfig, task, types } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 import "@nomicfoundation/hardhat-foundry";
+import { BLOCK_TIME_MS } from "./src/types/time";
 import { TASK_TEST } from "hardhat/builtin-tasks/task-names";
 import "./tasks/browserTest";
 import "./tasks/forgeTest";
@@ -48,7 +49,7 @@ const config: HardhatUserConfig = {
             allowUnlimitedContractSize: true,
             gas: "auto",
             // E2E parallel runs cram many concurrent games' txs into one node's
-            // 1s-interval blocks (not production's load profile, which spreads over
+            // one-block-time interval blocks (not production's load profile, which spreads over
             // time), so a realistic 30M block starves them. Raise it for
             // interval-mined runs (gated on E2E_INTERVAL_MINING); direct Hardhat
             // commands keep the realistic default.
@@ -61,14 +62,14 @@ const config: HardhatUserConfig = {
             // slot window under the parallel runner (see hdAccounts).
             accounts: hdAccounts(),
             // Interval-mined runs set E2E_INTERVAL_MINING=1 → automine OFF + a
-            // 1s interval, so block-time tracks wall-clock, ordered nonce batches
+            // one-block-time interval, so block-time tracks wall-clock, ordered nonce batches
             // can enter the mempool together, and the SDK's real-time dispute
             // timers stay in sync with on-chain deadlines (replaces the removed
             // harness startAutoTimeAdvance). Direct Hardhat commands keep default
             // automine for instant, awaited-free tx inclusion.
             mining:
                 process.env.E2E_INTERVAL_MINING === "1"
-                    ? { auto: false, interval: 1000 }
+                    ? { auto: false, interval: BLOCK_TIME_MS }
                     : { auto: true }
         },
         localhost: {

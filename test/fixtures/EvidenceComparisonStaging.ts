@@ -295,7 +295,7 @@ export async function stageEvidenceAuditAfterKill(h: MathPeerTestHarness) {
             spammerIndex: 1,
             // Protocol input: the three uploads and the kill below all land
             // inside one window, with room for a loaded machine.
-            timeConfig: { evidenceTime: 20 },
+            timeBlocks: { evidenceTime: 20 },
             beforeDispute: async () => {
                 for (const peer of h.peers)
                     await h
@@ -369,7 +369,7 @@ export async function stageEvidenceComparisonReplacedAfterKill(
             spammerIndex: 1,
             // Protocol input: the three uploads and the kill below all land
             // inside one window, with room for a loaded machine.
-            timeConfig: { evidenceTime: 20 },
+            timeBlocks: { evidenceTime: 20 },
             beforeDispute: async () => {
                 for (const peer of h.peers)
                     await h

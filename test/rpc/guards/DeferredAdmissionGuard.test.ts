@@ -1,5 +1,9 @@
+import { deriveTimeConfig } from "@/types";
 import { HandshakeCompletedGuardFixture } from "@test/fixtures/HandshakeCompletedGuardFixture";
 import { expect } from "chai";
+
+// the guard holds deferred work for two agreement windows
+const ADMISSION_TIMEOUT_MS = 2 * deriveTimeConfig().agreementTime * 1000;
 
 describe("DeferredAdmissionGuard", function () {
     let fixture: HandshakeCompletedGuardFixture;
@@ -27,8 +31,8 @@ describe("DeferredAdmissionGuard", function () {
             rejected: 1,
             expired: 1,
             transportCloseExpired: 1,
-            timeoutMs: [6000, 6000],
-            expectedTimeoutMs: 6000
+            timeoutMs: [ADMISSION_TIMEOUT_MS, ADMISSION_TIMEOUT_MS],
+            expectedTimeoutMs: ADMISSION_TIMEOUT_MS
         });
     });
 });

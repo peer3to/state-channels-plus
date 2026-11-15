@@ -1,18 +1,25 @@
-import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../scripts/V1/deploy";
+import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
+import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
+import {
+    DEFAULT_MAX_CHANNEL_PARTICIPANTS,
+    deploy,
+    deployArtifact,
+    deployFacets
+} from "../../scripts/V1/deploy";
 // @spec-test-coverage-ignore: shared deployment helpers for test files; declares no runnable case, so no specification or implementation IDs apply
 import Clock from "@/Clock";
 import { hash } from "@/utils";
 import { routedFacets } from "@/utils/routedFacets";
-import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import {
     StateChannelManagerInterface,
-    MathStateMachine
+    MathStateMachine,
+    MathStateMachine__factory
 } from "@typechain-types";
 import {
     JoinChannelStruct,
     OpenChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { ethers, AddressLike } from "ethers";
+import { ethers, AddressLike, type Signer } from "ethers";
 import { HardhatEthersHelpers } from "hardhat/types/runtime";
 
 export type TestObjectOptions = {
@@ -87,76 +94,51 @@ export const createOpenChannelTestObject = (
 /** Facet contract name -> deployed address of that facet behind the diamond. */
 export type DeployedFacetAddresses = Record<string, string>;
 
-export async function deployMathChannelProxyFixture(
-    _ethers: typeof ethers & HardhatEthersHelpers
-): Promise<{
+/**
+ * A fresh math stack on the deployer's chain: the routed facets, the math
+ * consumer facet and state machine, and a proxy with every time window and
+ * limit 0, bound to the deployer. Sends one at a time after the facets, so
+ * the deployer's pending nonce stays right on any node.
+ */
+export async function deployMathChannelProxyFixture(deployer: Signer): Promise<{
     mathChannelManager: StateChannelManagerInterface;
     mathInstance: MathStateMachine;
     facetAddresses: DeployedFacetAddresses;
     consumerFacetAddress: string;
 }> {
-    // the generic are here in order to make the spread operator in mathSmcFactory.deploy work
-    // typescipt needs to know the keys and the order of the array
-    async function deployFacets<T extends readonly any[]>(
-        configs: T
-    ): Promise<{ [K in keyof T]: string }> {
-        const addresses = await Promise.all(
-            configs.map(async (config) => {
-                const factory = await _ethers.getContractFactory(
-                    config.facetName
-                );
-                const facet = await factory.deploy();
-                return await facet.getAddress();
-            })
-        );
-        return addresses as { [K in keyof T]: string };
-    }
-
-    // Deploy all facets in parallel and get addresses in order
-    const facetAddresses = await deployFacets(routedFacets);
-
-    const mathConsumerFactory =
-        await _ethers.getContractFactory("MathConsumerFacet");
-    const mathConsumerFacet = await mathConsumerFactory.deploy();
-
-    //State machine logic
-    const mathSmFactory = await _ethers.getContractFactory("MathStateMachine");
-    const mathContactInstance = await mathSmFactory.deploy(
-        500000,
-        DEFAULT_MAX_CHANNEL_PARTICIPANTS
+    const facetAddresses = await deployFacets(deployer);
+    const { address: consumerFacetAddress } = await deployArtifact(
+        MathConsumerFacetArtifact,
+        deployer
+    );
+    const { address: stateMachineAddress } = await deployArtifact(
+        MathStateMachineArtifact,
+        deployer,
+        { args: [500000, DEFAULT_MAX_CHANNEL_PARTICIPANTS] }
+    );
+    const { contract } = await deploy(
+        stateMachineAddress,
+        consumerFacetAddress,
+        deployer,
+        { p2pTime: 0, agreementTime: 0, chainFallbackTime: 0, evidenceTime: 0 },
+        0,
+        0,
+        facetAddresses
     );
 
-    //Deploy MathStateChannelManager with all facet addresses
-    const mathSmcFactory = await _ethers.getContractFactory(
-        "StateChannelManagerProxy"
-    );
-    const mathStateChannelContactInstance = await mathSmcFactory.deploy(
-        await mathContactInstance.getAddress(),
-        ...facetAddresses,
-        await mathConsumerFacet.getAddress(),
-        0,
-        0,
-        0,
-        0,
-        0,
-        0
-    );
-
-    // The proxy only implements a handful of selectors itself and routes the
-    // rest to facets, so bind the diamond's full surface at its address.
     return {
-        mathChannelManager: connectStateChannelManager(
-            await mathStateChannelContactInstance.getAddress(),
-            mathStateChannelContactInstance.runner
+        mathChannelManager: contract,
+        mathInstance: MathStateMachine__factory.connect(
+            stateMachineAddress,
+            deployer
         ),
-        mathInstance: mathContactInstance,
         facetAddresses: Object.fromEntries(
             routedFacets.map((config, index) => [
                 config.facetName,
                 facetAddresses[index]
             ])
         ),
-        consumerFacetAddress: await mathConsumerFacet.getAddress()
+        consumerFacetAddress
     };
 }
 
@@ -166,14 +148,4 @@ export async function deployUtilityFacetTestContract(
     const UtilityFacetFactory =
         await _ethers.getContractFactory("UtilityFacet");
     return await UtilityFacetFactory.deploy();
-}
-
-export async function getSigners(
-    _ethers: typeof ethers & HardhatEthersHelpers
-) {
-    const signers = await _ethers.getSigners();
-    const firstSigner = signers[0];
-    const secondSigner = signers[1];
-    const thirdSigner = signers[2];
-    return { firstSigner, secondSigner, thirdSigner, signers };
 }

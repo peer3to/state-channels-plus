@@ -79,7 +79,7 @@ describe("E2E: dispute validation / inboundHash", function () {
         const attackerIndex = 1;
         // larger agreementTime avoids writer-timeout disputes racing the upload
         await h.scenario.preDisputeSetupConsumedInboundTopUp({
-            timeConfig: { agreementTime: 8, evidenceTime: 8 }
+            timeBlocks: { agreementTime: 8, evidenceTime: 8 }
         });
         const forkId = h.activeForkId!;
 
@@ -158,7 +158,7 @@ describe("E2E: dispute validation / inboundHash", function () {
 
         // larger agreementTime avoids writer-timeout disputes racing the upload
         await h.setup(3, {
-            timeConfig: {
+            timeBlocks: {
                 p2pTime: 2,
                 agreementTime: 8,
                 chainFallbackTime: 4,

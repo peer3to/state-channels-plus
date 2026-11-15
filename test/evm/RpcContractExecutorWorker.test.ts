@@ -384,7 +384,7 @@ describe("RpcContractExecutor (worker placement)", function () {
 
         try {
             await executor.simulateCall("0x1234", customAddress.toString());
-            await waitFor(() => reports.length >= 1, FLUSH_WAIT_MS, 50);
+            await waitFor(() => reports.length >= 1, FLUSH_WAIT_MS);
             expect(reports[0].message).to.include(WORKER_ASYNC_CRASH_MESSAGE);
 
             // report-and-continue: the thread kept its canonical state, so the
@@ -465,8 +465,7 @@ describe("RpcContractExecutor (worker placement)", function () {
                     receiver.requests.some(
                         (request) => request.threadName === "vm"
                     ),
-                FLUSH_WAIT_MS,
-                50
+                FLUSH_WAIT_MS
             );
 
             const vmUpload = receiver.requests.find(
@@ -526,8 +525,7 @@ describe("RpcContractExecutor (worker placement)", function () {
                             (request) => request.threadName === thread
                         )
                     ),
-                FLUSH_WAIT_MS,
-                50
+                FLUSH_WAIT_MS
             );
 
             const vmUpload = receiver.requests.find(
@@ -578,7 +576,7 @@ describe("RpcContractExecutor (worker placement)", function () {
                 expect(reports.length).to.equal(0);
 
                 sender.postMessage({ type: "arm" });
-                await waitFor(() => reports.length >= 1, 10_000, 50);
+                await waitFor(() => reports.length >= 1, 10_000);
                 const [report] = reports;
                 expect(report.message).to.equal(
                     `Event loop delay ${WATCHDOG_WORKER_TRIPPED_DELAY_MS}ms exceeded configured threshold ${WATCHDOG_WORKER_DELAY_ERROR_THRESHOLD_MS}ms`
@@ -624,7 +622,7 @@ describe("RpcContractExecutor (worker placement)", function () {
             const sender = new BroadcastChannel(armChannel);
             try {
                 sender.postMessage({ type: "arm" });
-                await waitFor(() => reports.length >= 1, 10_000, 50);
+                await waitFor(() => reports.length >= 1, 10_000);
                 expect(reports[0].message).to.equal(
                     WATCHDOG_WORKER_ORIGINAL_ERROR
                 );
@@ -657,22 +655,18 @@ describe("RpcContractExecutor (worker placement)", function () {
             try {
                 sender.postMessage({ type: "arm" });
                 let failure: unknown;
-                await waitFor(
-                    async () => {
-                        try {
-                            await executor.executeCall(
-                                "0x",
-                                "0x0000000000000000000000000000000000000001"
-                            );
-                            return false;
-                        } catch (error) {
-                            failure = error;
-                            return true;
-                        }
-                    },
-                    10_000,
-                    50
-                );
+                await waitFor(async () => {
+                    try {
+                        await executor.executeCall(
+                            "0x",
+                            "0x0000000000000000000000000000000000000001"
+                        );
+                        return false;
+                    } catch (error) {
+                        failure = error;
+                        return true;
+                    }
+                }, 10_000);
                 expect((failure as Error).message).to.equal(
                     "Root worker exited with 0"
                 );
@@ -822,7 +816,7 @@ describe("RpcContractExecutor (worker placement)", function () {
             try {
                 // The funnel is registered before readiness, so the earliest
                 // post-start throw is a report, not a fatal exit.
-                await waitFor(() => reports.length >= 1, 10_000, 50);
+                await waitFor(() => reports.length >= 1, 10_000);
                 expect(reports[0].message).to.equal(
                     WATCHDOG_WORKER_ORIGINAL_ERROR
                 );

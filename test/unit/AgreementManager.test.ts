@@ -773,7 +773,7 @@ describe("Unit: AgreementManager", function () {
             // writer-timeout dispute while d reconnects and syncs (verified:
             // default config reduces the fork mid-staging)
             await h.lifecycle.start(4, 0, {
-                timeConfig: { chainFallbackTime: 60 }
+                timeBlocks: { chainFallbackTime: 60 }
             });
             await h.network.blacklistAndDisconnectPeer(3);
             await h.transition.advanceState({

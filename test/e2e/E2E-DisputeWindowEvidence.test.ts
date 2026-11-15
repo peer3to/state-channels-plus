@@ -1,3 +1,4 @@
+import { BLOCK_TIME_MS } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type } from "@/utils";
 import {
@@ -108,7 +109,9 @@ describe("E2E: evidence in the dispute window", function () {
         const killed = await killedDisputeLogs(h);
         expect(killed).to.have.length(1);
         expect(killed[0].disputer).to.equal(late.address);
-        await h.event.waitUntilTimestamp(lower.evidenceEnd + 1);
+        await h.event.waitUntilTimestamp(
+            lower.evidenceEnd + BLOCK_TIME_MS / 1000
+        );
 
         // the higher state was admitted before the lower one and is not
         // uploaded again
@@ -206,7 +209,9 @@ describe("E2E: evidence in the dispute window", function () {
         await h.event.waitForPeers("onDisputeCommitted", [auditorIndex], 2, {
             mode: "atLeast"
         });
-        await h.event.waitUntilTimestamp(lower.evidenceEnd + 1);
+        await h.event.waitUntilTimestamp(
+            lower.evidenceEnd + BLOCK_TIME_MS / 1000
+        );
 
         expect(await auditorUploads.submissions()).to.deep.equal([]);
         expect(await comparisons.comparisons()).to.have.length(1);

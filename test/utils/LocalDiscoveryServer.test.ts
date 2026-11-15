@@ -9,6 +9,7 @@ import {
 } from "@test/fixtures/node/LocalDiscoveryReadyStaging";
 import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
+import { ABSENCE_WINDOW_MS } from "@test/harness/actions/EventActions";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -208,19 +209,13 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
                 .request()
         ).to.equal(false);
         let replacementToken: number | null = null;
-        await waitFor(
-            async () => {
-                replacementToken = await h
-                    .control(primary)
-                    .network.getTransportToken(other.address)
-                    .request();
-                return (
-                    replacementToken !== null && replacementToken !== firstToken
-                );
-            },
-            h.event.protocolEventTimeoutMs(),
-            200
-        );
+        await waitFor(async () => {
+            replacementToken = await h
+                .control(primary)
+                .network.getTransportToken(other.address)
+                .request();
+            return replacementToken !== null && replacementToken !== firstToken;
+        }, h.event.protocolEventTimeoutMs());
         expect(replacementToken).to.not.equal(firstToken);
         // the redial waits at least a second after the close, so the
         // replacement cannot exist earlier than that
@@ -237,7 +232,7 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
                 .network.closePeerTransportByAddress(other.address)
                 .request()
         ).to.equal(true);
-        await sleep(600);
+        await sleep(ABSENCE_WINDOW_MS);
         expect(
             await h
                 .control(primary)
@@ -289,16 +284,10 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
             await sleep(100);
         }
         let replacementToken: number | null = null;
-        await waitFor(
-            async () => {
-                replacementToken = await acceptorToken();
-                return (
-                    replacementToken !== null && replacementToken !== firstToken
-                );
-            },
-            h.event.protocolEventTimeoutMs(),
-            100
-        );
+        await waitFor(async () => {
+            replacementToken = await acceptorToken();
+            return replacementToken !== null && replacementToken !== firstToken;
+        }, h.event.protocolEventTimeoutMs());
         expect(Date.now() - closedAt).to.be.at.least(1000);
         for (const [from, to] of [
             [acceptor, dialer],
@@ -411,7 +400,7 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
                 )
             );
             // Observe repeated discovery announcements while authentication is held.
-            await sleep(600);
+            await sleep(ABSENCE_WINDOW_MS);
             expect(await heldCounts()).to.deep.equal([1, 1]);
             expect(
                 await h.control(dialer).query.getOpenConnectionCount().request()
@@ -522,7 +511,7 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
                 .network.blacklistAndDisconnectPeerByAddress(other.address)
                 .request()
         ).to.equal(true);
-        await sleep(600);
+        await sleep(ABSENCE_WINDOW_MS);
 
         expect(
             await h
@@ -588,7 +577,7 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
                 )
             );
             // Observe repeated discovery announcements while authentication is held.
-            await sleep(600);
+            await sleep(ABSENCE_WINDOW_MS);
             for (const peer of h.peers) {
                 expect(
                     await h.control(peer).stub.getHeldHandshakeCount().request()
@@ -649,7 +638,7 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
                 h.control(peer).network.joinSelectedKey(secondTopic).request()
             )
         );
-        await sleep(600);
+        await sleep(ABSENCE_WINDOW_MS);
         expect(
             await h
                 .control(primary)

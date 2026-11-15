@@ -1,7 +1,9 @@
 import { Block, StateSnapshot } from "@/models";
+import { readLogPages } from "@/stateManager/eventSync/EventSyncService";
 import { Status } from "@/types";
 import type { Address, Bytes } from "@/types/types";
 import { Codec, SignatureUtils, Type } from "@/utils";
+import { config } from "@/utils/config";
 import { recordSnapshotPostWaitResults } from "@test/fixtures/BotConnectionFixesStaging";
 import {
     stageExitPostInFlightAcrossClose,
@@ -18,7 +20,7 @@ import { MathTestSession as TestSession } from "@test/harness";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { ethers } from "ethers";
+import { ethers, type Log } from "ethers";
 
 /**
  * E2E Tests for Participant Lifecycle (Exit + Join)
@@ -188,15 +190,39 @@ describe("E2E: Participant Lifecycle", function () {
                 50
             );
 
+            // the registry spans every channel of this manager, which earlier
+            // tests on this node opened too -> read its whole history in pages
+            const manager = h.channelManager;
+            const head = await h.provider.getBlockNumber();
+            const allLogs = async (
+                filter:
+                    | typeof manager.filters.ChannelOpened
+                    | typeof manager.filters.StateSnapshotUpdated
+            ) => {
+                const logs: Log[] = [];
+                const failure = await readLogPages(
+                    h.provider,
+                    {
+                        address: await manager.getAddress(),
+                        topics: await filter().getTopicFilter()
+                    },
+                    0,
+                    head,
+                    (page) => {
+                        logs.push(...page);
+                    },
+                    config.LOG_QUERY_MAX_BLOCKS
+                );
+                if (failure) throw failure.error;
+                return logs.map((log) => manager.interface.parseLog(log)!);
+            };
             const liveFromEvents = new Set(
-                (
-                    await h.channelManager.queryFilter(
-                        h.channelManager.filters.ChannelOpened()
-                    )
-                ).map((event) => String(event.args.channelId))
+                (await allLogs(manager.filters.ChannelOpened)).map((event) =>
+                    String(event.args.channelId)
+                )
             );
-            const snapshots = await h.channelManager.queryFilter(
-                h.channelManager.filters.StateSnapshotUpdated()
+            const snapshots = await allLogs(
+                manager.filters.StateSnapshotUpdated
             );
             for (const event of snapshots) {
                 if (

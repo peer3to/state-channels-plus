@@ -31,7 +31,7 @@ import type { CustomRpcManifest } from "@/rpc/network/registry";
 import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import type { RpcRequestOptions } from "@/rpc/network/RpcHandler";
 import type StateManager from "@/stateManager/StateManager";
-import { TimeConfig } from "@/types";
+import { deriveTimeConfig, TimeConfig } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
 import { Address, ChannelId, ForkId, Hash } from "@/types/types";
 import {
@@ -67,7 +67,6 @@ import {
     slotAccountIndex,
     slotDeployerIndex
 } from "@test/harness/core/slotAccounts";
-import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import {
     EventSpies,
     HarnessConstructorOptions,
@@ -111,7 +110,10 @@ export class PeerTestHarness<
     public channelManager!: StateChannelManagerInterface;
     private sharedStateMachineDeployer!: LocalStateMachineDeployer;
     public channelId!: ChannelId;
-    public options!: HarnessOptions<THost>;
+    /** The block of the harness's last open; unset when the runtimes opened the channel. */
+    private openingBlock?: number;
+    /** The options as given, plus the protocol windows resolved from `timeBlocks`. */
+    public options!: HarnessOptions<THost> & { timeConfig: TimeConfig };
     private harnessConfig!: Partial<Config>;
     private readonly deployment: HarnessDeploymentConfig<TStateMachine>;
     public logger: Logger;
@@ -293,14 +295,10 @@ export class PeerTestHarness<
             testConfig
         );
 
-        const resolvedTimeConfig: TimeConfig = resolveTestTimeConfig(
-            options?.timeConfig
-        );
-
         this.options = {
             logLevel:
                 options?.logLevel ?? (config.LOG_LEVEL as LogLevel) ?? "error",
-            timeConfig: resolvedTimeConfig,
+            timeConfig: deriveTimeConfig(options?.timeBlocks),
             channelId:
                 options?.channelId ||
                 `test-channel-${Date.now()}-${process.pid}-${Math.floor(Math.random() * 1e9)}`,
@@ -400,18 +398,34 @@ export class PeerTestHarness<
         );
     }
 
+    /**
+     * The block of the harness's last open; log reads of the channel start
+     * here, not at block 0. Throws when the harness did not open the channel.
+     */
+    public get channelOpeningBlock(): number {
+        if (this.openingBlock === undefined) {
+            throw new Error(
+                "channelOpeningBlock is unset: the harness did not open this channel"
+            );
+        }
+        return this.openingBlock;
+    }
+
+    public set channelOpeningBlock(block: number) {
+        this.openingBlock = block;
+    }
+
     public get canAddPeer(): boolean {
         return !!this.channelManager && !!this.sharedStateMachineDeployer;
     }
 
     /**
-     * Establish the node + discovery URLs. Use whatever the runner passed in
-     * (PROVIDER_URL / LOCAL_DISCOVERY_REGISTRY_URL, e.g. a slot); for anything
-     * not provided, start it ourselves via the same shared infra calls the
-     * runner uses, and own its teardown. The resolved URLs are written back to
-     * the config so the SDK (and any sdk-in-thread worker) uses the same infra.
+     * Connect the harness provider to the test chain's node: the runner's
+     * (PROVIDER_URL, e.g. a slot), else one started here and stopped in
+     * cleanup. `setup` starts with it; a test that only deploys contracts and
+     * sends transactions calls it instead of `setup` and boots no peers.
      */
-    private async resolveInfra(): Promise<void> {
+    public async connectChain(): Promise<void> {
         let nodeUrl = process.env.PROVIDER_URL || process.env.HARDHAT_NODE_URL;
         if (!nodeUrl) {
             const node = await startHardhatNode({
@@ -422,6 +436,24 @@ export class PeerTestHarness<
             nodeUrl = node.url;
             this.logger.debug(`Started harness hardhat node at ${nodeUrl}`);
         }
+        config.PROVIDER_URL = nodeUrl;
+
+        // WebSocket so block/event subscriptions are push-based (eth_subscribe)
+        // rather than HTTP polling — far less main-thread event-loop pressure.
+        // Hardhat's node serves WS on the same port.
+        const wsUrl = nodeUrl.replace(/^http/, "ws");
+        this.provider = new ethers.WebSocketProvider(wsUrl);
+    }
+
+    /**
+     * Establish the node + discovery URLs. Use whatever the runner passed in
+     * (PROVIDER_URL / LOCAL_DISCOVERY_REGISTRY_URL, e.g. a slot); for anything
+     * not provided, start it ourselves via the same shared infra calls the
+     * runner uses, and own its teardown. The resolved URLs are written back to
+     * the config so the SDK (and any sdk-in-thread worker) uses the same infra.
+     */
+    private async resolveInfra(): Promise<void> {
+        await this.connectChain();
 
         let discoveryUrl = process.env.LOCAL_DISCOVERY_REGISTRY_URL;
         if (!discoveryUrl) {
@@ -433,16 +465,9 @@ export class PeerTestHarness<
             this.logger.debug(`Started harness discovery at ${discoveryUrl}`);
         }
 
-        this.harnessConfig.PROVIDER_URL = nodeUrl;
+        this.harnessConfig.PROVIDER_URL = config.PROVIDER_URL;
         this.harnessConfig.LOCAL_DISCOVERY_REGISTRY_URL = discoveryUrl;
-        config.PROVIDER_URL = nodeUrl;
         config.LOCAL_DISCOVERY_REGISTRY_URL = discoveryUrl;
-
-        // WebSocket so block/event subscriptions are push-based (eth_subscribe)
-        // rather than HTTP polling — far less main-thread event-loop pressure.
-        // Hardhat's node serves WS on the same port.
-        const wsUrl = nodeUrl.replace(/^http/, "ws");
-        this.provider = new ethers.WebSocketProvider(wsUrl);
     }
 
     /** Wallet for an absolute account index, connected to the harness provider. */
@@ -471,7 +496,7 @@ export class PeerTestHarness<
                 stateMachineGasLimit: this.options.stateMachineGasLimit!,
                 disputeExecutionGasLimit:
                     this.options.disputeExecutionGasLimit!,
-                timeConfig: this.options.timeConfig as TimeConfig,
+                timeConfig: this.options.timeConfig,
                 harnessConfig: this.harnessConfig
             });
 
@@ -569,7 +594,7 @@ export class PeerTestHarness<
                             this.options.stateMachineGasLimit!,
                         disputeExecutionGasLimit:
                             this.options.disputeExecutionGasLimit!,
-                        timeConfig: this.options.timeConfig as TimeConfig,
+                        timeConfig: this.options.timeConfig,
                         harnessConfig: this.harnessConfig,
                         facetAddresses
                     }

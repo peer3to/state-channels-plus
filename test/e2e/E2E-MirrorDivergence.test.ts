@@ -1,4 +1,4 @@
-import { Status } from "@/types";
+import { BLOCK_TIME_MS, Status } from "@/types";
 import { stageMirrorMissingConsumedTopUp } from "@test/fixtures/MirrorDivergenceStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
@@ -37,7 +37,7 @@ describe("E2E: local mirror divergence", function () {
         await h.event.waitWhileEventCountsStayAtMost(
             "onDisputeKilled",
             [...remainingPeerIndices, leaverIndex],
-            { durationMs: 4000 }
+            { durationMs: 4 * BLOCK_TIME_MS }
         );
         expect(
             await h

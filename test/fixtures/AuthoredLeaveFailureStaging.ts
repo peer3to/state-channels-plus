@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: authored-leave fallback staging for mapped runtime cases
+import { BLOCK_TIME_MS } from "@/types";
 import { addressesEqual } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
@@ -16,9 +17,9 @@ export async function assertAuthoredLeaveFallback(
 ) {
     const h = TestSession.getHarness();
     await h.lifecycle.start(3, 0, {
-        timeConfig: { evidenceTime: 20 },
+        timeBlocks: { evidenceTime: 20 },
         // the production default
-        configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 15_000 }
+        configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 15 * BLOCK_TIME_MS }
     });
     const leaver = h.getPeer(1);
     const forkId = h.activeForkId!;

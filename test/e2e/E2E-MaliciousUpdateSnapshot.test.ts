@@ -183,7 +183,7 @@ describe("E2E: Malicious updateSnapshot", function () {
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(3, 1, {
-            timeConfig: {
+            timeBlocks: {
                 p2pTime: 5,
                 agreementTime: 2,
                 chainFallbackTime: 2,

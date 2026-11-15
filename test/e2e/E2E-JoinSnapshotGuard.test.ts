@@ -1,6 +1,6 @@
 import StateSnapshot from "@/models/StateSnapshot";
 import { isRootDisposedError } from "@/rpc/internal/RemoteRoot";
-import { Status } from "@/types";
+import { BLOCK_TIME_MS, Status } from "@/types";
 import { sleep } from "@/utils";
 import {
     chainBlockPastWait,
@@ -304,8 +304,10 @@ describe("E2E: join snapshot guard", function () {
         const h = TestSession.getHarness();
         await h.scenario.syncSpectator();
         const participant = h.getPeer(0);
+        // the head block can hold an earlier join, so only later blocks count
         const fromBlock =
-            await participant.p2pInstance.chainSigner.provider!.getBlockNumber();
+            (await participant.p2pInstance.chainSigner.provider!.getBlockNumber()) +
+            1;
         const releaseAll = await h.rpcStub.holdMembershipSubmission(
             participant.index,
             "topUpBalance"
@@ -444,8 +446,10 @@ describe("E2E: join snapshot guard", function () {
         const h = TestSession.getHarness();
         await h.scenario.syncSpectator();
         const participant = h.getPeer(0);
+        // the head block can hold an earlier join, so only later blocks count
         const fromBlock =
-            await participant.p2pInstance.chainSigner.provider!.getBlockNumber();
+            (await participant.p2pInstance.chainSigner.provider!.getBlockNumber()) +
+            1;
         const releaseAll = await h.rpcStub.holdMembershipSubmission(
             participant.index,
             "topUpBalance"
@@ -486,8 +490,10 @@ describe("E2E: join snapshot guard", function () {
         // four seats: at most four retries
         await h.scenario.syncSpectator(4, { maxChannelParticipants: 4 });
         const participant = h.getPeer(0);
+        // the head block can hold an earlier join, so only later blocks count
         const fromBlock =
-            await participant.p2pInstance.chainSigner.provider!.getBlockNumber();
+            (await participant.p2pInstance.chainSigner.provider!.getBlockNumber()) +
+            1;
         await h.rpcStub.holdMembershipSubmission(
             participant.index,
             "topUpBalance"
@@ -1046,7 +1052,7 @@ describe("E2E: join snapshot guard", function () {
         expect(await join.catch(() => false)).to.equal(false);
         // absence window: a retry submitted after the disposal lands its JOIN
         // within it
-        await sleep(5_000);
+        await sleep(5 * BLOCK_TIME_MS);
         expect(
             await chainJoinAmounts(h, joiner.address, fromBlock)
         ).to.deep.equal([]);
@@ -1067,8 +1073,10 @@ describe("E2E: join snapshot guard", function () {
             channelId: h.channelId!,
             jcOverrides: { balance: { amount: 5n, data: "0x00" } }
         });
+        // the head block can hold an earlier join, so only later blocks count
         const fromBlock =
-            await participant.p2pInstance.chainSigner.provider!.getBlockNumber();
+            (await participant.p2pInstance.chainSigner.provider!.getBlockNumber()) +
+            1;
         await moveChainSnapshot(h);
         const stub = h.control(participant).stub;
         await stub.holdJoinCollectionResult().request();
@@ -1226,8 +1234,10 @@ describe("E2E: join snapshot guard", function () {
             h,
             thresholdPeers
         );
+        // the head block can hold an earlier join, so only later blocks count
         const fromBlock =
-            await joiner.p2pInstance.chainSigner.provider!.getBlockNumber();
+            (await joiner.p2pInstance.chainSigner.provider!.getBlockNumber()) +
+            1;
         await h.rpcStub.failMembershipReceipt(joiner.index, "joinChannel", {
             once: true,
             isReplayPassing: true
@@ -1270,8 +1280,10 @@ describe("E2E: join snapshot guard", function () {
             maximumBlocks: 16
         });
         await h.assert.sync.peersInSyncWait();
+        // the head block can hold an earlier join, so only later blocks count
         const fromBlock =
-            await second.p2pInstance.chainSigner.provider!.getBlockNumber();
+            (await second.p2pInstance.chainSigner.provider!.getBlockNumber()) +
+            1;
         await h.rpcStub.failMembershipReceipt(second.index, "joinChannel", {
             once: true,
             isReplayPassing: true
@@ -1339,8 +1351,10 @@ describe("E2E: join snapshot guard", function () {
             h,
             thresholdPeers
         );
+        // the head block can hold an earlier join, so only later blocks count
         const fromBlock =
-            await joiner.p2pInstance.chainSigner.provider!.getBlockNumber();
+            (await joiner.p2pInstance.chainSigner.provider!.getBlockNumber()) +
+            1;
         await h.rpcStub.failMembershipReceipt(joiner.index, "joinChannel", {
             isReplayPassing: true
         });
@@ -1610,8 +1624,10 @@ describe("E2E: join snapshot guard", function () {
                 joiner,
                 channelId: h.channelId!
             });
+        // the head block can hold an earlier join, so only later blocks count
         const fromBlock =
-            await joiner.p2pInstance.chainSigner.provider!.getBlockNumber();
+            (await joiner.p2pInstance.chainSigner.provider!.getBlockNumber()) +
+            1;
         const releaseAll = await h.rpcStub.holdMembershipSubmission(
             joiner.index,
             "joinChannel"
@@ -1725,8 +1741,10 @@ describe("E2E: join snapshot guard", function () {
         const h = TestSession.getHarness();
         const spectator = await h.scenario.syncSpectator();
         const participant = h.getPeer(0);
+        // the head block can hold an earlier join, so only later blocks count
         const fromBlock =
-            await participant.p2pInstance.chainSigner.provider!.getBlockNumber();
+            (await participant.p2pInstance.chainSigner.provider!.getBlockNumber()) +
+            1;
         const prepared = await h.join.buildJoinChannelConfirmation({
             joiner: participant,
             channelId: h.channelId!,
@@ -1826,8 +1844,10 @@ describe("E2E: join snapshot guard", function () {
             h,
             thresholdPeers
         );
+        // the head block can hold an earlier join, so only later blocks count
         const fromBlock =
-            await participant.p2pInstance.chainSigner.provider!.getBlockNumber();
+            (await participant.p2pInstance.chainSigner.provider!.getBlockNumber()) +
+            1;
         await h.rpcStub.failMembershipReceipt(
             participant.index,
             "topUpBalance",
@@ -1862,8 +1882,10 @@ describe("E2E: join snapshot guard", function () {
         const h = TestSession.getHarness();
         const spectator = await h.scenario.syncSpectator();
         const participant = h.getPeer(0);
+        // the head block can hold an earlier join, so only later blocks count
         const fromBlock =
-            await participant.p2pInstance.chainSigner.provider!.getBlockNumber();
+            (await participant.p2pInstance.chainSigner.provider!.getBlockNumber()) +
+            1;
         const prepared = await h.join.buildJoinChannelConfirmation({
             joiner: participant,
             channelId: h.channelId!,
@@ -1932,8 +1954,10 @@ describe("E2E: join snapshot guard", function () {
             h,
             thresholdPeers
         );
+        // the head block can hold an earlier join, so only later blocks count
         const fromBlock =
-            await participant.p2pInstance.chainSigner.provider!.getBlockNumber();
+            (await participant.p2pInstance.chainSigner.provider!.getBlockNumber()) +
+            1;
         await h.rpcStub.failMembershipReceipt(
             participant.index,
             "topUpBalance",
@@ -1970,8 +1994,10 @@ describe("E2E: join snapshot guard", function () {
         await h.scenario.syncSpectator();
         const participant = h.getPeer(0);
         const signer = participant.p2pInstance.p2pSigner;
+        // the head block can hold an earlier join, so only later blocks count
         const fromBlock =
-            await participant.p2pInstance.chainSigner.provider!.getBlockNumber();
+            (await participant.p2pInstance.chainSigner.provider!.getBlockNumber()) +
+            1;
         const prepared = await h.join.buildJoinChannelConfirmation({
             joiner: participant,
             channelId: h.channelId!,
@@ -2025,8 +2051,10 @@ describe("E2E: join snapshot guard", function () {
             h,
             thresholdPeers
         );
+        // the head block can hold an earlier join, so only later blocks count
         const fromBlock =
-            await joiner.p2pInstance.chainSigner.provider!.getBlockNumber();
+            (await joiner.p2pInstance.chainSigner.provider!.getBlockNumber()) +
+            1;
         const stub = h.control(joiner).stub;
         // the first call's collection is held before it asks for any
         // countersignature, so the joiner stays SYNCED meanwhile

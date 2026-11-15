@@ -5,9 +5,10 @@ import Clock from "@/Clock";
 import {
     EARLY_TIMEOUT_RECHECK_REASON,
     MISMATCH_TIMEOUT_RECHECK_REASON,
-    PREDECESSOR_POSTED_RECHECK_REASON
+    PREDECESSOR_POSTED_RECHECK_REASON,
+    TIMEOUT_RECHECK_DELAY_MS
 } from "@/stateManager/chainFallback/ParticipantTimeoutService";
-import { TimeConfig, timeoutWaitTime } from "@/types";
+import { BLOCK_TIME_MS, TimeBlocks, timeoutWaitTime } from "@/types";
 import type { Address, BlockHeight, ForkId } from "@/types/types";
 import { Codec, Type, sleep } from "@/utils";
 import type { CustomErrorArg } from "@test/factory";
@@ -112,15 +113,15 @@ export async function assertEarlyTimeoutRetry(
 ): Promise<void> {
     await h.lifecycle.timeoutSetup(3);
     // A mismatch needs a stored predecessor block: advance once, so peer 0
-    // authored it and observer 2 times out writer 1. Delays are literal so a
-    // changed TIMEOUT_RECHECK_DELAY_MS turns these checks red.
+    // authored it and observer 2 times out writer 1. Delays are
+    // TIMEOUT_RECHECK_DELAY_MS, one block time.
     if (mismatch) await h.transition.advanceState();
     const scenario = mismatch
         ? {
               observerIndex: 2,
               suppressedIndex: 0,
               reason: MISMATCH_TIMEOUT_RECHECK_REASON,
-              delayMs: 1000,
+              delayMs: TIMEOUT_RECHECK_DELAY_MS,
               failWith: {
                   customError: MISMATCH_TIMEOUT_ERROR,
                   customErrorArgs: mismatchRefusalArgs(
@@ -161,7 +162,7 @@ export async function assertEarlyTimeoutRetry(
         );
         if (failures > 1) {
             // While the first re-arm is held nothing else may submit (no spin).
-            await sleep(1000);
+            await sleep(TIMEOUT_RECHECK_DELAY_MS);
             expect(await probes.held.heldCount()).to.equal(1);
             expect(await probes.recorder.submissions()).to.have.length(1);
         }
@@ -228,9 +229,9 @@ export async function assertConsecutiveMismatchRetry(
         failWith
     );
     try {
-        await first.expectOneHeldRearm(1000);
+        await first.expectOneHeldRearm(TIMEOUT_RECHECK_DELAY_MS);
         expect(await didDispute(h, observerIndex, forkId)).to.equal(false);
-        await sleep(1000);
+        await sleep(TIMEOUT_RECHECK_DELAY_MS);
         expect(await first.held.heldCount()).to.equal(1);
         firstEncoded = (await first.recorder.submissions())[0].encodedDispute;
     } finally {
@@ -257,7 +258,7 @@ export async function assertConsecutiveMismatchRetry(
             { forkId, height: 1, writer: writer.address },
             { timeoutMs: h.event.hostExecTimeoutMs() }
         );
-        await second.expectOneHeldRearm(1000);
+        await second.expectOneHeldRearm(TIMEOUT_RECHECK_DELAY_MS);
         expect(await didDispute(h, observerIndex, forkId)).to.equal(false);
         await second.held.release(true);
         await waitFor(
@@ -509,7 +510,7 @@ export async function assertMismatchRetryAfterForkSwitch(
                         ),
                     { forkId, writer }
                 );
-                await installed.expectOneHeldRearm(1000);
+                await installed.expectOneHeldRearm(TIMEOUT_RECHECK_DELAY_MS);
             }
         });
         // the first upload is the refused timeout claim against the writer
@@ -809,7 +810,7 @@ async function storeUnappliedPost(
 // post lagged the block; a reschedule rounding up to the block's own deadline
 // waits a second or two. Both stagings post well over this bound after the
 // block, so a check running several seconds late still clears it.
-const POST_WAIT_MIN_MS = 3000;
+const POST_WAIT_MIN_MS = 3 * BLOCK_TIME_MS;
 
 /** The recorded checks that waited for the predecessor's post. */
 async function waitsForPost(tasks: {
@@ -831,9 +832,10 @@ async function waitsForPost(tasks: {
  */
 export async function assertSignedPredecessorPostGrantsNoTime(
     h: MathPeerTestHarness,
-    timeConfig: TimeConfig
+    timeBlocks: TimeBlocks
 ): Promise<void> {
-    await h.lifecycle.start(3, 1, { timeConfig });
+    await h.lifecycle.start(3, 1, { timeBlocks });
+    const { timeConfig } = h.options;
     const forkId = h.activeForkId!;
     await h.transition.advanceState();
     const leader = h.getPeer(0);
@@ -909,10 +911,11 @@ export async function assertSignedPredecessorPostGrantsNoTime(
  */
 export async function assertUnsignedPredecessorPostDelaysCheck(
     h: MathPeerTestHarness,
-    timeConfig: TimeConfig
+    timeBlocks: TimeBlocks
 ): Promise<void> {
     const { observer, author, parentAuthor, previous, forkId, postParent } =
-        await h.scenario.unpostedParentUnsignedByNextWriter({ timeConfig });
+        await h.scenario.unpostedParentUnsignedByNextWriter({ timeBlocks });
+    const { timeConfig } = h.options;
     await h.rpcStub.suppressTimeoutCheck(parentAuthor.index);
     // post well after the block reached the observer
     await sleep(timeConfig.agreementTime * 1000);

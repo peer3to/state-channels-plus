@@ -1,3 +1,4 @@
+import { BLOCK_TIME_MS } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { addressesEqual } from "@/utils";
 import {
@@ -16,7 +17,7 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         const h = TestSession.getHarness();
         // Larger agreementTime avoids writer-timeout disputes racing self-removal.
         await h.scenario.preDisputeSetup({
-            timeConfig: { agreementTime: 8, evidenceTime: 4 }
+            timeBlocks: { agreementTime: 8, evidenceTime: 4 }
         });
 
         const leaverIndex = 1;
@@ -48,7 +49,7 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         await h.event.waitWhileEventCountsStayAtMost(
             "onDisputeKilled",
             [...remainingPeerIndices, leaverIndex],
-            { durationMs: 4000 }
+            { durationMs: 4 * BLOCK_TIME_MS }
         );
 
         await h.dispute.resolveDisputeWait({

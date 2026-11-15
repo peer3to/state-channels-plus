@@ -1,7 +1,7 @@
 // @spec-test-coverage-ignore: shared fixture triggers production behavior; executable evidence belongs to its calling test declarations
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { EvmStateMachine, type AContractExecutor } from "@/evm";
-import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
+import { deriveTimeConfig } from "@/types";
 import { MathStateMachine__factory } from "@typechain-types";
 import type { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { ethers } from "hardhat";
@@ -136,7 +136,7 @@ export async function createDiamondStateMachine(
             diamondMachine.address,
             machineInterface,
             ethers.Wallet.createRandom(ethers.provider),
-            resolveTestTimeConfig(),
+            deriveTimeConfig(),
             3_000_000
         );
     return evmDiamondStateMachine;

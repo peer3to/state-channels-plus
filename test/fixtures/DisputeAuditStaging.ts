@@ -3,7 +3,7 @@ import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
-import { timeoutWaitTime } from "@/types";
+import { BLOCK_TIME_MS, timeoutWaitTime } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import type { Address, ForkId, Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
@@ -33,7 +33,6 @@ import type {
     DisputeSubmissionRecording,
     EvidenceComparisonRecording
 } from "@test/harness/actions/rpcStubActions";
-import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import type { TestPeer } from "@test/harness/core/types";
 import { waitFor } from "@test/utils/waitFor";
 import type { MathStateMachine } from "@typechain-types";
@@ -472,7 +471,7 @@ export async function stageRefusedKillAndDispute(
     // long enough that peer 2's upload is still inside the evidence period
     await h.scenario.preDisputeSetup({
         peerCount: 4,
-        timeConfig: { evidenceTime: 30 }
+        timeBlocks: { evidenceTime: 30 }
     });
     const forkId = h.activeForkId!;
     for (const peer of h.peers) {
@@ -533,8 +532,9 @@ export async function stageSlowAuditorPastEvidencePeriod(
     const evidenceTime = 14;
     await h.scenario.preDisputeSetup({
         peerCount: 4,
-        timeConfig: { evidenceTime }
+        timeBlocks: { evidenceTime }
     });
+    const evidenceSeconds = h.options.timeConfig.evidenceTime;
     const forkId = h.activeForkId!;
     for (const peer of h.peers) {
         await h.rpcStub.suppressTimeoutCheck(peer.index);
@@ -574,7 +574,9 @@ export async function stageSlowAuditorPastEvidencePeriod(
     );
 
     // the first kill and replacement land late in the kill period
-    await h.event.waitUntilTimestamp(created + evidenceTime - 6);
+    await h.event.waitUntilTimestamp(
+        created + evidenceSeconds - (6 * BLOCK_TIME_MS) / 1000
+    );
     await first.release();
     await waitFor(
         async () =>
@@ -588,7 +590,9 @@ export async function stageSlowAuditorPastEvidencePeriod(
     await h.assert.dispute.slashedOnChain(spammer.address);
 
     // the evidence period is over; the replacement's kill period is not
-    await h.event.waitUntilTimestamp(created + evidenceTime + 1);
+    await h.event.waitUntilTimestamp(
+        created + evidenceSeconds + BLOCK_TIME_MS / 1000
+    );
     await slowConstruction.release();
     return {
         forkId,
@@ -831,7 +835,8 @@ export async function postForgedOutboundRunDispute(
         async () =>
             (
                 await h.channelManager.queryFilter(
-                    h.channelManager.filters.DisputeKilled(h.channelId)
+                    h.channelManager.filters.DisputeKilled(h.channelId),
+                    h.channelOpeningBlock
                 )
             ).some((log) => log.args.disputer === disputer),
         h.event.protocolEventTimeoutMs()
@@ -991,7 +996,7 @@ export async function stagePendingDisputerBehindLateAuditor(
 ) {
     // The disputer's join idles the authors longer than p2pTime +
     // agreementTime under load, and the next block fails the time check.
-    await h.lifecycle.start(3, 0, { timeConfig: { p2pTime: 15 } });
+    await h.lifecycle.start(3, 0, { timeBlocks: { p2pTime: 15 } });
     const forkId = h.activeForkId!;
     for (const index of [0, 1, 2]) {
         await h.rpcStub.suppressTimeoutCheck(index);
@@ -1430,7 +1435,8 @@ export async function assertColludersKilledByConflict(
     const isKilled = async (disputer: Address) =>
         (
             await h.channelManager.queryFilter(
-                h.channelManager.filters.DisputeKilled(h.channelId)
+                h.channelManager.filters.DisputeKilled(h.channelId),
+                h.channelOpeningBlock
             )
         ).some((log) => log.args.disputer === disputer);
     for (const index of options.colluderIndices) {
@@ -1547,7 +1553,7 @@ export async function stageParallelHeadAudits(h: MathPeerTestHarness) {
     // covers the two later uploads, the held walks and their release, the
     // three audits, and the auditor's own kill-and-dispute upload. Use the
     // approved balance-invariant evidence window, as the other audit orders.
-    await h.scenario.preDisputeSetup({ timeConfig: { evidenceTime: 15 } });
+    await h.scenario.preDisputeSetup({ timeBlocks: { evidenceTime: 15 } });
     const forkId = h.activeForkId!;
     const { auditorIndex, restoreGossip } = await stageBlindPendingAuditor(
         h,
@@ -1618,7 +1624,7 @@ export async function waitUntilTimeoutIsTimely(
     previousTimestamp: number,
     accusedHeight: number
 ): Promise<void> {
-    const timeConfig = resolveTestTimeConfig(h.options.timeConfig);
+    const timeConfig = h.options.timeConfig;
     await h.event.waitUntilTimestamp(
         previousTimestamp +
             timeoutWaitTime(timeConfig, accusedHeight) +
@@ -1647,13 +1653,15 @@ export async function postTimelyNextWriterTimeout(h: MathPeerTestHarness) {
     const { header } = Codec.decode(head!.encodedBlock, Type.Block).transaction;
     const headTs = Number(header.timestamp);
     const wait = timeoutWaitTime(
-        resolveTestTimeConfig(),
+        h.options.timeConfig,
         Number(header.transactionCnt) + 1
     );
     // plant first: the upload's window-created-too-early guard compares
     // against the timeout's minTimeStamp (set at plant time)
     await h.tamper.plantFreshTimeoutForNextWriter(0);
-    await h.event.waitUntilTimestamp(headTs + wait + 2);
+    await h.event.waitUntilTimestamp(
+        headTs + wait + (2 * BLOCK_TIME_MS) / 1000
+    );
     const { dispute } = await h.tamper.postTamperedDispute(0, () => {}, {
         markMalicious: false
     });
@@ -2032,8 +2040,7 @@ export async function stageTimeoutOfCalldataPostedBlock(
     h: MathPeerTestHarness,
     options: { blocksBefore: number; beforeCalldataBlock?: () => Promise<void> }
 ) {
-    const timeConfig = { evidenceTime: 8 };
-    await h.lifecycle.timeoutSetup(4, 0, { timeConfig });
+    await h.lifecycle.timeoutSetup(4, 0, { timeBlocks: { evidenceTime: 8 } });
     if (options.blocksBefore > 0) {
         await h.transition.advanceState({ count: options.blocksBefore });
     }
@@ -2074,11 +2081,8 @@ export async function stageTimeoutOfCalldataPostedBlock(
               );
     await h.event.waitUntilTimestamp(
         previousTimestamp +
-            timeoutWaitTime(
-                resolveTestTimeConfig(timeConfig),
-                options.blocksBefore
-            ) +
-            1
+            timeoutWaitTime(h.options.timeConfig, options.blocksBefore) +
+            BLOCK_TIME_MS / 1000
     );
     await h.tamper.plantFreshTimeoutForParticipant(
         disputerIndex,

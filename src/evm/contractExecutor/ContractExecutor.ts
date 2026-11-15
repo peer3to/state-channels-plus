@@ -34,8 +34,9 @@ export const DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT = 0xffffffn;
  * copying the input come on top, and cost at most about one more budget (they
  * undo or move what one budgeted run wrote). With twice the requirement a
  * local transition is not refused where a funded chain replay runs it, as far
- * as the chain's block gas limit lets such a replay be sent (a block whose
- * input alone exceeds that limit cannot be replayed on-chain either). The
+ * as the chain's gas limit for one transaction (MAX_TX_GAS, at most the block
+ * gas limit) lets such a replay be sent (a block whose input alone exceeds
+ * that limit cannot be replayed on-chain either). The
  * requirement is a funding baseline, not a bound on the surrounding work of a
  * dispute call (proof checks, state restoration); a local out-of-gas there
  * falls back to the chain.

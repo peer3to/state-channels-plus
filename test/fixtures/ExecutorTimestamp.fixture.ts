@@ -12,6 +12,9 @@ import { sleep } from "@/utils";
 import { expect } from "chai";
 import type { Provider } from "ethers";
 
+/** Just over one whole-second tick of the seconds clock. */
+const CLOCK_TICK_MS = 1100;
+
 export const wallSeconds = () => Math.floor(Date.now() / 1000);
 export const TIMESTAMP_INIT_CODE = "0x684260005260206000f360005260096017f3";
 
@@ -85,7 +88,7 @@ export async function assertRuntimeClock(
         }
         expect(Clock.getClockAdjustmentSeconds()).to.be.greaterThan(500);
         // Cross a whole-second clock tick; elapsed time is the oracle here.
-        await sleep(1100);
+        await sleep(CLOCK_TICK_MS);
         expect(await read()).to.be.greaterThan(first);
     } finally {
         await executor?.dispose();

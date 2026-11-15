@@ -32,3 +32,4 @@ height, and no peer saw an on-chain dispute start (`onDisputeStarted`) or initia
 - `should handle multiple rotation rounds`: none
 - `should handle honest peer transitions after fork resolution`: REQ-FIN-6-YZWJX2.T1.P7
 - `the writer's state machine refuses a pending top-up → its candidate fails, it recovers and authors, every peer stores the same block and no dispute starts`: REQ-SM-12-J6QD9B.T2.P1
+- `the test chain makes one block per BLOCK_TIME_MS and takes a transaction at MAX_TX_GAS, and the peer3 chain refuses one at MAX_TX_GAS + 1`: REQ-TIME-7-2J5T0J.T1.P6

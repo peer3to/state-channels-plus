@@ -28,11 +28,9 @@ import { Codec, Mutex, Type } from "@/utils";
 import { channelKey } from "@/utils/channelKey";
 import { errorMessage } from "@/utils/errorMessage";
 import * as factory from "@test/factory";
+import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { ethers, id, Log, type WebSocketProvider } from "ethers";
-
-/** The bound of the wait for logs a catch-up scheduled; the drain is local. */
-const CATCH_UP_DRAIN_TIMEOUT_MS = 30_000;
 
 export type ConcurrentCalldataRecoveryProbe = {
     queryCount: number;
@@ -56,6 +54,8 @@ export type InboundRunRecoveryProbe = {
     queriedFromBlocks: (number | null)[];
     /** The event-sync watermark when the call started. */
     cursorAtCall: number | null;
+    /** The on-chain timestamp the run's blocks were appended at or after. */
+    notBefore: number;
     /** The `toBlock` every attempt queried up to. */
     toBlock: number | null;
     /** InboundMessagesProcessed logs the recovery dispatched. */
@@ -394,7 +394,7 @@ export class ValidationProbeService extends ANetworkRpcService<
      */
     public async drainScheduledEvents(): Promise<boolean> {
         await this.sm.eventSyncService.waitForScheduled(
-            CATCH_UP_DRAIN_TIMEOUT_MS
+            protocolEventTimeoutMs(this.sm.timeConfig)
         );
         return true;
     }
@@ -402,19 +402,22 @@ export class ValidationProbeService extends ANetworkRpcService<
     /**
      * Deliver the channel's newest InboundMessagesProcessed log again through
      * the real scheduler. Record-only: the handler records each call instead
-     * of applying a second copy to the live session.
+     * of applying a second copy to the live session. The log read starts at
+     * `openingBlock`, the channel's opening block.
      */
     public async probeInboundLogRedelivery(
-        redelivery: InboundLogRedelivery
+        redelivery: InboundLogRedelivery,
+        openingBlock: number
     ): Promise<StreamedLogDeliveryProbe> {
         const sm = this.sm;
         if (redelivery === "reorgedAtWatermark")
             await sm.eventSyncService.waitForScheduled(
-                CATCH_UP_DRAIN_TIMEOUT_MS
+                protocolEventTimeoutMs(sm.timeConfig)
             );
         const contract = sm.stateChannelManagerContract;
         const logs = await contract.queryFilter(
-            contract.filters.InboundMessagesProcessed(sm.channelId)
+            contract.filters.InboundMessagesProcessed(sm.channelId),
+            openingBlock
         );
         const log = logs.at(-1);
         if (!log) throw new Error("Expected an InboundMessagesProcessed log");
@@ -475,7 +478,9 @@ export class ValidationProbeService extends ANetworkRpcService<
             sm.channelId,
             0
         );
-        await sm.eventSyncService.waitForScheduled(CATCH_UP_DRAIN_TIMEOUT_MS);
+        await sm.eventSyncService.waitForScheduled(
+            protocolEventTimeoutMs(sm.timeConfig)
+        );
         return resumeFrom === undefined;
     }
 
@@ -503,7 +508,7 @@ export class ValidationProbeService extends ANetworkRpcService<
                 targetHead
             );
             await sm.eventSyncService.waitForScheduled(
-                CATCH_UP_DRAIN_TIMEOUT_MS
+                protocolEventTimeoutMs(sm.timeConfig)
             );
             return nextResumeFrom ?? null;
         } finally {
@@ -621,14 +626,20 @@ export class ValidationProbeService extends ANetworkRpcService<
     /**
      * Deliver the channel's ChannelOpened log again the way a lagging RPC
      * node's stream would, once every scheduled log has completed. Record-only:
-     * the handler records a call instead of opening the channel twice.
+     * the handler records a call instead of opening the channel twice. The log
+     * read starts at `openingBlock`, the channel's opening block.
      */
-    public async probeStreamedLogBelowWatermark(): Promise<StreamedLogDeliveryProbe> {
+    public async probeStreamedLogBelowWatermark(
+        openingBlock: number
+    ): Promise<StreamedLogDeliveryProbe> {
         const sm = this.sm;
-        await sm.eventSyncService.waitForScheduled(CATCH_UP_DRAIN_TIMEOUT_MS);
+        await sm.eventSyncService.waitForScheduled(
+            protocolEventTimeoutMs(sm.timeConfig)
+        );
         const contract = sm.stateChannelManagerContract;
         const logs = await contract.queryFilter(
-            contract.filters.ChannelOpened(sm.channelId)
+            contract.filters.ChannelOpened(sm.channelId),
+            openingBlock
         );
         const log = logs.at(-1);
         if (!log) throw new Error("Expected the channel's opening log");
@@ -695,6 +706,7 @@ export class ValidationProbeService extends ANetworkRpcService<
             return {
                 ...this.p2pManager.localRpc.stub.describeChainLogQueries(),
                 cursorAtCall,
+                notBefore: genesis.timestamp,
                 scheduledLogCount,
                 blockCount: run ? run.length : null,
                 heldBefore,
@@ -705,6 +717,7 @@ export class ValidationProbeService extends ANetworkRpcService<
             return {
                 ...this.p2pManager.localRpc.stub.describeChainLogQueries(),
                 cursorAtCall,
+                notBefore: genesis.timestamp,
                 scheduledLogCount,
                 blockCount: null,
                 heldBefore,

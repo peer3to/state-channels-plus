@@ -2,7 +2,7 @@ import { Status } from "@/types";
 import { Hash } from "@/types/types";
 import { MathTestSession as TestSession } from "@test/harness";
 import { DisputeTampering } from "@test/harness/actions/DisputeTamperingActions";
-import { INBOUND_GAP_TIME_CONFIG } from "@test/harness/core/testTimeConfig";
+import { INBOUND_GAP_TIME_BLOCKS } from "@test/harness/actions/math/MathScenarioActions";
 import { expect } from "chai";
 
 // On the settled path (postedAuditingData = false) the disputer posts no
@@ -14,11 +14,11 @@ import { expect } from "chai";
 // that survives recovery is missing required data: the audit throws.
 
 describe("E2E: dispute validation / inbound run gap", function () {
-    const TIME_CONFIG = INBOUND_GAP_TIME_CONFIG;
+    const TIME_CONFIG = INBOUND_GAP_TIME_BLOCKS;
 
     it("recoverable inbound log → the auditor recovers it, audits for real and converges", async function () {
         const h = TestSession.getHarness();
-        await h.setup(3, { timeConfig: TIME_CONFIG });
+        await h.setup(3, { timeBlocks: TIME_CONFIG });
         await h.lifecycle.openChannel();
         const forkId = h.activeForkId!;
         await h.transition.advanceState({
@@ -87,7 +87,7 @@ describe("E2E: dispute validation / inbound run gap", function () {
 
     it("final dispute over an unrecoverable gap → reduction deferred, then settles on the final dispute's fork", async function () {
         const h = TestSession.getHarness();
-        await h.setup(3, { timeConfig: TIME_CONFIG });
+        await h.setup(3, { timeBlocks: TIME_CONFIG });
         await h.lifecycle.openChannel();
         const forkId = h.activeForkId!;
         await h.transition.advanceState({

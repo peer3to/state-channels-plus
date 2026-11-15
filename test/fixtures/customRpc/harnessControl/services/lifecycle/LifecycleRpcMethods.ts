@@ -16,15 +16,18 @@ export class LifecycleRpcMethods extends ANetworkRpcMethods<LifecycleService> {
     }
 
     public async getEncodedOpening(
-        channelId: ChannelId
+        channelId: ChannelId,
+        fromBlock: number
     ): Promise<{ encodedOpenChannel: string } | null> {
-        const encodedOpenChannel =
-            await this.service.getEncodedOpening(channelId);
+        const encodedOpenChannel = await this.service.getEncodedOpening(
+            channelId,
+            fromBlock
+        );
         return encodedOpenChannel ? { encodedOpenChannel } : null;
     }
 
-    public applyChannelOpenedEvent(): Promise<boolean> {
-        return this.service.applyChannelOpenedEvent();
+    public applyChannelOpenedEvent(openingBlock: number): Promise<boolean> {
+        return this.service.applyChannelOpenedEvent(openingBlock);
     }
 }
 

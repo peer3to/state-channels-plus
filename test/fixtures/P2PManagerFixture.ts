@@ -21,7 +21,7 @@ export type HandshakeRoutingFixtureResult = {
 export type P2PManagerFixtureSetup = {
     peerCount?: number;
     openChannel?: boolean;
-    timeConfig?: HarnessOptions["timeConfig"];
+    timeBlocks?: HarnessOptions["timeBlocks"];
     /** Each peer in its own thread, so a probe's process-wide patch stays in its peer. */
     isolatedPeers?: boolean;
     configOverrides?: HarnessOptions["configOverrides"];
@@ -36,7 +36,7 @@ export class P2PManagerFixture {
     public async setup(options: P2PManagerFixtureSetup = {}): Promise<void> {
         await this.harness.setup(options.peerCount ?? 2, {
             autoConnect: false,
-            timeConfig: options.timeConfig,
+            timeBlocks: options.timeBlocks,
             configOverrides: {
                 ...options.configOverrides,
                 ...(options.isolatedPeers ? { RUN_SDK_IN_THREAD: true } : {})

@@ -7,28 +7,39 @@ import {
     deployLocalDiamond,
     deployArtifact
 } from "../../scripts/V1/deploy";
+import type AContractExecutor from "@/evm/contractExecutor/AContractExecutor";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
 import { ContractSizeLimitError } from "@/index";
+import { deriveTimeConfig } from "@/types";
 import { Codec, SignatureUtils, Type } from "@/utils";
 import { connectLocalDiamond } from "@/utils/localDiamond";
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import * as factory from "@test/factory";
 import {
     createSdkOwnedExecutor,
     disposeSdkExecutorFixtures
 } from "@test/fixtures/node/SdkExecutorFixture";
+import { MathTestSession as TestSession } from "@test/harness";
+import {
+    slotAccountIndex,
+    slotDeployerIndex
+} from "@test/harness/core/slotAccounts";
 import {
     createJoinChannelTestObject,
     createOpenChannelTestObject
 } from "@test/test_utils/testHelpers";
 import { OpenChannelConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 import { expect } from "chai";
-import { ContractFactory, type Signer } from "ethers";
-import { ethers } from "hardhat";
+import {
+    ContractFactory,
+    ethers,
+    type HDNodeWallet,
+    type Signer
+} from "ethers";
 
 describe("Universal Deployment", () => {
     after(disposeSdkExecutorFixtures);
-    let deployer: HardhatEthersSigner;
+    let executor: AContractExecutor;
+    let deployer: HDNodeWallet;
     let localSigner: LocalContractExecutorSigner;
 
     const deployMathStateMachineLocally = async (signer: Signer) => {
@@ -53,11 +64,14 @@ describe("Universal Deployment", () => {
     };
 
     before(async () => {
-        [deployer] = await ethers.getSigners();
-        localSigner = new LocalContractExecutorSigner(
-            deployer,
-            await createSdkOwnedExecutor({ dedicatedThread: false })
-        );
+        executor = await createSdkOwnedExecutor({ dedicatedThread: false });
+    });
+
+    beforeEach(async () => {
+        const h = TestSession.getHarness();
+        await h.connectChain();
+        deployer = h.signerFor(slotDeployerIndex());
+        localSigner = new LocalContractExecutorSigner(deployer, executor);
     });
 
     describe("Local Diamond", () => {
@@ -114,7 +128,9 @@ describe("Universal Deployment", () => {
                 diamondAddress.toString(),
                 localSigner
             );
-            expect(await diamond.getP2pTime()).to.equal(15n);
+            expect(await diamond.getP2pTime()).to.equal(
+                BigInt(deriveTimeConfig().p2pTime)
+            );
         });
 
         it("ignores stale overwrite events and deduplicates on-chain slashes", async () => {
@@ -199,7 +215,7 @@ describe("Universal Deployment", () => {
         let mathStateMachineAddress: string;
         let consumerFacetAddress: string;
 
-        before(async () => {
+        beforeEach(async () => {
             const { address: mathAddress } = await deployArtifact(
                 MathStateMachineArtifact,
                 deployer,
@@ -225,8 +241,15 @@ describe("Universal Deployment", () => {
 
             expect(diamondAddress).to.not.equal(ethers.ZeroAddress);
 
-            const times = await diamondContract.getAllTimes();
-            expect(times).to.deep.equal([15n, 5n, 30n, 30n]);
+            const derived = deriveTimeConfig();
+            expect(await diamondContract.getAllTimes()).to.deep.equal(
+                [
+                    derived.p2pTime,
+                    derived.agreementTime,
+                    derived.chainFallbackTime,
+                    derived.evidenceTime
+                ].map(BigInt)
+            );
             expect(await diamondContract.getGasLimit()).to.equal(3_000_000n);
         });
 
@@ -249,7 +272,7 @@ describe("Universal Deployment", () => {
                 deployer
             );
 
-            const currentBlock = await ethers.provider.getBlock("latest");
+            const currentBlock = await deployer.provider!.getBlock("latest");
             const signedBlock = factory.signedBlock(undefined, deployer);
             let proxyFailure: any;
             try {
@@ -275,7 +298,9 @@ describe("Universal Deployment", () => {
                 Number(proxyError?.args.maxTimestamp)
             );
 
-            const [, secondSigner] = await ethers.getSigners();
+            const secondSigner = TestSession.getHarness().signerFor(
+                slotAccountIndex(1)
+            );
             const openChannel = createOpenChannelTestObject([
                 deployer.address,
                 secondSigner.address

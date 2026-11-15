@@ -1,4 +1,4 @@
-import { Status } from "@/types";
+import { BLOCK_TIME_MS, Status } from "@/types";
 import { addressesEqual, Codec, sleep, Type } from "@/utils";
 import {
     authorUntilForceJoinCountingStarted,
@@ -120,7 +120,7 @@ describe("E2E: Force Join Dispute", function () {
     it("late leave waits for the submitted force-join dispute before retrying on its successor", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0, {
-            configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 5_000 }
+            configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 5 * BLOCK_TIME_MS }
         });
         const { peer: joiner } = await h.join.addSpectatorAuthoring({
             authoringPeerIndices: [0, 1],
@@ -181,7 +181,7 @@ describe("E2E: Force Join Dispute", function () {
     });
     it("a leave requested through the public leaveChannel before the joiner's own force-join dispute puts its self-removal into that dispute; once the reduction consumes the join and removes the joiner from the local state and the chain, the join ends: SYNCED, one onLeftChannel, no watchdog re-armed, and the runtime disposes itself", async function () {
         const h = TestSession.getHarness();
-        const watchdogMs = 3_000;
+        const watchdogMs = 3 * BLOCK_TIME_MS;
         await h.lifecycle.start(2, 0, {
             configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: watchdogMs }
         });
@@ -279,7 +279,7 @@ describe("E2E: Force Join Dispute", function () {
                 isSignerInLocalState: false
             });
             // absence window: a re-armed watchdog is scheduled within one period
-            await sleep(watchdogMs + 1_000);
+            await sleep(watchdogMs + BLOCK_TIME_MS);
             expect(await leaveWatchdogs()).to.equal(watchdogsAtLeft);
         } finally {
             await releaseDisposal();

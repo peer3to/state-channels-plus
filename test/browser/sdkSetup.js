@@ -20,13 +20,6 @@ import { ethers, NonceManager, ContractFactory } from "ethers";
 
 export const DEFAULT_HARDHAT_MNEMONIC =
     "test test test test test test test test test test test junk";
-const timeConfig = {
-    p2pTime: 5,
-    agreementTime: 30,
-    chainFallbackTime: 30,
-    evidenceTime: 60
-};
-
 function hardhatWallets() {
     return [0, 1, 2, 3].map((index) =>
         ethers.HDNodeWallet.fromPhrase(
@@ -61,7 +54,6 @@ export async function deployStack(providerUrl, openExistingChannel) {
         consumerFacetArtifact: MathConsumerFacetArtifact,
         stateMachineArgs: [5_000_000, DEFAULT_MAX_CHANNEL_PARTICIPANTS],
         consumerFacetArgs: [],
-        timeConfig,
         disputeExecutionGasLimit: 1_000_000
     });
 

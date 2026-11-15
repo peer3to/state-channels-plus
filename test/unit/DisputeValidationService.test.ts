@@ -1,6 +1,6 @@
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
-import { timeoutWaitTime } from "@/types";
+import { BLOCK_TIME_MS, deriveTimeConfig, timeoutWaitTime } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
@@ -15,10 +15,7 @@ import {
     postTimelyNextWriterTimeout,
     stageBlindPendingAuditor
 } from "@test/fixtures/DisputeAuditStaging";
-import {
-    MathTestSession as TestSession,
-    resolveTestTimeConfig
-} from "@test/harness";
+import { MathTestSession as TestSession } from "@test/harness";
 import { DisputeTampering } from "@test/harness/actions/DisputeTamperingActions";
 import { expect } from "chai";
 import { ZeroHash } from "ethers";
@@ -1114,7 +1111,7 @@ describe("Unit: DisputeValidationService", function () {
             const h = TestSession.getHarness();
             // wide wait window -> the immediate post is deterministically early
             await h.scenario.preDisputeSetup({
-                timeConfig: { chainFallbackTime: 12 }
+                timeBlocks: { chainFallbackTime: 12 }
             });
             const forkId = h.activeForkId!;
             for (const peer of h.peers) {
@@ -1131,7 +1128,7 @@ describe("Unit: DisputeValidationService", function () {
             const headBlock = Codec.decode(head!.encodedBlock, Type.Block);
             const headTs = Number(headBlock.transaction.header.timestamp);
             const wait = timeoutWaitTime(
-                resolveTestTimeConfig({ chainFallbackTime: 12 }),
+                deriveTimeConfig({ chainFallbackTime: 12 }),
                 Number(headBlock.transaction.header.transactionCnt) + 1
             );
 
@@ -1175,7 +1172,7 @@ describe("Unit: DisputeValidationService", function () {
             // agreementTime 10 widens the authored->calldata gap so the window
             // deterministically lands between the two forfeit clocks
             await h.lifecycle.timeoutSetup(4, 0, {
-                timeConfig: { agreementTime: 10, evidenceTime: 8 }
+                timeBlocks: { agreementTime: 10, evidenceTime: 8 }
             });
             await h.transition.advanceState({ count: 2 });
             // height 2: peer 3 cannot confirm -> the author posts calldata
@@ -1212,7 +1209,7 @@ describe("Unit: DisputeValidationService", function () {
             const tAuth = block2!.timestamp;
             const tCal = block2!.onChainTimestamp!;
             const wait = timeoutWaitTime(
-                resolveTestTimeConfig({ agreementTime: 10, evidenceTime: 8 }),
+                deriveTimeConfig({ agreementTime: 10, evidenceTime: 8 }),
                 3
             );
 
@@ -1224,7 +1221,9 @@ describe("Unit: DisputeValidationService", function () {
                 .request();
 
             // open the window inside (tAuth + wait, tCal + wait)
-            await h.event.waitUntilTimestamp(tAuth + wait + 1);
+            await h.event.waitUntilTimestamp(
+                tAuth + wait + BLOCK_TIME_MS / 1000
+            );
             await h.control(h.getPeer(2)).dispute.setForceExit(true).request();
             await h.tamper.postTamperedDispute(2, () => {}, {
                 markMalicious: false
@@ -1344,7 +1343,7 @@ describe("Unit: DisputeValidationService", function () {
         it("stale local previousBlockCalldata -> validateTimeoutCalldataPostedProof false, audit continues without TimeoutCalldataPosted", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.timeoutSetup(4, 0, {
-                timeConfig: { evidenceTime: 8 }
+                timeBlocks: { evidenceTime: 8 }
             });
             await h.transition.advanceState({ count: 2 });
             const calldataAuthor = await h.query.getNextPeerToWrite();
@@ -1374,10 +1373,12 @@ describe("Unit: DisputeValidationService", function () {
                 .query.getBlockByHeight(forkId, 1)
                 .request();
             const wait = timeoutWaitTime(
-                resolveTestTimeConfig({ evidenceTime: 8 }),
+                deriveTimeConfig({ evidenceTime: 8 }),
                 2
             );
-            await h.event.waitUntilTimestamp(block1!.timestamp + wait + 1);
+            await h.event.waitUntilTimestamp(
+                block1!.timestamp + wait + BLOCK_TIME_MS / 1000
+            );
             await h.control(h.getPeer(2)).dispute.setForceExit(true).request();
             await h.tamper.postTamperedDispute(2, () => {}, {
                 markMalicious: false

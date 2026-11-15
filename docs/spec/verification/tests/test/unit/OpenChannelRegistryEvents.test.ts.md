@@ -5,7 +5,7 @@ Exercises: [StateChannelCommon.sol](../../../../implementation/source/contracts/
 
 ## Overview
 
-The artifact-backed manager binding opens two valid channels, queries `ChannelOpened`, and compares the ordered event-derived IDs with the proxy's count and paged registry. The Foundry lifecycle suite separately covers final-close event removal.
+On the test chain's node through the harness (`connectChain` and slot accounts, no peers), the artifact-backed manager binding opens two valid channels, queries `ChannelOpened`, and compares the ordered event-derived IDs with the proxy's count and paged registry. The Foundry lifecycle suite separately covers final-close event removal.
 
 ## Tests
 

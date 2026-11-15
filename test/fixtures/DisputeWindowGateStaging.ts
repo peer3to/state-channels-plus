@@ -81,7 +81,7 @@ export async function postWindowClearingSnapshot(
 export async function stageFinalDisputeWhileAway(h: MathPeerTestHarness) {
     await h.scenario.preDisputeSetup({
         peerCount: 4,
-        timeConfig: { evidenceTime: 3 }
+        timeBlocks: { evidenceTime: 3 }
     });
     const forkId = h.activeForkId!;
     const pausedIndex = 1;

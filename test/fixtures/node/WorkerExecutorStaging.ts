@@ -1,12 +1,10 @@
 import { RootWorkerControl } from "./RootWorkerControl";
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
-import {
-    protocolEventTimeoutMs,
-    MIN_TEST_TIME_CONFIG
-} from "../../harness/core/testTimeConfig";
+import { protocolEventTimeoutMs } from "../../harness/core/testTimeConfig";
 import type { NonErrorFailure } from "../workerAnswerPrecompile";
 import { createSdkOwnedExecutor } from "./SdkExecutorFixture";
 import type { EvmCustomPrecompileManifest } from "@/evm";
+import { deriveTimeConfig } from "@/types";
 import contractExecutorRootUrl from "@platform/contractExecutorRootUrl";
 import { createRootWorker } from "@platform/rootWorkerRuntime";
 import type { WatchdogWorkerData } from "@test/evm/workers/node/watchdogContractExecutorWorkerEntry";
@@ -98,7 +96,7 @@ export async function workerNonErrorReports(
     );
     try {
         await executor.simulateCall("0x1234", address);
-        await waitFor(() => reports.length >= 1, NON_ERROR_REPORT_WAIT_MS, 50);
+        await waitFor(() => reports.length >= 1, NON_ERROR_REPORT_WAIT_MS);
         await executor.simulateCall(
             "0x",
             "0x00000000000000000000000000000000000000c0"
@@ -159,8 +157,7 @@ export async function assertWorkerFailureOrder() {
         // first. Here both must arrive, in that order.
         await waitFor(
             () => errors.length >= 2,
-            protocolEventTimeoutMs(MIN_TEST_TIME_CONFIG),
-            50
+            protocolEventTimeoutMs(deriveTimeConfig())
         );
         expect(errors[0].message).to.equal("Stubbed pre-funnel worker failure");
         expect(errors[1].message).to.equal("Root worker exited with 1");

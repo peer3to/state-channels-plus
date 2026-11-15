@@ -230,7 +230,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     // and kills inside the kill period; the file's other
                     // calldata-path cases give that twelve seconds.
                     await h.lifecycle.timeoutSetup(4, 2, {
-                        timeConfig: {
+                        timeBlocks: {
                             evidenceTime: 12,
                             agreementTime: 6
                         }
@@ -342,7 +342,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                 it("[calldata posted] dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof (killed by peer 2)", async function () {
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetupDisconnectedPeer({
-                        timeConfig: { p2pTime: 3 }
+                        timeBlocks: { p2pTime: 3 }
                     });
                     const forkId = h.activeForkId!;
 
@@ -381,7 +381,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     const disconnectedAuditorIndex = 2;
 
                     await h.scenario.preDisputeSetupDisconnectedPeer({
-                        timeConfig: { p2pTime: 3 }
+                        timeBlocks: { p2pTime: 3 }
                     });
                     const forkId = h.activeForkId!;
 

@@ -1,4 +1,5 @@
 import Clock from "@/Clock";
+import { BLOCK_TIME_MS } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
@@ -212,7 +213,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
             // period must outlast three concurrent audits, the invalid one
             // replayed over three tiers.
             await h.scenario.preDisputeSetupCalldataPath({
-                timeConfig: { evidenceTime: 15, agreementTime: 8 }
+                timeBlocks: { evidenceTime: 15, agreementTime: 8 }
             });
             const p2pTime = h.options.timeConfig?.p2pTime;
             if (p2pTime === undefined) {
@@ -278,7 +279,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
                 .stub.stubHoldCalldataPostedEvents()
                 .request();
             await h.event.waitUntilTimestamp(
-                postedBlock.timestamp + p2pTime + 1
+                postedBlock.timestamp + p2pTime + BLOCK_TIME_MS / 1000
             );
             const tx =
                 await author.p2pInstance.stateChannelManagerContract.postBlockCalldata(

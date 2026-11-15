@@ -147,6 +147,16 @@ submits a top-up with a made-up snapshot pin. No runtime stores that pin, so the
 both the pinned and the new snapshot stored, is not met, and the test still returns `false` (passed in the
 full gate).
 
+## Test timing inputs — 2026-11-14
+
+Engineer decision (Luke, 2026-11-14, plan 29): every protocol window derives from the chain block
+time as `k × block time + floor` ([`REQ-TIME-7-2J5T0J` (Deployment windows derive from the chain block time as k × block time + floor,…)](../specification/protocol-model/time.md#req-time-7-2j5t0j)),
+5/3/5/20 seconds at the one-second block time. The harness constants `MIN_TEST_TIME_CONFIG` and
+`INBOUND_GAP_TIME_CONFIG` and `resolveTestTimeConfig` are gone: the harness, the deploy script and
+the manager use `deriveTimeConfig`. Per-test overrides keep their numbers but are block counts
+(`timeBlocks`), so they scale with the block time. Waits tied to chain time derive from the windows
+or from `BLOCK_TIME_MS`; the entries below record the earlier fixed values.
+
 ## Test timing inputs — 2026-10-15
 
 Engineer decision (Luka, 2026-10-15, PR #551): raise the test evidence windows by a few seconds;

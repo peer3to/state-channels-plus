@@ -25,3 +25,4 @@ Single completion
 - [x] `UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P11` — direct completion returns false and removes the operation when the fork changes inside its mutex wait
 - [x] `UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P14` — an abort while the attempt is held: released after the cut-off, it sends no transaction
 - [x] `UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P15` — an abort while the genesis application is held at `setState`: released after the cut-off, the attempt sends no transaction
+- [x] `UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P16` — a reduction trigger the clock already passed re-arms after one block time; a later trigger arms at its own time

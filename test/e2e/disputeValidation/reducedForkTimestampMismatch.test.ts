@@ -13,7 +13,7 @@ describe("E2E: dispute validation / reducedForkTimestampMismatch", function () {
         const survivors = () => h.getActiveHonestPeers().map((p) => p.index);
 
         // 5 peers so two reductions still leave >= 2 honest survivors
-        await h.lifecycle.start(5, 2, { timeConfig: TIME });
+        await h.lifecycle.start(5, 2, { timeBlocks: TIME });
         await h.assert.sync.peersInSyncWait();
 
         // reduction 1: fork A -> B

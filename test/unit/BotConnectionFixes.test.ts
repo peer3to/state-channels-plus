@@ -1,4 +1,4 @@
-import { Status, timeoutWaitTime } from "@/types";
+import { BLOCK_TIME_MS, Status, timeoutWaitTime } from "@/types";
 import {
     addressesEqual,
     channelIdToDiscoveryKey,
@@ -180,7 +180,7 @@ describe("Unit: bot-connection fixes", function () {
                 // absence window: no member is left to finalize a block and
                 // nothing lands on chain, so no trigger comes; a replay of
                 // the follow-up post would have started by now
-                await sleep(3_000);
+                await sleep(3 * BLOCK_TIME_MS);
                 expect(await posts.started()).to.equal(2);
             } finally {
                 await restore();
@@ -257,7 +257,7 @@ describe("Unit: bot-connection fixes", function () {
         it("U72: a leaver whose exit is blocked by an inbound join that no block consumes posts again on each finalized block and starts one self-removal dispute when the one leave watchdog expires", async function () {
             const h = TestSession.getHarness();
             // the production default
-            const watchdogMs = 15_000;
+            const watchdogMs = 15 * BLOCK_TIME_MS;
             const {
                 joiner,
                 confirmation,
@@ -442,7 +442,7 @@ describe("Unit: bot-connection fixes", function () {
                 await posts.resultsWait(started + 1);
                 // absence window: a second queued post would have started by
                 // now, right after the queued post returned
-                await sleep(2_000);
+                await sleep(2 * BLOCK_TIME_MS);
                 expect(await posts.started()).to.equal(started + 1);
 
                 await h.transition.advanceState({
@@ -464,7 +464,7 @@ describe("Unit: bot-connection fixes", function () {
             const h = TestSession.getHarness();
             // twice the production default: a watchdog firing as the exit lands
             // is FIND-LEAVE-5-A1XAA4, recorded open; here it fires well after
-            const watchdogMs = 30_000;
+            const watchdogMs = 30 * BLOCK_TIME_MS;
             const {
                 leaver,
                 remainingPeerIndices,
@@ -491,7 +491,7 @@ describe("Unit: bot-connection fixes", function () {
 
                 // the settled exit cancelled its watchdog
                 await h.transition.keepAuthoringUntil({
-                    until: () => Date.now() > watchdogExpiresBy + 1_000,
+                    until: () => Date.now() > watchdogExpiresBy + BLOCK_TIME_MS,
                     waitForPeers: remainingPeerIndices,
                     maximumBlocks: 8
                 });
@@ -711,7 +711,7 @@ describe("Unit: bot-connection fixes", function () {
                 await h.event.waitForPeers("onAbort", [leaver.index], 1);
                 await stub.restoreChainMembershipReads().request();
                 // absence window: a late dispute would be mined by now
-                await sleep(2_000);
+                await sleep(2 * BLOCK_TIME_MS);
                 expect(await leaverNonce()).to.equal(nonceBefore);
             } finally {
                 await releaseDisposal();
@@ -734,7 +734,7 @@ describe("Unit: bot-connection fixes", function () {
                 waitForPeers: remainingPeerIndices
             });
             // absence window: a late post would be mined by now
-            await sleep(2_000);
+            await sleep(2 * BLOCK_TIME_MS);
             expect(await leaverNonce()).to.equal(nonceBefore);
             expect(
                 await h.channelManager.getParticipants(h.channelId)
@@ -745,7 +745,7 @@ describe("Unit: bot-connection fixes", function () {
             const h = TestSession.getHarness();
             const { joiner, leaver, disputes, posts } =
                 await stageLeaveAwaitingTurn(h, {
-                    watchdogMs: 60_000,
+                    watchdogMs: 60 * BLOCK_TIME_MS,
                     forwardDisputes: true
                 });
             const forkId = h.activeForkId!;
@@ -792,7 +792,7 @@ describe("Unit: bot-connection fixes", function () {
             const h = TestSession.getHarness();
             const { joiner, leaver, disputes } =
                 await stageInboundBlockedProtocolExit(h, {
-                    watchdogMs: 60_000,
+                    watchdogMs: 60 * BLOCK_TIME_MS,
                     forwardDisputes: true
                 });
             const forkId = h.activeForkId!;
@@ -1020,7 +1020,7 @@ describe("Unit: bot-connection fixes", function () {
                 ).to.equal("posted");
                 await h.event.waitUntilLeftChannel(leaver.index);
                 // absence window: a queued post would have started by now
-                await sleep(2_000);
+                await sleep(2 * BLOCK_TIME_MS);
                 expect(await posts.started()).to.equal(startedBefore + 1);
                 expect(await leaverNonce()).to.equal(nonceBefore + 1);
                 expect(
@@ -1114,7 +1114,7 @@ describe("Unit: bot-connection fixes", function () {
         it("U72: a leave of a pending join the chain has not shown re-arms the leave watchdog at each expiry with no dispute, and the join's expiry ends the leave and cancels the watchdog", async function () {
             const h = TestSession.getHarness();
             // the watchdog expires at least once within the join's authorization
-            const watchdogMs = 3_000;
+            const watchdogMs = 3 * BLOCK_TIME_MS;
             const prepared = await prepareJoinWithAuthorization(h, 15, {
                 LEAVE_CHANNEL_WATCHDOG_MS: watchdogMs
             });
@@ -1622,7 +1622,9 @@ describe("Unit: bot-connection fixes", function () {
                 expect(created).to.be.greaterThan(0);
                 const bounds = await readForceJoinBounds(h, joiner);
                 await h.event.waitUntilTimestamp(
-                    created + bounds.timeConfig.evidenceTime + 1
+                    created +
+                        bounds.timeConfig.evidenceTime +
+                        BLOCK_TIME_MS / 1000
                 );
                 await waitFor(() =>
                     h.execOnHost(
@@ -1896,7 +1898,7 @@ describe("Unit: bot-connection fixes", function () {
                     .getClockTimeInSeconds()
                     .request();
                 // The observation delay is the test input.
-                await sleep(3_000);
+                await sleep(3 * BLOCK_TIME_MS);
                 expect(
                     await recordedForceJoinDeadlineDelays(h, joiner)
                 ).to.deep.equal([]);
@@ -2070,7 +2072,7 @@ describe("Unit: bot-connection fixes", function () {
             // The leaving joiner audits the founder's timeout dispute before
             // its self-removal; under load that path can outlast 4 s.
             const prepared = await h.scenario.syncSpectatorAndPrepareJoin(4, {
-                timeConfig: { evidenceTime: 6 }
+                timeBlocks: { evidenceTime: 6 }
             });
             const joiner = prepared.joiner;
             const joinerQuery = h.control(joiner).query;
@@ -2311,6 +2313,45 @@ describe("Unit: bot-connection fixes", function () {
             ).to.equal(true);
         });
 
+        it("U75i: a submitted join arms its authorization expiry timer for the first block past the deadline", async function () {
+            const h = TestSession.getHarness();
+            const prepared = await prepareJoinWithAuthorization(h, 15);
+            const joiner = h.getPeer(prepared.joiner.index);
+            const control = h.control(joiner);
+            const expiry = await h.rpcStub.recordScheduledTasks(joiner.index, {
+                suppressPrefix: "join authorization expiry"
+            });
+            const restore = await h.rpcStub.failMembershipSubmissionUncertain(
+                joiner.index,
+                "joinChannel"
+            );
+            try {
+                const clockBefore = await control.query
+                    .getClockTimeInSeconds()
+                    .request();
+                await prepared.joiner.p2pInstance.p2pSigner.joinChannel(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                );
+                const clockAfter = await control.query
+                    .getClockTimeInSeconds()
+                    .request();
+
+                const armed = (await expiry.tasks()).filter(
+                    (task) => task.taskName === "join authorization expiry"
+                );
+                expect(armed.length).to.be.at.least(1);
+                expect(armed[0].delayMs).to.be.within(
+                    (prepared.joinDeadline - clockAfter) * 1000 + BLOCK_TIME_MS,
+                    (prepared.joinDeadline - clockBefore) * 1000 + BLOCK_TIME_MS
+                );
+            } finally {
+                await restore();
+                await expiry.restore();
+            }
+        });
+
         it("U75h: a join authorization expiry timer that fires while the joiner's clock is still at or before the deadline arms the expiry timer again → once the chain passes the deadline the unlanded join ends SYNCED with one onLeftChannel", async function () {
             const h = TestSession.getHarness();
             const prepared = await prepareJoinWithAuthorization(h, 15);
@@ -2352,7 +2393,7 @@ describe("Unit: bot-connection fixes", function () {
                     (task) => task.taskName === "join authorization expiry"
                 );
                 expect(rearmed.length).to.equal(1);
-                expect(rearmed[0].delayMs).to.be.at.least(1000);
+                expect(rearmed[0].delayMs).to.be.at.least(BLOCK_TIME_MS);
                 expect(await isJoinPending(h, joiner)).to.equal(true);
                 expect(
                     prepared.joiner.eventSpies.onLeftChannel?.called

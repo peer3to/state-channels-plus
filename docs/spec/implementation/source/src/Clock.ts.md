@@ -32,3 +32,13 @@ Released provider lifecycle
 
 - [x] `UNIT-TEST-CLOCK-RELEASE-1-B836QF.P1` — released provider destroyed on replacement
 - [x] `UNIT-TEST-CLOCK-RELEASE-1-B836QF.P2` — owned provider kept on replacement
+
+## UNIT-TEST-CLOCK-SYNC-1-WE3BF6
+
+Sync tolerance of one block time
+
+- Setup: Init the Clock against a private node whose head is several blocks ahead of the wall clock, and against one whose head is at the wall clock
+- Oracle: Past one block time the adjustment moves the estimate to within one block time of the head; within one block time the adjustment stays 0
+
+- [x] `UNIT-TEST-CLOCK-SYNC-1-WE3BF6.P1` — head more than one block time ahead → adjusted to within one block time of the head
+- [x] `UNIT-TEST-CLOCK-SYNC-1-WE3BF6.P2` — head within one block time → no adjustment

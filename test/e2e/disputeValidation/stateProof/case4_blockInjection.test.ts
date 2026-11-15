@@ -1,3 +1,4 @@
+import { BLOCK_TIME_MS } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { ForkId } from "@/types/types";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -266,7 +267,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
                 await h.event.waitWhileEventCountsStayAtMost(
                     "onDisputeKilled",
                     h.getHonestPeers().map((p) => p.index),
-                    { durationMs: 6000, maxCount: 0 }
+                    { durationMs: 6 * BLOCK_TIME_MS, maxCount: 0 }
                 );
 
                 for (const p of h.getHonestPeers()) {
@@ -308,7 +309,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
                 await h.event.waitWhileEventCountsStayAtMost(
                     "onDisputeKilled",
                     h.getHonestPeers().map((p) => p.index),
-                    { durationMs: 6000, maxCount: 0 }
+                    { durationMs: 6 * BLOCK_TIME_MS, maxCount: 0 }
                 );
 
                 for (const p of h.getHonestPeers()) {

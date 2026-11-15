@@ -2,14 +2,13 @@
 import {
     evidencePeriodWaitMs,
     participantTimeoutWaitMs,
-    protocolEventTimeoutMs,
-    resolveTestTimeConfig
+    protocolEventTimeoutMs
 } from "../core/testTimeConfig";
 import { EventSpies } from "../core/types";
 import Clock from "@/Clock";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { LeaveChannelState } from "@/stateManager/membership/LeaveChannelService";
-import { Status } from "@/types";
+import { BLOCK_TIME_MS, Status } from "@/types";
 import { Hash } from "@/types/types";
 import { Logger, sleep } from "@/utils";
 import type {
@@ -21,6 +20,13 @@ import { waitFor } from "@test/utils/waitFor";
 
 /** How long a host handler call takes to reach its main-thread spy. */
 const SPY_FORWARD_WINDOW_MS = 500;
+
+/**
+ * An absence window: long enough for a request, a reconnect or a block
+ * event that must not happen to have happened (the first reconnect waits
+ * 250 ms). Time is the test input here.
+ */
+export const ABSENCE_WINDOW_MS = 1_000;
 
 /**
  * EventActions handles all event spy management and queries.
@@ -171,12 +177,12 @@ export class EventActions<
         peerIndex: number,
         blockTimestamp: number
     ): Promise<number> {
-        const agreementTime = resolveTestTimeConfig(
-            this.harness.options.timeConfig
-        ).agreementTime;
+        const agreementTime = this.harness.options.timeConfig.agreementTime;
         const peer = this.harness.getPeer(peerIndex);
 
-        await this.waitUntilTimestamp(blockTimestamp + agreementTime + 1);
+        await this.waitUntilTimestamp(
+            blockTimestamp + agreementTime + BLOCK_TIME_MS / 1000
+        );
         // The main thread and the peer's worker sync their chain-clock
         // adjustments independently, so their clocks can disagree by a
         // second. The wait above used OUR clock; the assertion below uses the
@@ -191,7 +197,7 @@ export class EventActions<
             if (gap > agreementTime) {
                 return gap;
             }
-            await sleep((agreementTime - gap + 1) * 1000);
+            await sleep((agreementTime - gap) * 1000 + BLOCK_TIME_MS);
         }
         const now = await this.harness
             .control(peer)
@@ -235,10 +241,10 @@ export class EventActions<
         withFirstBlockGrace?: boolean;
         settlementMarginSeconds?: number;
     } = {}): number {
-        return protocolEventTimeoutMs(
-            resolveTestTimeConfig(this.harness.options.timeConfig),
-            { withFirstBlockGrace, settlementMarginSeconds }
-        );
+        return protocolEventTimeoutMs(this.harness.options.timeConfig, {
+            withFirstBlockGrace,
+            settlementMarginSeconds
+        });
     }
 
     participantTimeoutWaitMs(
@@ -246,7 +252,7 @@ export class EventActions<
         settlementMarginSeconds?: number
     ): number {
         return participantTimeoutWaitMs(
-            resolveTestTimeConfig(this.harness.options.timeConfig),
+            this.harness.options.timeConfig,
             blockHeight,
             settlementMarginSeconds
         );
@@ -254,7 +260,7 @@ export class EventActions<
 
     evidencePeriodWaitMs(settlementMarginSeconds?: number): number {
         return evidencePeriodWaitMs(
-            resolveTestTimeConfig(this.harness.options.timeConfig),
+            this.harness.options.timeConfig,
             settlementMarginSeconds
         );
     }
@@ -527,7 +533,7 @@ export class EventActions<
                     return durationElapsed;
                 },
                 {
-                    timeoutMs: durationMs + 500,
+                    timeoutMs: durationMs + BLOCK_TIME_MS / 2,
                     timeoutMessageFn: () =>
                         `Within ${durationMs}ms, ${String(eventName)} for peers [${peerIds.join(", ")}] did not stay at <= ${maxCount}`
                 }

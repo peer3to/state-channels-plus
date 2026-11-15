@@ -21,7 +21,7 @@ export async function assertDisputeAdmissionRefuses(h: MathPeerTestHarness) {
         await h.scenario.stageReducibleDisputedFork({
             beforeDispute: () => h.dispute.suppressDisputeInitiation([2]),
             disputingPeerIndices: [0, 3],
-            timeConfig: { evidenceTime: 6 },
+            timeBlocks: { evidenceTime: 6 },
             afterDispute: async () => {
                 // The target's audit compares its own constructed dispute
                 // once per fork, then schedules reduction. Let that finish

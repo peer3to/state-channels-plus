@@ -45,7 +45,7 @@ import {
     StateProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { randomInt } from "crypto";
-import { ethers } from "ethers";
+import { type BaseWallet, ethers } from "ethers";
 
 export const hash = (): `0x${string}` =>
     ethers.hexlify(ethers.randomBytes(32)) as `0x${string}`;
@@ -82,7 +82,7 @@ export const signature = () => {
  */
 export function transactionHeader(
     overrides: Partial<TransactionHeaderStruct> = {},
-    signer?: HardhatEthersSigner
+    signer?: HardhatEthersSigner | BaseWallet
 ): TransactionHeaderStruct {
     return {
         channelId: ethers.hexlify(ethers.zeroPadBytes("0x00", 32)),
@@ -113,7 +113,7 @@ export function transactionBody(
  */
 export function transaction(
     overrides: Partial<TransactionStruct> = {},
-    signer?: HardhatEthersSigner
+    signer?: HardhatEthersSigner | BaseWallet
 ): TransactionStruct {
     const transaction: TransactionStruct = {
         header: transactionHeader(undefined, signer),
@@ -146,7 +146,7 @@ export type BlockFactoryOverrides = Partial<BlockStruct> & {
  */
 export function block(
     overrides: BlockFactoryOverrides = {},
-    signer?: HardhatEthersSigner
+    signer?: HardhatEthersSigner | BaseWallet
 ): Block {
     const { header, transaction: transactionOverride, ...rest } = overrides;
 
@@ -281,7 +281,7 @@ export function joinChannel(
 }
 export function signedBlock(
     overrides: Partial<SignedBlockStruct> = {},
-    signer?: HardhatEthersSigner
+    signer?: HardhatEthersSigner | BaseWallet
 ): SignedBlockStruct {
     const mockBlock = block(undefined, signer);
     const defaultSignedBlock: SignedBlockStruct = {

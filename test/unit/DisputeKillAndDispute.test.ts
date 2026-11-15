@@ -1,3 +1,4 @@
+import { BLOCK_TIME_MS } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, hash, Type } from "@/utils";
 import {
@@ -366,7 +367,7 @@ describe("Unit: kill then dispute", function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({
             peerCount: 4,
-            timeConfig: { evidenceTime: EVIDENCE_TIME }
+            timeBlocks: { evidenceTime: EVIDENCE_TIME }
         });
         const forkId = h.activeForkId!;
         for (const peer of h.peers) {
@@ -416,7 +417,9 @@ describe("Unit: kill then dispute", function () {
         );
 
         // the evidence period is over
-        await h.event.waitUntilTimestamp(created + EVIDENCE_TIME + 1);
+        await h.event.waitUntilTimestamp(
+            created + h.options.timeConfig.evidenceTime + BLOCK_TIME_MS / 1000
+        );
         await slowConstruction.resume();
         await h.rpcStub.waitUntilDisputeMutexIdle(slow.index);
 

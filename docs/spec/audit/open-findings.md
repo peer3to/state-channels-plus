@@ -1098,12 +1098,12 @@ stores no inbound block.
 **Defect:** _Withdrawn (2026-08-10)._ The original claim — that the deploy helper's `?? 0` produces
 zero-length dispute windows — was false: the proxy constructor
 ([`StateChannelManagerProxy.sol`](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol)
-L54–58) maps every `0` argument to a nonzero default (15/5/30/30 s), so `0` is a deliberate "use
-default" sentinel ([enforcement/contracts.md](../specification/enforcement/contracts.md)). The real
-residual concern is tracked in
-[`OQ-8-PEYAAQ` (Clock-skew and bias values)](../specification/open-questions.md#oq-8-peyaaq): those
-defaults are unvalidated development values still needing target-chain analysis before production.
-No deploy-time change is warranted.
+then mapped every `0` argument to a nonzero default. Since 2026-11-14 (Luke, plan 29) the proxy
+stores the windows it is given with no default, and the deploy helper passes the windows derived from
+the chain block time ([`REQ-TIME-7-2J5T0J` (Deployment windows derive from the chain block time as k × block time + floor,…)](../specification/protocol-model/time.md#req-time-7-2j5t0j)), so no
+deploy path passes zero. The residual concern is tracked in
+[`OQ-8-PEYAAQ` (Clock-skew and bias values)](../specification/open-questions.md#oq-8-peyaaq): the derived
+values still need validation under representative conditions.
 
 <a id="def-5-e8tp9n"></a>
 
@@ -2562,7 +2562,9 @@ decision 2026-09-27, review 5 MO1) the requirement is about 7.3M and the declare
 inside a 30M block; with the earlier 16M budget it was not, and any consumer whose transition budget
 exceeds roughly 9M has fraud proofs that a searching node refuses at submission, so that fraud stays
 unproven on-chain. (4) **Resolved (2026-10-15):** `DisputeManager.replayGasLimit` caps the declared limit at the latest
-block's gas limit; a failed block read leaves it uncapped. (5) **No
+block's gas limit. Since 2026-11-14 (Luke) it caps at the smaller of the chain's per-transaction gas cap (the SDK constant
+`MAX_TX_GAS`, the peer3 runtime's 8,916,000) and that block gas limit; a failed block read leaves only the
+per-transaction cap. (5) **No
 send test** exercises a fraud-proof transaction with this rule against a searching node with a 30M
 block: block fit is shown by arithmetic, and the poker replay fixture only runs `eth_call`. History:
 review 3 (FR1 🔴, TO1) and review 4 (FR1 🔴, TO2) flagged the double count on searching estimators and
@@ -2629,7 +2631,11 @@ change, inclusion delay is unbounded, and the poker gate (`evidenceTime` 10 seco
 blocks) leaves little margin for poker's costlier audit; the SDK harness defaults were raised by 4
 seconds (Luka, 2026-10-15). **Decision (daiagi, 2026-10-15, PR #551 OO1, revised):** no normative
 `evidenceTime` floor or deploy-time check; this finding stays Open until a measurement after this
-change sizes the budget.
+change sizes the budget. **Sizing (Luke, 2026-11-14, plan 29):** `evidenceTime` derives from the block
+time as 10 block times plus 10 s, 20 s at one-second blocks, the SDK harness default and the deploy default
+alike ([`REQ-TIME-7-2J5T0J` (Deployment windows derive from the chain block time as k × block time + floor,…)](../specification/protocol-model/time.md#req-time-7-2j5t0j)). That covers the
+three sequential inclusions (upload, audit, kill) with queueing and the measured auditor work of about
+12 s above. The finding stays Open until a measurement at that size confirms the budget.
 
 **Proposed direction:** Remaining, no direction selected (sizing guidance for (d) now exists in
 `time.md` §3): (a) **Audit cost.** Measure what

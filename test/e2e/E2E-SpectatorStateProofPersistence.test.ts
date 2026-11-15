@@ -9,7 +9,7 @@ describe("E2E: Join/Leave Sequence", function () {
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(4, 0, {
-            timeConfig: {
+            timeBlocks: {
                 p2pTime: 5,
                 agreementTime: 3,
                 chainFallbackTime: 2,

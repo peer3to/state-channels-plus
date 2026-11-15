@@ -1,8 +1,5 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
-import {
-    protocolEventTimeoutMs,
-    MIN_TEST_TIME_CONFIG
-} from "../harness/core/testTimeConfig";
+import { protocolEventTimeoutMs } from "../harness/core/testTimeConfig";
 import { waitFor } from "../utils/waitFor";
 import { withWebRTCBridge } from "./node/WebRTCBridgeFixture";
 import { withRuntimeRpc } from "./RpcRouterFixture";
@@ -14,6 +11,7 @@ import { serializeRpc } from "@/rpc/Rpc";
 import LocalPeerInfo from "@/transport/LocalPeerInfo";
 import LocalTransport from "@/transport/LocalTransport";
 import WebRTCTransport from "@/transport/WebRTCTransport";
+import { deriveTimeConfig } from "@/types";
 import { Buffer } from "buffer";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -289,8 +287,7 @@ export async function assertWebRTCTransportDelivery(
                 // Once the channel opens, queued RPCs flush in order and the handshake starts.
                 await waitFor(
                     () => connected.received.includes(second),
-                    protocolEventTimeoutMs(MIN_TEST_TIME_CONFIG),
-                    10
+                    protocolEventTimeoutMs(deriveTimeConfig())
                 );
                 expect(order.slice(0, 3)).to.deep.equal([
                     first,
@@ -312,8 +309,7 @@ export async function assertWebRTCTransportDelivery(
                 transport._send(first);
                 await waitFor(
                     () => connected.received.includes(first),
-                    protocolEventTimeoutMs(MIN_TEST_TIME_CONFIG),
-                    10
+                    protocolEventTimeoutMs(deriveTimeConfig())
                 );
                 expect(
                     order.filter((frame) => frame === first).length

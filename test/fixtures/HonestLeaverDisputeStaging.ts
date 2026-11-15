@@ -36,7 +36,7 @@ async function findDisputeBy(
 // a removed leaver whose exit post is parked at its send, with its dispute
 // construction and reduction submit held
 async function stageHeldLeaverExitPost(h: MathPeerTestHarness) {
-    const timeConfig = {
+    const timeBlocks = {
         // This case idles while the exit post is held and the disputes
         // commit. Keep the production writer window.
         p2pTime: 15,
@@ -44,7 +44,7 @@ async function stageHeldLeaverExitPost(h: MathPeerTestHarness) {
         chainFallbackTime: 2,
         evidenceTime: 12
     };
-    await h.lifecycle.timeoutSetup(5, 2, { timeConfig });
+    await h.lifecycle.timeoutSetup(5, 2, { timeBlocks });
     const forkId = h.activeForkId!;
     const leaver = await h.query.getNextPeerToWrite();
     const others = h.peers

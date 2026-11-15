@@ -55,6 +55,7 @@ the peer's chain nonce is unchanged.
 - `a reduced-result chain event after live sync finishes without an obsolete operation`: REQ-DISPUTE-PIPE-4-3YVDSA.T1.P10, REQ-DISPUTE-PIPE-4-3YVDSA.T1.P12, UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P8, UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P10
 - `returns undefined without retaining an operation for a non-disputed fork`: none
 - `keeps future timer state independent from reduction completion`: none
+- `re-polls a passed reduction trigger once per block and arms a later trigger at its time`: UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P16
 - `reuses one resolved outcome for duplicate terminal triggers`: UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P1
 - `checks the dispute status before starting reduction`: none
 - `serializes concurrent ordinary reduction attempts`: none

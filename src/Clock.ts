@@ -1,3 +1,4 @@
+import { BLOCK_TIME_MS } from "@/types/time";
 import { ethers } from "ethers";
 
 class Clock {
@@ -5,7 +6,6 @@ class Clock {
     private static initialization: Promise<void> | undefined;
     private clockAdjustmentSeconds: number;
     private provider: ethers.Provider;
-    private averageBlockTime: number | undefined; // in seconds
     /** Set once no runtime owns `provider`: it is destroyed when replaced. */
     private providerReleased = false;
 
@@ -73,14 +73,6 @@ class Clock {
     public static getClockAdjustmentSeconds(): number {
         return Clock.getInstance().clockAdjustmentSeconds;
     }
-    public static getAverageOnChainBlockTime(): number {
-        const averageBlockTime = Clock.getInstance().averageBlockTime;
-        if (averageBlockTime === undefined) {
-            throw new Error("CLock - Average block time not set");
-        }
-        return averageBlockTime;
-    }
-
     public static async getBlockchainTime(): Promise<{
         timestamp: number;
         blockNumber: number;
@@ -114,30 +106,8 @@ class Clock {
 
         const difference = latestTimestamp - currentTime;
 
-        const blockCnt = Math.min(latestBlock.number, 10);
-        if (blockCnt === 0) {
-            this.averageBlockTime = 0;
-            this.clockAdjustmentSeconds += difference;
-            return;
-        }
-        const pastBlock = await this.provider.getBlock(
-            latestBlock.number - blockCnt
-        );
-        if (!pastBlock) throw new Error("Could not get past block");
-        const pastTimestamp = pastBlock.timestamp;
-
-        this.averageBlockTime = (latestTimestamp - pastTimestamp) / blockCnt;
-        // console.log(
-        //     `Average block time calculated: ${this.averageBlockTime}s over ${blockCnt} blocks`,
-        //     `past block timestamp: ${pastTimestamp}, latest block timestamp: ${latestTimestamp}`,
-        //     `current time: ${currentTime}, difference: ${difference}s`
-        // );
-        if (!this.averageBlockTime) {
-            this.clockAdjustmentSeconds += difference;
-            return;
-        }
-        //TODO - think - should it be 2* or 1* or something else?
-        if (Math.abs(difference) > this.averageBlockTime) {
+        // chain time moves in block-time steps: within one block is in sync
+        if (Math.abs(difference) > BLOCK_TIME_MS / 1000) {
             this.clockAdjustmentSeconds += difference;
             await this.syncClock(); // Recursively call syncClock until condition is satisfied
         }

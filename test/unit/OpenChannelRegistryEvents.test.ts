@@ -1,18 +1,27 @@
 import type { Bytes } from "@/types/types";
 import { SignatureUtils } from "@/utils";
+import { MathTestSession as TestSession } from "@test/harness";
+import {
+    slotAccountIndex,
+    slotDeployerIndex
+} from "@test/harness/core/slotAccounts";
 import {
     createOpenChannelTestObject,
-    deployMathChannelProxyFixture,
-    getSigners
+    deployMathChannelProxyFixture
 } from "@test/test_utils/testHelpers";
 import { expect } from "chai";
-import { ethers } from "hardhat";
 
 describe("open-channel registry events", function () {
     it("reconstructs the opened set from ChannelOpened events and matches the paged registry", async function () {
-        const { mathChannelManager } =
-            await deployMathChannelProxyFixture(ethers);
-        const { firstSigner, secondSigner } = await getSigners(ethers);
+        const h = TestSession.getHarness();
+        await h.connectChain();
+        const firstSigner = h.signerFor(slotAccountIndex(0));
+        const secondSigner = h.signerFor(slotAccountIndex(1));
+        // the manager's events start after this block
+        const fromBlock = await h.provider.getBlockNumber();
+        const { mathChannelManager } = await deployMathChannelProxyFixture(
+            h.signerFor(slotDeployerIndex())
+        );
         const channels = [
             createOpenChannelTestObject(
                 [firstSigner.address, secondSigner.address],
@@ -33,17 +42,20 @@ describe("open-channel registry events", function () {
                 channel,
                 secondSigner
             );
-            await mathChannelManager.open({
-                encodedOpenChannel: first.encoded,
-                signatures: [
-                    first.signature as Bytes,
-                    second.signature as Bytes
-                ]
-            });
+            await (
+                await mathChannelManager.open({
+                    encodedOpenChannel: first.encoded,
+                    signatures: [
+                        first.signature as Bytes,
+                        second.signature as Bytes
+                    ]
+                })
+            ).wait();
         }
 
         const opened = await mathChannelManager.queryFilter(
-            mathChannelManager.filters.ChannelOpened()
+            mathChannelManager.filters.ChannelOpened(),
+            fromBlock
         );
         const eventSet = opened.map((event) => event.args.channelId);
         const registry = await mathChannelManager.getOpenChannelIds(

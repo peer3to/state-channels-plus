@@ -3,6 +3,7 @@ import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
 import { BlockOrigin } from "@/storage/QueueStorage";
+import { BLOCK_TIME_MS } from "@/types";
 import type { ForkId, Hash } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
 import { stripDisputeReasons } from "@test/fixtures/DisputeAuditStaging";
@@ -71,7 +72,9 @@ export async function waitPastKillPeriod(
     observerIndex: number
 ) {
     const { killPeriodEnd } = await h.query.killPeriod(forkId, observerIndex);
-    await h.event.waitUntilTimestamp(killPeriodEnd + 2);
+    await h.event.waitUntilTimestamp(
+        killPeriodEnd + (2 * BLOCK_TIME_MS) / 1000
+    );
     return h.query.killPeriod(forkId, observerIndex);
 }
 
@@ -79,10 +82,12 @@ export async function waitPastKillPeriod(
 export async function committedDisputeLogs(h: MathPeerTestHarness) {
     const manager = h.channelManager;
     const plain = await manager.queryFilter(
-        manager.filters.DisputeCommitted(h.channelId)
+        manager.filters.DisputeCommitted(h.channelId),
+        h.channelOpeningBlock
     );
     const withData = await manager.queryFilter(
-        manager.filters.DisputeCommittedWithAuditingData(h.channelId)
+        manager.filters.DisputeCommittedWithAuditingData(h.channelId),
+        h.channelOpeningBlock
     );
     const project = (
         encodedDispute: string,
@@ -118,7 +123,8 @@ export async function committedDisputeLogs(h: MathPeerTestHarness) {
 export async function killedDisputeLogs(h: MathPeerTestHarness) {
     const manager = h.channelManager;
     const logs = await manager.queryFilter(
-        manager.filters.DisputeKilled(h.channelId)
+        manager.filters.DisputeKilled(h.channelId),
+        h.channelOpeningBlock
     );
     return Promise.all(
         logs.map(async (log) => ({
@@ -233,12 +239,11 @@ export async function stageSpamAfterOwnDispute(
     options: { holdKill: boolean; countStateProofBuilds?: boolean }
 ) {
     // The spam upload must land inside peer 0's evidence window, after the
-    // three peers' full commit handling, one estimate and send, and one 1 s
-    // interval-mining block; under load it was mined 1 s after the default
-    // 8 s window.
+    // three peers' full commit handling, one estimate and send, and one
+    // block; under load it was mined one block after an 8-block window.
     await h.scenario.preDisputeSetup({
         peerCount: 4,
-        timeConfig: { evidenceTime: SPAM_AFTER_OWN_DISPUTE_EVIDENCE_TIME }
+        timeBlocks: { evidenceTime: SPAM_AFTER_OWN_DISPUTE_EVIDENCE_TIME }
     });
     const forkId = h.activeForkId!;
     const killer = h.getPeer(0);
@@ -284,7 +289,7 @@ export async function stageOffWireBlock(
 ) {
     await h.scenario.preDisputeSetup({
         peerCount: 4,
-        timeConfig:
+        timeBlocks:
             options?.evidenceTime !== undefined
                 ? { evidenceTime: options.evidenceTime }
                 : undefined

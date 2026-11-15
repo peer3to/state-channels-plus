@@ -88,7 +88,11 @@ export class MirrorActions<
         event: MirrorChainEvent
     ): Promise<number> {
         return await this.mirror(peerIndex)
-            .serveChainReadsBefore(read, event)
+            .serveChainReadsBefore(
+                read,
+                event,
+                this.harness.channelOpeningBlock
+            )
             .request();
     }
 

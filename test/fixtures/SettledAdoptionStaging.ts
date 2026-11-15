@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: staging for a reducer's held fork adoption that the chain refuses as settled
+import { BLOCK_TIME_MS } from "@/types";
 import type { ForkId } from "@/types";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -7,7 +8,8 @@ import { expect } from "chai";
 import { ZeroHash } from "ethers";
 
 const REDUCER_INDEX = 0;
-const SETTLEMENT_MARGIN_SECONDS = 2;
+// two blocks: the chain includes the settlement in the next block
+const SETTLEMENT_MARGIN_SECONDS = (2 * BLOCK_TIME_MS) / 1000;
 
 export type SettledAdoptionRefusal =
     | "RaceConditionSnapshotUpdateNotLatestFork"

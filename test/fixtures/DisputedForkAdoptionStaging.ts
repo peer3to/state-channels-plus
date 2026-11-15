@@ -66,7 +66,7 @@ export async function assertReduceLandsAloneThenLatestForkAdopted(): Promise<voi
     const h = TestSession.getHarness();
     await h.scenario.preDisputeSetup({
         peerCount: PEER_COUNT,
-        timeConfig: { agreementTime: 3, evidenceTime: 4 }
+        timeBlocks: { agreementTime: 3, evidenceTime: 4 }
     });
     const forkE = h.activeForkId! as ForkId;
 

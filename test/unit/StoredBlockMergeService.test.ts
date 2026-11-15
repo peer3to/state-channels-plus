@@ -15,7 +15,7 @@ import { ethers } from "ethers";
 
 // long chainFallbackTime keeps timeout disputes away while a peer's broadcast
 // is suppressed to stage a missing signature
-const MERGE_TIME_CONFIG = {
+const MERGE_TIME_BLOCKS = {
     p2pTime: 4,
     agreementTime: 8,
     chainFallbackTime: 30,
@@ -103,7 +103,7 @@ describe("Unit: StoredBlockMergeService", function () {
 
     it("a genuine new participant signature → BROADCAST and the signature is persisted", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 1, { timeConfig: MERGE_TIME_CONFIG });
+        await h.lifecycle.start(3, 1, { timeBlocks: MERGE_TIME_BLOCKS });
         const forkId = h.activeForkId!;
 
         // silence a non-writer so its confirmation never reaches the writer
@@ -188,7 +188,7 @@ describe("Unit: StoredBlockMergeService", function () {
 
     it("stray + a real new signature → stray stripped, the real one merges, BROADCAST", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 1, { timeConfig: MERGE_TIME_CONFIG });
+        await h.lifecycle.start(3, 1, { timeBlocks: MERGE_TIME_BLOCKS });
         const forkId = h.activeForkId!;
 
         const writer = await h.query.getNextPeerToWrite();
@@ -244,7 +244,7 @@ describe("Unit: StoredBlockMergeService", function () {
 
     it("a committed participant using SpectatingValidationStrategy broadcasts genuine signature growth", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 1, { timeConfig: MERGE_TIME_CONFIG });
+        await h.lifecycle.start(3, 1, { timeBlocks: MERGE_TIME_BLOCKS });
         const forkId = h.activeForkId!;
 
         // A committed participant delegates sync-replay growth to live gossip.
@@ -330,7 +330,7 @@ describe("Unit: StoredBlockMergeService", function () {
 
     it("under CalldataCommittedStrategy a genuine new signature from a merged gossip copy → BROADCAST and persisted, as the live strategy", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 1, { timeConfig: MERGE_TIME_CONFIG });
+        await h.lifecycle.start(3, 1, { timeBlocks: MERGE_TIME_BLOCKS });
         const forkId = h.activeForkId!;
 
         // a signature the writer never saw: a queued calldata copy that merged
@@ -408,7 +408,7 @@ describe("Unit: StoredBlockMergeService", function () {
 
     it("under DisputeValidationStrategy a genuine new signature → DUPLICATE, not re-gossiped", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 1, { timeConfig: MERGE_TIME_CONFIG });
+        await h.lifecycle.start(3, 1, { timeBlocks: MERGE_TIME_BLOCKS });
         const forkId = h.activeForkId!;
 
         // same staging as the live-strategy case: a signature the writer never

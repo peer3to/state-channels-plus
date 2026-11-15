@@ -242,15 +242,17 @@ export class MirrorService extends ANetworkRpcService<
     /**
      * Serve every later chain read of `read` from the chain state one block
      * before this channel's latest `event` log: the chain view lags the
-     * mirror. Returns the block the reads are served at.
+     * mirror. Returns the block the reads are served at. The log read starts
+     * at `openingBlock`, the channel's opening block.
      */
     public async serveChainReadsBefore(
         read: ObservableRead,
-        event: MirrorChainEvent
+        event: MirrorChainEvent,
+        openingBlock: number
     ): Promise<number> {
         const entry = this.require(read);
         const contract: BaseContract = this.sm.stateChannelManagerContract;
-        const logs = await contract.queryFilter(event, 0, "latest");
+        const logs = await contract.queryFilter(event, openingBlock, "latest");
         const channelLogs = logs.filter(
             (log) => log.topics[1] === this.sm.channelId
         );

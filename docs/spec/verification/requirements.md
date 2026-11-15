@@ -980,6 +980,9 @@ Specification cases tested: 3/3.
 [`REQ-TIME-6-61C1EV` (The turn hook passes the runtime's current estimated chain time next to the…)](../specification/protocol-model/time.md#req-time-6-61c1ev)
 Specification cases tested: 2/2.
 
+[`REQ-TIME-7-2J5T0J` (Deployment windows derive from the chain block time as k × block time + floor,…)](../specification/protocol-model/time.md#req-time-7-2j5t0j)
+Specification cases tested: 6/6.
+
 [`REQ-TJOIN-1-5VGR1F` (Independent public options)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f)
 Specification cases tested: 8/8.
 

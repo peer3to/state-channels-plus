@@ -3,6 +3,7 @@ import Clock from "@/Clock";
 import type StateSnapshot from "@/models/StateSnapshot";
 import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import { BlockOrigin } from "@/storage/QueueStorage";
+import { BLOCK_TIME_MS } from "@/types";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import type { HarnessOptions } from "@test/harness/core/types";
 import { waitFor } from "@test/utils/waitFor";
@@ -303,7 +304,7 @@ async function stageOmittedInboundJoin(
                 options.watchdogMs === undefined
                     ? {}
                     : { LEAVE_CHANNEL_WATCHDOG_MS: options.watchdogMs },
-            timeConfig:
+            timeBlocks:
                 options.evidenceTime === undefined
                     ? undefined
                     : { evidenceTime: options.evidenceTime }
@@ -417,7 +418,7 @@ export async function stageInboundBlockedExit(
 export async function stageLastExitBlockedByJoin(h: MathPeerTestHarness) {
     await h.lifecycle.start(2, 0, {
         // the leave watchdog's dispute is not the subject
-        configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 60_000 }
+        configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 60 * BLOCK_TIME_MS }
     });
     const forkId = h.activeForkId!;
     const founders = [h.getPeer(0), h.getPeer(1)];
@@ -747,7 +748,7 @@ export async function latestRequestToResponderBehindChainFork(
 ) {
     await h.scenario.preDisputeSetup({
         peerCount: 4,
-        timeConfig: { evidenceTime: 3 }
+        timeBlocks: { evidenceTime: 3 }
     });
     const forkId = h.activeForkId!;
     const responder = h.getPeer(0);
@@ -900,7 +901,7 @@ export async function latestSyncFromResponderBehindDerivedFork(
 export async function stageExitReplacedBySeatingFork(h: MathPeerTestHarness) {
     await h.lifecycle.start(3, 0, {
         // the leave watchdog's dispute is not the subject
-        configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 60_000 }
+        configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 60 * BLOCK_TIME_MS }
     });
     const forkId = h.activeForkId!;
     const offender = h.getPeer(0);

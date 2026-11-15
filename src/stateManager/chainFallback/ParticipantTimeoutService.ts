@@ -2,7 +2,10 @@ import type { BlockCalldataRecoveryResult } from "../eventSync/EventSyncService"
 import type StateManager from "../StateManager";
 import Clock from "@/Clock";
 
-import { timeoutWaitTime as timeoutWaitTimeSeconds } from "@/types";
+import {
+    BLOCK_TIME_MS,
+    timeoutWaitTime as timeoutWaitTimeSeconds
+} from "@/types";
 import { Address, BlockHeight, Bytes, ForkId, Timestamp } from "@/types/types";
 import { Logger } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
@@ -11,7 +14,8 @@ import type { StateChannelManagerInterface } from "@typechain-types";
 import type { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { ethers } from "ethers";
 
-export const TIMEOUT_RECHECK_DELAY_MS = 1000;
+// recheck after one new block
+export const TIMEOUT_RECHECK_DELAY_MS = BLOCK_TIME_MS;
 // scheduleCheck reasons for a check re-armed after a refused timeout upload
 export const EARLY_TIMEOUT_RECHECK_REASON =
     "timeoutParticipantAfterEarlySubmission";

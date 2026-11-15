@@ -20,13 +20,16 @@ export class LifecycleService extends ANetworkRpcService<LifecycleRpcMethods> {
         return new LifecycleRpcMethods(transport, this);
     }
 
+    /** `fromBlock`: a block at or before the opening; the read starts there. */
     public async getEncodedOpening(
-        channelId: ChannelId
+        channelId: ChannelId,
+        fromBlock: number
     ): Promise<string | null> {
         const contract =
             this.p2pManager.stateManager.stateChannelManagerContract;
         const events = await contract.queryFilter(
-            contract.filters.ChannelOpened(channelId)
+            contract.filters.ChannelOpened(channelId),
+            fromBlock
         );
         const event = events.at(-1);
         if (!event) return null;
@@ -43,14 +46,18 @@ export class LifecycleService extends ANetworkRpcService<LifecycleRpcMethods> {
      * Re-deliver the selected channel's ChannelOpened log through the real
      * event pipeline, exactly as the chain listener would. Used to stage
      * "genesis arrives from the chain" on a runtime that selected the channel
-     * after it opened. Returns false when no such log exists.
+     * after it opened. Returns false when no such log exists. The read starts
+     * at `openingBlock`, the channel's opening block.
      */
-    public async applyChannelOpenedEvent(): Promise<boolean> {
+    public async applyChannelOpenedEvent(
+        openingBlock: number
+    ): Promise<boolean> {
         const stateManager = this.p2pManager.stateManager;
         const channelId = stateManager.channelId;
         const contract = stateManager.stateChannelManagerContract;
         const events = await contract.queryFilter(
-            contract.filters.ChannelOpened(channelId)
+            contract.filters.ChannelOpened(channelId),
+            openingBlock
         );
         const log = events.at(-1);
         if (!log) return false;

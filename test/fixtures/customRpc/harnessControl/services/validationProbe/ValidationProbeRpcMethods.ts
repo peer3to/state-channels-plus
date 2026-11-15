@@ -60,9 +60,10 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
     }
 
     public async probeInboundLogRedelivery(
-        redelivery: InboundLogRedelivery
+        redelivery: InboundLogRedelivery,
+        openingBlock: number
     ): Promise<StreamedLogDeliveryProbe> {
-        return this.service.probeInboundLogRedelivery(redelivery);
+        return this.service.probeInboundLogRedelivery(redelivery, openingBlock);
     }
 
     public async runCatchUpFromFirstNode(): Promise<boolean> {
@@ -114,8 +115,10 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
         return this.service.probeChannelSelectionRace(first);
     }
 
-    public async probeStreamedLogBelowWatermark(): Promise<StreamedLogDeliveryProbe> {
-        return this.service.probeStreamedLogBelowWatermark();
+    public async probeStreamedLogBelowWatermark(
+        openingBlock: number
+    ): Promise<StreamedLogDeliveryProbe> {
+        return this.service.probeStreamedLogBelowWatermark(openingBlock);
     }
 
     public async probeInboundRunRecovery(

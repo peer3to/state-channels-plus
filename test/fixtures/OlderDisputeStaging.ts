@@ -8,7 +8,6 @@ import {
 } from "@/types";
 import type { ForkId } from "@/types/types";
 import { addressesEqual, Codec, Type } from "@/utils";
-import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { expect } from "chai";
@@ -207,7 +206,8 @@ export async function readSnapshotHashAtKill(
 ): Promise<string> {
     const kills = (
         await h.channelManager.queryFilter(
-            h.channelManager.filters.DisputeKilled(h.channelId)
+            h.channelManager.filters.DisputeKilled(h.channelId),
+            h.channelOpeningBlock
         )
     ).filter((log) => addressesEqual(log.args.disputer, disputer));
     if (kills.length !== 1)
@@ -396,7 +396,7 @@ export async function postDepartedTimeoutDispute(
         Type.Block
     ).transaction;
     expect(Number(header.transactionCnt) + 1).to.equal(options.accusedHeight);
-    const timeConfig = resolveTestTimeConfig(h.options.timeConfig);
+    const timeConfig = h.options.timeConfig;
     await h.event.waitUntilTimestamp(
         Number(header.timestamp) +
             timeoutWaitTime(timeConfig, options.accusedHeight) +

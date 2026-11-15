@@ -9,6 +9,8 @@ import {
     interfaceFunctions,
     proxyShadowedRoutedFunctions
 } from "@test/fixtures/ProxySelectorRoutingFixture";
+import { MathTestSession as TestSession } from "@test/harness";
+import { slotDeployerIndex } from "@test/harness/core/slotAccounts";
 import {
     deployMathChannelProxyFixture,
     DeployedFacetAddresses
@@ -18,16 +20,21 @@ import {
     StateChannelManagerProxy__factory
 } from "@typechain-types";
 import { expect } from "chai";
-import { ethers } from "hardhat";
+import { ethers } from "ethers";
 
 describe("StateChannelManagerProxy selector routing", function () {
     let diamond: StateChannelManagerInterface;
     let facetAddresses: DeployedFacetAddresses;
     let consumerFacetAddress: string;
 
-    // The routing table is immutable, so one deployment serves every case.
-    before(async function () {
-        const contracts = await deployMathChannelProxyFixture(ethers);
+    // each case gets its own deployment: the harness session, and with it the
+    // chain connection, exists only per test
+    beforeEach(async function () {
+        const h = TestSession.getHarness();
+        await h.connectChain();
+        const contracts = await deployMathChannelProxyFixture(
+            h.signerFor(slotDeployerIndex())
+        );
         diamond = contracts.mathChannelManager;
         facetAddresses = contracts.facetAddresses;
         consumerFacetAddress = contracts.consumerFacetAddress;

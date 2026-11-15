@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: DisputeManager.killDispute apply staging shared by its unit declarations
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
+import { BLOCK_TIME_MS } from "@/types";
 import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
 
 /**
@@ -86,7 +87,7 @@ export async function runKillWithUnrecognizedApplyFailure(
 export async function runKillSentAfterKillPeriod(h: MathPeerTestHarness) {
     const { killer, spammer, forkId } =
         await h.scenario.stageUnkilledSpamDispute({
-            timeConfig: { evidenceTime: 6 }
+            timeBlocks: { evidenceTime: 6 }
         });
     const probe = await h.rpcStub.recordDisputeFraudProofApplies(killer.index, {
         hold: true
@@ -96,7 +97,9 @@ export async function runKillSentAfterKillPeriod(h: MathPeerTestHarness) {
     attempt.catch(() => undefined);
     await probe.waitUntilHeld(1);
     const { killPeriodEnd } = await h.query.killPeriod(forkId, killer.index);
-    await h.event.waitUntilTimestamp(killPeriodEnd + 2);
+    await h.event.waitUntilTimestamp(
+        killPeriodEnd + (2 * BLOCK_TIME_MS) / 1000
+    );
     const periodAtRelease = await h.query.killPeriod(forkId, killer.index);
     await probe.release();
     const { threw } = await attempt;

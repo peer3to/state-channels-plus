@@ -81,7 +81,7 @@ export async function stageOmittedInboundJoinerHistory(
 ): Promise<OmittedInboundJoinerHistory> {
     // the forged dispute posts its auditing data: the kill period covers
     // a full audit of it
-    await h.lifecycle.start(2, 2, { timeConfig: { evidenceTime: 12 } });
+    await h.lifecycle.start(2, 2, { timeBlocks: { evidenceTime: 12 } });
     const forkId = h.activeForkId!;
     const anchor = await h.transition.postSnapshotWait();
     if (!anchor) throw new Error("No finalized snapshot to anchor on chain");
@@ -444,7 +444,8 @@ export async function readDisputeKill(
 }> {
     const kills = (
         await h.channelManager.queryFilter(
-            h.channelManager.filters.DisputeKilled(h.channelId)
+            h.channelManager.filters.DisputeKilled(h.channelId),
+            h.channelOpeningBlock
         )
     ).filter((log) => log.args.disputer === disputer);
     if (kills.length !== 1)

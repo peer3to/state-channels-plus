@@ -144,7 +144,7 @@ describe("E2E: Dispute Manager", function () {
             // and dispute() takes the with-calldata upload. shorter evidence
             // time keeps the real resolve under budget
             await h.scenario.preDisputeSetupCalldataPath({
-                timeConfig: { evidenceTime: 6 }
+                timeBlocks: { evidenceTime: 6 }
             });
             const offender = await h.query.getNextPeerToWrite();
 
@@ -200,7 +200,7 @@ describe("E2E: Dispute Manager", function () {
             // a pending inbound join leaves the head not-final-by-everyone, so a
             // dispute here carries postedAuditingData=true (auditing calldata)
             await h.scenario.preDisputeSetupCalldataPath({
-                timeConfig: { chainFallbackTime: 2 }
+                timeBlocks: { chainFallbackTime: 2 }
             });
 
             // no block is produced -> the next writer's turn lapses -> the honest
@@ -236,7 +236,7 @@ describe("E2E: Dispute Manager", function () {
         it("should kill a spam dispute with no legitimate enforcement basis", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({
-                timeConfig: { evidenceTime: 6 }
+                timeBlocks: { evidenceTime: 6 }
             });
             const forkId = h.activeForkId!;
 
@@ -309,7 +309,7 @@ describe("E2E: Dispute Manager", function () {
         it("should reject dispute when full auditing data reconstructed but both commitment and state proof are invalid", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({
-                timeConfig: { evidenceTime: 6 }
+                timeBlocks: { evidenceTime: 6 }
             });
             const forkId = h.activeForkId!;
             const dispute = await h.byzantine.tamperedDisputeDoubleFault(1);
@@ -331,7 +331,7 @@ describe("E2E: Dispute Manager", function () {
         it("recovers an expired posted-data dispute and reduces from persisted proof data", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath({
-                timeConfig: { evidenceTime: 3 }
+                timeBlocks: { evidenceTime: 3 }
             });
             const disputedForkId = h.activeForkId;
             if (!disputedForkId) throw new Error("Expected an active fork");

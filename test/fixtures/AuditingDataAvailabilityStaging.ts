@@ -42,7 +42,7 @@ export async function stageAnchoredUnfinalizedTail(
     // The snapshot post and the join (two transactions and the join's
     // confirmation round) sit in one writer window before the tail block.
     await h.lifecycle.start(3, 0, {
-        timeConfig: {
+        timeBlocks: {
             p2pTime: 10,
             agreementTime: 4,
             chainFallbackTime: 4,

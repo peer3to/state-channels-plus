@@ -52,9 +52,10 @@ export class MirrorRpcMethods extends ANetworkRpcMethods<MirrorService> {
 
     public serveChainReadsBefore(
         read: ObservableRead,
-        event: MirrorChainEvent
+        event: MirrorChainEvent,
+        openingBlock: number
     ): Promise<number> {
-        return this.service.serveChainReadsBefore(read, event);
+        return this.service.serveChainReadsBefore(read, event, openingBlock);
     }
 
     public failNextUpdate(update: MirrorUpdate): boolean {

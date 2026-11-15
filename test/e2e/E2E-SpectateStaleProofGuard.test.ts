@@ -9,7 +9,7 @@ describe("E2E: Spectate stale-proof guard", function () {
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(2, 0, {
-            timeConfig: {
+            timeBlocks: {
                 p2pTime: 5,
                 agreementTime: 2,
                 chainFallbackTime: 2,
@@ -38,7 +38,9 @@ describe("E2E: Spectate stale-proof guard", function () {
         try {
             // Spawn-only, classified (plan 30 item 5): the sync is meant to fail and no
             // transition is scheduled while it runs, so the idle fork is by design.
-            await h.join.addSpectatorWait({ statusTimeoutMs: 5000 });
+            await h.join.addSpectatorWait({
+                statusTimeoutMs: h.event.protocolEventTimeoutMs()
+            });
         } catch (e: any) {
             threwTimeout = true;
         }
@@ -63,7 +65,7 @@ describe("E2E: Spectate stale-proof guard", function () {
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(2, 2, {
-            timeConfig: {
+            timeBlocks: {
                 p2pTime: 5,
                 agreementTime: 2,
                 chainFallbackTime: 2,
@@ -80,7 +82,9 @@ describe("E2E: Spectate stale-proof guard", function () {
         try {
             // Spawn-only, classified (plan 30 item 5): the sync is meant to fail and no
             // transition is scheduled while it runs, so the idle fork is by design.
-            await h.join.addSpectatorWait({ statusTimeoutMs: 5000 });
+            await h.join.addSpectatorWait({
+                statusTimeoutMs: h.event.protocolEventTimeoutMs()
+            });
         } catch {
             threwTimeout = true;
         }
@@ -105,7 +109,7 @@ describe("E2E: Spectate stale-proof guard", function () {
     it("blacklists the responder when a participant receives a proof behind the on-chain snapshot", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0, {
-            timeConfig: {
+            timeBlocks: {
                 p2pTime: 5,
                 agreementTime: 3,
                 chainFallbackTime: 2,

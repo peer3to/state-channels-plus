@@ -164,10 +164,11 @@ responsiveness against false time-based failures. The concrete values are a conf
 that must be chosen and validated empirically under representative delay, skew, reorganization,
 and block-production conditions.
 
-Code-derived specifics: the sync tolerance factor is unresolved in code (1× vs. 2× average block
-time, a live TODO); the clock syncs once per session (at init and on provider replacement) with no
-periodic re-sync cadence defined; no explicit maximum-skew constant exists anywhere; and the
-default window values (15/5/30/30 s) are development defaults. See
+Code-derived specifics: the sync tolerance is one chain block time (decided by Luke, 2026-11-14);
+the clock syncs once per session (at init and on provider replacement) with no periodic re-sync
+cadence defined; no explicit maximum-skew constant exists anywhere; and the windows derive from the
+block time (5/3/5/20 s at one-second blocks, decided by Luke, 2026-11-14) but are not yet validated
+under representative conditions. See
 [protocol/time.md](./protocol-model/time.md) §2–3. Also covers the unquantified underlying-chain
 timestamp-manipulation bounds relative to the protocol windows (inherited from
 [`OQ-9-XR1MFS`](open-questions.md#oq-9-xr1mfs) on its resolution; [protocol/time.md](./protocol-model/time.md) §5.3).
@@ -821,8 +822,8 @@ Affected layers: [synchronization](peer-communication/synchronization.md), imple
 
 Open; to address later (Luka, 2026-10-28). Seen in a six-player game (three desktop and three mobile
 browsers on one LAN, every link on WebRTC and stable): authors of ordered-contribution and voluntary-quit
-blocks posted their blocks' calldata on-chain because, at the author's check one `agreementTime` (4 s)
-after commit, not every participant's counter-signature had arrived. The links were healthy; the time went
+blocks posted their blocks' calldata on-chain because, at the author's check one `agreementTime` (4 s
+in that game's deployment; the derived window is 3 s at one-second blocks) after commit, not every participant's counter-signature had arrived. The links were healthy; the time went
 into processing.
 
 In that game every player received and sent about 24 messages and 310 KB per block, with peaks near

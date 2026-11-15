@@ -75,7 +75,7 @@ export async function stageChainAnchor(
         // An auditor walks every milestone of these proofs before it builds
         // and sends its kill, which has taken about nine seconds on a loaded
         // farm: the kill period keeps headroom over that.
-        timeConfig: { evidenceTime: 12 }
+        timeBlocks: { evidenceTime: 12 }
     });
     // Pin the anchor before authoring; mining and mirror delivery must not
     // consume the next writer's window.
@@ -590,7 +590,7 @@ export async function stageOffWireTailOverBlindPendingAuditor(
     // about 9 s on a loaded host, against the default 8 s.
     await h.scenario.preDisputeSetup({
         peerCount: 4,
-        timeConfig: { evidenceTime: 12 }
+        timeBlocks: { evidenceTime: 12 }
     });
     const participants = [0, 1, 2, 3];
     const { auditorIndex, headHeight, restoreGossip } =

@@ -116,7 +116,8 @@ describe("E2E: Multiple RPC nodes", function () {
         ).to.equal(callsBeforeCut + 2);
         const [newerLog] = (
             await h.channelManager.queryFilter(
-                h.channelManager.filters.InboundMessagesProcessed(h.channelId)
+                h.channelManager.filters.InboundMessagesProcessed(h.channelId),
+                h.channelOpeningBlock
             )
         ).slice(-1);
         // the finished catch-up released its hold on the watermark
@@ -397,7 +398,8 @@ describe("E2E: Multiple RPC nodes", function () {
         ).to.equal(callsBeforeCut + 1);
         const [missedLog] = (
             await h.channelManager.queryFilter(
-                h.channelManager.filters.InboundMessagesProcessed(h.channelId)
+                h.channelManager.filters.InboundMessagesProcessed(h.channelId),
+                h.channelOpeningBlock
             )
         ).slice(-1);
         // neither the abandoned catch-up nor the new one holds the watermark
@@ -417,7 +419,7 @@ describe("E2E: Multiple RPC nodes", function () {
             // the failing retries and the two backoff windows keep the channel
             // idle past the default first-block timeout, whose dispute would
             // reject the later top-up
-            timeConfig: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME }
+            timeBlocks: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME }
         });
         const [proxy] = h.getRpcNodeProxies(proxied);
         const validation = () => h.control(h.getPeer(proxied)).validation;
@@ -447,7 +449,8 @@ describe("E2E: Multiple RPC nodes", function () {
         await h.event.settleContractEvents(proxied);
         const [laterLog] = (
             await h.channelManager.queryFilter(
-                h.channelManager.filters.InboundMessagesProcessed(h.channelId)
+                h.channelManager.filters.InboundMessagesProcessed(h.channelId),
+                h.channelOpeningBlock
             )
         ).slice(-1);
         const watermark = await validation().getEventWatermark().request();
@@ -676,7 +679,8 @@ describe("E2E: Multiple RPC nodes", function () {
             observePeerIndices: [0, 1]
         });
         const logs = await h.channelManager.queryFilter(
-            h.channelManager.filters.InboundMessagesProcessed(h.channelId)
+            h.channelManager.filters.InboundMessagesProcessed(h.channelId),
+            h.channelOpeningBlock
         );
         const [missedLog, laterLog] = logs.slice(-2);
         const inboundHead = await h.query.getLatestInboundMessageHash(0);
@@ -715,7 +719,7 @@ describe("E2E: Multiple RPC nodes", function () {
             // the produced blocks and the reconnect backoff keep the channel
             // idle past the default first-block timeout, whose dispute would
             // reject the later top-up
-            timeConfig: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME }
+            timeBlocks: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME }
         });
         const [proxy] = h.getRpcNodeProxies(proxied);
         proxy.rejectLogSpansAbove(endpointLimit);
@@ -758,7 +762,8 @@ describe("E2E: Multiple RPC nodes", function () {
         ).to.equal(callsBeforeCut + 2);
         const [laterLog] = (
             await h.channelManager.queryFilter(
-                h.channelManager.filters.InboundMessagesProcessed(h.channelId)
+                h.channelManager.filters.InboundMessagesProcessed(h.channelId),
+                h.channelOpeningBlock
             )
         ).slice(-1);
         // the finished catch-up released its hold on the watermark
@@ -796,7 +801,8 @@ describe("E2E: Multiple RPC nodes", function () {
         await h.event.settleContractEvents(proxied);
         const [laterLog] = (
             await h.channelManager.queryFilter(
-                h.channelManager.filters.InboundMessagesProcessed(h.channelId)
+                h.channelManager.filters.InboundMessagesProcessed(h.channelId),
+                h.channelOpeningBlock
             )
         ).slice(-1);
 
@@ -828,7 +834,8 @@ describe("E2E: Multiple RPC nodes", function () {
         });
         const [missedLog] = (
             await h.channelManager.queryFilter(
-                h.channelManager.filters.InboundMessagesProcessed(h.channelId)
+                h.channelManager.filters.InboundMessagesProcessed(h.channelId),
+                h.channelOpeningBlock
             )
         ).slice(-1);
         const watermarkBefore = await validation.getEventWatermark().request();
@@ -884,7 +891,7 @@ describe("E2E: Multiple RPC nodes", function () {
             // the produced blocks and the backup's reconnect backoff keep the
             // channel idle past the default first-block timeout, whose
             // dispute would reject the later top-up
-            timeConfig: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME }
+            timeBlocks: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME }
         });
         const [first, backup] = h.getRpcNodeProxies(proxied);
         const validation = h.control(h.getPeer(proxied)).validation;
@@ -918,7 +925,8 @@ describe("E2E: Multiple RPC nodes", function () {
         await h.event.settleContractEvents(proxied);
         const [laterLog] = (
             await h.channelManager.queryFilter(
-                h.channelManager.filters.InboundMessagesProcessed(h.channelId)
+                h.channelManager.filters.InboundMessagesProcessed(h.channelId),
+                h.channelOpeningBlock
             )
         ).slice(-1);
         const watermark = await validation.getEventWatermark().request();
@@ -957,7 +965,8 @@ describe("E2E: Multiple RPC nodes", function () {
         await h.event.settleContractEvents(proxied);
         const [laterLog] = (
             await h.channelManager.queryFilter(
-                h.channelManager.filters.InboundMessagesProcessed(h.channelId)
+                h.channelManager.filters.InboundMessagesProcessed(h.channelId),
+                h.channelOpeningBlock
             )
         ).slice(-1);
 
@@ -976,7 +985,7 @@ describe("E2E: Multiple RPC nodes", function () {
             // the reconnect backoff and the lagging node keep the channel
             // idle past the default first-block timeout, whose dispute
             // would reject the later top-up
-            timeConfig: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME }
+            timeBlocks: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME }
         });
         const [first, backup] = h.getRpcNodeProxies(proxied);
         const validation = h.control(h.getPeer(proxied)).validation;
@@ -1005,7 +1014,8 @@ describe("E2E: Multiple RPC nodes", function () {
         await h.event.settleContractEvents(proxied);
         const [laterLog] = (
             await h.channelManager.queryFilter(
-                h.channelManager.filters.InboundMessagesProcessed(h.channelId)
+                h.channelManager.filters.InboundMessagesProcessed(h.channelId),
+                h.channelOpeningBlock
             )
         ).slice(-1);
         // the catch-up has read nothing through the lagging node and still
@@ -1041,7 +1051,7 @@ describe("E2E: Multiple RPC nodes", function () {
             // the head retries, the reconnect backoff and the lagging node
             // keep the channel idle past the default first-block timeout,
             // whose dispute would reject the later top-up
-            timeConfig: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME }
+            timeBlocks: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME }
         });
         const [first, backup] = h.getRpcNodeProxies(proxied);
         const validation = h.control(h.getPeer(proxied)).validation;
@@ -1093,7 +1103,8 @@ describe("E2E: Multiple RPC nodes", function () {
         await h.event.settleContractEvents(proxied);
         const [laterLog] = (
             await h.channelManager.queryFilter(
-                h.channelManager.filters.InboundMessagesProcessed(h.channelId)
+                h.channelManager.filters.InboundMessagesProcessed(h.channelId),
+                h.channelOpeningBlock
             )
         ).slice(-1);
         // the lagging first node is still below the backup's head: nothing
@@ -1149,7 +1160,8 @@ describe("E2E: Multiple RPC nodes", function () {
         await h.event.settleContractEvents(proxied);
         const [laterLog] = (
             await h.channelManager.queryFilter(
-                h.channelManager.filters.InboundMessagesProcessed(h.channelId)
+                h.channelManager.filters.InboundMessagesProcessed(h.channelId),
+                h.channelOpeningBlock
             )
         ).slice(-1);
 

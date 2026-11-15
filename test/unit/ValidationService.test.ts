@@ -1,5 +1,5 @@
 import { Block } from "@/models";
-import { Status } from "@/types";
+import { deriveTimeConfig, Status } from "@/types";
 import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
 import type { Address } from "@/types/types";
 import { Codec, Type } from "@/utils";
@@ -11,10 +11,7 @@ import {
     assertSpectatingFraud,
     assertObserverHook
 } from "@test/fixtures/SpectatingFraudStaging";
-import {
-    MathTestSession as TestSession,
-    MIN_TEST_TIME_CONFIG
-} from "@test/harness";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
@@ -27,26 +24,28 @@ const solProofType = (type: FraudProofType): string =>
 
 // a wide evidence window keeps the height-0 participant timeout clear of the
 // deliberate waits in the timestamp cases
-const TIMESTAMP_TIME_CONFIG = { ...MIN_TEST_TIME_CONFIG, evidenceTime: 20 };
+const TIMESTAMP_TIME_BLOCKS = { evidenceTime: 20 };
+const TIMESTAMP_TIME = deriveTimeConfig(TIMESTAMP_TIME_BLOCKS);
 
 // wide enough that the deliberate waits in the parent-recovery cases stay
 // clear of the participant timeout
-const RECOVERY_TIME_CONFIG = {
+const RECOVERY_TIME_BLOCKS = {
     p2pTime: 2,
     agreementTime: 8,
     chainFallbackTime: 10,
     evidenceTime: 20
 };
+const RECOVERY_TIME = deriveTimeConfig(RECOVERY_TIME_BLOCKS);
 // the ordinary post window; height 0 additionally gets the evidenceTime grace
 const HEIGHT_ONE_POST_WINDOW =
-    TIMESTAMP_TIME_CONFIG.p2pTime +
-    TIMESTAMP_TIME_CONFIG.agreementTime +
-    TIMESTAMP_TIME_CONFIG.chainFallbackTime;
+    TIMESTAMP_TIME.p2pTime +
+    TIMESTAMP_TIME.agreementTime +
+    TIMESTAMP_TIME.chainFallbackTime;
 const HEIGHT_ZERO_POST_WINDOW =
-    TIMESTAMP_TIME_CONFIG.p2pTime +
-    TIMESTAMP_TIME_CONFIG.agreementTime +
-    TIMESTAMP_TIME_CONFIG.chainFallbackTime +
-    TIMESTAMP_TIME_CONFIG.evidenceTime;
+    TIMESTAMP_TIME.p2pTime +
+    TIMESTAMP_TIME.agreementTime +
+    TIMESTAMP_TIME.chainFallbackTime +
+    TIMESTAMP_TIME.evidenceTime;
 
 describe("Unit: ValidationService", function () {
     it("a linked insertion from the wrong leader reaches the SDK deviation without changing state or eligibility", async () => {
@@ -942,7 +941,7 @@ describe("Unit: ValidationService", function () {
         it("previous-block calldata recovered, candidate now valid → recursive pass returns SUCCESS and caches the timestamp", async function () {
             const h = TestSession.getHarness();
             const staged = await h.scenario.previousBlockUnsignedByNextWriter({
-                timeConfig: RECOVERY_TIME_CONFIG
+                timeBlocks: RECOVERY_TIME_BLOCKS
             });
             const { observer, author, previous, forkId, parentPostTimestamp } =
                 staged;
@@ -951,7 +950,7 @@ describe("Unit: ValidationService", function () {
             // own-timestamp window, inside the recovered one
             const candidateTimestamp = parentPostTimestamp;
             expect(candidateTimestamp).to.be.greaterThan(
-                previous.timestamp + RECOVERY_TIME_CONFIG.p2pTime
+                previous.timestamp + RECOVERY_TIME.p2pTime
             );
 
             const encoded = await factory.buildAndEncodeBlock(author.signer, {
@@ -985,7 +984,7 @@ describe("Unit: ValidationService", function () {
         it("previous-block calldata recovered but the candidate is still invalid → objectiveInvalidTimestampDetected", async function () {
             const h = TestSession.getHarness();
             const staged = await h.scenario.previousBlockUnsignedByNextWriter({
-                timeConfig: RECOVERY_TIME_CONFIG
+                timeBlocks: RECOVERY_TIME_BLOCKS
             });
             const { observer, author, previous, forkId, parentPostTimestamp } =
                 staged;
@@ -993,7 +992,7 @@ describe("Unit: ValidationService", function () {
             // past the recovered post time's window too, so the better parent
             // data still can't legalise it
             const candidateTimestamp =
-                parentPostTimestamp + RECOVERY_TIME_CONFIG.p2pTime + 2;
+                parentPostTimestamp + RECOVERY_TIME.p2pTime + 2;
             expect(parentPostTimestamp).to.be.greaterThan(previous.timestamp);
 
             const encoded = await factory.buildAndEncodeBlock(author.signer, {
@@ -1027,7 +1026,7 @@ describe("Unit: ValidationService", function () {
         it("block replayed from a synchronization proof outside agreementTime → the subjective window does not apply → SUCCESS", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
-                timeConfig: TIMESTAMP_TIME_CONFIG
+                timeBlocks: TIMESTAMP_TIME_BLOCKS
             });
             const { observer, authored } =
                 await h.transition.authorNextBlockOffWireWait();
@@ -1039,9 +1038,7 @@ describe("Unit: ValidationService", function () {
                 observer.index,
                 authored.timestamp
             );
-            expect(clockGap).to.be.greaterThan(
-                TIMESTAMP_TIME_CONFIG.agreementTime
-            );
+            expect(clockGap).to.be.greaterThan(TIMESTAMP_TIME.agreementTime);
 
             const live = await h
                 .control(observer)
@@ -1070,7 +1067,7 @@ describe("Unit: ValidationService", function () {
         it("on-chain timestamp exactly at the post deadline → ON_TIME → SUCCESS even outside agreementTime", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
-                timeConfig: TIMESTAMP_TIME_CONFIG
+                timeBlocks: TIMESTAMP_TIME_BLOCKS
             });
             const { observer, authored, forkId } =
                 await h.transition.authorNextBlockOffWireWait();
@@ -1094,9 +1091,7 @@ describe("Unit: ValidationService", function () {
                 observer.index,
                 authored.timestamp
             );
-            expect(clockGap).to.be.greaterThan(
-                TIMESTAMP_TIME_CONFIG.agreementTime
-            );
+            expect(clockGap).to.be.greaterThan(TIMESTAMP_TIME.agreementTime);
 
             const r = await h
                 .control(observer)
@@ -1114,7 +1109,7 @@ describe("Unit: ValidationService", function () {
         it("on-chain timestamp one second past the deadline → objectiveInvalidTimestampDetected → DISPUTE + InvalidTimestamp", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
-                timeConfig: TIMESTAMP_TIME_CONFIG
+                timeBlocks: TIMESTAMP_TIME_BLOCKS
             });
             const { observer, authored, forkId } =
                 await h.transition.authorNextBlockOffWireWait();
@@ -1152,7 +1147,7 @@ describe("Unit: ValidationService", function () {
         it("no cached timestamp, calldata recoverable on-chain → recovered, persisted, ON_TIME → SUCCESS", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
-                timeConfig: TIMESTAMP_TIME_CONFIG
+                timeBlocks: TIMESTAMP_TIME_BLOCKS
             });
             const { leader, observer, authored, forkId } =
                 await h.transition.authorNextBlockOffWireWait();
@@ -1208,7 +1203,7 @@ describe("Unit: ValidationService", function () {
         it("height 1 posted one second past the no-grace deadline → TOO_LATE → DISPUTE", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1, {
-                timeConfig: TIMESTAMP_TIME_CONFIG
+                timeBlocks: TIMESTAMP_TIME_BLOCKS
             });
             const { observer, authored, forkId } =
                 await h.transition.authorNextBlockOffWireWait();
@@ -1256,7 +1251,7 @@ describe("Unit: ValidationService", function () {
         it("objectively valid but never posted, received outside agreementTime → subjectiveInvalidTimestampDetected → NOT_ENOUGH_TIME", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
-                timeConfig: TIMESTAMP_TIME_CONFIG
+                timeBlocks: TIMESTAMP_TIME_BLOCKS
             });
             const { observer, authored } =
                 await h.transition.authorNextBlockOffWireWait();
@@ -1266,9 +1261,7 @@ describe("Unit: ValidationService", function () {
                 observer.index,
                 authored.timestamp
             );
-            expect(clockGap).to.be.greaterThan(
-                TIMESTAMP_TIME_CONFIG.agreementTime
-            );
+            expect(clockGap).to.be.greaterThan(TIMESTAMP_TIME.agreementTime);
 
             const r = await h
                 .control(observer)
@@ -1287,7 +1280,7 @@ describe("Unit: ValidationService", function () {
         it("the same stale unposted block under the dispute strategy → subjective hook accepts history → SUCCESS", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
-                timeConfig: TIMESTAMP_TIME_CONFIG
+                timeBlocks: TIMESTAMP_TIME_BLOCKS
             });
             const { observer, authored } =
                 await h.transition.authorNextBlockOffWireWait();
@@ -1410,7 +1403,7 @@ describe("Unit: ValidationService", function () {
             const observerIndex = 0;
             const maliciousPeerIndex = 2;
             await h.lifecycle.start(4, 2, {
-                timeConfig: {
+                timeBlocks: {
                     p2pTime: 3,
                     agreementTime: 2,
                     chainFallbackTime: 2,
@@ -1631,7 +1624,7 @@ describe("Unit: ValidationService", function () {
             const observerIndex = 0;
             const maliciousPeerIndex = 2;
             await h.lifecycle.start(4, 2, {
-                timeConfig: {
+                timeBlocks: {
                     p2pTime: 3,
                     agreementTime: 2,
                     chainFallbackTime: 2,

@@ -1,6 +1,8 @@
 import { TransportType } from "@/transport/TransportType";
 import { sleep } from "@/utils";
+import { HOLD_FOREVER_MS } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { MathTestSession as TestSession } from "@test/harness";
+import { ABSENCE_WINDOW_MS } from "@test/harness/actions/EventActions";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
@@ -13,13 +15,20 @@ import { expect } from "chai";
  *
  * Tests the handshake protocol, peer profile creation, and time validation.
  */
+/** A holepunch upgrade to WebRTC connects within this. */
+const HOLEPUNCH_CONNECT_MS = 20_000;
+
 describe("E2E: Init Handshake", function () {
     describe("Handshake Completion", function () {
         it("should complete handshake successfully and create peer profile", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.network.connectPeers([0, 1]);
-            await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
+            await h.event.waitUntilEventOccurs(
+                "onConnection",
+                undefined,
+                [0, 1]
+            );
             await h.rpc.newPeerJoins({
                 newPeerIndex: 2,
                 observingPeerIndex: 0
@@ -33,7 +42,7 @@ describe("E2E: Init Handshake", function () {
         it("should update existing profile transport on WebRTC upgrade", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 0, { autoConnect: true });
-            await h.event.waitUntilEventOccurs("onConnection", 5000);
+            await h.event.waitUntilEventOccurs("onConnection");
             await h.assert.rpc.handshakeCompleted({ peer1: 0, peer2: 1 });
 
             const peer0 = h.getPeer(0);
@@ -79,7 +88,10 @@ describe("E2E: Init Handshake", function () {
                 "initial handshake should complete over HOLEPUNCH"
             );
 
-            await h.event.waitUntilEventOccurs("onConnection", 20000);
+            await h.event.waitUntilEventOccurs(
+                "onConnection",
+                HOLEPUNCH_CONNECT_MS
+            );
 
             // The same profile object must now point at a WEBRTC transport.
             const after = await h.execOnHost(
@@ -119,7 +131,11 @@ describe("E2E: Init Handshake", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.network.connectPeers([0, 1]);
-            await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
+            await h.event.waitUntilEventOccurs(
+                "onConnection",
+                undefined,
+                [0, 1]
+            );
             await h.rpc.newPeerJoins({
                 newPeerIndex: 2,
                 observingPeerIndex: 1
@@ -167,7 +183,11 @@ describe("E2E: Init Handshake", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.network.connectPeers([0, 1]);
-            await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
+            await h.event.waitUntilEventOccurs(
+                "onConnection",
+                undefined,
+                [0, 1]
+            );
             const observer = h.getPeer(0);
             const offender = h.getPeer(2);
             const agreementTime = await h
@@ -199,8 +219,7 @@ describe("E2E: Init Handshake", function () {
                             .request(),
                     h.event.protocolEventTimeoutMs({
                         withFirstBlockGrace: true
-                    }),
-                    100
+                    })
                 );
             } finally {
                 await h
@@ -220,7 +239,7 @@ describe("E2E: Init Handshake", function () {
                 "clock skew is never a verdict"
             ).to.equal(false);
             // The suspension holds: no later redial gets through.
-            await sleep(600);
+            await sleep(ABSENCE_WINDOW_MS);
             expect(
                 await h
                     .control(observer)
@@ -234,7 +253,11 @@ describe("E2E: Init Handshake", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.network.connectPeers([0, 1]);
-            await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
+            await h.event.waitUntilEventOccurs(
+                "onConnection",
+                undefined,
+                [0, 1]
+            );
             await h.rpc.newPeerJoins({
                 newPeerIndex: 2,
                 observingPeerIndex: 0
@@ -245,7 +268,7 @@ describe("E2E: Init Handshake", function () {
             await h.rpc.initiateHandshakeWithFaultyResponse({
                 initiatorPeer: 0,
                 responderPeer: 2,
-                delayMs: 100_000
+                delayMs: HOLD_FOREVER_MS
             });
             await h.assert.rpc.peerDisconnectedFrom({
                 peerIndex: 0,
@@ -273,7 +296,11 @@ describe("E2E: Init Handshake", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.network.connectPeers([0, 1]);
-            await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
+            await h.event.waitUntilEventOccurs(
+                "onConnection",
+                undefined,
+                [0, 1]
+            );
             await h.rpc.newPeerJoins({
                 newPeerIndex: 2,
                 observingPeerIndex: 0
@@ -331,8 +358,7 @@ describe("E2E: Init Handshake", function () {
                     async () => (await strikes()) >= 1,
                     h.event.protocolEventTimeoutMs({
                         withFirstBlockGrace: true
-                    }),
-                    100
+                    })
                 );
             } finally {
                 await h
@@ -365,7 +391,11 @@ describe("E2E: Init Handshake", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.network.connectPeers([0, 1]);
-            await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
+            await h.event.waitUntilEventOccurs(
+                "onConnection",
+                undefined,
+                [0, 1]
+            );
             await h.rpc.newPeerJoins({
                 newPeerIndex: 2,
                 observingPeerIndex: 0
@@ -395,7 +425,7 @@ describe("E2E: Init Handshake", function () {
         it("should disconnect + blacklist a peer that sends a duplicate handshake ack", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 0, { autoConnect: true });
-            await h.event.waitUntilEventOccurs("onConnection", 5000);
+            await h.event.waitUntilEventOccurs("onConnection");
             await h.assert.rpc.handshakeCompleted({ peer1: 0, peer2: 1 });
 
             // The handshake already exchanged acks; a second ack from peer 0

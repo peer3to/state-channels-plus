@@ -246,12 +246,14 @@ export async function assertInboundHeadMovedDuringUpload(
         h.control(disputer).query.getLatestInboundMessageHash().request();
     const committed = async () => [
         ...(await h.channelManager.queryFilter(
-            h.channelManager.filters.DisputeCommitted(h.channelId)
+            h.channelManager.filters.DisputeCommitted(h.channelId),
+            h.channelOpeningBlock
         )),
         ...(await h.channelManager.queryFilter(
             h.channelManager.filters.DisputeCommittedWithAuditingData(
                 h.channelId
-            )
+            ),
+            h.channelOpeningBlock
         ))
     ];
     try {

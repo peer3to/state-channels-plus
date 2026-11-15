@@ -2,7 +2,7 @@ import {
     CHAIN_READ_FAILED_RECHECK_REASON,
     EARLY_TIMEOUT_RECHECK_REASON
 } from "@/stateManager/chainFallback/ParticipantTimeoutService";
-import { Status } from "@/types";
+import { BLOCK_TIME_MS, deriveTimeConfig, Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
     assertEarlyTimeoutRetry,
@@ -30,7 +30,7 @@ import { ZeroAddress } from "ethers";
 // control: the same code path does submit when the deadline really passed.
 
 // short windows, so the staged parent post lands inside one test
-const RECHECK_TIME_CONFIG = {
+const RECHECK_TIME_BLOCKS = {
     p2pTime: 2,
     agreementTime: 8,
     chainFallbackTime: 10,
@@ -771,7 +771,7 @@ describe("Unit: ParticipantTimeoutService", function () {
             await h.lifecycle.start(3, 2, {
                 // a long window so the deadline is provably still open when the
                 // check runs
-                timeConfig: {
+                timeBlocks: {
                     p2pTime: 10,
                     agreementTime: 10,
                     chainFallbackTime: 30,
@@ -969,14 +969,14 @@ describe("Unit: ParticipantTimeoutService", function () {
         it("a writer that signed the predecessor gains no time from its post → the timeout is submitted at the block's own deadline", async function () {
             await assertSignedPredecessorPostGrantsNoTime(
                 TestSession.getHarness(),
-                RECHECK_TIME_CONFIG
+                RECHECK_TIME_BLOCKS
             );
         });
 
         it("a writer that never signed the predecessor waits for its post → the timeout follows the post-based deadline", async function () {
             await assertUnsignedPredecessorPostDelaysCheck(
                 TestSession.getHarness(),
-                RECHECK_TIME_CONFIG
+                RECHECK_TIME_BLOCKS
             );
         });
     });
@@ -988,7 +988,7 @@ describe("Unit: ParticipantTimeoutService", function () {
             // observer, so the check must schedule its recovered validation
             const { observer, author, previous, forkId } =
                 await h.scenario.previousBlockUnsignedByNextWriter({
-                    timeConfig: RECHECK_TIME_CONFIG
+                    timeBlocks: RECHECK_TIME_BLOCKS
                 });
             const height = previous.height + 1;
             const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
@@ -1017,9 +1017,13 @@ describe("Unit: ParticipantTimeoutService", function () {
                 // protocol budget for this time config covers it)
                 await waitFor(
                     async () => (await validationRetries()).length > 0,
-                    protocolEventTimeoutMs(RECHECK_TIME_CONFIG)
+                    protocolEventTimeoutMs(
+                        deriveTimeConfig(RECHECK_TIME_BLOCKS)
+                    )
                 );
-                expect((await validationRetries())[0].delayMs).to.equal(1000);
+                expect((await validationRetries())[0].delayMs).to.equal(
+                    BLOCK_TIME_MS
+                );
             } finally {
                 await tasks.restore();
             }

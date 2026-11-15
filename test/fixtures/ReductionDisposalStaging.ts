@@ -1,7 +1,7 @@
 // @spec-test-coverage-ignore: shared reduction disposal staging exercised by the mapped ReductionManager test declarations
 
 import { runtimeIsClosed } from "./RuntimeRootObservation";
-import { Status } from "@/types";
+import { BLOCK_TIME_MS, Status } from "@/types";
 import { sleep } from "@/utils";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
@@ -50,7 +50,7 @@ export async function assertAbortedReductionSendsNothing(
         await control.stub.abortDetached().request();
         await h.event.waitForPeers("onAbort", [0], 1);
         await hold.release();
-        await sleep(1_000);
+        await sleep(BLOCK_TIME_MS);
         expect(await h.provider.getTransactionCount(target.address)).to.equal(
             nonce
         );

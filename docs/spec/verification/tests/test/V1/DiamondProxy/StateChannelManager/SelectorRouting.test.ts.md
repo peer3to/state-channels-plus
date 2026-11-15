@@ -5,10 +5,10 @@ Exercises: [StateChannelManagerProxy.sol](../../../../../../implementation/sourc
 
 ## Overview
 
-A Hardhat suite that reconciles the proxy's deployed selector routing, the facets' real compiled
-ABIs and the `StateChannelManagerInterface` declarations against each other. One deployment from
-`deployMathChannelProxyFixture` serves every case that touches the chain (the routing table is
-immutable). The suite uses two kinds of oracle: the on-chain `facetAddressForSelector`, read
+A suite on the test chain's node that reconciles the proxy's deployed selector routing, the facets'
+real compiled ABIs and the `StateChannelManagerInterface` declarations against each other. Each case
+deploys `deployMathChannelProxyFixture` with the harness's slot deployer (`connectChain`, no peers),
+so on the peer3 chain the routing is read from the node. The suite uses two kinds of oracle: the on-chain `facetAddressForSelector`, read
 against the facet addresses and the consumer-facet address the fixture returns, and — for the
 interface cases — pure ABI set comparison, with no deployment involved.
 

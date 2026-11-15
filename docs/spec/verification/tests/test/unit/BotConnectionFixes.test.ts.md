@@ -147,6 +147,7 @@ is timed out.
 - `U75f: a pending joiner whose uncertain join can still land handles a snapshot event that does not list it → it stays PENDING_PARTICIPANT with its join open`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P18
 - `U75g: a finally refused first join emits onLeftChannel once and does not abort; a later join of the same runtime refused for its expired authorization emits its onLeftChannel before onAbort, each once`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P40, REQ-LIF-10-QR8NQ9.T1.P22
 - `U75h: a join authorization expiry timer that fires while the joiner's clock is still at or before the deadline arms the expiry timer again → once the chain passes the deadline the unlanded join ends SYNCED with one onLeftChannel`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P88
+- `U75i: a submitted join arms its authorization expiry timer for the first block past the deadline`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P117
 - `U76: blocks committed during the agreementTime grace after the joiner observes its join are not counted; counting starts at the first block after it`: INV-TJOIN-2-H7JSQM.T2.P6, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P40
 - `U130: a leave of another topic during the handoff → the join still rematches on its own topic`: REQ-LOBBY-9-N894C0.T1.P27
 - `U130: a new join after a leave during the handoff → its failed negotiation rematches again`: REQ-LOBBY-9-N894C0.T1.P29

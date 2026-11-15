@@ -1,27 +1,13 @@
 // @spec-test-coverage-ignore: shared harness support; executable evidence belongs to its calling test declarations
-import { TimeConfig, firstBlockGrace } from "@/types";
+import { BLOCK_TIME_MS, TimeConfig, firstBlockGrace } from "@/types";
 
-// p2pTime 5: under load a staging step (a join, a snapshot post) can idle
-// the table longer than p2pTime + agreementTime, and the next block then
-// fails the receivers' time check. evidenceTime 10: an honest auditor's kill
-// under farm load must land inside the kill period (FIND-DISPUTE-5).
-export const MIN_TEST_TIME_CONFIG: Readonly<TimeConfig> = Object.freeze({
-    p2pTime: 5,
-    agreementTime: 3,
-    chainFallbackTime: 3,
-    evidenceTime: 10
-});
-
-export function resolveTestTimeConfig(
-    overrides: Partial<TimeConfig> = {}
-): TimeConfig {
-    return { ...MIN_TEST_TIME_CONFIG, ...overrides };
-}
+// one block: the chain includes a transaction in the next block
+const BLOCK_SECONDS = BLOCK_TIME_MS / 1000;
 
 export function participantTimeoutWaitMs(
     timeConfig: TimeConfig,
     blockHeight: number,
-    settlementMarginSeconds: number = 1
+    settlementMarginSeconds: number = BLOCK_SECONDS
 ): number {
     return (
         (timeConfig.p2pTime +
@@ -35,7 +21,7 @@ export function participantTimeoutWaitMs(
 
 export function evidencePeriodWaitMs(
     timeConfig: TimeConfig,
-    settlementMarginSeconds: number = 1
+    settlementMarginSeconds: number = BLOCK_SECONDS
 ): number {
     return (timeConfig.evidenceTime + settlementMarginSeconds) * 1000;
 }
@@ -44,7 +30,7 @@ export function protocolEventTimeoutMs(
     timeConfig: TimeConfig,
     {
         withFirstBlockGrace = false,
-        settlementMarginSeconds = 4
+        settlementMarginSeconds = 4 * BLOCK_SECONDS
     }: {
         withFirstBlockGrace?: boolean;
         settlementMarginSeconds?: number;
@@ -57,10 +43,3 @@ export function protocolEventTimeoutMs(
         evidencePeriodWaitMs(timeConfig, settlementMarginSeconds)
     );
 }
-
-export const INBOUND_GAP_TIME_CONFIG: Readonly<TimeConfig> = Object.freeze({
-    p2pTime: 2,
-    agreementTime: 8,
-    chainFallbackTime: 4,
-    evidenceTime: 8
-});

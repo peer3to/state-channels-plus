@@ -1,4 +1,4 @@
-import { Status } from "@/types";
+import { BLOCK_TIME_MS, Status } from "@/types";
 import { ForkId } from "@/types/types";
 import { hash as randomHash } from "@test/factory";
 import { tryReduceAfterKillPeriod } from "@test/fixtures/DeferredReductionStaging";
@@ -11,7 +11,7 @@ import {
     stageHeldSuccessorAdoption
 } from "@test/fixtures/SettledAdoptionStaging";
 import { MathTestSession as TestSession } from "@test/harness";
-import { INBOUND_GAP_TIME_CONFIG } from "@test/harness/core/testTimeConfig";
+import { INBOUND_GAP_TIME_BLOCKS } from "@test/harness/actions/math/MathScenarioActions";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ZeroHash } from "ethers";
@@ -132,7 +132,7 @@ describe("Unit: ReductionExecutor", function () {
 
         it("inbound run unavailable on a participant → the attempt reschedules after chainFallbackTime, the participant keeps its status", async function () {
             const h = TestSession.getHarness();
-            await h.setup(3, { timeConfig: INBOUND_GAP_TIME_CONFIG });
+            await h.setup(3, { timeBlocks: INBOUND_GAP_TIME_BLOCKS });
             await h.lifecycle.openChannel();
             await h.transition.advanceState({
                 count: 2,
@@ -180,8 +180,11 @@ describe("Unit: ReductionExecutor", function () {
             const delays = (await scheduled.tasks())
                 .filter((task) => task.taskName === `reduction-${forkId}`)
                 .map((task) => task.delayMs);
-            const fallbackMs = INBOUND_GAP_TIME_CONFIG.chainFallbackTime * 1000;
-            expect(delays.at(-1)).to.be.within(fallbackMs - 1000, fallbackMs);
+            const fallbackMs = h.options.timeConfig.chainFallbackTime * 1000;
+            expect(delays.at(-1)).to.be.within(
+                fallbackMs - BLOCK_TIME_MS,
+                fallbackMs
+            );
             expect(
                 runtimeIsClosed(h.getPeer(laggingIndex).p2pInstance)
             ).to.equal(false);

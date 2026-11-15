@@ -7,13 +7,14 @@ import { launchChromium } from "./chromiumLaunch.js";
 import { startLocalDiscoveryRelayHub } from "./localDiscoveryRelayHub.mjs";
 import { startLocalHolepunch } from "./localHolepunch.js";
 import { startSdkRuntimeServer } from "./sdkRuntimeServer.mjs";
+import { deriveTimeConfig } from "../../dist/src/types/time.js";
 import { ethers } from "ethers";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-// Must match sdkSetup.js: the windows below are counted in agreement windows.
-const AGREEMENT_MS = 30_000;
+// sdkSetup.js deploys the derived windows: the waits below are counted in agreement windows.
+const AGREEMENT_MS = deriveTimeConfig().agreementTime * 1000;
 const HOLEPUNCH = 0;
 const WEBRTC = 1;
 const SYNCED = 3;
@@ -22,7 +23,9 @@ const SAMPLE_MS = 500;
 const LOG_TAIL_LINES = 300;
 // The blacklisted peer's pending link answers its handshake within one
 // agreement window, so the window it stays unlinked must end before that.
-const BAN_WINDOW_MS = 10_000;
+const BAN_WINDOW_MS = AGREEMENT_MS / 3;
+/** A browser page's link socket event at the hub: page work, not a protocol window. */
+const LINK_EVENT_MS = 30_000;
 
 /**
  * Two browser peers, each in its own page, over one bootstrap transport:
@@ -45,10 +48,8 @@ export async function runTransportPermutations(mode) {
     const resources = [];
     const pages = [];
     try {
-        // Chain fallback runs on the chain clock: it must track the wall clock.
-        const runtimeServer = await startSdkRuntimeServer({
-            miningIntervalMs: 1_000
-        });
+        // Chain fallback runs on the chain clock: the default interval tracks the wall clock.
+        const runtimeServer = await startSdkRuntimeServer();
         resources.push(() => runtimeServer.close());
         let relayUrls;
         let hub;
@@ -496,7 +497,7 @@ async function runLateLinkPermutation(mode, pages, scmAddress, hub) {
     for (const page of pages) page.call("joinLobby", topic).catch(() => {});
     await waitUntil(
         () => hub.heldLinks() === 2,
-        AGREEMENT_MS,
+        LINK_EVENT_MS,
         "(g) both link sockets held at the hub"
     );
 
@@ -504,7 +505,7 @@ async function runLateLinkPermutation(mode, pages, scmAddress, hub) {
     hub.releaseLinks();
     await waitUntil(
         () => hub.linkCloses(linkId) > 0,
-        AGREEMENT_MS,
+        LINK_EVENT_MS,
         "(g) the disposed page closes its late link"
     );
     const lateTopic = ethers.id(`transport-${mode}-late-join`);

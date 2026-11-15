@@ -3,6 +3,7 @@ import {
     EARLY_TIMEOUT_RECHECK_REASON,
     MISMATCH_TIMEOUT_RECHECK_REASON
 } from "@/stateManager/chainFallback/ParticipantTimeoutService";
+import { BLOCK_TIME_MS, MAX_TX_GAS } from "@/types";
 import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
@@ -496,7 +497,7 @@ describe("Unit: DisputeManager", function () {
             const attacker = 1;
             await h.scenario.preDisputeSetup({
                 peerCount: 4,
-                timeConfig: { evidenceTime: 12 }
+                timeBlocks: { evidenceTime: 12 }
             });
             const forkId = h.activeForkId!;
 
@@ -1634,7 +1635,10 @@ describe("Unit: DisputeManager", function () {
                 // the refusal handed it back: it lands within a task tick.
                 // Timeout checks are suppressed, and any chain redelivery is
                 // seconds away, so this short bound is the attribution.
-                await waitFor(async () => await inPipeline(), 3000);
+                await waitFor(
+                    async () => await inPipeline(),
+                    3 * BLOCK_TIME_MS
+                );
                 const timeouts = (await recorder.submissions()).map(
                     (submission) =>
                         Codec.decode(submission.encodedDispute, Type.Dispute)
@@ -1718,7 +1722,10 @@ describe("Unit: DisputeManager", function () {
                 // the failed upload handed it back: it lands within a task tick.
                 // Timeout checks are suppressed, and any chain redelivery is
                 // seconds away, so this short bound is the attribution.
-                await waitFor(async () => await inPipeline(), 3000);
+                await waitFor(
+                    async () => await inPipeline(),
+                    3 * BLOCK_TIME_MS
+                );
                 expect(
                     (await tasks.tasks()).filter(
                         (task) =>
@@ -2432,7 +2439,7 @@ describe("Unit: DisputeManager", function () {
             const h = TestSession.getHarness();
             const { killer, forkId } =
                 await h.scenario.stageUnkilledSpamDispute({
-                    timeConfig: { evidenceTime: 6 }
+                    timeBlocks: { evidenceTime: 6 }
                 });
             const probe = await h.rpcStub.recordDisputeFraudProofApplies(
                 killer.index
@@ -2440,7 +2447,9 @@ describe("Unit: DisputeManager", function () {
 
             // let the kill period lapse while the stored proof sits unused
             const { killPeriodEnd } = await h.query.killPeriod(forkId);
-            await h.event.waitUntilTimestamp(killPeriodEnd + 2);
+            await h.event.waitUntilTimestamp(
+                killPeriodEnd + (2 * BLOCK_TIME_MS) / 1000
+            );
             const period = await h.query.killPeriod(forkId);
             expect(period.windowExists).to.equal(true);
             expect(period.isExpired).to.equal(true);
@@ -2698,41 +2707,96 @@ describe("Unit: DisputeManager", function () {
             expect(slashed).to.include(spammer);
         });
 
-        it("a kill whose estimate plus the replay requirement exceeds the block gas limit is sent at the block gas limit", async function () {
+        it("a kill whose estimate plus the replay requirement exceeds the per-transaction gas cap is sent at the cap, lands, and slashes the disputer", async function () {
             const h = TestSession.getHarness();
-            const { applies, estimates, replayGas } =
-                // above both node configs' block gas limits (30M, 1B)
+            const { applies, estimates, replayGas, slashed, spammer } =
+                // above the cap and every test chain's block gas limit
                 await killWithScaledEstimate(h, {
                     numerator: 100_000,
                     denominator: 1
                 });
             const { gasLimit } =
                 (await h.channelManager.runner!.provider!.getBlock("latest"))!;
+            // premise - the cap is below the block gas limit, so it binds
+            expect(MAX_TX_GAS < gasLimit).to.equal(true);
             expect(BigInt(estimates[0].answer) + replayGas > gasLimit).to.equal(
                 true
             );
             expect(applies.length).to.equal(1);
-            expect(applies[0].gasLimit).to.equal(String(gasLimit));
+            expect(applies[0].gasLimit).to.equal(String(MAX_TX_GAS));
+            expect(applies[0].error).to.equal(null);
+            expect(applies[0].waited).to.equal(true);
+            expect(slashed).to.include(spammer);
         });
 
-        it("a kill whose latest-block read fails is sent uncapped at its estimate plus the replay requirement, lands, and slashes the disputer", async function () {
+        it("a kill whose estimate plus the replay requirement exceeds a latest block gas limit below the per-transaction gas cap is sent at that block gas limit, lands, and slashes the disputer", async function () {
+            // below the cap, still above what the kill uses
+            const blockGasLimit = MAX_TX_GAS - 1_000_000n;
             const {
                 applies,
                 estimates,
                 replayGas,
                 slashed,
                 spammer,
-                blockReadFailures
+                stubbedBlockReads
+            } = await killWithScaledEstimate(
+                TestSession.getHarness(),
+                { numerator: 100_000, denominator: 1 },
+                { blockGasLimit }
+            );
+            expect(stubbedBlockReads).to.equal(1);
+            expect(
+                BigInt(estimates[0].answer) + replayGas > MAX_TX_GAS
+            ).to.equal(true);
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.equal(String(blockGasLimit));
+            expect(applies[0].error).to.equal(null);
+            expect(applies[0].waited).to.equal(true);
+            expect(slashed).to.include(spammer);
+        });
+
+        it("a kill whose latest-block read fails is sent at its estimate plus the replay requirement, lands, and slashes the disputer", async function () {
+            const {
+                applies,
+                estimates,
+                replayGas,
+                slashed,
+                spammer,
+                stubbedBlockReads
             } = await killWithScaledEstimate(
                 TestSession.getHarness(),
                 { numerator: 1, denominator: 1 },
                 { failBlockRead: true }
             );
-            expect(blockReadFailures).to.equal(1);
+            expect(stubbedBlockReads).to.equal(1);
             expect(applies.length).to.equal(1);
             expect(applies[0].gasLimit).to.equal(
                 String(BigInt(estimates[0].answer) + replayGas)
             );
+            expect(applies[0].error).to.equal(null);
+            expect(applies[0].waited).to.equal(true);
+            expect(slashed).to.include(spammer);
+        });
+
+        it("a kill whose latest-block read fails and whose estimate plus the replay requirement exceeds the per-transaction gas cap is still sent at the cap and lands", async function () {
+            const {
+                applies,
+                estimates,
+                replayGas,
+                slashed,
+                spammer,
+                stubbedBlockReads
+            } = await killWithScaledEstimate(
+                TestSession.getHarness(),
+                { numerator: 100_000, denominator: 1 },
+                { failBlockRead: true }
+            );
+            expect(stubbedBlockReads).to.equal(1);
+            expect(
+                BigInt(estimates[0].answer) + replayGas > MAX_TX_GAS
+            ).to.equal(true);
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.equal(String(MAX_TX_GAS));
             expect(applies[0].error).to.equal(null);
             expect(applies[0].waited).to.equal(true);
             expect(slashed).to.include(spammer);

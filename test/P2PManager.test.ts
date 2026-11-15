@@ -1,6 +1,6 @@
 import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import { TransportType } from "@/transport";
-import { Status } from "@/types";
+import { BLOCK_TIME_MS, Status } from "@/types";
 import { channelIdToTargetedJoinTopic } from "@/utils";
 
 import {
@@ -893,7 +893,7 @@ describe("P2PManager", function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 2,
                     p2pTime: 2,
                     chainFallbackTime: 2,
@@ -937,7 +937,7 @@ describe("P2PManager", function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 2,
                     p2pTime: 2,
                     chainFallbackTime: 2,
@@ -974,7 +974,9 @@ describe("P2PManager", function () {
                     }, h.event.protocolEventTimeoutMs());
                     expect(settle!.result).to.equal(SyncResult.Failed);
                     // The request got the two-window default (one window is 2s).
-                    expect(settle!.requestTimeoutMs).to.equal(2 * 2 * 1000);
+                    expect(settle!.requestTimeoutMs).to.equal(
+                        2 * h.options.timeConfig.agreementTime * 1000
+                    );
                     // It ran into that timeout: a one-window bound ends before 3s.
                     expect(
                         settle!.settledAt - settle!.startedAt
@@ -993,7 +995,7 @@ describe("P2PManager", function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 2,
                     p2pTime: 2,
                     chainFallbackTime: 2,
@@ -1043,7 +1045,7 @@ describe("P2PManager", function () {
                         );
                         // the request keeps its own two-window timeout
                         expect(settles[0].requestTimeoutMs).to.equal(
-                            2 * 2 * 1000
+                            2 * h.options.timeConfig.agreementTime * 1000
                         );
 
                         // The deadline ends while that request runs: it is
@@ -1100,7 +1102,9 @@ describe("P2PManager", function () {
                                         INITIAL_SYNC_DEADLINE_TASK
                                 )
                                 .map((task) => task.delayMs)
-                        ).to.deep.equal([2 * 2 * 1000]);
+                        ).to.deep.equal([
+                            2 * h.options.timeConfig.agreementTime * 1000
+                        ]);
                         const query = h.control(observer).query;
                         expect(
                             await query
@@ -1140,7 +1144,7 @@ describe("P2PManager", function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 2,
                     p2pTime: 2,
                     chainFallbackTime: 2,
@@ -1178,8 +1182,12 @@ describe("P2PManager", function () {
                     )
                 ).to.equal(false);
                 const elapsedMs = Date.now() - startedAt;
-                expect(elapsedMs).to.be.greaterThan(2 * 2 * 1000 - 500);
-                expect(elapsedMs).to.be.lessThan(2 * 2 * 1000 + 6000);
+                expect(elapsedMs).to.be.greaterThan(
+                    2 * h.options.timeConfig.agreementTime * 1000 - 500
+                );
+                expect(elapsedMs).to.be.lessThan(
+                    2 * h.options.timeConfig.agreementTime * 1000 + 6000
+                );
                 await waitFor(
                     () => host.isClosed,
                     h.event.protocolEventTimeoutMs()
@@ -1202,7 +1210,7 @@ describe("P2PManager", function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 2,
                     p2pTime: 2,
                     chainFallbackTime: 2,
@@ -1263,7 +1271,7 @@ describe("P2PManager", function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 2,
                     p2pTime: 2,
                     chainFallbackTime: 2,
@@ -1307,7 +1315,7 @@ describe("P2PManager", function () {
                 fixture = new P2PManagerFixture();
                 await fixture.setup({
                     configOverrides: crashLogUploadOverrides(receiver.url),
-                    timeConfig: {
+                    timeBlocks: {
                         agreementTime: 2,
                         p2pTime: 2,
                         chainFallbackTime: 2,
@@ -1382,7 +1390,7 @@ describe("P2PManager", function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 2,
                     p2pTime: 2,
                     chainFallbackTime: 2,
@@ -1441,7 +1449,7 @@ describe("P2PManager", function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 2,
                     p2pTime: 2,
                     chainFallbackTime: 2,
@@ -1502,7 +1510,7 @@ describe("P2PManager", function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 2,
                     p2pTime: 2,
                     chainFallbackTime: 2,
@@ -1568,7 +1576,7 @@ describe("P2PManager", function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 2,
                     p2pTime: 2,
                     chainFallbackTime: 2,
@@ -1636,7 +1644,7 @@ describe("P2PManager", function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 2,
                     p2pTime: 2,
                     chainFallbackTime: 2,
@@ -1701,7 +1709,7 @@ describe("P2PManager", function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 2,
                     p2pTime: 2,
                     chainFallbackTime: 2,
@@ -1712,7 +1720,8 @@ describe("P2PManager", function () {
             try {
                 await assertObserverConnectRejectsOnEnd(h, {
                     // Settled by the abort, well inside the two-window deadline.
-                    settledWithinMs: 2 * 2 * 1000,
+                    settledWithinMs:
+                        2 * h.options.timeConfig.agreementTime * 1000,
                     // participants never answer the handshake, so the connect
                     // parks on the armed initial wait
                     stage: async () => {
@@ -1744,7 +1753,7 @@ describe("P2PManager", function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 2,
                     p2pTime: 2,
                     chainFallbackTime: 2,
@@ -1755,7 +1764,8 @@ describe("P2PManager", function () {
             try {
                 await assertObserverConnectRejectsOnEnd(h, {
                     end: "dispose",
-                    settledWithinMs: 2 * 2 * 1000,
+                    settledWithinMs:
+                        2 * h.options.timeConfig.agreementTime * 1000,
                     // participants never answer the handshake, so the connect
                     // parks on the armed initial wait
                     stage: async () => {
@@ -1787,7 +1797,7 @@ describe("P2PManager", function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 2,
                     p2pTime: 2,
                     chainFallbackTime: 2,
@@ -1798,7 +1808,7 @@ describe("P2PManager", function () {
             // connect handler is still inside it and the rejection comes from
             // the closed port, not from the held join
             await assertObserverConnectRejectsOnEnd(fixture.getHarness(), {
-                settledWithinMs: 3000,
+                settledWithinMs: 3 * BLOCK_TIME_MS,
                 stage: (observer) =>
                     fixture!
                         .getHarness()
@@ -1813,7 +1823,7 @@ describe("P2PManager", function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 2,
                     p2pTime: 2,
                     chainFallbackTime: 2,
@@ -1825,7 +1835,10 @@ describe("P2PManager", function () {
             // it opened would hold the worker past the drain bound
             await assertObserverConnectRejectsOnEnd(fixture.getHarness(), {
                 end: "dispose",
-                settledWithinMs: 2 * 2 * 1000,
+                settledWithinMs:
+                    2 *
+                    fixture.getHarness().options.timeConfig.agreementTime *
+                    1000,
                 stage: (observer) =>
                     fixture!
                         .getHarness()
@@ -1840,7 +1853,7 @@ describe("P2PManager", function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 2,
                     p2pTime: 2,
                     chainFallbackTime: 2,
@@ -1852,7 +1865,10 @@ describe("P2PManager", function () {
             // the join, and the timer frees the read after the abort
             const holdMs = 1000;
             await assertObserverConnectRejectsOnEnd(fixture.getHarness(), {
-                settledWithinMs: 2 * 2 * 1000,
+                settledWithinMs:
+                    2 *
+                    fixture.getHarness().options.timeConfig.agreementTime *
+                    1000,
                 stage: (observer) =>
                     fixture!
                         .getHarness()
@@ -1867,7 +1883,7 @@ describe("P2PManager", function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 2,
                     p2pTime: 2,
                     chainFallbackTime: 2,
@@ -1884,7 +1900,7 @@ describe("P2PManager", function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 2,
                     p2pTime: 2,
                     chainFallbackTime: 2,

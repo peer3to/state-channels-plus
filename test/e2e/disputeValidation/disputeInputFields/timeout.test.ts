@@ -1,4 +1,4 @@
-import { timeoutWaitTime } from "@/types";
+import { BLOCK_TIME_MS, deriveTimeConfig, timeoutWaitTime } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type, hash, sleep, tryDecodeCustomError } from "@/utils";
 import {
@@ -6,7 +6,6 @@ import {
     postTimeoutOfCalldataPostedBlock
 } from "@test/fixtures/DisputeAuditStaging";
 import { MathTestSession as TestSession } from "@test/harness";
-import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import {
     TimeoutCalldataPostedStruct,
@@ -16,7 +15,7 @@ import { expect } from "chai";
 import { AbiCoder } from "ethers";
 
 // Invalid-dispute scenarios require upload -> audit -> kill to fit inside the
-// evidence window. With one-second interval mining, the three-second minimum
+// evidence window. At one block time per block, a three-block window
 // has no scheduling margin for those two sequential on-chain transactions,
 // and on a loaded farm the event delivery plus the audit's chain reads alone
 // have taken five seconds, so the window keeps a few seconds of headroom.
@@ -27,7 +26,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         const h = TestSession.getHarness();
         // 0 transitions → peer 0 is next to write but never does → peers 1 & 2 detect timeout.
         await h.lifecycle.timeoutSetup(3, 0, {
-            timeConfig: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
+            timeBlocks: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
         });
         await h.assert.sync.peersInSyncWait();
         h.contextApi.captureOriginalFork();
@@ -68,7 +67,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         const h = TestSession.getHarness();
         // 0 transitions → peer 0 is next to write but never does → peers 1 & 2 detect timeout.
         await h.scenario.preDisputeSetup({
-            timeConfig: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
+            timeBlocks: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
         });
         const forkId = h.activeForkId!;
 
@@ -114,7 +113,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         it("existing window predates timeout deadline → upload reverts with race-condition guard", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({
-                timeConfig: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
+                timeBlocks: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
             });
             const forkId = h.activeForkId!;
             h.contextApi.markAfkPeer({ afkPeerIndex: 2 });
@@ -135,6 +134,11 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                     h.activeForkId!
                 );
             await h.tamper.plantFreshTimeoutForNextWriter(1);
+            // a node estimating at its head block refuses a minTimeStamp ahead
+            // of that block first -> wait until chain time reaches it
+            await h.event.waitForChainTimeAfter(
+                Number(windowCreationTimestamp)
+            );
 
             try {
                 await h.tamper.postTamperedDispute(
@@ -161,7 +165,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         it("dispute.input.timeout posted before wait period elapses → honest peers store TimeoutTooEarly", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({
-                timeConfig: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
+                timeBlocks: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
             });
             const forkId = h.activeForkId!;
             // peer 2 is the silent non-writer → exclude from fork-change barrier.
@@ -213,7 +217,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             await h.event.waitWhileEventCountsStayAtMost(
                 "onDisputeKilled",
                 [0, 1],
-                { durationMs: 3000, maxCount: 0 }
+                { durationMs: 3 * BLOCK_TIME_MS, maxCount: 0 }
             );
             for (const peer of [0, 1]) {
                 const proofTypes = await h
@@ -263,7 +267,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         // next writer -> but it's no longer an off-chain participant, so it must
         // NOT dispute.
         await h.lifecycle.timeoutSetup(4, 0, {
-            timeConfig: { agreementTime: 2, evidenceTime: 8 }
+            timeBlocks: { agreementTime: 2, evidenceTime: 8 }
         });
 
         // Skip leave snapshot so peer 0 stays dispute-eligible on-chain.
@@ -291,7 +295,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             "onInitiatingDispute",
             [0],
             {
-                durationMs: 8000,
+                durationMs: 8 * BLOCK_TIME_MS,
                 maxCount: 0
             }
         );
@@ -379,7 +383,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             .query.getBlockByHeight(forkId, timeoutHeight - 1)
             .request();
         if (!previousBlock) throw new Error("previous block not found");
-        const wait = timeoutWaitTime(resolveTestTimeConfig(), timeoutHeight);
+        const wait = timeoutWaitTime(deriveTimeConfig(), timeoutHeight);
         // The refutation deadline when the predecessor has no posted calldata
         // and the height is not 0: a late post would fail the refutation on
         // timing, not on the signature.
@@ -441,7 +445,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 previousBlock.onChainTimestamp ?? previousBlock.timestamp
             ) +
                 wait +
-                1
+                BLOCK_TIME_MS / 1000
         );
         await sleep(h.event.evidencePeriodWaitMs());
 
@@ -527,7 +531,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         await h.event.waitWhileEventCountsStayAtMost(
             "onDisputeKilled",
             [0, 1, 2],
-            { durationMs: 3000, maxCount: 0 }
+            { durationMs: 3 * BLOCK_TIME_MS, maxCount: 0 }
         );
         for (const peerIndex of [0, 1, 2]) {
             const proofTypes = await h

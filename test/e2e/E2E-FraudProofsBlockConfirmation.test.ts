@@ -16,15 +16,15 @@ describe("E2E: Block Fraud Proofs", function () {
     it("queued future block accepts later calldata event and executes after predecessor", async function () {
         const h = TestSession.getHarness();
         // A queued future block lives for agreementTime. The calldata post
-        // below is an on-chain round trip on a chain mining once a second, so
+        // below is an on-chain round trip on a chain mining once a block time, so
         // the window must outlast it or the entry times out first.
-        const timeConfig = {
+        const timeBlocks = {
             p2pTime: 3,
             agreementTime: 5,
             chainFallbackTime: 30,
             evidenceTime: 8
         };
-        await h.lifecycle.start(4, 0, { timeConfig });
+        await h.lifecycle.start(4, 0, { timeBlocks });
 
         const forkId = h.activeForkId;
         expect(forkId).to.not.be.undefined;
@@ -112,9 +112,11 @@ describe("E2E: Block Fraud Proofs", function () {
 
         h.event.resetEventSpies(observerIndex);
         const block2OnChainTimestamp = await postBlockCalldata(block2!);
-        await h.event.waitUntilEventOccurs("onBlockCalldataPosted", 5000, [
-            observerIndex
-        ]);
+        await h.event.waitUntilEventOccurs(
+            "onBlockCalldataPosted",
+            h.event.protocolEventTimeoutMs(),
+            [observerIndex]
+        );
         expect(
             await h
                 .control(observer)
@@ -131,7 +133,7 @@ describe("E2E: Block Fraud Proofs", function () {
         ]);
         expect(entry?.onChainTimestamp).to.equal(block2OnChainTimestamp);
 
-        await sleep((timeConfig.agreementTime + 1) * 1000);
+        await sleep((h.options.timeConfig.agreementTime + 1) * 1000);
 
         // The future calldata copy was evicted at the queue timeout — the
         // chain still holds it, so nothing is lost.

@@ -1,6 +1,6 @@
 import { StateSnapshot } from "@/models";
 import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
-import { Status, timeoutWaitTime } from "@/types";
+import { BLOCK_TIME_MS, Status, timeoutWaitTime } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
     readForceJoinBounds,
@@ -123,7 +123,7 @@ describe("E2E: Bot connection fixes", function () {
         const h = TestSession.getHarness();
         // No participant stays to consume the join, so each exit waits out
         // the leave watchdog before it disputes.
-        const watchdogMs = 5_000;
+        const watchdogMs = 5 * BLOCK_TIME_MS;
         await h.lifecycle.start(2, 0, {
             configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: watchdogMs }
         });
@@ -764,7 +764,7 @@ describe("E2E: Bot connection fixes", function () {
     it("E29: a fast table that authors the block bound inside the join's grace is not disputed; once counting starts the omitted join forces a dispute that seats the joiner", async function () {
         const h = TestSession.getHarness();
         // The grace is the test input: wide enough for N + 1 blocks.
-        await h.lifecycle.start(2, 0, { timeConfig: { agreementTime: 8 } });
+        await h.lifecycle.start(2, 0, { timeBlocks: { agreementTime: 8 } });
         const { peer } = await h.join.addSpectatorAuthoring({
             authoringPeerIndices: [0, 1],
             minimumBlocks: 2,

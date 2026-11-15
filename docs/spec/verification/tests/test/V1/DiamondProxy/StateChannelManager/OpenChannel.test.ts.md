@@ -5,7 +5,8 @@ Exercises: [StateChannelManagerProxy.sol](../../../../../../implementation/sourc
 
 ## Overview
 
-A Hardhat suite on the Math channel proxy fixture (`deployMathChannelProxyFixture`) that drives
+A suite on the Math channel proxy fixture (`deployMathChannelProxyFixture`), deployed per case on
+the test chain's node through the harness (`connectChain` and slot accounts, no peers), that drives
 the admission surface of the manager: `open` with unanimous `OpenChannel` signatures, and
 `joinChannel`/`topUpBalance` with SDK-built (`SignatureUtils`) signed payloads pinned to the
 current snapshot hash and fork id. The oracles are receipt events (`ChannelOpened`,

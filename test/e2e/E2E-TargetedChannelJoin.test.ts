@@ -28,7 +28,7 @@ describe("E2E: Targeted channel join", function () {
     const unopened = async (
         label: string,
         peerCount = 2,
-        timeConfig = testTime
+        timeBlocks = testTime
     ) => {
         const h = TestSession.getHarness();
         const channelId = ethers.keccak256(
@@ -37,7 +37,7 @@ describe("E2E: Targeted channel join", function () {
         await h.setup(peerCount, {
             autoConnect: false,
             channelId: label,
-            timeConfig
+            timeBlocks
         });
         return {
             h,
@@ -49,9 +49,9 @@ describe("E2E: Targeted channel join", function () {
     const openedWithFreshObservers = async (
         label: string,
         observerCount = 1,
-        timeConfig = testTime
+        timeBlocks = testTime
     ) => {
-        const setup = await unopened(label, 2, timeConfig);
+        const setup = await unopened(label, 2, timeBlocks);
         await setup.h.lifecycle.openChannelForParticipants([0, 1]);
         await setup.h.network.joinSelectedKey([0, 1], setup.channelId);
         // An observer spawn takes seconds on a loaded farm, and the fresh
@@ -615,8 +615,7 @@ describe("E2E: Targeted channel join", function () {
                         .control(h.getPeer(2))
                         .stub.getHeldMembershipReceiptCount()
                         .request()) === 1,
-                h.event.protocolEventTimeoutMs(),
-                200
+                h.event.protocolEventTimeoutMs()
             );
             await sleep(50);
             expect(settled).to.equal(false);
@@ -875,7 +874,7 @@ describe("E2E: Targeted channel join", function () {
                     ).reduce((sum, count) => sum + count, 0) === 1,
                 h.event.protocolEventTimeoutMs()
             );
-            await sleep(testTime.agreementTime * 1_050);
+            await sleep(h.options.timeConfig.agreementTime * 1_050);
             expect(settled).to.equal(false);
             await Promise.all(releases.map((release) => release()));
             expect(await connect).to.equal(true);
@@ -911,7 +910,7 @@ describe("E2E: Targeted channel join", function () {
             );
             expect(await connect).to.equal(false);
             expect(Date.now() - sentAt).to.be.at.least(
-                testTime.agreementTime * 2 * 1000
+                h.options.timeConfig.agreementTime * 2 * 1000
             );
             expect(await targeted.isDisposed(h.getPeer(2))).to.equal(true);
             await waitFor(() => runtimeIsClosed(h.getPeer(2).p2pInstance));
@@ -1011,7 +1010,7 @@ describe("E2E: Targeted channel join", function () {
         await h.setup(2, {
             autoConnect: false,
             channelId,
-            timeConfig: testTime,
+            timeBlocks: testTime,
             customRpcManifest: {
                 module: `${__dirname}/../fixtures/customRpc/RejectAllLobbyRpcManifest.ts`,
                 exportName: "RejectAllLobbyRpc"

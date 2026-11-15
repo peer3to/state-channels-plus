@@ -2,10 +2,14 @@ import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
 import type { Bytes } from "@/types/types";
 import { Codec, SignatureUtils, Type } from "@/utils";
+import { MathTestSession as TestSession } from "@test/harness";
+import {
+    slotAccountIndex,
+    slotDeployerIndex
+} from "@test/harness/core/slotAccounts";
 import {
     createOpenChannelTestObject,
-    deployMathChannelProxyFixture,
-    getSigners
+    deployMathChannelProxyFixture
 } from "@test/test_utils/testHelpers";
 import { StateChannelManagerInterface } from "@typechain-types";
 import {
@@ -19,13 +23,17 @@ import {
     MilestoneProofStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { expect } from "chai";
-import { ethers } from "hardhat";
+import { ethers } from "ethers";
 
 describe("StateChannelManagerProxy state-proof views", function () {
     let mathChannelManager: StateChannelManagerInterface;
 
     beforeEach(async function () {
-        const contracts = await deployMathChannelProxyFixture(ethers);
+        const h = TestSession.getHarness();
+        await h.connectChain();
+        const contracts = await deployMathChannelProxyFixture(
+            h.signerFor(slotDeployerIndex())
+        );
         mathChannelManager = contracts.mathChannelManager;
     });
 
@@ -178,7 +186,9 @@ async function openChannelWithBlockZeroDispute(
     auditingData: DisputeAuditingDataStruct;
     author: string;
 }> {
-    const { firstSigner, secondSigner } = await getSigners(ethers);
+    const h = TestSession.getHarness();
+    const firstSigner = h.signerFor(slotAccountIndex(0));
+    const secondSigner = h.signerFor(slotAccountIndex(1));
     const openChannel = createOpenChannelTestObject(
         [firstSigner.address, secondSigner.address],
         { channelId: "state-proof-verification-control" }

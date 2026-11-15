@@ -1,11 +1,14 @@
+// @spec-test-coverage-ignore: stages a real accepted socket before runtime disposal
 import type { Logger } from "@/utils/logging/Logger";
 import { LocalDiscoveryServer } from "@/utils/node/LocalDiscoveryServer";
-import { localDiscoverySockets } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
+import {
+    HOLD_FOREVER_MS,
+    localDiscoverySockets
+} from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
-// @spec-test-coverage-ignore: stages a real accepted socket before runtime disposal
 import { once } from "node:events";
 import WebSocket from "ws";
 
@@ -123,7 +126,7 @@ export async function assertDiscoveryEndpointReplacement(
     if (oldPort === undefined) throw new Error("Missing old listener");
     if (pendingHandshake)
         await h.rpcStub.stubHandshakeResponse(acceptor.index, {
-            delayMs: 600_000
+            delayMs: HOLD_FOREVER_MS
         });
     await h.control(dialer).network.joinSelectedKey(topic).request();
     if (pendingHandshake) await waitForPendingLocalDial(h, [dialer]);

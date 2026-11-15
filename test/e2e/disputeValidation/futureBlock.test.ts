@@ -18,7 +18,7 @@ describe("E2E: dispute validation / futureBlock", function () {
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(4, 3, {
-            timeConfig: {
+            timeBlocks: {
                 p2pTime: 1,
                 agreementTime: 6,
                 chainFallbackTime: 2,

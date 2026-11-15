@@ -5,7 +5,8 @@ Exercises: [StateProofFacet.sol](../../../../../../implementation/source/contrac
 
 ## Overview
 
-Calls the public proof views through the deployed manager proxy. Cases distinguish undecodable
+Calls the public proof views through a manager proxy deployed per case on the test chain's node
+through the harness (`connectChain` and slot accounts, no peers). Cases distinguish undecodable
 retained bytes from decodable genesis-linked controls, check the auditing-data commitment, and
 check standalone finality under an explicitly supplied one-signer threshold. A step fault returns
 true from the invalidity predicate; normal verification predicates reject malformed bytes without

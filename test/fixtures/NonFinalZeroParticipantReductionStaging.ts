@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: shared staging for two leavers whose self-removal disputes form a non-final reduction that leaves no participant
+import { BLOCK_TIME_MS } from "@/types";
 import type { ForkId } from "@/types";
 import {
     recordLeaveChannelLogs,
@@ -12,7 +13,8 @@ import { ZeroHash } from "ethers";
 
 const REDUCER_INDEX = 0;
 const LEAVER_INDEX = 1;
-const SETTLEMENT_MARGIN_SECONDS = 2;
+// two blocks: the chain includes the settlement in the next block
+const SETTLEMENT_MARGIN_SECONDS = (2 * BLOCK_TIME_MS) / 1000;
 /** The leave service's log line for an expected chain refusal of an exit post. */
 const EXIT_POST_REFUSED = "The chain refused the exit snapshot post";
 /** The error of an adopt-only post failed by `failFirstAdoptionPost`. */

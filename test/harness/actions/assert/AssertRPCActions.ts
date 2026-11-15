@@ -78,22 +78,19 @@ export class AssertRPCActions<
         expectedStrikes?: number;
         expectedStatus?: Status;
         timeoutMs?: number;
-        pollMs?: number;
     }): Promise<void> {
         const {
             observer,
             target,
             expectedStrikes = 1,
-            timeoutMs = this.harness.event.protocolEventTimeoutMs(),
-            pollMs = 200
+            timeoutMs = this.harness.event.protocolEventTimeoutMs()
         } = options;
         const query = this.harness.control(observer).query;
         await waitFor(
             async () =>
                 (await query.getStrikes(target.address).request()) ===
                 expectedStrikes,
-            timeoutMs,
-            pollMs
+            timeoutMs
         );
         expect(
             await query.isBlacklisted(target.address).request(),

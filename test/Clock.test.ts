@@ -1,4 +1,9 @@
 import Clock from "@/Clock";
+import { BLOCK_TIME_MS } from "@/types";
+import {
+    mineBlocks,
+    withIsolatedHardhatNode
+} from "@test/fixtures/node/IsolatedHardhatNode";
 import { expect } from "chai";
 import { BrowserProvider } from "ethers";
 import { ethers, network } from "hardhat";
@@ -22,7 +27,6 @@ describe("Clock", () => {
         const secondTime = await Clock.getBlockchainTime();
 
         expect(secondTime.blockNumber).to.equal(firstTime.blockNumber);
-        expect(Clock.getAverageOnChainBlockTime()).to.be.greaterThanOrEqual(0);
         expect(Clock.ownsProvider(ethers.provider)).to.equal(true);
     });
 
@@ -93,5 +97,45 @@ describe("Clock", () => {
         ).to.equal(true);
         const time = await Clock.getBlockchainTime();
         expect(time.blockNumber).to.be.greaterThanOrEqual(0);
+    });
+
+    it("adjusts to a head more than one block time ahead of the wall clock", async () => {
+        try {
+            await withIsolatedHardhatNode(
+                async (node) => {
+                    await mineBlocks(node, 5);
+                    const head = (await node.getBlock("latest"))!;
+
+                    await Clock.init(node);
+
+                    expect(Clock.getClockAdjustmentSeconds()).to.be.greaterThan(
+                        BLOCK_TIME_MS / 1000
+                    );
+                    expect(
+                        Math.abs(Clock.getTimeInSeconds() - head.timestamp)
+                    ).to.be.at.most(BLOCK_TIME_MS / 1000);
+                },
+                { seal: "manual" }
+            );
+        } finally {
+            await Clock.init(ethers.provider);
+        }
+    });
+
+    it("keeps no adjustment for a head within one block time of the wall clock", async () => {
+        try {
+            await withIsolatedHardhatNode(
+                async (node) => {
+                    await mineBlocks(node, 1);
+
+                    await Clock.init(node);
+
+                    expect(Clock.getClockAdjustmentSeconds()).to.equal(0);
+                },
+                { seal: "manual" }
+            );
+        } finally {
+            await Clock.init(ethers.provider);
+        }
     });
 });

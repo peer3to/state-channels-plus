@@ -583,7 +583,8 @@ describe("E2E: departed submitter's old timeout", function () {
             });
             expect(
                 await h.channelManager.queryFilter(
-                    h.channelManager.filters.DisputeKilled(h.channelId)
+                    h.channelManager.filters.DisputeKilled(h.channelId),
+                    h.channelOpeningBlock
                 )
             ).to.have.length(0);
             await h.assert.dispute.slashedOnChainExactly([dave.address]);

@@ -172,6 +172,9 @@ function rejectPending(error) {
 
 async function start(config) {
     configuration = config;
+    // the run's test chain decides what the slot nodes run
+    if (config.baseEnv.TEST_CHAIN)
+        process.env.TEST_CHAIN = config.baseEnv.TEST_CHAIN;
     const provisioned = await provisionSlots(
         config.slotCount,
         config.infraLogDir

@@ -545,9 +545,17 @@ async function main(options = {}) {
                         cli.forwardEnv,
                         {
                             LOG_LEVEL: process.env.LOG_LEVEL || "verbose",
+                            // the test chain (unset = hardhat) for the slot nodes and tests
+                            TEST_CHAIN: process.env.TEST_CHAIN,
                             CRASH_LOG_UPLOAD_ENDPOINT: "",
-                            NODE_OPTIONS:
+                            // on peer3 every test process and its SDK threads preload the fee quote
+                            NODE_OPTIONS: [
                                 "--enable-source-maps --stack-trace-limit=1000",
+                                process.env.TEST_CHAIN === "peer3" &&
+                                    "-r ./test/utils/peer3FeeData.js"
+                            ]
+                                .filter(Boolean)
+                                .join(" "),
                             STREAM_PARALLEL_CHILD_OUTPUT: "0",
                             FORCE_COLOR: "1",
                             TERM: process.env.TERM || "xterm-256color",

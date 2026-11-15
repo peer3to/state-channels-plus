@@ -401,7 +401,7 @@ export async function expectSyncPayloadAboveRequestedHeightWhileAhead(
     requestedHeight: number
 ) {
     await h.lifecycle.start(2, 0, {
-        timeConfig: {
+        timeBlocks: {
             p2pTime: 5,
             agreementTime: 10,
             chainFallbackTime: 2,
@@ -1109,17 +1109,13 @@ export async function reduceWindowOnChain(
     reducerIndex: number,
     forkId: ForkId
 ) {
-    await waitFor(
-        async () => {
-            if ((await h.query.reducedForkOnChain(forkId)) !== ZeroHash)
-                return true;
-            await h
-                .control(h.getPeer(reducerIndex))
-                .stub.startTryReduce(forkId)
-                .request();
-            return false;
-        },
-        h.event.protocolEventTimeoutMs(),
-        1000
-    );
+    await waitFor(async () => {
+        if ((await h.query.reducedForkOnChain(forkId)) !== ZeroHash)
+            return true;
+        await h
+            .control(h.getPeer(reducerIndex))
+            .stub.startTryReduce(forkId)
+            .request();
+        return false;
+    }, h.event.protocolEventTimeoutMs());
 }

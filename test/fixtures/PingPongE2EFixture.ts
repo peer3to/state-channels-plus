@@ -23,20 +23,10 @@ export class PingPongE2EFixture {
         };
     }
 
-    public timeConfig() {
-        return {
-            agreementTime: 10,
-            p2pTime: 2,
-            chainFallbackTime: 2,
-            evidenceTime: 2
-        };
-    }
-
     public async setup(peerCount: number): Promise<void> {
         await this.harness.setup(peerCount, {
             autoConnect: false,
-            customRpcManifest: this.customRpcManifest(),
-            timeConfig: this.timeConfig()
+            customRpcManifest: this.customRpcManifest()
         });
         await this.harness.lifecycle.openChannel();
         await this.harness.network.connectPeers(

@@ -31,6 +31,10 @@ export interface StartInfraOptions {
     logPath?: string;
     label?: string;
     env?: Record<string, string | undefined>;
+    /** The peer3 dev node's `--dev-seal` mode (TEST_CHAIN=peer3 only). */
+    seal?: "interval" | "manual";
+    /** The peer3 dev node's `--chain` (TEST_CHAIN=peer3 only). */
+    chain?: "test" | "test-other";
 }
 
 export interface Slot {

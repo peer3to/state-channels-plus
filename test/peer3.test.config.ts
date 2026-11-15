@@ -1,8 +1,9 @@
 // @spec-test-coverage-ignore: shared test defaults; watchdog behavior is exercised by the runtime-port suites
+import { BLOCK_TIME_MS } from "../src/types/time";
 import { Config } from "../src/utils/config";
 
 const testConfig: Partial<Config> = {
-    LEAVE_CHANNEL_WATCHDOG_MS: 60_000,
+    LEAVE_CHANNEL_WATCHDOG_MS: 60 * BLOCK_TIME_MS,
     PROVIDER_URL: "http://localhost:8545",
     DEBUG_STATE_MANAGER: false,
     DEBUG_DISPUTE_HANDLER: false,

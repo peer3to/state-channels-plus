@@ -4,7 +4,7 @@ import type { PreparedJoinChannelConfirmation } from "@/rpc/network/services";
 import { JoinCollectionError } from "@/rpc/network/services/joinChannel/JoinCollectionError";
 import type StateManager from "@/stateManager/StateManager";
 import type { JoinRecord, JoinUpdate } from "@/storage/ForceJoinStorage";
-import { Status, timeoutWaitTime } from "@/types";
+import { BLOCK_TIME_MS, Status, timeoutWaitTime } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
 import type { BlockHeight, ForkId, Hash } from "@/types/types";
 import { Codec, DetachedPromises, Logger, Type } from "@/utils";
@@ -665,11 +665,13 @@ export default class ChannelJoinService {
     /** The chain admits the join only in a block not past its authorization deadline. */
     private armUntilJoinExpiry(join: JoinRecord): void {
         if (!this.isActive(join)) return;
-        const seconds = Math.max(
-            join.authorizationDeadline + 1 - Clock.getTimeInSeconds(),
-            1
+        // the first block past the deadline
+        const delayMs = Math.max(
+            (join.authorizationDeadline - Clock.getTimeInSeconds()) * 1000 +
+                BLOCK_TIME_MS,
+            BLOCK_TIME_MS
         );
-        this.armTimer(seconds * 1000, "join authorization expiry", () =>
+        this.armTimer(delayMs, "join authorization expiry", () =>
             this.requestCheck()
         );
     }

@@ -1,9 +1,10 @@
 // @spec-test-coverage-ignore: shared polling utility exercised by owning mapped test declarations
 import { waitForPlain } from "./waitForPlain";
-import {
-    protocolEventTimeoutMs,
-    resolveTestTimeConfig
-} from "@test/harness/core/testTimeConfig";
+import { deriveTimeConfig } from "@/types";
+import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
+
+/** How often a wait re-checks its condition. */
+export const WAIT_POLL_MS = 200;
 
 /**
  * Poll `condition` until it holds. The default budget is the protocol event
@@ -13,8 +14,8 @@ import {
  */
 export async function waitFor(
     condition: () => boolean | Promise<boolean>,
-    timeoutMs: number = protocolEventTimeoutMs(resolveTestTimeConfig()),
-    pollIntervalMs: number = 200
+    timeoutMs: number = protocolEventTimeoutMs(deriveTimeConfig()),
+    pollIntervalMs: number = WAIT_POLL_MS
 ): Promise<void> {
     return waitForPlain(condition, timeoutMs, pollIntervalMs);
 }

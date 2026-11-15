@@ -4,7 +4,7 @@ import { StateSnapshot } from "@/models";
 import type { CustomRpcManifest } from "@/rpc";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";
-import { TimeConfig } from "@/types";
+import { TimeBlocks, TimeConfig } from "@/types";
 import { ForkId } from "@/types/types";
 import { EventBarrier, Logger } from "@/utils";
 import { Config } from "@/utils";
@@ -142,7 +142,8 @@ export type HarnessOptions<
      */
     logLevel?: "debug" | "verbose" | "info" | "warn" | "error";
 
-    timeConfig?: Partial<TimeConfig>;
+    /** Protocol windows as block counts; unset fields take the derived default. */
+    timeBlocks?: TimeBlocks;
     channelId?: string;
     initialBalance?: number;
     stateMachineGasLimit?: number;

@@ -155,9 +155,9 @@ describe("ContractCaller and ContractErrors", () => {
         let blockAuthorSigner: HardhatEthersSigner;
 
         beforeEach(async () => {
-            const contracts = await deployMathChannelProxyFixture(hre);
-            mathChannelManager = contracts.mathChannelManager;
             const signers = await hre.getSigners();
+            const contracts = await deployMathChannelProxyFixture(signers[0]);
+            mathChannelManager = contracts.mathChannelManager;
             testSigner = signers[0];
             blockAuthorSigner = signers[1];
         });

@@ -24,7 +24,7 @@ export async function assertStoredTipCopyDrainsNextBlock(
 ): Promise<void> {
     // the queued next block is applied well inside its agreement window
     await h.lifecycle.start(3, 1, {
-        timeConfig: {
+        timeBlocks: {
             p2pTime: 2,
             agreementTime: 12,
             chainFallbackTime: 3,

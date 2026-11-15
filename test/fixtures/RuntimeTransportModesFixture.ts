@@ -96,12 +96,6 @@ export async function prepareRuntimeSetup(options: {
             DEFAULT_MAX_CHANNEL_PARTICIPANTS
         ],
         consumerFacetArgs: [],
-        timeConfig: {
-            p2pTime: 1,
-            agreementTime: 1,
-            chainFallbackTime: 1,
-            evidenceTime: 1
-        },
         disputeExecutionGasLimit: 1_000_000
     });
 

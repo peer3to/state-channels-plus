@@ -156,7 +156,8 @@ export async function assertLiveForkSwitch(
                         await sm.stateChannelManagerContract.queryFilter(
                             sm.stateChannelManagerContract.filters.DisputeReducedResultCommitted(
                                 sm.channelId
-                            )
+                            ),
+                            args.openingBlock
                         )
                     ).filter((log) => log.args.forkId === args.forkId);
                     if (!logs.length)
@@ -192,7 +193,7 @@ export async function assertLiveForkSwitch(
                         eventBlock: logs.at(-1)!.blockNumber
                     };
                 },
-                { forkId: sourceForkId }
+                { forkId: sourceForkId, openingBlock: h.channelOpeningBlock }
             );
             expect(handled.hasOperation).to.equal(false);
             expect(handled.installed).to.equal(false);
@@ -228,7 +229,7 @@ export async function assertRefusalAfterLiveForkSwitch(
         // after it, a window holding evidence makes `dispute` a no-op.
         const { sourceForkId } = await h.scenario.stageReducibleDisputedFork({
             disputingPeerIndices: [2, 3],
-            timeConfig: { evidenceTime: 6 },
+            timeBlocks: { evidenceTime: 6 },
             beforeDispute: async () => {
                 await h.dispute.suppressDisputeInitiation([target().index]);
             },

@@ -1,5 +1,6 @@
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { BlockOrigin } from "@/storage/QueueStorage";
+import { BLOCK_TIME_MS } from "@/types";
 import { BlockConfirmationEthersType } from "@/types/ethers";
 import type { Address, Hash } from "@/types/types";
 import { Codec, sleep, Type } from "@/utils";
@@ -96,7 +97,7 @@ describe("Unit: BlockQueueManager", () => {
             );
             // premise: the timeout probed its source in the aborted runtime
             expect(syncCalls).to.equal(1);
-            await sleep(1_000);
+            await sleep(BLOCK_TIME_MS);
             expect(
                 await supplier.stub.getSpectateRequestCount().request()
             ).to.equal(0);
@@ -438,7 +439,7 @@ describe("Unit: BlockQueueManager", () => {
             // the entry has to stay queued while the intermediate block is
             // authored, and the queue window is agreementTime
             await h.lifecycle.start(3, 2, {
-                timeConfig: {
+                timeBlocks: {
                     p2pTime: 2,
                     agreementTime: 12,
                     chainFallbackTime: 3,

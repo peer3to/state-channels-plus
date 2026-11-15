@@ -10,7 +10,6 @@ import type {
     HarnessControlRpcShape
 } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import { HarnessOptions } from "@test/harness/core/types";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -55,18 +54,12 @@ export class LifecycleActions<
         peerCount: number = 3,
         transitionCount: number = 0,
         options?: {
-            timeConfig?: {
-                p2pTime?: number;
-                agreementTime?: number;
-                chainFallbackTime?: number;
-                evidenceTime?: number;
-            };
+            timeBlocks?: HarnessOptions["timeBlocks"];
             configOverrides?: HarnessOptions["configOverrides"];
         }
     ) {
-        const timeConfig = resolveTestTimeConfig(options?.timeConfig);
         await this.start(peerCount, transitionCount, {
-            timeConfig,
+            timeBlocks: options?.timeBlocks,
             configOverrides: options?.configOverrides
         });
     }
@@ -162,7 +155,8 @@ export class LifecycleActions<
             signatures
         });
 
-        await Promise.all([tx.wait(), sleep(100)]);
+        const [receipt] = await Promise.all([tx.wait(), sleep(100)]);
+        this.harness.channelOpeningBlock = receipt!.blockNumber;
 
         const eventCounts = observers.map((peer) => ({
             peerId: peer.index,
@@ -171,7 +165,7 @@ export class LifecycleActions<
         await this.harness.event.waitForEventCounts(
             "onSetState",
             eventCounts,
-            2000,
+            this.harness.event.protocolEventTimeoutMs(),
             { mode: "atLeast" }
         );
 
@@ -223,7 +217,7 @@ export class LifecycleActions<
     async applyChannelOpenedEvent(peerIndex: number): Promise<boolean> {
         return await this.harness
             .control(this.harness.getPeer(peerIndex))
-            .lifecycle.applyChannelOpenedEvent()
+            .lifecycle.applyChannelOpenedEvent(this.harness.channelOpeningBlock)
             .request();
     }
 }

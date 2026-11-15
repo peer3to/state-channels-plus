@@ -2,18 +2,14 @@
 
 import { Status } from "@/types";
 import { sleep } from "@/utils";
-import {
-    MathTestSession as TestSession,
-    resolveTestTimeConfig
-} from "@test/harness";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
 describe("JoinActions spectator spawn helper", function () {
     it("counts a slow authoring completion inside the next keep-alive window", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0);
-        const windowMs =
-            resolveTestTimeConfig(h.options.timeConfig).p2pTime * 1000;
+        const windowMs = h.options.timeConfig.p2pTime * 1000;
         let release!: () => void;
         const gate = new Promise<void>((resolve) => {
             release = resolve;

@@ -2,6 +2,7 @@
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
+import { BLOCK_TIME_MS } from "@/types";
 import {
     DisputeFraudProofType,
     FraudProofType,
@@ -96,7 +97,7 @@ export async function stageAnchorBeforeUnfinalizedTail(
     await h.scenario.preDisputeSetup({
         peerCount: 4,
         transitionCount: 0,
-        timeConfig: { evidenceTime: 12 }
+        timeBlocks: { evidenceTime: 12 }
     });
     await suppressWriterTimeouts(h, 4);
     await h.transition.advanceState({ count: 3 });
@@ -142,7 +143,7 @@ export async function stageGenesisAnchorZeroRun(
     await h.scenario.preDisputeSetup({
         peerCount: 4,
         transitionCount: 0,
-        timeConfig: { evidenceTime: 12 }
+        timeBlocks: { evidenceTime: 12 }
     });
     await suppressWriterTimeouts(h, 4);
     await h.transition.advanceState({ count: 1 });
@@ -161,7 +162,7 @@ export async function stageBlockZeroAnchor(
     await h.scenario.preDisputeSetup({
         peerCount: 4,
         transitionCount: 0,
-        timeConfig: { evidenceTime: 12 }
+        timeBlocks: { evidenceTime: 12 }
     });
     await suppressWriterTimeouts(h, 4);
     await h.transition.advanceState({ count: 1 });
@@ -182,7 +183,7 @@ export async function stageStaleGenesisClaim(
 ) {
     await h.scenario.preDisputeSetup({
         transitionCount: 0,
-        timeConfig: { evidenceTime: 12 }
+        timeBlocks: { evidenceTime: 12 }
     });
     await suppressWriterTimeouts(h, 3);
     const forkId = h.activeForkId!;
@@ -255,7 +256,7 @@ export async function stageLaggingAuditorBelowChainAnchor(
     await h.scenario.preDisputeSetup({
         peerCount: 4,
         transitionCount: 0,
-        timeConfig: { evidenceTime: 12 }
+        timeBlocks: { evidenceTime: 12 }
     });
     await suppressWriterTimeouts(h, 4);
     await h.transition.advanceState({ count: 2 });
@@ -295,7 +296,7 @@ export async function stagePendingJoinerAfterAnchor(h: MathPeerTestHarness) {
     await h.scenario.preDisputeSetup({
         peerCount: 3,
         transitionCount: 0,
-        timeConfig: { evidenceTime: 12 }
+        timeBlocks: { evidenceTime: 12 }
     });
     const { peer: joiner } = await h.join.addSpectatorAuthoring({
         authoringPeerIndices: [0, 1, 2],
@@ -887,7 +888,9 @@ export async function waitUntilKillPeriodExpired(
         expect(killPeriod.windowExists, "the dispute window must exist").to.be
             .true;
         if (killPeriod.isExpired) return;
-        await h.event.waitUntilTimestamp(killPeriod.killPeriodEnd + 2);
+        await h.event.waitUntilTimestamp(
+            killPeriod.killPeriodEnd + (2 * BLOCK_TIME_MS) / 1000
+        );
     }
 }
 

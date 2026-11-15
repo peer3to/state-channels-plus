@@ -68,7 +68,7 @@ describe("Unit: EventHandler committed dispute on a spectator", function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({
             peerCount: 4,
-            timeConfig: { evidenceTime: 3 }
+            timeBlocks: { evidenceTime: 3 }
         });
         const participants = h.peers.map((peer) => peer.index);
         const maliciousPeerIndex = 1;

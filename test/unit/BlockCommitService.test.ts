@@ -117,7 +117,7 @@ describe("Unit: BlockCommitService", function () {
         it("a participant that joined after the block → outside its union, not signed", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 0, {
-                timeConfig: {
+                timeBlocks: {
                     p2pTime: 2,
                     agreementTime: 4,
                     chainFallbackTime: 4,
@@ -222,7 +222,7 @@ describe("Unit: BlockCommitService", function () {
         it("a PENDING joiner's first committed block includes it → PARTICIPATING and the recorded forceJoin height cleared", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 0, {
-                timeConfig: {
+                timeBlocks: {
                     p2pTime: 2,
                     agreementTime: 4,
                     chainFallbackTime: 4,

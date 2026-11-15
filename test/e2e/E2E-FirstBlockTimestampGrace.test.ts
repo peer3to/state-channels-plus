@@ -1,23 +1,19 @@
 import Clock from "@/Clock";
 import { Block, StateSnapshot } from "@/models";
-import { timeoutWaitTime } from "@/types";
+import { BLOCK_TIME_MS, deriveTimeConfig, timeoutWaitTime } from "@/types";
 import { Codec, Type } from "@/utils";
-import {
-    MathTestSession as TestSession,
-    MIN_TEST_TIME_CONFIG
-} from "@test/harness";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
-const TIME = MIN_TEST_TIME_CONFIG;
+const TIME = deriveTimeConfig();
 
-// This test deliberately starts authoring after the ordinary deadline. Keep
-// enough grace for interval mining and three-peer signature collection under
-// parallel load; the default three-second evidence window is too narrow for
-// that boundary scenario.
-const FIRST_BLOCK_AUTHORING_TIME = {
-    ...MIN_TEST_TIME_CONFIG,
-    evidenceTime: 12
-};
+// This test deliberately starts authoring after the ordinary deadline. Twelve
+// block times of grace cover block inclusion and three-peer signature
+// collection under parallel load at that boundary.
+const FIRST_BLOCK_AUTHORING_BLOCKS = { evidenceTime: 12 };
+const FIRST_BLOCK_AUTHORING_TIME = deriveTimeConfig(
+    FIRST_BLOCK_AUTHORING_BLOCKS
+);
 
 describe("E2E: First block timestamp grace", function () {
     it("adds evidenceTime only to the height 0 participant timeout", async function () {
@@ -34,7 +30,7 @@ describe("E2E: First block timestamp grace", function () {
         // Re-apply the latest state at height 0 and at height 1 with a fixed
         // snapshot timestamp, so the recorded delays differ only by the grace.
         const h = TestSession.getHarness();
-        await h.lifecycle.start(2, 0, { timeConfig: TIME });
+        await h.lifecycle.start(2, 0);
         const forkId = h.activeForkId!;
 
         const recorder = await h.rpcStub.recordScheduledTasks(0, {
@@ -78,7 +74,7 @@ describe("E2E: First block timestamp grace", function () {
     it("authors height 0 after the old participant deadline and every peer finalizes it", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0, {
-            timeConfig: FIRST_BLOCK_AUTHORING_TIME
+            timeBlocks: FIRST_BLOCK_AUTHORING_BLOCKS
         });
 
         const forkId = h.activeForkId!;
@@ -171,7 +167,7 @@ describe("E2E: First block timestamp grace", function () {
         });
 
         const heightOneCap = heightZeroBlock.timestamp + TIME.p2pTime;
-        await h.event.waitUntilTimestamp(heightOneCap + 1);
+        await h.event.waitUntilTimestamp(heightOneCap + BLOCK_TIME_MS / 1000);
         await h.transition.advanceState({
             count: 1,
             waitForFinalization: true

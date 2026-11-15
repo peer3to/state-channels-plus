@@ -342,7 +342,7 @@ try {
         // Clock's adjustment, within the one-second sampling boundary, and
         // advances. Bracket the asynchronous read so reply latency is not clock
         // drift. The host's adjustment is the one Clock settled on, not the
-        // requested 600: the sync tolerates up to one average block time.
+        // requested 600: the sync tolerates up to one block time.
         const {
             hostAdjustmentSeconds,
             firstOffsetLowerBound,

@@ -1,4 +1,6 @@
+import { BLOCK_TIME_MS } from "@/types";
 import { Hash } from "@/types/types";
+import { sleep } from "@/utils";
 import {
     assertDirectSlashRecovery,
     assertRecoveredSlashTimestampAndDedup
@@ -126,6 +128,36 @@ describe("EventSyncService", function () {
             expect(probe.queryCount).to.be.lessThan(LOG_RECOVERY_ATTEMPTS);
             expect(probe.heldAfter).to.equal(true);
             expect(probe.blockCount).to.be.greaterThan(0);
+
+            await dropped.release();
+        });
+
+        it("the first recovery read spans the chain time since the run's snapshot at one block per block time", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const lagging = 2;
+            const dropped = await h.rpcStub.dropInboundMessageLogs(lagging);
+            const inboundHead = await stageInboundHead(h, lagging);
+            await dropped.waitUntilDropped();
+            // the missed log is twenty block times old when it is recovered
+            await sleep(20 * BLOCK_TIME_MS);
+
+            const probe = await h
+                .control(h.getPeer(lagging))
+                .validation.probeInboundRunRecovery(inboundHead)
+                .request();
+
+            const head = (await h.provider.getBlock(probe.toBlock!))!;
+            const elapsedBlocks =
+                (head.timestamp - probe.notBefore) / (BLOCK_TIME_MS / 1000);
+            const span = Math.ceil(elapsedBlocks * 1.5) + 2;
+            const fromBlock = Math.max(0, probe.toBlock! - span);
+            // premise: the watermark does not reach below the span
+            expect(probe.cursorAtCall ?? fromBlock).to.be.at.least(fromBlock);
+            expect(probe.queriedFromBlocks[0]).to.equal(fromBlock);
+            // the first read found the run: nothing older than the span is read
+            expect(probe.queryCount).to.equal(1);
+            expect(probe.heldAfter).to.equal(true);
 
             await dropped.release();
         });
@@ -523,7 +555,10 @@ describe("EventSyncService", function () {
 
             const probe = await h
                 .control(h.getPeer(1))
-                .validation.probeInboundLogRedelivery("duplicate")
+                .validation.probeInboundLogRedelivery(
+                    "duplicate",
+                    h.channelOpeningBlock
+                )
                 .request();
 
             expect(probe.handlerCalls).to.equal(0);
@@ -538,7 +573,10 @@ describe("EventSyncService", function () {
 
             const probe = await h
                 .control(h.getPeer(1))
-                .validation.probeInboundLogRedelivery("reorged")
+                .validation.probeInboundLogRedelivery(
+                    "reorged",
+                    h.channelOpeningBlock
+                )
                 .request();
 
             expect(probe.handlerCalls).to.equal(1);
@@ -553,7 +591,10 @@ describe("EventSyncService", function () {
 
             const probe = await h
                 .control(h.getPeer(1))
-                .validation.probeInboundLogRedelivery("removed")
+                .validation.probeInboundLogRedelivery(
+                    "removed",
+                    h.channelOpeningBlock
+                )
                 .request();
 
             expect(probe.handlerCalls).to.equal(0);
@@ -564,22 +605,27 @@ describe("EventSyncService", function () {
         it("head already at the block → true without waiting for a new block, no block listener left", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
-            const r = await h.execOnHost(h.getPeer(0), async (sm) => {
-                const provider =
-                    sm.stateChannelManagerContract.runner!.provider!;
-                const listenersBefore = await provider.listenerCount("block");
-                const head = await provider.getBlockNumber();
-                const reached = await sm.eventSyncService.waitForChainHead(
-                    head,
-                    60_000,
-                    new AbortController().signal
-                );
-                return {
-                    reached,
-                    listenersBefore,
-                    listenersAfter: await provider.listenerCount("block")
-                };
-            });
+            const r = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, a) => {
+                    const provider =
+                        sm.stateChannelManagerContract.runner!.provider!;
+                    const listenersBefore =
+                        await provider.listenerCount("block");
+                    const head = await provider.getBlockNumber();
+                    const reached = await sm.eventSyncService.waitForChainHead(
+                        head,
+                        a.timeoutMs,
+                        new AbortController().signal
+                    );
+                    return {
+                        reached,
+                        listenersBefore,
+                        listenersAfter: await provider.listenerCount("block")
+                    };
+                },
+                { timeoutMs: h.event.protocolEventTimeoutMs() }
+            );
             expect(r.reached).to.equal(true);
             expect(r.listenersAfter).to.equal(r.listenersBefore);
         });
@@ -597,10 +643,13 @@ describe("EventSyncService", function () {
                         async (sm, a) =>
                             sm.eventSyncService.waitForChainHead(
                                 a.target,
-                                60_000,
+                                a.timeoutMs,
                                 new AbortController().signal
                             ),
-                        { target: lag.pinnedBlock + 1 }
+                        {
+                            target: lag.pinnedBlock + 1,
+                            timeoutMs: h.event.protocolEventTimeoutMs()
+                        }
                     )
                     .finally(() => {
                         settled = true;
@@ -650,24 +699,29 @@ describe("EventSyncService", function () {
         it("aborted during the wait → false, no block listener left", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
-            const r = await h.execOnHost(h.getPeer(0), async (sm) => {
-                const provider =
-                    sm.stateChannelManagerContract.runner!.provider!;
-                const listenersBefore = await provider.listenerCount("block");
-                const head = await provider.getBlockNumber();
-                const abort = new AbortController();
-                setTimeout(() => abort.abort(), 200);
-                const reached = await sm.eventSyncService.waitForChainHead(
-                    head + 1_000,
-                    60_000,
-                    abort.signal
-                );
-                return {
-                    reached,
-                    listenersBefore,
-                    listenersAfter: await provider.listenerCount("block")
-                };
-            });
+            const r = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, a) => {
+                    const provider =
+                        sm.stateChannelManagerContract.runner!.provider!;
+                    const listenersBefore =
+                        await provider.listenerCount("block");
+                    const head = await provider.getBlockNumber();
+                    const abort = new AbortController();
+                    setTimeout(() => abort.abort(), 200);
+                    const reached = await sm.eventSyncService.waitForChainHead(
+                        head + 1_000,
+                        a.timeoutMs,
+                        abort.signal
+                    );
+                    return {
+                        reached,
+                        listenersBefore,
+                        listenersAfter: await provider.listenerCount("block")
+                    };
+                },
+                { timeoutMs: h.event.protocolEventTimeoutMs() }
+            );
             expect(r.reached).to.equal(false);
             expect(r.listenersAfter).to.equal(r.listenersBefore);
         });
@@ -675,63 +729,73 @@ describe("EventSyncService", function () {
         it("aborted before the call → false at once, with no head read", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
-            const r = await h.execOnHost(h.getPeer(0), async (sm) => {
-                const provider =
-                    sm.stateChannelManagerContract.runner!.provider!;
-                const original = provider.getBlockNumber.bind(provider);
-                let headReads = 0;
-                provider.getBlockNumber = async () => {
-                    headReads++;
-                    throw new Error("head read failed");
-                };
-                const abort = new AbortController();
-                abort.abort();
-                try {
-                    const reached = await sm.eventSyncService.waitForChainHead(
-                        1,
-                        60_000,
-                        abort.signal
-                    );
-                    return { reached, headReads };
-                } finally {
-                    provider.getBlockNumber = original;
-                }
-            });
+            const r = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, a) => {
+                    const provider =
+                        sm.stateChannelManagerContract.runner!.provider!;
+                    const original = provider.getBlockNumber.bind(provider);
+                    let headReads = 0;
+                    provider.getBlockNumber = async () => {
+                        headReads++;
+                        throw new Error("head read failed");
+                    };
+                    const abort = new AbortController();
+                    abort.abort();
+                    try {
+                        const reached =
+                            await sm.eventSyncService.waitForChainHead(
+                                1,
+                                a.timeoutMs,
+                                abort.signal
+                            );
+                        return { reached, headReads };
+                    } finally {
+                        provider.getBlockNumber = original;
+                    }
+                },
+                { timeoutMs: h.event.protocolEventTimeoutMs() }
+            );
             expect(r).to.deep.equal({ reached: false, headReads: 0 });
         });
 
         it("a failed head read rejects with its error, no block listener left", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
-            const r = await h.execOnHost(h.getPeer(0), async (sm) => {
-                const provider =
-                    sm.stateChannelManagerContract.runner!.provider!;
-                const listenersBefore = await provider.listenerCount("block");
-                const original = provider.getBlockNumber.bind(provider);
-                provider.getBlockNumber = async () => {
-                    throw new Error("head read failed");
-                };
-                let error: string | null = null;
-                try {
-                    await sm.eventSyncService.waitForChainHead(
-                        1,
-                        60_000,
-                        new AbortController().signal
-                    );
-                } catch (caught) {
-                    error =
-                        caught instanceof Error
-                            ? caught.message
-                            : String(caught);
-                } finally {
-                    provider.getBlockNumber = original;
-                }
-                return {
-                    error,
-                    listenersBefore,
-                    listenersAfter: await provider.listenerCount("block")
-                };
-            });
+            const r = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, a) => {
+                    const provider =
+                        sm.stateChannelManagerContract.runner!.provider!;
+                    const listenersBefore =
+                        await provider.listenerCount("block");
+                    const original = provider.getBlockNumber.bind(provider);
+                    provider.getBlockNumber = async () => {
+                        throw new Error("head read failed");
+                    };
+                    let error: string | null = null;
+                    try {
+                        await sm.eventSyncService.waitForChainHead(
+                            1,
+                            a.timeoutMs,
+                            new AbortController().signal
+                        );
+                    } catch (caught) {
+                        error =
+                            caught instanceof Error
+                                ? caught.message
+                                : String(caught);
+                    } finally {
+                        provider.getBlockNumber = original;
+                    }
+                    return {
+                        error,
+                        listenersBefore,
+                        listenersAfter: await provider.listenerCount("block")
+                    };
+                },
+                { timeoutMs: h.event.protocolEventTimeoutMs() }
+            );
             expect(r.error).to.equal("head read failed");
             expect(r.listenersAfter).to.equal(r.listenersBefore);
         });
@@ -739,40 +803,49 @@ describe("EventSyncService", function () {
         it("a head read that never settles → false at the timeout and at the abort, no block listener left", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
-            const r = await h.execOnHost(h.getPeer(0), async (sm) => {
-                const provider =
-                    sm.stateChannelManagerContract.runner!.provider!;
-                const listenersBefore = await provider.listenerCount("block");
-                const original = provider.getBlockNumber.bind(provider);
-                provider.getBlockNumber = () => new Promise<number>(() => {});
-                try {
-                    const timedOutAt = Date.now();
-                    const timedOut = await sm.eventSyncService.waitForChainHead(
-                        1,
-                        200,
-                        new AbortController().signal
-                    );
-                    const timeoutElapsedMs = Date.now() - timedOutAt;
-                    const abort = new AbortController();
-                    setTimeout(() => abort.abort(), 200);
-                    const abortedAt = Date.now();
-                    const aborted = await sm.eventSyncService.waitForChainHead(
-                        1,
-                        60_000,
-                        abort.signal
-                    );
-                    return {
-                        timedOut,
-                        timeoutElapsedMs,
-                        aborted,
-                        abortElapsedMs: Date.now() - abortedAt,
-                        listenersBefore,
-                        listenersAfter: await provider.listenerCount("block")
-                    };
-                } finally {
-                    provider.getBlockNumber = original;
-                }
-            });
+            const r = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, a) => {
+                    const provider =
+                        sm.stateChannelManagerContract.runner!.provider!;
+                    const listenersBefore =
+                        await provider.listenerCount("block");
+                    const original = provider.getBlockNumber.bind(provider);
+                    provider.getBlockNumber = () =>
+                        new Promise<number>(() => {});
+                    try {
+                        const timedOutAt = Date.now();
+                        const timedOut =
+                            await sm.eventSyncService.waitForChainHead(
+                                1,
+                                200,
+                                new AbortController().signal
+                            );
+                        const timeoutElapsedMs = Date.now() - timedOutAt;
+                        const abort = new AbortController();
+                        setTimeout(() => abort.abort(), 200);
+                        const abortedAt = Date.now();
+                        const aborted =
+                            await sm.eventSyncService.waitForChainHead(
+                                1,
+                                a.timeoutMs,
+                                abort.signal
+                            );
+                        return {
+                            timedOut,
+                            timeoutElapsedMs,
+                            aborted,
+                            abortElapsedMs: Date.now() - abortedAt,
+                            listenersBefore,
+                            listenersAfter:
+                                await provider.listenerCount("block")
+                        };
+                    } finally {
+                        provider.getBlockNumber = original;
+                    }
+                },
+                { timeoutMs: h.event.protocolEventTimeoutMs() }
+            );
             expect(r.timedOut).to.equal(false);
             expect(r.timeoutElapsedMs).to.be.within(190, 5_000);
             expect(r.aborted).to.equal(false);
@@ -793,7 +866,9 @@ describe("EventSyncService", function () {
 
             const probe = await h
                 .control(h.getPeer(1))
-                .validation.probeStreamedLogBelowWatermark()
+                .validation.probeStreamedLogBelowWatermark(
+                    h.channelOpeningBlock
+                )
                 .request();
 
             // premise - the opening log is below the watermark
@@ -812,7 +887,10 @@ describe("EventSyncService", function () {
 
             const probe = await h
                 .control(h.getPeer(1))
-                .validation.probeInboundLogRedelivery("reorgedAtWatermark")
+                .validation.probeInboundLogRedelivery(
+                    "reorgedAtWatermark",
+                    h.channelOpeningBlock
+                )
                 .request();
 
             // premise - the log's block is the completed watermark itself
@@ -842,7 +920,8 @@ describe("EventSyncService", function () {
                 await h.channelManager.queryFilter(
                     h.channelManager.filters.InboundMessagesProcessed(
                         h.channelId
-                    )
+                    ),
+                    h.channelOpeningBlock
                 )
             ).slice(-1);
 
@@ -878,7 +957,8 @@ describe("EventSyncService", function () {
                 await h.channelManager.queryFilter(
                     h.channelManager.filters.InboundMessagesProcessed(
                         h.channelId
-                    )
+                    ),
+                    h.channelOpeningBlock
                 )
             ).slice(-1);
 
@@ -925,7 +1005,8 @@ describe("EventSyncService", function () {
             await h.event.settleContractEvents(observer);
             const [openedLog] = (
                 await h.channelManager.queryFilter(
-                    h.channelManager.filters.ChannelOpened(channelId)
+                    h.channelManager.filters.ChannelOpened(channelId),
+                    h.channelOpeningBlock
                 )
             ).slice(-1);
 

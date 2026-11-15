@@ -1,11 +1,11 @@
 import { StateSnapshot } from "@/models";
+import { BLOCK_TIME_MS } from "@/types";
 import { chainSnapshot } from "@test/fixtures/MilestoneSyncStaging";
 import {
     postSnapshotFrom,
     stageUninstalledFinalReducedFork
 } from "@test/fixtures/ProofOwnerStaging";
 import { MathTestSession as TestSession } from "@test/harness";
-import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -98,7 +98,7 @@ describe("SnapshotUpdateService", function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({
             peerCount: 4,
-            timeConfig: { evidenceTime: 8 }
+            timeBlocks: { evidenceTime: 8 }
         });
         const targetPeer = h.getPeer(0);
         await h.control(targetPeer).stub.stubHoldReductionTasks().request();
@@ -310,7 +310,7 @@ describe("SnapshotUpdateService", function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({
             peerCount: 4,
-            timeConfig: { evidenceTime: 3 }
+            timeBlocks: { evidenceTime: 3 }
         });
         for (const peer of h.peers) {
             await h.control(peer).stub.stubPostStateSnapshot().request();
@@ -337,8 +337,8 @@ describe("SnapshotUpdateService", function () {
         const killPeriod = await h.query.killPeriod(second.forkId, 0);
         await h.event.waitUntilTimestamp(
             killPeriod.killPeriodEnd +
-                resolveTestTimeConfig(h.options.timeConfig).chainFallbackTime +
-                1
+                h.options.timeConfig.chainFallbackTime +
+                BLOCK_TIME_MS / 1000
         );
         expect(
             (await h.channelManager.getStateSnapshot(h.channelId)).forkId

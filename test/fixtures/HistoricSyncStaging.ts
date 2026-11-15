@@ -169,7 +169,7 @@ export async function stageOutboundAroundAnchor(
     // Each exit waits agreementTime and then its snapshot post and chain
     // event before the next writer authors; under load that idles longer
     // than p2pTime + agreementTime, and the late block fails the time check.
-    await h.lifecycle.start(4, 2, { timeConfig: { p2pTime: 15 } });
+    await h.lifecycle.start(4, 2, { timeBlocks: { p2pTime: 15 } });
     await suppressTimeoutChecks(h, [0, 1, 2, 3]);
     let remaining = [0, 1, 2, 3];
     const anchoredLeaver = await h.query.getNextPeerToWrite();
@@ -229,7 +229,8 @@ export async function stageAnchorAdvancedPastFirstExit(
         h.event.protocolEventTimeoutMs()
     );
     const posts = await h.channelManager.queryFilter(
-        h.channelManager.filters.StateSnapshotUpdated(h.channelId)
+        h.channelManager.filters.StateSnapshotUpdated(h.channelId),
+        h.channelOpeningBlock
     );
     const blockBeforePost = posts.at(-1)!.blockNumber - 1;
     for (const index of staged.remaining)

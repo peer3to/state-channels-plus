@@ -1,4 +1,5 @@
 import peer3Config from "../../peer3.config";
+import { BLOCK_TIME_MS } from "../types/time";
 
 export type Config = {
     PROVIDER_URL: string;
@@ -91,9 +92,11 @@ const DEFAULT_CONFIG: Config = {
     EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 0,
     EVENT_LOOP_MONITOR_STARTUP: false,
     SIGNER_RECOVERY_CACHE_MAX: 100_000,
-    LEAVE_CHANNEL_WATCHDOG_MS: 15_000,
+    // waits for the exit snapshot post to be mined
+    LEAVE_CHANNEL_WATCHDOG_MS: 15 * BLOCK_TIME_MS,
     JOIN_CHANNEL_DEADLINE_SECONDS: DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS,
-    GAS_USAGE_SETTLE_MS: 2_000,
+    // outstanding receipts land within two blocks
+    GAS_USAGE_SETTLE_MS: 2 * BLOCK_TIME_MS,
     // Crash log collection is enabled when upload endpoint is configured.
     CRASH_LOG_UPLOAD_ENDPOINT: "",
     CRASH_LOG_API_TOKEN: "",

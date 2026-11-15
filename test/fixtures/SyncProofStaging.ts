@@ -565,7 +565,7 @@ export async function stageAnchoredHistory(
     await h.lifecycle.start(3, 3, {
         ...(options.p2pTime === undefined
             ? {}
-            : { timeConfig: { p2pTime: options.p2pTime } })
+            : { timeBlocks: { p2pTime: options.p2pTime } })
     });
     if (options.cutPeer) {
         for (const index of [0, 1, 2])

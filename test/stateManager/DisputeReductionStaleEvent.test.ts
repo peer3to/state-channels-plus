@@ -1,4 +1,5 @@
 import { MathTestSession as TestSession } from "@test/harness";
+import { WAIT_POLL_MS } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 /**
@@ -35,9 +36,9 @@ describe("Dispute reduction stale event", function () {
                         (peer.eventSpies.onDisputeReducedResultCommitted
                             ?.callCount ?? 0) > 0
                 )?.index ?? -1;
-        const deadline = Date.now() + 60000;
+        const deadline = Date.now() + h.event.protocolEventTimeoutMs();
         while (findObserverIndex() < 0 && Date.now() < deadline) {
-            await new Promise((resolve) => setTimeout(resolve, 250));
+            await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS));
         }
         const observerIndex = findObserverIndex();
         expect(

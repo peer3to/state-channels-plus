@@ -4,7 +4,8 @@ Test file: [test/V1/UniversalDeployment.test.ts](../../../../../../test/V1/Unive
 
 ## Overview
 
-A Hardhat suite for the two deployment paths in `scripts/V1/deploy`. The production
+A suite for the two deployment paths in `scripts/V1/deploy`, on the test chain's node through the
+harness (`connectChain` and the slot deployer, no peers). The production
 `deployArtifact` case passes the real oversized `LocalDiamond` artifact and complete constructor
 arguments, then requires the package-root `ContractSizeLimitError` before the deployer nonce changes. The
 explicit local path deploys that same contract on the local unlimited-size network and reads a
@@ -22,7 +23,7 @@ declarations and those views are routed facet selectors, so that one test also d
 halves of the merged binding answering on a real deployment. The consumer-facet half deploys the
 production proxy via `deploy`, parses a proxy error, a direct facet error, and a routed
 `joinChannel` facet error through the returned combined binding, and asserts the constructor's zero-means-default timing sentinels
-(`getAllTimes` → 15/5/30/30, gas limit 3,000,000), a custom dispute-execution gas limit, and
+(`getAllTimes` → the derived windows, gas limit 3,000,000), a custom dispute-execution gas limit, and
 that `open` against a non-contract consumer facet address reverts. Channel protocol flows
 (open/join/dispute semantics) are out of scope; the suite verifies deployment wiring and mirror
 replication only, so no single Exercises component is named.

@@ -1,9 +1,6 @@
 import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import { Status } from "@/types";
-import {
-    MathTestSession as TestSession,
-    MIN_TEST_TIME_CONFIG
-} from "@test/harness";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
 // A non-participant that sends a spectator a block it must reject is dropped
@@ -13,15 +10,12 @@ import { expect } from "chai";
 // cannot prove its own block fails that sync -> one counted close, no verdict.
 // A relayed outsider-authored block reaches the author check on the live queue.
 
-const LIVE_FORK_TIME = {
-    ...MIN_TEST_TIME_CONFIG,
-    chainFallbackTime: 12
-};
+const LIVE_FORK_TIME = { chainFallbackTime: 12 };
 
 describe("E2E: spectating strategy junk-block handling", function () {
     it("cuts the sender of an unauthenticated junk block and keeps a SYNCED spectator running", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 1, { timeConfig: LIVE_FORK_TIME });
+        await h.lifecycle.start(3, 1, { timeBlocks: LIVE_FORK_TIME });
         const forkId = h.activeForkId!;
 
         const { peer: victim } = await h.join.addSpectatorAuthoring({
@@ -66,7 +60,7 @@ describe("E2E: spectating strategy junk-block handling", function () {
 
     it("cuts the sender of an unauthenticated junk block and keeps a PENDING_PARTICIPANT running", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 1, { timeConfig: LIVE_FORK_TIME });
+        await h.lifecycle.start(3, 1, { timeBlocks: LIVE_FORK_TIME });
         const forkId = h.activeForkId!;
 
         const { peer: victim } = await h.join.addSpectatorAuthoring({
@@ -119,7 +113,7 @@ describe("E2E: spectating strategy junk-block handling", function () {
 
     it("cuts the sender of an authenticated outsider-authored block it cannot prove with a counted close and keeps a SYNCED spectator running", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 1, { timeConfig: LIVE_FORK_TIME });
+        await h.lifecycle.start(3, 1, { timeBlocks: LIVE_FORK_TIME });
         const forkId = h.activeForkId!;
 
         const { peer: victim } = await h.join.addSpectatorAuthoring({
@@ -174,7 +168,7 @@ describe("E2E: spectating strategy junk-block handling", function () {
 
     it("cuts the sender of an authenticated outsider-authored block that answers it is still in its own initial sync with one counted close and keeps a SYNCED spectator running", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 1, { timeConfig: LIVE_FORK_TIME });
+        await h.lifecycle.start(3, 1, { timeBlocks: LIVE_FORK_TIME });
         const forkId = h.activeForkId!;
 
         const { peer: victim } = await h.join.addSpectatorAuthoring({
@@ -258,7 +252,7 @@ describe("E2E: spectating strategy junk-block handling", function () {
     // author" - this one separates them and asserts that both are cut.
     it("cuts both an eligible relayer and the outsider author while the victim keeps spectating", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 1, { timeConfig: LIVE_FORK_TIME });
+        await h.lifecycle.start(3, 1, { timeBlocks: LIVE_FORK_TIME });
         const forkId = h.activeForkId!;
 
         // The participants keep authoring while each peer process spawns and
@@ -334,7 +328,7 @@ describe("E2E: spectating strategy junk-block handling", function () {
     // is a non-participant: drop it, never abort.
     it("cuts an ex-member that authors a linked block naming a stale membership snapshot, keeping the spectator SYNCED", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(4, 0, { timeConfig: LIVE_FORK_TIME });
+        await h.lifecycle.start(4, 0, { timeBlocks: LIVE_FORK_TIME });
         const forkId = h.activeForkId!;
 
         // victim spectates and stores the pre-leave snapshots (still listing the
@@ -401,7 +395,7 @@ describe("E2E: spectating strategy junk-block handling", function () {
 describe("E2E: active-participant stale-membership handling", function () {
     it("cuts an ex-member's stale-membership block, stays PARTICIPATING, starts no dispute", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(4, 0, { timeConfig: LIVE_FORK_TIME });
+        await h.lifecycle.start(4, 0, { timeBlocks: LIVE_FORK_TIME });
         const forkId = h.activeForkId!;
 
         // build the pre-leave snapshot the ex-member will name

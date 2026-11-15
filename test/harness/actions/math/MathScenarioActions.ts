@@ -1,11 +1,10 @@
 // @spec-test-coverage-ignore: shared math scenario setup exercised by owning mapped test declarations
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
-import { Status, TimeConfig } from "@/types";
+import { BLOCK_TIME_MS, Status } from "@/types";
 import { ForkId, Hash } from "@/types/types";
 import { Logger, sleep } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
-import { INBOUND_GAP_TIME_CONFIG } from "@test/harness/core/testTimeConfig";
 import {
     CreateAndResolveDisputeResult,
     HarnessOptions,
@@ -22,6 +21,14 @@ type MathTestPeer = TestPeer<
 
 /** Kill period for the shared invalid-dispute staging, in seconds. */
 const DEFAULT_INVALID_DISPUTE_EVIDENCE_TIME = 12;
+
+// the inbound-gap scenario needs agreementTime > p2pTime
+export const INBOUND_GAP_TIME_BLOCKS = {
+    p2pTime: 2,
+    agreementTime: 8,
+    chainFallbackTime: 4,
+    evidenceTime: 8
+};
 
 export class MathScenarioActions extends ScenarioActions {
     declare public harness: MathPeerTestHarness;
@@ -73,7 +80,7 @@ export class MathScenarioActions extends ScenarioActions {
      */
     async stageSpectatedDisputeOverHeldInboundGap() {
         await this.harness.setup(3, {
-            timeConfig: INBOUND_GAP_TIME_CONFIG
+            timeBlocks: INBOUND_GAP_TIME_BLOCKS
         });
         await this.harness.lifecycle.openChannel();
         await this.harness.transition.advanceState({
@@ -113,7 +120,7 @@ export class MathScenarioActions extends ScenarioActions {
      */
     async stageSpectatedDisputeAboveSpectatorHead() {
         await this.harness.lifecycle.start(3, 1, {
-            timeConfig: INBOUND_GAP_TIME_CONFIG
+            timeBlocks: INBOUND_GAP_TIME_BLOCKS
         });
         const participants = this.harness.peers.map((peer) => peer.index);
         const spectatorIndex = (
@@ -258,7 +265,7 @@ export class MathScenarioActions extends ScenarioActions {
     }
 
     async fourPeersDisputeResolution(options?: {
-        timeConfig?: {
+        timeBlocks?: {
             p2pTime?: number;
             agreementTime?: number;
             chainFallbackTime?: number;
@@ -274,7 +281,7 @@ export class MathScenarioActions extends ScenarioActions {
     }
 
     async fourPeersDisputeResolutionAndSnapshotUpdateDetached(options?: {
-        timeConfig?: {
+        timeBlocks?: {
             p2pTime?: number;
             agreementTime?: number;
             chainFallbackTime?: number;
@@ -288,7 +295,7 @@ export class MathScenarioActions extends ScenarioActions {
     }
 
     async fourPeersDisputeResolutionAndSnapshotUpdateWait(options?: {
-        timeConfig?: {
+        timeBlocks?: {
             p2pTime?: number;
             agreementTime?: number;
             chainFallbackTime?: number;
@@ -304,7 +311,7 @@ export class MathScenarioActions extends ScenarioActions {
     async preDisputeSetup(options?: {
         peerCount?: number;
         transitionCount?: number;
-        timeConfig?: {
+        timeBlocks?: {
             p2pTime?: number;
             agreementTime?: number;
             chainFallbackTime?: number;
@@ -322,9 +329,9 @@ export class MathScenarioActions extends ScenarioActions {
                 // and the audit's chain reads; on a loaded farm those alone
                 // have taken five seconds, so the staging's kill period keeps
                 // a few seconds of headroom over the harness default.
-                timeConfig: {
+                timeBlocks: {
                     evidenceTime: DEFAULT_INVALID_DISPUTE_EVIDENCE_TIME,
-                    ...options?.timeConfig
+                    ...options?.timeBlocks
                 }
             }
         );
@@ -393,7 +400,7 @@ export class MathScenarioActions extends ScenarioActions {
         transitionCount?: number;
         /** "nextWriter" -> the peer that writes the next height, so the invalid block passes the leader gate */
         maliciousPeerIndex?: number | "nextWriter";
-        timeConfig?: { evidenceTime?: number };
+        timeBlocks?: { evidenceTime?: number };
         /** return right after the commit, before the kill period expires */
         skipEvidenceWait?: boolean;
     }): Promise<{ sourceForkId: ForkId; maliciousPeerIndex: number }> {
@@ -402,7 +409,7 @@ export class MathScenarioActions extends ScenarioActions {
             peerCount,
             transitionCount: options?.transitionCount,
             configOverrides: options?.configOverrides,
-            timeConfig: { evidenceTime: options?.timeConfig?.evidenceTime ?? 3 }
+            timeBlocks: { evidenceTime: options?.timeBlocks?.evidenceTime ?? 3 }
         });
         const sourceForkId = this.harness.activeForkId!;
         let maliciousPeerIndex = 1;
@@ -441,7 +448,7 @@ export class MathScenarioActions extends ScenarioActions {
                     sourceForkId
                 )
             );
-            const settlementMarginSeconds = 2;
+            const settlementMarginSeconds = (2 * BLOCK_TIME_MS) / 1000;
             await this.harness.event.waitUntilTimestamp(
                 windowCreatedAt +
                     this.harness.event.evidencePeriodWaitMs(
@@ -473,7 +480,7 @@ export class MathScenarioActions extends ScenarioActions {
      */
     async preDisputeSetupConsumedInboundTopUp(options?: {
         peerCount?: number;
-        timeConfig?: {
+        timeBlocks?: {
             p2pTime?: number;
             agreementTime?: number;
             chainFallbackTime?: number;
@@ -506,7 +513,7 @@ export class MathScenarioActions extends ScenarioActions {
         peerCount?: number;
         beforeDispute?: () => Promise<void>;
         addSpectatorBeforeDispute?: boolean;
-        timeConfig?: {
+        timeBlocks?: {
             p2pTime?: number;
             agreementTime?: number;
             chainFallbackTime?: number;
@@ -525,7 +532,7 @@ export class MathScenarioActions extends ScenarioActions {
         await this.preDisputeSetup({
             peerCount: options?.peerCount,
             transitionCount: addSpectatorBeforeDispute ? 0 : undefined,
-            timeConfig: { evidenceTime: 12, ...options?.timeConfig }
+            timeBlocks: { evidenceTime: 12, ...options?.timeBlocks }
         });
         const spectator = addSpectatorBeforeDispute
             ? (
@@ -573,7 +580,7 @@ export class MathScenarioActions extends ScenarioActions {
     }
 
     async preDisputeSetupCalldataPath(options?: {
-        timeConfig?: {
+        timeBlocks?: {
             p2pTime?: number;
             agreementTime?: number;
             chainFallbackTime?: number;
@@ -592,15 +599,15 @@ export class MathScenarioActions extends ScenarioActions {
          */
         recoverableLaggingInbound?: boolean;
     }): Promise<{ releaseLaggingInbound?: () => Promise<void> }> {
-        const timeConfig = {
+        const timeBlocks = {
             evidenceTime: 12,
-            ...options?.timeConfig
+            ...options?.timeBlocks
         };
 
         await this.preDisputeSetup({
             peerCount: 4,
             transitionCount: 0,
-            timeConfig
+            timeBlocks
         });
         const laggingIndex = options?.laggingInboundPeerIndex;
         const recoverable = options?.recoverableLaggingInbound ?? false;
@@ -639,7 +646,7 @@ export class MathScenarioActions extends ScenarioActions {
 
     async setupTwoLeaversAcrossMilestones(options?: {
         forceExitPeerIndex?: number;
-        timeConfig?: {
+        timeBlocks?: {
             p2pTime?: number;
             agreementTime?: number;
             chainFallbackTime?: number;
@@ -650,15 +657,15 @@ export class MathScenarioActions extends ScenarioActions {
         // both leavers' exit windows, and a stamp is capped at the previous
         // one plus p2pTime, so a shorter window would leave the stamps behind
         // the wall clock by the end of it.
-        const timeConfig = {
+        const timeBlocks = {
             p2pTime: 3,
             agreementTime: 6,
             chainFallbackTime: 2,
             evidenceTime: 12,
-            ...options?.timeConfig
+            ...options?.timeBlocks
         };
 
-        await this.harness.lifecycle.timeoutSetup(5, 2, { timeConfig });
+        await this.harness.lifecycle.timeoutSetup(5, 2, { timeBlocks });
 
         const firstLeaver =
             await this.harness.transition.participantLeaveDetached({
@@ -713,7 +720,7 @@ export class MathScenarioActions extends ScenarioActions {
     }
 
     async preDisputeSetupDisconnectedPeer(options?: {
-        timeConfig?: {
+        timeBlocks?: {
             p2pTime?: number;
             agreementTime?: number;
             chainFallbackTime?: number;
@@ -722,13 +729,13 @@ export class MathScenarioActions extends ScenarioActions {
         stateTransitionCount?: number;
         disconnectedPeerIndex?: number;
     }) {
-        const timeConfig = {
+        const timeBlocks = {
             evidenceTime: 12,
-            ...options?.timeConfig
+            ...options?.timeBlocks
         };
         const stateTransitionCount = options?.stateTransitionCount ?? 2;
         const disconnectedPeerIndex = options?.disconnectedPeerIndex ?? 2;
-        await this.harness.lifecycle.timeoutSetup(4, 0, { timeConfig });
+        await this.harness.lifecycle.timeoutSetup(4, 0, { timeBlocks });
         await this.harness.network.blacklistAndDisconnectPeer(
             disconnectedPeerIndex
         );
@@ -759,18 +766,18 @@ export class MathScenarioActions extends ScenarioActions {
         initialTransitions: number = 4,
         options?: {
             configOverrides?: HarnessOptions["configOverrides"];
-            timeConfig?: HarnessOptions["timeConfig"];
+            timeBlocks?: HarnessOptions["timeBlocks"];
             maxChannelParticipants?: HarnessOptions["maxChannelParticipants"];
         }
     ): Promise<TestPeer> {
         const h = this.harness;
         await h.lifecycle.start(3, 0, {
-            timeConfig: {
+            timeBlocks: {
                 p2pTime: 5,
                 agreementTime: 4,
                 chainFallbackTime: 2,
                 evidenceTime: 4,
-                ...options?.timeConfig
+                ...options?.timeBlocks
             },
             configOverrides: options?.configOverrides,
             maxChannelParticipants: options?.maxChannelParticipants
@@ -789,7 +796,7 @@ export class MathScenarioActions extends ScenarioActions {
         initialTransitions: number = 4,
         options?: {
             configOverrides?: HarnessOptions["configOverrides"];
-            timeConfig?: HarnessOptions["timeConfig"];
+            timeBlocks?: HarnessOptions["timeBlocks"];
         }
     ) {
         const h = this.harness;
@@ -809,12 +816,12 @@ export class MathScenarioActions extends ScenarioActions {
         initialPeers?: number;
         initialTransitions?: number;
         postPromotionTransitions?: number;
-        timeConfig?: HarnessOptions["timeConfig"];
+        timeBlocks?: HarnessOptions["timeBlocks"];
     }): Promise<TestPeer> {
         const initialPeers = options?.initialPeers ?? 2;
         const initialTransitions = options?.initialTransitions ?? 2;
         const postPromotionTransitions = options?.postPromotionTransitions ?? 2;
-        const timeConfig = options?.timeConfig ?? {
+        const timeBlocks = options?.timeBlocks ?? {
             p2pTime: 2,
             agreementTime: 4,
             chainFallbackTime: 4,
@@ -822,7 +829,7 @@ export class MathScenarioActions extends ScenarioActions {
         };
 
         await this.harness.lifecycle.start(initialPeers, 0, {
-            timeConfig
+            timeBlocks
         });
 
         // Spectating and joining are asynchronous to the channel:
@@ -916,18 +923,18 @@ export class MathScenarioActions extends ScenarioActions {
     private async setupChannelWithSpectator(options?: {
         initialPeers?: number;
         initialTransitions?: number;
-        timeConfig?: HarnessOptions["timeConfig"];
+        timeBlocks?: HarnessOptions["timeBlocks"];
     }): Promise<{ spectator: TestPeer; initialPeers: number }> {
         const initialPeers = options?.initialPeers ?? 3;
         const initialTransitions = options?.initialTransitions ?? 2;
-        const timeConfig = options?.timeConfig ?? {
+        const timeBlocks = options?.timeBlocks ?? {
             p2pTime: 5,
             agreementTime: 4,
             chainFallbackTime: 4,
             evidenceTime: 6
         };
         await this.harness.lifecycle.start(initialPeers, 0, {
-            timeConfig
+            timeBlocks
         });
         const { peer: spectator } =
             await this.harness.join.addSpectatorAuthoring({
@@ -945,7 +952,7 @@ export class MathScenarioActions extends ScenarioActions {
     async spectatorPromotedViaForceInboundWait(options?: {
         initialPeers?: number;
         initialTransitions?: number;
-        timeConfig?: HarnessOptions["timeConfig"];
+        timeBlocks?: HarnessOptions["timeBlocks"];
     }): Promise<TestPeer> {
         const { spectator, initialPeers } =
             await this.setupChannelWithSpectator(options);
@@ -985,7 +992,7 @@ export class MathScenarioActions extends ScenarioActions {
      * a candidate timestamp already past the parent's p2p window.
      */
     async previousBlockUnsignedByNextWriter(options: {
-        timeConfig: TimeConfig;
+        timeBlocks: HarnessOptions["timeBlocks"];
     }) {
         const { observer, author, previous, forkId, postParent } =
             await this.unpostedParentUnsignedByNextWriter(options);
@@ -999,10 +1006,10 @@ export class MathScenarioActions extends ScenarioActions {
      * after the observer has built a timeout against the unposted parent.
      */
     async unpostedParentUnsignedByNextWriter(options: {
-        timeConfig: TimeConfig;
+        timeBlocks: HarnessOptions["timeBlocks"];
     }) {
         const h = this.harness;
-        await h.lifecycle.start(3, 1, { timeConfig: options.timeConfig });
+        await h.lifecycle.start(3, 1, { timeBlocks: options.timeBlocks });
         const forkId = h.activeForkId!;
 
         const parentAuthorAddress = await h
@@ -1097,7 +1104,7 @@ export class MathScenarioActions extends ScenarioActions {
         const postParent = async () => {
             // leave the parent's p2p window before posting, so its real post time
             // is strictly later than its own timestamp
-            await sleep((options.timeConfig.p2pTime + 2) * 1000);
+            await sleep((h.options.timeConfig.p2pTime + 2) * 1000);
             const { onChainTimestamp: parentPostTimestamp } =
                 await h.transition.postBlockCalldataOnChainWait(
                     parentAuthor,

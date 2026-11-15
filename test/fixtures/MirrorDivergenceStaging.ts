@@ -16,7 +16,7 @@ export async function stageMirrorMissingJoin(
     await h.scenario.preDisputeSetup({
         peerCount: 4,
         transitionCount: 0,
-        timeConfig: { evidenceTime: 12 }
+        timeBlocks: { evidenceTime: 12 }
     });
     const held = await h.mirror.holdUpdates(
         laggingIndex,

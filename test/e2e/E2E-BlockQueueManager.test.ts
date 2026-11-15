@@ -1,6 +1,6 @@
 import { Block } from "@/models";
 import { BlockOrigin } from "@/storage/QueueStorage";
-import { BlockValidationResult, Status } from "@/types";
+import { BLOCK_TIME_MS, BlockValidationResult, Status } from "@/types";
 import type { Address } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import * as factory from "@test/factory";
@@ -17,10 +17,7 @@ import {
     assertSlashPreservesHonestWork
 } from "@test/fixtures/QueueSlashFixture";
 import { contractRejectedEncodings } from "@test/fixtures/SignatureEncodingFixture";
-import {
-    MathTestSession as TestSession,
-    MIN_TEST_TIME_CONFIG
-} from "@test/harness";
+import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -135,7 +132,7 @@ describe("E2E: BlockQueueManager", function () {
         const h = TestSession.getHarness();
         // wide windows: nobody times out the held-back author mid-test
         await h.lifecycle.start(3, 1, {
-            timeConfig: {
+            timeBlocks: {
                 p2pTime: 2,
                 agreementTime: 8,
                 chainFallbackTime: 10,
@@ -374,7 +371,7 @@ describe("E2E: BlockQueueManager", function () {
         // short windows so the two spectators converge on the victim inside the
         // connection barrier below
         await h.lifecycle.start(3, 1, {
-            timeConfig: { ...MIN_TEST_TIME_CONFIG, chainFallbackTime: 12 }
+            timeBlocks: { chainFallbackTime: 12 }
         });
         const forkId = h.activeForkId!;
 
@@ -442,7 +439,7 @@ describe("E2E: BlockQueueManager", function () {
         // live validation, whose subjective time window is the agreement
         // time; two seconds let farm clock skew reject an honest replay as
         // "in the future".
-        const timeConfig = {
+        const timeBlocks = {
             p2pTime: 3,
             agreementTime: 4,
             chainFallbackTime: 30,
@@ -453,7 +450,7 @@ describe("E2E: BlockQueueManager", function () {
 
         it("future block whose source proves its lineage at queue timeout is applied and the source kept", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(4, 0, { timeConfig });
+            await h.lifecycle.start(4, 0, { timeBlocks });
             const forkId = h.activeForkId!;
             const observer = h.getPeer(observerIndex);
             const supplier = h.getPeer(supplierIndex);
@@ -503,7 +500,7 @@ describe("E2E: BlockQueueManager", function () {
                             .control(observer)
                             .query.getBlockByHash(block1!.hash)
                             .request()) !== null,
-                    (timeConfig.agreementTime + 5) * 1000
+                    (h.options.timeConfig.agreementTime + 5) * 1000
                 );
                 expect(
                     await h
@@ -525,7 +522,7 @@ describe("E2E: BlockQueueManager", function () {
 
         it("future block at a height its source holds a different block at queue timeout is dropped and the source excluded", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(4, 0, { timeConfig });
+            await h.lifecycle.start(4, 0, { timeBlocks });
             const forkId = h.activeForkId!;
             const observer = h.getPeer(observerIndex);
             const supplier = h.getPeer(supplierIndex);
@@ -606,7 +603,7 @@ describe("E2E: BlockQueueManager", function () {
 
         it("junk supplier is excluded even when another sync toward it is in flight at queue timeout", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(4, 0, { timeConfig });
+            await h.lifecycle.start(4, 0, { timeBlocks });
             const forkId = h.activeForkId!;
             const observer = h.getPeer(observerIndex);
             const supplier = h.getPeer(supplierIndex);
@@ -661,7 +658,7 @@ describe("E2E: BlockQueueManager", function () {
                             .control(observer)
                             .query.isBlockQueued(junk.hash)
                             .request()),
-                    (timeConfig.agreementTime + 5) * 1000
+                    (h.options.timeConfig.agreementTime + 5) * 1000
                 );
                 expect(
                     await h
@@ -702,7 +699,7 @@ describe("E2E: BlockQueueManager", function () {
 
         it("future block at a height its source never reached at queue timeout is dropped and the source struck", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(4, 0, { timeConfig });
+            await h.lifecycle.start(4, 0, { timeBlocks });
             const forkId = h.activeForkId!;
             const observer = h.getPeer(observerIndex);
             const supplier = h.getPeer(supplierIndex);
@@ -777,13 +774,13 @@ describe("E2E: BlockQueueManager", function () {
 
     it("queued entry that becomes stored merges at queue timeout: strays stripped, supplier blacklisted", async function () {
         const h = TestSession.getHarness();
-        const timeConfig = {
+        const timeBlocks = {
             p2pTime: 3,
             agreementTime: 2,
             chainFallbackTime: 30,
             evidenceTime: 8
         };
-        await h.lifecycle.start(4, 0, { timeConfig });
+        await h.lifecycle.start(4, 0, { timeBlocks });
 
         const forkId = h.activeForkId;
         expect(forkId).to.not.be.undefined;
@@ -857,7 +854,7 @@ describe("E2E: BlockQueueManager", function () {
                     .control(observer)
                     .query.isBlacklisted(h.getPeer(1).address)
                     .request(),
-            (timeConfig.agreementTime + 5) * 1000
+            (h.options.timeConfig.agreementTime + 5) * 1000
         );
         const storedBlock = await h
             .control(observer)
@@ -870,7 +867,7 @@ describe("E2E: BlockQueueManager", function () {
     });
 
     describe("wrong-fork blocks", function () {
-        const forkTimeConfig = {
+        const forkTimeBlocks = {
             p2pTime: 3,
             agreementTime: 4,
             chainFallbackTime: 2,
@@ -885,7 +882,7 @@ describe("E2E: BlockQueueManager", function () {
 
             // 2 = warm-up transitions the dispute staging needs, not the peer index.
             await h.lifecycle.start(4, 2, {
-                timeConfig: forkTimeConfig
+                timeBlocks: forkTimeBlocks
             });
             await h.assert.sync.peersInSyncWait();
 
@@ -916,8 +913,7 @@ describe("E2E: BlockQueueManager", function () {
             // the first-block delivery.
             await waitFor(
                 async () => (await race.heldSnapshotEventCount()) > 0,
-                h.event.protocolEventTimeoutMs(),
-                50
+                h.event.protocolEventTimeoutMs()
             );
 
             const sourcePeer = h.getPeer(reducingHonestPeers[0]);
@@ -996,7 +992,7 @@ describe("E2E: BlockQueueManager", function () {
             await h.event.waitWhileEventCountsStayAtMost(
                 "onSetState",
                 [targetPeerIndex],
-                { durationMs: 2000, maxCount: 1 }
+                { durationMs: 2 * BLOCK_TIME_MS, maxCount: 1 }
             );
             expect(
                 h.event.getEventCallCount(targetPeerIndex, "onSetState")
@@ -1019,7 +1015,7 @@ describe("E2E: BlockQueueManager", function () {
             const reducingHonestPeers = [0, 3];
 
             await h.lifecycle.start(4, 2, {
-                timeConfig: forkTimeConfig
+                timeBlocks: forkTimeBlocks
             });
             await h.assert.sync.peersInSyncWait();
 
@@ -1040,8 +1036,7 @@ describe("E2E: BlockQueueManager", function () {
 
             await waitFor(
                 async () => (await race.heldSnapshotEventCount()) > 0,
-                h.event.protocolEventTimeoutMs(),
-                50
+                h.event.protocolEventTimeoutMs()
             );
 
             const sourcePeer = h.getPeer(reducingHonestPeers[0]);
@@ -1227,7 +1222,7 @@ describe("E2E: BlockQueueManager", function () {
             const maliciousPeerIndex = 2;
 
             await h.lifecycle.start(4, 2, {
-                timeConfig: forkTimeConfig
+                timeBlocks: forkTimeBlocks
             });
             await h.assert.sync.peersInSyncWait();
 
@@ -1555,7 +1550,7 @@ describe("E2E: BlockQueueManager", function () {
 
         it("queues an unknown-fork block for sync; the failed sync, not the queue, punishes the supplier", async function () {
             const h = TestSession.getHarness();
-            const timeConfig = {
+            const timeBlocks = {
                 p2pTime: 3,
                 // 4, not 2: the immediate isBlockQueued check below must not
                 // race the entry's own eviction timer under parallel-load stall.
@@ -1563,7 +1558,7 @@ describe("E2E: BlockQueueManager", function () {
                 chainFallbackTime: 30,
                 evidenceTime: 8
             };
-            await h.lifecycle.start(3, 0, { timeConfig });
+            await h.lifecycle.start(3, 0, { timeBlocks });
 
             const observer = h.getPeer(0);
             const originalForkId = await h
@@ -1778,13 +1773,13 @@ describe("E2E: BlockQueueManager", function () {
 
         it("unknown-fork timeout asks only the sender to sync, never the author", async function () {
             const h = TestSession.getHarness();
-            const timeConfig = {
+            const timeBlocks = {
                 p2pTime: 3,
                 agreementTime: 4,
                 chainFallbackTime: 30,
                 evidenceTime: 8
             };
-            await h.lifecycle.start(3, 0, { timeConfig });
+            await h.lifecycle.start(3, 0, { timeBlocks });
 
             const observer = h.getPeer(0);
             const author = h.getPeer(1);
@@ -1820,7 +1815,7 @@ describe("E2E: BlockQueueManager", function () {
                 await h.rpcStub.spectateSyncTargetsWait(
                     0,
                     1,
-                    (timeConfig.agreementTime + 20) * 1000
+                    (h.options.timeConfig.agreementTime + 20) * 1000
                 )
             ).to.deep.equal([supplier.address]);
             expect(await h.rpcStub.spectateSyncCallCount(0)).to.equal(1);
@@ -1830,13 +1825,13 @@ describe("E2E: BlockQueueManager", function () {
 
         it("unknown fork: only the sender is asked and cut; the author keeps the observer", async function () {
             const h = TestSession.getHarness();
-            const timeConfig = {
+            const timeBlocks = {
                 p2pTime: 3,
                 agreementTime: 4,
                 chainFallbackTime: 30,
                 evidenceTime: 8
             };
-            await h.lifecycle.start(3, 0, { timeConfig });
+            await h.lifecycle.start(3, 0, { timeBlocks });
 
             const observer = h.getPeer(0);
             const author = h.getPeer(1);
@@ -2008,7 +2003,7 @@ describe("E2E: BlockQueueManager", function () {
 
             // 2 = warm-up transitions the dispute staging needs, not the peer index.
             await h.lifecycle.start(4, 2, {
-                timeConfig: forkTimeConfig
+                timeBlocks: forkTimeBlocks
             });
             await h.assert.sync.peersInSyncWait();
 
@@ -2054,7 +2049,7 @@ describe("E2E: BlockQueueManager", function () {
             await h.event.waitForEventCounts(
                 "onSetState",
                 [{ peerId: targetPeerIndex, expectedCount: 1 }],
-                10000
+                h.event.protocolEventTimeoutMs()
             );
             expect(
                 await h.control(targetPeer).query.getForkId().request()
@@ -2083,7 +2078,7 @@ describe("E2E: BlockQueueManager", function () {
                         .control(targetPeer)
                         .query.isBlockQueued(bogusBlock.hash)
                         .request()),
-                (forkTimeConfig.agreementTime + 5) * 1000
+                (h.options.timeConfig.agreementTime + 5) * 1000
             );
             expect(
                 await h
@@ -2102,7 +2097,7 @@ describe("E2E: BlockQueueManager", function () {
             await h.event.waitWhileEventCountsStayAtMost(
                 "onSetState",
                 [targetPeerIndex],
-                { durationMs: 2000, maxCount: 1 }
+                { durationMs: 2 * BLOCK_TIME_MS, maxCount: 1 }
             );
             expect(
                 h.event.getEventCallCount(targetPeerIndex, "onSetState")
@@ -2119,7 +2114,7 @@ describe("E2E: BlockQueueManager", function () {
             await h.lifecycle.start(4, 2, {
                 // Long queue window: the early block must survive queued
                 // until the release below drains it.
-                timeConfig: { ...forkTimeConfig, agreementTime: 10 }
+                timeBlocks: { ...forkTimeBlocks, agreementTime: 10 }
             });
             await h.assert.sync.peersInSyncWait();
 
@@ -2208,8 +2203,7 @@ describe("E2E: BlockQueueManager", function () {
             // the replay below is what drives the transition.
             await waitFor(
                 async () => (await race.heldSnapshotEventCount()) > 0,
-                h.event.protocolEventTimeoutMs(),
-                50
+                h.event.protocolEventTimeoutMs()
             );
 
             // Release: real reduction back first, then the replayed snapshot
@@ -2261,7 +2255,7 @@ describe("E2E: BlockQueueManager", function () {
             it("missing genesis: no proof to build, sources blacklisted, no dispute", async function () {
                 const h = TestSession.getHarness();
                 await h.lifecycle.start(3, 0, {
-                    timeConfig: {
+                    timeBlocks: {
                         p2pTime: 3,
                         agreementTime: 10,
                         chainFallbackTime: 30,
@@ -2383,7 +2377,7 @@ describe("E2E: BlockQueueManager", function () {
             it("present genesis: builds the WrongGenesis proof and disputes the fork", async function () {
                 const h = TestSession.getHarness();
                 await h.lifecycle.start(3, 0, {
-                    timeConfig: { agreementTime: 10 }
+                    timeBlocks: { agreementTime: 10 }
                 });
                 // Setup only needs block 0 present on the observer - don't
                 // gate on suite-wide finalization (load-flake under parallel).
@@ -2466,7 +2460,7 @@ describe("E2E: BlockQueueManager", function () {
             it("never validates an entry whose fork is not current", async function () {
                 const h = TestSession.getHarness();
                 await h.lifecycle.start(3, 0, {
-                    timeConfig: {
+                    timeBlocks: {
                         p2pTime: 3,
                         agreementTime: 10,
                         chainFallbackTime: 30,
@@ -2693,7 +2687,7 @@ describe("E2E: BlockQueueManager", function () {
         it("schedules the full window fresh, only the remainder after aging, and nothing at the deadline", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
-                timeConfig: {
+                timeBlocks: {
                     p2pTime: 3,
                     agreementTime: 10,
                     chainFallbackTime: 30,

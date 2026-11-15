@@ -1,4 +1,5 @@
 import { StateSnapshot } from "@/models";
+import { BLOCK_TIME_MS } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { tryDecodeCustomError } from "@/utils";
 import { assertReduceLandsAloneThenLatestForkAdopted } from "@test/fixtures/DisputedForkAdoptionStaging";
@@ -52,7 +53,7 @@ describe("E2E: State Snapshots", function () {
     it("off-chain promotion gains dispute standing only after snapshot publication", async () => {
         await assertPromotionDisputeStanding();
     });
-    const forkTimeConfig = {
+    const forkTimeBlocks = {
         p2pTime: 3,
         agreementTime: 2,
         // The shared 6 s evidence window is used on purpose; the window length is not this suite's subject.
@@ -61,7 +62,7 @@ describe("E2E: State Snapshots", function () {
 
     it("should post updated state snapshot on-chain after 3 transitions", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 0, { timeConfig: { agreementTime: 4 } });
+        await h.lifecycle.start(3, 0, { timeBlocks: { agreementTime: 4 } });
         // the leaver posts at its exit block's finality; failing its posts
         // keeps this case's post the only one
         for (const peer of h.peers)
@@ -79,7 +80,7 @@ describe("E2E: State Snapshots", function () {
         await h.event.waitForEventCounts(
             "onStateSnapshotUpdated",
             h.peers.map((peer) => ({ peerId: peer.index, expectedCount: 1 })),
-            10000,
+            h.event.protocolEventTimeoutMs(),
             { mode: "atLeast" }
         );
         await h.assert.snapshot.withdrawalDeltaMatchesExpected();
@@ -90,7 +91,7 @@ describe("E2E: State Snapshots", function () {
     it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - 2 independent snapshot updates", async function () {
         const h = TestSession.getHarness();
         await h.scenario.fourPeersDisputeResolutionAndSnapshotUpdateDetached({
-            timeConfig: { ...forkTimeConfig, agreementTime: 4 }
+            timeBlocks: { ...forkTimeBlocks, agreementTime: 4 }
         });
         // the reduction's adoption post moves the chain snapshot to the
         // reduced fork once the reduce is mined; the stub below also drops
@@ -124,7 +125,7 @@ describe("E2E: State Snapshots", function () {
 
         //  the point of this test is to exercise the multicall path for fork updates
         await h.scenario.fourPeersDisputeResolution({
-            timeConfig: { ...forkTimeConfig, agreementTime: 4 }
+            timeBlocks: { ...forkTimeBlocks, agreementTime: 4 }
         });
         // the reduction's adoption post moves the chain snapshot to the
         // reduced fork once the reduce is mined; the stub below also drops
@@ -161,7 +162,7 @@ describe("E2E: State Snapshots", function () {
 
         // 2 = warm-up transitions the dispute staging needs, not the peer index.
         await h.lifecycle.start(4, 2, {
-            timeConfig: { ...forkTimeConfig, agreementTime: 4 }
+            timeBlocks: { ...forkTimeBlocks, agreementTime: 4 }
         });
         await h.assert.sync.peersInSyncWait();
 
@@ -213,7 +214,7 @@ describe("E2E: State Snapshots", function () {
             "onSetState",
             [targetPeerIndex],
             {
-                durationMs: 5000,
+                durationMs: 5 * BLOCK_TIME_MS,
                 maxCount: 1
             }
         );
@@ -236,8 +237,8 @@ describe("E2E: State Snapshots", function () {
 
         // 2 = warm-up transitions the dispute staging needs, not the peer index.
         await h.lifecycle.start(4, 2, {
-            timeConfig: {
-                ...forkTimeConfig,
+            timeBlocks: {
+                ...forkTimeBlocks,
                 // The target is deliberately paused while the other peers
                 // resolve the first dispute. Keep the resulting fork from
                 // timing out and opening a second dispute before we release
@@ -276,8 +277,7 @@ describe("E2E: State Snapshots", function () {
                         .control(targetPeer)
                         .stub.getHeldReductionTaskCount()
                         .request()) > 0,
-                h.event.protocolEventTimeoutMs(),
-                50
+                h.event.protocolEventTimeoutMs()
             );
             await h
                 .control(targetPeer)
@@ -292,8 +292,7 @@ describe("E2E: State Snapshots", function () {
                             .stub.getPausedReductionStatus()
                             .request()
                     ).entered,
-                h.event.protocolEventTimeoutMs(),
-                50
+                h.event.protocolEventTimeoutMs()
             );
 
             await resolvePromise;
@@ -310,8 +309,7 @@ describe("E2E: State Snapshots", function () {
                             .stub.getPausedReductionStatus()
                             .request()
                     ).settled,
-                h.event.protocolEventTimeoutMs(),
-                50
+                h.event.protocolEventTimeoutMs()
             );
             const reductionStatus = await h
                 .control(targetPeer)
@@ -345,7 +343,7 @@ describe("E2E: State Snapshots", function () {
                 "onSetState",
                 [targetPeerIndex],
                 {
-                    durationMs: 2000,
+                    durationMs: 2 * BLOCK_TIME_MS,
                     maxCount: 1
                 }
             );
@@ -383,7 +381,7 @@ describe("E2E: State Snapshots", function () {
     it("should handle snapshot update at blockHeight = 0 (first snapshot) - edge case since genesis is also height 0", async function () {
         const h = TestSession.getHarness();
 
-        await h.lifecycle.start(3, 0, { timeConfig: { agreementTime: 4 } });
+        await h.lifecycle.start(3, 0, { timeBlocks: { agreementTime: 4 } });
         // the leaver posts at its exit block's finality; failing its posts
         // keeps this case's post the only one
         for (const peer of h.peers)
@@ -401,7 +399,7 @@ describe("E2E: State Snapshots", function () {
         await h.event.waitForEventCounts(
             "onStateSnapshotUpdated",
             h.peers.map((peer) => ({ peerId: peer.index, expectedCount: 1 })),
-            10000,
+            h.event.protocolEventTimeoutMs(),
             { mode: "atLeast" }
         );
 
@@ -424,7 +422,7 @@ describe("E2E: State Snapshots", function () {
         await h.event.waitForEventCounts(
             "onStateSnapshotUpdated",
             honest.map((peerId) => ({ peerId, expectedCount: 1 })),
-            10000,
+            h.event.protocolEventTimeoutMs(),
             { mode: "atLeast" }
         );
 

@@ -1,3 +1,4 @@
+import { BLOCK_TIME_MS } from "@/types";
 import { sleep } from "@/utils";
 import { REDUCTION_ATTEMPT_STUB_FAILURE } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { assertInvalidReductionControl } from "@test/fixtures/InvalidReductionControlFixture";
@@ -87,11 +88,41 @@ describe("ReductionManager", function () {
         expect(hasOperation).to.equal(false);
     });
 
+    it("re-polls a passed reduction trigger once per block and arms a later trigger at its time", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const forkId = h.activeForkId!;
+        const tasks = await h.rpcStub.recordScheduledTasks(0, {
+            suppressPrefix: "reduction-"
+        });
+        try {
+            await h.execOnHost(
+                h.getPeer(0),
+                (sm, args, { Clock }) => {
+                    const now = Clock.getTimeInSeconds();
+                    sm.reductionManager.schedule(args.forkId, now - 5);
+                    sm.reductionManager.schedule(args.forkId, now + 3);
+                },
+                { forkId }
+            );
+
+            const delays = (await tasks.tasks())
+                .filter((task) => task.taskName === `reduction-${forkId}`)
+                .map((task) => task.delayMs);
+            expect(delays[0]).to.equal(BLOCK_TIME_MS);
+            // whole seconds: a clock tick between the two reads shaves one
+            expect(delays[1]).to.be.within(2000, 3000);
+            expect(delays.length).to.equal(2);
+        } finally {
+            await tasks.restore();
+        }
+    });
+
     it("reuses one resolved outcome for duplicate terminal triggers", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({
             peerCount: 4,
-            timeConfig: { evidenceTime: 3 }
+            timeBlocks: { evidenceTime: 3 }
         });
         const staged = await h.dispute.submitFinalDispute({
             maliciousPeerIndex: 1
@@ -136,7 +167,7 @@ describe("ReductionManager", function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({
             peerCount: 4,
-            timeConfig: { evidenceTime: 8 }
+            timeBlocks: { evidenceTime: 8 }
         });
         const targetPeer = h.getPeer(0);
         await h.control(targetPeer).stub.stubHoldReductionTasks().request();
@@ -182,7 +213,7 @@ describe("ReductionManager", function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({
             peerCount: 4,
-            timeConfig: { evidenceTime: 8 }
+            timeBlocks: { evidenceTime: 8 }
         });
         const targetPeer = h.getPeer(0);
         await h.control(targetPeer).stub.stubHoldReductionTasks().request();
@@ -308,7 +339,7 @@ describe("ReductionManager", function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({
                 peerCount: 4,
-                timeConfig: { evidenceTime: 3 }
+                timeBlocks: { evidenceTime: 3 }
             });
             const { query } = h.control(h.getPeer(0));
             // The final dispute is uploaded without its auditing data, so peer
@@ -349,7 +380,7 @@ describe("ReductionManager", function () {
                 );
             }
             // Observe that releasing the held rebuild causes no later chain snapshot write.
-            await sleep(1_000);
+            await sleep(BLOCK_TIME_MS);
             expect(
                 (await h.channelManager.getStateSnapshot(h.channelId)).forkId
             ).to.equal(staged!.forkId);

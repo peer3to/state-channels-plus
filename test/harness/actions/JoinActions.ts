@@ -16,7 +16,6 @@ import type {
 } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
-import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import { TestPeer } from "@test/harness/core/types";
 import {
     JoinChannelConfirmationStruct,
@@ -205,9 +204,7 @@ export class JoinActions<
         // beyond the minimum are paced by the p2p window: enough to keep the
         // writer slot alive, no faster. Otherwise the bound would burn through
         // in a second while a spawn still takes several.
-        const keepAliveMs =
-            resolveTestTimeConfig(this.harness.options.timeConfig).p2pTime *
-            1000;
+        const keepAliveMs = this.harness.options.timeConfig.p2pTime * 1000;
         let blocksAuthored = 0;
         let lastAuthoredAt = 0;
         while (

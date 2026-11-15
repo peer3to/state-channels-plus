@@ -48,7 +48,7 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(4, 2, {
-            timeConfig: { evidenceTime: 8 }
+            timeBlocks: { evidenceTime: 8 }
         });
 
         // peer 1 misbehaves and gets slashed. After fork resolution, peer 1's

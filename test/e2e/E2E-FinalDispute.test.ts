@@ -1,4 +1,4 @@
-import { Status } from "@/types";
+import { BLOCK_TIME_MS, Status } from "@/types";
 import {
     commitmentOf,
     committedDisputeLogs
@@ -12,7 +12,7 @@ describe("E2E: final dispute resolution", function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({
             peerCount: 4,
-            timeConfig: { evidenceTime: 3 }
+            timeBlocks: { evidenceTime: 3 }
         });
 
         const staged = await h.dispute.submitFinalDispute({
@@ -96,7 +96,7 @@ describe("E2E: final dispute resolution", function () {
             peerCount: 4,
             // Keep the leave watchdog out of the way: the leave must settle
             // through its exit turn on the reduced fork, not a fallback dispute.
-            timeConfig: { evidenceTime: 3 }
+            timeBlocks: { evidenceTime: 3 }
         });
         const maliciousPeerIndex = 1;
         const leaver = h.getPeer(2);
@@ -222,7 +222,7 @@ describe("E2E: final dispute resolution", function () {
             peerCount: 4,
             // Keep the ordinary dispute active while the threshold-final
             // payload is assembled under parallel-run load.
-            timeConfig: { evidenceTime: 15 }
+            timeBlocks: { evidenceTime: 15 }
         });
         const targetPeer = h.getPeer(targetPeerIndex);
         await h.control(targetPeer).stub.stubHoldReductionTasks().request();
@@ -258,7 +258,7 @@ describe("E2E: final dispute resolution", function () {
             await h.event.waitWhileEventCountsStayAtMost(
                 "onSetState",
                 [targetPeerIndex],
-                { durationMs: 2000, maxCount: 1 }
+                { durationMs: 2 * BLOCK_TIME_MS, maxCount: 1 }
             );
             expect(
                 await h
@@ -280,7 +280,7 @@ describe("E2E: final dispute resolution", function () {
         const targetPeerIndex = 0;
         await h.scenario.preDisputeSetup({
             peerCount: 4,
-            timeConfig: { evidenceTime: 3 }
+            timeBlocks: { evidenceTime: 3 }
         });
         const staged = await h.dispute.submitFinalDispute({
             maliciousPeerIndex: 1
@@ -307,7 +307,7 @@ describe("E2E: final dispute resolution", function () {
             peerCount: 4,
             // The test posts an ordinary dispute and then assembles a second,
             // threshold-final payload inside the same evidence window.
-            timeConfig: { evidenceTime: 6 }
+            timeBlocks: { evidenceTime: 6 }
         });
         const forkId = await h.dispute.openOrdinaryDisputeWindow({
             maliciousPeerIndex: 1,
@@ -354,7 +354,7 @@ describe("E2E: final dispute resolution", function () {
         const targetPeerIndex = 0;
         await h.scenario.preDisputeSetup({
             peerCount: 4,
-            timeConfig: { evidenceTime: 3 }
+            timeBlocks: { evidenceTime: 3 }
         });
         const restorePreparation =
             await h.rpcStub.failNextFinalDisputePreparation(targetPeerIndex);

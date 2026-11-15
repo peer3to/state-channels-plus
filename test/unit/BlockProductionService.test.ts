@@ -1,11 +1,12 @@
 import { Block } from "@/models";
 import { isRootDisposedError } from "@/rpc/internal/RemoteRoot";
-import { Status } from "@/types";
+import { BLOCK_TIME_MS, Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import { sleep } from "@/utils";
 import { disposeAndRelease } from "@test/fixtures/DisposeCutOffStaging";
 import { clientRootFor } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
+import { ABSENCE_WINDOW_MS } from "@test/harness/actions/EventActions";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
@@ -16,7 +17,7 @@ import { expect } from "chai";
 // small p2pTime makes the authoring window expire in seconds; the long
 // chainFallbackTime keeps the writer-timeout dispute far away while we
 // deliberately author late
-const LATE_AUTHOR_TIME_CONFIG = {
+const LATE_AUTHOR_TIME_BLOCKS = {
     p2pTime: 2,
     agreementTime: 8,
     chainFallbackTime: 20,
@@ -57,10 +58,10 @@ describe("Unit: BlockProductionService", function () {
 
         it("inbound arrived but not yet consumed → returned; once consumed → empty", async function () {
             const h = TestSession.getHarness();
-            // the timeConfig is the one the promotion scenario needs to keep a
+            // the timeBlocks is the one the promotion scenario needs to keep a
             // 2-peer channel serving the spectator's sync
             await h.lifecycle.start(2, 0, {
-                timeConfig: {
+                timeBlocks: {
                     p2pTime: 2,
                     agreementTime: 4,
                     chainFallbackTime: 4,
@@ -212,8 +213,7 @@ describe("Unit: BlockProductionService", function () {
                             };
                             return mutex.queue.length;
                         })) >= 2,
-                    h.event.protocolEventTimeoutMs(),
-                    100
+                    h.event.protocolEventTimeoutMs()
                 );
                 await h.execOnHost(writer, (sm) => sm.mutex.unlock());
                 mutexReleased = true;
@@ -676,7 +676,7 @@ describe("Unit: BlockProductionService", function () {
 
             expect(message).to.contain("Failed to process inbound message");
             await h.event.waitForPeers("onAbort", [writer.index], 1);
-            await sleep(1_000);
+            await sleep(ABSENCE_WINDOW_MS);
             expect(await heights()).to.deep.equal(heightsBefore);
         });
     });
@@ -717,7 +717,7 @@ describe("Unit: BlockProductionService", function () {
                 );
 
             expect(isRootDisposedError(failure)).to.equal(true);
-            await sleep(1_000);
+            await sleep(ABSENCE_WINDOW_MS);
             expect(await heights()).to.deep.equal(heightsBefore);
         });
     });
@@ -780,10 +780,12 @@ describe("Unit: BlockProductionService", function () {
 
             // the stale-timestamp clamp moves it to exactly authoring-time
             // clock + 1, so it is bounded on both sides. The writer's clock
-            // follows chain time and a resync can move it back one second
-            // between authoring and the read, hence the extra second.
+            // follows chain time and a resync can move it back one block time
+            // between authoring and the read, hence the extra block time.
             expect(block!.timestamp).to.be.greaterThan(clockBefore);
-            expect(block!.timestamp).to.be.at.most(clockAfter + 2);
+            expect(block!.timestamp).to.be.at.most(
+                clockAfter + 1 + BLOCK_TIME_MS / 1000
+            );
         });
 
         // the was-in-the-past clamp (timestamp raised to previousTimestamp)
@@ -796,7 +798,7 @@ describe("Unit: BlockProductionService", function () {
         it("authored after the window closed → timestamp clamped back below the local clock", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1, {
-                timeConfig: LATE_AUTHOR_TIME_CONFIG
+                timeBlocks: LATE_AUTHOR_TIME_BLOCKS
             });
             const forkId = h.activeForkId!;
 
@@ -811,7 +813,7 @@ describe("Unit: BlockProductionService", function () {
                 .request();
 
             // let the author's p2pTime window lapse before it writes
-            await sleep((LATE_AUTHOR_TIME_CONFIG.p2pTime + 3) * 1000);
+            await sleep((h.options.timeConfig.p2pTime + 3) * 1000);
 
             const writer = await h.query.getNextPeerToWrite();
             await h.transition.advanceState({ count: 1 });

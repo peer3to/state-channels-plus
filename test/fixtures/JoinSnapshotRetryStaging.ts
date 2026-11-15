@@ -267,8 +267,9 @@ export async function joinFullChannel(
         h,
         await remoteThresholdPeerIndices(h, joiner.index)
     );
+    // the head block can hold an earlier join, so only later blocks count
     const fromBlock =
-        await joiner.p2pInstance.chainSigner.provider!.getBlockNumber();
+        (await joiner.p2pInstance.chainSigner.provider!.getBlockNumber()) + 1;
     const [participantsAtConnect, pendingAtConnect] = await Promise.all([
         h.channelManager.getParticipants(h.channelId),
         h.channelManager.getPendingParticipants(h.channelId)

@@ -366,7 +366,7 @@ export async function applyGenesisCaseWindowSyncPayload(
                           RUN_SDK_IN_THREAD: true,
                           VM_DEDICATED_THREAD: false
                       },
-                      timeConfig: { evidenceTime: 30 },
+                      timeBlocks: { evidenceTime: 30 },
                       skipEvidenceWait: true
                   }
                 : {})

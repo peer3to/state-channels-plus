@@ -1617,7 +1617,7 @@ describe("Unit: SpectateService", function () {
                         RUN_SDK_IN_THREAD: true,
                         VM_DEDICATED_THREAD: false
                     },
-                    timeConfig: { evidenceTime: 30 },
+                    timeBlocks: { evidenceTime: 30 },
                     skipEvidenceWait: true
                 });
             const requester = h.getPeer(2);

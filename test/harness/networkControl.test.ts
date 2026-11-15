@@ -1,6 +1,7 @@
 import { Status } from "@/types";
 import { Codec, sleep, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import { ABSENCE_WINDOW_MS } from "@test/harness/actions/EventActions";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -31,7 +32,7 @@ describe("harness network control", function () {
         await h.lifecycle.start(2, 0);
 
         await h.network.blacklistAndDisconnectPeer(1);
-        await sleep(600);
+        await sleep(ABSENCE_WINDOW_MS);
 
         expect(
             await h

@@ -6,6 +6,7 @@ import { deployFullStack } from "../../../scripts/V1/deploy";
 import { EvmStateMachine } from "@/evm";
 import type P2pInstance from "@/evm/P2pInstance";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import { deriveTimeConfig } from "@/types";
 import { Codec, LocalDiscoveryServer, SignatureUtils, Type } from "@/utils";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import type {
@@ -43,13 +44,7 @@ import path from "node:path";
 let hardhatNodeUrl = process.env.HARDHAT_NODE_URL;
 let localDiscoveryRegistryUrl = process.env.LOCAL_DISCOVERY_REGISTRY_URL;
 
-const TEST_TIME_CONFIG = {
-    p2pTime: 1,
-    agreementTime: 10,
-    chainFallbackTime: 2,
-    evidenceTime: 2
-};
-const TEST_PROTOCOL_TIMEOUT_MS = protocolEventTimeoutMs(TEST_TIME_CONFIG, {
+const TEST_PROTOCOL_TIMEOUT_MS = protocolEventTimeoutMs(deriveTimeConfig(), {
     withFirstBlockGrace: true
 });
 const DEFAULT_HARDHAT_MNEMONIC =
@@ -131,7 +126,6 @@ export async function assertCustomRpcRuntimeFlow(
             consumerFacetArtifact: MathConsumerFacetArtifact,
             stateMachineArgs: [5_000_000, DEFAULT_MAX_CHANNEL_PARTICIPANTS],
             consumerFacetArgs: [],
-            timeConfig: TEST_TIME_CONFIG,
             disputeExecutionGasLimit: 1_000_000
         });
 

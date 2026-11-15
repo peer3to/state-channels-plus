@@ -19,6 +19,7 @@ import type { RpcResponse } from "@/rpc/Rpc";
 import NetworkTransport from "@/transport/NetworkTransport";
 import { TransportType } from "@/transport/TransportType";
 import { getChecksumAddress } from "@/utils";
+import { HOLD_FOREVER_MS } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 
 class GuardTransport extends NetworkTransport {
     public transportType = TransportType.HOLEPUNCH;
@@ -690,7 +691,10 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
     public async probeHandshakeWaitDisposal(): Promise<HandshakeWaitDisposalProbe> {
         const transport = new GuardTransport(this.p2pManager);
         const init = this.p2pManager.localRpc.initHandshakeService;
-        const pending = init.waitForHandshakeCompleted(transport, 600_000);
+        const pending = init.waitForHandshakeCompleted(
+            transport,
+            HOLD_FOREVER_MS
+        );
         init.dispose();
         return { pendingCompleted: await pending };
     }

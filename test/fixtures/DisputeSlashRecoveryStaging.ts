@@ -98,7 +98,8 @@ export async function assertKilledOpenerSubmissionRace(
             ).to.not.include(spammer.address);
         }
         const [killedLog] = await h.channelManager.queryFilter(
-            h.channelManager.filters.DisputeKilled(h.channelId)
+            h.channelManager.filters.DisputeKilled(h.channelId),
+            h.channelOpeningBlock
         );
         if (!killedLog) throw new Error("The opener kill log is missing");
         const slashTimestamp = (await killedLog.getBlock()).timestamp;
@@ -334,7 +335,8 @@ export async function assertRecoveredSlashTimestampAndDedup(
             return;
         }
         const [log] = await h.channelManager.queryFilter(
-            h.channelManager.filters.DisputeKilled(h.channelId)
+            h.channelManager.filters.DisputeKilled(h.channelId),
+            h.channelOpeningBlock
         );
         const timestamp = (await log.getBlock()).timestamp;
         const result = await h.execOnHost(

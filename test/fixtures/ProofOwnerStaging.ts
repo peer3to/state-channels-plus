@@ -1730,7 +1730,7 @@ export async function stageUninstalledFinalReducedFork(
 }> {
     await h.scenario.preDisputeSetup({
         peerCount: 4,
-        timeConfig: { evidenceTime: 3 }
+        timeBlocks: { evidenceTime: 3 }
     });
     for (const index of [1, 2, 3])
         await h

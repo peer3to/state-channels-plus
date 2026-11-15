@@ -86,7 +86,7 @@ describe("E2E: Spectate Service", function () {
             const harness = TestSession.getHarness();
             await harness.lifecycle.start(3, 0, {
                 autoConnect: false,
-                timeConfig: {
+                timeBlocks: {
                     agreementTime: 10,
                     p2pTime: 2,
                     chainFallbackTime: 2,
@@ -385,7 +385,7 @@ describe("E2E: Spectate Service", function () {
         it("spectate atomic persistence and setState", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
-                timeConfig: {
+                timeBlocks: {
                     p2pTime: 5,
                     agreementTime: 3,
                     chainFallbackTime: 2,
@@ -558,7 +558,7 @@ describe("E2E: Spectate Service", function () {
         it("skips latest state persistence when local storage is already ahead", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
-                timeConfig: {
+                timeBlocks: {
                     p2pTime: 5,
                     agreementTime: 3,
                     chainFallbackTime: 2,
@@ -642,7 +642,7 @@ describe("E2E: Spectate Service", function () {
         it("aborts spectating when a finalized sync block conflicts with storage", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 0, {
-                timeConfig: {
+                timeBlocks: {
                     p2pTime: 5,
                     agreementTime: 3,
                     chainFallbackTime: 2,
@@ -837,7 +837,7 @@ describe("E2E: Spectate Service", function () {
         it("should spectate successfully even when it must traverse forks (dispute -> reduced fork)", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(5, 0, {
-                timeConfig: {
+                timeBlocks: {
                     p2pTime: 30,
                     agreementTime: 2,
                     chainFallbackTime: 2,
@@ -940,7 +940,7 @@ describe("E2E: Spectate Service", function () {
         it("pre-dispute spectator disconnects after resolve; post-dispute joiner syncs from surviving honest responders", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 0, {
-                timeConfig: {
+                timeBlocks: {
                     p2pTime: 5,
                     agreementTime: 2,
                     chainFallbackTime: 2,
@@ -1162,7 +1162,7 @@ describe("E2E: Spectate Service", function () {
     });
 
     describe("Concurrent promotion", function () {
-        const concurrentTimeConfig = {
+        const concurrentTimeBlocks = {
             p2pTime: 6, // 2s too low for joinChannelWait
             agreementTime: 4,
             chainFallbackTime: 4,
@@ -1172,7 +1172,7 @@ describe("E2E: Spectate Service", function () {
         it("joinChannel before forceInboundJoin → both joiners participate", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
-                timeConfig: concurrentTimeConfig
+                timeBlocks: concurrentTimeBlocks
             });
 
             // Spectating is asynchronous to the channel: participants author
@@ -1231,7 +1231,7 @@ describe("E2E: Spectate Service", function () {
         it("forceInboundJoin before joinChannel → the pre-signed confirmation reverts ErrorJoinChannelConfirmationNotThresholdSigned, and joinChannel collects it again once with the pending participant's countersignature and lands", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
-                timeConfig: concurrentTimeConfig
+                timeBlocks: concurrentTimeBlocks
             });
 
             // Spawn-only, classified (plan 30 item 5): no transition is scheduled until
@@ -1365,7 +1365,7 @@ describe("E2E: Spectate Service", function () {
         it("survives dispute on reduced fork", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
-                timeConfig: {
+                timeBlocks: {
                     p2pTime: 2,
                     agreementTime: 4,
                     chainFallbackTime: 2,
@@ -1578,7 +1578,7 @@ describe("E2E: Spectate Service", function () {
         it("serves a newer sync payload when the minimum is the leave-block height", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 0, {
-                timeConfig: {
+                timeBlocks: {
                     p2pTime: 5,
                     agreementTime: 10,
                     chainFallbackTime: 2,
@@ -1719,7 +1719,7 @@ describe("E2E: Spectate Service", function () {
         it("serves a newer sync payload across a leave above the minimum height", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 0, {
-                timeConfig: {
+                timeBlocks: {
                     p2pTime: 5,
                     agreementTime: 10,
                     chainFallbackTime: 2,

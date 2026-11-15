@@ -349,7 +349,7 @@ describe("JoinChannel signature requests", function () {
         // evidenceTime + p2pTime after genesis; on a loaded farm two spawns
         // and the grace waits outlast the default, so this channel models a
         // long p2p window and keeps the agreement window the grace uses.
-        await h.lifecycle.start(2, 0, { timeConfig: { p2pTime: 30 } });
+        await h.lifecycle.start(2, 0, { timeBlocks: { p2pTime: 30 } });
         const joiner = await h.join.addSpectatorDetached();
         const nonUnionSigner = await h.join.addSpectatorDetached();
         await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
