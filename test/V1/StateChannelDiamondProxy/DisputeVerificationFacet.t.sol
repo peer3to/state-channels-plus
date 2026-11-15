@@ -1520,9 +1520,9 @@ contract DisputeVerificationFacetTest is DiamondHarness {
             address(new StateProofFacet()),
             address(utilityFacet),
             P2P_TIME,
-            0,
-            0,
-            0,
+            AGREEMENT_TIME,
+            CHAIN_FALLBACK_TIME,
+            EVIDENCE_TIME,
             gasLimit,
             MAX_CHANNEL_PARTICIPANTS
         );

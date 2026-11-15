@@ -8,8 +8,9 @@ Exercises: [StateChannelManagerProxy.sol](../../../../../implementation/source/c
 The harness exercises constructor route registration directly. It proves duplicate registration
 reverts with the full selector payload, a codeless route target reverts with the exact selector and
 address, and a selector registered to a deployed `UtilityFacet` executes through the proxy.
-A shared `_deployUtilityProxy` helper deploys the utility-backed proxy for the constructor and
-calldata-posting cases alike. The posting cases prove the canonical boundary: a trailing-word post
+A shared `_deployUtilityProxyWithTimes` helper deploys the utility-backed proxy with chosen
+protocol windows for the constructor and calldata-posting cases alike; two cases read the windows
+back and prove the proxy stores exactly what it is given, zeros included. The posting cases prove the canonical boundary: a trailing-word post
 reverts with `ErrorNonCanonicalEncoding` and stores no commitment, while a canonical post stores the
 signed-block/timestamp commitment, including a retry at a previously rejected key.
 
@@ -20,3 +21,5 @@ signed-block/timestamp commitment, including a retry at a previously rejected ke
 - `test_routedSelector_executesOnFacet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P33
 - `test_postBlockCalldata_rejectsNonCanonicalWithoutCommitment`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P21
 - `test_postBlockCalldata_canonicalStoresCommitment`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P22
+- `test_constructor_storesThePassedWindows`: REQ-TIME-7-2J5T0J.T1.P3
+- `test_constructor_storesZeroWindowsWithoutADefault`: REQ-TIME-7-2J5T0J.T1.P4

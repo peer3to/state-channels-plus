@@ -22,11 +22,6 @@ import "./UtilityFacet.sol";
 /// `_facetForSelector` and delegatecalled from the fallback. The full external
 /// surface is declared on `StateChannelManagerInterface` for callers to bind.
 contract StateChannelManagerProxy is StateChannelCommon {
-    // Default time values
-    uint256 private constant DEFAULT_P2P_TIME = 15;
-    uint256 private constant DEFAULT_AGREEMENT_TIME = 5;
-    uint256 private constant DEFAULT_CHAIN_FALLBACK_TIME = 30;
-    uint256 private constant DEFAULT_EVIDENCE_TIME = 30;
     uint256 private constant DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
     uint256 private constant DEFAULT_MAX_CHANNEL_PARTICIPANTS = 32;
 
@@ -124,10 +119,10 @@ contract StateChannelManagerProxy is StateChannelCommon {
         _registerRoute(UtilityFacet.isGenesisSnapshotWithoutTimeCheck.selector, _utilityFacet);
         _registerRoute(UtilityFacet.isSnapshotNewer.selector, _utilityFacet);
 
-        p2pTime = _p2pTime == 0 ? DEFAULT_P2P_TIME : _p2pTime;
-        agreementTime = _agreementTime == 0 ? DEFAULT_AGREEMENT_TIME : _agreementTime;
-        chainFallbackTime = _chainFallbackTime == 0 ? DEFAULT_CHAIN_FALLBACK_TIME : _chainFallbackTime;
-        evidenceTime = _evidenceTime == 0 ? DEFAULT_EVIDENCE_TIME : _evidenceTime;
+        p2pTime = _p2pTime;
+        agreementTime = _agreementTime;
+        chainFallbackTime = _chainFallbackTime;
+        evidenceTime = _evidenceTime;
         gasLimit = _disputeExecutionGasLimit == 0 ? DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT : _disputeExecutionGasLimit;
         maxChannelParticipants =
             _maxChannelParticipants == 0 ? DEFAULT_MAX_CHANNEL_PARTICIPANTS : _maxChannelParticipants;

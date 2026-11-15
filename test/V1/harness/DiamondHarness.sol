@@ -26,8 +26,12 @@ abstract contract DiamondHarness is Test {
     MathConsumerFacet internal consumerFacet;
     StateChannelManagerInterface internal deployedDiamond;
 
-    // non-zero so tests check against a known value, not the contract default
+    // non-zero so tests check against a known value
     uint256 internal constant P2P_TIME = 100;
+    // the proxy stores the windows it is given, with no default for zero
+    uint256 internal constant AGREEMENT_TIME = 5;
+    uint256 internal constant CHAIN_FALLBACK_TIME = 30;
+    uint256 internal constant EVIDENCE_TIME = 30;
     uint256 internal constant SM_GAS_LIMIT = 3_000_000;
     uint256 internal constant MAX_CHANNEL_PARTICIPANTS = 32;
 
@@ -80,9 +84,9 @@ abstract contract DiamondHarness is Test {
                         address(utilityFacet),
                         address(consumerFacet),
                         P2P_TIME,
-                        0, // agreementTime  -> contract default
-                        0, // chainFallbackTime -> default
-                        0, // evidenceTime -> default
+                        AGREEMENT_TIME,
+                        CHAIN_FALLBACK_TIME,
+                        EVIDENCE_TIME,
                         0, // disputeExecutionGasLimit -> default
                         MAX_CHANNEL_PARTICIPANTS
                     )

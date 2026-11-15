@@ -42,6 +42,15 @@ contract DuplicateRouteRegistrationHarness is StateChannelManagerProxy {
 
 contract StateChannelManagerProxyRegistrationTest is Test {
     function _deployUtilityProxy() internal returns (StateChannelManagerProxy proxy) {
+        return _deployUtilityProxyWithTimes(5, 3, 5, 20);
+    }
+
+    function _deployUtilityProxyWithTimes(
+        uint256 p2pTime,
+        uint256 agreementTime,
+        uint256 chainFallbackTime,
+        uint256 evidenceTime
+    ) internal returns (StateChannelManagerProxy proxy) {
         UtilityFacet utilityFacet = new UtilityFacet();
         proxy = new StateChannelManagerProxy(
             address(1),
@@ -54,10 +63,10 @@ contract StateChannelManagerProxyRegistrationTest is Test {
             address(utilityFacet),
             address(utilityFacet),
             address(10),
-            0,
-            0,
-            0,
-            0,
+            p2pTime,
+            agreementTime,
+            chainFallbackTime,
+            evidenceTime,
             0,
             0
         );
@@ -149,6 +158,26 @@ contract StateChannelManagerProxyRegistrationTest is Test {
     function test_routedSelector_executesOnFacet() public {
         StateChannelManagerProxy proxy = _deployUtilityProxy();
 
-        assertEq(StateChannelManagerInterface(address(proxy)).getP2pTime(), 15);
+        assertEq(StateChannelManagerInterface(address(proxy)).getP2pTime(), 5);
+    }
+
+    function test_constructor_storesThePassedWindows() public {
+        StateChannelManagerInterface proxy =
+            StateChannelManagerInterface(address(_deployUtilityProxyWithTimes(7, 4, 6, 21)));
+
+        assertEq(proxy.getP2pTime(), 7);
+        assertEq(proxy.getAgreementTime(), 4);
+        assertEq(proxy.getChainFallbackTime(), 6);
+        assertEq(proxy.getEvidenceTime(), 21);
+    }
+
+    function test_constructor_storesZeroWindowsWithoutADefault() public {
+        StateChannelManagerInterface proxy =
+            StateChannelManagerInterface(address(_deployUtilityProxyWithTimes(0, 0, 0, 0)));
+
+        assertEq(proxy.getP2pTime(), 0);
+        assertEq(proxy.getAgreementTime(), 0);
+        assertEq(proxy.getChainFallbackTime(), 0);
+        assertEq(proxy.getEvidenceTime(), 0);
     }
 }
