@@ -69,6 +69,17 @@ export async function loadBrowserTestDependency(name) {
     }
 }
 
+/** An SDK source module loaded in the gate's Node process through Vite, as the pages load `src`. */
+export async function loadSdkSource(sourcePath) {
+    const { runnerImport } = await loadBrowserTestDependency("vite");
+    const { module } = await runnerImport(path.join(projectRoot, sourcePath), {
+        configFile: false,
+        logLevel: "silent",
+        resolve: { alias: platformAliases }
+    });
+    return module;
+}
+
 // Dependencies the SDK workers import. Vite's scan starts from the gate's page
 // and does not follow worker URLs, so a dependency found later re-optimizes
 // and reloads the page under a running scenario.

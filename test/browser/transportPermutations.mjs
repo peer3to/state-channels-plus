@@ -1,18 +1,19 @@
 // @spec-test-coverage-ignore: shared driver of the transport permutation gates; evidence is mapped from run-transport-*-e2e.mjs
 import {
     loadBrowserTestDependency,
+    loadSdkSource,
     startBrowserGateServer
 } from "./browserGateServer.mjs";
 import { launchChromium } from "./chromiumLaunch.js";
 import { startLocalDiscoveryRelayHub } from "./localDiscoveryRelayHub.mjs";
 import { startLocalHolepunch } from "./localHolepunch.js";
 import { startSdkRuntimeServer } from "./sdkRuntimeServer.mjs";
-import { deriveTimeConfig } from "../../dist/src/types/time.js";
 import { ethers } from "ethers";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+const { deriveTimeConfig } = await loadSdkSource("src/types/time.ts");
 // sdkSetup.js deploys the derived windows: the waits below are counted in agreement windows.
 const AGREEMENT_MS = deriveTimeConfig().agreementTime * 1000;
 const HOLEPUNCH = 0;

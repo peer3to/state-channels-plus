@@ -1,6 +1,5 @@
 // @spec-test-coverage-ignore: browser test infrastructure; executable evidence is in the browser worker and WebRTC gates
-// the built SDK constant (`yarn test:parallel:build` or `yarn build` writes dist)
-import { BLOCK_TIME_MS } from "../../dist/src/types/time.js";
+import { loadSdkSource } from "./browserGateServer.mjs";
 import { ethers } from "ethers";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -12,6 +11,7 @@ const projectRoot = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "../.."
 );
+const { BLOCK_TIME_MS } = await loadSdkSource("src/types/time.ts");
 
 /**
  * Each browser gate owns its node, including its interval-mining setting.

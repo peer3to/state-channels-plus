@@ -37,8 +37,9 @@ Released provider lifecycle
 
 Sync tolerance of one block time
 
-- Setup: Init the Clock against a private node whose head is several blocks ahead of the wall clock, and against one whose head is at the wall clock
-- Oracle: Past one block time the adjustment moves the estimate to within one block time of the head; within one block time the adjustment stays 0
+- Setup: Init the Clock against a private node whose head is several blocks ahead of the wall clock, one whose head trails it by more than one block time, and one whose head is at the wall clock
+- Oracle: Past one block time either way the adjustment moves the estimate to within one block time of the head; within one block time the adjustment stays 0
 
 - [x] `UNIT-TEST-CLOCK-SYNC-1-WE3BF6.P1` — head more than one block time ahead → adjusted to within one block time of the head
 - [x] `UNIT-TEST-CLOCK-SYNC-1-WE3BF6.P2` — head within one block time → no adjustment
+- [x] `UNIT-TEST-CLOCK-SYNC-1-WE3BF6.P3` — head more than one block time behind → adjusted back to within one block time of the head

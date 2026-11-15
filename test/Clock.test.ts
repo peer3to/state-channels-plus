@@ -4,6 +4,7 @@ import {
     mineBlocks,
     withIsolatedHardhatNode
 } from "@test/fixtures/node/IsolatedHardhatNode";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { BrowserProvider } from "ethers";
 import { ethers, network } from "hardhat";
@@ -114,6 +115,35 @@ describe("Clock", () => {
                     expect(
                         Math.abs(Clock.getTimeInSeconds() - head.timestamp)
                     ).to.be.at.most(BLOCK_TIME_MS / 1000);
+                },
+                { seal: "manual" }
+            );
+        } finally {
+            await Clock.init(ethers.provider);
+        }
+    });
+
+    it("adjusts back to a head more than one block time behind the wall clock", async () => {
+        const blockSeconds = BLOCK_TIME_MS / 1000;
+        try {
+            await withIsolatedHardhatNode(
+                async (node) => {
+                    await mineBlocks(node, 1);
+                    const head = (await node.getBlock("latest"))!;
+                    await waitFor(
+                        () =>
+                            Math.floor(Date.now() / 1000) - head.timestamp >
+                            2 * blockSeconds
+                    );
+
+                    await Clock.init(node);
+
+                    expect(Clock.getClockAdjustmentSeconds()).to.be.lessThan(
+                        -blockSeconds
+                    );
+                    expect(
+                        Math.abs(Clock.getTimeInSeconds() - head.timestamp)
+                    ).to.be.at.most(blockSeconds);
                 },
                 { seal: "manual" }
             );
