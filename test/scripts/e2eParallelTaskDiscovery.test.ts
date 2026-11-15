@@ -259,6 +259,37 @@ describe("parallel Mocha task discovery", function () {
         }
     });
 
+    it("decodes escaped quotes in describe and it titles so the task grep matches the title Mocha runs", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "mocha-escapes-"));
+        const testDir = path.join(root, "test");
+        fs.mkdirSync(testDir, { recursive: true });
+        fs.writeFileSync(
+            path.join(testDir, "quoted.test.ts"),
+            String.raw`describe('it\'s "quoted"', () => { it("reports its \"Delegatecall failed\" error", () => {}); it(` +
+                "`a \\`tick\\``" +
+                ", () => {}); });"
+        );
+
+        try {
+            const { tasks } = discoverTasks(testDir);
+            const mochaTitles = [
+                `it's "quoted" reports its "Delegatecall failed" error`,
+                'it\'s "quoted" a `tick`'
+            ];
+            expect(tasks.map((task) => task.fullTitle)).to.deep.equal(
+                mochaTitles
+            );
+            for (const [index, task] of tasks.entries()) {
+                const grep = task.args[task.args.indexOf("--grep") + 1];
+                expect(new RegExp(grep).test(mochaTitles[index])).to.equal(
+                    true
+                );
+            }
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("supports a consumer-defined test filename pattern", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "mocha-pattern-"));
         const testDir = path.join(root, "test");

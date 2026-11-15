@@ -8,12 +8,13 @@ const { Project, SyntaxKind } = require("ts-morph");
 const { MAX_LOG_NAME_LEN } = require("./constants");
 const { TASK_RUNNERS } = require("./taskRunners");
 
+// the title Mocha sees: escapes such as \" decoded, not the source text
 function getStringLiteralValue(node) {
-    if (node.getKind() === SyntaxKind.StringLiteral) {
-        return node.getText().slice(1, -1); // Remove quotes
-    }
-    if (node.getKind() === SyntaxKind.NoSubstitutionTemplateLiteral) {
-        return node.getText().slice(1, -1); // Remove backticks
+    if (
+        node.getKind() === SyntaxKind.StringLiteral ||
+        node.getKind() === SyntaxKind.NoSubstitutionTemplateLiteral
+    ) {
+        return node.getLiteralValue();
     }
     return null;
 }
