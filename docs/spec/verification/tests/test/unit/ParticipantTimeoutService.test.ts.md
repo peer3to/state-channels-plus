@@ -34,6 +34,7 @@ for the old fork.
 - `a due claim whose minimum the chain head has not reached is held: nothing stored or sent`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P41, REQ-TIME-8-VK08CB.T1.P1
 - `a held claim is sent once the chain head reaches its minimum, and the chain accepts that first upload`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P42, REQ-TIME-8-VK08CB.T1.P2
 - `a dispute window opened while the claim waits, before its minimum, still keeps it from being stored or sent`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P43, REQ-TIME-8-VK08CB.T1.P3
+- `a failed chain head read re-arms the check with nothing stored or sent, and the claim is sent once the head reaches its minimum`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P45, REQ-TIME-8-VK08CB.T1.P6
 - `runtime disposed while the claim waits for the chain head → it is never sent`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P44, REQ-TIME-8-VK08CB.T1.P4
 - `the writer block arrives before retry → no second submission`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P7, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P4
 - `a plain check meets a valid posted block still in confirmation → no dispute, then the block is stored`: REQ-DISPUTE-PIPE-12-F85KF2.T1.P1, UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P17

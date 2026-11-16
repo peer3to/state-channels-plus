@@ -3,6 +3,7 @@ import { syncTargetToUnpostedReduction } from "./ReductionForkSwitchStaging";
 import { runtimeIsClosed } from "./RuntimeRootObservation";
 import Clock from "@/Clock";
 import {
+    CHAIN_READ_FAILED_RECHECK_REASON,
     EARLY_TIMEOUT_RECHECK_REASON,
     HEAD_BEHIND_RECHECK_REASON,
     MISMATCH_TIMEOUT_RECHECK_REASON,
@@ -297,10 +298,12 @@ export async function assertConsecutiveMismatchRetry(
  * - "disposed": the runtime is disposed while the claim waits; it is never sent.
  * - "window": a dispute window opens while the claim waits, before its
  *   minimum; the claim is never stored or sent.
+ * - "readFailed": the head read fails twice; the check re-arms with nothing
+ *   stored or sent, then waits for the head and is sent once.
  */
 export async function assertTimeoutClaimWaitsForChainHead(
     h: MathPeerTestHarness,
-    outcome: "held" | "sent" | "disposed" | "window"
+    outcome: "held" | "sent" | "disposed" | "window" | "readFailed"
 ): Promise<void> {
     await h.lifecycle.timeoutSetup(3);
     // peer 0 authors height 0; observer 2 will time out writer 1
@@ -320,13 +323,13 @@ export async function assertTimeoutClaimWaitsForChainHead(
         { forkId, writer: writer.address }
     );
     const minimum = previous.relevant + timeoutWaitTime(previous.timeConfig, 1);
-    const held =
-        outcome === "sent"
-            ? undefined
-            : await h.rpcStub.holdScheduledTasks(
-                  observer.index,
-                  HEAD_BEHIND_RECHECK_REASON
-              );
+    const sends = outcome === "sent" || outcome === "readFailed";
+    const held = sends
+        ? undefined
+        : await h.rpcStub.holdScheduledTasks(
+              observer.index,
+              HEAD_BEHIND_RECHECK_REASON
+          );
     const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
     const uploads = await h.rpcStub.recordDisputeSubmissions(observer.index, {
         forward: true
@@ -339,6 +342,11 @@ export async function assertTimeoutClaimWaitsForChainHead(
         )
         .request();
     let disposed = false;
+    if (outcome === "readFailed")
+        await h
+            .control(observer)
+            .stub.stubFailChainReads("getBlockchainTime", 2)
+            .request();
     try {
         await h.execOnHost(
             observer,
@@ -353,7 +361,23 @@ export async function assertTimeoutClaimWaitsForChainHead(
             { forkId, writer: writer.address },
             { timeoutMs: h.event.hostExecTimeoutMs() }
         );
-        if (outcome === "sent") {
+        if (outcome === "readFailed") {
+            // the failed head read re-armed the check; nothing went out
+            await waitFor(
+                async () =>
+                    (await tasks.tasks()).some((task) =>
+                        task.taskName.startsWith(
+                            CHAIN_READ_FAILED_RECHECK_REASON
+                        )
+                    ),
+                h.event.hostExecTimeoutMs()
+            );
+            expect(await uploads.submissions()).to.deep.equal([]);
+            expect(
+                await h.control(observer).query.getTimeout(forkId).request()
+            ).to.equal(null);
+        }
+        if (sends) {
             await h.assert.dispute.committedWait({
                 peersIndices: [observer.index],
                 expectedCount: 1,
@@ -369,6 +393,13 @@ export async function assertTimeoutClaimWaitsForChainHead(
                 Codec.decode(first.encodedDispute, Type.Dispute).input.timeout
                     .participant
             ).to.equal(writer.address);
+            if (outcome === "readFailed")
+                expect(
+                    await h
+                        .control(observer)
+                        .stub.getChainReadObservation()
+                        .request()
+                ).to.deep.include({ failed: 2 });
             return;
         }
         await waitFor(
@@ -444,6 +475,7 @@ export async function assertTimeoutClaimWaitsForChainHead(
     } finally {
         // a disposed runtime ends with its holds
         if (!disposed) {
+            await h.control(observer).stub.restoreChainReadFailures().request();
             await h.control(observer).stub.releaseClockOffset().request();
             await held?.release(false);
             await uploads.restore();

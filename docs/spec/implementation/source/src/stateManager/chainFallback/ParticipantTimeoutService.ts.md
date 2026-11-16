@@ -54,3 +54,4 @@
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P42` — a held claim is sent once the chain head reaches its minimum, and the chain accepts that first upload
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P43` — a dispute window opened while the claim waits, before its minimum, still keeps it from being stored or sent
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P44` — runtime disposed while the claim waits for the chain head → it is never sent
+- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P45` — a failed chain head read re-arms the check with nothing stored or sent, and the claim is sent once the head reaches its minimum

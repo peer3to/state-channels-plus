@@ -4069,7 +4069,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         method:
             | "getBlockCallDataCommitment"
             | "getDisputeWindowCreationTimestamp"
-            | "getReducedResult",
+            | "getReducedResult"
+            | "getBlockchainTime",
         times: number
     ): boolean {
         this.service.stubFailChainReads(method, times);

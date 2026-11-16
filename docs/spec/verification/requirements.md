@@ -987,7 +987,7 @@ Specification cases tested: 2/2.
 Specification cases tested: 5/5.
 
 [`REQ-TIME-8-VK08CB` (A participant submits a timeout claim only once the chain head's timestamp has…)](../specification/protocol-model/time.md#req-time-8-vk08cb)
-Specification cases tested: 5/5.
+Specification cases tested: 6/6.
 
 [`REQ-TJOIN-1-5VGR1F` (Independent public options)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f)
 Specification cases tested: 8/8.

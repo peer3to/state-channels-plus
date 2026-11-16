@@ -1,6 +1,7 @@
 import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import { Status } from "@/types";
 import { MathTestSession as TestSession } from "@test/harness";
+import { SHORT_TIME_BLOCKS } from "@test/harness/core/testTimeConfig";
 import { expect } from "chai";
 
 // A non-participant that sends a spectator a block it must reject is dropped
@@ -10,7 +11,8 @@ import { expect } from "chai";
 // cannot prove its own block fails that sync -> one counted close, no verdict.
 // A relayed outsider-authored block reaches the author check on the live queue.
 
-const LIVE_FORK_TIME = { chainFallbackTime: 12 };
+// near their seconds at one-second blocks; the fallback holds the live fork
+const LIVE_FORK_TIME = { ...SHORT_TIME_BLOCKS, chainFallbackTime: 6 };
 
 describe("E2E: spectating strategy junk-block handling", function () {
     it("cuts the sender of an unauthenticated junk block and keeps a SYNCED spectator running", async function () {

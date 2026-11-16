@@ -251,6 +251,13 @@ describe("Unit: ParticipantTimeoutService", function () {
             );
         });
 
+        it("a failed chain head read re-arms the check with nothing stored or sent, and the claim is sent once the head reaches its minimum", async function () {
+            await assertTimeoutClaimWaitsForChainHead(
+                TestSession.getHarness(),
+                "readFailed"
+            );
+        });
+
         it("runtime disposed while the claim waits for the chain head → it is never sent", async function () {
             await assertTimeoutClaimWaitsForChainHead(
                 TestSession.getHarness(),
