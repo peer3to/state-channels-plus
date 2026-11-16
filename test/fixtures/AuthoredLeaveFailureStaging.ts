@@ -17,9 +17,10 @@ export async function assertAuthoredLeaveFallback(
 ) {
     const h = TestSession.getHarness();
     await h.lifecycle.start(3, 0, {
-        timeBlocks: { evidenceTime: 20 },
-        // the production default
-        configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 15 * BLOCK_TIME_MS }
+        // near their seconds at one-second blocks: half the evidence blocks
+        // and half the production default's 15-block watchdog
+        timeBlocks: { evidenceTime: 10 },
+        configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 8 * BLOCK_TIME_MS }
     });
     const leaver = h.getPeer(1);
     const forkId = h.activeForkId!;

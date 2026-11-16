@@ -5,7 +5,7 @@ import { MathTestSession as TestSession } from "@test/harness";
  * every honest survivor stays in sync the whole way through.
  */
 
-const TIME = { evidenceTime: 10 };
+const TIME = { evidenceTime: 5 };
 
 describe("E2E: dispute validation / reducedForkTimestampMismatch", function () {
     it("fork A→B→C: two reductions then sustained honest activity → all survivors stay in sync", async function () {

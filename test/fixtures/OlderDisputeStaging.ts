@@ -8,6 +8,7 @@ import {
 } from "@/types";
 import type { ForkId } from "@/types/types";
 import { addressesEqual, Codec, Type } from "@/utils";
+import { SHORT_TIME_BLOCKS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { expect } from "chai";
@@ -306,7 +307,11 @@ export async function readAccusedBlock(
  * test ends.
  */
 export async function stageDepartedEligibleLeaver(h: MathPeerTestHarness) {
-    await h.scenario.preDisputeSetup({ peerCount: 4, transitionCount: 2 });
+    await h.scenario.preDisputeSetup({
+        peerCount: 4,
+        transitionCount: 2,
+        timeBlocks: SHORT_TIME_BLOCKS
+    });
     const forkId = h.activeForkId!;
     const alice = await h.query.getNextPeerToWrite();
     const remaining = h.peers

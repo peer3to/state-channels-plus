@@ -25,7 +25,7 @@ import { ZeroAddress } from "ethers";
  * uploaded `LATE_MARGIN_SECONDS` before the evidence period of
  * `EVIDENCE_TIME` seconds closes, after the higher state was admitted.
  */
-const EVIDENCE_TIME = 15;
+const EVIDENCE_TIME = 8;
 const LATE_MARGIN_SECONDS = 7;
 
 /**

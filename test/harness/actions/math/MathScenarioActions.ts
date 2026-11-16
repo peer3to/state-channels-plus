@@ -24,10 +24,10 @@ const DEFAULT_INVALID_DISPUTE_EVIDENCE_TIME = 12;
 
 // the inbound-gap scenario needs agreementTime > p2pTime
 export const INBOUND_GAP_TIME_BLOCKS = {
-    p2pTime: 2,
-    agreementTime: 8,
-    chainFallbackTime: 4,
-    evidenceTime: 8
+    p2pTime: 1,
+    agreementTime: 4,
+    chainFallbackTime: 2,
+    evidenceTime: 4
 };
 
 export class MathScenarioActions extends ScenarioActions {

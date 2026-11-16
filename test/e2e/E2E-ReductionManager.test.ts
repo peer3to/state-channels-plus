@@ -104,7 +104,11 @@ describe("E2E: ReductionManager", function () {
             await h.scenario.disputeWithSuppressedCommitEvents({
                 observerIndex: laggingIndex,
                 maliciousPeerIndex,
-                harnessOptions: { timeBlocks: SHORT_TIME_BLOCKS }
+                // the kill period and the absence wait both run on evidence:
+                // the honest dispute needs no kill, so a short one fits
+                harnessOptions: {
+                    timeBlocks: { ...SHORT_TIME_BLOCKS, evidenceTime: 5 }
+                }
             });
 
         // a healthy reduction landing while the lagging peer is blinded emits
