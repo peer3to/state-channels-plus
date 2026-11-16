@@ -151,7 +151,8 @@ full gate).
 
 Engineer decision (Luke, 2026-11-16, PR #598): the SDK targets peer3 chains only and does not check the
 connected chain's block time or gas cap at startup; `BLOCK_TIME_MS` and `MAX_TX_GAS` are the peer3 chain's
-values and the Hardhat test chain mirrors them. The refusal above the cap is its own permutation,
+values. The Hardhat test chain mirrors the block time (interval mining) but has no per-transaction cap, so
+the refusal above the cap is its own permutation,
 [`REQ-SDK-ARCH-8-02EEHA.T1.P3`](../specification/runtime/sdk.md#req-sdk-arch-8-02eeha.t1.p3), verified on the peer3 dev node only and skipped on Hardhat; CI runs Hardhat
 until the team switches `TEST_CHAIN` to peer3.
 

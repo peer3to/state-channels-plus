@@ -1,6 +1,7 @@
 import type { BlockHeight, Timestamp } from "./types";
 
-// peer3 chain values: the SDK targets peer3 chains only, and the hardhat test chain mirrors them
+// peer3 chain values: the SDK targets peer3 chains only; the hardhat test chain mirrors the block time
+// (interval mining) but has no per-transaction cap
 
 // must equal the chain's block time (the parachain's MILLI_SECS_PER_BLOCK)
 export const BLOCK_TIME_MS = 1000;

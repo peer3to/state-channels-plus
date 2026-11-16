@@ -126,7 +126,9 @@ reach a client of an isolated runtime with the same content.
 **<a id="req-sdk-arch-8-02eeha"></a>`REQ-SDK-ARCH-8-02EEHA` — Mirrored chain limits match the target chain.** The chain
 limits a participant assumes instead of reading them from the chain, its block time and its per-transaction
 gas cap, MUST equal the target chain's. They are the peer3 chain's values: the SDK targets peer3 chains
-only and does not check the connected chain at startup; the Hardhat test chain mirrors them. On the target
+only and does not check the connected chain at startup; the Hardhat test chain mirrors the block time
+(interval mining) but has no per-transaction cap, so the cap refusal is verified on the peer3 dev node
+only. On the target
 chain one block follows another after exactly that block time, a transaction at the cap is accepted, and
 one unit above the cap is refused.
 
