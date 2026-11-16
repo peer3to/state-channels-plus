@@ -22,8 +22,9 @@ import { ZeroAddress } from "ethers";
 
 /**
  * Protocol input for the evidence-timing cases: a lower-state dispute is
- * uploaded `LATE_MARGIN_SECONDS` before the evidence period of
- * `EVIDENCE_TIME` seconds closes, after the higher state was admitted.
+ * uploaded `LATE_MARGIN_SECONDS` seconds before the evidence period of
+ * `EVIDENCE_TIME` blocks (`EVIDENCE_TIME × BLOCK_TIME_MS` ms) closes, after
+ * the higher state was admitted.
  */
 const EVIDENCE_TIME = 8;
 const LATE_MARGIN_SECONDS = 7;

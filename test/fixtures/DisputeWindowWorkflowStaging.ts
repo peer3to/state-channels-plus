@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: real dispute-window workflows (kill then dispute, late challenges, evidence at window opening, frozen-view replay, fatal audits) staged for the plan-35 E2E declarations
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
+import Clock from "@/Clock";
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
 import { BlockOrigin } from "@/storage/QueueStorage";
@@ -10,6 +11,7 @@ import { stripDisputeReasons } from "@test/fixtures/DisputeAuditStaging";
 import { disputeOnHost } from "@test/fixtures/ReplayGasLimitStaging";
 import { waitFor } from "@test/utils/waitFor";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { expect } from "chai";
 
 /** The window commitment of `dispute`, as the chain stores it. */
 export function commitmentOf(dispute: DisputeStruct): Hash {
@@ -362,6 +364,7 @@ export async function uploadLateLowerStateDispute(
     const evidenceEnd = Number(created) + evidenceTime;
     // time is the input: the lower-state dispute arrives shortly before the
     // evidence period closes
+    expectLateUploadAhead(evidenceEnd, marginSeconds);
     await h.event.waitUntilTimestamp(evidenceEnd - marginSeconds);
     await upload.release();
     await attempt;
@@ -437,6 +440,7 @@ export async function prepareLateFalseTimeoutDispute(
         const populated = await signer.populateTransaction(request);
         // time is the input: the lower-state dispute arrives shortly before the
         // evidence period closes
+        expectLateUploadAhead(evidenceEnd, marginSeconds);
         await h.event.waitUntilTimestamp(evidenceEnd - marginSeconds);
         const transaction = await signer.sendTransaction(populated);
         await transaction.wait();
@@ -520,4 +524,12 @@ export async function stageAuditorBehindLastFinalBlock(h: MathPeerTestHarness) {
         return true;
     }, h.event.protocolEventTimeoutMs());
     return { forkId, writer, auditor, others, authored, height };
+}
+
+/** Premise of a late upload: its send time `marginSeconds` before the evidence end is still ahead. */
+function expectLateUploadAhead(evidenceEnd: number, marginSeconds: number) {
+    expect(
+        Clock.getTimeInSeconds(),
+        "late upload premise: the steps before it used up the margin"
+    ).to.be.lessThan(evidenceEnd - marginSeconds);
 }
