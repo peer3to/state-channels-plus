@@ -2774,26 +2774,39 @@ export class StubService extends ANetworkRpcService<
             | "getBlockchainTime",
         times: number
     ): void {
-        const target: object =
-            method === "getBlockchainTime"
-                ? Clock
-                : this.p2pManager.stateManager.stateChannelManagerContract;
-        const original = Reflect.get(target, method) as (
-            ...args: unknown[]
-        ) => unknown;
         let remaining = times;
         const observation = { failed: 0, passed: 0 };
         this.chainReadObservation = observation;
-        Reflect.set(target, method, async (...args: unknown[]) => {
-            if (remaining > 0) {
-                remaining -= 1;
-                observation.failed += 1;
-                throw new Error(`stubbed chain read failure: ${method}`);
-            }
-            observation.passed += 1;
-            return Reflect.apply(original, target, args);
-        });
-        this.restoreChainReads = () => Reflect.set(target, method, original);
+        const failFirst =
+            <A extends unknown[], R>(read: (...args: A) => Promise<R>) =>
+            async (...args: A): Promise<R> => {
+                if (remaining > 0) {
+                    remaining -= 1;
+                    observation.failed += 1;
+                    throw new Error(`stubbed chain read failure: ${method}`);
+                }
+                observation.passed += 1;
+                return read(...args);
+            };
+        if (method === "getBlockchainTime") {
+            const original = Clock.getBlockchainTime;
+            Clock.getBlockchainTime = failFirst(() => original.call(Clock));
+            this.restoreChainReads = () => {
+                Clock.getBlockchainTime = original;
+            };
+            return;
+        }
+        const contract =
+            this.p2pManager.stateManager.stateChannelManagerContract;
+        const original = contract[method];
+        Reflect.set(
+            contract,
+            method,
+            failFirst((...args: unknown[]) =>
+                Reflect.apply(original, contract, args)
+            )
+        );
+        this.restoreChainReads = () => Reflect.set(contract, method, original);
     }
 
     public getChainReadObservation(): { failed: number; passed: number } {

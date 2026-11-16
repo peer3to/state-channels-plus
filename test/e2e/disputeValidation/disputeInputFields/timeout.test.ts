@@ -22,6 +22,10 @@ import { AbiCoder } from "ethers";
 // have taken five seconds, so the window keeps a few seconds of headroom.
 const INVALID_DISPUTE_EVIDENCE_TIME = 8;
 
+// the bad-signature case waits out a deadline and an evidence period, then
+// refutes inside the next one: windows near their one-second-block seconds
+const BAD_SIGNATURE_TIME_BLOCKS = { ...SHORT_TIME_BLOCKS, evidenceTime: 8 };
+
 describe("E2E: dispute validation / disputeInputFields / timeout", function () {
     it("dispute.input.timeout.blockHeight != stateProof.latest + 1 → TimeoutNotLinkedToLatestState", async function () {
         const h = TestSession.getHarness();
@@ -339,7 +343,9 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
 
     it("bad-signature posted calldata cannot refute an honest forced timeout", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.timeoutSetup(4, 0, { timeBlocks: SHORT_TIME_BLOCKS });
+        await h.lifecycle.timeoutSetup(4, 0, {
+            timeBlocks: BAD_SIGNATURE_TIME_BLOCKS
+        });
 
         // Establish height 1 so the calldata block does not receive first-block grace.
         await h.transition.advanceState({ count: 2 });
@@ -384,7 +390,10 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             .query.getBlockByHeight(forkId, timeoutHeight - 1)
             .request();
         if (!previousBlock) throw new Error("previous block not found");
-        const wait = timeoutWaitTime(deriveTimeConfig(), timeoutHeight);
+        const wait = timeoutWaitTime(
+            deriveTimeConfig(BAD_SIGNATURE_TIME_BLOCKS),
+            timeoutHeight
+        );
         // The refutation deadline when the predecessor has no posted calldata
         // and the height is not 0: a late post would fail the refutation on
         // timing, not on the signature.
