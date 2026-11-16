@@ -462,9 +462,9 @@ describe("Unit: bot-connection fixes", function () {
             // the longer watchdog runs past the default test timeout
             this.timeout(90_000);
             const h = TestSession.getHarness();
-            // twice the production default: a watchdog firing as the exit lands
+            // the production default: a watchdog firing as the exit lands
             // is FIND-LEAVE-5-A1XAA4, recorded open; here it fires well after
-            const watchdogMs = 30 * BLOCK_TIME_MS;
+            const watchdogMs = 15 * BLOCK_TIME_MS;
             const {
                 leaver,
                 remainingPeerIndices,

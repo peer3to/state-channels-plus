@@ -1,6 +1,6 @@
 import { isRootDisposedError } from "@/rpc/internal/RemoteRoot";
 import { TransportType, type OpenConnection } from "@/transport";
-import { BLOCK_TIME_MS, Status } from "@/types";
+import { BLOCK_TIME_MS, deriveTimeConfig, Status } from "@/types";
 import {
     addressesEqual,
     channelIdToTargetedJoinTopic,
@@ -23,6 +23,12 @@ import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
+
+// the self-removal cases' leave watchdog, about half the production default's 15 blocks
+const LEAVE_WATCHDOG_MS = 8 * BLOCK_TIME_MS;
+// one keep-alive block per p2p window until that watchdog fires, plus three
+const WATCHDOG_KEEP_ALIVE_WINDOWS =
+    Math.ceil(LEAVE_WATCHDOG_MS / (deriveTimeConfig().p2pTime * 1000)) + 3;
 
 describe("connectToChannel input validation", function () {
     it("invalid channel ID rejects before state mutation", async function () {
@@ -948,7 +954,7 @@ describe("discovery runtime port", function () {
         ).to.equal(false);
         expect(
             await h.control(peer).query.getLeaveChannelWatchdogMs().request()
-        ).to.equal(60_000);
+        ).to.equal(60 * BLOCK_TIME_MS);
 
         peer.p2pInstance.leaveChannel();
         await h.event.waitUntilLeftChannel(peer.index);
@@ -1072,9 +1078,8 @@ describe("discovery runtime port", function () {
         // Same staging as the settled self-removal case below: the leave
         // watchdog's fallback dispute is the one that reduces.
         await h.lifecycle.start(3, 0, {
-            timeBlocks: { evidenceTime: 20 },
-            // the production default
-            configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 15 * BLOCK_TIME_MS }
+            timeBlocks: { evidenceTime: 10 },
+            configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: LEAVE_WATCHDOG_MS }
         });
         const leaver = h.peers[1];
         await h.control(leaver).stub.failStateSnapshotPost().request();
@@ -1092,7 +1097,7 @@ describe("discovery runtime port", function () {
                 0,
             waitForPeers: [0, 2],
             excludePeerIndices: [leaver.index],
-            maximumBlocks: 6
+            maximumBlocks: WATCHDOG_KEEP_ALIVE_WINDOWS
         });
         await h.assert.dispute.committedWait({
             peersIndices: [0, 2],
@@ -1163,9 +1168,8 @@ describe("discovery runtime port", function () {
         // until then, so no honest peer is timed out meanwhile. Settlement
         // runs through the full kill period.
         await h.lifecycle.start(3, 0, {
-            timeBlocks: { evidenceTime: 20 },
-            // the production default
-            configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 15 * BLOCK_TIME_MS }
+            timeBlocks: { evidenceTime: 10 },
+            configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: LEAVE_WATCHDOG_MS }
         });
         const leaver = h.peers[1];
         const originalForkId = h.activeForkId!;
@@ -1186,7 +1190,7 @@ describe("discovery runtime port", function () {
                 0,
             waitForPeers: [0, 2],
             excludePeerIndices: [leaver.index],
-            maximumBlocks: 6
+            maximumBlocks: WATCHDOG_KEEP_ALIVE_WINDOWS
         });
         await h.assert.dispute.committedWait({
             peersIndices: [0, 2],

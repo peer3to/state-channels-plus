@@ -7,6 +7,7 @@
 - [`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar)
 - [`REQ-DISPUTE-PIPE-12-F85KF2` (Force a timeout only over a rejected posted block)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2)
 - [`REQ-DISPUTE-PIPE-13-R2QJZN` (Time out only the next height)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-13-r2qjzn)
+- [`REQ-TIME-8-VK08CB` (A participant submits a timeout claim only once the chain head's timestamp has…)](../../../../../specification/protocol-model/time.md#req-time-8-vk08cb)
 
 ## UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5
 
@@ -17,7 +18,7 @@
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P2` — receipt refused once → rolls back and commits the retry
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P3` — two early refusals → re-arms each time and commits
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P4` — chain three seconds early → schedules the reported remaining interval
-- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P5` — zero reported difference → retains a one-second minimum delay
+- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P5` — zero reported difference → retains a one-block-time minimum delay
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P6` — verified sync replaces the fork → queued retry and later schedules do nothing
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P7` — the writer block arrives before retry → no second submission
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P8` — runtime disposed before retry → no second submission
@@ -49,3 +50,7 @@
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P38` — a predecessor posted only in the local view yields a claim with the chain's posting state that commits
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P39` — the writer signed a predecessor whose post the stored block has not applied yet → no wait for the post and no raised minimum; the timeout is submitted against the block's own deadline
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P40` — the writer never signed a predecessor whose post the stored block has not applied yet → the check itself waits for the post time plus the wait, and the claim it then submits takes that as its minimum
+- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P41` — a due claim whose minimum the chain head has not reached is held: nothing stored or sent
+- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P42` — a held claim is sent once the chain head reaches its minimum, and the chain accepts that first upload
+- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P43` — a dispute window opened while the claim waits, before its minimum, still keeps it from being stored or sent
+- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P44` — runtime disposed while the claim waits for the chain head → it is never sent

@@ -2563,7 +2563,7 @@ inside a 30M block; with the earlier 16M budget it was not, and any consumer who
 exceeds roughly 9M has fraud proofs that a searching node refuses at submission, so that fraud stays
 unproven on-chain. (4) **Resolved (2026-10-15):** `DisputeManager.replayGasLimit` caps the declared limit at the latest
 block's gas limit. Since 2026-11-14 (Luke) it caps at the smaller of the chain's per-transaction gas cap (the SDK constant
-`MAX_TX_GAS`, the peer3 runtime's 8,916,000) and that block gas limit; a failed block read leaves only the
+`MAX_TX_GAS`, the peer3 runtime's 17,916,000 since 2026-11-16) and that block gas limit; a failed block read leaves only the
 per-transaction cap. (5) **No
 send test** exercises a fraud-proof transaction with this rule against a searching node with a 30M
 block: block fit is shown by arithmetic, and the poker replay fixture only runs `eth_call`. History:
@@ -2632,7 +2632,7 @@ blocks) leaves little margin for poker's costlier audit; the SDK harness default
 seconds (Luka, 2026-10-15). **Decision (daiagi, 2026-10-15, PR #551 OO1, revised):** no normative
 `evidenceTime` floor or deploy-time check; this finding stays Open until a measurement after this
 change sizes the budget. **Sizing (Luke, 2026-11-14, plan 29):** `evidenceTime` derives from the block
-time as 10 block times plus 10 s, 20 s at one-second blocks, the SDK harness default and the deploy default
+time as 10 block times plus 10 s, 30 s at the two-second block time (Luke, 2026-11-16), the SDK harness default and the deploy default
 alike ([`REQ-TIME-7-2J5T0J` (Deployment windows derive from the chain block time as k × block time + floor,…)](../specification/protocol-model/time.md#req-time-7-2j5t0j)). That covers the
 three sequential inclusions (upload, audit, kill) with queueing and the measured auditor work of about
 12 s above. The finding stays Open until a measurement at that size confirms the budget.

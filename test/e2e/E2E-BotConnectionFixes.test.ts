@@ -19,6 +19,7 @@ import {
 } from "@test/fixtures/MilestoneSyncStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
+import { SHORT_TIME_BLOCKS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -568,7 +569,7 @@ describe("E2E: Bot connection fixes", function () {
 
     it("E27: a joiner whose join no block includes, while writers produce no blocks, forces it by dispute once its time bound passes", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(2, 0);
+        await h.lifecycle.start(2, 0, { timeBlocks: SHORT_TIME_BLOCKS });
         const { peer } = await h.join.addSpectatorAuthoring({
             authoringPeerIndices: [0, 1],
             minimumBlocks: 2,

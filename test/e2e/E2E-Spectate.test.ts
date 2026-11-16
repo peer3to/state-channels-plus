@@ -36,6 +36,7 @@ import {
     assertSpectatorRejectedWork
 } from "@test/fixtures/SpectatorSilenceFixture";
 import { MathTestSession as TestSession } from "@test/harness";
+import { SHORT_TIME_BLOCKS } from "@test/harness/core/testTimeConfig";
 import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -2061,7 +2062,8 @@ describe("E2E: Spectate Service", function () {
 
         it("a participant's source probe while the tip fork's kill period is open waits for the chain's reduction, then proves the target without blacklisting its honest responder", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(4, 0);
+            // the probe waits out the kill period inside one host request
+            await h.lifecycle.start(4, 0, { timeBlocks: SHORT_TIME_BLOCKS });
             await h.transition.advanceState({ count: 2 });
             await h.assert.sync.peersInSyncWait();
             const maliciousPeerIndex = (await h.query.getNextPeerToWrite())

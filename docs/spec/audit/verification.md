@@ -147,6 +147,28 @@ submits a top-up with a made-up snapshot pin. No runtime stores that pin, so the
 both the pinned and the new snapshot stored, is not met, and the test still returns `false` (passed in the
 full gate).
 
+## Two-second blocks — 2026-11-16
+
+Engineer decision (Luke, 2026-11-16, PR #598): the peer3 chain makes a block every 2 seconds, with a
+75,000,000 block gas limit and a 17,916,000 per-transaction cap; `BLOCK_TIME_MS` and `MAX_TX_GAS` follow, and
+the derived windows become 5/5/8/30 seconds. Per-test window overrides are block counts and double in
+seconds with it.
+
+Engineer decision (Luke, 2026-11-16, PR #598): 2-second blocks everywhere, with no per-chain block time. A test
+whose block-counted windows no longer fit the test timeout gets half the block counts, so its seconds stay
+about what they were at one-second blocks; where half is too tight it gets the smallest safe count, and a test
+that still does not fit is split. No global or per-test timeout raise.
+
+## Timeout claims wait for the chain head — 2026-11-16
+
+Engineer decision (Luke, 2026-11-16, PR #598; design question Q8): a timeout claim is submitted only once
+the chain head's timestamp has reached its `minTimeStamp`
+([`REQ-TIME-8-VK08CB` (A participant submits a timeout claim only once the chain head's timestamp has…)](../specification/protocol-model/time.md#req-time-8-vk08cb)). The peer3 node judges an
+estimate at its head, which at two-second blocks trails the local clock by up to a block, so a claim sent on
+the clock alone was refused as early. Estimating at the `pending` block was tried first and dropped: Frontier
+runs `eth_call` and `eth_estimateGas` at `pending` on the head's state and timestamp, and changing that needs a
+Frontier fork. The wait reuses the timeout check's one-block recheck; no new polling.
+
 ## Mirrored chain limits — 2026-11-16
 
 Engineer decision (Luke, 2026-11-16, PR #598): the SDK targets peer3 chains only and does not check the

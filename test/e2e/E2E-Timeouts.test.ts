@@ -1,7 +1,8 @@
 import {
     CHAIN_READ_FAILED_RECHECK_REASON,
     MISMATCH_TIMEOUT_RECHECK_REASON,
-    PREDECESSOR_POSTED_RECHECK_REASON
+    PREDECESSOR_POSTED_RECHECK_REASON,
+    TIMEOUT_RECHECK_DELAY_MS
 } from "@/stateManager/chainFallback/ParticipantTimeoutService";
 import { BLOCK_TIME_MS, deriveTimeConfig, timeoutWaitTime } from "@/types";
 import type { Hash } from "@/types/types";
@@ -14,16 +15,16 @@ import { id, ZeroAddress } from "ethers";
 
 // short windows, so the staged parent post and the moved deadline fit one test
 const MOVED_DEADLINE_TIME_BLOCKS = {
-    p2pTime: 2,
-    agreementTime: 8,
-    chainFallbackTime: 10,
-    evidenceTime: 20
+    p2pTime: 1,
+    agreementTime: 4,
+    chainFallbackTime: 5,
+    evidenceTime: 10
 };
 // M9: the dispute window must outlive the post-moved deadline, or the fork is
 // reduced before the claim is ever built
 const WINDOW_OUTLIVES_DEADLINE_TIME_BLOCKS = {
     ...MOVED_DEADLINE_TIME_BLOCKS,
-    evidenceTime: 60
+    evidenceTime: 30
 };
 
 /**
@@ -46,6 +47,31 @@ describe("E2E: Timeouts", function () {
             });
             await h.assert.dispute.didNotInitiate({ peers: [2] });
             h.assert.calldata.noCalldataPosted();
+        });
+
+        it("an honest timeout claim waits for the chain head, so no observer's upload is refused as early", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.timeoutSetup(3, 2);
+            const uploads = await Promise.all(
+                [0, 1].map((index) =>
+                    h.rpcStub.recordDisputeSubmissions(index, { forward: true })
+                )
+            );
+            try {
+                await h.assert.dispute.committedWait({
+                    peersIndices: [0, 1],
+                    expectedCount: 1,
+                    mode: "atLeast"
+                });
+                const submissions = (
+                    await Promise.all(uploads.map((u) => u.submissions()))
+                ).flat();
+                expect(submissions.length).to.be.greaterThan(0);
+                for (const submission of submissions)
+                    expect(submission.revert).to.equal(null);
+            } finally {
+                for (const u of uploads) await u.restore();
+            }
         });
 
         it("should demonstrate timeout creates disputes", async function () {
@@ -750,7 +776,7 @@ describe("E2E: Timeouts", function () {
                         (task) =>
                             task.taskName.startsWith(
                                 PREDECESSOR_POSTED_RECHECK_REASON
-                            ) && task.delayMs > 1000
+                            ) && task.delayMs > TIMEOUT_RECHECK_DELAY_MS
                     );
                 await waitFor(
                     async () => (await awaitPost()) !== undefined,

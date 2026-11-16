@@ -6,6 +6,7 @@ import {
     sleep,
     type MathPeerTestHarness
 } from "@test/harness";
+import { SHORT_TIME_BLOCKS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { id } from "ethers";
@@ -102,7 +103,8 @@ describe("E2E: ReductionManager", function () {
         const { forkId, race, restoreEvents } =
             await h.scenario.disputeWithSuppressedCommitEvents({
                 observerIndex: laggingIndex,
-                maliciousPeerIndex
+                maliciousPeerIndex,
+                harnessOptions: { timeBlocks: SHORT_TIME_BLOCKS }
             });
 
         // a healthy reduction landing while the lagging peer is blinded emits

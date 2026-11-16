@@ -4,6 +4,7 @@ import { runtimeIsClosed } from "./RuntimeRootObservation";
 import Clock from "@/Clock";
 import {
     EARLY_TIMEOUT_RECHECK_REASON,
+    HEAD_BEHIND_RECHECK_REASON,
     MISMATCH_TIMEOUT_RECHECK_REASON,
     PREDECESSOR_POSTED_RECHECK_REASON,
     TIMEOUT_RECHECK_DELAY_MS
@@ -137,7 +138,10 @@ export async function assertEarlyTimeoutRetry(
               observerIndex: 1,
               suppressedIndex: 2,
               reason: EARLY_TIMEOUT_RECHECK_REASON,
-              delayMs: Math.max(1, differenceSeconds) * 1000,
+              delayMs: Math.max(
+                  TIMEOUT_RECHECK_DELAY_MS,
+                  differenceSeconds * 1000
+              ),
               failWith: {
                   customError: "RaceConditionDisputeTimeoutNotMinTimestamp",
                   customErrorArgs: [String(differenceSeconds + 1), "1"],
@@ -282,6 +286,172 @@ export async function assertConsecutiveMismatchRetry(
     }
 }
 
+/**
+ * Observer 2's timeout claim against writer 1 at height 1. Once height 0 is
+ * stored, the observer's clock is moved past the claim's minimum and its
+ * check runs: it finds the claim due while the chain head is still about one
+ * writer turn short of that minimum. `outcome` is what follows:
+ * - "held": the claim waits for the head; nothing is stored or sent.
+ * - "sent": the claim is sent once the head reaches its minimum, and the
+ *   chain accepts that first upload.
+ * - "disposed": the runtime is disposed while the claim waits; it is never sent.
+ * - "window": a dispute window opens while the claim waits, before its
+ *   minimum; the claim is never stored or sent.
+ */
+export async function assertTimeoutClaimWaitsForChainHead(
+    h: MathPeerTestHarness,
+    outcome: "held" | "sent" | "disposed" | "window"
+): Promise<void> {
+    await h.lifecycle.timeoutSetup(3);
+    // peer 0 authors height 0; observer 2 will time out writer 1
+    await h.transition.advanceState();
+    const observer = h.getPeer(2);
+    const writer = h.getPeer(1);
+    const forkId = h.activeForkId!;
+    await h.rpcStub.suppressTimeoutCheck(h.getPeer(0).index);
+    const previous = await h.execOnHost(
+        observer,
+        (sm, args) => ({
+            relevant: sm.storage.blocks
+                .getBlock(args.forkId, 0)!
+                .getRelevantTimestamp(args.writer),
+            timeConfig: sm.timeConfig
+        }),
+        { forkId, writer: writer.address }
+    );
+    const minimum = previous.relevant + timeoutWaitTime(previous.timeConfig, 1);
+    const held =
+        outcome === "sent"
+            ? undefined
+            : await h.rpcStub.holdScheduledTasks(
+                  observer.index,
+                  HEAD_BEHIND_RECHECK_REASON
+              );
+    const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+    const uploads = await h.rpcStub.recordDisputeSubmissions(observer.index, {
+        forward: true
+    });
+    // past the minimum on the observer's clock, whatever its adjustment
+    await h
+        .control(observer)
+        .stub.holdClockOffset(
+            minimum - Math.floor(Date.now() / 1000) + (2 * BLOCK_TIME_MS) / 1000
+        )
+        .request();
+    let disposed = false;
+    try {
+        await h.execOnHost(
+            observer,
+            async (sm, args) => {
+                await sm.participantTimeoutService["tryTimeoutParticipant"](
+                    args.forkId,
+                    1,
+                    args.writer
+                );
+                return true;
+            },
+            { forkId, writer: writer.address },
+            { timeoutMs: h.event.hostExecTimeoutMs() }
+        );
+        if (outcome === "sent") {
+            await h.assert.dispute.committedWait({
+                peersIndices: [observer.index],
+                expectedCount: 1,
+                mode: "atLeast"
+            });
+            const waits = (await tasks.tasks()).filter((task) =>
+                task.taskName.startsWith(HEAD_BEHIND_RECHECK_REASON)
+            );
+            expect(waits.length).to.be.greaterThan(0);
+            const [first] = await uploads.submissions();
+            expect(first.revert).to.equal(null);
+            expect(
+                Codec.decode(first.encodedDispute, Type.Dispute).input.timeout
+                    .participant
+            ).to.equal(writer.address);
+            return;
+        }
+        await waitFor(
+            async () => (await held!.heldCount()) === 1,
+            h.event.hostExecTimeoutMs()
+        );
+        // premise - the claim is due on the observer's clock, not at the head
+        expect((await h.provider.getBlock("latest"))!.timestamp).to.be.lessThan(
+            minimum
+        );
+        expect(await uploads.submissions()).to.deep.equal([]);
+        expect(
+            await h.control(observer).query.getTimeout(forkId).request()
+        ).to.equal(null);
+        if (outcome === "held") return;
+
+        if (outcome === "disposed") {
+            // the dispose ends the claim's wait with the runtime's timers
+            await h.control(observer).stub.abortDetached().request();
+            await h.event.waitForPeers("onAbort", [observer.index], 1);
+            disposed = true;
+            await waitFor(
+                () => runtimeIsClosed(observer.p2pInstance),
+                h.event.protocolEventTimeoutMs()
+            );
+            await waitFor(
+                async () =>
+                    (await h.provider.getBlock("latest"))!.timestamp >=
+                    minimum + (2 * BLOCK_TIME_MS) / 1000,
+                h.event.hostExecTimeoutMs()
+            );
+            expect(
+                await h.channelManager.isForkDisputed(h.channelId, forkId)
+            ).to.equal(false);
+            return;
+        }
+
+        // a window opens before the claim's minimum...
+        await h
+            .control(h.getPeer(0))
+            .dispute.startSelfRemovalDispute(forkId)
+            .request();
+        await h.assert.dispute.committedWait({
+            peersIndices: [observer.index],
+            expectedCount: 1,
+            mode: "atLeast"
+        });
+        // premise - the window opened before the claim's minimum
+        expect(
+            Number(
+                await h.channelManager.getDisputeWindowCreationTimestamp(
+                    h.channelId,
+                    forkId
+                )
+            )
+        ).to.be.lessThan(minimum);
+        await held!.release(true);
+        // ...so once the head reaches the minimum, the claim is dropped
+        await waitFor(
+            async () =>
+                (await h.provider.getBlock("latest"))!.timestamp >=
+                minimum + (2 * BLOCK_TIME_MS) / 1000,
+            h.event.hostExecTimeoutMs()
+        );
+        expect(
+            await h.control(observer).query.getTimeout(forkId).request()
+        ).to.equal(null);
+        for (const submission of await uploads.submissions())
+            expect(
+                Codec.decode(submission.encodedDispute, Type.Dispute).input
+                    .timeout.participant
+            ).to.not.equal(writer.address);
+    } finally {
+        // a disposed runtime ends with its holds
+        if (!disposed) {
+            await h.control(observer).stub.releaseClockOffset().request();
+            await held?.release(false);
+            await uploads.restore();
+            await tasks.restore();
+        }
+    }
+}
+
 /** Long enough for a released retry to run on and submit what it would. */
 const AFTER_CUT_WINDOW_MS = 1_000;
 
@@ -333,8 +503,10 @@ export async function assertObsoleteEarlyTimeoutRetry(
                   }
     });
     try {
-        // Enter the real timeout constructor before the local deadline. The
+        // Enter the real timeout constructor before the local deadline, with
+        // a minimum the chain head has reached so the claim is sent. The
         // chain-boundary refusal then schedules the check under test.
+        const head = (await h.provider.getBlock("latest"))!.timestamp;
         await h.execOnHost(
             peer,
             (sm, args) =>
@@ -344,7 +516,7 @@ export async function assertObsoleteEarlyTimeoutRetry(
                     args.writer,
                     args.minimum
                 ),
-            { forkId, writer: h.getPeer(0).address, minimum }
+            { forkId, writer: h.getPeer(0).address, minimum: head }
         );
         await waitFor(async () => (await held.heldCount()) === 1);
         expect(await recorder.submissions()).to.have.length(1);

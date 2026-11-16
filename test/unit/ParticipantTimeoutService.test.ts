@@ -9,6 +9,7 @@ import {
     assertMismatchRetryAfterForkSwitch,
     assertTimeoutRetryAfterForkSwitch,
     assertObsoleteEarlyTimeoutRetry,
+    assertTimeoutClaimWaitsForChainHead,
     assertConsecutiveMismatchRetry,
     assertSignedPredecessorPostGrantsNoTime,
     assertSkippedHeightNotTimedOut,
@@ -218,12 +219,42 @@ describe("Unit: ParticipantTimeoutService", function () {
                 3
             );
         });
-        it("zero reported difference → retains a one-second minimum delay", async function () {
+        it("zero reported difference → retains a one-block-time minimum delay", async function () {
             await assertEarlyTimeoutRetry(
                 TestSession.getHarness(),
                 "send",
                 1,
                 0
+            );
+        });
+    });
+
+    describe("timeout claim waits for the chain head", function () {
+        it("a due claim whose minimum the chain head has not reached is held: nothing stored or sent", async function () {
+            await assertTimeoutClaimWaitsForChainHead(
+                TestSession.getHarness(),
+                "held"
+            );
+        });
+
+        it("a held claim is sent once the chain head reaches its minimum, and the chain accepts that first upload", async function () {
+            await assertTimeoutClaimWaitsForChainHead(
+                TestSession.getHarness(),
+                "sent"
+            );
+        });
+
+        it("a dispute window opened while the claim waits, before its minimum, still keeps it from being stored or sent", async function () {
+            await assertTimeoutClaimWaitsForChainHead(
+                TestSession.getHarness(),
+                "window"
+            );
+        });
+
+        it("runtime disposed while the claim waits for the chain head → it is never sent", async function () {
+            await assertTimeoutClaimWaitsForChainHead(
+                TestSession.getHarness(),
+                "disposed"
             );
         });
     });

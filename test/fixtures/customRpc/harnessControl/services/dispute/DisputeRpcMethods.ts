@@ -245,21 +245,25 @@ export class DisputeRpcMethods extends ANetworkRpcMethods<DisputeService> {
         return this.service.storage.disputes.didIDispute(forkId);
     }
 
-    /** Plant a fresh timeout for `participant` at head+1 height on `forkId` (0 on a fork with no block). */
-    public plantFreshTimeout(forkId: ForkId, participant: string): boolean {
+    /**
+     * Plant a fresh timeout for `participant` at head+1 height on `forkId` (0
+     * on a fork with no block); returns its `minTimeStamp`, the local clock.
+     */
+    public plantFreshTimeout(forkId: ForkId, participant: string): number {
         const latestBlock = this.service.storage.blocks.getLatestBlock(forkId);
+        const minTimeStamp = Clock.getTimeInSeconds();
         this.service.storage.timeout.storeTimeout(forkId, {
             participant,
             blockHeight: latestBlock
                 ? BigInt(Number(latestBlock.height) + 1)
                 : 0n,
-            minTimeStamp: BigInt(Clock.getTimeInSeconds()),
+            minTimeStamp: BigInt(minTimeStamp),
             isForced: false,
             previousBlockProducer: ZeroAddress,
             previousBlockProducerPostedCalldata: false,
             participantSignatureOnPreviousBlock: "0x"
         });
-        return true;
+        return minTimeStamp;
     }
 }
 

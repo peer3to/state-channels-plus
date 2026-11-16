@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: node ownership helper; executable evidence belongs to its calling test declarations
 import { jsonRpc, startHardhatNode } from "../../utils/nodeInfra";
+import { BLOCK_TIME_MS } from "@/types";
 import {
     HDNodeWallet,
     JsonRpcProvider,
@@ -108,7 +109,23 @@ export async function mineBlocks(
     count: number
 ): Promise<void> {
     if (process.env.TEST_CHAIN !== "peer3") {
-        await node.send("hardhat_mine", [toQuantity(count)]);
+        // hardhat's clock trails the wall clock by its startup time: the first
+        // block is stamped at the wall clock, then one block per block time
+        const blockSeconds = BLOCK_TIME_MS / 1000;
+        // a raw read: getBlock would cache the pre-mine head for the caller
+        const head = Number(
+            (await node.send("eth_getBlockByNumber", ["latest", false]))
+                .timestamp
+        );
+        const first = Math.max(
+            Math.floor(Date.now() / 1000),
+            head + blockSeconds
+        );
+        await node.send("evm_setNextBlockTimestamp", [toQuantity(first)]);
+        await node.send("hardhat_mine", [
+            toQuantity(count),
+            toQuantity(blockSeconds)
+        ]);
         return;
     }
     for (let i = 0; i < count; i++)

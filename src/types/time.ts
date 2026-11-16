@@ -4,10 +4,10 @@ import type { BlockHeight, Timestamp } from "./types";
 // (interval mining) but has no per-transaction cap
 
 // must equal the chain's block time (the parachain's MILLI_SECS_PER_BLOCK)
-export const BLOCK_TIME_MS = 1000;
+export const BLOCK_TIME_MS = 2000;
 
 // must equal the chain's per-transaction gas cap (the parachain's MAX_TX_GAS)
-export const MAX_TX_GAS = 8_916_000n;
+export const MAX_TX_GAS = 17_916_000n;
 
 export type TimeConfig = {
     p2pTime: Timestamp;

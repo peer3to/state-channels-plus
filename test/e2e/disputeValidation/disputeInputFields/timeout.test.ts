@@ -6,6 +6,7 @@ import {
     postTimeoutOfCalldataPostedBlock
 } from "@test/fixtures/DisputeAuditStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { SHORT_TIME_BLOCKS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import {
     TimeoutCalldataPostedStruct,
@@ -338,7 +339,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
 
     it("bad-signature posted calldata cannot refute an honest forced timeout", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.timeoutSetup(4, 0);
+        await h.lifecycle.timeoutSetup(4, 0, { timeBlocks: SHORT_TIME_BLOCKS });
 
         // Establish height 1 so the calldata block does not receive first-block grace.
         await h.transition.advanceState({ count: 2 });

@@ -24,6 +24,8 @@ export const MISMATCH_TIMEOUT_RECHECK_REASON =
 // scheduleCheck reason when the predecessor posted during timeout construction
 export const PREDECESSOR_POSTED_RECHECK_REASON =
     "timeoutParticipantAfterPredecessorPosted";
+// scheduleCheck reason while the chain head has not reached the claim's minimum timestamp
+export const HEAD_BEHIND_RECHECK_REASON = "timeoutParticipantAwaitingChainHead";
 // scheduleCheck reason when the predecessor commitment read failed
 export const CHAIN_READ_FAILED_RECHECK_REASON =
     "timeoutParticipantAfterChainReadFailure";
@@ -497,10 +499,36 @@ export default class ParticipantTimeoutService {
             return;
         }
 
+        const minTimeStamp = Math.max(timeoutMinTimestamp, postedMinimum ?? 0);
+        // the chain judges the claim at its head's time, which can trail the
+        // local clock by a block -> wait for the head to reach the minimum
+        try {
+            if ((await Clock.getBlockchainTime()).timestamp < minTimeStamp) {
+                this.scheduleCheck(
+                    forkId,
+                    blockHeight,
+                    participantAddress,
+                    TIMEOUT_RECHECK_DELAY_MS,
+                    HEAD_BEHIND_RECHECK_REASON,
+                    isForced
+                );
+                return;
+            }
+        } catch (error) {
+            this.recheckAfterFailedChainRead(
+                error,
+                forkId,
+                blockHeight,
+                participantAddress,
+                isForced
+            );
+            return;
+        }
+
         const timeout: TimeoutStruct = {
             participant: participantAddress.toString(),
             blockHeight: BigInt(blockHeight),
-            minTimeStamp: Math.max(timeoutMinTimestamp, postedMinimum ?? 0),
+            minTimeStamp,
             isForced: isForced,
             previousBlockProducer: previousBlock
                 ? previousBlock.author.toString()

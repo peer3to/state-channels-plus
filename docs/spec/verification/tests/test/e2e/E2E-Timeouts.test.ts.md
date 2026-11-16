@@ -14,7 +14,9 @@ calldata was posted on-chain, which participant each peer recorded in `TimeoutSt
 timeout: rejected calldata at the next height indicts its poster, while junk calldata at the
 current height combined with a silent next author times out the non-authoring peer on every
 observer. A liveness test confirms a mid-transaction disconnect of a non-author neither stalls the
-survivors nor spawns a dispute. Dispute content validation is owned by the disputeValidation
+survivors nor spawns a dispute. The chain-head test records both honest observers' uploads of a
+plain timeout and expects every one accepted: on the peer3 node, whose head trails the wall clock by
+up to a block, an observer that submitted on its own clock alone would be refused as early. Dispute content validation is owned by the disputeValidation
 suites. After atomization, the one-scenario timeout-detection permutations this suite drives end
 to end — the self skip, the normal timeout claim, and the forced claim on a calldata commitment
 without an accepted block — are assigned below; the scheduling-boundary permutations (due-time
@@ -24,6 +26,7 @@ boundaries, predecessor-post reschedules, per-fork retention) remain with the de
 ## Tests
 
 - `should handle timeout when next peer to write does not author a block`: UNIT-TEST-STATE-MANAGER-3-32QM46.P5
+- `an honest timeout claim waits for the chain head, so no observer's upload is refused as early`: REQ-TIME-8-VK08CB.T1.P5
 - `should demonstrate timeout creates disputes`: UNIT-TEST-STATE-MANAGER-3-32QM46.P3
 - `should handle timeout when non-author peer disconnects (calldata posting)`: none
 - `should handle timeout when author peer disconnects`: none

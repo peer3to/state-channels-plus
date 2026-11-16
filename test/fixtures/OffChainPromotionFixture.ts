@@ -3,6 +3,7 @@ import { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { Status } from "@/types";
 import { MathTestSession } from "@test/harness";
+import { SHORT_TIME_BLOCKS } from "@test/harness/core/testTimeConfig";
 import { decodeMathState } from "@test/utils/mathHarnessAbi";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -249,7 +250,15 @@ export async function assertPromotionBeforeReceiverApplication(
     mode?: "overlap" | "slowSync"
 ) {
     const h = MathTestSession.getHarness();
-    await h.lifecycle.start(2, 1, { maxChannelParticipants: 3 });
+    await h.lifecycle.start(2, 1, {
+        maxChannelParticipants: 3,
+        // the slow sync stalls the slot for one agreement window: the
+        // slot must outlast it
+        timeBlocks:
+            mode === "slowSync"
+                ? { ...SHORT_TIME_BLOCKS, p2pTime: 4 }
+                : undefined
+    });
     const { peer: newcomer } = await h.join.addSpectatorAuthoring({
         authoringPeerIndices: [0, 1],
         minimumBlocks: 2,

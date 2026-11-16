@@ -24,6 +24,7 @@ import type {
 } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { DisputeTamperStrategy } from "@test/fixtures/customRpc/harnessControl/services/dispute/tamperStrategies";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { waitFor } from "@test/utils/waitFor";
 import type {
     BlockStruct,
     SnapshotDataStruct,
@@ -501,10 +502,12 @@ export class DisputeTamperingActions<
         }
         const peer = this.harness.getPeer(disputerIndex);
         const nextPeer = await this.harness.query.getNextPeerToWrite();
-        await this.harness
-            .control(peer)
-            .dispute.plantFreshTimeout(forkId, nextPeer.address)
-            .request();
+        await this.waitForChainHead(
+            await this.harness
+                .control(peer)
+                .dispute.plantFreshTimeout(forkId, nextPeer.address)
+                .request()
+        );
     }
 
     async plantFreshTimeoutForParticipant(
@@ -517,10 +520,12 @@ export class DisputeTamperingActions<
                 "plantFreshTimeoutForParticipant: no active fork ID — channel must be opened first"
             );
         }
-        await this.harness
-            .control(this.harness.getPeer(disputerIndex))
-            .dispute.plantFreshTimeout(forkId, participant)
-            .request();
+        await this.waitForChainHead(
+            await this.harness
+                .control(this.harness.getPeer(disputerIndex))
+                .dispute.plantFreshTimeout(forkId, participant)
+                .request()
+        );
     }
 
     /**
@@ -620,6 +625,18 @@ export class DisputeTamperingActions<
             originalOutboundBlock,
             mutated
         };
+    }
+
+    /**
+     * Waits until the chain head's timestamp reaches `timestamp`, as the SDK
+     * does before it submits a timeout claim (REQ-TIME-8-VK08CB).
+     */
+    private async waitForChainHead(timestamp: number): Promise<void> {
+        await waitFor(
+            async () =>
+                (await this.harness.provider.getBlock("latest"))!.timestamp >=
+                timestamp
+        );
     }
 
     private peerForBlockAuthor(participant: Address) {
