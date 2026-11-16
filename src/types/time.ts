@@ -1,5 +1,7 @@
 import type { BlockHeight, Timestamp } from "./types";
 
+// peer3 chain values: the SDK targets peer3 chains only, and the hardhat test chain mirrors them
+
 // must equal the chain's block time (the parachain's MILLI_SECS_PER_BLOCK)
 export const BLOCK_TIME_MS = 1000;
 

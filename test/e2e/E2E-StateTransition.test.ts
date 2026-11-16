@@ -13,7 +13,7 @@ import { expect } from "chai";
  * Tests the core state transition mechanism, block creation, and state advancement.
  */
 describe("E2E: State Transitions", function () {
-    it("the test chain makes one block per BLOCK_TIME_MS and takes a transaction at MAX_TX_GAS, and the peer3 chain refuses one at MAX_TX_GAS + 1", async function () {
+    it("the test chain makes one block per BLOCK_TIME_MS and takes a transaction at MAX_TX_GAS", async function () {
         const h = TestSession.getHarness();
         await h.setup(2);
         const start = await h.provider.getBlockNumber();
@@ -30,19 +30,28 @@ describe("E2E: State Transitions", function () {
         const blockSeconds = BLOCK_TIME_MS / 1000;
         expect(steps).to.deep.equal([blockSeconds, blockSeconds, blockSeconds]);
 
-        // the SDK's per-transaction cap is the chain's: hardhat has none below its block gas limit
         const deployer = h.signerFor(slotDeployerIndex());
-        const selfTransfer = (gasLimit: bigint) =>
-            deployer.sendTransaction({ to: deployer.address, gasLimit });
-        const atCap = await (await selfTransfer(MAX_TX_GAS)).wait();
+        const atCap = await (
+            await deployer.sendTransaction({
+                to: deployer.address,
+                gasLimit: MAX_TX_GAS
+            })
+        ).wait();
         expect(atCap?.status).to.equal(1);
-        const overCap = await selfTransfer(MAX_TX_GAS + 1n).then(
-            async (sent) => (await sent.wait())?.status ?? null,
-            (error: Error) => error.message
-        );
-        if (process.env.TEST_CHAIN === "peer3")
-            expect(overCap).to.match(/exceeds transaction gas limit cap/);
-        else expect(overCap).to.equal(1);
+    });
+
+    it("the peer3 chain refuses a transaction at MAX_TX_GAS + 1", async function () {
+        // hardhat has no per-transaction cap below its block gas limit
+        if (process.env.TEST_CHAIN !== "peer3") this.skip();
+        const h = TestSession.getHarness();
+        await h.connectChain();
+        const deployer = h.signerFor(slotDeployerIndex());
+        await expect(
+            deployer.sendTransaction({
+                to: deployer.address,
+                gasLimit: MAX_TX_GAS + 1n
+            })
+        ).to.be.rejectedWith(/exceeds transaction gas limit cap/);
     });
 
     describe("Basic State Advancement", function () {

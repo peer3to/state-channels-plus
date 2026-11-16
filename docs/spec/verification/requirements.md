@@ -846,7 +846,7 @@ Specification cases tested: 8/10. Untested: T1.P1, T1.P5.
 Specification cases tested: 8/8.
 
 [`REQ-SDK-ARCH-8-02EEHA` (Mirrored chain limits match the target chain)](../specification/runtime/sdk.md#req-sdk-arch-8-02eeha)
-Specification cases tested: 2/2.
+Specification cases tested: 3/3.
 
 [`REQ-SEC-1-SNS1GA` (Before this specification is finalized, a dedicated security review of the full…)](../audit/security-assessment.md#req-sec-1-sns1ga)
 Specification cases tested: none planned.
