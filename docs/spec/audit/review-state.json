@@ -410,9 +410,9 @@
         "date": "2026-08-27"
     },
     "specification/open-questions.md": {
-        "hash": "4ea41689da371ee4",
-        "reviewer": "Luka-discovery-v1",
-        "date": "2026-08-30"
+        "hash": "23adc27553d3e524",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
     },
     "specification/peer-communication/handshake.md": {
         "hash": "9b2faeb467123330",
@@ -470,9 +470,9 @@
         "date": "2026-08-30"
     },
     "implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md": {
-        "hash": "6e8e83458e083ef5",
-        "reviewer": "Luka-discovery-v1",
-        "date": "2026-08-30"
+        "hash": "8895819f1527282a",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
     },
     "implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol.md": {
         "hash": "6d4ab5360f1b97bb",
@@ -595,9 +595,9 @@
         "date": "2026-08-30"
     },
     "specification/enforcement/local-mirror.md": {
-        "hash": "d47e816a4e77472d",
-        "reviewer": "Luka-discovery-v1",
-        "date": "2026-08-30"
+        "hash": "7f513d359374ff01",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
     },
     "specification/peer-communication/README.md": {
         "hash": "b881b7fc72120263",
@@ -620,19 +620,19 @@
         "date": "2026-08-30"
     },
     "specification/settlement/lifecycle.md": {
-        "hash": "11ec94a0496223ba",
-        "reviewer": "Luka-discovery-v1",
-        "date": "2026-08-30"
+        "hash": "bdcf976e8a2c92a6",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
     },
     "verification/tests/test/V1/DiamondProxy/StateChannelManager/OpenChannel.test.ts.md": {
-        "hash": "c9974d5065ad5460",
-        "reviewer": "Luka-discovery-v1",
-        "date": "2026-08-30"
+        "hash": "3067a25d1f2f4ce2",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
     },
     "verification/tests/test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts.md": {
-        "hash": "8d5bc4df1e63bc95",
-        "reviewer": "Luka-discovery-v1",
-        "date": "2026-08-30"
+        "hash": "901d4381572086b0",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
     },
     "verification/tests/test/V1/StateChannelDiamondProxy/StateSnapshotFacetOpenChannelRegistry.t.sol.md": {
         "hash": "f41793d637df5e54",
@@ -675,9 +675,9 @@
         "date": "2026-08-30"
     },
     "verification/tests/test/unit/OpenChannelRegistryEvents.test.ts.md": {
-        "hash": "f70f5eaabc650c13",
-        "reviewer": "Luka-discovery-v1",
-        "date": "2026-08-30"
+        "hash": "d915684e866e00d6",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
     },
     "verification/tests/test/utils/discoveryKey.test.ts.md": {
         "hash": "929fae3c97e8c6b6",
@@ -685,8 +685,163 @@
         "date": "2026-08-30"
     },
     "specification/disputes/dispute-processing.md": {
-        "hash": "8206c89d80c51467",
-        "reviewer": "momosh",
-        "date": "2026-10-07"
+        "hash": "9e225b3557aaf99a",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "audit/open-findings.md": {
+        "hash": "6dc3a502cc239d08",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "audit/verification.md": {
+        "hash": "d4277dda261eac9f",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "implementation/source/src/Clock.ts.md": {
+        "hash": "6e90afe9e379dd72",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "implementation/source/src/disputeManager/DisputeManager.ts.md": {
+        "hash": "1e8361bdf5bb8953",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md": {
+        "hash": "d93f03e9214c05b9",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "implementation/source/src/stateManager/eventSync/EventSyncService.ts.md": {
+        "hash": "952bcbca001a1944",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "implementation/source/src/stateManager/membership/ChannelJoinService.ts.md": {
+        "hash": "fee98d7016476ce3",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "implementation/source/src/stateManager/reduction/ReductionManager.ts.md": {
+        "hash": "2ee0852136cdb8d7",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "implementation/source/src/types/time.ts.md": {
+        "hash": "d74777eb4f6acc2a",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "implementation/source/src/utils/config.ts.md": {
+        "hash": "0ab41ecea0874e1c",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "implementation/source/src/utils/node/DeployUtils.ts.md": {
+        "hash": "afaf3a58180eee3a",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "specification/enforcement/execution-and-consumer.md": {
+        "hash": "30e386e91d5a61d2",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "specification/protocol-model/time.md": {
+        "hash": "74383bffeeedd893",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "specification/runtime/sdk.md": {
+        "hash": "62319e3a44d5f70b",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "verification/requirements.md": {
+        "hash": "940267c3871c3ea0",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "verification/tests/test/Clock.test.ts.md": {
+        "hash": "97c7a60cf1dbde74",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "verification/tests/test/V1/DiamondProxy/StateChannelManager/StateProofVerification.test.ts.md": {
+        "hash": "022930aa88c4b907",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyRegistration.t.sol.md": {
+        "hash": "80a441ce0d414610",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "verification/tests/test/V1/UniversalDeployment.test.ts.md": {
+        "hash": "6de08c74777d9bba",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "verification/tests/test/e2e/E2E-ReductionManager.test.ts.md": {
+        "hash": "ed582917de321038",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "verification/tests/test/e2e/E2E-StateTransition.test.ts.md": {
+        "hash": "8b2a2b0197411106",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "verification/tests/test/e2e/E2E-Timeouts.test.ts.md": {
+        "hash": "e93e8302dbbd6826",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "verification/tests/test/stateManager/EventSyncService.test.ts.md": {
+        "hash": "91781b95cb711337",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "verification/tests/test/stateManager/ReductionManager.test.ts.md": {
+        "hash": "74d3889cba622036",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "verification/tests/test/types/time.test.ts.md": {
+        "hash": "eb909345b59ac588",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "verification/tests/test/unit/BotConnectionFixes.test.ts.md": {
+        "hash": "1b138f05dc036bb7",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "verification/tests/test/unit/DeployUtils.test.ts.md": {
+        "hash": "9ddd6197ce807670",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "verification/tests/test/unit/DisputeManager.test.ts.md": {
+        "hash": "23ca4f82a9cb3e52",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "verification/tests/test/unit/MembershipService.test.ts.md": {
+        "hash": "d3b664aa448099a6",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "verification/tests/test/unit/ParticipantTimeoutService.test.ts.md": {
+        "hash": "e5785b0ae97a972a",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
+    },
+    "verification/tests/test/utils/ContractErrors.test.ts.md": {
+        "hash": "1e71f5b306024d94",
+        "reviewer": "Luke",
+        "date": "2026-11-17"
     }
 }
