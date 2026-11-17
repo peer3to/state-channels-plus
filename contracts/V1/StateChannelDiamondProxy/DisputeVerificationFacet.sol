@@ -97,7 +97,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             inboundBlock = inboundMessageBlockMap[channelId][inboundHash];
         }
         reducedOutput.latestInboundMessageBlockHash = inboundHash;
-        // snapshot adoption prunes its own inbound head -> take that height from the snapshot
+        // the snapshot's own inbound head -> take its height from the snapshot
         SnapshotData storage snapshotData = stateSnapshots[channelId].snapshotData;
         reducedOutput.latestInboundMessageBlockHeight = inboundHash == snapshotData.latestInboundMessageBlockHash
             ? snapshotData.latestInboundMessageBlockHeight

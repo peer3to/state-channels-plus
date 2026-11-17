@@ -120,7 +120,7 @@ Kill preconditions and races
 - [x] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P11` — An unrecognized upload receipt failure rejects with the original error and clears the local disputed marker
 - [x] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P12` — An unrecognized kill send failure rejects with the original error after one apply attempt, without retry or slashing the submitter
 - [x] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P13` — An unrecognized kill receipt failure rejects with the original error after one apply attempt, without retry or slashing the submitter
-- [x] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P14` — a nested forged-inbound proof whose inbound block a snapshot pruned reverts `RaceConditionBlockHeightTooOld`: `killDispute` handles it as a no-op
+- [x] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P14` — a nested forged-inbound proof whose inbound block is at or below the snapshot's inbound head reverts `RaceConditionBlockHeightTooOld`: `killDispute` handles it as a no-op
 
 ## UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9
 

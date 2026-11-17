@@ -8,17 +8,17 @@ Exercises: [FraudProofFacet.sol](../../../../../implementation/source/contracts/
 A Foundry suite on the deployed, routed diamond (`DiamondHarness.deployDiamond()`). `setUp` opens a
 two-participant channel, lands two genuine deposits A then B through `depositAssetsComposable`,
 and adopts B through `updateStateSnapshotSameFork`, expecting the `ChannelStorageCleared` event for
-B's hash, so A, B and every ancestor are pruned from the inbound map. It then asserts the snapshot's
+A's hash, so the head B stays and A and every ancestor are pruned from the inbound map. It then asserts the snapshot's
 inbound head is B and that A sits one below it. Each case submits a forged-inbound proof built from
 an author-signed block that carries the cited inbound block, and checks the slash set through
 `isParticipantSlashedOnChain` for the author, the eligible participant and an outsider.
 
-Pruned genuine blocks, from an outsider or an eligible submitter, and the snapshot head itself at
+Pruned genuine blocks, from an outsider or an eligible submitter, and the kept snapshot head at
 height S revert `RaceConditionBlockHeightTooOld(S, height)` with the exact payload, and nobody is
 slashed. Above S, a genuine stored block one above the head slashes the eligible false prover and
 not the author, and a fabricated block one above the head slashes the author. One fuzz case spans
 the full `uint256` height range of a fabricated block with either submitter: refused at or below S,
-the author slashed above it. Another fuzzes which pruned genuine block and which submitter. The
+the author slashed above it. Another fuzzes which consumed genuine block (A or B) and which submitter. The
 nested dispute route commits a real dispute whose last milestone is a protected first block followed by one
 block carrying the cited inbound block (`blockIndex: 1`): for a pruned genuine block the dispute-fraud proof reverts, the commitment stays,
 and nobody is slashed; for a fabricated block above S the disputer is killed and slashed and the
@@ -27,7 +27,7 @@ adoption, with no newer inbound, and checks that the output keeps B's hash and S
 height.
 
 Three further cases read the routed view `isUncommittedInboundMessageBlock` for the pruned block
-A, the pruned head B, a stored deposit C one above the head and a fabricated block one above the
+A, the kept head B, a stored deposit C one above the head and a fabricated block one above the
 head (only the last is true), and run `reduce` on both other walk outcomes: a dispute after a
 stored deposit C above the head returns C's hash and S+1, and a deposit that lands after the
 window's expiry is stepped over so the output is B's hash and S.

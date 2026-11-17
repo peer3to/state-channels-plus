@@ -288,12 +288,12 @@ export class EventHandler {
 
     async onChannelStorageCleared(
         channelId: ChannelId,
-        latestInboundMessageBlockHash: Hash,
+        firstPrunedInboundMessageBlockHash: Hash,
         coordinate: EventCoordinate
     ): Promise<void> {
         await this.diamondStateMachine.localDiamondContract.onChannelStorageCleared(
             channelId,
-            latestInboundMessageBlockHash,
+            firstPrunedInboundMessageBlockHash,
             coordinate.blockNumber,
             coordinate.logIndex
         );

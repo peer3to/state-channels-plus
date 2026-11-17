@@ -273,7 +273,7 @@ Specification cases tested: 0/4.
 Specification cases tested: 11/11.
 
 [`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)
-Specification cases tested: 17/17.
+Specification cases tested: 21/21.
 
 [`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)
 Specification cases tested: 33/33.
@@ -666,7 +666,7 @@ Specification cases tested: 3/4. Untested: T1.P1.
 Specification cases tested: 3/4. Untested: T1.P1.
 
 [`REQ-LOG-7-M2RC5W` (Nothing unpacks without a limit)](../specification/runtime/log-collection.md#req-log-7-m2rc5w)
-Specification cases tested: 7/7.
+Specification cases tested: 10/10.
 
 [`REQ-LOG-8-B7VN3J` (Works wherever the runtime works)](../specification/runtime/log-collection.md#req-log-8-b7vn3j)
 Specification cases tested: 4/6. Untested: T1.P2, T1.P6.
@@ -699,7 +699,7 @@ Specification cases tested: 0/12.
 Specification cases tested: 0/12.
 
 [`REQ-MSG-3-YY569F` (Packaged inbound blocks MUST chain from the previous snapshot tip and exist…)](../specification/settlement/cross-layer-messages.md#req-msg-3-yy569f)
-Specification cases tested: 0/12.
+Specification cases tested: 1/13. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12.
 
 [`REQ-MSG-4-SC1FEX` (Outbound processing MUST verify the linked range and skip the processed prefix…)](../specification/settlement/cross-layer-messages.md#req-msg-4-sc1fex)
 Specification cases tested: 0/8.

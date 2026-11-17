@@ -10,6 +10,7 @@
 - [`REQ-LOG-4-W5XR7Q` (Every line says where it came from)](../../../../../specification/runtime/log-collection.md#req-log-4-w5xr7q)
 - [`REQ-LOG-5-ST6S0G` (Sending twice does not store twice)](../../../../../specification/runtime/log-collection.md#req-log-5-st6s0g)
 - [`REQ-LOG-6-Q8KY4N` (One run's logs never overwrite another's)](../../../../../specification/runtime/log-collection.md#req-log-6-q8ky4n)
+- [`REQ-LOG-7-M2RC5W` (Nothing unpacks without a limit)](../../../../../specification/runtime/log-collection.md#req-log-7-m2rc5w)
 - [`REQ-LOG-11-F5TJQC` (An aborting runtime uploads its logs before it disposes)](../../../../../specification/runtime/log-collection.md#req-log-11-f5tjqc)
 
 ## UNIT-TEST-LOG-UPLOADER-1-TBRV7K
@@ -47,3 +48,11 @@ Delta upload against a real receiver, and crash capture that never throws.
 - [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P26` — a later flush's deadline also bounds an upload queued earlier without one
 - [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P27` — a flush's upload sleeps its jitter at most half the time left to the flush's deadline, so a short flush still sends
 - [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P28` — a flush ends the jitter wait of an upload already running, so an error's upload started just before a disposal reaches the endpoint
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P29` — a delta past the server's chunk limit is sent as consecutive chunks, each within it, counted as the server counts it
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P30` — a delta exactly at the chunk limit is sent as one chunk
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P31` — a refused chunk of a split delta stops the upload; the next delta re-sends from that chunk
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P32` — an entry that alone is past the chunk limit is sent trimmed to fit, saying its original size, with the rest; the trim warning goes through the logger and ships in the next upload
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P33` — an entry that grows under the double JSON encoding (quotes, newlines, control and multi-byte characters) is trimmed through the halving loop to fit, keeping its message's start
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P34` — an entry whose fields other than message, stack and meta are alone past the chunk limit is sent as its time, level and original size only, and does not hold back the next upload
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P35` — a `CRASH_LOG_MAX_CHUNK_MB` of zero is the 10 MiB default, as on the server: a small store goes whole and untrimmed
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P36` — a thread end while a split delta's second chunk is held ends the upload with only the first chunk's entries and sends nothing after it

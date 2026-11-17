@@ -238,7 +238,7 @@ describe("Unit: ValidationService", function () {
     });
     describe("detectForgedInboundMessageBlock", function () {
         // the spectator synced after the prune -> it never stored the top-up, so only the chain answers
-        it("genuine inbound pruned by a same-fork snapshot, absent locally -> not flagged", async function () {
+        it("genuine inbound consumed as the snapshot's inbound head, absent locally -> not flagged", async function () {
             const h = TestSession.getHarness();
             const { prunedInbound, forkId } = await stagePrunedGenuineInbound();
             const spectator = await h.join.addSpectatorDetached();

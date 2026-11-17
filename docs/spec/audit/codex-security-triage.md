@@ -122,9 +122,9 @@ Fix status: resolved.
 
 Source identity: `csf_f664a2f1629d842430826ec3`; rule `pruned-inbound`; occurrence `occ_60d59b4ec6fb0b8576e03989`.
 
-**Evidence and path.** The forged-inbound handler equated absence from the live map with forgery. Normal snapshot adoption deleted the consumed inbound head and its ancestors. After a later head was adopted, a retained honest signed block containing an earlier genuine head satisfied the false-fraud verdict, and the honest author was slashed.
+**Evidence and path.** The forged-inbound handler equated absence from the live map with forgery. Normal snapshot adoption deleted the consumed inbound head and its ancestors (an open channel's adoption now keeps the head until the next adoption deletes it). After a later head was adopted, a retained honest signed block containing an earlier genuine head satisfied the false-fraud verdict, and the honest author was slashed.
 
-**Locations (fixed code):** [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:349–360](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L349-L360); [contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol:325–334](../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L325-L334); [contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol:195–204](../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L195-L204).
+**Locations (fixed code):** [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:361–372](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L361-L372); [contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol:328–337](../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L328-L337); [contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol:189–221](../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L189-L221).
 
 **Boundary:** any chain account, through the routed `applyFraudProofs` entrypoint. The only material needed was one retained honest signed block that included the earlier inbound head. Ranking class: unauthenticated on-chain path.
 

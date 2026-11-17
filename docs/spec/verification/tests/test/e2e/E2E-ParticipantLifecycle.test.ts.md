@@ -55,6 +55,13 @@ flag, chain snapshot fork ID zero, no participants), the leaver reaching `NOT_OP
 no `onAbort` and no host error. The status is awaited, not read once: the leave check reports
 `onLeftChannel` when the membership drops, before the channel-close handler sets `NOT_OPENED`, and the
 specification does not order the two.
+The pruned-history join case starts three founders, lands a top-up that a block consumes, and posts a
+same-fork snapshot with no dispute window whose inbound head is the top-up. The chain and each honest
+founder's local diamond then hold the head and no longer hold the open's inbound block below it. The next writer is then
+disconnected, and the timeout reduction moves the two honest founders to a new fork. Each founder's
+genesis snapshot of that fork carries the chain's inbound head hash and height. Once the chain's
+snapshot is on the reduced fork, a spectator joins
+while the two founders author, and a block seats it as `PARTICIPATING`.
 
 ## Tests
 
@@ -71,6 +78,7 @@ specification does not order the two.
 - `a lone participant's leave that falls back to its self-removal dispute posts the reduced fork that has no participant: the channel closes and the leaver gets onLeftChannel once`: REQ-LIF-10-QR8NQ9.T1.P29
 - `every participant leaves and a JOIN lands before any exit snapshot is posted: the refused exit posts fall back to the leave watchdogs' self-removal disputes, whose reduction seats the joiner as the only participant and keeps the channel open; each leaver gets onLeftChannel once with no abort, the exits and the deposit are counted once, and the joiner authors the next block`: REQ-LIF-10-QR8NQ9.T1.P35
 - `should set PENDING_PARTICIPANT on join broadcast, then PARTICIPATING once joiner appears in a block`: UNIT-TEST-STATE-MANAGER-2-WSMPYS.P4
+- `a spectator joins after a timeout reduction that followed a snapshot post pruning the inbound history: the reduced fork keeps the chain's inbound height and the joiner is seated`: REQ-MSG-3-YY569F.T1.P13
 - `pending join fault survives until a failed receipt restores SYNCED`: INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P1, INV-TJOIN-2-H7JSQM.T1.P1, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P8
 - `pending join fault preserves the successful on-chain join and inbound message`: INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P2, INV-TJOIN-2-H7JSQM.T1.P2, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P9
 - `preserves a landed pending join when the same confirmation is retried`: REQ-ENFADM-2-K6K9SP.T1.P4, UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P17

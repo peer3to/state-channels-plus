@@ -74,7 +74,7 @@ assert none happened (`6.P3`, credited to the plain upload). One test holds the 
 read and no send while it is held, then one resolved read and both sends at their own recorded
 estimate plus the replay gas, the kill mined without error (`6.P11`). A non-timeout dispute refused as a previous-producer mismatch queues no mismatch retry: the ZeroAddress participant guard suppresses the re-arm, so no mismatch task exists without a nonzero submitted timeout.
 
-One construction case stages a pruned top-up (`PrunedInboundStaging`), stores a forged-inbound proof against the
+One construction case stages a top-up consumed as the snapshot's inbound head (`PrunedInboundStaging`), stores a forged-inbound proof against the
 honest block that consumed it through the real `FraudProofService` producer, and runs
 `constructDispute`: the proof stays stored but is left out of `fraudProofsToApply`, and its author
 is not added to `onChainSlashes`.
@@ -182,8 +182,8 @@ author is added.
 - `a rejected replay requirement read rejects the kill without sending it and the next kill reads again`: none
 - `fraud proof stored while constructDispute is held at getStateProof → lands in fraudProofsToApply and onChainSlashes`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P1, UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P8
 - `a non-timeout dispute refused as a predecessor mismatch queues no mismatch retry`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P45, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P17
-- `stored forged-inbound proof whose inbound block a snapshot pruned → constructDispute leaves it out, author not marked slashed`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P17
-- `stored forged-inbound proof above the pruned head → constructDispute bundles it, author marked slashed`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P18
+- `stored forged-inbound proof whose inbound block is the snapshot's inbound head → constructDispute leaves it out, author not marked slashed`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P17
+- `stored forged-inbound proof above the snapshot's inbound head → constructDispute bundles it, author marked slashed`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P18
 - `stale forged-inbound proof stored before a valid proof against the same author → constructDispute applies the valid one`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P19
 - `stored forged-inbound proof citing a genuine inbound block still held above the head → constructDispute leaves it out`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P20
 - `stored WrongGenesis proof while the chain holds the fork past genesis → constructDispute leaves it out, author not marked slashed`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P21, UNIT-TEST-PAST-GENESIS-1-1MXHJP.P4

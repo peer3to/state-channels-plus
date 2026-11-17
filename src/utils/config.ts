@@ -56,7 +56,11 @@ export type Config = {
     // Crash log collection
     CRASH_LOG_UPLOAD_ENDPOINT: string;
     CRASH_LOG_API_TOKEN: string;
+    // size of the local log store; older entries are pruned past it
     CRASH_LOG_MAX_SIZE_MB: number;
+    // largest upload chunk, as the crash-log server's own CRASH_LOG_MAX_CHUNK_MB;
+    // a store past it is uploaded in several chunks
+    CRASH_LOG_MAX_CHUNK_MB: number;
     // Minimum spacing between coordinated upload attempts.
     CRASH_LOG_UPLOAD_COALESCE_MS: number;
     // upper bound of the random per-upload jitter that spreads realms apart
@@ -98,6 +102,7 @@ const DEFAULT_CONFIG: Config = {
     CRASH_LOG_UPLOAD_ENDPOINT: "",
     CRASH_LOG_API_TOKEN: "",
     CRASH_LOG_MAX_SIZE_MB: 10,
+    CRASH_LOG_MAX_CHUNK_MB: 10,
     CRASH_LOG_UPLOAD_COALESCE_MS: 3000,
     CRASH_LOG_UPLOAD_JITTER_MAX_MS: 3000,
     CRASH_LOG_FLUSH_MS: 15_000,

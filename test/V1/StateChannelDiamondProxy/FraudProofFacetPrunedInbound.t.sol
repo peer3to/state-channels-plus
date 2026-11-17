@@ -9,11 +9,12 @@ import "../../../contracts/V1/types/DisputeTypes.sol";
 import "../../../contracts/V1/types/FraudProofTypes.sol";
 import "../../../contracts/V1/types/ProofTypes.sol";
 
-/// Genuine inbound A -> B adopted through the routed same-fork snapshot path, which prunes the consumed chain.
+/// Genuine inbound A -> B adopted through the routed same-fork snapshot path, which keeps the head B and prunes the
+/// blocks below it.
 /// A forged-inbound proof is judged only above the snapshot's inbound head S.
 // test naming: test_<targetFunction>_<property>
 contract FraudProofFacetPrunedInboundTest is DiamondHarness {
-    event ChannelStorageCleared(bytes32 indexed channelId, bytes32 latestInboundMessageBlockHash);
+    event ChannelStorageCleared(bytes32 indexed channelId, bytes32 firstPrunedInboundMessageBlockHash);
 
     StateChannelManagerInterface internal diamond;
 
@@ -42,11 +43,11 @@ contract FraudProofFacetPrunedInboundTest is DiamondHarness {
         inboundB = _deposit(BOB_PK, 7);
         assertEq(inboundB.previousBlockHash, keccak256(abi.encode(inboundA)), "B links to A");
 
-        // step 2 - same-fork adoption consumes B and prunes B, A and their ancestors
+        // step 2 - same-fork adoption consumes B, keeps B and prunes A and its ancestors
         (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots) =
             _makeSameForkSnapshot(CHANNEL, _participants(), _pks());
         vm.expectEmit(true, false, false, true, address(diamond));
-        emit ChannelStorageCleared(CHANNEL, keccak256(abi.encode(inboundB)));
+        emit ChannelStorageCleared(CHANNEL, keccak256(abi.encode(inboundA)));
         diamond.updateStateSnapshotSameFork(CHANNEL, proofs, snapshots, new MessageBlock[](0));
 
         StateSnapshot memory snapshot = diamond.getStateSnapshot(CHANNEL);
@@ -150,7 +151,7 @@ contract FraudProofFacetPrunedInboundTest is DiamondHarness {
         assertEq(diamond.getWindowCommitments(CHANNEL, dispute.input.forkId).length, 0, "dispute removed");
     }
 
-    // the walk ends on the pruned snapshot head -> its height comes from the snapshot, not deleted storage
+    // the walk ends on the kept snapshot head -> the output carries the snapshot's inbound height
     function test_reduce_afterSameForkPrune_keepsSnapshotInboundHeight() public {
         vm.warp(block.timestamp + 5);
         Dispute memory dispute = _uploadDisputeCarrying(BOB_PK, ALICE_PK, inboundA);
@@ -169,7 +170,7 @@ contract FraudProofFacetPrunedInboundTest is DiamondHarness {
         MessageBlock memory fabricated = _fabricatedInbound(snapshotHeight + 1, keccak256(abi.encode(inboundB)), 1, 99);
 
         assertFalse(diamond.isUncommittedInboundMessageBlock(CHANNEL, inboundA), "pruned A below S");
-        assertFalse(diamond.isUncommittedInboundMessageBlock(CHANNEL, inboundB), "pruned head B at S");
+        assertFalse(diamond.isUncommittedInboundMessageBlock(CHANNEL, inboundB), "kept head B at S");
         assertFalse(diamond.isUncommittedInboundMessageBlock(CHANNEL, inboundC), "stored C at S + 1");
         assertTrue(diamond.isUncommittedInboundMessageBlock(CHANNEL, fabricated), "fabricated at S + 1");
     }
@@ -187,7 +188,7 @@ contract FraudProofFacetPrunedInboundTest is DiamondHarness {
         assertEq(output.latestInboundMessageBlockHeight, snapshotHeight + 1, "C's height");
     }
 
-    // an inbound block newer than the window's expiry is stepped over -> the walk ends on the pruned head
+    // an inbound block newer than the window's expiry is stepped over -> the walk ends on the kept head
     function test_reduce_inboundAfterWindowExpiry_fallsBackToSnapshotHeight() public {
         vm.warp(block.timestamp + 5);
         Dispute[] memory disputes = new Dispute[](1);
@@ -198,7 +199,7 @@ contract FraudProofFacetPrunedInboundTest is DiamondHarness {
 
         ReduceOutput memory output = diamond.reduce(disputes);
 
-        assertEq(output.latestInboundMessageBlockHash, keccak256(abi.encode(inboundB)), "pruned head B");
+        assertEq(output.latestInboundMessageBlockHash, keccak256(abi.encode(inboundB)), "kept head B");
         assertEq(output.latestInboundMessageBlockHeight, snapshotHeight, "S");
     }
 

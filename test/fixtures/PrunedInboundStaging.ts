@@ -1,4 +1,4 @@
-// @spec-test-coverage-ignore: genuine inbound consumed and pruned by a same-fork snapshot, shared by the unit and E2E declarations
+// @spec-test-coverage-ignore: genuine inbound consumed by a same-fork snapshot as its inbound head, shared by the unit and E2E declarations
 import type { ForkId } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import * as factory from "@test/factory";
@@ -6,7 +6,7 @@ import { MathTestSession as TestSession } from "@test/harness";
 import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { expect } from "chai";
 
-/** a top-up lands, honest blocks consume it, then a posted snapshot prunes it and its ancestors on chain */
+/** a top-up lands, honest blocks consume it, then a posted snapshot makes it the inbound head S and prunes its ancestors on chain */
 export async function stagePrunedGenuineInbound() {
     const h = TestSession.getHarness();
     await h.lifecycle.start(3, 1);
@@ -28,7 +28,7 @@ export async function stagePrunedGenuineInbound() {
     await h.transition.advanceState({ count: 2, waitForFinalization: true });
     await h.transition.postSnapshotWait();
 
-    // premise - the posted snapshot consumed the top-up -> same-fork adoption pruned it
+    // premise - the posted snapshot consumed the top-up -> it is the snapshot's inbound head S
     const snapshot = await h.channelManager.getStateSnapshot(h.channelId);
     expect(snapshot.snapshotData.latestInboundMessageBlockHash).to.equal(
         prunedHash
@@ -78,7 +78,7 @@ export async function findCarrier(forkId: ForkId, inboundHash: string) {
     throw new Error("no honest block carried the pruned inbound block");
 }
 
-/** the next writer authors a block carrying a fabricated inbound block one above the pruned head; another peer ingests it and stores the forged-inbound proof */
+/** the next writer authors a block carrying a fabricated inbound block one above the snapshot's inbound head; another peer ingests it and stores the forged-inbound proof */
 export async function storeForgedInboundProofAboveHead(
     prunedInbound: MessageBlockStruct
 ) {

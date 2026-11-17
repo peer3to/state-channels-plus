@@ -8,7 +8,7 @@ const {
     parseChunkFileName,
     encodeChunk,
     decodeChunk,
-    mergeChunks
+    mergeEncodedEntries
 } = require("../../scripts/logging/logChunks.js") as {
     chunkFileName: (fromSeq: number, toSeq: number) => string;
     parseChunkFileName: (
@@ -16,15 +16,27 @@ const {
     ) => { fromSeq: number; toSeq: number } | null;
     encodeChunk: (entries: LogEntry[]) => string;
     decodeChunk: (base64: string) => LogEntry[];
-    mergeChunks: ((perThread: {
+    mergeEncodedEntries: (perThread: {
         [threadName: string]: Array<{
             storeId?: string;
             fromSeq: number;
             toSeq: number;
             base64: string;
         }>;
-    }) => LogEntry[]) & { lastSkippedChunks: number };
+    }) => { encodedEntries: string[]; skippedChunks: number };
 };
+
+/** the server's merge, its entries parsed back */
+function mergeParsed(perThread: Parameters<typeof mergeEncodedEntries>[0]): {
+    merged: LogEntry[];
+    skippedChunks: number;
+} {
+    const { encodedEntries, skippedChunks } = mergeEncodedEntries(perThread);
+    return {
+        merged: encodedEntries.map((encoded) => JSON.parse(encoded)),
+        skippedChunks
+    };
+}
 
 function entry(
     message: string,
@@ -67,7 +79,7 @@ describe("logChunks", function () {
     });
 
     it("merges three threads into one ordered stream", function () {
-        const merged = mergeChunks({
+        const { merged } = mergeParsed({
             main: [chunk(0, [entry("main a", 100, "main")])],
             sdk: [
                 chunk(0, [
@@ -92,7 +104,7 @@ describe("logChunks", function () {
         const third = entry("three", 30, "sdk");
 
         // A lost 2xx makes the client re-send a range it already stored.
-        const merged = mergeChunks({
+        const { merged } = mergeParsed({
             sdk: [chunk(0, [first, second]), chunk(0, [first, second, third])]
         });
 
@@ -104,7 +116,7 @@ describe("logChunks", function () {
     });
 
     it("skips an undecodable chunk", function () {
-        const merged = mergeChunks({
+        const { merged } = mergeParsed({
             sdk: [
                 { fromSeq: 0, toSeq: 0, base64: "not base64 gzip at all" },
                 chunk(1, [entry("survivor", 10, "sdk")])
@@ -115,7 +127,7 @@ describe("logChunks", function () {
     });
 
     it("keeps the gap when a chunk is missing", function () {
-        const merged = mergeChunks({
+        const { merged } = mergeParsed({
             sdk: [
                 chunk(0, [entry("before gap", 10, "sdk")]),
                 chunk(5, [entry("after gap", 20, "sdk")])
@@ -132,8 +144,8 @@ describe("logChunks", function () {
 
     // [PO1] the budget is shared across a whole merged read, not per chunk
     it("stops a merged read at the shared inflate budget and reports it", function () {
-        const previous = process.env.CRASH_LOG_MAX_SIZE_MB;
-        process.env.CRASH_LOG_MAX_SIZE_MB = "1";
+        const previous = process.env.CRASH_LOG_MAX_CHUNK_MB;
+        process.env.CRASH_LOG_MAX_CHUNK_MB = "1";
         try {
             // each chunk fits the per-chunk bound; together they pass it
             // ~400 KB inflated: comfortably under the 1 MB per-chunk bound
@@ -150,22 +162,22 @@ describe("logChunks", function () {
             });
 
             // 100 x ~400 KB = ~40 MB, past the 20-store shared budget
-            const merged = mergeChunks({
+            const { merged, skippedChunks } = mergeParsed({
                 vm: Array.from({ length: 100 }, (_unused, i) => chunk(i))
             });
 
-            expect(mergeChunks.lastSkippedChunks).to.be.greaterThan(0);
+            expect(skippedChunks).to.be.greaterThan(0);
             // a partial read, not an empty one
             expect(merged.length).to.be.greaterThan(0);
         } finally {
-            process.env.CRASH_LOG_MAX_SIZE_MB = previous;
+            process.env.CRASH_LOG_MAX_CHUNK_MB = previous;
         }
     });
 
     // [TO4] the bound must stop the inflate, not check the size after it
     it("refuses a chunk that inflates past the configured maximum", function () {
-        const previous = process.env.CRASH_LOG_MAX_SIZE_MB;
-        process.env.CRASH_LOG_MAX_SIZE_MB = "1";
+        const previous = process.env.CRASH_LOG_MAX_CHUNK_MB;
+        process.env.CRASH_LOG_MAX_CHUNK_MB = "1";
         try {
             const many = Array.from({ length: 40_000 }, (_unused, index) =>
                 entry(`padding ${"x".repeat(200)}`, 1000 + index, "vm")
@@ -175,7 +187,7 @@ describe("logChunks", function () {
                 "inflates past"
             );
         } finally {
-            process.env.CRASH_LOG_MAX_SIZE_MB = previous;
+            process.env.CRASH_LOG_MAX_CHUNK_MB = previous;
         }
     });
 
@@ -188,7 +200,7 @@ describe("logChunks", function () {
         delete broken.wallTimeMs;
         const base64 = encodeChunk([good, broken as LogEntry]);
 
-        const merged = mergeChunks({
+        const { merged } = mergeParsed({
             vm: [{ storeId: "s1", fromSeq: 0, toSeq: 1, base64 }]
         });
 
@@ -206,7 +218,7 @@ describe("logChunks", function () {
             entry("third", 1002, "vm")
         ]);
 
-        const merged = mergeChunks({
+        const { merged } = mergeParsed({
             vm: [{ storeId: "s1", fromSeq: 0, toSeq: 2, base64 }]
         });
 
