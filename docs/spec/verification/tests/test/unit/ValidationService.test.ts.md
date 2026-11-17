@@ -29,9 +29,9 @@ and only its supplier is punished
 `ValidationService` concern (it is `Codec` in the `Block` model), so the file has no decoding cases.
 
 A `detectForgedInboundMessageBlock` group stages a real top-up that honest blocks consume and a
-posted same-fork snapshot then prunes on chain, asserting the snapshot's inbound head is that
-top-up. A spectator synced afterwards, which never stored the top-up, runs the real detector
-through the validation probe: a block carrying the pruned genuine top-up is not flagged, and a
+posted same-fork snapshot keeps as its inbound head on chain (pruning the blocks below), asserting
+the snapshot's inbound head is that top-up. A spectator synced afterwards, which never stored the top-up, runs the real detector
+through the validation probe: a block carrying the genuine top-up at that head is not flagged, and a
 fabricated inbound block one above the snapshot's inbound head is flagged and returned.
 
 Two wrong-genesis cases first author blocks 0 and 1 and post the latest snapshot, so the chain
@@ -112,5 +112,5 @@ once the chain is past genesis, does not abort and stores no proof.
 - `repositions the state machine to the block's predecessor before the leader check`: none
 - `the same candidate crosses the future→next boundary as storage advances → NOT_READY then DISCONNECT`: none
 - `concurrent probes are serialized → every one gets an uncorrupted patch/restore`: none
-- `genuine inbound pruned by a same-fork snapshot, absent locally -> not flagged`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P36
+- `genuine inbound consumed as the snapshot's inbound head, absent locally -> not flagged`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P36
 - `fabricated inbound one above the snapshot's inbound head -> flagged`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P37

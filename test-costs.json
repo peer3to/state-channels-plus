@@ -21913,6 +21913,12 @@
       "peakRssGb": 0.794,
       "measurementReason": null
     },
+    "hardhat|test/unit/ValidationService.test.ts|Unit: ValidationService detectForgedInboundMessageBlock genuine inbound consumed as the snapshot's inbound head, absent locally -> not flagged": {
+      "durationMs": 9642,
+      "avgCores": 0.698,
+      "peakRssGb": 0.933,
+      "measurementReason": null
+    },
     "hardhat|test/unit/ValidationService.test.ts|Unit: ValidationService duplicate malformed bytes use one charged slot and are removed once": {
       "durationMs": 11528,
       "avgCores": 1.093,
