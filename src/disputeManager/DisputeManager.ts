@@ -115,6 +115,7 @@ class DisputeManager {
         let txResponse;
         let rethrow: unknown;
         let refreshSlashes = false;
+        let retryWithoutStaleProof = false;
         let submittedTimeout: TimeoutStruct | undefined;
         let timeoutRetry: { delayMs: number; reason: string } | undefined;
         let postedTimeout: TimeoutStruct | undefined;
@@ -322,6 +323,15 @@ class DisputeManager {
                             { forkId, channelId: this.channelId }
                         );
                     },
+                    // the snapshot passed a stored forged-inbound proof's height, or moved its fork past
+                    // the genesis a WrongGenesis proof needs -> rebuild: construction reads the chain and leaves it out
+                    RaceConditionBlockHeightTooOld: () => {
+                        this.logger.info(
+                            "dispute retry: a fraud proof the chain no longer judges",
+                            { forkId, channelId: this.channelId }
+                        );
+                        retryWithoutStaleProof = true;
+                    },
                     // the chain inbound head moved past our anchor (a join landed
                     // after construction, or our inbound store lags): the marker
                     // rolls back below and we retry from the chain's head
@@ -438,6 +448,8 @@ class DisputeManager {
                 refusedInboundHead: inboundRetry.chainHead
             });
         }
+        if (retryWithoutStaleProof && this.stateManager.forkId === forkId)
+            return this.dispute(forkId);
         return { lostEvidenceRace };
     }
 
@@ -541,6 +553,12 @@ class DisputeManager {
                     RaceConditionUnexpectedBlockCalldataPosted: () => {
                         this.logger.info(
                             `killDispute no-op: unexpected block calldata posted for dispute ${formattedHash}`,
+                            { disputeMeta }
+                        );
+                    },
+                    RaceConditionBlockHeightTooOld: () => {
+                        this.logger.info(
+                            `killDispute no-op: a nested fraud proof the chain no longer judges for dispute ${formattedHash}`,
                             { disputeMeta }
                         );
                     }

@@ -583,7 +583,7 @@ install, reduction genesis and block commit. Prove each with a regression in whi
 
 ## Codex Security reassessment
 
-The [current Codex Security reassessment](./codex-security-triage.md) checks the 7 protocol findings of the supplied scan against `dispute` at `9dc243769`: **6 confirmed, 1 fixed**. Four of the confirmed findings have since been fixed: [`FIND-SECURITY-1-6SAJ4E`](open-findings.md#find-security-1-6saj4e), [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v), [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz) and [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx); [`FIND-SECURITY-3-REDPJW`](open-findings.md#find-security-3-redpjw) and [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) remain confirmed. This is static evidence, not runtime validation or engineer approval. The report includes exact paths, preconditions, counterevidence and proposed fix/test handoffs. The scan's 5 developer-tooling findings are tracked in the tooling's own documentation, as the report lists.
+The [current Codex Security reassessment](./codex-security-triage.md) checks the 7 protocol findings of the supplied scan against `dispute` at `9dc243769`: **6 confirmed, 1 fixed**. Five of the confirmed findings have since been fixed: [`FIND-SECURITY-1-6SAJ4E`](open-findings.md#find-security-1-6saj4e), [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v), [`FIND-SECURITY-3-REDPJW`](open-findings.md#find-security-3-redpjw), [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz) and [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx); [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) remains confirmed. This is static evidence, not runtime validation or engineer approval. The report includes exact paths, preconditions, counterevidence and proposed fix/test handoffs. The scan's 5 developer-tooling findings are tracked in the tooling's own documentation, as the report lists.
 
 **Engineer decision (2026-09-30):** publish this assessment now, with no fixes in the change that adds it. Each finding below stays open until its fix and regression test land.
 
@@ -625,12 +625,17 @@ never slashes an honest signer either. Regression:
 
 ### FIND-SECURITY-3-REDPJW
 
-**Current defect:** **Open; high.** Pruned genuine inbound history can falsely slash honest authors.
+**Current defect:** **Resolved (2026-10-02); high.** Pruned genuine inbound history could falsely
+slash honest authors.
 
-**Proposed direction and handoff:**
-[Evidence and proposed fix](./codex-security-triage.md#pruned-inbound). Engineer review pending;
-preserve the report's prerequisites and proof gaps. Owed regression:
-[`INV-ENFFP-1-BGVZN4.T1.P14`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p14).
+**Proposed direction and handoff:** Done: a forged-inbound proof at or below the snapshot's inbound
+head now reverts `RaceConditionBlockHeightTooOld` and slashes nobody; the SDK detector reads the
+chain's predicate through `isUncommittedInboundMessageBlock`; dispute construction skips proofs the
+chain no longer judges, and `dispute()` retries once after a race; `reduce` keeps the snapshot's
+inbound height after a prune ([fix record](./codex-security-triage.md#pruned-inbound)). Mapped
+regressions: [`INV-ENFFP-1-BGVZN4.T1.P14`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p14),
+[`INV-ENFFP-1-BGVZN4.T1.P18`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p18),
+[`INV-ENFFP-1-BGVZN4.T1.P19`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p19).
 
 <a id="find-security-4-02dywz"></a>
 
@@ -680,8 +685,8 @@ pending. Mapped regressions:
 **Current defect:** **Resolved (2026-10-03, window path 2026-10-30); high.** `applySyncResponse` binds the
 genesis timestamp before persistence, to the step-1 chain genesis on the same fork and to the
 origin window's chain-expired kill-period end for a successor fork; a mismatch rejects as "genesis
-timestamp mismatch". Past genesis on chain no value authenticates it: sync keeps a held genesis, the
-rest is [`FIND-FRAUD-1-TRWDPS`](open-findings.md#find-fraud-1-trwdps). The same timestamp could also arrive as
+timestamp mismatch". Past genesis on chain no value authenticates it: sync keeps a held genesis, and the chain no
+longer judges that fork's block 0 ([`FIND-FRAUD-1-TRWDPS`](open-findings.md#find-fraud-1-trwdps)). The same timestamp could also arrive as
 the `latestStateSnapshot` of a genesis-case window (its disputes carry no block) that the sync
 reduces itself, whose reduction pins only the snapshot data (handed over from
 [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf)): that snapshot must now hash to the
@@ -787,9 +792,21 @@ Each should become a normal fix + test once confirmed.
 
 ### FIND-FRAUD-1-TRWDPS
 
-**Defect:** _Open (2026-10-03)._ An honest peer files a WrongGenesis proof that cannot succeed, and is slashed for it, when a block 0 is judged on a fork whose on-chain snapshot is already past genesis. `_handleWrongGenesis` returns invalid for that fork (contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:295-297) and `applyFraudProofs` slashes the submitter of an invalid proof (FraudProofFacet.sol:19-25). A block 0 still reaches validation after a sync that persisted only history above the anchor: the queue lets stored heights through for double-sign detection, and `isLinked` then compares it with the stored genesis (src/stateManager/ingest/ValidationService.ts:412-418). Triggers: a genuinely wrong late block 0, or an honest block 0 judged against a genesis whose timestamp a sync responder altered while the chain was past genesis (the residual of [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj)). Also unverified: a forged genesis timestamp as the block-timestamp floor in `BlockProductionService.adjustTimestampIfNeeded` when that fork has no stored block. Code-traced, not executed.
+**Defect:** _Resolved (2026-10-30)._ An honest peer filed a WrongGenesis proof that cannot succeed, and is slashed for it, when a block 0 is judged on a fork whose on-chain snapshot is already past genesis. `_handleWrongGenesis` returns invalid for that fork (contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:295-297) and `applyFraudProofs` slashes the submitter of an invalid proof (FraudProofFacet.sol:19-25). A block 0 still reaches validation after a sync that persisted only history above the anchor: the queue lets stored heights through for double-sign detection, and `isLinked` then compares it with the stored genesis (src/stateManager/ingest/ValidationService.ts:412-418). Triggers: a genuinely wrong late block 0, or an honest block 0 judged against a genesis whose timestamp a sync responder altered while the chain was past genesis (the residual of [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj)). Code-traced, not executed. The unverified block-timestamp floor in `BlockProductionService.adjustTimestampIfNeeded` is tracked separately as [`FIND-BLOCK-TIMESTAMP-1-5NNFAZ`](open-findings.md#find-block-timestamp-1-5nnfaz).
 
-**Proposed direction:** Stop judging WrongGenesis for a block 0 once the chain snapshot on its fork is past genesis. Engineer choices: WrongGenesis only or any stale block; a guard in `wrongGenesisDetected` or a new strategy deviation on all strategies; dispute or disconnect at all; the lag of the event-fed local view (preflight through the local diamond); keying stored fraud proofs by fork.
+**Fix:** Engineer decision (Luke, 2026-10-30): the chain is the source of truth, and a proof the chain can no longer judge reverts and never slashes the prover. `_handleWrongGenesis` reverts `RaceConditionBlockHeightTooOld(snapshotHeight, 0)` once the fork's on-chain snapshot is past its genesis, so neither the prover nor the author is slashed. `BlockValidationStrategy.wrongGenesisDetected` reads the chain snapshot (not the local diamond, which can lag) and files no proof there: another author's block 0 against the stored one disconnects its sources and author, an unlinked block 0 with none stored is dropped with no verdict (the node's own genesis may be the wrong one). `DisputeBuilder.constructDispute` leaves out a stored WrongGenesis proof the chain no longer judges, read from the chain, next to the forged-inbound skip, so a stale proof cannot revert the dispute multicall; a refusal that still lands makes `dispute()` rebuild, and the rebuild reads the chain with the contract's own genesis predicate and leaves the proof out, and `killDispute` treats it as a no-op. A third "no verdict" outcome that lets the batch continue was rejected: the dispute counts a bundled proof's slash in its `onChainSlashes`, so an ignored proof would leave an honest dispute that auditors kill. Regressions: [`INV-ENFFP-1-BGVZN4.T1.P21`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p21), [`INV-ENFFP-1-BGVZN4.T1.P22`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p22).
+
+<a id="find-block-timestamp-1-5nnfaz"></a>
+
+### FIND-BLOCK-TIMESTAMP-1-5NNFAZ
+
+**Defect:** _Open (2026-10-30), unverified._ `BlockProductionService.adjustTimestampIfNeeded` may use a genesis
+timestamp a sync responder altered, while the chain was past genesis, as the block-timestamp floor of a fork that
+has no stored block yet. Split out of [`FIND-FRAUD-1-TRWDPS`](open-findings.md#find-fraud-1-trwdps), which this
+residual did not close. Code-traced, not executed.
+
+**Proposed direction:** Confirm whether the floor can come from an unchecked genesis timestamp at all; if it can,
+read the floor from a value the chain authenticates.
 
 <a id="find-contract-devlog-1-s97s2h"></a>
 
