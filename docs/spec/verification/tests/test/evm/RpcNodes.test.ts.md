@@ -23,7 +23,7 @@ transaction answered with that error rejects with the node's own answer and neve
 proxy, that the same error carrying revert data `0x` (Hardhat's revert answer) rejects the call as a
 `CALL_EXCEPTION` without asking the second proxy, that the latest block read answered with no block
 (a proxy answers `eth_getBlockByNumber` with `null`, once or every time) goes to the next node, gets
-one more pass when both answer so and then rejects, while a block read by an unmined number answered
+one more pass when both answer so and then rejects, rejects at once with the internal error when the other node answers with that error in the same pass, while a block read by an unmined number answered
 with no block is returned without asking the second proxy, that the provider warns
 once per outage of every node, that malformed endpoints, an invalid signer secret and a `LOG_QUERY_MAX_BLOCKS` of zero or a fraction open no node,
 and that `readLogPages` reads a private chain longer than three windows through a proxy that rejects
@@ -103,6 +103,7 @@ within the one-second window (every node was destroyed).
 - `fails a latest block read over to the next node when the first answers with no block`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P24, REQ-CHAINOBS-2-2NCSQ3.T1.P18
 - `answers a latest block read on a second pass when every node first answers with no block`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P25, REQ-CHAINOBS-2-2NCSQ3.T1.P19
 - `rejects a latest block read when every node answers with no block twice`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P26, REQ-CHAINOBS-2-2NCSQ3.T1.P20
+- `rejects a latest block read with the internal error, without a second pass, when the other node answers with no block`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P28
 - `answers a block read by an unmined number with no block without failing over`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P27, REQ-CHAINOBS-2-2NCSQ3.T1.P21
 - `warns once per outage of every node and again after a reconnect`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P14, REQ-CHAINOBS-2-2NCSQ3.T1.P12
 - `rejects startup over a malformed endpoint before any node opens and without its secret`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P10, REQ-CHAINOBS-1-5JTHY8.T1.P9

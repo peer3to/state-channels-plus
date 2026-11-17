@@ -35,6 +35,7 @@ import {
     assertMissingLatestBlockOfEveryNodeIsFinal,
     assertMissingLatestBlockOfEveryNodeRetriedOnce,
     assertMissingNumberedBlockIsAnswer,
+    assertInternalErrorBeatsMissingLatestBlock,
     assertReadFailsOverWhenNodeDropsMidRequest,
     assertReadsFailOverToNextNode,
     assertRefusedNodeKeepsReconnecting,
@@ -177,6 +178,10 @@ describe("MultiRpcProvider", () => {
 
     it("rejects a latest block read when every node answers with no block twice", async () => {
         await assertMissingLatestBlockOfEveryNodeIsFinal();
+    });
+
+    it("rejects a latest block read with the internal error, without a second pass, when the other node answers with no block", async () => {
+        await assertInternalErrorBeatsMissingLatestBlock();
     });
 
     it("answers a block read by an unmined number with no block without failing over", async () => {

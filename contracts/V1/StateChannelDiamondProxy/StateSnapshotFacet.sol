@@ -123,13 +123,11 @@ contract StateSnapshotFacet is StateChannelCommon {
             // Clear the state snapshot
             delete stateSnapshots[channelId];
             // TODO! send all remaining funds to the treasury
-        }
-
-        //check if last fork -> clearStorage
-        if (
+        } else if (
             disputeData[channelId].disputeWindowMap[newSnapshot.forkId].evidence.creationTimestamp == 0
                 && shouldClearStorage
         ) {
+            // last fork of an open channel -> clear its storage (the close above already did)
             _clearStorage(channelId, newSnapshot.snapshotData.latestInboundMessageBlockHash, false);
         }
         emit StateSnapshotUpdated(channelId, newSnapshot);

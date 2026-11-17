@@ -325,7 +325,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return storedBlock.timestamp != 0 || storedBlock.messages.length != 0;
     }
 
-    // snapshot adoption prunes the canonical inbound chain up to its head -> absent above it means never committed
+    // snapshot adoption prunes the canonical inbound chain below its head -> absent above it means never committed
     function _isUncommittedInboundMessageBlock(bytes32 channelId, MessageBlock memory messageBlock)
         internal
         view

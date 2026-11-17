@@ -764,7 +764,7 @@ describe("Unit: DisputeManager", function () {
             expect(r.authorMarkedSlashed).to.equal(false);
         });
 
-        it("stored forged-inbound proof above the pruned head → constructDispute bundles it, author marked slashed", async function () {
+        it("stored forged-inbound proof above the snapshot's inbound head → constructDispute bundles it, author marked slashed", async function () {
             const h = TestSession.getHarness();
             const { prunedInbound, forkId } = await stagePrunedGenuineInbound();
             const { author, observer } =

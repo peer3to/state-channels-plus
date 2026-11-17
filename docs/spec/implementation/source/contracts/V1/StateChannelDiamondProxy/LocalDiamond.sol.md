@@ -20,6 +20,7 @@ Mirror replication
 - [x] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P2` — duplicate idempotence
 - [x] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P3` — replaying the open transaction's `InboundMessagesProcessed` and `ChannelOpened`, in either order, stores the genesis inbound block once and leaves the inbound head, its height and the deposit total at the genesis snapshot's values; `ChannelOpened` alone stores no inbound block
 - [x] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P4` — `onInboundMessagesProcessed` with a block it already stores, the head block or an older one, is a no-op: no revert, the inbound head and its deposit total stay
+- [x] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P7` — `onChannelStorageCleared` naming a block an earlier clearing already deleted (a later advance with the same head) deletes nothing; the head block, the inbound head and its deposit total stay
 - [x] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P5` — `onInboundMessagesProcessed` with an older block after a newer one stores the older block; the inbound head and its deposit total stay at the newer block
 - [x] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P6` — `onChannelStorageCleared` deletes inbound blocks from the first pruned block the event names and keeps the blocks above it; the inbound head and its deposit total stay
 

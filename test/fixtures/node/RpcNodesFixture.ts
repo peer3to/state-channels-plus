@@ -1302,6 +1302,26 @@ export async function assertMissingLatestBlockOfEveryNodeRetriedOnce(): Promise<
     });
 }
 
+export async function assertInternalErrorBeatsMissingLatestBlock(): Promise<void> {
+    await withProxiedNodes(2, async ({ proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        proxies[0].answerRequests("eth_getBlockByNumber", null);
+        proxies[1].failNextRequestInternally("eth_getBlockByNumber");
+
+        const error = await provider.getBlock("latest").then(
+            () => undefined,
+            (failure: unknown) => failure
+        );
+
+        // the internal error is final: no second pass for the missing block
+        expect(String(error)).to.include("Internal error");
+        expect(
+            proxies.map((proxy) => proxy.forwardedCount("eth_getBlockByNumber"))
+        ).to.deep.equal([1, 1]);
+        expect(proxies[1].failedCount("eth_getBlockByNumber")).to.equal(1);
+    });
+}
+
 export async function assertMissingNumberedBlockIsAnswer(): Promise<void> {
     await withProxiedNodes(2, async ({ proxies, nodes, logger }) => {
         const provider = new MultiRpcProvider(nodes, logger);

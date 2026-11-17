@@ -51,4 +51,8 @@ Delta upload against a real receiver, and crash capture that never throws.
 - [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P29` — a delta past the server's chunk limit is sent as consecutive chunks, each within it, counted as the server counts it
 - [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P30` — a delta exactly at the chunk limit is sent as one chunk
 - [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P31` — a refused chunk of a split delta stops the upload; the next delta re-sends from that chunk
-- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P32` — an entry that alone is past the chunk limit is sent trimmed to fit, saying its original size, with the rest
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P32` — an entry that alone is past the chunk limit is sent trimmed to fit, saying its original size, with the rest; the trim warning goes through the logger and ships in the next upload
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P33` — an entry that grows under the double JSON encoding (quotes, newlines, control and multi-byte characters) is trimmed through the halving loop to fit, keeping its message's start
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P34` — an entry whose fields other than message, stack and meta are alone past the chunk limit is sent as its time, level and original size only, and does not hold back the next upload
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P35` — a `CRASH_LOG_MAX_CHUNK_MB` of zero is the 10 MiB default, as on the server: a small store goes whole and untrimmed
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P36` — a thread end while a split delta's second chunk is held ends the upload with only the first chunk's entries and sends nothing after it

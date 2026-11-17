@@ -137,6 +137,17 @@ contract InboundHeadPruningTest is Test, StateChannelManagerEvents {
         assertTrue(harness.hasInboundBlock(CHANNEL_ID, H3), "the new snapshot head kept");
     }
 
+    function test_clearStorage_openChannel_sameHeadTwice_keepsTheHead() public {
+        harness.clearStorage(CHANNEL_ID, H2, false);
+
+        vm.expectEmit(address(harness));
+        emit ChannelStorageCleared(CHANNEL_ID, H1);
+        harness.clearStorage(CHANNEL_ID, H2, false);
+
+        assertTrue(harness.hasInboundBlock(CHANNEL_ID, H2), "snapshot head kept");
+        assertEq(harness.inboundBlockHeight(CHANNEL_ID, H2), 2, "snapshot head keeps its height");
+    }
+
     function test_clearStorage_openChannelWithoutInboundBlocks_prunesNothing() public {
         bytes32 emptyChannel = keccak256("no inbound blocks");
 

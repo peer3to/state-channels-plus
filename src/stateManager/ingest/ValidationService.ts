@@ -251,7 +251,7 @@ export default class ValidationService {
     /**
      * Did the author invent an inbound message block? A carried inbound block
      * is legitimate if we already store it locally or the chain cannot show it
-     * was never committed (stored, or at/below the snapshot's pruned inbound head).
+     * was never committed (stored, or at/below the snapshot's inbound head).
      */
     public async detectForgedInboundMessageBlock(
         block: Block

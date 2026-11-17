@@ -86,6 +86,20 @@ contract LocalDiamondInboundMirrorTest is DiamondHarness {
         _assertHead(second, 250);
     }
 
+    function test_onChannelStorageCleared_alreadyPrunedBlock_keepsTheHead() public {
+        MessageBlock memory first = _inboundBlock(bytes32(0), 1, 100);
+        MessageBlock memory second = _inboundBlock(keccak256(abi.encode(first)), 2, 250);
+        localDiamond.onInboundMessagesProcessed(CHANNEL_ID, first);
+        localDiamond.onInboundMessagesProcessed(CHANNEL_ID, second);
+        localDiamond.onChannelStorageCleared(CHANNEL_ID, keccak256(abi.encode(first)), 1, 0);
+
+        // a later advance with the same head names the block the first clearing already deleted
+        localDiamond.onChannelStorageCleared(CHANNEL_ID, keccak256(abi.encode(first)), 2, 0);
+
+        assertTrue(mirror.hasInboundMessageBlock(CHANNEL_ID, keccak256(abi.encode(second))));
+        _assertHead(second, 250);
+    }
+
     function test_openReplay_eitherOrder_storesTheGenesisInboundBlockOnlyThroughTheInboundEvent() public {
         (MessageBlock memory genesisBlock, StateSnapshot memory genesisSnapshot, bytes memory genesisState) =
             _openAndRecordGenesis();

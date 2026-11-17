@@ -504,7 +504,7 @@ app.use("/logs/upload", (err, req, res, next) => {
 
     if (err && err.type === "entity.too.large") {
         console.error(
-            `[CrashLogServer][${requestId}] Upload parser rejected payload: uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} entity too large elapsedMs=${elapsedMs} limit=50mb contentLengthHeader=${meta ? meta.contentLengthHeader : 0}`
+            `[CrashLogServer][${requestId}] Upload parser rejected payload: uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} entity too large elapsedMs=${elapsedMs} limit=${MAX_UPLOAD_BODY_BYTES} contentLengthHeader=${meta ? meta.contentLengthHeader : 0}`
         );
         res.status(413).json({ error: "Payload too large" });
         return;
@@ -593,7 +593,10 @@ app.get("/logs/:channelId/:peerAddress/:threadName", async (req, res) => {
 let mergedReadTurn = Promise.resolve();
 
 // a client that stops reading would hold the merged read turn for good
-const MERGED_READ_TIMEOUT_MS = 120_000;
+function mergedReadTimeoutMs() {
+    const configured = Number(process.env.CRASH_LOG_MERGED_READ_TIMEOUT_MS);
+    return Number.isFinite(configured) && configured > 0 ? configured : 120_000;
+}
 
 function takeMergedReadTurn() {
     const previous = mergedReadTurn;
@@ -606,6 +609,10 @@ async function sendMergedChunks(req, res, threadName) {
     let release;
     try {
         const { channelId, peerAddress } = req.params;
+        // the turn before the read: a queued read holds none of its chunks
+        release = await takeMergedReadTurn();
+        // gone while it waited for the turn -> skip its read and merge
+        if (res.destroyed) return;
         const { dir: channelDir } = await resolveChannelDir(channelId);
         const perThread = await readPeerChunks(
             channelDir,
@@ -621,15 +628,6 @@ async function sendMergedChunks(req, res, threadName) {
             return;
         }
 
-        release = await takeMergedReadTurn();
-        // gone while it waited for the turn -> skip its merge
-        if (res.destroyed) return;
-        res.setTimeout(MERGED_READ_TIMEOUT_MS, () => {
-            console.warn(
-                `[CrashLogServer] Merged read stalled past ${MERGED_READ_TIMEOUT_MS}ms channelId=${channelId} peer=${peerAddress}; dropping it`
-            );
-            res.destroy();
-        });
         const { encodedEntries, skippedChunks } =
             mergeEncodedEntries(perThread);
         res.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -638,6 +636,14 @@ async function sendMergedChunks(req, res, threadName) {
         if (skippedChunks > 0) {
             res.setHeader("x-skipped-chunks", String(skippedChunks));
         }
+        // armed after the merge: it times the client's reading, not the merge
+        const timeoutMs = mergedReadTimeoutMs();
+        res.setTimeout(timeoutMs, () => {
+            console.warn(
+                `[CrashLogServer] Merged read stalled past ${timeoutMs}ms channelId=${channelId} peer=${peerAddress}; dropping it`
+            );
+            res.destroy();
+        });
         await writeEncodedChunk(encodedEntries, res);
     } catch (err) {
         // a client that went away is not a server failure
@@ -673,4 +679,9 @@ if (require.main === module) {
     });
 }
 
-module.exports = { app, sanitizeSegment, validateUploadBody };
+module.exports = {
+    app,
+    sanitizeSegment,
+    validateUploadBody,
+    MAX_UPLOAD_BODY_BYTES
+};

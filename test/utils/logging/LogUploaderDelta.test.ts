@@ -1,3 +1,4 @@
+import { config } from "@/utils/config";
 import { LogUploader } from "@/utils/logging/LogUploader";
 import {
     messagesOf,
@@ -13,7 +14,6 @@ import {
 import { deferred } from "@test/utils/deferred";
 import { expect } from "chai";
 import { ethers } from "ethers";
-import sinon from "sinon";
 
 describe("LogUploader delta uploads", function () {
     let receiver: LogReceiver | undefined;
@@ -649,35 +649,141 @@ describe("LogUploader delta uploads", function () {
                 maxStoreBytes: 1024 * 1024,
                 maxChunkBytes: () => maxChunkBytes
             });
-            const warn = sinon.spy(console, "warn");
-            try {
-                const outcome = await logUploader.uploadLogs();
-                const again = await logUploader.uploadLogs();
 
-                expect(outcome).to.deep.equal({ ok: true, entries: 4 });
-                expect(again).to.deep.equal({ ok: true, entries: 0 });
-                for (const chunk of receiver!.requests)
-                    expect(inflatedBytesOf(chunk)).to.be.at.most(maxChunkBytes);
-                const messages = receiver!.requests
-                    .flatMap(decodeUpload)
-                    .map((e) => e.message);
-                expect([messages[0], messages[2], messages[3]]).to.deep.equal(
-                    small
-                );
-                expect(messages[1]).to.match(
-                    /^oversized x+ \[trimmed from \d+ bytes\]$/
-                );
-                expect(
-                    warn
-                        .getCalls()
-                        .filter((call) =>
-                            String(call.args[0]).startsWith(
-                                "Log upload trimmed an entry"
-                            )
-                        )
-                ).to.have.length(1);
+            const outcome = await logUploader.uploadLogs();
+            const uploads = receiver!.requests.length;
+            const again = await logUploader.uploadLogs();
+
+            expect(outcome).to.deep.equal({ ok: true, entries: 4 });
+            for (const chunk of receiver!.requests)
+                expect(inflatedBytesOf(chunk)).to.be.at.most(maxChunkBytes);
+            const messages = receiver!.requests
+                .slice(0, uploads)
+                .flatMap(decodeUpload)
+                .map((e) => e.message);
+            expect([messages[0], messages[2], messages[3]]).to.deep.equal(
+                small
+            );
+            expect(messages[1]).to.match(
+                /^oversized x+ \[trimmed from \d+ bytes\]$/
+            );
+            // the trim warning goes through the logger, so it ships in the next upload
+            expect(again).to.deep.equal({ ok: true, entries: 1 });
+            const [warning] = decodeUpload(receiver!.requests[uploads]);
+            expect(warning.level).to.equal("warn");
+            expect(warning.message).to.match(
+                /^Log upload trimmed an entry: seq=1 encodes to \d+ bytes, past the 100000 byte chunk limit$/
+            );
+        });
+
+        it("trims an entry that grows under encoding through the halving loop", async function () {
+            // once encoded twice a quote and a newline take 4 bytes, a control
+            // character 7 and a euro sign 3: a quarter of the limit in characters
+            // is past the limit in bytes
+            const oversized = '"\n\u0001€'.repeat(60_000);
+            const maxChunkBytes = 100_000;
+            const { logUploader } = createUploaderOverLoggedStore({
+                uploadEndpoint: receiver!.url,
+                messages: [oversized],
+                maxStoreBytes: 4 * 1024 * 1024,
+                maxChunkBytes: () => maxChunkBytes
+            });
+
+            const outcome = await logUploader.uploadLogs();
+            const again = await logUploader.uploadLogs();
+
+            expect(outcome).to.deep.equal({ ok: true, entries: 1 });
+            expect(inflatedBytesOf(receiver!.requests[0])).to.be.at.most(
+                maxChunkBytes
+            );
+            const [trimmed] = decodeUpload(receiver!.requests[0]);
+            const [kept, note] = trimmed.message.split(" [trimmed from ");
+            expect(oversized.startsWith(kept)).to.equal(true);
+            // the first guess keeps a quarter of the limit; it did not fit
+            expect(kept.length).to.be.below(maxChunkBytes / 4);
+            expect(note).to.match(/^\d+ bytes\]$/);
+            // only the trim warning is left to send
+            expect(again).to.deep.equal({ ok: true, entries: 1 });
+        });
+
+        it("keeps only the time, level and size of an entry whose other fields alone are past the limit", async function () {
+            const maxChunkBytes = 100_000;
+            const { logger, logStore } = createUploaderFixture({
+                uploadEndpoint: receiver!.url,
+                maxStoreBytes: 4 * 1024 * 1024
+            });
+            logger
+                .child({ component: "x".repeat(200_000) })
+                .info("context too large");
+            const { logUploader } = createUploaderFixture({
+                uploadEndpoint: receiver!.url,
+                logStore,
+                maxChunkBytes
+            });
+
+            const outcome = await logUploader.uploadLogs();
+            const again = await logUploader.uploadLogs();
+
+            expect(outcome).to.deep.equal({ ok: true, entries: 1 });
+            expect(inflatedBytesOf(receiver!.requests[0])).to.be.at.most(
+                maxChunkBytes
+            );
+            const [trimmed] = decodeUpload(receiver!.requests[0]);
+            expect(trimmed.level).to.equal("info");
+            expect(trimmed.context).to.deep.equal({});
+            expect(trimmed.message).to.match(/^\[trimmed from \d+ bytes\]$/);
+            // the refused entry does not hold back the next upload
+            expect(again).to.deep.equal({ ok: true, entries: 1 });
+        });
+
+        it("takes a chunk limit of zero as the default, so a small store goes whole and untrimmed", async function () {
+            const previous = config.CRASH_LOG_MAX_CHUNK_MB;
+            config.CRASH_LOG_MAX_CHUNK_MB = 0;
+            try {
+                const messages = paddedMessages(3);
+                const { logger, logUploader } = createUploaderFixture({
+                    uploadEndpoint: receiver!.url
+                });
+                for (const message of messages) logger.info(message);
+
+                const outcome = await logUploader.uploadLogs();
+
+                expect(outcome).to.deep.equal({ ok: true, entries: 3 });
+                expect(receiver!.requests).to.have.length(1);
+                expect(messagesOf(receiver!, 0)).to.deep.equal(messages);
             } finally {
-                warn.restore();
+                config.CRASH_LOG_MAX_CHUNK_MB = previous;
+            }
+        });
+
+        it("ends a split delta at the chunk a thread end cancels, sending nothing after it", async function () {
+            const held = deferred();
+            await receiver!.close();
+            receiver = await startLogReceiver({
+                respond: async (_received, index) => {
+                    if (index === 1) await held.promise;
+                    return 200;
+                }
+            });
+            const { logUploader } = createUploaderOverLoggedStore({
+                uploadEndpoint: receiver!.url,
+                messages: paddedMessages(30),
+                maxChunkBytes: (deltaBytes) => Math.ceil(deltaBytes / 2.5)
+            });
+            try {
+                const running = logUploader.uploadLogs();
+                await receiver!.waitForRequests(2);
+                const firstChunk = receiver!.requests[0];
+
+                LogUploader.cancelRealmUploads();
+
+                expect(await running).to.deep.equal({
+                    ok: false,
+                    entries: firstChunk.toSeq + 1
+                });
+                expect(receiver!.requests).to.have.length(2);
+            } finally {
+                held.resolve();
             }
         });
     });

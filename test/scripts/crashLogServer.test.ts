@@ -1,11 +1,14 @@
 import {
     decodeChunk,
     encodeChunk,
+    holdMergedRead,
     listenOn,
     loadCrashLogServer,
     logEntries,
     paddedLogEntries,
+    uploadIncompressibleLog,
     withInflateCeiling,
+    withMergedReadTimeout,
     upload as uploadTo,
     uploadBody
 } from "@test/fixtures/logging/crashLogServer.fixture";
@@ -16,14 +19,22 @@ import {
 import { expect } from "chai";
 import { randomBytes } from "node:crypto";
 import { once } from "node:events";
-import { mkdirSync, readdirSync, rmSync, utimesSync } from "node:fs";
+import {
+    mkdirSync,
+    readdirSync,
+    rmSync,
+    unlinkSync,
+    utimesSync
+} from "node:fs";
 import { get, type Server } from "node:http";
+import { setTimeout as delay } from "node:timers/promises";
 import path from "path";
 
 const {
     app,
     sanitizeSegment,
     validateUploadBody,
+    MAX_UPLOAD_BODY_BYTES,
     logDir: TEST_LOG_DIR
 } = loadCrashLogServer();
 
@@ -392,6 +403,137 @@ describe("crash-log-server routes", function () {
                 })
             )
         ).to.equal(200);
+    });
+
+    it("refuses a body past the upload body limit with 413 and stores nothing", async function () {
+        const body = uploadBody({
+            channelId: "0x" + "e1".repeat(32),
+            compressedLogs: randomBytes(
+                Math.ceil((MAX_UPLOAD_BODY_BYTES * 3) / 4) + 1
+            ).toString("base64")
+        });
+
+        expect(await upload(body)).to.equal(413);
+        const read = await fetch(
+            `${baseUrl}/logs/${body.channelId}/${body.peerAddress}`
+        );
+        expect(read.status).to.equal(404);
+    });
+
+    it("refuses a small chunk that inflates past the limit with 400 and stores nothing", async function () {
+        const body = uploadBody({
+            channelId: "0x" + "e2".repeat(32),
+            compressedLogs: encodeChunk(paddedLogEntries(200, "fat")),
+            toSeq: 199
+        });
+
+        const response = await withInflateCeiling("0.05", () =>
+            fetch(`${baseUrl}/logs/upload`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body)
+            })
+        );
+
+        expect(response.status).to.equal(400);
+        expect(((await response.json()) as { error: string }).error).to.include(
+            "inflates past"
+        );
+        const read = await fetch(
+            `${baseUrl}/logs/${body.channelId}/${body.peerAddress}`
+        );
+        expect(read.status).to.equal(404);
+    });
+
+    // one merged read at a time; a client that stops reading is cut at the
+    // stall timeout and the queued read runs right after
+    it("runs a second merged read only after a stalled one is cut at the timeout", async function () {
+        const channelId = "0x" + "e3".repeat(32);
+        const stalledPeer = "0x" + "e4".repeat(20);
+        const queuedPeer = "0x" + "e5".repeat(20);
+        await uploadIncompressibleLog(baseUrl, channelId, stalledPeer, 3);
+        expect(
+            await upload(uploadBody({ channelId, peerAddress: queuedPeer }))
+        ).to.equal(200);
+
+        const timeoutMs = 500;
+        const { waitedMs, entries } = await withMergedReadTimeout(
+            timeoutMs,
+            async () => {
+                const stalled = await holdMergedRead(
+                    `${baseUrl}/logs/${channelId}/${stalledPeer}`
+                );
+                try {
+                    const read = await fetch(
+                        `${baseUrl}/logs/${channelId}/${queuedPeer}`
+                    );
+                    expect(read.status).to.equal(200);
+                    return {
+                        entries: decodeChunk(await read.text()),
+                        waitedMs: Date.now() - stalled.startedAt
+                    };
+                } finally {
+                    stalled.destroy();
+                }
+            }
+        );
+
+        expect(entries).to.have.length(3);
+        // the queued read waited for the stalled one's timeout to cut it
+        expect(waitedMs).to.be.at.least(timeoutMs);
+    });
+
+    // a queued read holds none of its chunks: it reads them once it has the turn
+    it("reads a queued merged read's chunks only once it gets the turn", async function () {
+        const channelId = "0x" + "e6".repeat(32);
+        const stalledPeer = "0x" + "e7".repeat(20);
+        const queuedPeer = "0x" + "e8".repeat(20);
+        await uploadIncompressibleLog(baseUrl, channelId, stalledPeer, 3);
+        for (const [fromSeq, storeId] of [
+            [0, "kept0000"],
+            [3, "deleted0"]
+        ] as const)
+            expect(
+                await upload(
+                    uploadBody({
+                        channelId,
+                        peerAddress: queuedPeer,
+                        storeId,
+                        fromSeq,
+                        toSeq: fromSeq + 2
+                    })
+                )
+            ).to.equal(200);
+        const channelDir = readdirSync(TEST_LOG_DIR).find((name) =>
+            name.startsWith(channelId)
+        )!;
+        const deletedStore = path.join(
+            TEST_LOG_DIR,
+            channelDir,
+            queuedPeer,
+            "vm",
+            "deleted0"
+        );
+
+        const entries = await withMergedReadTimeout(500, async () => {
+            const stalled = await holdMergedRead(
+                `${baseUrl}/logs/${channelId}/${stalledPeer}`
+            );
+            try {
+                const queued = fetch(
+                    `${baseUrl}/logs/${channelId}/${queuedPeer}`
+                );
+                // the queued request reaches the server, then a chunk goes away
+                await delay(200);
+                for (const name of readdirSync(deletedStore))
+                    unlinkSync(path.join(deletedStore, name));
+                return decodeChunk(await (await queued).text());
+            } finally {
+                stalled.destroy();
+            }
+        });
+
+        expect(entries).to.have.length(3);
     });
 
     it("lists stored chunks in the index", async function () {

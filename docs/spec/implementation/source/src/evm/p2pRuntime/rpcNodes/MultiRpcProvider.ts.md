@@ -42,3 +42,4 @@ Request routing and failover
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P25` — the latest block read answered with no block by both nodes once is answered on a second pass
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P26` — the latest block read answered with no block by both nodes twice rejects as `UNKNOWN_ERROR`
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P27` — a block read by an unmined number answered with no block is returned, and the second node is not asked
+- [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P28` — a latest block read answered with no block by the first node and with the internal error by the second rejects with the internal error, without a second pass

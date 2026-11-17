@@ -206,7 +206,8 @@ export function encodeLogChunk(logs: LogEntry[]): Uint8Array {
 /**
  * `entry` cut down so a chunk of it alone is at most `maxBytes`: its message
  * and stack keep their start, the message says how large the entry was, and
- * its meta is dropped.
+ * its meta is dropped. When its other fields alone are past `maxBytes`, only
+ * its time, level and that note are kept.
  */
 export function trimLogEntry(entry: LogEntry, maxBytes: number): LogEntry {
     const note = ` [trimmed from ${encodeLogChunk([entry]).length} bytes]`;
@@ -217,8 +218,18 @@ export function trimLogEntry(entry: LogEntry, maxBytes: number): LogEntry {
             meta: [],
             stack: entry.stack.slice(0, kept)
         };
-        if (kept === 0 || encodeLogChunk([trimmed]).length <= maxBytes)
-            return trimmed;
+        if (encodeLogChunk([trimmed]).length <= maxBytes) return trimmed;
+        if (kept === 0)
+            return {
+                time: entry.time,
+                wallTimeMs: entry.wallTimeMs,
+                level: entry.level,
+                context: {},
+                sharedContext: {},
+                message: note.trimStart(),
+                meta: [],
+                stack: ""
+            };
     }
 }
 

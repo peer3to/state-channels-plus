@@ -3163,6 +3163,12 @@
       "peakRssGb": 0.598,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-PrunedInboundFraudProof.test.ts|E2E: Pruned inbound fraud proof fabricated inbound above the snapshot's inbound head -> honest peers dispute, the forger is slashed": {
+      "durationMs": 22172,
+      "avgCores": 0.435,
+      "peakRssGb": 0.687,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-QueueProofOrigins.test.ts|E2E: Queue proof origins historical dispute replay retains its full participant union after a signer is slashed": {
       "durationMs": 35683,
       "avgCores": 0.618,
@@ -10163,6 +10169,18 @@
       "durationMs": 2061,
       "avgCores": 0.767,
       "peakRssGb": 0.205,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/crashLogServer.test.ts|crash-log-server routes reads a queued merged read's chunks only once it gets the turn": {
+      "durationMs": 3980,
+      "avgCores": 0.847,
+      "peakRssGb": 0.544,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/crashLogServer.test.ts|crash-log-server routes runs a second merged read only after a stalled one is cut at the timeout": {
+      "durationMs": 4262,
+      "avgCores": 0.73,
+      "peakRssGb": 0.554,
       "measurementReason": null
     },
     "hardhat|test/scripts/crashLogServer.test.ts|crash-log-server routes stores an uploaded chunk and reads it back merged": {
@@ -18757,6 +18775,12 @@
       "peakRssGb": 0.791,
       "measurementReason": null
     },
+    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager constructDispute stored forged-inbound proof above the snapshot's inbound head → constructDispute bundles it, author marked slashed": {
+      "durationMs": 9498,
+      "avgCores": 0.788,
+      "peakRssGb": 0.684,
+      "measurementReason": null
+    },
     "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager constructDispute successor fork while the chain anchor is still on the parent fork (no successor snapshot posted) → the dispute built on the successor is accepted by an honest auditor, and the chain accepts its proof": {
       "durationMs": 20980,
       "avgCores": 0.758,
@@ -19931,12 +19955,6 @@
       "durationMs": 2941,
       "avgCores": 0.942,
       "peakRssGb": 0.328,
-      "measurementReason": null
-    },
-    "hardhat|test/unit/FraudProofStorage.test.ts|Unit: FraudProofStorage returns undefined for a participant with no stored proof": {
-      "durationMs": 2486,
-      "avgCores": 0.676,
-      "peakRssGb": 0.205,
       "measurementReason": null
     },
     "hardhat|test/unit/FraudProofStorage.test.ts|Unit: FraudProofStorage stores a fraud proof and reads it back by content hash": {

@@ -223,13 +223,6 @@ function mergeEncodedEntries(perThread) {
     };
 }
 
-/** the merged stream as entries */
-function mergeChunks(perThread) {
-    const { encodedEntries, skippedChunks } = mergeEncodedEntries(perThread);
-    mergeChunks.lastSkippedChunks = skippedChunks;
-    return encodedEntries.map((encoded) => JSON.parse(encoded));
-}
-
 /**
  * writes encoded entries to `out` as one chunk, compressed and base64'd as
  * they go: a whole merged log as one string, then as bytes, then compressed,
@@ -280,7 +273,6 @@ module.exports = {
     maxInflatedBytes,
     decodeChunk,
     encodeChunk,
-    mergeChunks,
     mergeEncodedEntries,
     writeEncodedChunk
 };

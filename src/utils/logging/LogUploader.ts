@@ -334,7 +334,7 @@ export abstract class LogUploader {
             return this.postChunk(chunk, entries.length, fromSeq, identity);
         if (entries.length === 1) {
             // sent whole it is refused, and every later delta with it
-            console.warn(
+            this.logger?.warn(
                 `Log upload trimmed an entry: seq=${fromSeq} encodes to ${chunk.length} bytes, past the ${maxBytes} byte chunk limit`
             );
             return this.postChunk(
@@ -361,12 +361,15 @@ export abstract class LogUploader {
         return { ok: true, entries: uploaded };
     }
 
-    /** the largest chunk the server accepts, counted as {@link encodeLogChunk} */
+    /**
+     * the largest chunk the server accepts, counted as {@link encodeLogChunk}.
+     * A CRASH_LOG_MAX_CHUNK_MB that is not positive means the default, as on
+     * the server.
+     */
     private getMaxChunkBytes(): number {
-        return (
-            this.config.maxChunkBytes ??
-            globalConfig.CRASH_LOG_MAX_CHUNK_MB * 1024 * 1024
-        );
+        const configuredMb = globalConfig.CRASH_LOG_MAX_CHUNK_MB;
+        const megabytes = configuredMb > 0 ? configuredMb : 10;
+        return this.config.maxChunkBytes ?? megabytes * 1024 * 1024;
     }
 
     private async postChunk(

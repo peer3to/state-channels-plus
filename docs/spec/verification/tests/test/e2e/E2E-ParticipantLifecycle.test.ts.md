@@ -55,10 +55,12 @@ flag, chain snapshot fork ID zero, no participants), the leaver reaching `NOT_OP
 no `onAbort` and no host error. The status is awaited, not read once: the leave check reports
 `onLeftChannel` when the membership drops, before the channel-close handler sets `NOT_OPENED`, and the
 specification does not order the two.
-The pruned-history join case starts three founders and posts a same-fork snapshot with no dispute
-window, which clears the inbound history below the snapshot's inbound head. The next writer is then
+The pruned-history join case starts three founders, lands a top-up that a block consumes, and posts a
+same-fork snapshot with no dispute window whose inbound head is the top-up. The chain and each honest
+founder's local diamond then hold the head and no longer hold the open's inbound block below it. The next writer is then
 disconnected, and the timeout reduction moves the two honest founders to a new fork. Each founder's
-genesis snapshot of that fork carries the chain's inbound head hash and height. A spectator then joins
+genesis snapshot of that fork carries the chain's inbound head hash and height. Once the chain's
+snapshot is on the reduced fork, a spectator joins
 while the two founders author, and a block seats it as `PARTICIPATING`.
 
 ## Tests

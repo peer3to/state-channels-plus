@@ -92,7 +92,8 @@ chain storage is the proof of authenticity.
   chain tip.
 - **Pruning.** A snapshot advance on an open channel deletes the persisted inbound blocks below the
   new snapshot's tip and keeps the tip block, so its height stays readable for a later reduction, a
-  dispute anchored at it and the next inbound block. The next advance deletes that tip. Closing the
+  dispute anchored at it and the next inbound block. Each advance deletes the blocks below its own
+  tip; a tip kept by an earlier advance is deleted once a later advance has a newer tip. Closing the
   channel deletes the tip too. Where the tip block is pruned, the deposit total at that tip is the
   snapshot's committed `totalDeposits`.
 

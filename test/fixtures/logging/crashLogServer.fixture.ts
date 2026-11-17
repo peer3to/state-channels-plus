@@ -1,7 +1,8 @@
 // @spec-test-coverage-ignore: crash-log server staging shared by its suites; the suites own the declarations
+import { randomBytes } from "node:crypto";
 import { once } from "node:events";
 import { mkdtempSync } from "node:fs";
-import type { Server } from "node:http";
+import { get, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "path";
@@ -14,6 +15,7 @@ type CrashLogServerModule = {
     app: { listen: (port: number, host: string) => Server };
     sanitizeSegment: (value: unknown) => string;
     validateUploadBody: (body: unknown) => UploadValidation;
+    MAX_UPLOAD_BODY_BYTES: number;
 };
 
 /** the server module. it reads CRASH_LOG_DIR at import, so a fresh dir is set
@@ -114,5 +116,68 @@ export async function withInflateCeiling<T>(
     } finally {
         if (previous === undefined) delete process.env.CRASH_LOG_MAX_CHUNK_MB;
         else process.env.CRASH_LOG_MAX_CHUNK_MB = previous;
+    }
+}
+
+/**
+ * Uploads `chunks` chunks of random entries, each about 9 MiB inflated and
+ * barely compressible: a merged read of them outgrows every socket buffer, so
+ * a client that stops reading holds the server's write.
+ */
+export async function uploadIncompressibleLog(
+    baseUrl: string,
+    channelId: string,
+    peerAddress: string,
+    chunks: number
+): Promise<void> {
+    const perChunk = 128;
+    for (let index = 0; index < chunks; index += 1) {
+        const entries = logEntries(perChunk).map((entry) => ({
+            ...(entry as Record<string, unknown>),
+            message: randomBytes(54 * 1024).toString("base64")
+        }));
+        const status = await upload(
+            baseUrl,
+            uploadBody({
+                channelId,
+                peerAddress,
+                compressedLogs: encodeChunk(entries),
+                fromSeq: index * perChunk,
+                toSeq: (index + 1) * perChunk - 1
+            })
+        );
+        if (status !== 200)
+            throw new Error(`incompressible chunk upload answered ${status}`);
+    }
+}
+
+/**
+ * Opens a merged read and never reads its body: the server's write stalls
+ * once the socket buffers are full. Resolves once the headers arrived, with
+ * that time; `destroy` ends the connection from the client side. A paused
+ * client never sees the server cut it, since it never reads up to the close.
+ */
+export async function holdMergedRead(
+    url: string
+): Promise<{ startedAt: number; destroy: () => void }> {
+    const request = get(url);
+    request.on("error", () => undefined);
+    await once(request, "response");
+    return { startedAt: Date.now(), destroy: () => request.destroy() };
+}
+
+/** runs `action` with the merged read's stall timeout lowered */
+export async function withMergedReadTimeout<T>(
+    timeoutMs: number,
+    action: () => Promise<T>
+): Promise<T> {
+    const previous = process.env.CRASH_LOG_MERGED_READ_TIMEOUT_MS;
+    process.env.CRASH_LOG_MERGED_READ_TIMEOUT_MS = String(timeoutMs);
+    try {
+        return await action();
+    } finally {
+        if (previous === undefined)
+            delete process.env.CRASH_LOG_MERGED_READ_TIMEOUT_MS;
+        else process.env.CRASH_LOG_MERGED_READ_TIMEOUT_MS = previous;
     }
 }

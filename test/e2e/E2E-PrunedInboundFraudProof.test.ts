@@ -45,7 +45,7 @@ describe("E2E: Pruned inbound fraud proof", function () {
         await h.assert.sync.peersInSyncWait();
     });
 
-    it("fabricated inbound above the pruned head -> honest peers dispute, the forger is slashed", async function () {
+    it("fabricated inbound above the snapshot's inbound head -> honest peers dispute, the forger is slashed", async function () {
         const h = TestSession.getHarness();
         const { forkId } = await stagePrunedGenuineInbound();
         // the forger must hold the next turn -> otherwise the wrong-leader gate fires first

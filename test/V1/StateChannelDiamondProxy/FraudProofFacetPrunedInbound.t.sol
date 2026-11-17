@@ -151,7 +151,7 @@ contract FraudProofFacetPrunedInboundTest is DiamondHarness {
         assertEq(diamond.getWindowCommitments(CHANNEL, dispute.input.forkId).length, 0, "dispute removed");
     }
 
-    // the walk ends on the pruned snapshot head -> its height comes from the snapshot, not deleted storage
+    // the walk ends on the kept snapshot head -> the output carries the snapshot's inbound height
     function test_reduce_afterSameForkPrune_keepsSnapshotInboundHeight() public {
         vm.warp(block.timestamp + 5);
         Dispute memory dispute = _uploadDisputeCarrying(BOB_PK, ALICE_PK, inboundA);

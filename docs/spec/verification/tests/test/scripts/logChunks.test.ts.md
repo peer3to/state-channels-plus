@@ -5,7 +5,7 @@ Test file: [test/scripts/logChunks.test.ts](../../../../../../test/scripts/logCh
 ## Overview
 
 The suite calls the chunk helpers the crash-log server shares with its tests: naming, encoding, and
-the merge of many stored chunks into one ordered stream. Oracles are the merged messages and the
+the server's own merge (`mergeEncodedEntries`) of many stored chunks into one ordered stream, its encoded entries parsed back. Oracles are the merged messages and the
 skipped-chunk count. It covers naming and parsing by sequence range, three threads merged by wall
 clock, an overlapping resend merged without duplicates, an undecodable chunk skipped while the rest
 survive, a missing chunk leaving its gap, a merged read that stops at the shared inflate budget and
