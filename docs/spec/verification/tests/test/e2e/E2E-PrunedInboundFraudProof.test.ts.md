@@ -21,10 +21,10 @@ only the honest peers stay in sync after the dispute resolves.
 A third case resolves that dispute, then adopts the reduced fork on chain from an honest peer and
 asserts the adopted snapshot is on the honest peers' new fork with inbound height S. A later
 top-up is consumed and adopted at S+1 with the honest peers in sync, and a forged-inbound proof
-over the original pruned block still reverts `RaceConditionBlockHeightTooOld` naming S+1.
+over the original head, pruned by that adoption, still reverts `RaceConditionBlockHeightTooOld` naming S+1.
 
 ## Tests
 
-- `genuine inbound pruned by a snapshot -> forged-inbound proof against its honest author reverts, nobody slashed, channel advances`: INV-ENFFP-1-BGVZN4.T1.P18
+- `genuine inbound consumed as the snapshot's inbound head -> forged-inbound proof against its honest author reverts, nobody slashed, channel advances`: INV-ENFFP-1-BGVZN4.T1.P18
 - `fabricated inbound above the snapshot's inbound head -> honest peers dispute, the forger is slashed`: INV-ENFFP-1-BGVZN4.T1.P20
-- `dispute resolved after a prune -> the reduced fork keeps the snapshot inbound height, the next top-up is adopted, the pruned proof stays refused`: REQ-DIS-6-Y92H1M.T1.P17
+- `dispute resolved after a snapshot post -> the reduced fork keeps the snapshot inbound height, the next top-up is adopted, the old head's proof stays refused`: REQ-DIS-6-Y92H1M.T1.P17

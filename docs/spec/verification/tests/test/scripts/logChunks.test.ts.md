@@ -20,6 +20,6 @@ clock dropped without shifting the sequence of those after it.
 - `skips an undecodable chunk`: REQ-LOG-7-M2RC5W.T1.P3
 - `keeps the gap when a chunk is missing`: none
 - `stops a merged read at the shared inflate budget and reports it`: none
-- `refuses a chunk that inflates past the configured maximum`: REQ-LOG-7-M2RC5W.T1.P1
+- `refuses a chunk that inflates past the configured maximum`: none
 - `drops an entry with no wall-clock timestamp from the merge`: none
 - `keeps the sequence of entries after a dropped one aligned`: none

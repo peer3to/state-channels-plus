@@ -7,7 +7,7 @@ import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 describe("E2E: Pruned inbound fraud proof", function () {
-    it("genuine inbound pruned by a snapshot -> forged-inbound proof against its honest author reverts, nobody slashed, channel advances", async function () {
+    it("genuine inbound consumed as the snapshot's inbound head -> forged-inbound proof against its honest author reverts, nobody slashed, channel advances", async function () {
         const h = TestSession.getHarness();
         const { prunedInbound, snapshotInboundHeight, carrier } =
             await stagePrunedGenuineInbound();
@@ -67,7 +67,7 @@ describe("E2E: Pruned inbound fraud proof", function () {
     });
 
     // reduce after the prune -> the reduced fork keeps S, so the next top-up links and the old proof stays refused
-    it("dispute resolved after a prune -> the reduced fork keeps the snapshot inbound height, the next top-up is adopted, the pruned proof stays refused", async function () {
+    it("dispute resolved after a snapshot post -> the reduced fork keeps the snapshot inbound height, the next top-up is adopted, the old head's proof stays refused", async function () {
         const h = TestSession.getHarness();
         const { prunedInbound, snapshotInboundHeight, carrier, forkId } =
             await stagePrunedGenuineInbound();

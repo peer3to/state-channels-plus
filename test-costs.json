@@ -3163,10 +3163,22 @@
       "peakRssGb": 0.598,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-PrunedInboundFraudProof.test.ts|E2E: Pruned inbound fraud proof dispute resolved after a snapshot post -> the reduced fork keeps the snapshot inbound height, the next top-up is adopted, the old head's proof stays refused": {
+      "durationMs": 23821,
+      "avgCores": 0.407,
+      "peakRssGb": 0.699,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-PrunedInboundFraudProof.test.ts|E2E: Pruned inbound fraud proof fabricated inbound above the snapshot's inbound head -> honest peers dispute, the forger is slashed": {
       "durationMs": 22172,
       "avgCores": 0.435,
       "peakRssGb": 0.687,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-PrunedInboundFraudProof.test.ts|E2E: Pruned inbound fraud proof genuine inbound consumed as the snapshot's inbound head -> forged-inbound proof against its honest author reverts, nobody slashed, channel advances": {
+      "durationMs": 9079,
+      "avgCores": 0.653,
+      "peakRssGb": 0.664,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-QueueProofOrigins.test.ts|E2E: Queue proof origins historical dispute replay retains its full participant union after a signer is slashed": {
@@ -18779,6 +18791,12 @@
       "durationMs": 9498,
       "avgCores": 0.788,
       "peakRssGb": 0.684,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager constructDispute stored forged-inbound proof whose inbound block is the snapshot's inbound head → constructDispute leaves it out, author not marked slashed": {
+      "durationMs": 7841,
+      "avgCores": 0.789,
+      "peakRssGb": 0.674,
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager constructDispute successor fork while the chain anchor is still on the parent fork (no successor snapshot posted) → the dispute built on the successor is accepted by an honest auditor, and the chain accepts its proof": {

@@ -720,7 +720,7 @@ describe("Unit: DisputeManager", function () {
         });
 
         // the proof lost the race to a snapshot -> on chain it would revert the whole multicall
-        it("stored forged-inbound proof whose inbound block a snapshot pruned → constructDispute leaves it out, author not marked slashed", async function () {
+        it("stored forged-inbound proof whose inbound block is the snapshot's inbound head → constructDispute leaves it out, author not marked slashed", async function () {
             const h = TestSession.getHarness();
             const { prunedInbound, forkId, carrier } =
                 await stagePrunedGenuineInbound();

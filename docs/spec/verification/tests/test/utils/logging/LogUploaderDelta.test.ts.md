@@ -41,7 +41,7 @@ an upload requested while one is in flight resolves only after its own POST; and
 - `exactly at the limit is sent as one chunk`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P30
 - `re-sends from the first chunk the server refused`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P31
 - `trims an entry that alone is past the limit and sends it with the rest`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P32, REQ-LOG-7-M2RC5W.T1.P9
-- `trims an entry that grows under encoding through the halving loop`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P33, REQ-LOG-7-M2RC5W.T1.P9
-- `keeps only the time, level and size of an entry whose other fields alone are past the limit`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P34, REQ-LOG-7-M2RC5W.T1.P9
+- `trims an entry that grows under encoding through the halving loop`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P33
+- `keeps only the time, level and size of an entry whose other fields alone are past the limit`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P34
 - `takes a chunk limit of zero as the default, so a small store goes whole and untrimmed`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P35
 - `ends a split delta at the chunk a thread end cancels, sending nothing after it`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P36
