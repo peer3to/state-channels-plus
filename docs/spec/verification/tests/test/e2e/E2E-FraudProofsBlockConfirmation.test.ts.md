@@ -33,6 +33,10 @@ removes the offender on-chain may also carry valid-application permutations from
 applies a proof); the remaining contract-side handler permutations (`REQ-FP-2-CH4DA1.T1`._`,
 `REQ-ENFFP-_`) remain with the contract suites.
 
+One wrong-genesis case first posts a snapshot past the genesis; another author than block 0's
+then gossips an unlinked block 0. Every honest participant blacklists it, stores no fraud proof
+against it and starts no dispute, and the on-chain slash set does not change.
+
 ## Tests
 
 - `queued future block accepts later calldata event and executes after predecessor`: REQ-BLOCK-PIPE-4-CF52J6.T1.P1, REQ-RPC-4-9VX0B9.T1.P2, REQ-GOSSIP-4-J5Z4DF.T1.P23, REQ-BLOCK-PIPE-1-SS24D1.T1.P6
@@ -43,6 +47,7 @@ applies a proof); the remaining contract-side handler permutations (`REQ-FP-2-CH
 - `canonical block encoding rejects Byzantine relay and calldata posting`: REQ-BLOCK-PIPE-2-PCXNT6.T1.P11
 - `double sign → BlockDoubleSign`: REQ-BLOCK-PIPE-8-N529VH.T1.P1, INV-FIN-2-MK27J6.T1.P4, UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P1
 - `wrong genesis → WrongGenesis`: REQ-BLOCK-PIPE-8-N529VH.T1.P5, UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P7
+- `wrong genesis after a snapshot moved the fork past genesis → the forger is cut, no fraud proof, no dispute, nobody slashed`: INV-ENFFP-1-BGVZN4.T1.P22
 - `unexpected next leader → BlockInvalidStateTransition`: REQ-FIN-5-DH29VZ.T1.P4
 - `invalid timestamp → InvalidTimestamp`: REQ-BLOCK-PIPE-8-N529VH.T1.P6, UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P8
 - `broken inbound chain → BlockInvalidStateTransition`: REQ-BLOCK-PIPE-8-N529VH.T1.P8

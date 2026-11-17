@@ -5,7 +5,6 @@
 ## Requirements
 
 - [`INV-ENFFP-1-BGVZN4` (Slash set integrity)](../../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4)
-  Contradicts: The forged-inbound handler returns a valid verdict against an honest participant, so a proof that shows no misconduct appends to the slash set: the pruned genuine inbound block ([`FIND-SECURITY-3-REDPJW`](../../../../../audit/open-findings.md#find-security-3-redpjw)).
 - [`REQ-ENFFP-1-BREACW` (Symmetric stake on submission)](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-1-breacw)
 - [`REQ-ENFFP-2-JXMYNB` (Proof-type completeness at the boundary)](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-2-jxmynb)
 - [`INV-HIST-1-5N44K9` (Block commits to the state snapshot hash)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-1-5n44k9)
@@ -59,6 +58,21 @@ Proof application
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P23` — BlockInvalidStateTransition against an honest later block with a decodable predecessor block that is not the real one, from an eligible submitter: the submitter is slashed and the signer is not
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P24` — BlockInvalidStateTransition whose predecessor bytes do not decode as a block: the call reverts and nobody is slashed
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P25` — BlockInvalidStateTransition whose later block links, through its real predecessor block, to a previous snapshot of another fork: the signer is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P26` — ForgedInboundMessageBlock citing a genuine inbound block that same-fork adoption pruned, below the snapshot's inbound head, from an outsider, reverts `RaceConditionBlockHeightTooOld(snapshotHeight, forgedHeight)`; neither author nor submitter is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P27` — the same pruned genuine inbound block from an eligible submitter reverts the same way; the submitter keeps its stake
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P28` — ForgedInboundMessageBlock citing the snapshot's own inbound head (height equal to the snapshot's inbound height) reverts `RaceConditionBlockHeightTooOld`; nobody is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P29` — ForgedInboundMessageBlock citing a genuine stored inbound block one above the snapshot's inbound head returns invalid: the eligible submitter is slashed, the author is not
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P30` — ForgedInboundMessageBlock citing a fabricated inbound block one above the snapshot's inbound head slashes the author
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P31` — a fabricated inbound block at any height from an outsider or an eligible submitter: at or below the snapshot's inbound head the proof reverts and nobody is slashed; above it the author is slashed and the submitter is not
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P32` — any pruned genuine inbound block from an outsider or an eligible submitter reverts; nobody is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P33` — WrongGenesis citing a block 0 that does not link to the fork's on-chain genesis while that snapshot is still the genesis: the author is slashed, the prover kept
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P34` — WrongGenesis citing a block 0 that links to the on-chain genesis while the snapshot is still the genesis: the handler goes on to the origin window, which the opened genesis has none of, and reverts `RaceConditionDisputeWindowNotOpen`; nobody is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P35` — WrongGenesis citing an unlinked block 0 after a same-fork adoption moved the snapshot past genesis reverts `RaceConditionBlockHeightTooOld(snapshotHeight, 0)`; nobody is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P36` — the same past-genesis WrongGenesis with a linked block 0 from an outsider reverts the same way; nobody is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P37` — past genesis, a block 0 with any previous-block hash from an eligible submitter or an outsider: always refused, nobody slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P38` — WrongGenesis citing an unlinked block 0 after block 0's own height-0 snapshot (other data than the genesis) was adopted reverts `RaceConditionBlockHeightTooOld(0, 0)`; nobody is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P39` — WrongGenesis citing another channel's block 0 is invalid in the context channel: the author is not slashed there, the eligible prover is
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P40` — after a genesis look-alike block-0 snapshot was refused, WrongGenesis citing the honest linked block 0 is still judged at genesis and reverts `RaceConditionDisputeWindowNotOpen`; nobody is slashed
 
 ## UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04
 

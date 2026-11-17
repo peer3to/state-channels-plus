@@ -15,10 +15,10 @@ only at that height, and the historic threshold set counts no JOIN of the kept h
 
 ## Tests
 
-- `test_clearStorage_openChannel_keepsTheSnapshotInboundHeadAndPrunesTheBlocksBelow`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P48
-- `test_clearStorage_closedChannel_prunesTheSnapshotInboundHeadToo`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P49
-- `test_clearStorage_openChannel_nextPrunePrunesThePreviouslyKeptHead`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P50
-- `test_clearStorage_openChannelWithoutInboundBlocks_prunesNothing`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P51
-- `test_reduce_afterOpenChannelPrune_readsTheSnapshotInboundHeadHeight`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P31
-- `test_isDisputeInboundHashValid_afterOpenChannelPrune_acceptsTheSnapshotHeadAtItsHeight`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P214
-- `test_historicThresholdSet_afterOpenChannelPrune_countsNoJoinOfTheKeptHead`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P215
+- `test_clearStorage_openChannel_keepsTheSnapshotInboundHeadAndPrunesTheBlocksBelow`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P49
+- `test_clearStorage_closedChannel_prunesTheSnapshotInboundHeadToo`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P50
+- `test_clearStorage_openChannel_nextPrunePrunesThePreviouslyKeptHead`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P51
+- `test_clearStorage_openChannelWithoutInboundBlocks_prunesNothing`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P52
+- `test_reduce_afterOpenChannelPrune_readsTheSnapshotInboundHeadHeight`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P34
+- `test_isDisputeInboundHashValid_afterOpenChannelPrune_acceptsTheSnapshotHeadAtItsHeight`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P216
+- `test_historicThresholdSet_afterOpenChannelPrune_countsNoJoinOfTheKeptHead`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P217

@@ -20,5 +20,5 @@ proven alongside it to close the sibling half of the same requirement.
 - `re-storing the identical proof is a no-op`: REQ-DSTORE-3-ZNXSTM.T1.P2, UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P2
 - `keeps the participant index consistent when the same encoded proof is re-stored under a different participant`: REQ-DSTORE-3-ZNXSTM.T1.P3, UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P5
 - `indexes multiple distinct proofs for one participant`: UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P3
-- `returns undefined for a participant with no stored proof`: UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P4
+- `returns no proofs for a participant with no stored proof`: UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P4
 - `DisputeFraudProofStorage: second proof for the same dispute is dropped`: REQ-DSTORE-3-ZNXSTM.T1.P4, REQ-DSTORE-3-ZNXSTM.T1.P5, REQ-DSTORE-3-ZNXSTM.T1.P6, UNIT-TEST-DISPUTE-FRAUD-PROOF-STORAGE-1-WFRDHK.P1, UNIT-TEST-DISPUTE-FRAUD-PROOF-STORAGE-1-WFRDHK.P2
