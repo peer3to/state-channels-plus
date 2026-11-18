@@ -35,6 +35,13 @@ after a failed check are named as separate subjects and are not specified yet. R
 the document: a root taken from the same endpoint as the proof catches that endpoint's faults and
 omissions, not a consistent lie.
 
+[`REQ-STPROOF-3-NVJGR0` (A pushed block is accepted only under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0) was added the same day for a block an endpoint pushes: the writes are accepted
+only under the state root of the header pushed with them, the block is identified by the header hash and
+by the Ethereum block hash the chain wrote into the header, and a rejected block yields no write. The
+shape of the pushed block (header, written slots, proof, matching logs) follows the user's decisions of
+2026-11-18 and is not confirmed by Luka yet. Not specified: which blocks an endpoint must push, and how a
+participant notices a write an endpoint left out.
+
 ## 2026-10-26 — Application chain access, local join-signature answers, closed-transport frames
 
 Luka decided these in the shared poker client manager plan (poker-contracts

@@ -21757,6 +21757,66 @@
       "peakRssGb": 0.757,
       "measurementReason": null
     },
+    "hardhat|test/unit/SubstrateHeader.test.ts|SubstrateHeader encodes numbers as SCALE compact integers on both sides of each size boundary": {
+      "durationMs": 320,
+      "avgCores": 1.156,
+      "peakRssGb": 0.092,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateHeader.test.ts|SubstrateHeader hashes each recorded header to the block hash its node reports": {
+      "durationMs": 325,
+      "avgCores": 1.138,
+      "peakRssGb": 0.09,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateHeader.test.ts|SubstrateHeader hashes to another value when the state root is changed": {
+      "durationMs": 288,
+      "avgCores": 0.417,
+      "peakRssGb": 0.062,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateHeader.test.ts|SubstrateHeader reads the Ethereum block hash Frontier wrote into each recorded digest": {
+      "durationMs": 504,
+      "avgCores": 0.714,
+      "peakRssGb": 0.079,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateHeader.test.ts|SubstrateHeader reads the number and the state root of the header": {
+      "durationMs": 309,
+      "avgCores": 1.197,
+      "peakRssGb": 0.06,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateHeader.test.ts|SubstrateHeader throws when a hash of the header is not 32 bytes long": {
+      "durationMs": 285,
+      "avgCores": 0.421,
+      "peakRssGb": 0.063,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateHeader.test.ts|SubstrateHeader throws when the Frontier log ends before its hash": {
+      "durationMs": 485,
+      "avgCores": 0.742,
+      "peakRssGb": 0.079,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateHeader.test.ts|SubstrateHeader throws when the Frontier log holds a whole block and no hash": {
+      "durationMs": 468,
+      "avgCores": 0.769,
+      "peakRssGb": 0.076,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateHeader.test.ts|SubstrateHeader throws when the digest holds no Frontier log": {
+      "durationMs": 455,
+      "avgCores": 0.791,
+      "peakRssGb": 0.077,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateHeader.test.ts|SubstrateHeader throws when the digest holds two Frontier logs": {
+      "durationMs": 347,
+      "avgCores": 1.066,
+      "peakRssGb": 0.085,
+      "measurementReason": null
+    },
     "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof reads a value the trie holds by hash": {
       "durationMs": 301,
       "avgCores": 0.399,
@@ -22445,6 +22505,72 @@
       "durationMs": 16475,
       "avgCores": 1.14,
       "peakRssGb": 0.801,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/proveFrontierStorageBlock.test.ts|proveFrontierStorageBlock accepts a block that carries a log and no write": {
+      "durationMs": 419,
+      "avgCores": 0.835,
+      "peakRssGb": 0.08,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/proveFrontierStorageBlock.test.ts|proveFrontierStorageBlock proves a slot pushed as cleared to zero": {
+      "durationMs": 444,
+      "avgCores": 0.788,
+      "peakRssGb": 0.079,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/proveFrontierStorageBlock.test.ts|proveFrontierStorageBlock proves every write of a block, also of a slot no pushed log names": {
+      "durationMs": 303,
+      "avgCores": 0.363,
+      "peakRssGb": 0.064,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/proveFrontierStorageBlock.test.ts|proveFrontierStorageBlock proves the write of a pushed block under the block's own header": {
+      "durationMs": 342,
+      "avgCores": 1.082,
+      "peakRssGb": 0.088,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/proveFrontierStorageBlock.test.ts|proveFrontierStorageBlock throws when a cleared slot is pushed with a value": {
+      "durationMs": 298,
+      "avgCores": 0.369,
+      "peakRssGb": 0.063,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/proveFrontierStorageBlock.test.ts|proveFrontierStorageBlock throws when a pushed log is of another Ethereum block": {
+      "durationMs": 316,
+      "avgCores": 1.234,
+      "peakRssGb": 0.093,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/proveFrontierStorageBlock.test.ts|proveFrontierStorageBlock throws when a pushed value differs from the proven one": {
+      "durationMs": 323,
+      "avgCores": 1.115,
+      "peakRssGb": 0.091,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/proveFrontierStorageBlock.test.ts|proveFrontierStorageBlock throws when a stored slot is pushed as cleared": {
+      "durationMs": 494,
+      "avgCores": 0.709,
+      "peakRssGb": 0.078,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/proveFrontierStorageBlock.test.ts|proveFrontierStorageBlock throws when the block carries the header of another block": {
+      "durationMs": 295,
+      "avgCores": 0.407,
+      "peakRssGb": 0.061,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/proveFrontierStorageBlock.test.ts|proveFrontierStorageBlock throws when the proof belongs to another block's state root": {
+      "durationMs": 307,
+      "avgCores": 1.205,
+      "peakRssGb": 0.061,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/proveFrontierStorageBlock.test.ts|proveFrontierStorageBlock throws when the proof is left out": {
+      "durationMs": 293,
+      "avgCores": 0.41,
+      "peakRssGb": 0.061,
       "measurementReason": null
     },
     "hardhat|test/utils/Codec.test.ts|Codec Block model wrappers enforce canonical decoding failure policy": {

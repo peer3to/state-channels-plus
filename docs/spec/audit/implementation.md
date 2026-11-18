@@ -26,6 +26,18 @@ lockfile already held. The proofs in the tests come from Moonbeam and from a pee
 `stateRoot` differs from the header's and refuses the proof, and that the header digest carries the
 Ethereum block hash.
 
+Added the same day for pushed blocks ([`REQ-STPROOF-3-NVJGR0` (A pushed block is accepted only under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0)):
+[lightClientWire.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/lightClientWire.ts.md) names the
+three `lightClient_*` methods and the pushed block;
+[SubstrateHeader.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateHeader.ts.md)
+hashes a header and reads the Ethereum block hash from its Frontier digest log;
+[proveFrontierStorageBlock.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/proveFrontierStorageBlock.ts.md)
+checks a pushed block; [ScaleReader.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/ScaleReader.ts.md)
+holds the SCALE reading the trie proof and the header share. No node serves the `lightClient_*` methods
+yet. A test-owned sidecar (`test/fixtures/lightClient/LightClientSidecar.ts`) stands in: a WebSocket proxy
+in front of a peer3 node that builds the pushed blocks from the node's wildcard storage subscription,
+which the node allows only with unsafe RPC methods. Nothing in `src` calls the new code yet.
+
 ## Discovery joins after the dispose cut — 2026-11-02
 
 What changed (Luke: refuse a late join where it registers):

@@ -25,6 +25,14 @@ files (a missing node read as empty, each refusal switched off, each traversal r
 one of the first 28 declarations, and all 28 passed with the source restored; the two peer3 declarations
 were added afterwards. Not covered: the browser build beyond its typecheck.
 
+[SubstrateHeader.test.ts](../verification/tests/test/unit/SubstrateHeader.test.ts.md) (10 declarations) and
+[proveFrontierStorageBlock.test.ts](../verification/tests/test/unit/proveFrontierStorageBlock.test.ts.md) (11
+declarations) cover all 15 planned cases of [`REQ-STPROOF-3-NVJGR0` (A pushed block is accepted only under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0). Their data is three blocks a peer3 dev
+node pushed through the sidecar on 2026-11-18, with the block hashes that node reported. Each of 11
+single-line faults put into the three source files failed at least one declaration, and all 51 light client
+declarations passed with the source restored. The sidecar has no test of its own: the recorded blocks are
+its only evidence, and no repository test starts a peer3 node yet.
+
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 
 PR #579 review cards TO4, TO5, TY2 and TY3.
