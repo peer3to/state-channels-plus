@@ -6,7 +6,7 @@ const path = require("path");
 const { globSync } = require("glob");
 const { Project, SyntaxKind } = require("ts-morph");
 const { MAX_LOG_NAME_LEN } = require("./constants");
-const { TASK_RUNNERS } = require("./taskRunners");
+const { TASK_RUNNERS, TASK_REQUIREMENTS } = require("./taskRunners");
 
 function getStringLiteralValue(node) {
     if (node.getKind() === SyntaxKind.StringLiteral) {
@@ -227,11 +227,16 @@ function isMochaTestFile(filePath) {
 // `// @distributed-requires: browser` in a test file's leading comment lines:
 // its tests need what that runner's environment provides (Chromium), so the
 // distributed orchestrator hands them only to a worker whose protocol runs it.
+// `// @distributed-requires: lightClient` marks light client tests, which need
+// a peer3 node binary and are discovered only with --lc-tests.
 const REQUIRES_MARKER_RE = /^\s*\/\/\s*@distributed-requires:\s*(\S.*)$/;
 
 /** The runners a test file's marker names; empty without one. Throws on an unknown name. */
 function readRequiredRunners(filePath) {
-    const known = new Set(Object.values(TASK_RUNNERS));
+    const known = new Set([
+        ...Object.values(TASK_RUNNERS),
+        ...Object.values(TASK_REQUIREMENTS)
+    ]);
     for (const line of fs.readFileSync(filePath, "utf8").split("\n")) {
         if (!/^\s*\/\//.test(line)) break;
         const match = line.match(REQUIRES_MARKER_RE);
@@ -256,7 +261,8 @@ function discoverTasks(
     {
         compiled = false,
         includeParallelScript = true,
-        includeBrowser = true
+        includeBrowser = true,
+        includeLightClient = true
     } = {}
 ) {
     const files = globSync(path.join(testDir, testPattern), { nodir: true })
@@ -269,6 +275,13 @@ function discoverTasks(
         .filter(
             (file) =>
                 includeBrowser || !readRequiredRunners(file).includes("browser")
+        )
+        .filter(
+            (file) =>
+                includeLightClient ||
+                !readRequiredRunners(file).includes(
+                    TASK_REQUIREMENTS.LIGHT_CLIENT
+                )
         )
         .sort();
     const resolvedE2eDir = path.resolve(e2eDir);

@@ -76,6 +76,9 @@ touch their relevant files or dependencies:
   configuration, or their self-tests.
 - Use `--test-browser` when changing browser code, browser build/runtime
   dependencies, or browser tests, including shared code that affects those paths.
+- Use `--lc-tests` when changing light client code or its tests. It needs
+  `PEER3_NODE_BIN` and the local runner; see the README's
+  [Light client tests](README.md#light-client-tests) section.
 
 Run only the relevant optional group and focused tests for those changes. Do not
 add both flags routinely to development validation; CI runs both groups on every

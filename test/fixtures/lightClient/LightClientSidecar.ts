@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: test-owned stand-in for a node's light client endpoints; executable evidence belongs to its calling test declarations
+import { JsonRpcSocket } from "./JsonRpcSocket";
 import {
     LIGHT_CLIENT_METHODS,
     type LightClientLog,
@@ -60,40 +61,38 @@ export class LightClientSidecar {
     private readonly server: WebSocketServer;
     private readonly upstreamUrl: string;
     /** This sidecar's own socket to the node, for the storage feed and its reads. */
-    private readonly feed: WebSocket;
+    private readonly feed: JsonRpcSocket;
     private readonly subscriptions = new Map<
         SubscriptionId,
         { client: WebSocket; subscription: LightClientSubscription }
     >();
-    /** Answers this sidecar waits for on its own socket. */
-    private readonly feedAnswers = new Map<
-        JsonRpcId,
-        { resolve: (result: unknown) => void; reject: (error: Error) => void }
-    >();
-    private nextFeedId = 1;
     private nextSubscriptionId = 1;
 
     private constructor(
         server: WebSocketServer,
         upstreamUrl: string,
-        feed: WebSocket
+        feed: JsonRpcSocket
     ) {
         this.server = server;
         this.upstreamUrl = upstreamUrl;
         this.feed = feed;
         server.on("connection", (client) => this.link(client));
-        feed.on("message", (data) => this.onFeedMessage(data));
+        feed.onNotification((method, params) => {
+            if (method === "state_storage")
+                void this.pushBlock(
+                    (params as { result: StorageChanges }).result
+                );
+        });
     }
 
     /** A sidecar on a free local port in front of the node at `nodeUrl`. */
     static async start(nodeUrl: string): Promise<LightClientSidecar> {
         const upstreamUrl = nodeUrl.replace(/^http/i, "ws");
-        const feed = new WebSocket(upstreamUrl);
-        await once(feed, "open");
+        const feed = await JsonRpcSocket.open(upstreamUrl);
         const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
         await once(server, "listening");
         const sidecar = new LightClientSidecar(server, upstreamUrl, feed);
-        await sidecar.feedRequest("state_subscribeStorage", []);
+        await feed.request("state_subscribeStorage");
         return sidecar;
     }
 
@@ -105,38 +104,11 @@ export class LightClientSidecar {
     }
 
     async close(): Promise<void> {
-        this.feed.terminate();
+        this.feed.close();
         for (const client of this.server.clients) client.terminate();
         await new Promise<void>((resolve) =>
             this.server.close(() => resolve())
         );
-    }
-
-    private feedRequest<T>(method: string, params: unknown[]): Promise<T> {
-        const id = this.nextFeedId++;
-        return new Promise<T>((resolve, reject) => {
-            this.feedAnswers.set(id, {
-                resolve: (result) => resolve(result as T),
-                reject
-            });
-            this.feed.send(
-                JSON.stringify({ jsonrpc: "2.0", id, method, params })
-            );
-        });
-    }
-
-    private onFeedMessage(data: RawData): void {
-        const message = JSON.parse(data.toString());
-        if (message.method === "state_storage") {
-            void this.pushBlock(message.params.result);
-            return;
-        }
-        const answer = this.feedAnswers.get(message.id);
-        if (!answer) return;
-        this.feedAnswers.delete(message.id);
-        if (message.error)
-            answer.reject(new Error(JSON.stringify(message.error)));
-        else answer.resolve(message.result);
     }
 
     /** The contract's logs of the Ethereum block, once the node has mapped it. */
@@ -146,7 +118,7 @@ export class LightClientSidecar {
     ): Promise<LightClientLog[]> {
         for (let attempt = 1; ; attempt++) {
             try {
-                return await this.feedRequest("eth_getLogs", [
+                return await this.feed.request("eth_getLogs", [
                     { blockHash: ethereumBlockHash, address }
                 ]);
             } catch (error) {
@@ -164,7 +136,7 @@ export class LightClientSidecar {
             )
         );
         if (followed.size === 0) return;
-        const headerJson = await this.feedRequest<SubstrateHeaderJson>(
+        const headerJson = await this.feed.request<SubstrateHeaderJson>(
             "chain_getHeader",
             [block]
         );
@@ -185,7 +157,7 @@ export class LightClientSidecar {
                 written.length === 0
                     ? []
                     : (
-                          await this.feedRequest<{ proof: string[] }>(
+                          await this.feed.request<{ proof: string[] }>(
                               "state_getReadProof",
                               [written.map(([key]) => key), block]
                           )

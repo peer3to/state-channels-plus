@@ -370,6 +370,31 @@ before anything is built, in either schedule. The defaults are placeholders in
 `scripts/e2e-parallel/shared/constants.js`, to be tuned from
 `run-metrics.json`. Workers on protocol 13/14 keep the old admission.
 
+### Light client tests
+
+A light client test needs an RPC node that serves the light client endpoints,
+which the Hardhat node does not. Such a test file carries
+`// @distributed-requires: lightClient` in its leading comments and is
+discovered only with `--lc-tests`; the legacy `yarn test` leaves
+`test/lightClient` out.
+
+```shell
+PEER3_NODE_BIN=/path/to/zero-fee-node yarn test:parallel --lc-tests --mocha-test-pattern "lightClient/*.ts"
+```
+
+`PEER3_NODE_BIN` names a peer3 node binary (`zero-fee-node` of
+`peer3-parachain`). Each test starts a dev node of its own from it
+(`startPeer3Node` in `test/utils/nodeInfra.js`), so the tests share no chain
+state. The node does not serve the light
+client endpoints itself yet: `test/fixtures/lightClient/LightClientSidecar.ts`
+stands in front of it and adds them. Without `PEER3_NODE_BIN`, or against a node
+that does not list the endpoints, a test fails at once with
+`RPC node doesn't support LC endpoints`.
+
+No distributed worker provides the node binary yet, so a distributed run with
+`--lc-tests` skips these tests with a warning that lists them. Run them with
+the local runner.
+
 ### Distributed parallel tests
 
 The worker and orchestrator can run on different devices. They do not need a
@@ -728,15 +753,18 @@ See the [persistent PR review service guide](docs/pr-review-bot.md) for setup, a
 
 ### Optional test groups
 
-Normal parallel runs omit `e2eParallel*.test.*` runner self-tests and browser
-checks (both browser gates and Mocha files marked `@distributed-requires: browser`).
+Normal parallel runs omit `e2eParallel*.test.*` runner self-tests, browser
+checks (both browser gates and Mocha files marked `@distributed-requires: browser`)
+and light client tests (Mocha files marked `@distributed-requires: lightClient`).
 Enable them explicitly, including when using `--grep`:
 
 ```shell
 yarn test:parallel:distributed --test-parallel-script
 yarn test:parallel:distributed --test-browser
 yarn test:parallel:distributed --test-parallel-script --test-browser
+PEER3_NODE_BIN=/path/to/zero-fee-node yarn test:parallel --lc-tests
 ```
 
-CI passes both flags for the full test gate. `--browser-only` still selects only
+CI passes the first two flags for the full test gate; see
+[Light client tests](#light-client-tests) for `--lc-tests`. `--browser-only` still selects only
 browser gates. `--e2e-only` retains its existing tier restrictions.

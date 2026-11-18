@@ -77,6 +77,7 @@ Checks Forge task discovery against the configured contract test inventory. This
 - `fails a dry run when an explicit Forge file contains no runnable contract`: none
 - `fails a dry run when a Forge pattern is combined with --no-forge`: none
 - `accepts a repository with only default Mocha tests`: none
+- `selects light client tests only with --lc-tests`: none
 - `accepts a repository with only default Forge tests`: none
 - `reports an uncompilable --grep as an invalid RegExp`: none
 - `reports a forge discovery throw as a forge failure even when --grep is set`: none

@@ -18,6 +18,13 @@ const TASK_RUNNERS = {
 
 const KNOWN_TASK_RUNNERS = new Set(Object.values(TASK_RUNNERS));
 
+// What a test file can name in `@distributed-requires` that is no runner: a
+// dependency of its tests that only some environments have. Light client tests
+// need a peer3 node binary, which no worker protocol provides yet.
+const TASK_REQUIREMENTS = {
+    LIGHT_CLIENT: "lightClient"
+};
+
 // A task built without an explicit runner is a hardhat task.
 function normalizeTaskRunner(runner) {
     const resolved = runner ?? TASK_RUNNERS.HARDHAT;
@@ -190,6 +197,7 @@ function browserTypecheckFailure() {
 
 module.exports = {
     TASK_RUNNERS,
+    TASK_REQUIREMENTS,
     FORGE_BIN,
     normalizeTaskRunner,
     requiresChainSlot,

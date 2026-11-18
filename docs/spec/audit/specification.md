@@ -40,7 +40,8 @@ only under the state root of the header pushed with them, the block is identifie
 by the Ethereum block hash the chain wrote into the header, and a rejected block yields no write. The
 shape of the pushed block (header, written slots, proof, matching logs) follows the user's decisions of
 2026-11-18 and is not confirmed by Luka yet. Not specified: which blocks an endpoint must push, and how a
-participant notices a write an endpoint left out.
+participant notices a write an endpoint left out. The plan [`REQ-STPROOF-3-NVJGR0.T2`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2), added the same
+day, asks for the same check on blocks a running chain node pushes.
 
 ## 2026-10-26 — Application chain access, local join-signature answers, closed-transport frames
 

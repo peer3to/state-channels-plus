@@ -64,6 +64,10 @@ export function startDhtBootstrapper(
     options?: { port?: number; attempts?: number }
 ): Promise<DhtBootstrapper>;
 export function startHardhatNode(opts?: StartInfraOptions): Promise<NodeHandle>;
+/** The peer3 dev node at `PEER3_NODE_BIN`; throws when the variable is unset. */
+export function startPeer3Node(
+    opts?: Omit<StartInfraOptions, "env">
+): Promise<NodeHandle>;
 export function waitForHardhatNode(
     url: string,
     timeoutMs?: number

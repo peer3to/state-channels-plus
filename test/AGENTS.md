@@ -350,6 +350,12 @@ with the suite still green.
   window with a warning that lists them; check a green run for it. A Mocha file
   that launches Chromium must carry that marker in its leading comments. See
   "Browser tests" in the root `README.md`.
+- Light client tests need a node with the light client endpoints: mark the file
+  `// @distributed-requires: lightClient` and start the node through
+  `LightClientNodeFixture`. They are discovered only with `--lc-tests`, run on
+  the local runner with `PEER3_NODE_BIN` set, and fail at once with
+  `RPC node doesn't support LC endpoints` otherwise. See "Light client tests" in
+  the root `README.md`.
 - Legacy in-process unit/integration: `yarn test`. E2E inline: `yarn test:e2e`.
 - E2E in worker mode: `yarn test:e2e:worker` (per-file process isolation +
   internal X/N progress; needs the hardhat node — `yarn infra:hardhat-node`).

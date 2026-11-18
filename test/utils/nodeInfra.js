@@ -152,6 +152,59 @@ async function startHardhatNode({
             stdio: ["ignore", "pipe", "pipe"]
         }
     );
+    return nodeHandleWhenReady(proc, nodePort, { logPath, label });
+}
+
+/**
+ * Spawn the peer3 dev node at `PEER3_NODE_BIN` (on `port` or a free one), wait
+ * until its RPC is ready, and return `{ proc, url, stop }`. The node seals a
+ * block every block time on the funded test chain and keeps its database in a
+ * directory of its own, removed when it exits.
+ */
+async function startPeer3Node({ port, logPath, label = "peer3 node" } = {}) {
+    const nodeBin = process.env.PEER3_NODE_BIN;
+    if (!nodeBin) throw new Error("PEER3_NODE_BIN names no peer3 node binary");
+    const nodePort = port ?? (await getFreePort());
+    // --dev alone keeps the database in the system temp dir and leaves it there
+    const nodesDir = path.join(PROJECT_ROOT, "temp", "peer3-nodes");
+    fs.mkdirSync(nodesDir, { recursive: true });
+    const basePath = fs.mkdtempSync(path.join(nodesDir, "node-"));
+    const output = logPath ? "pipe" : "ignore";
+    const proc = spawn(
+        nodeBin,
+        [
+            "--dev",
+            "--base-path",
+            basePath,
+            "--chain",
+            "test",
+            "--dev-seal",
+            "interval",
+            "--rpc-port",
+            String(nodePort),
+            // the wildcard storage subscription is an unsafe method
+            "--rpc-methods",
+            "unsafe",
+            "--port",
+            "0",
+            "--no-mdns",
+            "--no-prometheus",
+            "--no-telemetry",
+            "--no-hardware-benchmarks"
+        ],
+        // the node logs every block, and an unread pipe would fill and stall it
+        { cwd: PROJECT_ROOT, stdio: ["ignore", output, output] }
+    );
+    const removeBasePath = () =>
+        fs.rmSync(basePath, { recursive: true, force: true });
+    proc.once("exit", removeBasePath);
+    // a binary that cannot be spawned emits no exit
+    proc.once("error", removeBasePath);
+    return nodeHandleWhenReady(proc, nodePort, { logPath, label });
+}
+
+/** The handle of a spawned node once its RPC on `nodePort` answers. */
+function nodeHandleWhenReady(proc, nodePort, { logPath, label }) {
     let resolveExit;
     const exited = new Promise((resolve) => {
         resolveExit = resolve;
@@ -477,6 +530,7 @@ module.exports = {
     startDhtBootstrapper,
     waitForHardhatNode,
     startHardhatNode,
+    startPeer3Node,
     startDiscoveryRegistry,
     jsonRpc,
     resetSlotCacheDir,

@@ -14,6 +14,7 @@ const {
 const {
     DISTRIBUTED_PROTOCOL_VERSION,
     MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL,
+    minimumProtocolForTask,
     runnersForDistributedProtocol,
     workerCanRunTask
 } = require("../../scripts/e2e-parallel/distributed/protocol.js");
@@ -283,6 +284,17 @@ describe("distributed mixed-protocol pool", function () {
             gateOn13: false,
             gateOn14: true
         });
+    });
+
+    it("lets no accepted worker protocol run a task that requires lightClient", function () {
+        const lightClient = { runner: "hardhat", requires: ["lightClient"] };
+        expect(
+            workerCanRunTask(
+                runnersForDistributedProtocol(DISTRIBUTED_PROTOCOL_VERSION),
+                lightClient
+            )
+        ).to.equal(false);
+        expect(minimumProtocolForTask(lightClient)).to.equal(null);
     });
 
     it("rejects a worker host older than the minimum or newer than the orchestrator", function () {

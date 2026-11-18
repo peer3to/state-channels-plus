@@ -1535,6 +1535,32 @@ describe("parallel forge tier guards", function () {
         }
     });
 
+    it("selects light client tests only with --lc-tests", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "lc-tests-"));
+        try {
+            fs.mkdirSync(path.join(root, "test"));
+            fs.writeFileSync(
+                path.join(root, "test", "Plain.ts"),
+                'it("runs", function () {});'
+            );
+            fs.writeFileSync(
+                path.join(root, "test", "Pushed.ts"),
+                '// @distributed-requires: lightClient\nit("proves", function () {});'
+            );
+            const withoutFlag = runParallelDryEntry(["--dry-run"], root);
+            expect(withoutFlag.status, withoutFlag.stderr).to.equal(0);
+            expect(withoutFlag.stdout).to.include("1 task(s)");
+            const withFlag = runParallelDryEntry(
+                ["--dry-run", "--lc-tests"],
+                root
+            );
+            expect(withFlag.status, withFlag.stderr).to.equal(0);
+            expect(withFlag.stdout).to.include("2 task(s)");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("accepts a repository with only default Forge tests", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "forge-only-"));
         try {
