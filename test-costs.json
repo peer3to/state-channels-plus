@@ -19981,6 +19981,66 @@
       "peakRssGb": 0.201,
       "measurementReason": null
     },
+    "hardhat|test/unit/FrontierStorageProofVerifier.test.ts|FrontierStorageProofVerifier proves a slot cleared on a peer3 dev node as zero, and not with the proof of the block before": {
+      "durationMs": 458,
+      "avgCores": 0.764,
+      "peakRssGb": 0.078,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierStorageProofVerifier.test.ts|FrontierStorageProofVerifier proves a slot the chain stores no entry for as zero": {
+      "durationMs": 345,
+      "avgCores": 1.072,
+      "peakRssGb": 0.091,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierStorageProofVerifier.test.ts|FrontierStorageProofVerifier proves a stored slot to the value the chain's eth_getStorageAt returned": {
+      "durationMs": 439,
+      "avgCores": 0.82,
+      "peakRssGb": 0.079,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierStorageProofVerifier.test.ts|FrontierStorageProofVerifier proves several slots from one shared proof, in the order asked": {
+      "durationMs": 336,
+      "avgCores": 1.131,
+      "peakRssGb": 0.092,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierStorageProofVerifier.test.ts|FrontierStorageProofVerifier proves slots written on a peer3 dev node to the node's own reads": {
+      "durationMs": 378,
+      "avgCores": 0.979,
+      "peakRssGb": 0.084,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierStorageProofVerifier.test.ts|FrontierStorageProofVerifier refuses a slot that is not 32 bytes": {
+      "durationMs": 315,
+      "avgCores": 1.238,
+      "peakRssGb": 0.094,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierStorageProofVerifier.test.ts|FrontierStorageProofVerifier refuses an address that is not 20 bytes": {
+      "durationMs": 344,
+      "avgCores": 1.076,
+      "peakRssGb": 0.085,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierStorageProofVerifier.test.ts|FrontierStorageProofVerifier throws for a slot the proof was not built for": {
+      "durationMs": 315,
+      "avgCores": 1.238,
+      "peakRssGb": 0.094,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierStorageProofVerifier.test.ts|FrontierStorageProofVerifier throws when one of several slots is not proven": {
+      "durationMs": 320,
+      "avgCores": 1.156,
+      "peakRssGb": 0.093,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierStorageProofVerifier.test.ts|FrontierStorageProofVerifier throws when the proven value is not 32 bytes long": {
+      "durationMs": 334,
+      "avgCores": 1.138,
+      "peakRssGb": 0.094,
+      "measurementReason": null
+    },
     "hardhat|test/unit/LocalDiamondBinding.test.ts|localDiamond binding carries every fragment of both generated ABIs": {
       "durationMs": 2494,
       "avgCores": 0.569,
@@ -21695,6 +21755,126 @@
       "durationMs": 10464,
       "avgCores": 0.946,
       "peakRssGb": 0.757,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof reads a value the trie holds by hash": {
+      "durationMs": 301,
+      "avgCores": 0.399,
+      "peakRssGb": 0.063,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof reads a value the trie holds inside its leaf": {
+      "durationMs": 320,
+      "avgCores": 1.25,
+      "peakRssGb": 0.093,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof reads a value through a child its branch holds inside itself": {
+      "durationMs": 319,
+      "avgCores": 1.16,
+      "peakRssGb": 0.092,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof reads null for a key the proof shows to hold nothing": {
+      "durationMs": 324,
+      "avgCores": 1.173,
+      "peakRssGb": 0.093,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof reads null from the empty trie": {
+      "durationMs": 293,
+      "avgCores": 0.41,
+      "peakRssGb": 0.063,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof reads null where a branch has no child for the key's next nibble": {
+      "durationMs": 288,
+      "avgCores": 0.417,
+      "peakRssGb": 0.063,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof reads null where a leaf's partial key differs from the key": {
+      "durationMs": 316,
+      "avgCores": 1.139,
+      "peakRssGb": 0.092,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof reads null where the key continues past a leaf": {
+      "durationMs": 313,
+      "avgCores": 1.182,
+      "peakRssGb": 0.093,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof reads null where the key ends at a branch that holds no value": {
+      "durationMs": 284,
+      "avgCores": 0.423,
+      "peakRssGb": 0.063,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof reads null where the key ends inside a leaf's partial key": {
+      "durationMs": 305,
+      "avgCores": 1.18,
+      "peakRssGb": 0.061,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof reads the value a branch holds where the key ends": {
+      "durationMs": 302,
+      "avgCores": 0.364,
+      "peakRssGb": 0.062,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof throws for a state root the proof does not lead to": {
+      "durationMs": 538,
+      "avgCores": 0.223,
+      "peakRssGb": 0.059,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof throws on a branch that has no child": {
+      "durationMs": 331,
+      "avgCores": 0,
+      "peakRssGb": 0.016,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof throws on a node that ends before its announced content": {
+      "durationMs": 293,
+      "avgCores": 0.41,
+      "peakRssGb": 0.062,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof throws on a node with an unknown header": {
+      "durationMs": 444,
+      "avgCores": 0.788,
+      "peakRssGb": 0.077,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof throws on a value length nothing can hold": {
+      "durationMs": 305,
+      "avgCores": 0.393,
+      "peakRssGb": 0.061,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof throws on an odd partial key whose padding is not zero": {
+      "durationMs": 291,
+      "avgCores": 0.412,
+      "peakRssGb": 0.062,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof throws when any node on the key's path is left out of the proof": {
+      "durationMs": 500,
+      "avgCores": 0.7,
+      "peakRssGb": 0.077,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof throws when the bytes of any node on the key's path were changed": {
+      "durationMs": 329,
+      "avgCores": 1.155,
+      "peakRssGb": 0.094,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SubstrateTrieProof.test.ts|SubstrateTrieProof throws when the node holding a hashed value is left out": {
+      "durationMs": 293,
+      "avgCores": 0.41,
+      "peakRssGb": 0.063,
       "measurementReason": null
     },
     "hardhat|test/unit/SyncReconstruction.test.ts|Unit: SpectateService sync persistence and reconstruction persistence from the observed anchor U57: a run served from an older anchor while the chain anchor moved into it → accepted, the material from the new anchor on is kept, the rebuilt proof starts at the new anchor and verifies on chain": {

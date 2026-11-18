@@ -22,6 +22,19 @@ explicit black-box plan and permutation set; the newly added clock-boundary, sep
 and opened-non-participant permutations are planned but not yet covered by executable evidence;
 engineer disposition remains pending.
 
+## 2026-11-18 — Contract storage proven against a state root
+
+New subject [storage-proofs.md](../specification/runtime/storage-proofs.md), the first part of the light
+client card (Trello 399, Luka). [`REQ-STPROOF-1-J20P5Y` (A slot value is accepted only when the proof decides it)](../specification/runtime/storage-proofs.md#req-stproof-1-j20p5y) states the rule every verifier keeps: a slot value
+is accepted only when the proof decides it, a slot the root commits to hold nothing reads as zero, and an
+undecided slot never reads as empty. [`REQ-STPROOF-2-ABCQR7` (One verifier per proof representation)](../specification/runtime/storage-proofs.md#req-stproof-2-abcqr7) puts verifiers behind one interface (Luka,
+2026-11-18: "each node has a different proof representation", one implementation per representation)
+and names the first one, the Substrate read proof of a Frontier chain. The document covers the check
+alone. Where the state root comes from, how a participant learns that a slot changed, and what it does
+after a failed check are named as separate subjects and are not specified yet. Residual risk recorded in
+the document: a root taken from the same endpoint as the proof catches that endpoint's faults and
+omissions, not a consistent lie.
+
 ## 2026-10-26 — Application chain access, local join-signature answers, closed-transport frames
 
 Luka decided these in the shared poker client manager plan (poker-contracts

@@ -950,6 +950,12 @@ Specification cases tested: 0/6.
 [`REQ-STOR-6-SKP0KM` (Value semantics at the store boundary)](../specification/storage/durability.md#req-stor-6-skp0km)
 Specification cases tested: 1/6. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6.
 
+[`REQ-STPROOF-1-J20P5Y` (A slot value is accepted only when the proof decides it)](../specification/runtime/storage-proofs.md#req-stproof-1-j20p5y)
+Specification cases tested: 11/11.
+
+[`REQ-STPROOF-2-ABCQR7` (One verifier per proof representation)](../specification/runtime/storage-proofs.md#req-stproof-2-abcqr7)
+Specification cases tested: 4/4.
+
 [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../specification/peer-communication/synchronization.md#req-sync-1-t2589h)
 Specification cases tested: 17/20. Untested: T1.P2, T1.P4, T1.P7.
 
