@@ -42,6 +42,12 @@ shape of the pushed block (header, written slots, proof, matching logs) follows 
 2026-11-18 and is not confirmed by Luka yet. Not specified: which blocks an endpoint must push, and how a
 participant notices a write an endpoint left out.
 
+Added on 2026-11-19 on the engineer's decisions of that day: pushed logs are hints whose content is not
+proven and that never change what a participant holds; only the header hash binds a pushed block to a
+block the participant trusts; a pushed block of the wrong shape is rejected. They are stated as
+assumptions of [storage-proofs.md](../specification/runtime/storage-proofs.md). Which blocks an endpoint
+pushes, and which writes, is decided too and specified with the subscription.
+
 ## 2026-10-26 — Application chain access, local join-signature answers, closed-transport frames
 
 Luka decided these in the shared poker client manager plan (poker-contracts

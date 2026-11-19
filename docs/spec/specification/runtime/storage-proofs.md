@@ -65,6 +65,14 @@ write.
   about slots that were not asked.
 - The verifier checks values, not completeness: whether the participant was given every slot that
   changed is outside this document.
+- Only the hash of a pushed header can bind a pushed block to a block the participant trusts. The
+  Ethereum block hash read from the header's digest names the block's Ethereum block but binds
+  nothing: a header with another state root can carry the same digest.
+- Pushed logs are hints. Only their block hash is checked; their content is not proven. A
+  participant MAY use a pushed log to look sooner, and MUST NOT let one change what it holds or
+  decide anything on its own.
+- A pushed block is untrusted input of any shape. One that is not a block of the expected shape is
+  rejected like a block whose proof fails.
 - The hash function of the representation is collision resistant.
 - The work of one check is bounded by the size of the proof and the length of the keys: every node
   is hashed once and a path visits at most one node per key nibble.
