@@ -2,15 +2,21 @@ import { Block } from "@/models";
 import { Status } from "@/types";
 import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
 import type { Address } from "@/types/types";
-import { Codec, Type } from "@/utils";
+import { Codec, hash, Type } from "@/utils";
 import * as factory from "@test/factory";
 
 import { normalizeRealConfirmations } from "@test/fixtures/ConfirmationNormalizationFixture";
 import { probeWrongLeaderInsertion } from "@test/fixtures/MathInsertionFixture";
+import { stagePrunedGenuineInbound } from "@test/fixtures/PrunedInboundStaging";
 import {
     assertSpectatingFraud,
     assertObserverHook
 } from "@test/fixtures/SpectatingFraudStaging";
+import {
+    encodeUnlinkedBlockZero,
+    runSpectatorWrongGenesisPastGenesis,
+    stageChainPastGenesis
+} from "@test/fixtures/WrongGenesisPastGenesisStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { deriveTimeConfig } from "@test/harness/core/testTimeConfig";
 import { expect } from "chai";
@@ -202,6 +208,19 @@ describe("Unit: ValidationService", function () {
     it("observer live arrivals abort on double-sign fraud without requesting a dispute", async function () {
         await assertSpectatingFraud("observer", false);
     });
+    // past genesis on chain nobody can prove a block-0 conflict -> a spectator keeps spectating
+    it("observer wrongGenesisDetected while the chain holds the fork past genesis, no block 0 stored → dropped, no abort, no fraud proof, no dispute, nobody disconnected", async function () {
+        const { probe } = await runSpectatorWrongGenesisPastGenesis(
+            TestSession.getHarness()
+        );
+        expect(probe.firedHooks).to.include("wrongGenesisDetected");
+        expect(probe.resultName).to.equal("DUPLICATE");
+        expect(probe.abortCalled).to.equal(false);
+        expect(probe.fraudProofType).to.equal(null);
+        expect(probe.disputedForkIds).to.deep.equal([]);
+        expect(probe.disconnectedAddresses).to.deep.equal([]);
+    });
+
     it("observer wrongGenesisDetected keeps the spectator reaction without submitting a dispute", async function () {
         await assertObserverHook("wrongGenesisDetected");
     });
@@ -217,6 +236,78 @@ describe("Unit: ValidationService", function () {
     it("observer blockForkIsDisputed keeps the spectator reaction without submitting a dispute", async function () {
         await assertObserverHook("blockForkIsDisputed");
     });
+    describe("detectForgedInboundMessageBlock", function () {
+        // the spectator synced after the prune -> it never stored the top-up, so only the chain answers
+        it("genuine inbound consumed as the snapshot's inbound head, absent locally -> not flagged", async function () {
+            const h = TestSession.getHarness();
+            const { prunedInbound, forkId } = await stagePrunedGenuineInbound();
+            const spectator = await h.join.addSpectatorDetached();
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
+            const prunedHash = hash(
+                Codec.encode(prunedInbound, Type.MessageBlock)
+            );
+            expect(
+                await h
+                    .control(spectator)
+                    .query.getInboundMessageBlock(prunedHash)
+                    .request()
+            ).to.equal(null);
+            const encoded = await factory.buildAndEncodeBlock(
+                h.getPeer(0).signer,
+                {
+                    header: {
+                        channelId: h.channelId,
+                        forkId,
+                        transactionCnt: 1
+                    },
+                    messageBlocks: [prunedInbound]
+                }
+            );
+
+            const forged = await h
+                .control(spectator)
+                .validation.detectForgedInboundMessageBlock(encoded)
+                .request();
+
+            expect(forged).to.equal(null);
+        });
+
+        it("fabricated inbound one above the snapshot's inbound head -> flagged", async function () {
+            const h = TestSession.getHarness();
+            const { prunedInbound, snapshotInboundHeight, forkId } =
+                await stagePrunedGenuineInbound();
+            const spectator = await h.join.addSpectatorDetached();
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
+            const fabricated = factory.messageBlock({
+                previousBlockHash: hash(
+                    Codec.encode(prunedInbound, Type.MessageBlock)
+                ),
+                blockHeight: BigInt(snapshotInboundHeight + 1)
+            });
+            const encoded = await factory.buildAndEncodeBlock(
+                h.getPeer(0).signer,
+                {
+                    header: {
+                        channelId: h.channelId,
+                        forkId,
+                        transactionCnt: 1
+                    },
+                    messageBlocks: [fabricated]
+                }
+            );
+
+            const forged = await h
+                .control(spectator)
+                .validation.detectForgedInboundMessageBlock(encoded)
+                .request();
+
+            expect(forged, "fabricated block flagged").to.not.equal(null);
+            expect(hash(forged!.encodedForgedInboundMessageBlock)).to.equal(
+                hash(Codec.encode(fabricated, Type.MessageBlock))
+            );
+        });
+    });
+
     describe("isChannelOpen", function () {
         it("open fork (non-zero) → true", async function () {
             const h = TestSession.getHarness();
@@ -456,6 +547,56 @@ describe("Unit: ValidationService", function () {
                     solProofType(FraudProofType.WrongGenesis)
                 );
             }
+        });
+
+        // the chain no longer judges block 0 once it holds the fork past genesis -> a proof would revert
+        it("height-0 block not linked to genesis while the chain holds the fork past genesis, no block 0 stored → dropped, no fraud proof, no dispute, nobody disconnected", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, blockZeroAuthor } = await stageChainPastGenesis(h);
+            const observer = h.getPeer(0);
+            // history below the anchor pruned, as a sync above the anchor leaves it
+            await h
+                .control(observer)
+                .stub.pruneStoredBlocksBelowAnchor(forkId, 1)
+                .request();
+            expect(
+                await h
+                    .control(observer)
+                    .query.getBlockByHeight(forkId, 0)
+                    .request()
+            ).to.equal(null);
+            const author = h.peers.find((p) => p.address === blockZeroAuthor)!;
+            const encoded = await encodeUnlinkedBlockZero(h, author, forkId);
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockValidation(encoded)
+                .request();
+
+            expect(r.firedHooks).to.include("wrongGenesisDetected");
+            expect(r.resultName).to.equal("DUPLICATE");
+            expect(r.fraudProofType).to.equal(null);
+            expect(r.disputedForkIds).to.deep.equal([]);
+            expect(r.disconnectedAddresses).to.deep.equal([]);
+        });
+
+        it("conflict at height 0 from another author while the chain holds the fork past genesis → DISCONNECT of sources and author, no fraud proof, no dispute", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, blockZeroAuthor } = await stageChainPastGenesis(h);
+            const observer = h.getPeer(0);
+            const other = h.peers.find((p) => p.address !== blockZeroAuthor)!;
+            const encoded = await encodeUnlinkedBlockZero(h, other, forkId);
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockValidation(encoded)
+                .request();
+
+            expect(r.firedHooks).to.include("wrongGenesisDetected");
+            expect(r.resultName).to.equal("DISCONNECT");
+            expect(r.fraudProofType).to.equal(null);
+            expect(r.disputedForkIds).to.deep.equal([]);
+            expect(r.disconnectedAddresses).to.include(other.address);
         });
 
         it("linked next block by the wrong leader → invalidStateTransitionDetected → DISPUTE + InvalidStateTransition proof", async function () {

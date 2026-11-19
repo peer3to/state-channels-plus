@@ -144,6 +144,8 @@ export class RpcNodeProxy {
     private readonly failedRequests: ForwardedRequest[] = [];
     /** Method -> the result this proxy answers its requests with, unforwarded. */
     private readonly answeredMethods = new Map<JsonRpcMethod, unknown>();
+    /** Methods {@link answeredMethods} answers only once. */
+    private readonly answeredOnceMethods = new Set<JsonRpcMethod>();
     /** Most blocks an eth_getLogs may span before this proxy rejects it. */
     private maxLogSpan?: number;
     /**
@@ -254,11 +256,19 @@ export class RpcNodeProxy {
     /** Answer every `method` request with `result` itself, unforwarded. */
     answerRequests(method: JsonRpcMethod, result: unknown): void {
         this.answeredMethods.set(method, result);
+        this.answeredOnceMethods.delete(method);
+    }
+
+    /** Answer the next `method` request with `result` itself, unforwarded. */
+    answerNextRequest(method: JsonRpcMethod, result: unknown): void {
+        this.answeredMethods.set(method, result);
+        this.answeredOnceMethods.add(method);
     }
 
     /** Forward `method`'s requests to the node again after {@link answerRequests}. */
     stopAnsweringRequests(method: JsonRpcMethod): void {
         this.answeredMethods.delete(method);
+        this.answeredOnceMethods.delete(method);
     }
 
     /** Reject eth_getLogs requests spanning more than `maxSpan` blocks. */
@@ -428,6 +438,8 @@ export class RpcNodeProxy {
                 this.answeredMethods.has(method)
             ) {
                 reply({ result: this.answeredMethods.get(method) });
+                if (this.answeredOnceMethods.delete(method))
+                    this.answeredMethods.delete(method);
                 return;
             }
             if (

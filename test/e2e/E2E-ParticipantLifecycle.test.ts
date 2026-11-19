@@ -718,6 +718,111 @@ describe("E2E: Participant Lifecycle", function () {
             );
         });
 
+        it("a spectator joins after a timeout reduction that followed a snapshot post pruning the inbound history: the reduced fork keeps the chain's inbound height and the joiner is seated", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.timeoutSetup(3, 1);
+            await h.assert.sync.peersInSyncWait();
+            // a consumed top-up puts the open's inbound block below the head;
+            // its block keeps peer 0 off the next writer's turn
+            const { latestInboundMessageBlockHash: openInboundHash } =
+                await h.channelManager.getChannelBalance(h.channelId);
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+            await h.transition.advanceState({ count: 1 });
+            await h.assert.sync.peersInSyncWait();
+            const { latestInboundMessageBlockHash: headInboundHash } =
+                await h.channelManager.getChannelBalance(h.channelId);
+            // a same-fork post with no dispute window clears the inbound
+            // history below the snapshot's inbound head
+            const posted = await h.transition.postSnapshotWait();
+            expect(posted!.snapshotData.latestInboundMessageBlockHash).to.equal(
+                headInboundHash
+            );
+            const prunedForkId = h.activeForkId!;
+            expect(
+                await h.channelManager.hasInboundMessageBlock(
+                    h.channelId,
+                    openInboundHash
+                ),
+                "the chain pruned the block below the head"
+            ).to.equal(false);
+            expect(
+                await h.channelManager.hasInboundMessageBlock(
+                    h.channelId,
+                    headInboundHash
+                ),
+                "the chain kept the snapshot's inbound head"
+            ).to.equal(true);
+
+            const writer = await h.query.getNextPeerToWrite();
+            const honestIndices = [0, 1, 2].filter((i) => i !== writer.index);
+            for (const index of honestIndices) {
+                await waitFor(async () => {
+                    const held = await h.execOnHost(
+                        h.getPeer(index),
+                        (sm, args) =>
+                            Promise.all(
+                                args.hashes.map((hash) =>
+                                    sm.diamondStateMachine.localDiamondContract.hasInboundMessageBlock(
+                                        sm.channelId,
+                                        hash
+                                    )
+                                )
+                            ),
+                        { hashes: [openInboundHash, headInboundHash] }
+                    );
+                    return !held[0] && held[1];
+                }, h.event.protocolEventTimeoutMs());
+            }
+            await h.network.blacklistAndDisconnectPeer(writer.index);
+            await h.assert.sync.forkChangedWait({
+                originalForkId: prunedForkId,
+                honestPeerIndices: honestIndices
+            });
+
+            const chainInbound = await h.channelManager.getChannelBalance(
+                h.channelId
+            );
+            for (const index of honestIndices) {
+                const peer = h.getPeer(index);
+                const [reducedForkId] = await h.peerForkIds([peer]);
+                const genesisHash = await h
+                    .control(peer)
+                    .query.getGenesisSnapshotHash(reducedForkId)
+                    .request();
+                const genesis = await h
+                    .control(peer)
+                    .query.getStateSnapshotStructByHash(genesisHash!)
+                    .request();
+                const reduced = StateSnapshot.from(
+                    Codec.decode(genesis!.encodedSnapshot, Type.StateSnapshot)
+                );
+                expect(
+                    reduced.snapshotData.latestInboundMessageBlockHash
+                ).to.equal(chainInbound.latestInboundMessageBlockHash);
+                expect(
+                    BigInt(reduced.snapshotData.latestInboundMessageBlockHeight)
+                ).to.equal(
+                    BigInt(chainInbound.latestInboundMessageBlockHeight),
+                    `peer ${index}'s reduced fork lost the chain's inbound height`
+                );
+            }
+            // the JOIN names the chain's snapshot fork: wait for the reduced
+            // fork's post so it cannot race the JOIN
+            await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
+
+            const { peer: joiner } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: honestIndices,
+                minimumBlocks: 1,
+                maximumBlocks: 20
+            });
+            await h.scenario.joinUntilPromotedWait({
+                joiner,
+                authoringPeerIndices: honestIndices
+            });
+        });
+
         it("pending join fault survives until a failed receipt restores SYNCED", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2);

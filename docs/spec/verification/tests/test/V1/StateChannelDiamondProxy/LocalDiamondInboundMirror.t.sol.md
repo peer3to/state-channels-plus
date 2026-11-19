@@ -12,10 +12,15 @@ it, and the head and deposit total stay at the newer block. A third test opens a
 harness diamond, records the genesis inbound block and snapshot from its logs and replays them into
 the local diamond in both orders: either order stores the genesis block and leaves the inbound head,
 its height and the deposit total at the snapshot's values, and `ChannelOpened` alone stores no
-inbound block.
+inbound block. A fourth test applies `onChannelStorageCleared` naming the older of two stored
+blocks: the older block is deleted, the newer one stays and the inbound head with its deposit
+total stays at it. A fifth test replays that event for the already-deleted block, as a later advance
+with the same head emits it: nothing changes and the head block stays.
 
 ## Tests
 
 - `test_onInboundMessagesProcessed_storedBlockAgain_isNoOp`: UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P4, REQ-MIRROR-2-E9F3TM.T1.P4
 - `test_onInboundMessagesProcessed_olderBlockAfterNewer_storesItWithoutMovingTheHeadBack`: UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P5, REQ-MIRROR-2-E9F3TM.T1.P5
+- `test_onChannelStorageCleared_prunesFromTheFirstPrunedBlockAndKeepsTheBlocksAbove`: UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P6
+- `test_onChannelStorageCleared_alreadyPrunedBlock_keepsTheHead`: UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P7
 - `test_openReplay_eitherOrder_storesTheGenesisInboundBlockOnlyThroughTheInboundEvent`: UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P3, REQ-MIRROR-2-E9F3TM.T2.P1

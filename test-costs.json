@@ -79,6 +79,12 @@
       "peakRssGb": 0.261,
       "measurementReason": null
     },
+    "forge|test/V1/StateChannelDiamondProxy/InboundHeadPruning.t.sol|InboundHeadPruningTest": {
+      "durationMs": 1267,
+      "avgCores": 0.639,
+      "peakRssGb": 0.134,
+      "measurementReason": null
+    },
     "forge|test/V1/StateChannelDiamondProxy/InvalidStateProofStep.t.sol|InvalidStateProofStepTest": {
       "durationMs": 1408,
       "avgCores": 0.504,
@@ -3103,6 +3109,12 @@
       "peakRssGb": 0.8,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Join path a spectator joins after a timeout reduction that followed a snapshot post pruning the inbound history: the reduced fork keeps the chain's inbound height and the joiner is seated": {
+      "durationMs": 38596,
+      "avgCores": 0.252,
+      "peakRssGb": 0.75,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Join path pending join fault preserves the successful on-chain join and inbound message": {
       "durationMs": 13047,
       "avgCores": 0.947,
@@ -3149,6 +3161,24 @@
       "durationMs": 8696,
       "avgCores": 0.865,
       "peakRssGb": 0.598,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-PrunedInboundFraudProof.test.ts|E2E: Pruned inbound fraud proof dispute resolved after a snapshot post -> the reduced fork keeps the snapshot inbound height, the next top-up is adopted, the old head's proof stays refused": {
+      "durationMs": 23821,
+      "avgCores": 0.407,
+      "peakRssGb": 0.699,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-PrunedInboundFraudProof.test.ts|E2E: Pruned inbound fraud proof fabricated inbound above the snapshot's inbound head -> honest peers dispute, the forger is slashed": {
+      "durationMs": 22172,
+      "avgCores": 0.435,
+      "peakRssGb": 0.687,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-PrunedInboundFraudProof.test.ts|E2E: Pruned inbound fraud proof genuine inbound consumed as the snapshot's inbound head -> forged-inbound proof against its honest author reverts, nobody slashed, channel advances": {
+      "durationMs": 9079,
+      "avgCores": 0.653,
+      "peakRssGb": 0.664,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-QueueProofOrigins.test.ts|E2E: Queue proof origins historical dispute replay retains its full participant union after a signer is slashed": {
@@ -10151,6 +10181,18 @@
       "durationMs": 2061,
       "avgCores": 0.767,
       "peakRssGb": 0.205,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/crashLogServer.test.ts|crash-log-server routes reads a queued merged read's chunks only once it gets the turn": {
+      "durationMs": 3980,
+      "avgCores": 0.847,
+      "peakRssGb": 0.544,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/crashLogServer.test.ts|crash-log-server routes runs a second merged read only after a stalled one is cut at the timeout": {
+      "durationMs": 4262,
+      "avgCores": 0.73,
+      "peakRssGb": 0.554,
       "measurementReason": null
     },
     "hardhat|test/scripts/crashLogServer.test.ts|crash-log-server routes stores an uploaded chunk and reads it back merged": {
@@ -17864,9 +17906,9 @@
       "measurementReason": null
     },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes force-join time bound U74: observing its own join arms the force-join deadline at once, one full turn window per pending turn, while the counting grace still runs": {
-      "durationMs": 19412,
-      "avgCores": 1.155,
-      "peakRssGb": 0.989,
+      "durationMs": 13951,
+      "avgCores": 1.615,
+      "peakRssGb": 1.202,
       "measurementReason": null
     },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes force-join time bound U74: the force-join deadline passing with no new block requests the force-join dispute": {
@@ -18080,9 +18122,9 @@
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeAuditOlderDispute.test.ts|Unit: DisputeValidationService data availability and older disputes auditor without the older state U41: an auditor missing older application states but holding a newer finalized state audits a current dispute -> no missing-state failure, true": {
-      "durationMs": 19445,
-      "avgCores": 1.003,
-      "peakRssGb": 1.016,
+      "durationMs": 19728,
+      "avgCores": 1.571,
+      "peakRssGb": 1.245,
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeAuditOlderDispute.test.ts|Unit: DisputeValidationService data availability and older disputes auditor without the older state U94: the disputer signed a newer block than its dispute's latest state, which the auditor never held -> DisputeNotLatestState from that signature, no backward replay": {
@@ -18743,6 +18785,18 @@
       "durationMs": 9908,
       "avgCores": 1.038,
       "peakRssGb": 0.791,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager constructDispute stored forged-inbound proof above the snapshot's inbound head → constructDispute bundles it, author marked slashed": {
+      "durationMs": 9498,
+      "avgCores": 0.788,
+      "peakRssGb": 0.684,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager constructDispute stored forged-inbound proof whose inbound block is the snapshot's inbound head → constructDispute leaves it out, author not marked slashed": {
+      "durationMs": 7841,
+      "avgCores": 0.789,
+      "peakRssGb": 0.674,
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager constructDispute successor fork while the chain anchor is still on the parent fork (no successor snapshot posted) → the dispute built on the successor is accepted by an honest auditor, and the chain accepts its proof": {
@@ -19919,12 +19973,6 @@
       "durationMs": 2941,
       "avgCores": 0.942,
       "peakRssGb": 0.328,
-      "measurementReason": null
-    },
-    "hardhat|test/unit/FraudProofStorage.test.ts|Unit: FraudProofStorage returns undefined for a participant with no stored proof": {
-      "durationMs": 2486,
-      "avgCores": 0.676,
-      "peakRssGb": 0.205,
       "measurementReason": null
     },
     "hardhat|test/unit/FraudProofStorage.test.ts|Unit: FraudProofStorage stores a fraud proof and reads it back by content hash": {
@@ -21863,6 +21911,12 @@
       "durationMs": 11489,
       "avgCores": 0.99,
       "peakRssGb": 0.794,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/ValidationService.test.ts|Unit: ValidationService detectForgedInboundMessageBlock genuine inbound consumed as the snapshot's inbound head, absent locally -> not flagged": {
+      "durationMs": 9642,
+      "avgCores": 0.698,
+      "peakRssGb": 0.933,
       "measurementReason": null
     },
     "hardhat|test/unit/ValidationService.test.ts|Unit: ValidationService duplicate malformed bytes use one charged slot and are removed once": {

@@ -81,10 +81,14 @@ describe("Unit: MembershipService", function () {
                             { blockTag }
                         )
                     );
+                // what the chain emits: the first block below the kept head,
                 // applied as its block's last log (END_OF_BLOCK_LOG_INDEX)
+                const head = sm.storage.inboundMessages.getMessageBlock(
+                    snapshot.snapshotData.latestInboundMessageBlockHash
+                );
                 await sm.eventHandler.onChannelStorageCleared(
                     sm.channelId,
-                    snapshot.snapshotData.latestInboundMessageBlockHash,
+                    head!.previousBlockHash,
                     { blockNumber, logIndex: Number.MAX_SAFE_INTEGER }
                 );
                 return {

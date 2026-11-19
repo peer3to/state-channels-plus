@@ -41,7 +41,7 @@ interface StateChannelManagerEvents {
 
     event WithdrawalsUpdated(bytes32 indexed channelId, Balance totalWithdrawals);
 
-    event ChannelStorageCleared(bytes32 indexed channelId, bytes32 latestInboundMessageBlockHash);
+    event ChannelStorageCleared(bytes32 indexed channelId, bytes32 firstPrunedInboundMessageBlockHash);
 
     event DisputeKilled(bytes32 indexed channelId, bytes32 forkId, address disputer, bytes32 disputeHash);
 

@@ -3,6 +3,7 @@ import {
     NodeSocketSubscriptions
 } from "./RpcNodeProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
+import { sleep } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 import {
@@ -27,6 +28,30 @@ type LogId = string;
 
 /** Block heights below the highest delivered log whose log ids are kept. */
 const REMEMBERED_LOG_BLOCKS = 128;
+
+/**
+ * Pause before a second pass over the nodes when each answered the latest
+ * block read with no block: they import a new head at about the same time.
+ */
+const MISSING_LATEST_BLOCK_RETRY_MS = 100;
+
+/**
+ * Whether a node answered the latest block read with no block. The latest
+ * block always exists, so it is a node fault: Besu answers null for an
+ * instant around importing a new head. A block read by number may be null:
+ * that block is not mined yet.
+ */
+function isMissingLatestBlock(
+    method: string,
+    params: unknown[],
+    result: unknown
+): boolean {
+    return (
+        result == null &&
+        method === "eth_getBlockByNumber" &&
+        params[0] === "latest"
+    );
+}
 
 /**
  * Relays one subscription from every node's socket to the provider. Sockets
@@ -140,14 +165,16 @@ class RpcNodesLogSubscriber extends RpcNodesSocketSubscriber {
  * The runtime's chain provider over several RPC nodes in list order. Every
  * request, read or transaction, goes to the first node with an open socket
  * and moves to the next one when that node has no open socket, loses it
- * before answering or answers that it failed internally; when no other node
- * answers, that internal error is the request's. While no node is connected
- * a request waits for the
- * first one to reconnect; the wait is warned about once per outage and ends
- * with a rejection on destroy or stopReconnecting. Block events and contract
- * log subscriptions come from every node's socket, each block and each log
- * once, so `on(filter)` keeps delivering while any node is connected; logs
- * emitted while a node is down are not read again from it.
+ * before answering, answers that it failed internally or answers the latest
+ * block read with no block. When no other node answers, that internal error
+ * is the request's; a missing latest block gets one more pass first. While
+ * no node is connected a request waits for the first one to reconnect; the
+ * wait is warned about once per outage and ends with a rejection on destroy
+ * or stopReconnecting.
+ * Block events and contract log subscriptions come from every node's socket,
+ * each block and each log once, so `on(filter)` keeps delivering while any
+ * node is connected; logs emitted while a node is down are not read again
+ * from it.
  */
 export default class MultiRpcProvider extends JsonRpcApiProvider {
     readonly nodes: readonly RpcNodeProvider[];
@@ -197,8 +224,9 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     }
 
     // Implements JsonRpcApiProvider._send: each request goes to the first
-    // connected node and fails over to the next one when that node drops or
-    // answers a read with its internal error and no revert data.
+    // connected node and fails over to the next one when that node drops,
+    // answers a read with its internal error and no revert data, or answers
+    // the latest block read with no block.
     async _send(
         payload: JsonRpcPayload | Array<JsonRpcPayload>
     ): Promise<Array<JsonRpcResult | JsonRpcError>> {
@@ -231,29 +259,49 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
         const params = Array.isArray(request.params)
             ? request.params
             : [request.params];
+        let hasRetriedMissingBlock = false;
         for (;;) {
             this.assertServing(request.method);
             let internalError: unknown;
+            let missingBlock: Error | undefined;
             for (const node of this.nodes) {
+                let fault: unknown;
                 try {
                     const sent = await node.trySendOnCurrentSocket(
                         request.method,
                         params
                     );
-                    if (sent) return { id: request.id, result: sent.result };
+                    if (!sent) continue;
+                    if (
+                        !isMissingLatestBlock(
+                            request.method,
+                            params,
+                            sent.result
+                        )
+                    )
+                        return { id: request.id, result: sent.result };
+                    fault = missingBlock = makeError(
+                        "RPC node answered the latest block read with no block",
+                        "UNKNOWN_ERROR",
+                        { request }
+                    );
                 } catch (error) {
                     if (!isNodeInternalError(error)) throw error;
-                    internalError = error;
-                    this.logger.warn(
-                        "RPC node failed a request internally; the next node gets it",
-                        {
-                            method: request.method,
-                            ...LoggerUtils.getRpcNodeMetadata(node.url)
-                        }
-                    );
+                    fault = internalError = error;
                 }
+                this.logger.warn("RPC node failed a request", {
+                    method: request.method,
+                    error: fault,
+                    ...LoggerUtils.getRpcNodeMetadata(node.url)
+                });
             }
             if (internalError) throw internalError;
+            if (missingBlock) {
+                if (hasRetriedMissingBlock) throw missingBlock;
+                hasRetriedMissingBlock = true;
+                await sleep(MISSING_LATEST_BLOCK_RETRY_MS);
+                continue;
+            }
             // destroyed while the request was on a node
             this.assertServing(request.method);
             if (!this.reconnects)
