@@ -1,4 +1,8 @@
 import { coordinateKey } from "./keys";
+import {
+    PersistentCollection,
+    type PersistenceController
+} from "./persistence";
 import { Block } from "@/models";
 import { ForkId, BlockHeight, BlockCalldata, Address } from "@/types/types";
 
@@ -8,10 +12,16 @@ export class BlockCalldataStorage {
     // ====================================
     // STORAGE MAPS
     // ====================================
-    private coordinatesToBlockMap: Map<CalldataCoordinateKey, BlockCalldata>;
+    private readonly coordinatesToBlockMap: PersistentCollection<
+        CalldataCoordinateKey,
+        BlockCalldata
+    >;
 
-    constructor() {
-        this.coordinatesToBlockMap = new Map();
+    constructor(controller?: PersistenceController) {
+        this.coordinatesToBlockMap = new PersistentCollection(
+            "blockCalldata",
+            controller
+        );
     }
 
     // ====================================

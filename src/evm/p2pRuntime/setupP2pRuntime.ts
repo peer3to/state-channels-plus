@@ -17,6 +17,11 @@ import type {
 } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";
 import type { CustomRpcManifest } from "@/rpc/network/registry";
+import {
+    openPersistencePartition,
+    type PersistenceOptions
+} from "@/storage/persistence";
+import type { ChannelId } from "@/types/types";
 import { createLogger } from "@/utils";
 import type { Logger } from "@/utils";
 import { createConfig } from "@/utils/config";
@@ -63,6 +68,17 @@ export type P2pSetupOptions<
      */
     signerSecret?: string;
     /**
+     * Durable storage, off unless passed. Browsers use IndexedDB and Node
+     * uses an embedded LevelDB. One live runtime owns a channel partition,
+     * so local multi-peer setups must use distinct locations.
+     */
+    persistence?: boolean | PersistenceOptions;
+    /**
+     * Known channel identity used to recover the persisted signer and
+     * channel state before the runtime graph is constructed.
+     */
+    channelId?: ChannelId;
+    /**
      * Context every inline-host handler runs inside (see
      * {@link HostHandlerExecutionContext}). Ignored in threaded mode —
      * a worker thread runs exactly one peer's host.
@@ -97,8 +113,49 @@ export async function setupP2pRuntime<
     // Initialize SDK config for this runtime (intended to be called once).
     const activeConfig = createConfig(options?.config);
 
-    const runtimeSignerSecret =
+    let runtimeSignerSecret =
         options?.signerSecret ?? ethers.Wallet.createRandom().privateKey;
+    const persistence =
+        options?.persistence === true ? {} : options?.persistence || undefined;
+    // A manager without a provider fails the setup below.
+    const network = persistence
+        ? await deployedStateChannelContractInstance.runner?.provider?.getNetwork()
+        : undefined;
+    const persistenceIdentity =
+        persistence && network
+            ? {
+                  chainId: network.chainId.toString(),
+                  stateChannelManagerAddress: (
+                      await deployedStateChannelContractInstance.getAddress()
+                  ).toString(),
+                  stateMachineAddress: (
+                      await stateMachineContractInstance.getAddress()
+                  ).toString()
+              }
+            : undefined;
+    const channelId = options?.channelId
+        ? ethers.hexlify(options.channelId)
+        : undefined;
+
+    if (persistence && persistenceIdentity && channelId) {
+        const preparedPartition = await openPersistencePartition({
+            identity: { ...persistenceIdentity, channelId },
+            persistence,
+            signerSecret: runtimeSignerSecret,
+            existingPartition: "allow"
+        });
+        await preparedPartition.databaseHandle.close();
+        // a caller's own key never signs as the partition's stored signer
+        if (
+            options?.signerSecret !== undefined &&
+            preparedPartition.signerSecret !== options.signerSecret
+        )
+            throw new Error(
+                "The channel's persisted partition belongs to another signer"
+            );
+        runtimeSignerSecret = preparedPartition.signerSecret;
+    }
+
     const trimmedSignerSecret = runtimeSignerSecret.trim();
     const resolvedSignerAddress = /^0x[0-9a-fA-F]{64}$/.test(
         trimmedSignerSecret
@@ -147,6 +204,14 @@ export async function setupP2pRuntime<
             scm,
             stateMachine,
             signerSecret: runtimeSignerSecret,
+            persistence:
+                persistence && persistenceIdentity
+                    ? {
+                          options: persistence,
+                          identity: persistenceIdentity,
+                          channelId
+                      }
+                    : undefined,
             peerId: options?.peerId,
             customRpcManifest: options?.customRpcManifest,
             hostRootManifest: options?.hostRootManifest,

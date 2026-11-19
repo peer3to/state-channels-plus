@@ -247,6 +247,7 @@ describe("parallel browser task discovery", function () {
         const { tasks } = discoverBrowserTasks(REPO_TEST_DIR);
         expect(tasks.map((task) => task.fullTitle)).to.deep.equal([
             "run-p2p-webrtc-e2e",
+            "run-persistence-restart",
             "run-transport-holepunch-e2e",
             "run-transport-local-e2e",
             "run-worker-contract-executor"
@@ -353,6 +354,7 @@ describe("parallel browser task discovery", function () {
         });
         expect(tasks.map((task) => task.fullTitle)).to.deep.equal([
             "run-p2p-webrtc-e2e",
+            "run-persistence-restart",
             "run-transport-holepunch-e2e",
             "run-transport-local-e2e",
             "run-worker-contract-executor"

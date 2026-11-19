@@ -76,6 +76,7 @@ export default class StateApplicationService {
             outboundMessageBlock,
             prepared
         );
+        await sm.storage.flush();
         if (previousForkId !== stateSnapshot.forkId)
             sm.reductionManager.settleForkLeft(previousForkId);
         return true;
@@ -119,6 +120,7 @@ export default class StateApplicationService {
             outboundMessageBlock,
             prepared
         );
+        await sm.storage.flush();
         return true;
     }
 
@@ -186,9 +188,8 @@ export default class StateApplicationService {
     ): void {
         const sm = this.stateManager;
         // Persist state snapshot (as a model)
-        sm.storage.stateSnapshots.storeStateSnapshot(
-            StateSnapshot.from(stateSnapshot)
-        );
+        const latestSnapshot = StateSnapshot.from(stateSnapshot);
+        sm.storage.stateSnapshots.storeStateSnapshot(latestSnapshot);
         // Persist outbound message block if provided
         if (outboundMessageBlock)
             sm.storage.outboundMessages.store(outboundMessageBlock);
@@ -198,6 +199,15 @@ export default class StateApplicationService {
         });
         // Update the forkId to the new fork
         sm.forkId = stateSnapshot.forkId;
+        // TODO(persistence): recover legal prefixes if the process crashes
+        // between these individually durable records.
+        sm.storage.setRuntimeMetadata({
+            activeForkId: stateSnapshot.forkId,
+            headHash: sm.storage.blocks.getLatestBlock(stateSnapshot.forkId)
+                ?.hash,
+            snapshotHash: latestSnapshot.hash,
+            stateHash: latestSnapshot.stateMachineStateHash
+        });
         sm.membershipService.publishOffChainEligibility(
             stateSnapshot.snapshotData.participants
         );

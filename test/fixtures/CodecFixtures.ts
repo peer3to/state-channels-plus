@@ -51,6 +51,7 @@ export const codecValues = {
     blockConfirmation: () => factory.blockConfirmation(),
     transaction: () => factory.transaction(),
     dispute: () => factory.dispute(),
+    timeout: () => factory.dispute().input.timeout,
     disputeConfirmation: () => ({
         signedDispute: signedDispute(),
         signatures: [factory.signature()]

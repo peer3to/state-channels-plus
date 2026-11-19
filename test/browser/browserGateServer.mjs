@@ -48,6 +48,10 @@ const platformAliases = {
         projectRoot,
         "src/transport/browser/RuntimeChannel.ts"
     ),
+    "@platform/persistenceDatabase": path.join(
+        projectRoot,
+        "src/storage/persistence/browser/createPersistenceDatabase.ts"
+    ),
     "@": path.join(projectRoot, "src"),
     "@test": path.join(projectRoot, "test"),
     "@typechain-types": path.join(projectRoot, "typechain-types"),
@@ -72,7 +76,7 @@ export async function loadBrowserTestDependency(name) {
 // Dependencies the SDK workers import. Vite's scan starts from the gate's page
 // and does not follow worker URLs, so a dependency found later re-optimizes
 // and reloads the page under a running scenario.
-const workerDependencies = ["@ethereumjs/evm"];
+const workerDependencies = ["@ethereumjs/evm", "browser-level"];
 
 /**
  * The Vite dev server a gate serves the SDK sources from. `rpcProxy` is the
