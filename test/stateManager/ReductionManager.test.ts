@@ -320,6 +320,10 @@ describe("ReductionManager", function () {
             // nothing, so the chain's snapshot stays where the dispute found
             // it until a snapshot post walks the fork.
             const rebuild = await h.rpcStub.holdAuditingDataRebuild(0);
+            // The attempt starts on the same upload: parked before its
+            // dispute read until the commit handler has stored the final
+            // dispute (the rebuild is held after that store).
+            const attempt = await h.rpcStub.holdReductionAttempt(0, "disputes");
             let staged: SubmittedFinalDispute;
             try {
                 staged = await h.dispute.submitFinalDispute({
@@ -330,6 +334,7 @@ describe("ReductionManager", function () {
                     withFirstBlockGrace: true
                 });
                 await rebuild.waitUntilHeld(timeoutMs);
+                await attempt.release();
                 await waitFor(
                     async () =>
                         (await query.getForkId().request()) ===
@@ -337,6 +342,7 @@ describe("ReductionManager", function () {
                     timeoutMs
                 );
             } finally {
+                await attempt.release();
                 await rebuild.release();
                 await h.dispute.restoreDisputeInitiation(
                     staged!.suppressedPeerIndices

@@ -4,6 +4,7 @@ import type {
     StateProofEvidence
 } from "@/agreementManager/AgreementManager";
 import { DisconnectPolicy } from "@/DisconnectPolicy";
+import { END_OF_BLOCK_LOG_INDEX } from "@/eventHandlers/EventHandler";
 import { Block, StateSnapshot } from "@/models";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
@@ -1247,25 +1248,29 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     }
 
     /**
-     * Fetch latest on-chain snapshot
+     * Fetch the onChainSnapshot, pinned to one chain block, and persist it to
+     * the local diamond as that block's last log. Logs arrive from every RPC
+     * node but the fetch goes to one, which can be behind a snapshot log
+     * already applied; its older answer then loses the event ordering, so the
+     * local diamond never moves back.
      */
     public async fetchAndPersistOnChainSnapshot(
         channelId: ChannelId
     ): Promise<StateSnapshot> {
-        // Fetch the latest on-chain snapshot from RPC node
-        // Assume it's true since it's on-chain
-        const currentOnChainSnapshot = StateSnapshot.from(
-            await this.p2pManager.stateManager.stateChannelManagerContract.getStateSnapshot(
-                channelId
-            )
-        );
-        // sync our local EVM to it
-        await this.p2pManager.stateManager.eventHandler.onStateSnapshotUpdated(
+        const stateManager = this.p2pManager.stateManager;
+        const { blockNumber, value: read } =
+            await stateManager.eventSyncService.readAtHead((blockTag) =>
+                stateManager.stateChannelManagerContract.getStateSnapshot(
+                    channelId,
+                    { blockTag }
+                )
+            );
+        await stateManager.eventHandler.onStateSnapshotUpdated(
             channelId,
-            currentOnChainSnapshot.toStruct(),
-            { blockNumber: 0, logIndex: 0 }
+            read,
+            { blockNumber, logIndex: END_OF_BLOCK_LOG_INDEX }
         );
-        return currentOnChainSnapshot;
+        return StateSnapshot.from(read);
     }
 
     /**

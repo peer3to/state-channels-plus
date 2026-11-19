@@ -241,7 +241,7 @@ contract LocalDiamond is StateChannelManagerProxy {
 
     function onChannelStorageCleared(
         bytes32 channelId,
-        bytes32 latestInboundMessageBlockHash,
+        bytes32 firstPrunedInboundMessageBlockHash,
         uint256 blockNumber,
         uint256 logIndex
     ) external {
@@ -257,8 +257,8 @@ contract LocalDiamond is StateChannelManagerProxy {
         }
         delete disputeData.disputedForks;
 
-        // Clear old inbound message blocks (prune the snapshot head too)
-        bytes32 keyToDelete = latestInboundMessageBlockHash;
+        // Clear old inbound message blocks from the first block the chain pruned
+        bytes32 keyToDelete = firstPrunedInboundMessageBlockHash;
         while (keyToDelete != bytes32(0)) {
             bytes32 nextKeyToDelete = inboundMessageBlockMap[channelId][keyToDelete].previousBlockHash;
             delete inboundMessageBlockMap[channelId][keyToDelete];
@@ -270,11 +270,6 @@ contract LocalDiamond is StateChannelManagerProxy {
         private
         returns (bool)
     {
-        // (0, 0) is a trusted local reconciliation, not an observed event.
-        // Apply it unconditionally without changing the latest real event
-        // coordinate used for ordering and deduplication.
-        if (blockNumber == 0 && logIndex == 0) return true;
-
         bytes32 key = keccak256(abi.encode(family, scope));
         EventCoordinate storage latest = latestEventCoordinates[channelId][key];
         if (blockNumber < latest.blockNumber || (blockNumber == latest.blockNumber && logIndex <= latest.logIndex)) {

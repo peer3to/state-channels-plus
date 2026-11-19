@@ -5,7 +5,7 @@ Test file: [test/scripts/logChunks.test.ts](../../../../../../test/scripts/logCh
 ## Overview
 
 The suite calls the chunk helpers the crash-log server shares with its tests: naming, encoding, and
-the merge of many stored chunks into one ordered stream. Oracles are the merged messages and the
+the server's own merge (`mergeEncodedEntries`) of many stored chunks into one ordered stream, its encoded entries parsed back. Oracles are the merged messages and the
 skipped-chunk count. It covers naming and parsing by sequence range, three threads merged by wall
 clock, an overlapping resend merged without duplicates, an undecodable chunk skipped while the rest
 survive, a missing chunk leaving its gap, a merged read that stops at the shared inflate budget and
@@ -20,6 +20,6 @@ clock dropped without shifting the sequence of those after it.
 - `skips an undecodable chunk`: REQ-LOG-7-M2RC5W.T1.P3
 - `keeps the gap when a chunk is missing`: none
 - `stops a merged read at the shared inflate budget and reports it`: none
-- `refuses a chunk that inflates past the configured maximum`: REQ-LOG-7-M2RC5W.T1.P1
+- `refuses a chunk that inflates past the configured maximum`: none
 - `drops an entry with no wall-clock timestamp from the merge`: none
 - `keeps the sequence of entries after a dropped one aligned`: none

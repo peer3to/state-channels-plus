@@ -1,10 +1,6 @@
 // @spec-test-coverage-ignore: sync replay-base staging exercised by explicit unit declarations
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
-import {
-    latestHeight,
-    nextWriters,
-    waitForMutualConnection
-} from "@test/fixtures/MilestoneSyncStaging";
+import { latestHeight, nextWriters } from "@test/fixtures/MilestoneSyncStaging";
 
 /**
  * Three participants and a synced spectator. The spectator is cut off, the
@@ -58,6 +54,5 @@ export async function stageSpectatorBehindUnfinalizedTail(
     const tip = await latestHeight(h, responder, forkId);
 
     await h.network.reconnectPeers([spectator.index]);
-    await waitForMutualConnection(h, spectator, responder);
     return { forkId, spectator, responder, tip };
 }

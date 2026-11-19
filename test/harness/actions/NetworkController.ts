@@ -82,13 +82,32 @@ export class NetworkController<
         );
     }
 
-    /** Reconnect peers after persistent harness isolation. */
+    /**
+     * Reconnect peers after persistent harness isolation. Returns once each
+     * reconnected peer and every other connected peer have completed their
+     * handshakes with each other, both ways.
+     */
     async reconnectPeers(
         peerIndices: number[],
         options?: ConnectToChannelOptions
     ): Promise<void> {
+        const counterparts = await this.connectedCounterparts(peerIndices);
         await this.clearPeerIsolation(peerIndices);
         await this.connectPeers(peerIndices, options);
+        const pairs = peerIndices.flatMap((index, position) =>
+            [...peerIndices.slice(position + 1), ...counterparts].map(
+                (other) => [
+                    this.harness.getPeer(index),
+                    this.harness.getPeer(other)
+                ]
+            )
+        );
+        await Promise.all(
+            pairs.flatMap(([a, b]) => [
+                this.harness.rpc.waitForHandshakeCompleted(a.index, b.address),
+                this.harness.rpc.waitForHandshakeCompleted(b.index, a.address)
+            ])
+        );
     }
 
     /** Resume transport discovery without starting another channel lifecycle. */
@@ -328,6 +347,32 @@ export class NetworkController<
                     .request()
             )
         );
+    }
+
+    /**
+     * The peers outside `peerIndices` that are connected: each holds an open
+     * connection, or is the only peer outside them and has none to hold.
+     */
+    private async connectedCounterparts(
+        peerIndices: number[]
+    ): Promise<number[]> {
+        const others = this.harness.peers.filter(
+            (peer) => !peerIndices.includes(peer.index)
+        );
+        const connectionCounts = await Promise.all(
+            others.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .query.getOpenConnectionCount()
+                    .request()
+            )
+        );
+        return others
+            .filter(
+                (_peer, position) =>
+                    others.length === 1 || connectionCounts[position] > 0
+            )
+            .map((peer) => peer.index);
     }
 
     private async clearPeerIsolation(peerIndices: number[]): Promise<void> {

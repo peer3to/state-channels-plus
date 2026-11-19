@@ -2,7 +2,10 @@ import {
     getErrorPeerAddress,
     maybeStampErrorWithPeerAddress
 } from "@/utils/errorPeerAddress";
-import type { EventLoopDelayDetails } from "@/utils/logging/performanceMonitorInternal";
+import {
+    getErrorEventLoopDelay,
+    type EventLoopDelayDetails
+} from "@/utils/logging/performanceMonitorInternal";
 import {
     getErrorWasmDiagnostics,
     getWasmFailureDiagnostics,
@@ -123,9 +126,8 @@ function cloneSerializableErrorField(value: unknown): unknown {
 function extractEventLoopDelay(
     error: unknown
 ): EventLoopDelayDetails | undefined {
-    if (typeof error !== "object" || error === null) return undefined;
-    const details = (error as { eventLoopDelay?: unknown }).eventLoopDelay;
-    if (typeof details !== "object" || details === null) return undefined;
+    const details = getErrorEventLoopDelay(error);
+    if (details === undefined) return undefined;
     return cloneSerializableErrorField(details) as
         | EventLoopDelayDetails
         | undefined;

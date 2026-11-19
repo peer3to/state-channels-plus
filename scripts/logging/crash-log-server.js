@@ -13,13 +13,17 @@ const {
     chunkFileName,
     parseChunkFileName,
     isSafeSeq,
+    maxInflatedBytes,
     decodeChunk,
-    encodeChunk,
-    mergeChunks
+    mergeEncodedEntries,
+    writeEncodedChunk
 } = require("./logChunks");
 
-// bounds what merge-on-read has to inflate; the client store is 10 MB raw
-const MAX_CHUNK_BASE64_BYTES = 8 * 1024 * 1024;
+// an upload body that can carry any chunk the inflate limit accepts: data that
+// does not compress at all only grows by gzip framing and base64 (4/3), plus
+// the JSON fields around it
+const MAX_UPLOAD_BODY_BYTES =
+    Math.ceil(((maxInflatedBytes() * 4) / 3) * 1.01) + 64 * 1024;
 
 const PORT = process.env.CRASH_LOG_SERVER_PORT || 3001;
 const LOG_DIR =
@@ -268,17 +272,6 @@ function validateUploadBody(body) {
         };
     }
 
-    if (
-        Buffer.byteLength(String(compressedLogs), "utf8") >
-        MAX_CHUNK_BASE64_BYTES
-    ) {
-        return {
-            ok: false,
-            status: 413,
-            error: "Payload too large"
-        };
-    }
-
     let entryCount;
     try {
         entryCount = decodeChunk(compressedLogs).length;
@@ -415,85 +408,92 @@ app.use("/logs/upload", (req, res, next) => {
     next();
 });
 
-app.post("/logs/upload", express.json({ limit: "50mb" }), async (req, res) => {
-    try {
-        const meta = getRequestMeta(req);
-        const parseDoneMs = meta ? Date.now() - meta.startedAt : -1;
-        const {
-            channelId,
-            peerAddress,
-            threadName,
-            storeId,
-            compressedLogs,
-            fromSeq,
-            toSeq
-        } = req.body || {};
+app.post(
+    "/logs/upload",
+    express.json({ limit: MAX_UPLOAD_BODY_BYTES }),
+    async (req, res) => {
+        try {
+            const meta = getRequestMeta(req);
+            const parseDoneMs = meta ? Date.now() - meta.startedAt : -1;
+            const {
+                channelId,
+                peerAddress,
+                threadName,
+                storeId,
+                compressedLogs,
+                fromSeq,
+                toSeq
+            } = req.body || {};
 
-        if (meta && meta.uploadId) {
-            res.setHeader("x-upload-id", meta.uploadId);
-        }
+            if (meta && meta.uploadId) {
+                res.setHeader("x-upload-id", meta.uploadId);
+            }
 
-        if (!isAuthorized(req)) {
-            res.status(401).json({ error: "Unauthorized" });
-            return;
-        }
+            if (!isAuthorized(req)) {
+                res.status(401).json({ error: "Unauthorized" });
+                return;
+            }
 
-        const validation = validateUploadBody(req.body);
-        if (!validation.ok) {
-            console.warn(
-                `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload rejected: uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} ${validation.error}`
+            const validation = validateUploadBody(req.body);
+            if (!validation.ok) {
+                console.warn(
+                    `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload rejected: uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} ${validation.error}`
+                );
+                res.status(validation.status).json({ error: validation.error });
+                return;
+            }
+
+            const payloadBytes = Buffer.byteLength(
+                String(compressedLogs),
+                "utf8"
             );
-            res.status(validation.status).json({ error: validation.error });
-            return;
+            const resolveStartedAt = Date.now();
+
+            const { dir: channelDir, timestamp } = await resolveChannelDir(
+                channelId,
+                { rotateIfOld: true }
+            );
+            const resolveMs = Date.now() - resolveStartedAt;
+            // thread is attacker-controlled like every other segment
+            const safePeer = sanitizeSegment(peerAddress);
+            const safeThread = sanitizeSegment(threadName);
+            const safeStore = sanitizeSegment(storeId);
+            const filename = chunkFileName(fromSeq, toSeq);
+            // one dir per store -> a second run's seq 0 can't overwrite the first's
+            const threadDir = path.join(
+                channelDir,
+                safePeer,
+                safeThread,
+                safeStore
+            );
+            const filepath = path.join(threadDir, filename);
+
+            const writeStartedAt = Date.now();
+
+            await fs.mkdir(threadDir, { recursive: true });
+            // write, not append -> a retried delta overwrites its own chunk
+            await fs.writeFile(filepath, compressedLogs, "utf8");
+
+            const writeMs = Date.now() - writeStartedAt;
+
+            console.log(
+                `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload stored uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} channelId=${channelId} peer=${safePeer} thread=${safeThread} seq=${fromSeq}-${toSeq} payloadBytes=${payloadBytes} parseMs=${parseDoneMs} resolveDirMs=${resolveMs} writeMs=${writeMs} timestamp=${timestamp}`
+            );
+
+            res.status(200).json({
+                success: true,
+                uploadId: meta && meta.uploadId ? meta.uploadId : null,
+                channelId,
+                peerAddress,
+                threadName: safeThread,
+                filename
+            });
+        } catch (err) {
+            console.error("[CrashLogServer] Upload failed:", err);
+            res.status(500).json({ error: "Internal server error" });
         }
-
-        const payloadBytes = Buffer.byteLength(String(compressedLogs), "utf8");
-        const resolveStartedAt = Date.now();
-
-        const { dir: channelDir, timestamp } = await resolveChannelDir(
-            channelId,
-            { rotateIfOld: true }
-        );
-        const resolveMs = Date.now() - resolveStartedAt;
-        // thread is attacker-controlled like every other segment
-        const safePeer = sanitizeSegment(peerAddress);
-        const safeThread = sanitizeSegment(threadName);
-        const safeStore = sanitizeSegment(storeId);
-        const filename = chunkFileName(fromSeq, toSeq);
-        // one dir per store -> a second run's seq 0 can't overwrite the first's
-        const threadDir = path.join(
-            channelDir,
-            safePeer,
-            safeThread,
-            safeStore
-        );
-        const filepath = path.join(threadDir, filename);
-
-        const writeStartedAt = Date.now();
-
-        await fs.mkdir(threadDir, { recursive: true });
-        // write, not append -> a retried delta overwrites its own chunk
-        await fs.writeFile(filepath, compressedLogs, "utf8");
-
-        const writeMs = Date.now() - writeStartedAt;
-
-        console.log(
-            `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload stored uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} channelId=${channelId} peer=${safePeer} thread=${safeThread} seq=${fromSeq}-${toSeq} payloadBytes=${payloadBytes} parseMs=${parseDoneMs} resolveDirMs=${resolveMs} writeMs=${writeMs} timestamp=${timestamp}`
-        );
-
-        res.status(200).json({
-            success: true,
-            uploadId: meta && meta.uploadId ? meta.uploadId : null,
-            channelId,
-            peerAddress,
-            threadName: safeThread,
-            filename
-        });
-    } catch (err) {
-        console.error("[CrashLogServer] Upload failed:", err);
-        res.status(500).json({ error: "Internal server error" });
     }
-});
+);
 
 app.use("/logs/upload", (err, req, res, next) => {
     const meta = getRequestMeta(req);
@@ -504,7 +504,7 @@ app.use("/logs/upload", (err, req, res, next) => {
 
     if (err && err.type === "entity.too.large") {
         console.error(
-            `[CrashLogServer][${requestId}] Upload parser rejected payload: uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} entity too large elapsedMs=${elapsedMs} limit=50mb contentLengthHeader=${meta ? meta.contentLengthHeader : 0}`
+            `[CrashLogServer][${requestId}] Upload parser rejected payload: uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} entity too large elapsedMs=${elapsedMs} limit=${MAX_UPLOAD_BODY_BYTES} contentLengthHeader=${meta ? meta.contentLengthHeader : 0}`
         );
         res.status(413).json({ error: "Payload too large" });
         return;
@@ -588,9 +588,31 @@ app.get("/logs/:channelId/:peerAddress/:threadName", async (req, res) => {
     await sendMergedChunks(req, res, req.params.threadName);
 });
 
+// one merged read at a time: each holds a peer's whole inflated log while it
+// sorts, so parallel reads multiply the server's peak memory
+let mergedReadTurn = Promise.resolve();
+
+// a client that stops reading would hold the merged read turn for good
+function mergedReadTimeoutMs() {
+    const configured = Number(process.env.CRASH_LOG_MERGED_READ_TIMEOUT_MS);
+    return Number.isFinite(configured) && configured > 0 ? configured : 120_000;
+}
+
+function takeMergedReadTurn() {
+    const previous = mergedReadTurn;
+    let release;
+    mergedReadTurn = new Promise((resolve) => (release = resolve));
+    return previous.then(() => release);
+}
+
 async function sendMergedChunks(req, res, threadName) {
+    let release;
     try {
         const { channelId, peerAddress } = req.params;
+        // the turn before the read: a queued read holds none of its chunks
+        release = await takeMergedReadTurn();
+        // gone while it waited for the turn -> skip its read and merge
+        if (res.destroyed) return;
         const { dir: channelDir } = await resolveChannelDir(channelId);
         const perThread = await readPeerChunks(
             channelDir,
@@ -606,20 +628,36 @@ async function sendMergedChunks(req, res, threadName) {
             return;
         }
 
-        const merged = mergeChunks(perThread);
-        res.setHeader("Content-Type", "text/plain");
+        const { encodedEntries, skippedChunks } =
+            mergeEncodedEntries(perThread);
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
         // a short log must announce itself: the body is a plain blob, so the
         // count of dropped chunks rides on a header
-        if (mergeChunks.lastSkippedChunks > 0) {
-            res.setHeader(
-                "x-skipped-chunks",
-                String(mergeChunks.lastSkippedChunks)
-            );
+        if (skippedChunks > 0) {
+            res.setHeader("x-skipped-chunks", String(skippedChunks));
         }
-        res.send(encodeChunk(merged));
+        // armed after the merge: it times the client's reading, not the merge
+        const timeoutMs = mergedReadTimeoutMs();
+        res.setTimeout(timeoutMs, () => {
+            console.warn(
+                `[CrashLogServer] Merged read stalled past ${timeoutMs}ms channelId=${channelId} peer=${peerAddress}; dropping it`
+            );
+            res.destroy();
+        });
+        await writeEncodedChunk(encodedEntries, res);
     } catch (err) {
-        console.error("[CrashLogServer] Retrieve failed:", err);
+        // a client that went away is not a server failure
+        if (err?.code !== "ERR_STREAM_PREMATURE_CLOSE") {
+            console.error("[CrashLogServer] Retrieve failed:", err);
+        }
+        // failed mid-body -> a cut connection, never a 200 that looks whole
+        if (res.headersSent) {
+            res.destroy();
+            return;
+        }
         res.status(500).json({ error: "Internal server error" });
+    } finally {
+        release?.();
     }
 }
 
@@ -641,4 +679,9 @@ if (require.main === module) {
     });
 }
 
-module.exports = { app, sanitizeSegment, validateUploadBody };
+module.exports = {
+    app,
+    sanitizeSegment,
+    validateUploadBody,
+    MAX_UPLOAD_BODY_BYTES
+};

@@ -785,7 +785,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             .concatAddressArraysNoDuplicates(
                 _getSnapshotParticipants(channelId),
                 _derivePendingParticipantsFromInboundHash(
-                    channelId, dispute.input.latestInboundMessageBlockHash, bytes32(0)
+                    channelId,
+                    dispute.input.latestInboundMessageBlockHash,
+                    stateSnapshots[channelId].snapshotData.latestInboundMessageBlockHash
                 )
             );
         // the disputer picks the slashes; over-listing is provable by DisputeOnChainSlashesNotSubset

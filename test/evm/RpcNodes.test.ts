@@ -20,13 +20,22 @@ import {
     assertDestroyRejectsWaitingRead,
     assertNodeOnAnotherChainRefused,
     assertSilentNodeMarkedDeadAndReadFailsOver,
-    assertStartupDoesNotWaitForASilentNode,
     assertStopReconnectingRejectsWaitingRead,
+    assertStartupDoesNotWaitForASilentNode,
     assertTransactionFailsOverAfterFirstNodeForwardedIt,
     assertTransactionWaitResolvesAfterReconnect,
     assertDestroyFailsHeldRequest,
     assertHeldRequestAnsweredAfterRestore,
     assertNeverConnectedNodeFailsAtOnce,
+    assertInternalErrorWithRevertDataIsFinal,
+    assertNodeInternalErrorFailsCallOver,
+    assertNodeInternalErrorFinalWithoutConnectedNextNode,
+    assertNodeInternalErrorOfEveryNodeIsFinal,
+    assertMissingLatestBlockFailsOver,
+    assertMissingLatestBlockOfEveryNodeIsFinal,
+    assertMissingLatestBlockOfEveryNodeRetriedOnce,
+    assertMissingNumberedBlockIsAnswer,
+    assertInternalErrorBeatsMissingLatestBlock,
     assertReadFailsOverWhenNodeDropsMidRequest,
     assertReadsFailOverToNextNode,
     assertRefusedNodeKeepsReconnecting,
@@ -37,6 +46,7 @@ import {
     assertStopReconnectingLeavesNodeDown,
     assertTransactionFailsOverToNextNode,
     assertTransactionHeldUntilANodeReconnects,
+    assertTransactionInternalErrorIsFinal,
     assertTransactionSentToFirstNodeOnly,
     assertUnsubscribeAnsweredAfterDestroyStaysQuiet,
     assertUnsubscribeErrorAnswerStaysQuiet
@@ -136,6 +146,46 @@ describe("MultiRpcProvider", () => {
 
     it("passes the first node's error answer to the caller without failing over", async () => {
         await assertFirstNodeErrorAnswerIsFinal();
+    });
+
+    it("fails a call over to the next node when the first answers with its internal error", async () => {
+        await assertNodeInternalErrorFailsCallOver();
+    });
+
+    it("rejects a call with the internal error when every node answers with it", async () => {
+        await assertNodeInternalErrorOfEveryNodeIsFinal();
+    });
+
+    it("passes a transaction's internal error to the caller without sending it to the next node", async () => {
+        await assertTransactionInternalErrorIsFinal();
+    });
+
+    it("passes an internal error carrying revert data to the caller without failing over", async () => {
+        await assertInternalErrorWithRevertDataIsFinal();
+    });
+
+    it("rejects a call with the internal error at once when no other node is connected", async () => {
+        await assertNodeInternalErrorFinalWithoutConnectedNextNode();
+    });
+
+    it("fails a latest block read over to the next node when the first answers with no block", async () => {
+        await assertMissingLatestBlockFailsOver();
+    });
+
+    it("answers a latest block read on a second pass when every node first answers with no block", async () => {
+        await assertMissingLatestBlockOfEveryNodeRetriedOnce();
+    });
+
+    it("rejects a latest block read when every node answers with no block twice", async () => {
+        await assertMissingLatestBlockOfEveryNodeIsFinal();
+    });
+
+    it("rejects a latest block read with the internal error, without a second pass, when the other node answers with no block", async () => {
+        await assertInternalErrorBeatsMissingLatestBlock();
+    });
+
+    it("answers a block read by an unmined number with no block without failing over", async () => {
+        await assertMissingNumberedBlockIsAnswer();
     });
 
     it("warns once per outage of every node and again after a reconnect", async () => {

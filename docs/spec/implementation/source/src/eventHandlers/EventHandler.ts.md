@@ -6,6 +6,7 @@
 
 - [`REQ-SDK-ARCH-1-7H14H6` (Explicit ownership)](../../../../specification/runtime/sdk.md#req-sdk-arch-1-7h14h6)
 - [`REQ-DISPUTE-PIPE-1-HRBFP7` (Bound intake)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-1-hrbfp7)
+- [`REQ-DISPUTE-PIPE-14-5C2SXH` (Act only on a window the chain still holds)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-14-5c2sxh)
 - [`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)
 - [`REQ-MIRROR-2-E9F3TM` (Unconditional replication)](../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)
 - [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
@@ -43,3 +44,8 @@ Dispute-event branches
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P24` — a peer that already disputed audits an invalid dispute: no state proof is built and its kill goes out alone and lands
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P25` — a non-disputer auditing a valid dispute below its own view builds its state proof once, during the audit, and both the evidence comparison and its own upload reuse it
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P26` — a cut-off spectator observes a final dispute whose latest block it never received: it aborts cleanly and the participants reach the dispute's output fork
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P27` — a timed-out peer whose chain events were held through the disputes, the reduction and a same-fork snapshot update ignores the disputes whose window that update cleared: no event-pipeline failure, no `onDisputeStarted` or `onDisputeUpdate` for them, and it leaves the channel
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P28` — a double signer whose chain events were held through a threshold-final dispute, its reduction and a same-fork snapshot update ignores the final dispute whose window that update cleared: `completeWithGenesis` is never called, no event-pipeline failure, and it leaves the channel
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P29` — a synced spectator whose chain events were held through a dispute cycle and a same-fork snapshot update ignores the disputes whose window that update cleared: no dispute persisted, no reduction scheduled for the old fork, no event-pipeline failure, and its mirror holds the chain's snapshot
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P30` — a participant whose read node is behind the block of a fork's first dispute waits for that block instead of taking the missing window as cleared: then it requests the acknowledgment, fires `onDisputeStarted` once, audits the invalid dispute and its kill lands
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P31` — a participant disposed while its window read waits for a lagging read node: the runtime release ends the wait well before its deadline, no further read or wait follows, the dispute is not handled (no `onDisputeStarted`, no upload, no kill), and no runtime error is reported

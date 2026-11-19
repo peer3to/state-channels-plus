@@ -841,7 +841,37 @@ export class MathScenarioActions extends ScenarioActions {
             maximumBlocks: initialTransitions + 16
         });
         await this.harness.assert.sync.peersInSyncWait();
+        await this.joinUntilPromotedWait({
+            joiner,
+            authoringPeerIndices: Array.from(
+                { length: initialPeers },
+                (_, index) => index
+            )
+        });
 
+        if (postPromotionTransitions > 0) {
+            await this.harness.transition.advanceState({
+                count: postPromotionTransitions
+            });
+            await this.harness.assert.sync.peersInSyncWait();
+        }
+
+        this.harness.assert.dispute.noDisputes();
+        this.harness.event.resetEventSpies();
+        this.harness.contextApi.captureOriginalFork();
+
+        return joiner;
+    }
+
+    /**
+     * `joiner` joins while `authoringPeerIndices` keep authoring, until a block
+     * seats it and it is PARTICIPATING.
+     */
+    async joinUntilPromotedWait(options: {
+        joiner: TestPeer;
+        authoringPeerIndices: number[];
+    }): Promise<void> {
+        const { joiner } = options;
         // Handlers attached at once: the join promise is never unobserved.
         const join: { isSettled: boolean; failure?: { error: unknown } } = {
             isSettled: false
@@ -874,23 +904,10 @@ export class MathScenarioActions extends ScenarioActions {
                 }
                 return false;
             },
-            waitForPeers: Array.from({ length: initialPeers }, (_, i) => i),
+            waitForPeers: options.authoringPeerIndices,
             maximumBlocks: 20
         });
         await joining;
-
-        if (postPromotionTransitions > 0) {
-            await this.harness.transition.advanceState({
-                count: postPromotionTransitions
-            });
-            await this.harness.assert.sync.peersInSyncWait();
-        }
-
-        this.harness.assert.dispute.noDisputes();
-        this.harness.event.resetEventSpies();
-        this.harness.contextApi.captureOriginalFork();
-
-        return joiner;
     }
 
     async spectatorJoinedAndSynced(

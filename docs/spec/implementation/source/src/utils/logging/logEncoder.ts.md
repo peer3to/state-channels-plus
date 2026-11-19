@@ -5,6 +5,7 @@
 ## Requirements
 
 - [`REQ-LOG-4-W5XR7Q` (Every line says where it came from)](../../../../../specification/runtime/log-collection.md#req-log-4-w5xr7q)
+- [`REQ-LOG-7-M2RC5W` (Nothing unpacks without a limit)](../../../../../specification/runtime/log-collection.md#req-log-7-m2rc5w)
 
 ## UNIT-TEST-LOG-ENCODER-1-JR0W8Z
 

@@ -14,7 +14,10 @@ import type { RuntimePort } from "@/transport/RuntimePort";
 import { config } from "@/utils/config";
 import { DetachedPromises } from "@/utils/DetachedPromises";
 import { errorMessage } from "@/utils/errorMessage";
-import type { Logger } from "@/utils/logging/Logger";
+import type {
+    Logger,
+    LoggerPerformanceMonitorOptions
+} from "@/utils/logging/Logger";
 import { runCleanup } from "@/utils/runCleanup";
 import { createLogger } from "@platform/createLogger";
 
@@ -55,6 +58,13 @@ export abstract class AInternalRpcRoot<
     private startContext?: RootStartContext;
 
     private readonly closeListeners = new Set<() => void>();
+    /**
+     * This worker thread's event-loop monitor options. A compute thread whose
+     * one synchronous call blocks its loop by design turns the fatal delay
+     * off (`delayErrorThresholdMs: 0`) and keeps the reports.
+     */
+    protected readonly performanceMonitorOptions: LoggerPerformanceMonitorOptions =
+        {};
     public readonly router: InternalRpcRouter;
     public readonly connections = new Map<
         InternalTransport,
@@ -120,6 +130,7 @@ export abstract class AInternalRpcRoot<
         // An active thread monitor keeps its existing options.
         const startMonitor = () =>
             this.logger.attachedLogger.startPerformanceMonitoring({
+                ...this.performanceMonitorOptions,
                 threadLabel: globalThis.threadName
             });
         if (isMonitored && config.EVENT_LOOP_MONITOR_STARTUP) startMonitor();

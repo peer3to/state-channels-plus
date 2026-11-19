@@ -51,7 +51,7 @@ Specification cases tested: 5/5.
 Specification cases tested: 7/7.
 
 [`INV-ENFFP-1-BGVZN4` (Slash set integrity)](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4)
-Specification cases tested: 6/17. Untested: T1.P1, T1.P2, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P14.
+Specification cases tested: 13/23. Untested: T1.P1, T1.P2, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11.
 
 [`INV-ENFPROOF-1-DR1N9B` (Side-effect-free verification)](../specification/enforcement/proof-verification.md#inv-enfproof-1-dr1n9b)
 Specification cases tested: 0/8.
@@ -273,7 +273,7 @@ Specification cases tested: 0/4.
 Specification cases tested: 11/11.
 
 [`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)
-Specification cases tested: 12/12.
+Specification cases tested: 21/21.
 
 [`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)
 Specification cases tested: 33/33.
@@ -357,7 +357,7 @@ Specification cases tested: 5/22. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P7, T
 Specification cases tested: 2/16. Untested: T1.P1, T1.P2, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15.
 
 [`REQ-DIS-6-Y92H1M` (Every initiated dispute window MUST end in a canonical successor fork, genesis…)](../specification/disputes/disputes.md#req-dis-6-y92h1m)
-Specification cases tested: 4/16. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
+Specification cases tested: 5/17. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
 
 [`REQ-DIS-9-64WHCD` (The on-chain snapshot advances to a successor fork only along committed…)](../specification/disputes/disputes.md#req-dis-9-64whcd)
 Specification cases tested: 1/22. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16, T1.P17, T1.P18, T1.P19, T1.P20, T1.P21, T1.P22.
@@ -409,6 +409,9 @@ Specification cases tested: 8/8.
 
 [`REQ-DISPUTE-PIPE-13-R2QJZN` (Time out only the next height)](../specification/disputes/dispute-processing.md#req-dispute-pipe-13-r2qjzn)
 Specification cases tested: 6/6.
+
+[`REQ-DISPUTE-PIPE-14-5C2SXH` (Act only on a window the chain still holds)](../specification/disputes/dispute-processing.md#req-dispute-pipe-14-5c2sxh)
+Specification cases tested: 4/4.
 
 [`REQ-DSTORE-1-5AQYJX` (Dispute confirmation merge)](../specification/storage/dispute-evidence.md#req-dstore-1-5aqyjx)
 Specification cases tested: 1/3. Untested: T1.P2, T1.P3.
@@ -615,7 +618,7 @@ Specification cases tested: 6/6.
 Specification cases tested: 9/9.
 
 [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
-Specification cases tested: 39/39.
+Specification cases tested: 41/41.
 
 [`REQ-LOBBY-1-PZTPKD` (Caller-owned rendezvous)](../specification/peer-communication/lobby-matching.md#req-lobby-1-pztpkd)
 Specification cases tested: 4/4.
@@ -663,7 +666,7 @@ Specification cases tested: 3/4. Untested: T1.P1.
 Specification cases tested: 3/4. Untested: T1.P1.
 
 [`REQ-LOG-7-M2RC5W` (Nothing unpacks without a limit)](../specification/runtime/log-collection.md#req-log-7-m2rc5w)
-Specification cases tested: 7/7.
+Specification cases tested: 10/10.
 
 [`REQ-LOG-8-B7VN3J` (Works wherever the runtime works)](../specification/runtime/log-collection.md#req-log-8-b7vn3j)
 Specification cases tested: 4/6. Untested: T1.P2, T1.P6.
@@ -696,7 +699,7 @@ Specification cases tested: 0/12.
 Specification cases tested: 0/12.
 
 [`REQ-MSG-3-YY569F` (Packaged inbound blocks MUST chain from the previous snapshot tip and exist…)](../specification/settlement/cross-layer-messages.md#req-msg-3-yy569f)
-Specification cases tested: 0/12.
+Specification cases tested: 1/13. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12.
 
 [`REQ-MSG-4-SC1FEX` (Outbound processing MUST verify the linked range and skip the processed prefix…)](../specification/settlement/cross-layer-messages.md#req-msg-4-sc1fex)
 Specification cases tested: 0/8.
@@ -801,7 +804,7 @@ Specification cases tested: 5/12. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T
 Specification cases tested: 1/5. Untested: T1.P2, T1.P3, T1.P4, T1.P5.
 
 [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59)
-Specification cases tested: 96/100. Untested: T1.P2, T1.P3, T1.P4, T1.P6.
+Specification cases tested: 97/101. Untested: T1.P2, T1.P3, T1.P4, T1.P6.
 
 [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../specification/runtime/execution.md#req-runtime-4-b0n70y)
 Specification cases tested: 2/6. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
@@ -973,6 +976,9 @@ Specification cases tested: 0/15.
 
 [`REQ-TIME-5-S9NQXK` (Every local contract execution observes the runtime's current estimated chain…)](../specification/protocol-model/time.md#req-time-5-s9nqxk)
 Specification cases tested: 3/3.
+
+[`REQ-TIME-6-61C1EV` (The turn hook passes the runtime's current estimated chain time next to the…)](../specification/protocol-model/time.md#req-time-6-61c1ev)
+Specification cases tested: 2/2.
 
 [`REQ-TJOIN-1-5VGR1F` (Independent public options)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f)
 Specification cases tested: 8/8.

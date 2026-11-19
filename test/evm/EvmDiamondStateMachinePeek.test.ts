@@ -14,8 +14,11 @@ const DEFAULT_BUDGET = 500_000n;
 // The Math machine holds one participant whose turn is next (its live state).
 async function deployLiveMachine() {
     const executor = new ContractExecutor(
-        // the runtime's EVM option: the local diamond exceeds EIP-170
-        await EVM.create({ allowUnlimitedContractSize: true })
+        // the runtime's EVM options: the local diamond exceeds EIP-170/3860
+        await EVM.create({
+            allowUnlimitedContractSize: true,
+            allowUnlimitedInitCodeSize: true
+        })
     );
     const machine = await deployMathMachine(executor, DEFAULT_BUDGET);
     const stateMachine = await createDiamondStateMachine(

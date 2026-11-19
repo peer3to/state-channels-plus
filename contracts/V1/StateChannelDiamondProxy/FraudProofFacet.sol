@@ -282,11 +282,10 @@ contract FraudProofFacet is StateChannelCommon {
         return _hasInvalidTimestamp(proof);
     }
 
-    function _handleWrongGenesis(FraudProof memory fraudProof, FraudProofVerificationContext memory)
-        internal
-        view
-        returns (address)
-    {
+    function _handleWrongGenesis(
+        FraudProof memory fraudProof,
+        FraudProofVerificationContext memory fraudProofVerificationContext
+    ) internal view returns (address) {
         WrongGenesisProof memory proof = abi.decode(fraudProof.encodedProof, (WrongGenesisProof));
         SignedBlock memory signedBlock = proof.invalidBlock;
         if (!_isBlockAuthentic(signedBlock)) return _invalid();
@@ -294,6 +293,8 @@ contract FraudProofFacet is StateChannelCommon {
         if (_block.transaction.header.transactionCnt != 0) return _invalid();
 
         bytes32 channelId = _block.transaction.header.channelId;
+        // judged in one channel, slashed in the context's: another channel's block proves nothing here
+        if (channelId != fraudProofVerificationContext.channelId) return _invalid();
         bytes32 forkId = _block.transaction.header.forkId;
         address blockAuthor = _block.transaction.header.participant;
         StateSnapshot memory correctGenesisSnapshot = proof.genesisSnapshot;
@@ -301,9 +302,12 @@ contract FraudProofFacet is StateChannelCommon {
         StateSnapshot memory onChainSnapshot = _getStateSnapshot(channelId);
 
         if (onChainSnapshot.forkId == forkId) {
-            if (!UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(onChainSnapshot)) {
-                return _invalid();
-            }
+            // past genesis on its fork the chain no longer holds the genesis to judge block 0 against -> revert,
+            // never slash the prover
+            require(
+                UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(onChainSnapshot),
+                RaceConditionBlockHeightTooOld(onChainSnapshot.blockHeight, _block.transaction.header.transactionCnt)
+            );
             if (_block.previousBlockHash != keccak256(abi.encode(onChainSnapshot))) return _valid(blockAuthor);
         }
 
@@ -354,14 +358,14 @@ contract FraudProofFacet is StateChannelCommon {
             return _invalid();
         }
 
-        MessageBlock storage persistedBlock =
-            inboundMessageBlockMap[fraudProofVerificationContext.channelId][messageBlockHash];
-        if (persistedBlock.timestamp != 0 || persistedBlock.messages.length != 0) {
-            return _invalid();
-        }
-
-        StateSnapshot memory onChainSnapshot = _getStateSnapshot(fraudProofVerificationContext.channelId);
-        if (onChainSnapshot.snapshotData.latestInboundMessageBlockHash == messageBlockHash) {
+        // at or below the snapshot's inbound head the block may be pruned history -> revert, never slash the prover
+        uint256 snapshotHeight =
+            stateSnapshots[fraudProofVerificationContext.channelId].snapshotData.latestInboundMessageBlockHeight;
+        uint256 forgedHeight = proof.forgedInboundMessageBlock.blockHeight;
+        require(forgedHeight > snapshotHeight, RaceConditionBlockHeightTooOld(snapshotHeight, forgedHeight));
+        if (!_isUncommittedInboundMessageBlock(
+                fraudProofVerificationContext.channelId, proof.forgedInboundMessageBlock
+            )) {
             return _invalid();
         }
 

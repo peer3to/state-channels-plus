@@ -1,4 +1,4 @@
-import axios from "axios";
+import { isAxiosError } from "../axiosErrorUtils";
 
 function countAgentEntries(
     entries?: Record<string, unknown[]>
@@ -36,7 +36,7 @@ export function getSyncNetworkSnapshot(
     const http = require("http");
     const https = require("https");
 
-    const request = axios.isAxiosError(uploadError)
+    const request = isAxiosError(uploadError)
         ? (uploadError.request as any)
         : undefined;
     const socket = request?.socket;

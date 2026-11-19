@@ -3,9 +3,10 @@ import {
     getAxiosRetrySummary,
     sanitizeAxiosErrorForLogging
 } from "./axiosErrorUtils";
-import { compressToBase64, encodeLogs } from "./logEncoder";
+import { compressToBase64, encodeLogChunk, trimLogEntry } from "./logEncoder";
 import {
     type ExclusiveLoggerContext,
+    type LogEntry,
     type LogThreadName,
     type SharedLoggerContext,
     Logger
@@ -14,7 +15,6 @@ import { LogStore } from "./logStore";
 import { config as globalConfig } from "../config";
 import { abortableSleep, retry } from "../retry";
 import { settleBy } from "../settleBy";
-import axios from "axios";
 import { ethers } from "ethers";
 
 export type LogUploaderOptions = {
@@ -33,6 +33,20 @@ export type LogUploaderConfig = {
     apiToken?: string;
     /** upper bound of the random per-upload jitter; 0 disables it */
     jitterMaxMs?: number;
+    /**
+     * The largest chunk the server accepts, in bytes of
+     * {@link encodeLogChunk}; the server counts the inflated chunk the same
+     * way. Defaults to CRASH_LOG_MAX_CHUNK_MB.
+     */
+    maxChunkBytes?: number;
+};
+
+/** where one batch is filed */
+type UploadIdentity = {
+    channelId: string;
+    peerAddress: NonNullable<SharedLoggerContext["peerAddress"]>;
+    threadName: LogThreadName;
+    uploadKey: string;
 };
 
 const BUSY_UPLOADERS_KEY: unique symbol = Symbol.for("peer3.busyLogUploaders");
@@ -238,7 +252,7 @@ export abstract class LogUploader {
     }
 
     /** where this realm files a batch; read live, never cached across a sleep */
-    private identity() {
+    private identity(): UploadIdentity {
         const channelId = this.sharedContext.channelId || ethers.ZeroHash;
         const peerAddress =
             this.sharedContext.peerAddress || ethers.ZeroAddress;
@@ -261,56 +275,117 @@ export abstract class LogUploader {
 
     private async postDelta(): Promise<LogUploadOutcome> {
         const { signal } = this.cancel;
-        let rawLogsSize;
+        if (!this.isEnabled()) return { ok: true, entries: 0 };
+
+        // checked before the jitter sleep -> a fan-out onto an idle realm
+        // costs neither HTTP nor wall time. the cursor is only read here;
+        // a changed identity restarts it once the batch is really built
+        if (
+            this.logStore.getLogsSince(
+                this.watermarkFor(this.identity().uploadKey)
+            ).entries.length === 0
+        ) {
+            return { ok: true, entries: 0 };
+        }
+
+        // a flush's upload sleeps at most half the time left to its deadline
+        const jitter = new AbortController();
+        const endJitter = () => jitter.abort();
+        signal.addEventListener("abort", endJitter);
+        this.wakeJitter = endJitter;
+        await abortableSleep(
+            Math.min(
+                this.getJitterMs(),
+                Math.max(0, (this.activeDeadlineMs - Date.now()) / 2)
+            ),
+            jitter.signal
+        );
+        this.wakeJitter = undefined;
+        signal.removeEventListener("abort", endJitter);
+        if (signal.aborted) return { ok: false, entries: 0 };
+
+        // identity and delta are read together, after the sleep: a channel
+        // or peer set during it files this batch, instead of the batch
+        // landing in the old bucket and being sent again under the new one
+        const identity = this.identity();
+        this.lastUploadedSeq = this.watermarkFor(identity.uploadKey);
+        const { entries, fromSeq } = this.logStore.getLogsSince(
+            this.lastUploadedSeq
+        );
+        if (entries.length === 0) return { ok: true, entries: 0 };
+        return this.postChunks(entries, fromSeq, identity);
+    }
+
+    /**
+     * Posts `entries`, the first at seq `fromSeq`, in chunks the server
+     * accepts. A delta within the limit is encoded once and sent whole; one
+     * past it is split into as many equal parts as its size needs, each
+     * checked again. Stops at the first chunk that fails: the next delta
+     * re-sends from there.
+     */
+    private async postChunks(
+        entries: LogEntry[],
+        fromSeq: number,
+        identity: UploadIdentity
+    ): Promise<LogUploadOutcome> {
+        const chunk = encodeLogChunk(entries);
+        const maxBytes = this.getMaxChunkBytes();
+        if (chunk.length <= maxBytes)
+            return this.postChunk(chunk, entries.length, fromSeq, identity);
+        if (entries.length === 1) {
+            // sent whole it is refused, and every later delta with it
+            this.logger?.warn(
+                `Log upload trimmed an entry: seq=${fromSeq} encodes to ${chunk.length} bytes, past the ${maxBytes} byte chunk limit`
+            );
+            return this.postChunk(
+                encodeLogChunk([trimLogEntry(entries[0], maxBytes)]),
+                1,
+                fromSeq,
+                identity
+            );
+        }
+        const partEntries = Math.ceil(
+            entries.length /
+                Math.min(entries.length, Math.ceil(chunk.length / maxBytes))
+        );
+        let uploaded = 0;
+        for (let start = 0; start < entries.length; start += partEntries) {
+            const outcome = await this.postChunks(
+                entries.slice(start, start + partEntries),
+                fromSeq + start,
+                identity
+            );
+            uploaded += outcome.entries;
+            if (!outcome.ok) return { ok: false, entries: uploaded };
+        }
+        return { ok: true, entries: uploaded };
+    }
+
+    /**
+     * the largest chunk the server accepts, counted as {@link encodeLogChunk}.
+     * A CRASH_LOG_MAX_CHUNK_MB that is not positive means the default, as on
+     * the server.
+     */
+    private getMaxChunkBytes(): number {
+        const configuredMb = globalConfig.CRASH_LOG_MAX_CHUNK_MB;
+        const megabytes = configuredMb > 0 ? configuredMb : 10;
+        return this.config.maxChunkBytes ?? megabytes * 1024 * 1024;
+    }
+
+    private async postChunk(
+        chunk: Uint8Array,
+        entryCount: number,
+        fromSeq: number,
+        { channelId, peerAddress, threadName, uploadKey }: UploadIdentity
+    ): Promise<LogUploadOutcome> {
+        const { signal } = this.cancel;
+        const toSeq = fromSeq + entryCount - 1;
+        const rawLogsSize = chunk.length;
         let compressedLogsSize;
         const uploadStartedAt = Date.now();
         try {
-            if (!this.isEnabled()) return { ok: true, entries: 0 };
-
-            // checked before the jitter sleep -> a fan-out onto an idle realm
-            // costs neither HTTP nor wall time. the cursor is only read here;
-            // a changed identity restarts it once the batch is really built
-            if (
-                this.logStore.getLogsSince(
-                    this.watermarkFor(this.identity().uploadKey)
-                ).entries.length === 0
-            ) {
-                return { ok: true, entries: 0 };
-            }
-
-            // a flush's upload sleeps at most half the time left to its deadline
-            const jitter = new AbortController();
-            const endJitter = () => jitter.abort();
-            signal.addEventListener("abort", endJitter);
-            this.wakeJitter = endJitter;
-            await abortableSleep(
-                Math.min(
-                    this.getJitterMs(),
-                    Math.max(0, (this.activeDeadlineMs - Date.now()) / 2)
-                ),
-                jitter.signal
-            );
-            this.wakeJitter = undefined;
-            signal.removeEventListener("abort", endJitter);
-            if (signal.aborted) return { ok: false, entries: 0 };
-
-            // identity and delta are read together, after the sleep: a channel
-            // or peer set during it files this batch, instead of the batch
-            // landing in the old bucket and being sent again under the new one
-            const { channelId, peerAddress, threadName, uploadKey } =
-                this.identity();
-            this.lastUploadedSeq = this.watermarkFor(uploadKey);
-            const { entries, fromSeq, toSeq } = this.logStore.getLogsSince(
-                this.lastUploadedSeq
-            );
-            if (entries.length === 0) return { ok: true, entries: 0 };
-
-            // Generate plain log and compress before upload
-            const serializedLogs = encodeLogs(entries);
-            rawLogsSize = serializedLogs.length * 2;
-            const compressedLogs = compressToBase64(serializedLogs);
-            compressedLogsSize = compressedLogs.length * 2;
-
+            const compressedLogs = compressToBase64(chunk);
+            compressedLogsSize = compressedLogs.length;
             const headers: Record<string, string> = {
                 "Content-Type": "application/json"
             };
@@ -322,6 +397,8 @@ export abstract class LogUploader {
             console.trace(
                 `Log uploading started. uploadId=${uploadId} channelId=${channelId} peerAddress=${peerAddress} Raw size: ${rawLogsSize / 1e6}MB, Compressed size: ${compressedLogsSize / 1e6}MB.`
             );
+            // Loaded on the first upload: most threads never upload.
+            const { default: axios } = await import("axios");
             const response = await retry(
                 () =>
                     axios.post(
@@ -369,7 +446,7 @@ export abstract class LogUploader {
             // advance only on 2xx -> a failed POST re-sends in the next delta
             this.lastUploadedSeq = toSeq;
             this.lastUploadedKey = uploadKey;
-            return { ok: true, entries: entries.length };
+            return { ok: true, entries: entryCount };
         } catch (uploadError) {
             // Canceled as its thread ends: no diagnostics, which would start new network work.
             if (signal.aborted) return { ok: false, entries: 0 };
@@ -393,7 +470,7 @@ export abstract class LogUploader {
             );
 
             console.error(
-                `Log upload failed: requestUploadId=${requestUploadId || "N/A"} responseUploadId=${responseUploadId || "N/A"} channelId=${this.sharedContext.channelId || ethers.ZeroHash} peerAddress=${this.sharedContext.peerAddress || ethers.ZeroAddress} Raw size: ${rawLogsSize ? rawLogsSize / 1e6 : "N/A"}MB, Compressed size: ${compressedLogsSize ? compressedLogsSize / 1e6 : "N/A"}MB - endpoint: ${this.config.uploadEndpoint}\n Error: ${String(uploadError)}\n`,
+                `Log upload failed: requestUploadId=${requestUploadId || "N/A"} responseUploadId=${responseUploadId || "N/A"} channelId=${channelId} peerAddress=${peerAddress} Raw size: ${rawLogsSize / 1e6}MB, Compressed size: ${compressedLogsSize ? compressedLogsSize / 1e6 : "N/A"}MB - endpoint: ${this.config.uploadEndpoint}\n Error: ${String(uploadError)}\n`,
                 {
                     code,
                     status,

@@ -1,4 +1,8 @@
 import { Status } from "@/types";
+import {
+    commitmentOf,
+    committedDisputeLogs
+} from "@test/fixtures/DisputeWindowWorkflowStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -24,6 +28,10 @@ describe("E2E: final dispute resolution", function () {
         });
 
         const targetPeer = h.getPeer(honestPeerIndices[0]);
+        // the late event is replayed at the final dispute's own log
+        const finalLog = (await committedDisputeLogs(h)).find(
+            (log) => log.commitment === commitmentOf(staged.dispute)
+        )!;
         const validationCalls = await h.execOnHost(
             targetPeer,
             async (sm, args) => {
@@ -43,6 +51,7 @@ describe("E2E: final dispute resolution", function () {
                         args.disputeCreationTimestamp,
                         false,
                         args.windowCreationTimestamp,
+                        args.coordinate,
                         args.disputeAuditingData
                     );
                     return calls;
@@ -57,6 +66,10 @@ describe("E2E: final dispute resolution", function () {
                     staged.finalResolution.genesisTimestamp,
                 windowCreationTimestamp:
                     staged.finalResolution.genesisTimestamp,
+                coordinate: {
+                    blockNumber: finalLog.blockNumber,
+                    logIndex: finalLog.logIndex
+                },
                 disputeAuditingData: undefined
             }
         );
