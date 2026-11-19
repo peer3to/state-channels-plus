@@ -1,4 +1,4 @@
-import { BLOCK_TIME_MS, Status } from "@/types";
+import { Status } from "@/types";
 import { ForkId } from "@/types/types";
 import { hash as randomHash } from "@test/factory";
 import { tryReduceAfterKillPeriod } from "@test/fixtures/DeferredReductionStaging";
@@ -181,10 +181,7 @@ describe("Unit: ReductionExecutor", function () {
                 .filter((task) => task.taskName === `reduction-${forkId}`)
                 .map((task) => task.delayMs);
             const fallbackMs = h.options.timeConfig.chainFallbackTime * 1000;
-            expect(delays.at(-1)).to.be.within(
-                fallbackMs - BLOCK_TIME_MS,
-                fallbackMs
-            );
+            expect(delays.at(-1)).to.be.within(fallbackMs - 1000, fallbackMs);
             expect(
                 runtimeIsClosed(h.getPeer(laggingIndex).p2pInstance)
             ).to.equal(false);

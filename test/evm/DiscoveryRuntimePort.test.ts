@@ -1,6 +1,6 @@
 import { isRootDisposedError } from "@/rpc/internal/RemoteRoot";
 import { TransportType, type OpenConnection } from "@/transport";
-import { BLOCK_TIME_MS, deriveTimeConfig, Status } from "@/types";
+import { Status } from "@/types";
 import {
     addressesEqual,
     channelIdToTargetedJoinTopic,
@@ -20,6 +20,10 @@ import { waitUntilScheduledReductionEntered } from "@test/fixtures/ReductionSche
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
+import {
+    BLOCK_TIME_MS,
+    deriveTimeConfig
+} from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";

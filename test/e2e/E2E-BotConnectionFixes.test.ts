@@ -1,6 +1,6 @@
 import { StateSnapshot } from "@/models";
 import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
-import { BLOCK_TIME_MS, Status, timeoutWaitTime } from "@/types";
+import { Status, timeoutWaitTime } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
     readForceJoinBounds,
@@ -19,6 +19,7 @@ import {
 } from "@test/fixtures/MilestoneSyncStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";

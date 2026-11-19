@@ -8,6 +8,7 @@ import {
 import { RootCreationControl } from "../fixtures/runtimeRpc/RootCreationControl.ts";
 import { RuntimeRpcControl } from "../fixtures/runtimeRpc/RuntimeRpcControl.ts";
 import { TestClockProvider } from "../fixtures/TestClockProvider.ts";
+import { deriveTimeConfig } from "../harness/core/testTimeConfig.ts";
 import Clock from "@/Clock";
 import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import { setupP2pRuntime } from "@/evm/p2pRuntime/setupP2pRuntime";
@@ -54,6 +55,7 @@ export async function deployStack(providerUrl, openExistingChannel) {
         consumerFacetArtifact: MathConsumerFacetArtifact,
         stateMachineArgs: [5_000_000, DEFAULT_MAX_CHANNEL_PARTICIPANTS],
         consumerFacetArgs: [],
+        timeConfig: deriveTimeConfig(),
         disputeExecutionGasLimit: 1_000_000
     });
 

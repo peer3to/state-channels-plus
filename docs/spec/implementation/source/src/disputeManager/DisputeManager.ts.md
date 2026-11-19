@@ -124,8 +124,8 @@ Kill preconditions and races
 
 Replay sends funded upfront
 
-- Setup: `dispute(forkId)` with a held fraud proof and `killDispute(dispute)` with a stored proof and an open window on a running peer; record-only stubs record each send's overrides, scale the `estimateGas` answer of the replay sends to a fraction of the real estimate (standing in for an estimator that reports only the gas spent) or leave it real (`stubScaleReplayGasEstimates`), record or fail the `getStateTransitionReplayGas` reads (`stubRecordReplayGasReads`), and fail the kill's latest-block read or answer it with a block gas limit below `MAX_TX_GAS` (`stubReplayGasBlockRead`); the read succeeding, failing once, shared by sequential and concurrent sends
-- Oracle: The batched `multicallBestEffortLast` and `applyDisputeFraudProofs` carry `gasLimit` = min(estimate + replay gas, per-transaction gas cap `MAX_TX_GAS`, latest block gas limit), or min(estimate + replay gas, `MAX_TX_GAS`) when the block read fails, and land (the spammer is slashed on a kill); the plain and calldata uploads carry no `gasLimit`; one read serves every later send; a failed read sends nothing and the next send reads again
+- Setup: `dispute(forkId)` with a held fraud proof and `killDispute(dispute)` with a stored proof and an open window on a running peer; record-only stubs record each send's overrides, scale the `estimateGas` answer of the replay sends to a fraction of the real estimate (standing in for an estimator that reports only the gas spent) or leave it real (`stubScaleReplayGasEstimates`), record or fail the `getStateTransitionReplayGas` reads (`stubRecordReplayGasReads`), and fail the kill's latest-block read or answer it with a block gas limit below the parachain's per-transaction cap (`stubReplayGasBlockRead`); the read succeeding, failing once, shared by sequential and concurrent sends
+- Oracle: The batched `multicallBestEffortLast` and `applyDisputeFraudProofs` carry `gasLimit` = min(estimate + replay gas, latest block gas limit), or estimate + replay gas when the block read fails, and land (the spammer is slashed on a kill); the plain and calldata uploads carry no `gasLimit`; one read serves every later send; a failed read sends nothing and the next send reads again
 
 - [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P3` — an upload without fraud proofs (plain or calldata) carries no gas limit and reads no replay gas
 - [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P14` — a dispute whose `multicall` estimate is a fraction of the real one is sent at that estimate plus the replay gas
@@ -135,10 +135,8 @@ Replay sends funded upfront
 - [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P11` — concurrent replay sends share the one in-flight replay-gas read
 - [ ] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P12` — a rejected replay-gas read on the dispute path sends no dispute, is not kept, and the next dispute reads again and sends
 - [ ] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P13` — a rejected replay-gas read on the kill path sends no kill, is not kept, and the next kill reads again, lands, and slashes the disputer
-- [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P18` — a kill whose estimate plus replay gas exceeds a latest block gas limit below the per-transaction cap is sent with that block's gas limit, is mined, and slashes the disputer
+- [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P18` — a kill whose estimate plus replay gas exceeds the latest block's gas limit is sent with that block's gas limit
 - [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P19` — a kill whose latest-block read fails is sent at its estimate plus the replay gas, is mined, and slashes the disputer
-- [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P20` — a kill whose estimate plus replay gas exceeds the per-transaction cap, which is below the latest block's gas limit, is sent at the cap, is mined, and slashes the disputer
-- [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P21` — a kill whose latest-block read fails and whose estimate plus replay gas exceeds the per-transaction cap is sent at the cap, is mined, and slashes the disputer
 - [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P17` — a kill whose stored proof is a `TimeoutCalldataPosted` refutation (a dispute fraud proof that replays the posted block) is sent at its `applyDisputeFraudProofs` estimate plus the replay gas, is mined, slashes the disputer, and removes the timeout dispute's commitment
 
 ## UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM

@@ -1,12 +1,13 @@
 import { Block } from "@/models";
 import { isRootDisposedError } from "@/rpc/internal/RemoteRoot";
-import { BLOCK_TIME_MS, Status } from "@/types";
+import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import { sleep } from "@/utils";
 import { disposeAndRelease } from "@test/fixtures/DisposeCutOffStaging";
 import { clientRootFor } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { ABSENCE_WINDOW_MS } from "@test/harness/actions/EventActions";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 

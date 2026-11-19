@@ -2,7 +2,6 @@
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
-import { BLOCK_TIME_MS } from "@/types";
 import {
     DisputeFraudProofType,
     FraudProofType,
@@ -12,6 +11,7 @@ import {
 import type { Address, ForkId } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
 import { suppressTimeoutChecks } from "@test/fixtures/OlderDisputeStaging";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import type {
     BlockConfirmationStruct,

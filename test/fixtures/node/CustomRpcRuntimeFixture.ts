@@ -6,7 +6,6 @@ import { deployFullStack } from "../../../scripts/V1/deploy";
 import { EvmStateMachine } from "@/evm";
 import type P2pInstance from "@/evm/P2pInstance";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
-import { deriveTimeConfig } from "@/types";
 import { Codec, LocalDiscoveryServer, SignatureUtils, Type } from "@/utils";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import type {
@@ -17,7 +16,10 @@ import {
     slotAccountIndex,
     slotDeployerIndex
 } from "@test/harness/core/slotAccounts";
-import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
+import {
+    protocolEventTimeoutMs,
+    deriveTimeConfig
+} from "@test/harness/core/testTimeConfig";
 import {
     createJoinChannelTestObject,
     createOpenChannelTestObject
@@ -126,6 +128,7 @@ export async function assertCustomRpcRuntimeFlow(
             consumerFacetArtifact: MathConsumerFacetArtifact,
             stateMachineArgs: [5_000_000, DEFAULT_MAX_CHANNEL_PARTICIPANTS],
             consumerFacetArgs: [],
+            timeConfig: deriveTimeConfig(),
             disputeExecutionGasLimit: 1_000_000
         });
 

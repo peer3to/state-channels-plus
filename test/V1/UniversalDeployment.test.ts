@@ -10,7 +10,6 @@ import {
 import type AContractExecutor from "@/evm/contractExecutor/AContractExecutor";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
 import { ContractSizeLimitError } from "@/index";
-import { deriveTimeConfig } from "@/types";
 import { Codec, SignatureUtils, Type } from "@/utils";
 import { connectLocalDiamond } from "@/utils/localDiamond";
 import * as factory from "@test/factory";
@@ -128,9 +127,7 @@ describe("Universal Deployment", () => {
                 diamondAddress.toString(),
                 localSigner
             );
-            expect(await diamond.getP2pTime()).to.equal(
-                BigInt(deriveTimeConfig().p2pTime)
-            );
+            expect(await diamond.getP2pTime()).to.equal(15n);
         });
 
         it("ignores stale overwrite events and deduplicates on-chain slashes", async () => {
@@ -241,15 +238,8 @@ describe("Universal Deployment", () => {
 
             expect(diamondAddress).to.not.equal(ethers.ZeroAddress);
 
-            const derived = deriveTimeConfig();
-            expect(await diamondContract.getAllTimes()).to.deep.equal(
-                [
-                    derived.p2pTime,
-                    derived.agreementTime,
-                    derived.chainFallbackTime,
-                    derived.evidenceTime
-                ].map(BigInt)
-            );
+            const times = await diamondContract.getAllTimes();
+            expect(times).to.deep.equal([15n, 5n, 30n, 30n]);
             expect(await diamondContract.getGasLimit()).to.equal(3_000_000n);
         });
 

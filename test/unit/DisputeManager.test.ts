@@ -3,7 +3,6 @@ import {
     EARLY_TIMEOUT_RECHECK_REASON,
     MISMATCH_TIMEOUT_RECHECK_REASON
 } from "@/stateManager/chainFallback/ParticipantTimeoutService";
-import { BLOCK_TIME_MS, MAX_TX_GAS } from "@/types";
 import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
@@ -50,6 +49,7 @@ import {
     killWithScaledEstimate
 } from "@test/fixtures/ReplayGasLimitStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ZeroAddress } from "ethers";
@@ -2707,31 +2707,9 @@ describe("Unit: DisputeManager", function () {
             expect(slashed).to.include(spammer);
         });
 
-        it("a kill whose estimate plus the replay requirement exceeds the per-transaction gas cap is sent at the cap, lands, and slashes the disputer", async function () {
-            const h = TestSession.getHarness();
-            const { applies, estimates, replayGas, slashed, spammer } =
-                // above the cap and every test chain's block gas limit
-                await killWithScaledEstimate(h, {
-                    numerator: 100_000,
-                    denominator: 1
-                });
-            const { gasLimit } =
-                (await h.channelManager.runner!.provider!.getBlock("latest"))!;
-            // premise - the cap is below the block gas limit, so it binds
-            expect(MAX_TX_GAS < gasLimit).to.equal(true);
-            expect(BigInt(estimates[0].answer) + replayGas > gasLimit).to.equal(
-                true
-            );
-            expect(applies.length).to.equal(1);
-            expect(applies[0].gasLimit).to.equal(String(MAX_TX_GAS));
-            expect(applies[0].error).to.equal(null);
-            expect(applies[0].waited).to.equal(true);
-            expect(slashed).to.include(spammer);
-        });
-
-        it("a kill whose estimate plus the replay requirement exceeds a latest block gas limit below the per-transaction gas cap is sent at that block gas limit, lands, and slashes the disputer", async function () {
-            // below the cap, still above what the kill uses
-            const blockGasLimit = MAX_TX_GAS - 1_000_000n;
+        it("a kill whose estimate plus the replay requirement exceeds the block gas limit is sent at the block gas limit", async function () {
+            // below the parachain's per-transaction gas cap, so the kill lands on both chains
+            const blockGasLimit = 16_000_000n;
             const {
                 applies,
                 estimates,
@@ -2746,7 +2724,7 @@ describe("Unit: DisputeManager", function () {
             );
             expect(stubbedBlockReads).to.equal(1);
             expect(
-                BigInt(estimates[0].answer) + replayGas > MAX_TX_GAS
+                BigInt(estimates[0].answer) + replayGas > blockGasLimit
             ).to.equal(true);
             expect(applies.length).to.equal(1);
             expect(applies[0].gasLimit).to.equal(String(blockGasLimit));
@@ -2755,7 +2733,7 @@ describe("Unit: DisputeManager", function () {
             expect(slashed).to.include(spammer);
         });
 
-        it("a kill whose latest-block read fails is sent at its estimate plus the replay requirement, lands, and slashes the disputer", async function () {
+        it("a kill whose latest-block read fails is sent uncapped at its estimate plus the replay requirement, lands, and slashes the disputer", async function () {
             const {
                 applies,
                 estimates,
@@ -2773,30 +2751,6 @@ describe("Unit: DisputeManager", function () {
             expect(applies[0].gasLimit).to.equal(
                 String(BigInt(estimates[0].answer) + replayGas)
             );
-            expect(applies[0].error).to.equal(null);
-            expect(applies[0].waited).to.equal(true);
-            expect(slashed).to.include(spammer);
-        });
-
-        it("a kill whose latest-block read fails and whose estimate plus the replay requirement exceeds the per-transaction gas cap is still sent at the cap and lands", async function () {
-            const {
-                applies,
-                estimates,
-                replayGas,
-                slashed,
-                spammer,
-                stubbedBlockReads
-            } = await killWithScaledEstimate(
-                TestSession.getHarness(),
-                { numerator: 100_000, denominator: 1 },
-                { failBlockRead: true }
-            );
-            expect(stubbedBlockReads).to.equal(1);
-            expect(
-                BigInt(estimates[0].answer) + replayGas > MAX_TX_GAS
-            ).to.equal(true);
-            expect(applies.length).to.equal(1);
-            expect(applies[0].gasLimit).to.equal(String(MAX_TX_GAS));
             expect(applies[0].error).to.equal(null);
             expect(applies[0].waited).to.equal(true);
             expect(slashed).to.include(spammer);

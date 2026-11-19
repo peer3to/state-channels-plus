@@ -1,6 +1,6 @@
-import { BLOCK_TIME_MS } from "@/types";
 import { hash as randomHash } from "@test/factory";
 import { MathTestSession as TestSession, sleep } from "@test/harness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import { expect } from "chai";
 import { ethers } from "ethers";

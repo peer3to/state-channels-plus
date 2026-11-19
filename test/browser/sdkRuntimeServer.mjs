@@ -11,7 +11,9 @@ const projectRoot = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "../.."
 );
-const { BLOCK_TIME_MS } = await loadSdkSource("src/types/time.ts");
+const { BLOCK_TIME_MS } = await loadSdkSource(
+    "test/harness/core/testTimeConfig.ts"
+);
 
 /**
  * Each browser gate owns its node, including its interval-mining setting.

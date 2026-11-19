@@ -1,8 +1,12 @@
 import Clock from "@/Clock";
 import { Block, StateSnapshot } from "@/models";
-import { BLOCK_TIME_MS, deriveTimeConfig, timeoutWaitTime } from "@/types";
+import { timeoutWaitTime } from "@/types";
 import { Codec, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import {
+    BLOCK_TIME_MS,
+    deriveTimeConfig
+} from "@test/harness/core/testTimeConfig";
 import { expect } from "chai";
 
 const TIME = deriveTimeConfig();

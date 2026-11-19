@@ -1,6 +1,4 @@
-import { BLOCK_TIME_MS } from "@/types";
 import { Hash } from "@/types/types";
-import { sleep } from "@/utils";
 import {
     assertDirectSlashRecovery,
     assertRecoveredSlashTimestampAndDedup
@@ -128,36 +126,6 @@ describe("EventSyncService", function () {
             expect(probe.queryCount).to.be.lessThan(LOG_RECOVERY_ATTEMPTS);
             expect(probe.heldAfter).to.equal(true);
             expect(probe.blockCount).to.be.greaterThan(0);
-
-            await dropped.release();
-        });
-
-        it("the first recovery read spans the chain time since the run's snapshot at one block per block time", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 0);
-            const lagging = 2;
-            const dropped = await h.rpcStub.dropInboundMessageLogs(lagging);
-            const inboundHead = await stageInboundHead(h, lagging);
-            await dropped.waitUntilDropped();
-            // the missed log is twenty block times old when it is recovered
-            await sleep(20 * BLOCK_TIME_MS);
-
-            const probe = await h
-                .control(h.getPeer(lagging))
-                .validation.probeInboundRunRecovery(inboundHead)
-                .request();
-
-            const head = (await h.provider.getBlock(probe.toBlock!))!;
-            const elapsedBlocks =
-                (head.timestamp - probe.notBefore) / (BLOCK_TIME_MS / 1000);
-            const span = Math.ceil(elapsedBlocks * 1.5) + 2;
-            const fromBlock = Math.max(0, probe.toBlock! - span);
-            // premise: the watermark does not reach below the span
-            expect(probe.cursorAtCall ?? fromBlock).to.be.at.least(fromBlock);
-            expect(probe.queriedFromBlocks[0]).to.equal(fromBlock);
-            // the first read found the run: nothing older than the span is read
-            expect(probe.queryCount).to.equal(1);
-            expect(probe.heldAfter).to.equal(true);
 
             await dropped.release();
         });

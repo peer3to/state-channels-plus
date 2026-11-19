@@ -1,5 +1,4 @@
 // @spec-test-coverage-ignore: shared staging for two leavers whose self-removal disputes form a non-final reduction that leaves no participant
-import { BLOCK_TIME_MS } from "@/types";
 import type { ForkId } from "@/types";
 import {
     recordLeaveChannelLogs,
@@ -7,6 +6,7 @@ import {
 } from "@test/fixtures/BotConnectionFixesStaging";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { MathTestSession as TestSession } from "@test/harness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ZeroHash } from "ethers";

@@ -6,7 +6,6 @@ import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamo
 import { StateChannelManagerInterface } from "@typechain-types/index";
 import { Artifact } from "hardhat/types";
 import { config } from "@/utils/config";
-import { deriveTimeConfig, type TimeConfig } from "@/types/time";
 import type { Address } from "@/types/types";
 import { routedFacetArtifacts } from "@/utils/routedFacets";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
@@ -19,6 +18,7 @@ const DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
 // Mirrors DEFAULT_MAX_CHANNEL_PARTICIPANTS in StateChannelManagerProxy: the
 // deployer picks the value, the chain stores it, and clients read it back.
 export const DEFAULT_MAX_CHANNEL_PARTICIPANTS = 32;
+const FACET_DEPLOY_GAS_LIMIT = 12_000_000;
 const NONCE_GAP_RETRY_DELAY_MS = 10;
 const NONCE_GAP_MAX_RETRIES = 500;
 
@@ -137,7 +137,10 @@ export async function deployFacets(
                     return (
                         await deployArtifact(artifact, signer, {
                             libs,
-                            txOverrides: { nonce: nextNonce + index }
+                            txOverrides: {
+                                nonce: nextNonce + index,
+                                gasLimit: FACET_DEPLOY_GAS_LIMIT
+                            }
                         })
                     ).address;
                 } catch (error) {
@@ -175,9 +178,20 @@ export async function deployFacetsLocal(
     );
 }
 
-// the derived protocol windows, with any field the caller sets in seconds
-export function getTimeConfig(overrides?: Partial<TimeConfig>): TimeConfig {
-    return { ...deriveTimeConfig(), ...overrides };
+export type TimeConfig = {
+    p2pTime?: number;
+    agreementTime?: number;
+    chainFallbackTime?: number;
+    evidenceTime?: number;
+};
+
+export function getTimeConfig(overrides?: TimeConfig): TimeConfig {
+    return {
+        p2pTime: overrides?.p2pTime ?? 0,
+        agreementTime: overrides?.agreementTime ?? 0,
+        chainFallbackTime: overrides?.chainFallbackTime ?? 0,
+        evidenceTime: overrides?.evidenceTime ?? 0
+    };
 }
 
 export type DeployFullStackParams = {
@@ -185,7 +199,7 @@ export type DeployFullStackParams = {
     consumerFacetArtifact: Artifact;
     stateMachineArgs?: any[];
     consumerFacetArgs?: any[];
-    timeConfig?: Partial<TimeConfig>;
+    timeConfig?: TimeConfig;
     disputeExecutionGasLimit?: number;
     maxChannelParticipants?: number;
     /** Reuse already-deployed config-independent facets (see `deploy`). */
@@ -196,7 +210,7 @@ export async function deploy(
     stateMachineAddress: string,
     consumerFacetAddress: string,
     signer: Signer,
-    timeConfigOverrides?: Partial<TimeConfig>,
+    timeConfigOverrides?: TimeConfig,
     disputeExecutionGasLimit: number = DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT,
     maxChannelParticipants: number = DEFAULT_MAX_CHANNEL_PARTICIPANTS,
     // The dispute/verification facets are stateless and config-independent:
@@ -273,7 +287,7 @@ export async function deployFullStack(
 export async function deployLocalDiamond(
     deployStateMachine: LocalStateMachineDeployer,
     signer: Signer,
-    timeConfigOverrides?: Partial<TimeConfig>,
+    timeConfigOverrides?: TimeConfig,
     disputeExecutionGasLimit: number = DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT,
     maxChannelParticipants: number = DEFAULT_MAX_CHANNEL_PARTICIPANTS
 ): Promise<DeploymentResult> {
@@ -306,7 +320,7 @@ export async function deployLocalDiamond(
 export async function deployLocalDiamondWithStateMachineAddress(
     stateMachineAddress: Address,
     signer: Signer,
-    timeConfigOverrides?: Partial<TimeConfig>,
+    timeConfigOverrides?: TimeConfig,
     disputeExecutionGasLimit: number = DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT,
     maxChannelParticipants: number = DEFAULT_MAX_CHANNEL_PARTICIPANTS
 ): Promise<DeploymentResult> {

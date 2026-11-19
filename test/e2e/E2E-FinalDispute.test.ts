@@ -1,9 +1,10 @@
-import { BLOCK_TIME_MS, Status } from "@/types";
+import { Status } from "@/types";
 import {
     commitmentOf,
     committedDisputeLogs
 } from "@test/fixtures/DisputeWindowWorkflowStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 

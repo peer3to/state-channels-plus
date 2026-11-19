@@ -1,4 +1,3 @@
-import { BLOCK_TIME_MS } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { addressesEqual } from "@/utils";
 import {
@@ -10,6 +9,7 @@ import {
     DisputeTampering,
     MathTestSession as TestSession
 } from "@test/harness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { expect } from "chai";
 
 describe("E2E: dispute validation / disputeInputFields / selfRemoval", function () {

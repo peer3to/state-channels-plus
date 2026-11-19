@@ -315,7 +315,7 @@ required.
 
 **<a id="req-dispute-pipe-10-bt8yar"></a>`REQ-DISPUTE-PIPE-10-BT8YAR` — Recheck an early timeout submission.** When a timeout submission is refused
 because the executing chain timestamp is below its minimum timestamp, or because of either previous-producer posting-state mismatch, clear the failed attempt's
-signing marker and schedule a fresh timeout check: after the larger of one block time and `minimum - chainTimestamp` seconds for the timestamp refusal, after one block time for either mismatch direction.
+signing marker and schedule a fresh timeout check: after `max(1, minimum - chainTimestamp)` seconds for the timestamp refusal, after a fixed one second for either mismatch direction.
 A mismatch refusal also drops the refused claim from timeout storage while the boundary is held, so later disputes on the fork never carry a claim the chain rejected.
 Release the dispute serialization boundary before scheduling. The check must reconstruct current evidence through
 ordinary construction, not resend the signed transaction; the previous producer's posting state is read from the chain that

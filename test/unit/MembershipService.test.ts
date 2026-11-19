@@ -1,8 +1,7 @@
 import { hash as randomHash } from "../factory";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
-import { BLOCK_TIME_MS, Status } from "@/types";
+import { Status } from "@/types";
 import { sleep } from "@/utils";
-import { config, createConfig } from "@/utils/config";
 import {
     checkForceJoinOnLatestBlock,
     readTrackedJoin,
@@ -45,19 +44,6 @@ import { ethers } from "ethers";
 // (p2pSigner.joinChannel / topUpBalance) and through a real leave.
 
 describe("Unit: MembershipService", function () {
-    it("the leave watchdog and the gas settle window default to block-time multiples", () => {
-        const previous = { ...config };
-        try {
-            const defaults = createConfig({}, {});
-            expect(defaults.LEAVE_CHANNEL_WATCHDOG_MS).to.equal(
-                15 * BLOCK_TIME_MS
-            );
-            expect(defaults.GAS_USAGE_SETTLE_MS).to.equal(2 * BLOCK_TIME_MS);
-        } finally {
-            createConfig(previous);
-        }
-    });
-
     it("an authoritative slash survives failed slash log recovery and repeated lookups", async () => {
         await assertSlashRefreshFailure();
     });

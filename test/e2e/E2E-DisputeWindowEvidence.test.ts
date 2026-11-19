@@ -1,4 +1,3 @@
-import { BLOCK_TIME_MS } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type } from "@/utils";
 import {
@@ -16,6 +15,7 @@ import {
 } from "@test/fixtures/DisputeWindowWorkflowStaging";
 import { disputeOnHost } from "@test/fixtures/ReplayGasLimitStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ZeroAddress } from "ethers";

@@ -1,7 +1,7 @@
 // @spec-test-coverage-ignore: shared fixture triggers production behavior; executable evidence belongs to its calling test declarations
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { EvmStateMachine, type AContractExecutor } from "@/evm";
-import { deriveTimeConfig } from "@/types";
+import { deriveTimeConfig } from "@test/harness/core/testTimeConfig";
 import { MathStateMachine__factory } from "@typechain-types";
 import type { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { ethers } from "hardhat";

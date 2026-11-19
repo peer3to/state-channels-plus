@@ -51,6 +51,7 @@ Options:
       --distributed              Run tasks on authenticated remote workers
       --discovery-timeout <ms>   Time to wait for the first worker
       --forward-env <name>       Environment variable to forward (repeatable)
+      --parachain                Run the slot nodes and tests on the parachain dev node
 
 By default Mocha tests (excluding parallel-runner and browser-required tests)
 and all Foundry test contracts under test/ are discovered and logs are written to a new logs/run-N directory.
@@ -91,6 +92,8 @@ function parseCliArgs(argv) {
         browserTestPattern: undefined,
         help: false,
         e2eOnly: false,
+        // --parachain runs on the parachain dev node instead of hardhat
+        parachain: false,
         // Foundry test contracts are discovered alongside Mocha tests by
         // default; --no-forge drops them, --forge-only drops the Mocha tier.
         forge: true,
@@ -236,6 +239,10 @@ function parseCliArgs(argv) {
             options.browserTestPattern = arg.slice(
                 "--browser-test-pattern=".length
             );
+            continue;
+        }
+        if (arg === "--parachain") {
+            options.parachain = true;
             continue;
         }
         if (arg === "--e2e-only") {

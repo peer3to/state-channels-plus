@@ -4,11 +4,15 @@ import {
     PREDECESSOR_POSTED_RECHECK_REASON,
     TIMEOUT_RECHECK_DELAY_MS
 } from "@/stateManager/chainFallback/ParticipantTimeoutService";
-import { BLOCK_TIME_MS, deriveTimeConfig, timeoutWaitTime } from "@/types";
+import { timeoutWaitTime } from "@/types";
 import type { Hash } from "@/types/types";
 import { Codec, sleep, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
-import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
+import {
+    protocolEventTimeoutMs,
+    BLOCK_TIME_MS,
+    deriveTimeConfig
+} from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { id, ZeroAddress } from "ethers";

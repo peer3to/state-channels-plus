@@ -1,5 +1,5 @@
 // @spec-test-coverage-ignore: shared test defaults; watchdog behavior is exercised by the runtime-port suites
-import { BLOCK_TIME_MS } from "../src/types/time";
+import { BLOCK_TIME_MS } from "./harness/core/testTimeConfig";
 import { Config } from "../src/utils/config";
 
 const testConfig: Partial<Config> = {

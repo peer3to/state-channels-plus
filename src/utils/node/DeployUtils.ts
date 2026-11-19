@@ -24,9 +24,11 @@ export class DeployUtils {
     ): Promise<ReturnType<T["deploy"]>> {
         const contractsJSON = this.contractsJSON;
 
-        // the estimate sets the gas limit: a fixed one above the chain's
-        // per-transaction cap (MAX_TX_GAS) is refused
-        const instance = await contractFactory.deploy(...args);
+        const instance = await contractFactory.deploy(...args, {
+            // Right-sized from 20M: largest facet/manager deploy measures ~6.9M;
+            // 10M keeps headroom (deploy is one-time, off the hot concurrency path).
+            gasLimit: 10_000_000
+        });
         contractsJSON[contractName] = {};
         contractsJSON[contractName].address = await instance.getAddress();
         contractsJSON[contractName].abi =

@@ -28,6 +28,7 @@ import {
     slotAccountIndex,
     slotDeployerIndex
 } from "@test/harness/core/slotAccounts";
+import { deriveTimeConfig } from "@test/harness/core/testTimeConfig";
 import {
     startHardhatNode,
     waitForHardhatNode,
@@ -96,6 +97,7 @@ export async function prepareRuntimeSetup(options: {
             DEFAULT_MAX_CHANNEL_PARTICIPANTS
         ],
         consumerFacetArgs: [],
+        timeConfig: deriveTimeConfig(),
         disputeExecutionGasLimit: 1_000_000
     });
 

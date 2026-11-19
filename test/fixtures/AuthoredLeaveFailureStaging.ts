@@ -1,7 +1,7 @@
 // @spec-test-coverage-ignore: authored-leave fallback staging for mapped runtime cases
-import { BLOCK_TIME_MS } from "@/types";
 import { addressesEqual } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 

@@ -1,6 +1,6 @@
-import { BLOCK_TIME_MS } from "@/types";
 import { sleep } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { expect } from "chai";
 
 describe("StateManager timeout", function () {

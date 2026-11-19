@@ -133,7 +133,7 @@ local error closes it; the cost is that such a node cannot judge the block until
 environment is fixed, while every other peer judges it normally. The residual is cost, not
 correctness: every replay transaction must carry the requirement (somewhat more than the
 transition limit itself) plus its other work, so it fits a block only while that total, with the
-submitter's safety margin, stays within the chain's per-transaction gas cap and the block gas limit; a larger replay cannot be submitted at
+submitter's safety margin, stays below the block gas limit; a larger replay cannot be submitted at
 all and its fraud stays unproven on-chain until the configured limit is lowered. A submitter
 declares its gas estimate plus the requirement. An estimator that reports the gas a run spends
 counts only what the transition used, never the unused part of the limit that must be free when

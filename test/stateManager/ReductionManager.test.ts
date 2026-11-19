@@ -1,4 +1,3 @@
-import { BLOCK_TIME_MS } from "@/types";
 import { sleep } from "@/utils";
 import { REDUCTION_ATTEMPT_STUB_FAILURE } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { assertInvalidReductionControl } from "@test/fixtures/InvalidReductionControlFixture";
@@ -12,6 +11,7 @@ import { assertLiveForkSwitch } from "@test/fixtures/ReductionForkSwitchStaging"
 import { assertSyncedLeaverSkipsSubmission } from "@test/fixtures/SyncedLeaverReductionStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import type { SubmittedFinalDispute } from "@test/harness/actions/DisputeOrchestrator";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
@@ -86,36 +86,6 @@ describe("ReductionManager", function () {
             .request();
 
         expect(hasOperation).to.equal(false);
-    });
-
-    it("re-polls a passed reduction trigger once per block and arms a later trigger at its time", async function () {
-        const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 0);
-        const forkId = h.activeForkId!;
-        const tasks = await h.rpcStub.recordScheduledTasks(0, {
-            suppressPrefix: "reduction-"
-        });
-        try {
-            await h.execOnHost(
-                h.getPeer(0),
-                (sm, args, { Clock }) => {
-                    const now = Clock.getTimeInSeconds();
-                    sm.reductionManager.schedule(args.forkId, now - 5);
-                    sm.reductionManager.schedule(args.forkId, now + 3);
-                },
-                { forkId }
-            );
-
-            const delays = (await tasks.tasks())
-                .filter((task) => task.taskName === `reduction-${forkId}`)
-                .map((task) => task.delayMs);
-            expect(delays[0]).to.equal(BLOCK_TIME_MS);
-            // whole seconds: a clock tick between the two reads shaves one
-            expect(delays[1]).to.be.within(2000, 3000);
-            expect(delays.length).to.equal(2);
-        } finally {
-            await tasks.restore();
-        }
     });
 
     it("reuses one resolved outcome for duplicate terminal triggers", async function () {

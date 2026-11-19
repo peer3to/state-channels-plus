@@ -31,9 +31,9 @@ export interface StartInfraOptions {
     logPath?: string;
     label?: string;
     env?: Record<string, string | undefined>;
-    /** The peer3 dev node's `--dev-seal` mode (TEST_CHAIN=peer3 only). */
+    /** The peer3 dev node's `--dev-seal` mode (--parachain only). */
     seal?: "interval" | "manual";
-    /** The peer3 dev node's `--chain` (TEST_CHAIN=peer3 only). */
+    /** The peer3 dev node's `--chain` (--parachain only). */
     chain?: "test" | "test-other";
 }
 

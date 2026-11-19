@@ -26,7 +26,6 @@
 - [`REQ-TIME-3-MT1MMF` (Window values and skew bound are explicit configuration trade-offs)](../../../../../specification/protocol-model/time.md#req-time-3-mt1mmf)
 - [`INV-DA-1-TS7HX2` (A posted block-calldata commitment MUST be immutable for its key and binding)](../../../../../specification/security/data-availability.md#inv-da-1-ts7hx2)
 - [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs)
-- [`REQ-TIME-7-2J5T0J` (Deployment windows derive from the chain block time as k × block time + floor,…)](../../../../../specification/protocol-model/time.md#req-time-7-2j5t0j)
 
 ## UNIT-TEST-MANAGER-PROXY-1-NTYR71
 

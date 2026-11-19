@@ -1,7 +1,7 @@
 import { HardhatUserConfig, task, types } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 import "@nomicfoundation/hardhat-foundry";
-import { BLOCK_TIME_MS } from "./src/types/time";
+import { BLOCK_TIME_MS } from "./test/harness/core/testTimeConfig";
 import { TASK_TEST } from "hardhat/builtin-tasks/task-names";
 import "./tasks/browserTest";
 import "./tasks/forgeTest";

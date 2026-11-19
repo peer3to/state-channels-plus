@@ -5,7 +5,7 @@ import ReductionExecutor from "./ReductionExecutor";
 import type StateManager from "../StateManager";
 import Clock from "@/Clock";
 import { StateSnapshot } from "@/models";
-import { BLOCK_TIME_MS, type ReduceData } from "@/types";
+import type { ReduceData } from "@/types";
 import type { Bytes, ForkId, Timestamp } from "@/types/types";
 import { DetachedPromises, Logger } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
@@ -111,8 +111,7 @@ export default class ReductionManager {
                 }
                 DetachedPromises.collect(this.tryReduce(forkId));
             },
-            // re-poll once per block until a block passes the trigger
-            Math.max(BLOCK_TIME_MS, (localTriggerTimestamp - now) * 1000),
+            Math.max(1, localTriggerTimestamp - now) * 1000,
             `reduction-${forkId}`
         );
 

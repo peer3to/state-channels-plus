@@ -31,7 +31,7 @@ import type { CustomRpcManifest } from "@/rpc/network/registry";
 import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import type { RpcRequestOptions } from "@/rpc/network/RpcHandler";
 import type StateManager from "@/stateManager/StateManager";
-import { deriveTimeConfig, TimeConfig } from "@/types";
+import { TimeConfig } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
 import { Address, ChannelId, ForkId, Hash } from "@/types/types";
 import {
@@ -67,6 +67,7 @@ import {
     slotAccountIndex,
     slotDeployerIndex
 } from "@test/harness/core/slotAccounts";
+import { deriveTimeConfig } from "@test/harness/core/testTimeConfig";
 import {
     EventSpies,
     HarnessConstructorOptions,

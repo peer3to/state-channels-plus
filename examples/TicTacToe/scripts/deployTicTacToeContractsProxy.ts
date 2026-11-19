@@ -74,8 +74,12 @@ export async function deployTicTacToe(): Promise<
         await ticTacToeContactInstance.getAddress(),
         ticTacToeConsumerFacetAddress,
         deployer as any,
-        // the windows derived from the chain block time
-        undefined,
+        {
+            p2pTime: 5,
+            agreementTime: 3,
+            chainFallbackTime: 3,
+            evidenceTime: 5
+        },
         TICTACTOE_DISPUTE_EXECUTION_GAS_LIMIT
     );
 

@@ -150,7 +150,7 @@ replay requirement funds only the transition's limit and the machine's fixed set
 previous transition's outbound messages and copying the transition input come on top of it, and
 cost at most about one more requirement, because they undo or move what one funded run wrote.
 With twice the requirement a local transition is not refused where a funded chain replay runs it,
-as far as the chain's per-transaction gas cap and block gas limit let such a replay be sent. The requirement is a funding
+as far as the chain's block gas limit lets such a replay be sent. The requirement is a funding
 baseline, not a bound on the rest of a dispute call (proof checks, restoring the machine's state),
 which an on-chain submission funds through its own estimate; a local evaluation can therefore run
 out of gas where the chain would not. Running out of gas locally MUST propagate as an error and MUST NOT become an answer or trigger fallback. A local state transition has no chain answer to fall back to: its refusal, its

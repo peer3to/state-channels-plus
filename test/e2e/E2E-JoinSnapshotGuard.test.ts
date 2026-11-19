@@ -1,6 +1,6 @@
 import StateSnapshot from "@/models/StateSnapshot";
 import { isRootDisposedError } from "@/rpc/internal/RemoteRoot";
-import { BLOCK_TIME_MS, Status } from "@/types";
+import { Status } from "@/types";
 import { sleep } from "@/utils";
 import {
     chainBlockPastWait,
@@ -27,6 +27,7 @@ import {
 import { rejectionOf } from "@test/fixtures/ProvenSubmissionFailureStaging";
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";

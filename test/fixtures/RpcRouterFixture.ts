@@ -4,7 +4,10 @@ import {
     createLoggerSdkFixture,
     type LoggerSdkFixture
 } from "./node/LoggerServiceFixture";
-import { protocolEventTimeoutMs } from "../harness/core/testTimeConfig";
+import {
+    protocolEventTimeoutMs,
+    deriveTimeConfig
+} from "../harness/core/testTimeConfig";
 import { waitFor } from "../utils/waitFor";
 import type { RuntimeProbeRoot } from "./runtimeRpc/probe/runtime/RuntimeProbeService";
 import { RuntimeRpcControl } from "./runtimeRpc/RuntimeRpcControl";
@@ -14,7 +17,6 @@ import type { CustomRpcManifest } from "@/rpc/network/registry";
 import RpcMethodsProxy from "@/rpc/network/RpcHandleProxy";
 import RpcHandler from "@/rpc/network/RpcHandler";
 import InternalTransport from "@/transport/InternalTransport";
-import { deriveTimeConfig } from "@/types";
 import {
     createRuntimeChannel,
     createTransferableChannel

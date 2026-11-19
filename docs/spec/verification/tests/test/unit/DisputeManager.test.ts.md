@@ -154,10 +154,8 @@ estimate plus the replay gas, the kill mined without error (`6.P11`). A non-time
 - `a dispute sends the multicall at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P14
 - `a kill whose estimate covers only part of the work still lands at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P15
 - `a kill with the real estimate lands at the estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P16
-- `a kill whose estimate plus the replay requirement exceeds the per-transaction gas cap is sent at the cap, lands, and slashes the disputer`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P20
-- `a kill whose estimate plus the replay requirement exceeds a latest block gas limit below the per-transaction gas cap is sent at that block gas limit, lands, and slashes the disputer`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P18
-- `a kill whose latest-block read fails is sent at its estimate plus the replay requirement, lands, and slashes the disputer`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P19
-- `a kill whose latest-block read fails and whose estimate plus the replay requirement exceeds the per-transaction gas cap is still sent at the cap and lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P21
+- `a kill whose estimate plus the replay requirement exceeds the block gas limit is sent at the block gas limit`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P18
+- `a kill whose latest-block read fails is sent uncapped at its estimate plus the replay requirement, lands, and slashes the disputer`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P19
 - `a kill that refutes a timeout with posted calldata replays the block and lands at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P17
 - `the dispute and kill sends share one replay requirement read`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P10
 - `concurrent dispute and kill sends wait on one held replay requirement read and both land at estimate plus requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P11

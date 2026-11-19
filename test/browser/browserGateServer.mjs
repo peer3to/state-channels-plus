@@ -69,7 +69,7 @@ export async function loadBrowserTestDependency(name) {
     }
 }
 
-/** An SDK source module loaded in the gate's Node process through Vite, as the pages load `src`. */
+/** A source module loaded in the gate's Node process through Vite, as the pages load it. */
 export async function loadSdkSource(sourcePath) {
     const { runnerImport } = await loadBrowserTestDependency("vite");
     const { module } = await runnerImport(path.join(projectRoot, sourcePath), {

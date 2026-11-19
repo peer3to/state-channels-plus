@@ -1,4 +1,4 @@
-import { BLOCK_TIME_MS, Status, timeoutWaitTime } from "@/types";
+import { Status, timeoutWaitTime } from "@/types";
 import {
     addressesEqual,
     channelIdToDiscoveryKey,
@@ -52,6 +52,7 @@ import {
 } from "@test/fixtures/NonFinalZeroParticipantReductionStaging";
 import { postSnapshotFrom } from "@test/fixtures/ProofOwnerStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -257,7 +258,7 @@ describe("Unit: bot-connection fixes", function () {
         it("U72: a leaver whose exit is blocked by an inbound join that no block consumes posts again on each finalized block and starts one self-removal dispute when the one leave watchdog expires", async function () {
             const h = TestSession.getHarness();
             // the production default
-            const watchdogMs = 15 * BLOCK_TIME_MS;
+            const watchdogMs = 15_000;
             const {
                 joiner,
                 confirmation,
@@ -386,7 +387,8 @@ describe("Unit: bot-connection fixes", function () {
                         ).includes(leaver.address),
                     h.event.protocolEventTimeoutMs()
                 );
-                const results = await posts.results();
+                // the chain shows the exit before the post's receipt resolves
+                const results = await posts.resultsWait(await posts.started());
                 expect(results.at(-1)).to.equal("posted");
                 expect(results.slice(0, -1)).to.deep.equal(
                     results
@@ -462,9 +464,9 @@ describe("Unit: bot-connection fixes", function () {
             // the longer watchdog runs past the default test timeout
             this.timeout(90_000);
             const h = TestSession.getHarness();
-            // the production default: a watchdog firing as the exit lands
+            // twice the production default: a watchdog firing as the exit lands
             // is FIND-LEAVE-5-A1XAA4, recorded open; here it fires well after
-            const watchdogMs = 15 * BLOCK_TIME_MS;
+            const watchdogMs = 30_000;
             const {
                 leaver,
                 remainingPeerIndices,
@@ -2313,45 +2315,6 @@ describe("Unit: bot-connection fixes", function () {
             ).to.equal(true);
         });
 
-        it("U75i: a submitted join arms its authorization expiry timer for the first block past the deadline", async function () {
-            const h = TestSession.getHarness();
-            const prepared = await prepareJoinWithAuthorization(h, 15);
-            const joiner = h.getPeer(prepared.joiner.index);
-            const control = h.control(joiner);
-            const expiry = await h.rpcStub.recordScheduledTasks(joiner.index, {
-                suppressPrefix: "join authorization expiry"
-            });
-            const restore = await h.rpcStub.failMembershipSubmissionUncertain(
-                joiner.index,
-                "joinChannel"
-            );
-            try {
-                const clockBefore = await control.query
-                    .getClockTimeInSeconds()
-                    .request();
-                await prepared.joiner.p2pInstance.p2pSigner.joinChannel(
-                    prepared.confirmation,
-                    prepared.expectedSnapshotHash,
-                    prepared.expectedForkId
-                );
-                const clockAfter = await control.query
-                    .getClockTimeInSeconds()
-                    .request();
-
-                const armed = (await expiry.tasks()).filter(
-                    (task) => task.taskName === "join authorization expiry"
-                );
-                expect(armed.length).to.be.at.least(1);
-                expect(armed[0].delayMs).to.be.within(
-                    (prepared.joinDeadline - clockAfter) * 1000 + BLOCK_TIME_MS,
-                    (prepared.joinDeadline - clockBefore) * 1000 + BLOCK_TIME_MS
-                );
-            } finally {
-                await restore();
-                await expiry.restore();
-            }
-        });
-
         it("U75h: a join authorization expiry timer that fires while the joiner's clock is still at or before the deadline arms the expiry timer again → once the chain passes the deadline the unlanded join ends SYNCED with one onLeftChannel", async function () {
             const h = TestSession.getHarness();
             const prepared = await prepareJoinWithAuthorization(h, 15);
@@ -2393,7 +2356,7 @@ describe("Unit: bot-connection fixes", function () {
                     (task) => task.taskName === "join authorization expiry"
                 );
                 expect(rearmed.length).to.equal(1);
-                expect(rearmed[0].delayMs).to.be.at.least(BLOCK_TIME_MS);
+                expect(rearmed[0].delayMs).to.be.at.least(1000);
                 expect(await isJoinPending(h, joiner)).to.equal(true);
                 expect(
                     prepared.joiner.eventSpies.onLeftChannel?.called

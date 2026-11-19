@@ -1,5 +1,8 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
-import { protocolEventTimeoutMs } from "../harness/core/testTimeConfig";
+import {
+    protocolEventTimeoutMs,
+    deriveTimeConfig
+} from "../harness/core/testTimeConfig";
 import { waitFor } from "../utils/waitFor";
 import { withWebRTCBridge } from "./node/WebRTCBridgeFixture";
 import { withRuntimeRpc } from "./RpcRouterFixture";
@@ -11,7 +14,6 @@ import { serializeRpc } from "@/rpc/Rpc";
 import LocalPeerInfo from "@/transport/LocalPeerInfo";
 import LocalTransport from "@/transport/LocalTransport";
 import WebRTCTransport from "@/transport/WebRTCTransport";
-import { deriveTimeConfig } from "@/types";
 import { Buffer } from "buffer";
 import { expect } from "chai";
 import { ethers } from "ethers";

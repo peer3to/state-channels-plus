@@ -1,7 +1,7 @@
 // @spec-test-coverage-ignore: DisputeManager.killDispute apply staging shared by its unit declarations
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
-import { BLOCK_TIME_MS } from "@/types";
 import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 
 /**
  * `killDispute` on the killer for the first stored dispute fraud proof.

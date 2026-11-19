@@ -5,7 +5,7 @@ import {
 } from "@/eventHandlers/EventHandler";
 import { StateSnapshot } from "@/models";
 import Storage from "@/storage";
-import { BLOCK_TIME_MS, TimeConfig, timeoutWaitTime } from "@/types";
+import { TimeConfig, timeoutWaitTime } from "@/types";
 import {
     Address,
     BlockCalldata,
@@ -1153,8 +1153,9 @@ export default class EventSyncService {
 
     // blocks to look back over `seconds` of chain time, with headroom
     private getBlockSpan(seconds: number): number {
+        const average = Clock.getAverageOnChainBlockTime();
         const elapsed = Math.max(0, seconds);
-        return Math.ceil((elapsed / (BLOCK_TIME_MS / 1000)) * 1.5) + 2;
+        return Math.ceil((average > 0 ? elapsed / average : elapsed) * 1.5) + 2;
     }
 
     private buildLogFilter(

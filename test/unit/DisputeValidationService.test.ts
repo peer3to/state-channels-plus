@@ -1,6 +1,6 @@
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
-import { BLOCK_TIME_MS, deriveTimeConfig, timeoutWaitTime } from "@/types";
+import { timeoutWaitTime } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
@@ -17,6 +17,10 @@ import {
 } from "@test/fixtures/DisputeAuditStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { DisputeTampering } from "@test/harness/actions/DisputeTamperingActions";
+import {
+    BLOCK_TIME_MS,
+    deriveTimeConfig
+} from "@test/harness/core/testTimeConfig";
 import { expect } from "chai";
 import { ZeroHash } from "ethers";
 

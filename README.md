@@ -162,6 +162,9 @@ default. `--e2e-only` selects the Mocha end-to-end tier and drops the forge and
 browser tiers with it. Use `--mocha-test-pattern`, `--forge-test-pattern` or
 `--browser-test-pattern` when only one tier needs a filename filter.
 
+`--parachain` runs the slot nodes and tests on the parachain dev node
+(`PEER3_NODE_BIN`, default `zero-fee-node` on `PATH`) instead of Hardhat.
+
 Forge tasks need no Hardhat node, so they take neither a warm slot nor a funded
 account partition. Local and distributed runs build the contracts and the
 scheduled forge test files once before scheduling; unselected test files are

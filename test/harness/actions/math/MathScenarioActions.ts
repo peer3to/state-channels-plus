@@ -1,10 +1,11 @@
 // @spec-test-coverage-ignore: shared math scenario setup exercised by owning mapped test declarations
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
-import { BLOCK_TIME_MS, Status } from "@/types";
+import { Status } from "@/types";
 import { ForkId, Hash } from "@/types/types";
 import { Logger, sleep } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import {
     CreateAndResolveDisputeResult,
     HarnessOptions,

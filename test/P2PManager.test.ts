@@ -1,6 +1,6 @@
 import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import { TransportType } from "@/transport";
-import { BLOCK_TIME_MS, Status } from "@/types";
+import { Status } from "@/types";
 import { channelIdToTargetedJoinTopic } from "@/utils";
 
 import {
@@ -25,6 +25,7 @@ import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
 import { clientRootFor } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers, Wallet } from "ethers";

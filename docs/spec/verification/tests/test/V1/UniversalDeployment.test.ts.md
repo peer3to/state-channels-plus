@@ -22,8 +22,8 @@ newer evidence timestamp — oracles are the mirror's read-back views (`getChann
 declarations and those views are routed facet selectors, so that one test also demonstrates both
 halves of the merged binding answering on a real deployment. The consumer-facet half deploys the
 production proxy via `deploy`, parses a proxy error, a direct facet error, and a routed
-`joinChannel` facet error through the returned combined binding, and asserts the deploy path stores the derived windows
-(`getAllTimes` → `deriveTimeConfig()`, gas limit 3,000,000), a custom dispute-execution gas limit, and
+`joinChannel` facet error through the returned combined binding, and asserts the constructor's zero-means-default timing sentinels
+(`getAllTimes` → 15/5/30/30, gas limit 3,000,000), a custom dispute-execution gas limit, and
 that `open` against a non-contract consumer facet address reverts. Channel protocol flows
 (open/join/dispute semantics) are out of scope; the suite verifies deployment wiring and mirror
 replication only, so no single Exercises component is named.

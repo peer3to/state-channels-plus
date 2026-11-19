@@ -845,9 +845,6 @@ Specification cases tested: 8/10. Untested: T1.P1, T1.P5.
 [`REQ-SDK-ARCH-7-H64K87` (Open connections are observable)](../specification/runtime/sdk.md#req-sdk-arch-7-h64k87)
 Specification cases tested: 8/8.
 
-[`REQ-SDK-ARCH-8-02EEHA` (Mirrored chain limits match the target chain)](../specification/runtime/sdk.md#req-sdk-arch-8-02eeha)
-Specification cases tested: 3/3.
-
 [`REQ-SEC-1-SNS1GA` (Before this specification is finalized, a dedicated security review of the full…)](../audit/security-assessment.md#req-sec-1-sns1ga)
 Specification cases tested: none planned.
 
@@ -982,9 +979,6 @@ Specification cases tested: 3/3.
 
 [`REQ-TIME-6-61C1EV` (The turn hook passes the runtime's current estimated chain time next to the…)](../specification/protocol-model/time.md#req-time-6-61c1ev)
 Specification cases tested: 2/2.
-
-[`REQ-TIME-7-2J5T0J` (Deployment windows derive from the chain block time as k × block time + floor,…)](../specification/protocol-model/time.md#req-time-7-2j5t0j)
-Specification cases tested: 5/5.
 
 [`REQ-TIME-8-VK08CB` (A participant submits a timeout claim only once the chain head's timestamp has…)](../specification/protocol-model/time.md#req-time-8-vk08cb)
 Specification cases tested: 6/6.

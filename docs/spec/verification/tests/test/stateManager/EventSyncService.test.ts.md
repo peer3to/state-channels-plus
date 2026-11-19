@@ -57,7 +57,6 @@ listener is left behind.
 - `joins concurrent calldata recovery onto one chain query`: none
 - `run already held → returned with no chain query`: none
 - `missed inbound log → recovered by query, the run becomes walkable`: REQ-MSGSTORE-1-6ME9D7.T2.P2
-- `the first recovery read spans the chain time since the run's snapshot at one block per block time`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P26
 - `logs recovered into an empty inbound store set its tip to the recovered head`: REQ-MSGSTORE-1-6ME9D7.T2.P1
 - `only the inbound log we do not hold is dispatched`: none
 - `the widening span stays inside the watermark and the chain`: none

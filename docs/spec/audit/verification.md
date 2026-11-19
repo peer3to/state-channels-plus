@@ -147,10 +147,28 @@ submits a top-up with a made-up snapshot pin. No runtime stores that pin, so the
 both the pinned and the new snapshot stored, is not met, and the test still returns `false` (passed in the
 full gate).
 
+## SDK reads the chain again — 2026-11-19
+
+Engineer decision (Luke, 2026-11-19, PR #598 review): the SDK reads the block time and the protocol
+windows from the chain again. `BLOCK_TIME_MS`, `TimeBlocks` and `deriveTimeConfig` leave `src/`; the
+clock measures the average block time again; the proxy's 15/5/30/30 fallback for a zero window and the
+deploy script's zero defaults are back. `MAX_TX_GAS` is removed: the replay gas limit is capped by the
+latest block gas limit only. The 2-second block clock stays a test-only constant in
+`test/harness/core/testTimeConfig.ts`, so the harness deploys `deriveTimeConfig()` windows and Hardhat
+interval-mines at it. Parachain runs use the runner flag `--parachain` (`PARACHAIN=1` on the workers)
+instead of the earlier environment variable. The timeout claim's chain-head wait
+([`REQ-TIME-8-VK08CB` (A participant submits a timeout claim only once the chain head's timestamp has…)](../specification/protocol-model/time.md#req-time-8-vk08cb)) stays, rechecked
+every second.
+
+Engineer decision (Luke, 2026-11-19): the clock excludes genesis from the measured block-time window.
+A fresh parachain's genesis has timestamp 0, so a window reaching it measured a block time of years and
+dispute-window log recovery searched too few blocks
+([`UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0`](../implementation/source/src/Clock.ts.md#unit-test-clock-average-1-6pdvr0)).
+
 ## Two-second blocks — 2026-11-16
 
 Engineer decision (Luke, 2026-11-16, PR #598): the peer3 chain makes a block every 2 seconds, with a
-75,000,000 block gas limit and a 17,916,000 per-transaction cap; `BLOCK_TIME_MS` and `MAX_TX_GAS` follow, and
+75,000,000 block gas limit and a 17,916,000 per-transaction cap, and
 the derived windows become 5/5/8/30 seconds. Per-test window overrides are block counts and double in
 seconds with it.
 
@@ -167,33 +185,18 @@ the chain head's timestamp has reached its `minTimeStamp`
 estimate at its head, which at two-second blocks trails the local clock by up to a block, so a claim sent on
 the clock alone was refused as early. Estimating at the `pending` block was tried first and dropped: Frontier
 runs `eth_call` and `eth_estimateGas` at `pending` on the head's state and timestamp, and changing that needs a
-Frontier fork. The wait reuses the timeout check's one-block recheck; no new polling.
-
-## Mirrored chain limits — 2026-11-16
-
-Engineer decision (Luke, 2026-11-16, PR #598): the SDK targets peer3 chains only and does not check the
-connected chain's block time or gas cap at startup; `BLOCK_TIME_MS` and `MAX_TX_GAS` are the peer3 chain's
-values. The Hardhat test chain mirrors the block time (interval mining) but has no per-transaction cap, so
-the refusal above the cap is its own permutation,
-[`REQ-SDK-ARCH-8-02EEHA.T1.P3`](../specification/runtime/sdk.md#req-sdk-arch-8-02eeha.t1.p3), verified on the peer3 dev node only and skipped on Hardhat; CI runs Hardhat
-until the team switches `TEST_CHAIN` to peer3.
-
-## Mirrored chain limits — 2026-11-15
-
-Engineer decision (Luke, 2026-11-15): the block time and per-transaction gas cap the SDK mirrors are
-one requirement, [`REQ-SDK-ARCH-8-02EEHA` (Mirrored chain limits match the target chain)](../specification/runtime/sdk.md#req-sdk-arch-8-02eeha). The
-block-time check moved there from the window derivation; the cap's refusal side is demonstrated only on
-the peer3 chain, since Hardhat has no per-transaction cap below its block gas limit.
+Frontier fork. The wait reuses the timeout check's recheck (every second since the 2026-11-19 entry); no new polling.
 
 ## Test timing inputs — 2026-11-14
 
 Engineer decision (Luke, 2026-11-14, plan 29): every protocol window derives from the chain block
-time as `k × block time + floor` ([`REQ-TIME-7-2J5T0J` (Deployment windows derive from the chain block time as k × block time + floor,…)](../specification/protocol-model/time.md#req-time-7-2j5t0j)),
+time as `k × block time + floor`,
 5/3/5/20 seconds at the one-second block time. The harness constants `MIN_TEST_TIME_CONFIG` and
 `INBOUND_GAP_TIME_CONFIG` and `resolveTestTimeConfig` are gone: the harness, the deploy script and
 the manager use `deriveTimeConfig`. Per-test overrides keep their numbers but are block counts
 (`timeBlocks`), so they scale with the block time. Waits tied to chain time derive from the windows
-or from `BLOCK_TIME_MS`; the entries below record the earlier fixed values.
+or from `BLOCK_TIME_MS`; the entries below record the earlier fixed values. Superseded by the 2026-11-19
+entry: only the harness uses `deriveTimeConfig` and `BLOCK_TIME_MS`.
 
 ## Test timing inputs — 2026-10-15
 

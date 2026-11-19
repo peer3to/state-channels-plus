@@ -3,7 +3,7 @@ import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
-import { BLOCK_TIME_MS, timeoutWaitTime } from "@/types";
+import { timeoutWaitTime } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import type { Address, ForkId, Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
@@ -33,6 +33,7 @@ import type {
     DisputeSubmissionRecording,
     EvidenceComparisonRecording
 } from "@test/harness/actions/rpcStubActions";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import type { TestPeer } from "@test/harness/core/types";
 import { waitFor } from "@test/utils/waitFor";
 import type { MathStateMachine } from "@typechain-types";

@@ -1,6 +1,7 @@
-import { BLOCK_TIME_MS, Status } from "@/types";
+import { Status } from "@/types";
 import { stageMirrorMissingConsumedTopUp } from "@test/fixtures/MirrorDivergenceStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 

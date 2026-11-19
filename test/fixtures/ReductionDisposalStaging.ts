@@ -1,9 +1,10 @@
 // @spec-test-coverage-ignore: shared reduction disposal staging exercised by the mapped ReductionManager test declarations
 
 import { runtimeIsClosed } from "./RuntimeRootObservation";
-import { BLOCK_TIME_MS, Status } from "@/types";
+import { Status } from "@/types";
 import { sleep } from "@/utils";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 

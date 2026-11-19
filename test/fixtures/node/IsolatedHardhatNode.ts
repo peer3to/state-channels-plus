@@ -1,6 +1,6 @@
 // @spec-test-coverage-ignore: node ownership helper; executable evidence belongs to its calling test declarations
 import { jsonRpc, startHardhatNode } from "../../utils/nodeInfra";
-import { BLOCK_TIME_MS } from "@/types";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import {
     HDNodeWallet,
     JsonRpcProvider,
@@ -92,7 +92,7 @@ export async function testAccount(
     node: JsonRpcProvider,
     index: number
 ): Promise<JsonRpcSigner | HDNodeWallet> {
-    if (process.env.TEST_CHAIN !== "peer3") return await node.getSigner(index);
+    if (process.env.PARACHAIN !== "1") return await node.getSigner(index);
     return HDNodeWallet.fromPhrase(
         TEST_MNEMONIC,
         undefined,
@@ -108,7 +108,7 @@ export async function mineBlocks(
     node: JsonRpcProvider,
     count: number
 ): Promise<void> {
-    if (process.env.TEST_CHAIN !== "peer3") {
+    if (process.env.PARACHAIN !== "1") {
         // hardhat's clock trails the wall clock by its startup time: the first
         // block is stamped at the wall clock, then one block per block time
         const blockSeconds = BLOCK_TIME_MS / 1000;
@@ -141,7 +141,7 @@ export async function withIsolatedHardhatNode<T>(
     use: (provider: JsonRpcProvider) => Promise<T>,
     options: IsolatedNodeOptions = {}
 ): Promise<T> {
-    if (process.env.TEST_CHAIN === "peer3")
+    if (process.env.PARACHAIN === "1")
         return await withIsolatedPeer3Node(use, options);
     const chainId = options.chainId ?? 31337;
     const child = spawn(

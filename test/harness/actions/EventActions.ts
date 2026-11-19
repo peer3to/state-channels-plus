@@ -2,13 +2,14 @@
 import {
     evidencePeriodWaitMs,
     participantTimeoutWaitMs,
-    protocolEventTimeoutMs
+    protocolEventTimeoutMs,
+    BLOCK_TIME_MS
 } from "../core/testTimeConfig";
 import { EventSpies } from "../core/types";
 import Clock from "@/Clock";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { LeaveChannelState } from "@/stateManager/membership/LeaveChannelService";
-import { BLOCK_TIME_MS, Status } from "@/types";
+import { Status } from "@/types";
 import { Hash } from "@/types/types";
 import { Logger, sleep } from "@/utils";
 import type {

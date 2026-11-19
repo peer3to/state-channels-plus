@@ -1,10 +1,11 @@
 // @spec-test-coverage-ignore: shared harness context and type declarations exercised by owning mapped test declarations
+import { TimeBlocks } from "./testTimeConfig";
 import { P2pInstance, type EvmCustomPrecompileManifest } from "@/evm";
 import { StateSnapshot } from "@/models";
 import type { CustomRpcManifest } from "@/rpc";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";
-import { TimeBlocks, TimeConfig } from "@/types";
+import { TimeConfig } from "@/types";
 import { ForkId } from "@/types/types";
 import { EventBarrier, Logger } from "@/utils";
 import { Config } from "@/utils";

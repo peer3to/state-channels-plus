@@ -1,11 +1,11 @@
 import { StateSnapshot } from "@/models";
-import { BLOCK_TIME_MS } from "@/types";
 import { chainSnapshot } from "@test/fixtures/MilestoneSyncStaging";
 import {
     postSnapshotFrom,
     stageUninstalledFinalReducedFork
 } from "@test/fixtures/ProofOwnerStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";

@@ -1,8 +1,8 @@
 // @spec-test-coverage-ignore: staging for a reducer's held fork adoption that the chain refuses as settled
-import { BLOCK_TIME_MS } from "@/types";
 import type { ForkId } from "@/types";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { MathTestSession as TestSession } from "@test/harness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ZeroHash } from "ethers";

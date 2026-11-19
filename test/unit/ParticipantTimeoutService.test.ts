@@ -2,7 +2,7 @@ import {
     CHAIN_READ_FAILED_RECHECK_REASON,
     EARLY_TIMEOUT_RECHECK_REASON
 } from "@/stateManager/chainFallback/ParticipantTimeoutService";
-import { BLOCK_TIME_MS, deriveTimeConfig, Status } from "@/types";
+import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
     assertEarlyTimeoutRetry,
@@ -20,7 +20,10 @@ import {
 } from "@test/fixtures/EarlyTimeoutRetryStaging";
 import { assertTimeoutCheckWaitsForSyncInstall } from "@test/fixtures/PinnedSyncStaging";
 import { MathTestSession as TestSession } from "@test/harness";
-import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
+import {
+    protocolEventTimeoutMs,
+    deriveTimeConfig
+} from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ZeroAddress } from "ethers";
@@ -219,7 +222,7 @@ describe("Unit: ParticipantTimeoutService", function () {
                 3
             );
         });
-        it("zero reported difference → retains a one-block-time minimum delay", async function () {
+        it("zero reported difference → retains a one-second minimum delay", async function () {
             await assertEarlyTimeoutRetry(
                 TestSession.getHarness(),
                 "send",
@@ -1059,9 +1062,7 @@ describe("Unit: ParticipantTimeoutService", function () {
                         deriveTimeConfig(RECHECK_TIME_BLOCKS)
                     )
                 );
-                expect((await validationRetries())[0].delayMs).to.equal(
-                    BLOCK_TIME_MS
-                );
+                expect((await validationRetries())[0].delayMs).to.equal(1000);
             } finally {
                 await tasks.restore();
             }

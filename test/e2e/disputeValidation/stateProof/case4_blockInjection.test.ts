@@ -1,7 +1,7 @@
-import { BLOCK_TIME_MS } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { ForkId } from "@/types/types";
 import { MathTestSession as TestSession } from "@test/harness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { expect } from "chai";
 
 // Randomly inject blocks with incorrect channelId and/or forkId

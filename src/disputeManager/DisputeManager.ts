@@ -12,7 +12,6 @@ import {
 import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import type StateManager from "@/stateManager/StateManager";
 import Storage from "@/storage";
-import { MAX_TX_GAS } from "@/types";
 import {
     DebugProxy,
     DetachedPromises,
@@ -599,8 +598,7 @@ class DisputeManager {
      * the limit asks for more than needed, which is safe. Callers estimate
      * through getFunction, the contract's own method, so an estimate is never
      * taken from a replaced or wrapped method property. The limit is capped
-     * at the chain's per-transaction cap (MAX_TX_GAS) and the block gas limit:
-     * a larger one is refused or never included.
+     * at the block gas limit: a larger one is never included.
      */
     private async replayGasLimit(estimate: Promise<bigint>): Promise<bigint> {
         let replayGas = this.stateTransitionReplayGas;
@@ -617,13 +615,12 @@ class DisputeManager {
         const [estimated, required, latestBlock] = await Promise.all([
             estimate,
             replayGas,
-            // a failed read leaves only the per-transaction cap instead of failing the send
+            // a failed read leaves the limit uncapped instead of failing the send
             this.stateChannelManagerContract.runner?.provider
                 ?.getBlock("latest")
                 .catch(() => null)
         ]);
-        let limit = estimated + required;
-        if (MAX_TX_GAS < limit) limit = MAX_TX_GAS;
+        const limit = estimated + required;
         const blockGasLimit = latestBlock?.gasLimit ?? limit;
         return blockGasLimit < limit ? blockGasLimit : limit;
     }

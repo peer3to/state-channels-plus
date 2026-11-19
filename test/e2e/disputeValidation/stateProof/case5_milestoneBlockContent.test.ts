@@ -1,9 +1,9 @@
 import Clock from "@/Clock";
-import { BLOCK_TIME_MS } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { expect } from "chai";
 
 describe("E2E: dispute validation / stateProof / milestone block content integrity", function () {

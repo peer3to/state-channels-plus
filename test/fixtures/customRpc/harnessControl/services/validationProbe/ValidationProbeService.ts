@@ -54,8 +54,6 @@ export type InboundRunRecoveryProbe = {
     queriedFromBlocks: (number | null)[];
     /** The event-sync watermark when the call started. */
     cursorAtCall: number | null;
-    /** The on-chain timestamp the run's blocks were appended at or after. */
-    notBefore: number;
     /** The `toBlock` every attempt queried up to. */
     toBlock: number | null;
     /** InboundMessagesProcessed logs the recovery dispatched. */
@@ -706,7 +704,6 @@ export class ValidationProbeService extends ANetworkRpcService<
             return {
                 ...this.p2pManager.localRpc.stub.describeChainLogQueries(),
                 cursorAtCall,
-                notBefore: genesis.timestamp,
                 scheduledLogCount,
                 blockCount: run ? run.length : null,
                 heldBefore,
@@ -717,7 +714,6 @@ export class ValidationProbeService extends ANetworkRpcService<
             return {
                 ...this.p2pManager.localRpc.stub.describeChainLogQueries(),
                 cursorAtCall,
-                notBefore: genesis.timestamp,
                 scheduledLogCount,
                 blockCount: null,
                 heldBefore,

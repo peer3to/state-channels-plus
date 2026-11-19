@@ -1,4 +1,3 @@
-import { BLOCK_TIME_MS } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, hash, Type } from "@/utils";
 import {
@@ -17,6 +16,7 @@ import {
     waitForCommittedDisputeOf
 } from "@test/fixtures/EvidenceComparisonStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 

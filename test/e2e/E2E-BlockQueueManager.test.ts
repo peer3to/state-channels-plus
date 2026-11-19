@@ -1,6 +1,6 @@
 import { Block } from "@/models";
 import { BlockOrigin } from "@/storage/QueueStorage";
-import { BLOCK_TIME_MS, BlockValidationResult, Status } from "@/types";
+import { BlockValidationResult, Status } from "@/types";
 import type { Address } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import * as factory from "@test/factory";
@@ -18,6 +18,7 @@ import {
 } from "@test/fixtures/QueueSlashFixture";
 import { contractRejectedEncodings } from "@test/fixtures/SignatureEncodingFixture";
 import { MathTestSession as TestSession } from "@test/harness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";

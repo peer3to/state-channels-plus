@@ -117,4 +117,3 @@ dispute it constructs declares no self-removal.
 - `U77: after the agreementTime grace, fires exactly at the first counted block + participants + 1`: INV-TJOIN-2-H7JSQM.T2.P7, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P41
 - `a clean leave everyone signed → snapshot path, force-exit flag kept`: none
 - `a leaver whose membership ended joins again on the same runtime → the new membership clears the force-exit flag and its dispute carries no self-removal`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P52, REQ-RMSTORE-2-Y2T1PG.T1.P5, REQ-LIF-10-QR8NQ9.T1.P36
-- `the leave watchdog and the gas settle window default to block-time multiples`: UNIT-TEST-CONFIG-BLOCK-TIME-1-7KR619.P1

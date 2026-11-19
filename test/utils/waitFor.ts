@@ -1,7 +1,9 @@
 // @spec-test-coverage-ignore: shared polling utility exercised by owning mapped test declarations
 import { waitForPlain } from "./waitForPlain";
-import { deriveTimeConfig } from "@/types";
-import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
+import {
+    protocolEventTimeoutMs,
+    deriveTimeConfig
+} from "@test/harness/core/testTimeConfig";
 
 /** How often a wait re-checks its condition. */
 export const WAIT_POLL_MS = 200;

@@ -29,7 +29,7 @@ for the old fork.
 - `receipt refused once → rolls back and commits the retry`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P2, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P2
 - `two early refusals → re-arms each time and commits`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P3, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P3
 - `chain three seconds early → schedules the reported remaining interval`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P4, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P8
-- `zero reported difference → retains a one-block-time minimum delay`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P5
+- `zero reported difference → retains a one-second minimum delay`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P5
 - `verified sync replaces the fork → queued retry and later schedules do nothing`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P6, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P6
 - `a due claim whose minimum the chain head has not reached is held: nothing stored or sent`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P41, REQ-TIME-8-VK08CB.T1.P1
 - `a held claim is sent once the chain head reaches its minimum, and the chain accepts that first upload`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P42, REQ-TIME-8-VK08CB.T1.P2

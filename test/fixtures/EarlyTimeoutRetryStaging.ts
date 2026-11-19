@@ -10,7 +10,7 @@ import {
     PREDECESSOR_POSTED_RECHECK_REASON,
     TIMEOUT_RECHECK_DELAY_MS
 } from "@/stateManager/chainFallback/ParticipantTimeoutService";
-import { BLOCK_TIME_MS, TimeBlocks, timeoutWaitTime } from "@/types";
+import { timeoutWaitTime } from "@/types";
 import type { Address, BlockHeight, ForkId } from "@/types/types";
 import { Codec, Type, sleep } from "@/utils";
 import type { CustomErrorArg } from "@test/factory";
@@ -19,7 +19,11 @@ import type {
     RecordedDisputeSubmission
 } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
-import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
+import {
+    protocolEventTimeoutMs,
+    BLOCK_TIME_MS,
+    TimeBlocks
+} from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ZeroAddress, hexlify } from "ethers";
@@ -116,7 +120,7 @@ export async function assertEarlyTimeoutRetry(
     await h.lifecycle.timeoutSetup(3);
     // A mismatch needs a stored predecessor block: advance once, so peer 0
     // authored it and observer 2 times out writer 1. Delays are
-    // TIMEOUT_RECHECK_DELAY_MS, one block time.
+    // TIMEOUT_RECHECK_DELAY_MS.
     if (mismatch) await h.transition.advanceState();
     const scenario = mismatch
         ? {

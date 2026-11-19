@@ -1,6 +1,5 @@
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { BlockOrigin } from "@/storage/QueueStorage";
-import { BLOCK_TIME_MS } from "@/types";
 import { BlockConfirmationEthersType } from "@/types/ethers";
 import type { Address, Hash } from "@/types/types";
 import { Codec, sleep, Type } from "@/utils";
@@ -26,6 +25,7 @@ import {
     stageAbsentGossipAcrossUnreducedWindow
 } from "@test/fixtures/QueueNetworkRetentionFixture";
 import { MathTestSession } from "@test/harness";
+import { BLOCK_TIME_MS } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { id, ZeroHash } from "ethers";

@@ -1,5 +1,5 @@
-import { deriveTimeConfig } from "@/types";
 import { HandshakeCompletedGuardFixture } from "@test/fixtures/HandshakeCompletedGuardFixture";
+import { deriveTimeConfig } from "@test/harness/core/testTimeConfig";
 import { expect } from "chai";
 
 // the guard holds deferred work for two agreement windows

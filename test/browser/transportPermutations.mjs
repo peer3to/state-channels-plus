@@ -13,7 +13,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const { deriveTimeConfig } = await loadSdkSource("src/types/time.ts");
+const { deriveTimeConfig } = await loadSdkSource(
+    "test/harness/core/testTimeConfig.ts"
+);
 // sdkSetup.js deploys the derived windows: the waits below are counted in agreement windows.
 const AGREEMENT_MS = deriveTimeConfig().agreementTime * 1000;
 const HOLEPUNCH = 0;

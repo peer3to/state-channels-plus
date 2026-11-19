@@ -96,8 +96,8 @@ export type DeployedFacetAddresses = Record<string, string>;
 
 /**
  * A fresh math stack on the deployer's chain: the routed facets, the math
- * consumer facet and state machine, and a proxy with every time window and
- * limit 0, bound to the deployer. Sends one at a time after the facets, so
+ * consumer facet and state machine, and a proxy given 0 for every time window
+ * and limit (the contract defaults), bound to the deployer. Sends one at a time after the facets, so
  * the deployer's pending nonce stays right on any node.
  */
 export async function deployMathChannelProxyFixture(deployer: Signer): Promise<{

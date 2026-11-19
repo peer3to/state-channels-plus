@@ -1,4 +1,4 @@
-import { BLOCK_TIME_MS, deriveTimeConfig, timeoutWaitTime } from "@/types";
+import { timeoutWaitTime } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type, hash, sleep, tryDecodeCustomError } from "@/utils";
 import {
@@ -6,7 +6,11 @@ import {
     postTimeoutOfCalldataPostedBlock
 } from "@test/fixtures/DisputeAuditStaging";
 import { MathTestSession as TestSession } from "@test/harness";
-import { SHORT_TIME_BLOCKS } from "@test/harness/core/testTimeConfig";
+import {
+    SHORT_TIME_BLOCKS,
+    BLOCK_TIME_MS,
+    deriveTimeConfig
+} from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import {
     TimeoutCalldataPostedStruct,

@@ -1,10 +1,12 @@
 import { RootWorkerControl } from "./RootWorkerControl";
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
-import { protocolEventTimeoutMs } from "../../harness/core/testTimeConfig";
+import {
+    protocolEventTimeoutMs,
+    deriveTimeConfig
+} from "../../harness/core/testTimeConfig";
 import type { NonErrorFailure } from "../workerAnswerPrecompile";
 import { createSdkOwnedExecutor } from "./SdkExecutorFixture";
 import type { EvmCustomPrecompileManifest } from "@/evm";
-import { deriveTimeConfig } from "@/types";
 import contractExecutorRootUrl from "@platform/contractExecutorRootUrl";
 import { createRootWorker } from "@platform/rootWorkerRuntime";
 import type { WatchdogWorkerData } from "@test/evm/workers/node/watchdogContractExecutorWorkerEntry";

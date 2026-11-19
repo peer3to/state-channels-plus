@@ -1,10 +1,36 @@
 // @spec-test-coverage-ignore: shared harness support; executable evidence belongs to its calling test declarations
-import {
-    BLOCK_TIME_MS,
-    TimeBlocks,
-    TimeConfig,
-    firstBlockGrace
-} from "@/types";
+import { TimeConfig, firstBlockGrace } from "@/types/time";
+
+// the parachain's block time; Hardhat interval mining mirrors it
+export const BLOCK_TIME_MS = 2000;
+
+/** A block count per protocol window, for {@link deriveTimeConfig}. */
+export type TimeBlocks = Partial<Record<keyof TimeConfig, number>>;
+
+// seconds per field = blocks × block time + floor
+const TIME_CONFIG_SHAPE = {
+    p2pTime: { blocks: 0, floorSeconds: 5 },
+    agreementTime: { blocks: 2, floorSeconds: 1 },
+    chainFallbackTime: { blocks: 3, floorSeconds: 2 },
+    evidenceTime: { blocks: 10, floorSeconds: 10 }
+};
+
+/** The protocol windows for BLOCK_TIME_MS; `blocks` replaces a field with that many block times. */
+export function deriveTimeConfig(blocks: TimeBlocks = {}): TimeConfig {
+    const seconds = (field: keyof TimeConfig) => {
+        const { blocks: k, floorSeconds } = TIME_CONFIG_SHAPE[field];
+        const count = blocks[field];
+        return count === undefined
+            ? (k * BLOCK_TIME_MS) / 1000 + floorSeconds
+            : (count * BLOCK_TIME_MS) / 1000;
+    };
+    return {
+        p2pTime: seconds("p2pTime"),
+        agreementTime: seconds("agreementTime"),
+        chainFallbackTime: seconds("chainFallbackTime"),
+        evidenceTime: seconds("evidenceTime")
+    };
+}
 
 // one block: the chain includes a transaction in the next block
 const BLOCK_SECONDS = BLOCK_TIME_MS / 1000;

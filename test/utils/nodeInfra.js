@@ -128,10 +128,9 @@ function infraNodeFlags() {
     return flags ? flags.split(" ").filter(Boolean) : [];
 }
 
-// TEST_CHAIN=peer3 starts the peer3 dev node (PEER3_NODE_BIN, default
-// `zero-fee-node` on PATH) on the funded test chain instead of hardhat.
-const isPeer3Chain = () => process.env.TEST_CHAIN === "peer3";
-if (isPeer3Chain()) require("./peer3FeeData");
+// --parachain (PARACHAIN=1) starts the parachain dev node (PEER3_NODE_BIN,
+// default `zero-fee-node` on PATH) on the funded test chain instead of hardhat.
+const isParachain = () => process.env.PARACHAIN === "1";
 
 /**
  * The peer3 dev node's arguments: `seal` is "interval" or "manual", `chain`
@@ -174,11 +173,11 @@ async function startHardhatNode({
     const nodePort = port ?? (await getFreePort());
     // the node's database grows past a container's small /tmp, so it lives in the project's temp dir
     const nodesDir = path.join(PROJECT_ROOT, "temp", "peer3-nodes");
-    if (isPeer3Chain()) fs.mkdirSync(nodesDir, { recursive: true });
-    const basePath = isPeer3Chain()
+    if (isParachain()) fs.mkdirSync(nodesDir, { recursive: true });
+    const basePath = isParachain()
         ? fs.mkdtempSync(path.join(nodesDir, "node-"))
         : undefined;
-    const [command, args] = isPeer3Chain()
+    const [command, args] = isParachain()
         ? [
               process.env.PEER3_NODE_BIN || "zero-fee-node",
               peer3NodeArgs(nodePort, seal, chain, basePath)

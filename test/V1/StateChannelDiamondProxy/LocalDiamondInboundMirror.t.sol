@@ -34,9 +34,9 @@ contract LocalDiamondInboundMirrorTest is DiamondHarness {
                         vm.deployCode("StateProofFacet.sol:StateProofFacet"),
                         address(utilityFacet),
                         P2P_TIME,
-                        AGREEMENT_TIME,
-                        CHAIN_FALLBACK_TIME,
-                        EVIDENCE_TIME,
+                        0,
+                        0,
+                        0,
                         0,
                         MAX_CHANNEL_PARTICIPANTS
                     )

@@ -1,18 +1,42 @@
 import Clock from "@/Clock";
-import { BLOCK_TIME_MS } from "@/types";
-import {
-    mineBlocks,
-    withIsolatedHardhatNode
-} from "@test/fixtures/node/IsolatedHardhatNode";
-import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { BrowserProvider } from "ethers";
-import { ethers, network } from "hardhat";
+import { config, ethers, network } from "hardhat";
+import { createProvider } from "hardhat/internal/core/providers/construction";
 
 // A second real ethers provider over the same in-process hardhat network:
 // distinct instance, live chain reads, no mocking.
 function createSecondProvider(): BrowserProvider {
     return new BrowserProvider(network.provider);
+}
+
+// A private in-process chain whose genesis has timestamp 0, as on the
+// parachain, then `blocks` blocks mined 2 s apart ending at the wall clock.
+async function createZeroGenesisChain(
+    blocks: number
+): Promise<BrowserProvider> {
+    const chain = await createProvider(
+        {
+            ...config,
+            networks: {
+                ...config.networks,
+                hardhat: {
+                    ...config.networks.hardhat,
+                    initialDate: new Date(0).toISOString(),
+                    mining: { ...config.networks.hardhat.mining, auto: true }
+                }
+            }
+        },
+        "hardhat"
+    );
+    const now = Math.floor(Date.now() / 1000);
+    for (let block = 1; block <= blocks; block++) {
+        await chain.request({
+            method: "evm_mine",
+            params: [now - 2 * (blocks - block)]
+        });
+    }
+    return new BrowserProvider(chain);
 }
 
 describe("Clock", () => {
@@ -28,6 +52,7 @@ describe("Clock", () => {
         const secondTime = await Clock.getBlockchainTime();
 
         expect(secondTime.blockNumber).to.equal(firstTime.blockNumber);
+        expect(Clock.getAverageOnChainBlockTime()).to.be.greaterThanOrEqual(0);
         expect(Clock.ownsProvider(ethers.provider)).to.equal(true);
     });
 
@@ -86,6 +111,33 @@ describe("Clock", () => {
         expect(time.blockNumber).to.be.greaterThanOrEqual(0);
     });
 
+    it("measures a young chain's block time without its zero-timestamp genesis", async () => {
+        const young = await createZeroGenesisChain(4);
+
+        await Clock.init(young);
+
+        expect(Clock.getAverageOnChainBlockTime()).to.equal(2);
+        young.destroy();
+    });
+
+    it("measures no block time on a chain one block past genesis", async () => {
+        const fresh = await createZeroGenesisChain(1);
+
+        await Clock.init(fresh);
+
+        expect(Clock.getAverageOnChainBlockTime()).to.equal(0);
+        fresh.destroy();
+    });
+
+    it("measures an older chain's block time over its last ten blocks", async () => {
+        const older = await createZeroGenesisChain(15);
+
+        await Clock.init(older);
+
+        expect(Clock.getAverageOnChainBlockTime()).to.equal(2);
+        older.destroy();
+    });
+
     it("settles overlapping different-provider initializations on one live owner", async () => {
         const first = createSecondProvider();
         const second = createSecondProvider();
@@ -98,74 +150,5 @@ describe("Clock", () => {
         ).to.equal(true);
         const time = await Clock.getBlockchainTime();
         expect(time.blockNumber).to.be.greaterThanOrEqual(0);
-    });
-
-    it("adjusts to a head more than one block time ahead of the wall clock", async () => {
-        try {
-            await withIsolatedHardhatNode(
-                async (node) => {
-                    await mineBlocks(node, 5);
-                    const head = (await node.getBlock("latest"))!;
-
-                    await Clock.init(node);
-
-                    expect(Clock.getClockAdjustmentSeconds()).to.be.greaterThan(
-                        BLOCK_TIME_MS / 1000
-                    );
-                    expect(
-                        Math.abs(Clock.getTimeInSeconds() - head.timestamp)
-                    ).to.be.at.most(BLOCK_TIME_MS / 1000);
-                },
-                { seal: "manual" }
-            );
-        } finally {
-            await Clock.init(ethers.provider);
-        }
-    });
-
-    it("adjusts back to a head more than one block time behind the wall clock", async () => {
-        const blockSeconds = BLOCK_TIME_MS / 1000;
-        try {
-            await withIsolatedHardhatNode(
-                async (node) => {
-                    await mineBlocks(node, 1);
-                    const head = (await node.getBlock("latest"))!;
-                    await waitFor(
-                        () =>
-                            Math.floor(Date.now() / 1000) - head.timestamp >
-                            2 * blockSeconds
-                    );
-
-                    await Clock.init(node);
-
-                    expect(Clock.getClockAdjustmentSeconds()).to.be.lessThan(
-                        -blockSeconds
-                    );
-                    expect(
-                        Math.abs(Clock.getTimeInSeconds() - head.timestamp)
-                    ).to.be.at.most(blockSeconds);
-                },
-                { seal: "manual" }
-            );
-        } finally {
-            await Clock.init(ethers.provider);
-        }
-    });
-
-    it("keeps no adjustment for a head within one block time of the wall clock", async () => {
-        try {
-            await withIsolatedHardhatNode(
-                async (node) => {
-                    await mineBlocks(node, 1);
-
-                    await Clock.init(node);
-
-                    expect(Clock.getClockAdjustmentSeconds()).to.equal(0);
-                },
-                { seal: "manual" }
-            );
-        } finally {
-            await Clock.init(ethers.provider);
-        }
     });
 });

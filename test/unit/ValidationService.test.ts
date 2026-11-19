@@ -1,5 +1,5 @@
 import { Block } from "@/models";
-import { deriveTimeConfig, Status } from "@/types";
+import { Status } from "@/types";
 import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
 import type { Address } from "@/types/types";
 import { Codec, Type } from "@/utils";
@@ -12,6 +12,7 @@ import {
     assertObserverHook
 } from "@test/fixtures/SpectatingFraudStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { deriveTimeConfig } from "@test/harness/core/testTimeConfig";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
