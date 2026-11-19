@@ -1,13 +1,11 @@
 // @distributed-requires: lightClient
 import type { ProvenBlock } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/AProvenStateReader";
 import StorageProofError from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/StorageProofError";
+import { PEER3_CHAIN_CONSTANTS } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierChainConstants";
 import FrontierProvenStateReader from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierProvenStateReader";
 import { contractStorageKey } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/frontierStateKeys";
 import type { JsonRpcSocket } from "@test/fixtures/lightClient/JsonRpcSocket";
-import {
-    LightClientNodeFixture,
-    PEER3_EXISTENTIAL_DEPOSIT
-} from "@test/fixtures/lightClient/LightClientNodeFixture";
+import { LightClientNodeFixture } from "@test/fixtures/lightClient/LightClientNodeFixture";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { toBeHex, ZeroHash } from "ethers";
@@ -18,7 +16,7 @@ const SLOT_TWO = toBeHex(2, 32);
 function readerOver(socket: JsonRpcSocket): FrontierProvenStateReader {
     return new FrontierProvenStateReader(
         (method, params) => socket.request(method, params),
-        PEER3_EXISTENTIAL_DEPOSIT
+        PEER3_CHAIN_CONSTANTS
     );
 }
 

@@ -57,6 +57,28 @@ is 1,000,000,000 (`MILLI_UNIT`). The code key prefix was first recorded wrongly 
 `AccountCodesMetadata`, whose keys have the same shape; the tests against the node's own `eth_getCode`
 caught it. Nothing in `src` calls the reader yet.
 
+Added on 2026-11-19 for the light client itself ([`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../specification/runtime/light-client.md#req-lc-1-jt5pkt) to [`REQ-LC-4-E29Y46` (The light client is off unless switched on and served)](../specification/runtime/light-client.md#req-lc-4-e29y46), [`REQ-STPROOF-6-CASBQP` (The block values a call reads are accepted only as the block commits to them)](../specification/runtime/storage-proofs.md#req-stproof-6-casbqp)):
+[LightClientRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/LightClientRpcProvider.ts.md)
+answers the reads through the new `answer` hook of `MultiRpcProvider`, counts how each was answered and
+logs a failure as an error;
+[LightClient.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/LightClient.ts.md) runs one read at
+a time at the node's best block and repeats a pass until the state it used was all proven;
+[LightClientState.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/LightClientState.ts.md) is the
+local EVM's state, which records what a pass found missing;
+[LocalReadParser.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/LocalReadParser.ts.md) decides
+which requests are answered locally;
+[LightClientChain.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/LightClientChain.ts.md) holds
+what is specific to peer3;
+[FrontierEthereumHeader.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierEthereumHeader.ts.md)
+reads the block values. The state, the pass loop and the parser are taken from the closed mirror provider
+(`origin/b1384-mirror-provider`, PR #589) with everything of the storage diff service removed. The
+provider is created by `createRpcNodesProvider` when `LIGHT_CLIENT` is true. The local EVM is the one
+`createEvm` builds, so its hardfork is the SDK's and not read from the chain. peer3's own precompile
+address (`0x…0800`, `XCM_PRECOMPILE` in `runtime/src/free_lane_rules.rs`) and its constants are written
+into the source and must follow a runtime upgrade by hand. The header check against the Ethereum block
+hash guards the decoder against a changed block layout; no honest node makes it fail, so only the unit
+suite exercises it. The limit of 256 passes per read is not reached by any test.
+
 ## Discovery joins after the dispose cut — 2026-11-02
 
 What changed (Luke: refuse a late join where it registers):

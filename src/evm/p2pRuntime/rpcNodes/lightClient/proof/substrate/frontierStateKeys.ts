@@ -14,6 +14,12 @@ const ACCOUNT_CODES_PREFIX =
 /** `twox128("System") ++ twox128("Account")`: every account's nonce and balances. */
 const SYSTEM_ACCOUNT_PREFIX =
     "0x26aa394eea5630e07c48ae0c9558cef7b99d880ec681799c0cf30e8886371da9";
+/**
+ * `twox128("Ethereum") ++ twox128("CurrentBlock")`: the Ethereum block
+ * pallet-ethereum built in the Substrate block.
+ */
+export const CURRENT_ETHEREUM_BLOCK_KEY =
+    "0x2013754dd003840aea66b349f8241e25c8c156f8164e0465c74b8972ea68b4b3";
 const ADDRESS_LENGTH = 20;
 const SLOT_LENGTH = 32;
 

@@ -1,6 +1,7 @@
 import {
     isNodeInternalError,
-    NodeSocketSubscriptions
+    NodeSocketSubscriptions,
+    paramsOf
 } from "./RpcNodeProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
 import { sleep } from "@/utils";
@@ -178,7 +179,7 @@ class RpcNodesLogSubscriber extends RpcNodesSocketSubscriber {
  */
 export default class MultiRpcProvider extends JsonRpcApiProvider {
     readonly nodes: readonly RpcNodeProvider[];
-    private readonly logger: Logger;
+    protected readonly logger: Logger;
     /** Requests waiting for any node to connect. */
     private readonly connectionWaiters = new Set<() => void>();
     /** False once the owning runtime is gone; waiting requests are rejected. */
@@ -187,6 +188,8 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     private allNodesDownWarned = false;
     /** Requests sent so far; a slow setup's step timings count them. */
     private sentRequestCount = 0;
+    /** The id of the next request this provider itself sends to the nodes. */
+    private nextNodeRequestId = 0;
 
     get requestCount(): number {
         return this.sentRequestCount;
@@ -233,7 +236,7 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
         // batchMaxCount is 1, so the request queue never batches
         const requests = Array.isArray(payload) ? payload : [payload];
         this.sentRequestCount += requests.length;
-        return Promise.all(requests.map((request) => this.forward(request)));
+        return Promise.all(requests.map((request) => this.answer(request)));
     }
 
     // Overrides JsonRpcApiProvider._getSubscriber: block events and contract
@@ -255,10 +258,29 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
         this.releaseConnectionWaiters();
     }
 
-    private async forward(request: JsonRpcPayload): Promise<JsonRpcResult> {
-        const params = Array.isArray(request.params)
-            ? request.params
-            : [request.params];
+    /** Answers one request by forwarding it to the nodes; a subclass may answer it itself. */
+    protected answer(
+        request: JsonRpcPayload
+    ): Promise<JsonRpcResult | JsonRpcError> {
+        return this.forward(request);
+    }
+
+    /** Sends one request to the nodes as {@link forward} does; a node's rejection is thrown. */
+    protected async requestNode(
+        method: string,
+        params: unknown[]
+    ): Promise<unknown> {
+        const { result } = await this.forward({
+            jsonrpc: "2.0",
+            id: this.nextNodeRequestId++,
+            method,
+            params
+        });
+        return result;
+    }
+
+    protected async forward(request: JsonRpcPayload): Promise<JsonRpcResult> {
+        const params = paramsOf(request);
         let hasRetriedMissingBlock = false;
         for (;;) {
             this.assertServing(request.method);

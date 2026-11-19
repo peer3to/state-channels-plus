@@ -5,6 +5,11 @@ export type Config = {
     // RPC nodes in priority order. The first one sends transactions while it
     // is connected. Unset or empty means the single node PROVIDER_URL.
     PROVIDER_URLS?: string[];
+    // true answers chain reads from state the RPC node proves instead of
+    // trusting its answers, when the node serves the light client endpoints.
+    // A node without them keeps answering the reads itself, with an error
+    // logged.
+    LIGHT_CLIENT: boolean;
     // Most blocks one eth_getLogs read may span. Event catch-up and recovery
     // read longer ranges in windows of this size; set it at or below the
     // endpoints' own range limit. A positive integer.
@@ -77,6 +82,7 @@ export const DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS = 120;
 const DEFAULT_CONFIG: Config = {
     PROVIDER_URL: "http://localhost:8545",
     PROVIDER_URLS: [],
+    LIGHT_CLIENT: false,
     LOG_QUERY_MAX_BLOCKS: 1000,
     DEBUG_STATE_MANAGER: false,
     DEBUG_DISPUTE_HANDLER: false,

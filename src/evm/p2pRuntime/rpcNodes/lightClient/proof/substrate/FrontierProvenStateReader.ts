@@ -1,14 +1,19 @@
 import FrontierAccountProofVerifier from "./FrontierAccountProofVerifier";
+import type { FrontierChainConstants } from "./FrontierChainConstants";
+import FrontierEthereumHeader from "./FrontierEthereumHeader";
 import {
     accountCodeKey,
     contractStorageKey,
+    CURRENT_ETHEREUM_BLOCK_KEY,
     systemAccountKey
 } from "./frontierStateKeys";
 import FrontierStorageProofVerifier from "./FrontierStorageProofVerifier";
 import SubstrateHeader from "./SubstrateHeader";
+import SubstrateTrieProof from "./SubstrateTrieProof";
 import type { SubstrateHeaderJson } from "../../lightClientWire";
 import AProvenStateReader, {
     type AccountStateRead,
+    type BlockEnvironment,
     type NodeRequest,
     type ProvenAccountState,
     type ProvenBlock
@@ -36,19 +41,21 @@ function isHeader(answer: unknown): answer is SubstrateHeaderJson {
 /**
  * Proven state of a Frontier chain, read through the node's Substrate RPC:
  * `chain_getHeader` for the best block and one `state_getReadProof` for
- * everything a read asks.
+ * everything a read asks. A block's environment is the header of its
+ * Ethereum block, which the chain's state holds.
  */
 export default class FrontierProvenStateReader extends AProvenStateReader {
     private readonly requestNode: NodeRequest;
     private readonly storageVerifier = new FrontierStorageProofVerifier();
     private readonly accountVerifier: FrontierAccountProofVerifier;
+    private readonly constants: FrontierChainConstants;
 
-    /** `existentialDeposit` is the chain's, a runtime constant. */
-    constructor(requestNode: NodeRequest, existentialDeposit: bigint) {
+    constructor(requestNode: NodeRequest, constants: FrontierChainConstants) {
         super();
         this.requestNode = requestNode;
+        this.constants = constants;
         this.accountVerifier = new FrontierAccountProofVerifier(
-            existentialDeposit
+            constants.existentialDeposit
         );
     }
 
@@ -62,6 +69,32 @@ export default class FrontierProvenStateReader extends AProvenStateReader {
             hash: header.hash,
             ethereumBlockHash: header.ethereumBlockHash(),
             stateRoot: header.stateRoot
+        };
+    }
+
+    async environment(block: ProvenBlock): Promise<BlockEnvironment> {
+        const proofNodes = await this.readProof(block, [
+            CURRENT_ETHEREUM_BLOCK_KEY
+        ]);
+        const encodedBlock = new SubstrateTrieProof(proofNodes).read(
+            block.stateRoot,
+            CURRENT_ETHEREUM_BLOCK_KEY
+        );
+        if (encodedBlock === null)
+            throw new StorageProofError(
+                "The block's state holds no Ethereum block"
+            );
+        const header = new FrontierEthereumHeader(encodedBlock);
+        header.assertHash(block.ethereumBlockHash);
+        return {
+            number: header.number,
+            // a contract reads the runtime's clock in whole seconds
+            timestamp: header.timestampMs / 1000n,
+            coinbase: header.beneficiary,
+            gasLimit: header.gasLimit,
+            difficulty: header.difficulty,
+            prevRandao: header.mixHash,
+            baseFeePerGas: this.constants.baseFeePerGas
         };
     }
 
