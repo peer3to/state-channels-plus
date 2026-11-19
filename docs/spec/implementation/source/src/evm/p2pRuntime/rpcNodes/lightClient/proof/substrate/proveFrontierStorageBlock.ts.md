@@ -24,3 +24,4 @@ Checking a block a Frontier node pushed
 - [x] `UNIT-TEST-STPROOF-4-220T2R.P9` — the header of another block
 - [x] `UNIT-TEST-STPROOF-4-220T2R.P10` — the proof of another block
 - [x] `UNIT-TEST-STPROOF-4-220T2R.P11` — a log with another block's Ethereum hash
+- [x] `UNIT-TEST-STPROOF-4-220T2R.P12` — neither a write nor a log nor a proof

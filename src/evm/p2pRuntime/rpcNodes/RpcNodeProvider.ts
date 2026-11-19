@@ -72,13 +72,19 @@ function hasRevertData({ error }: JsonRpcError): boolean {
  * opened after registration: events may have been missed before it.
  */
 export type RpcNodeSocketWatcher = (
-    socket: WebSocketProvider,
+    socket: NodeSocket,
     reopened: boolean
 ) => void;
 
+/** The method of a JSON-RPC notification a node pushes, e.g. `lightClient_storage`. */
+type NotificationMethod = string;
+
+/** Called with the `params` of each notification of one method. */
+export type NodeNotificationListener = (params: unknown) => void;
+
 /** One open socket and the end of its life. */
 type NodeConnection = {
-    socket: WebSocketProvider;
+    socket: NodeSocket;
     ended: Promise<typeof SOCKET_ENDED>;
     hasEnded: boolean;
     /** Ends the connection, e.g. after a failed heartbeat. */
@@ -92,8 +98,64 @@ type NodeConnection = {
  */
 export type ExpectedChain = { chainId?: bigint };
 
+/** The method and params of `message` when it is a notification: a frame with a method and no id. */
+function readNotification(
+    message: string
+): { method: NotificationMethod; params: unknown } | undefined {
+    const frame: unknown = JSON.parse(message);
+    if (typeof frame !== "object" || frame === null || "id" in frame)
+        return undefined;
+    if (!("method" in frame) || typeof frame.method !== "string")
+        return undefined;
+    return {
+        method: frame.method,
+        params: "params" in frame ? frame.params : undefined
+    };
+}
+
 /** A node's WebSocket. */
-class NodeSocket extends WebSocketProvider {
+export class NodeSocket extends WebSocketProvider {
+    /** Who listens to the notifications ethers does not know, by their method. */
+    private readonly notificationListeners = new Map<
+        NotificationMethod,
+        Set<NodeNotificationListener>
+    >();
+
+    /**
+     * Calls `listener` with each notification of `method` this socket
+     * receives. Returns the function that stops the calls.
+     */
+    watchNotifications(
+        method: NotificationMethod,
+        listener: NodeNotificationListener
+    ): () => void {
+        const listeners = this.notificationListeners.get(method) ?? new Set();
+        listeners.add(listener);
+        this.notificationListeners.set(method, listeners);
+        return () => {
+            listeners.delete(listener);
+            if (listeners.size === 0) this.notificationListeners.delete(method);
+        };
+    }
+
+    // Overrides SocketProvider._processMessage: a notification of a watched
+    // method goes to its listeners. ethers knows eth_subscription only and
+    // reports any other notification as an unexpected message.
+    override async _processMessage(message: string): Promise<void> {
+        if (this.notificationListeners.size > 0) {
+            const notification = readNotification(message);
+            const listeners = notification
+                ? this.notificationListeners.get(notification.method)
+                : undefined;
+            if (notification && listeners) {
+                for (const listener of [...listeners])
+                    listener(notification.params);
+                return;
+            }
+        }
+        await super._processMessage(message);
+    }
+
     // Overrides JsonRpcApiProvider.send: ethers sends a removed subscription's
     // eth_unsubscribe unawaited, so any failure (e.g. the socket destroyed
     // before the answer) is settled here; the subscription ends with the socket.
@@ -134,7 +196,7 @@ class NodeSocket extends WebSocketProvider {
  * that names the endpoint by scheme and host only: its text would carry the
  * whole URL, credentials included.
  */
-function openSocket(url: string): WebSocketProvider {
+function openSocket(url: string): NodeSocket {
     try {
         return new NodeSocket(url);
     } catch {
@@ -436,7 +498,7 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
 
     // never rejects: a failed attempt schedules the next one
     private async connect(): Promise<Error | undefined> {
-        let socket: WebSocketProvider | undefined;
+        let socket: NodeSocket | undefined;
         const attemptDeadline = deadline(
             CONNECT_TIMEOUT_MS,
             "RPC node connection attempt timed out"
@@ -495,7 +557,7 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
         }
     }
 
-    private attach(socket: WebSocketProvider, socketEnd: Promise<Error>) {
+    private attach(socket: NodeSocket, socketEnd: Promise<Error>) {
         let end!: (reason: Error) => void;
         const endReason = new Promise<Error>((resolve) => {
             end = resolve;

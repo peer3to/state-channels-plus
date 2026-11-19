@@ -608,6 +608,18 @@ Specification cases tested: 2/2.
 [`REQ-LC-4-E29Y46` (The light client is off unless switched on and served)](../specification/runtime/light-client.md#req-lc-4-e29y46)
 Specification cases tested: 2/2.
 
+[`REQ-LC-5-MM0BM9` (The storage of a followed contract is carried across blocks only by pushed…)](../specification/runtime/light-client.md#req-lc-5-mm0bm9)
+Specification cases tested: 9/9.
+
+[`REQ-LC-6-NEFA2N` (Carried storage is proven again at an interval)](../specification/runtime/light-client.md#req-lc-6-nefa2n)
+Specification cases tested: 4/4.
+
+[`REQ-LC-7-W8WDN3` (A refused pushed block is not used and is made known)](../specification/runtime/light-client.md#req-lc-7-w8wdn3)
+Specification cases tested: 2/2.
+
+[`REQ-LC-8-BBYC51` (A participant follows the channel it has selected)](../specification/runtime/light-client.md#req-lc-8-bbyc51)
+Specification cases tested: 0/3.
+
 [`REQ-LIF-1-A5BN02` (The best-case complete lifecycle needs at least two base-layer transactions)](../specification/settlement/lifecycle.md#req-lif-1-a5bn02)
 Specification cases tested: 2/13. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13.
 
@@ -969,7 +981,7 @@ Specification cases tested: 11/11.
 Specification cases tested: 4/4.
 
 [`REQ-STPROOF-3-NVJGR0` (A pushed block is accepted only under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0)
-Specification cases tested: 18/18.
+Specification cases tested: 20/20.
 
 [`REQ-STPROOF-4-XK5S64` (An account's nonce, balance and code are accepted only when the proof decides…)](../specification/runtime/storage-proofs.md#req-stproof-4-xk5s64)
 Specification cases tested: 18/18.

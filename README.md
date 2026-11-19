@@ -79,6 +79,7 @@ Create a `peer3.config.json` file in the root of your project (next to `package.
   "PROVIDER_URL": "http://localhost:8545",
   "PROVIDER_URLS": [],
   "LIGHT_CLIENT": false,
+  "LIGHT_CLIENT_REPROOF_BLOCKS": 10,
   "LOG_QUERY_MAX_BLOCKS": 1000,
   "DEBUG_STATE_MANAGER": false,
   "DEBUG_DISPUTE_HANDLER": false,
@@ -96,6 +97,8 @@ yarn && yarn build
 `PROVIDER_URLS` lists several RPC endpoints of the same chain in priority order, for example `["wss://primary.example", "wss://backup.example"]`. Requests go to the first connected endpoint and fail over to the next; events are observed on every endpoint. When the list is empty, `PROVIDER_URL` is the only endpoint. Every listed endpoint is trusted. `LOG_QUERY_MAX_BLOCKS` is the most blocks one `eth_getLogs` read may span; set it at or below the smallest range limit of your endpoints (default 1000).
 
 `LIGHT_CLIENT` set to `true` makes the SDK answer chain reads at the latest block (`eth_call`, storage, code, balance and transaction count) from state the RPC endpoint proves, instead of trusting the endpoint's answer. A contract call then runs in a local EVM over the proven state. It needs an endpoint that serves the light client endpoints, which today is a peer3 node. With another endpoint, or when a proof fails, the reads go to the endpoint as before and an error is logged; `lightClientCounters` on the provider counts how reads were answered.
+
+With the light client on, the runtime has the endpoint push every block for the contract of the channel it has selected. A block that logs the channel's id comes with the contract's storage writes and their proof, so the storage the SDK holds of that contract follows the chain without a request. A read that arrives before its block was pushed proves the held storage itself. Every `LIGHT_CLIENT_REPROOF_BLOCKS` blocks the held storage is proven again whole; until then a write in a block that did not log the channel's id is not seen, so keep the interval inside your shortest on-chain deadline. `1` proves the storage at every block. `pushedStateCounters` on the provider counts accepted and refused pushed blocks, the proofs made again, and the slots such a proof found changed.
 
 ## Run Tests
 Install local dependencies

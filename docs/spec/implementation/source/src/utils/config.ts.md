@@ -13,3 +13,4 @@
 - [`REQ-RUN-13-27YE2T` (Isolated placement is the default)](../../../../specification/runtime/execution.md#req-run-13-27ye2t)
 - [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)
 - [`REQ-LC-4-E29Y46` (The light client is off unless switched on and served)](../../../../specification/runtime/light-client.md#req-lc-4-e29y46)
+- [`REQ-LC-6-NEFA2N` (Carried storage is proven again at an interval)](../../../../specification/runtime/light-client.md#req-lc-6-nefa2n)

@@ -114,6 +114,8 @@ export class RpcNodeProxy {
     readonly forwardedMethods: JsonRpcMethod[] = [];
     /** The requests behind {@link forwardedMethods}, with their params. */
     readonly forwardedRequests: ForwardedRequest[] = [];
+    /** The notifications of the node this proxy sent on to a client, in order. */
+    readonly sentNotifications: ForwardedRequest[] = [];
     private readonly server: WebSocketServer;
     private readonly upstreamUrl: string;
     /** Each client socket and its upstream socket to the node. */
@@ -161,6 +163,14 @@ export class RpcNodeProxy {
      * transaction hash of the log each carries; undefined while they pass.
      */
     private withheldNotifications?: WithheldNotification[];
+    /**
+     * Method -> what this proxy sends in place of the `params` of each of
+     * its notifications; `undefined` drops the notification.
+     */
+    private readonly notificationChanges = new Map<
+        JsonRpcMethod,
+        (params: unknown) => unknown
+    >();
     private isCut = false;
     private isBlackholed = false;
 
@@ -356,6 +366,23 @@ export class RpcNodeProxy {
         };
     }
 
+    /**
+     * Send `change(params)` in place of the `params` of every `method`
+     * notification of the node; a notification `change` answers `undefined`
+     * for is dropped.
+     */
+    changeNotifications(
+        method: JsonRpcMethod,
+        change: (params: unknown) => unknown
+    ): void {
+        this.notificationChanges.set(method, change);
+    }
+
+    /** Send `method`'s notifications on as the node sent them, after {@link changeNotifications}. */
+    stopChangingNotifications(method: JsonRpcMethod): void {
+        this.notificationChanges.delete(method);
+    }
+
     /** Keep every socket open but forward nothing in either direction. */
     blackhole(): void {
         this.isBlackholed = true;
@@ -488,6 +515,22 @@ export class RpcNodeProxy {
                     transactionHash: notifiedTransactionHash(params),
                     send
                 });
+                return;
+            }
+            if (method && id === undefined) {
+                const change = this.notificationChanges.get(method);
+                const sentParams = change ? change(params) : params;
+                if (sentParams === undefined) return;
+                this.sentNotifications.push({ method, params: sentParams });
+                if (change && client.readyState === WebSocket.OPEN)
+                    client.send(
+                        JSON.stringify({
+                            jsonrpc: "2.0",
+                            method,
+                            params: sentParams
+                        })
+                    );
+                else send();
                 return;
             }
             const heldReplies =

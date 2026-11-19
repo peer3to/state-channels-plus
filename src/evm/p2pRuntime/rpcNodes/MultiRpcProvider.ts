@@ -4,6 +4,7 @@ import {
     paramsOf
 } from "./RpcNodeProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
+import type { ChannelId } from "@/types/types";
 import { sleep } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
@@ -224,6 +225,20 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
         this.reconnects = false;
         for (const node of this.nodes) node.stopReconnecting();
         this.releaseConnectionWaiters();
+    }
+
+    /**
+     * Tells the provider that the runtime follows the channel `channelId` of
+     * the contract at `contract` from now on. Plain chain access has no use
+     * for it; a subclass may.
+     */
+    followChannel(_contract: string, _channelId: ChannelId): void {
+        // nothing to do
+    }
+
+    /** Tells the provider that the runtime no longer follows the channel. */
+    unfollowChannel(_contract: string, _channelId: ChannelId): void {
+        // nothing to do
     }
 
     // Implements JsonRpcApiProvider._send: each request goes to the first

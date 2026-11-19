@@ -34,6 +34,18 @@ const STORE_AND_LOG_CONTRACT =
     "0x601080600b6000396000f36020356000355560003560006000a100";
 
 /**
+ * Creation code of a contract that, called with 64 bytes, stores the second
+ * word at the slot the first names and logs the slot as its only topic, as
+ * {@link STORE_AND_LOG_CONTRACT} does, and called with anything else returns
+ * the word at the slot its calldata names.
+ */
+export const STORE_LOG_AND_READ_CONTRACT =
+    "0x602480600b6000396000f3" +
+    "36604014601357" +
+    "6000355460005260206000f3" +
+    "5b6020356000355560003560006000a100";
+
+/**
  * Creation code of a contract that returns the block values a call reads, one
  * word each: NUMBER, TIMESTAMP, COINBASE, GASLIMIT, PREVRANDAO, BASEFEE and
  * CHAINID.
@@ -100,6 +112,11 @@ export class LightClientConnection {
             };
             this.pushed.push({ subscription, block: result });
         });
+    }
+
+    /** The pushed blocks in which a log matched the subscription, in arrival order. */
+    get pushedWithLogs() {
+        return this.pushed.filter(({ block }) => block.logs.length > 0);
     }
 
     subscribe(subscription: LightClientSubscription): Promise<SubscriptionId> {
@@ -252,13 +269,21 @@ export class LightClientNodeFixture {
         return this.mined({ to: contract, data });
     }
 
-    /** Stores `value` at `slot` of `contract`; the receipt of the included transaction. */
+    /**
+     * Stores `value` at `slot` of `contract`, paying it `paid` wei; the
+     * receipt of the included transaction.
+     */
     store(
         contract: string,
         slot: string,
-        value: string
+        value: string,
+        paid?: bigint
     ): Promise<TransactionReceipt> {
-        return this.mined({ to: contract, data: concat([slot, value]) });
+        return this.mined({
+            to: contract,
+            data: concat([slot, value]),
+            value: paid
+        });
     }
 
     /**
@@ -294,6 +319,7 @@ export class LightClientNodeFixture {
     private async mined(transaction: {
         to?: string;
         data: string;
+        value?: bigint;
     }): Promise<TransactionReceipt> {
         const sent = await this.wallet.sendTransaction({
             ...transaction,

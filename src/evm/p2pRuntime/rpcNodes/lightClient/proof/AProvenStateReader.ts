@@ -49,6 +49,15 @@ export type ProvenAccountState = {
     code?: string;
 };
 
+/** A block a node pushed for one contract, as its proof decides it. */
+export type ProvenPushedBlock = {
+    block: ProvenBlock;
+    /** The hash of the block before `block`. */
+    parentHash: string;
+    /** The contract's slots the block is proven to have written, as 32-byte values. */
+    writes: { slot: StorageSlot; value: string }[];
+};
+
 /**
  * Reads state from a node together with its proof and returns only what the
  * proof decides. Each kind of node serves proofs through its own methods: one
@@ -77,4 +86,15 @@ export default abstract class AProvenStateReader {
         block: ProvenBlock,
         reads: AccountStateRead[]
     ): Promise<ProvenAccountState[]>;
+
+    /**
+     * What `pushed`, a block a node pushed for the contract at `address`,
+     * holds, as the block's own state root commits to it. Throws
+     * {@link StorageProofError} when it is no such block or a write is not
+     * proven.
+     */
+    abstract pushedBlock(
+        address: ChecksumAddress,
+        pushed: unknown
+    ): ProvenPushedBlock;
 }

@@ -81,6 +81,20 @@ all passed with the source restored. Not covered: the same suite in CI, because 
 distributed worker has the node binary; more than one endpoint; a read while the provider's endpoint is
 down; the pass limit; the full SDK suite with the light client on, which is the farm rollout.
 
+[LightClientFollowedChannel.test.ts](../verification/tests/test/lightClient/LightClientFollowedChannel.test.ts.md)
+(12 declarations, added 2026-11-19) covers [`REQ-LC-5-MM0BM9.T1`](../specification/runtime/light-client.md#req-lc-5-mm0bm9.t1), [`REQ-LC-6-NEFA2N.T1`](../specification/runtime/light-client.md#req-lc-6-nefa2n.t1) and [`REQ-LC-7-W8WDN3.T1`](../specification/runtime/light-client.md#req-lc-7-w8wdn3.t1) on a
+peer3 node of its own behind `--lc-tests`. A read is made at a block the proxy names, whose pushed block
+the proxy sent on before; otherwise the read would race the push of a block sealed in between.
+[LightClientReproofBlocks.test.ts](../verification/tests/test/unit/LightClientReproofBlocks.test.ts.md)
+(3 declarations) covers [`REQ-LC-6-NEFA2N.T2`](../specification/runtime/light-client.md#req-lc-6-nefa2n.t2) without a node. One more declaration each in
+[SubstrateHeader.test.ts](../verification/tests/test/unit/SubstrateHeader.test.ts.md),
+[proveFrontierStorageBlock.test.ts](../verification/tests/test/unit/proveFrontierStorageBlock.test.ts.md) and
+[LightClientPushedBlocks.test.ts](../verification/tests/test/lightClient/LightClientPushedBlocks.test.ts.md)
+covers the header-only block and the parent hash. Each of 16 single-line faults put into the light client, its state, the subscriptions, the provider and the pushed-block check failed a declaration, and all passed with the source restored. Not covered:
+[`REQ-LC-8-BBYC51.T1`](../specification/runtime/light-client.md#req-lc-8-bbyc51.t1), which needs a runtime on a peer3 node with the channel contract deployed and comes
+with the farm rollout; more than one endpoint; a pushed block that arrives while a read runs; the limit
+of waiting pushed blocks; the same suites in CI.
+
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 
 PR #579 review cards TO4, TO5, TY2 and TY3.

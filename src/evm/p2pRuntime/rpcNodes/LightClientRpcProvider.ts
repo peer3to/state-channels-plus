@@ -1,13 +1,22 @@
 import type { LightClient } from "./lightClient/LightClient";
 import type { LightClientChain } from "./lightClient/LightClientChain";
+import { LightClientSubscriptions } from "./lightClient/LightClientSubscriptions";
 import { NotLocalError } from "./lightClient/LightClientUnavailableError";
 import { LIGHT_CLIENT_METHODS } from "./lightClient/lightClientWire";
 import { parseLocalRead } from "./lightClient/LocalReadParser";
 import StorageProofError from "./lightClient/proof/StorageProofError";
+import type { PushedStateCounters } from "./lightClient/PushedStateCounters";
 import MultiRpcProvider from "./MultiRpcProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
+import type { ChannelId } from "@/types/types";
 import type { Logger } from "@/utils/logging/Logger";
-import type { JsonRpcError, JsonRpcPayload, JsonRpcResult } from "ethers";
+import {
+    hexlify,
+    type JsonRpcError,
+    type JsonRpcPayload,
+    type JsonRpcResult,
+    zeroPadValue
+} from "ethers";
 
 /** How the reads the light client may answer were answered, since the provider started. */
 export type LightClientCounters = {
@@ -21,6 +30,11 @@ export type LightClientCounters = {
     unsupported: number;
 };
 
+/** The log topic an indexed `channelId` is. */
+function channelTopic(channelId: ChannelId): string {
+    return zeroPadValue(hexlify(channelId), 32);
+}
+
 /**
  * {@link MultiRpcProvider} that answers `eth_call`, `eth_getStorageAt`,
  * `eth_getCode`, `eth_getBalance` and the latest `eth_getTransactionCount`
@@ -31,6 +45,10 @@ export type LightClientCounters = {
  * client endpoints or a proof fails. Such a fallback keeps the peer working;
  * a failure is logged as an error and counted, because the light client is
  * relied on.
+ *
+ * The storage of the contract of a channel the runtime follows is kept
+ * across blocks: the provider subscribes to the blocks the nodes push for
+ * it, and the light client carries the storage with their proven writes.
  */
 export default class LightClientRpcProvider extends MultiRpcProvider {
     readonly lightClientCounters: LightClientCounters = {
@@ -39,19 +57,72 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         failed: 0,
         unsupported: 0
     };
+    readonly pushedStateCounters: PushedStateCounters = {
+        acceptedBlocks: 0,
+        refusedBlocks: 0,
+        reproofs: 0,
+        changedUnpushed: 0
+    };
     private readonly chain: LightClientChain;
-    /** Started by the first read it may answer, so that a provider that answers none loads no EVM. */
+    private readonly reproofIntervalBlocks: number;
+    private readonly subscriptions: LightClientSubscriptions;
+    /**
+     * Started by the first read it may answer or the first channel followed,
+     * so that a provider that does neither loads no EVM.
+     */
     private lightClient?: Promise<LightClient>;
     /** Whether the nodes list the light client endpoints, once asked. */
     private endpointsListed?: Promise<boolean>;
+    /** The follow and unfollow calls, one after another. */
+    private following: Promise<void> = Promise.resolve();
 
     constructor(
         nodes: readonly RpcNodeProvider[],
         logger: Logger,
-        chain: LightClientChain
+        chain: LightClientChain,
+        reproofIntervalBlocks: number
     ) {
         super(nodes, logger);
         this.chain = chain;
+        this.reproofIntervalBlocks = reproofIntervalBlocks;
+        this.subscriptions = new LightClientSubscriptions(
+            nodes,
+            this.logger,
+            (address, block) =>
+                // a light client that did not start follows nothing
+                void this.lightClient?.then(
+                    (lightClient) => lightClient.pushed(address, block),
+                    () => undefined
+                )
+        );
+    }
+
+    // Overrides MultiRpcProvider.followChannel: the nodes push the blocks of
+    // the channel's contract from now on, and the light client keeps the
+    // contract's storage across blocks with them.
+    override followChannel(contract: string, channelId: ChannelId): void {
+        this.changeFollowing(async () => {
+            if (!(await this.hasEndpoints())) return;
+            const address = contract.toLowerCase();
+            (await this.getLightClient()).follow(address);
+            this.subscriptions.follow(address, channelTopic(channelId));
+        });
+    }
+
+    // Overrides MultiRpcProvider.unfollowChannel: ends what followChannel
+    // began, once no channel of the contract is followed.
+    override unfollowChannel(contract: string, channelId: ChannelId): void {
+        this.changeFollowing(async () => {
+            const address = contract.toLowerCase();
+            if (this.subscriptions.unfollow(address, channelTopic(channelId)))
+                (await this.lightClient)?.unfollow(address);
+        });
+    }
+
+    // Overrides MultiRpcProvider.destroy: also ends the subscriptions.
+    override destroy(): void {
+        this.subscriptions.close();
+        super.destroy();
     }
 
     // Overrides MultiRpcProvider.answer: reads the light client can answer
@@ -112,8 +183,21 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
             ),
             chainPrecompiles: this.chain.chainPrecompiles,
             getChainId: async () => (await this.getNetwork()).chainId,
+            reproofIntervalBlocks: this.reproofIntervalBlocks,
+            counters: this.pushedStateCounters,
             logger: this.logger
         });
+    }
+
+    private changeFollowing(change: () => Promise<void>): void {
+        this.following = this.following
+            .then(change)
+            .catch((error: unknown) =>
+                this.logger.error(
+                    "Light client could not change what it follows",
+                    { error }
+                )
+            );
     }
 
     private hasEndpoints(): Promise<boolean> {

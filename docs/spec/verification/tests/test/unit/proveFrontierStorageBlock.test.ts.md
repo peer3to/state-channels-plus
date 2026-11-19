@@ -20,6 +20,7 @@ block can show.
 - `proves every write of a block, also of a slot no pushed log names`: REQ-STPROOF-3-NVJGR0.T1.P2, UNIT-TEST-STPROOF-4-220T2R.P2
 - `proves a slot pushed as cleared to zero`: REQ-STPROOF-3-NVJGR0.T1.P3, UNIT-TEST-STPROOF-4-220T2R.P3
 - `accepts a block that carries a log and no write`: REQ-STPROOF-3-NVJGR0.T1.P4, UNIT-TEST-STPROOF-4-220T2R.P4
+- `accepts a block that carries neither a write nor a log`: REQ-STPROOF-3-NVJGR0.T1.P16, UNIT-TEST-STPROOF-4-220T2R.P12
 - `throws when a pushed value differs from the proven one`: REQ-STPROOF-3-NVJGR0.T1.P5, UNIT-TEST-STPROOF-4-220T2R.P5
 - `throws when a stored slot is pushed as cleared`: REQ-STPROOF-3-NVJGR0.T1.P6, UNIT-TEST-STPROOF-4-220T2R.P6
 - `throws when a cleared slot is pushed with a value`: REQ-STPROOF-3-NVJGR0.T1.P7, UNIT-TEST-STPROOF-4-220T2R.P7

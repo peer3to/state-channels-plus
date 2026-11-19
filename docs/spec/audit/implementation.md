@@ -81,6 +81,30 @@ into the source and must follow a runtime upgrade by hand. The header check agai
 hash guards the decoder against a changed block layout; no honest node makes it fail, so only the unit
 suite exercises it. The limit of 256 passes per read is not reached by any test.
 
+Added on 2026-11-19 for the followed channel ([`REQ-LC-5-MM0BM9` (The storage of a followed contract is carried across blocks only by pushed…)](../specification/runtime/light-client.md#req-lc-5-mm0bm9) to [`REQ-LC-8-BBYC51` (A participant follows the channel it has selected)](../specification/runtime/light-client.md#req-lc-8-bbyc51)):
+[StateChannelEventListener.ts](../implementation/source/src/StateChannelEventListener.ts.md) calls
+`followChannel` on the runtime's provider where it subscribes to the channel's logs and `unfollowChannel`
+where it removes them; [MultiRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md)
+ignores both and [LightClientRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/LightClientRpcProvider.ts.md)
+overrides them. [LightClientSubscriptions.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/LightClientSubscriptions.ts.md)
+keeps one subscription per followed contract on every node socket; a socket's changes run one after
+another, and a changed topic set ends the old subscription before it starts the new one, because both
+would push one block and only one of them with the writes.
+[RpcNodeProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md) hands a
+notification of a watched method to its listeners before ethers sees it, since ethers knows
+`eth_subscription` only. [LightClient.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/LightClient.ts.md)
+checks each pushed block when it arrives and keeps it until a read moves the held state: `moveTo` walks
+the parent hashes back from the read's block to the block the state is held at, applies the writes of
+that run, and otherwise, or when the interval is over, proves every held slot of the contract in one
+request. [FrontierProvenStateReader.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierProvenStateReader.ts.md)
+checks the shape of a pushed block before `proveFrontierStorageBlock` proves it. The wire changed: the
+endpoint pushes every block, with its header alone when no log matched ([`REQ-STPROOF-3-NVJGR0` (A pushed block is accepted only under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0)), and the test-owned
+sidecar does so in block order. A read does not wait for a pushed block that has not arrived; it proves
+the held slots. The interval is `LIGHT_CLIENT_REPROOF_BLOCKS`, checked in `createRpcNodesProvider`. At
+most 256 pushed blocks wait per contract while no read uses them; no test reaches the limit. Two
+endpoints that push the same block are each counted. The dispute and money-moving triggers of a
+re-proof are not implemented.
+
 ## Discovery joins after the dispose cut — 2026-11-02
 
 What changed (Luke: refuse a late join where it registers):

@@ -48,6 +48,18 @@ describe("proveFrontierStorageBlock", function () {
         expect(proven.ethereumBlockHash).to.equal(oneWrite.ethereumBlockHash);
     });
 
+    it("accepts a block that carries neither a write nor a log", function () {
+        const proven = proveFrontierStorageBlock(
+            { ...oneWrite.block, writes: [], proofNodes: [], logs: [] },
+            address
+        );
+        expect(proven.writes).to.deep.equal([]);
+        expect(proven.header.hash).to.equal(oneWrite.substrateBlockHash);
+        expect(proven.header.parentHash).to.equal(
+            oneWrite.block.header.parentHash
+        );
+    });
+
     it("throws when a pushed value differs from the proven one", function () {
         const block = {
             ...oneWrite.block,

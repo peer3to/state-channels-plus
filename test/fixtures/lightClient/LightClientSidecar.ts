@@ -51,9 +51,10 @@ function contractStoragePrefix(address: string): string {
  * Stands in for the light client endpoints of a peer3 node until the node
  * serves them itself. It is a WebSocket proxy in front of one node: every
  * request passes through, `rpc_methods` also lists the light client methods,
- * and a light client subscription is served here. The pushed blocks come from
- * the node's wildcard storage subscription, so the node must allow unsafe RPC
- * methods on the port this sidecar connects to.
+ * and a light client subscription is served here. Every block the node
+ * imports is pushed to every subscription, one block after the other. The
+ * pushed blocks come from the node's wildcard storage subscription, so the
+ * node must allow unsafe RPC methods on the port this sidecar connects to.
  */
 export class LightClientSidecar {
     /** Blocks in which a followed contract wrote storage but emitted no log. */
@@ -67,6 +68,8 @@ export class LightClientSidecar {
         { client: WebSocket; subscription: LightClientSubscription }
     >();
     private nextSubscriptionId = 1;
+    /** The pushes of the blocks imported so far, in block order. */
+    private pushes: Promise<void> = Promise.resolve();
 
     private constructor(
         server: WebSocketServer,
@@ -78,10 +81,9 @@ export class LightClientSidecar {
         this.feed = feed;
         server.on("connection", (client) => this.link(client));
         feed.onNotification((method, params) => {
-            if (method === "state_storage")
-                void this.pushBlock(
-                    (params as { result: StorageChanges }).result
-                );
+            if (method !== "state_storage") return;
+            const { result } = params as { result: StorageChanges };
+            this.pushes = this.pushes.then(() => this.pushBlock(result));
         });
     }
 
@@ -128,7 +130,11 @@ export class LightClientSidecar {
         }
     }
 
-    /** Pushes one imported block to every subscription a log of it matches. */
+    /**
+     * Pushes one imported block to every subscription: with the contract's
+     * writes and their proof where a log of the block matches the
+     * subscription, with the header alone where none does.
+     */
     private async pushBlock({ block, changes }: StorageChanges): Promise<void> {
         const followed = new Set(
             [...this.subscriptions.values()].map(
@@ -149,12 +155,10 @@ export class LightClientSidecar {
             const prefix = contractStoragePrefix(address);
             const written = changes.filter(([key]) => key.startsWith(prefix));
             const logs = await this.readLogs(ethereumBlockHash, address);
-            if (logs.length === 0) {
-                if (written.length > 0) this.writesWithoutLog += 1;
-                continue;
-            }
+            if (logs.length === 0 && written.length > 0)
+                this.writesWithoutLog += 1;
             const proofNodes =
-                written.length === 0
+                written.length === 0 || logs.length === 0
                     ? []
                     : (
                           await this.feed.request<{ proof: string[] }>(
@@ -172,13 +176,20 @@ export class LightClientSidecar {
                 const matching = logs.filter((log) =>
                     log.topics.some((topic) => topics.has(topic))
                 );
-                if (matching.length === 0) continue;
-                const result: LightClientStorageBlock = {
-                    header: headerJson,
-                    writes,
-                    proofNodes,
-                    logs: matching
-                };
+                const result: LightClientStorageBlock =
+                    matching.length === 0
+                        ? {
+                              header: headerJson,
+                              writes: [],
+                              proofNodes: [],
+                              logs: []
+                          }
+                        : {
+                              header: headerJson,
+                              writes,
+                              proofNodes,
+                              logs: matching
+                          };
                 if (client.readyState === WebSocket.OPEN)
                     client.send(
                         JSON.stringify({

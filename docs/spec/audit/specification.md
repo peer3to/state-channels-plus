@@ -68,6 +68,17 @@ the endpoint. [`REQ-STPROOF-6-CASBQP` (The block values a call reads are accepte
 values a call reads, taken from the Ethereum block header in the chain's state. The base fee is not in that
 header and is a supplied constant, like the existential deposit.
 
+Added on 2026-11-19 to [light-client.md](../specification/runtime/light-client.md): [`REQ-LC-5-MM0BM9` (The storage of a followed contract is carried across blocks only by pushed…)](../specification/runtime/light-client.md#req-lc-5-mm0bm9), [`REQ-LC-6-NEFA2N` (Carried storage is proven again at an interval)](../specification/runtime/light-client.md#req-lc-6-nefa2n), [`REQ-LC-7-W8WDN3` (A refused pushed block is not used and is made known)](../specification/runtime/light-client.md#req-lc-7-w8wdn3) and
+[`REQ-LC-8-BBYC51` (A participant follows the channel it has selected)](../specification/runtime/light-client.md#req-lc-8-bbyc51), after the engineer chose on that day that the runtime tells its chain access the contract and the
+channel id, and that the interval comes first and the dispute and money-moving triggers later.
+[`REQ-STPROOF-3-NVJGR0` (A pushed block is accepted only under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0) now has the endpoint push every block and the participant read the parent hash. The engineer has
+not confirmed what follows from the implementing agent: the endpoint pushes every block, because a
+participant that got nothing for a block cannot tell a block that did not concern it from a push still
+on its way; a read does not wait for a push and proves the held storage itself; writes come only in
+blocks that log a followed channel id, so a slot another channel's transaction wrote stays as held up
+to the interval, which weakens "the answer equals the endpoint's own" of [`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../specification/runtime/light-client.md#req-lc-1-jt5pkt) for carried storage; the
+interval is a configuration key with a default of 10 blocks; only storage is carried.
+
 ## 2026-10-26 — Application chain access, local join-signature answers, closed-transport frames
 
 Luka decided these in the shared poker client manager plan (poker-contracts

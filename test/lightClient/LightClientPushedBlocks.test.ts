@@ -24,10 +24,10 @@ describe("Light client pushed blocks", function () {
 
         const value = toBeHex(0xaaaa, 32);
         const receipt = await node.store(contract, SLOT_ONE, value);
-        await waitFor(() => connection.pushed.length === 1);
+        await waitFor(() => connection.pushedWithLogs.length === 1);
 
         const proven = proveFrontierStorageBlock(
-            connection.pushed[0].block,
+            connection.pushedWithLogs[0].block,
             contract
         );
         expect(proven.writes).to.deep.equal([{ slot: SLOT_ONE, value }]);
@@ -59,7 +59,7 @@ describe("Light client pushed blocks", function () {
             { slot: SLOT_TWO, value: second }
         ]);
         const pushedForBlock = () =>
-            connection.pushed.find(
+            connection.pushedWithLogs.find(
                 ({ block }) => block.logs[0].blockHash === receipt.blockHash
             );
         await waitFor(() => pushedForBlock() !== undefined);
@@ -74,6 +74,37 @@ describe("Light client pushed blocks", function () {
         ]);
     });
 
+    it("proves a live block without a log of the subscribed topic to hold no write and to follow the block before it", async function () {
+        node = await LightClientNodeFixture.start();
+        const contract = await node.deployStoreAndLogContract();
+        const connection = await node.connect();
+        await connection.subscribe({ address: contract, topics: [SLOT_ONE] });
+
+        const receipt = await node.store(
+            contract,
+            SLOT_TWO,
+            toBeHex(0xbbbb, 32)
+        );
+        const pushedForBlock = () =>
+            connection.pushed.find(
+                ({ block }) =>
+                    Number(block.header.number) === receipt.blockNumber
+            );
+        await waitFor(() => pushedForBlock() !== undefined);
+
+        const proven = proveFrontierStorageBlock(
+            pushedForBlock()!.block,
+            contract
+        );
+        expect(proven.writes).to.deep.equal([]);
+        expect(proven.ethereumBlockHash).to.equal(receipt.blockHash);
+        expect(proven.header.parentHash).to.equal(
+            await connection.request("chain_getBlockHash", [
+                receipt.blockNumber - 1
+            ])
+        );
+    });
+
     it("proves a slot a live node pushed as cleared", async function () {
         node = await LightClientNodeFixture.start();
         const contract = await node.deployStoreAndLogContract();
@@ -82,9 +113,9 @@ describe("Light client pushed blocks", function () {
 
         await node.store(contract, SLOT_ONE, toBeHex(0xaaaa, 32));
         const receipt = await node.store(contract, SLOT_ONE, ZeroHash);
-        await waitFor(() => connection.pushed.length === 2);
+        await waitFor(() => connection.pushedWithLogs.length === 2);
 
-        const { block } = connection.pushed[1];
+        const { block } = connection.pushedWithLogs[1];
         expect(block.writes).to.deep.equal([{ slot: SLOT_ONE, value: null }]);
         const proven = proveFrontierStorageBlock(block, contract);
         expect(proven.ethereumBlockHash).to.equal(receipt.blockHash);

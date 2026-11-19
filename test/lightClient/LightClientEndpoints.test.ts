@@ -54,23 +54,60 @@ describe("Light client endpoints", function () {
             .that.includes(LIGHT_CLIENT_UNSUPPORTED);
     });
 
-    it("pushes no block whose logs carry no subscribed topic", async function () {
+    it("pushes a block whose logs carry no subscribed topic with its header alone", async function () {
         node = await LightClientNodeFixture.start();
         const contract = await node.deployStoreAndLogContract();
         const connection = await node.connect();
         await connection.subscribe({ address: contract, topics: [SLOT_ONE] });
 
-        await node.store(contract, SLOT_TWO, toBeHex(0xbbbb, 32));
+        const unmatched = await node.store(
+            contract,
+            SLOT_TWO,
+            toBeHex(0xbbbb, 32)
+        );
         const receipt = await node.store(
             contract,
             SLOT_ONE,
             toBeHex(0xaaaa, 32)
         );
-        await waitFor(() => connection.pushed.length > 0);
+        await waitFor(() => connection.pushedWithLogs.length > 0);
 
         expect(
-            connection.pushed.map(({ block }) => block.logs[0].blockHash)
+            connection.pushedWithLogs.map(
+                ({ block }) => block.logs[0].blockHash
+            )
         ).to.deep.equal([receipt.blockHash]);
+        const pushedUnmatched = connection.pushed.find(
+            ({ block }) => Number(block.header.number) === unmatched.blockNumber
+        );
+        expect(pushedUnmatched?.block).to.deep.include({
+            writes: [],
+            proofNodes: [],
+            logs: []
+        });
+    });
+
+    it("pushes every block once and in block order", async function () {
+        node = await LightClientNodeFixture.start();
+        const contract = await node.deployStoreAndLogContract();
+        const connection = await node.connect();
+        await connection.subscribe({ address: contract, topics: [SLOT_ONE] });
+
+        const receipt = await node.store(
+            contract,
+            SLOT_ONE,
+            toBeHex(0xaaaa, 32)
+        );
+        await node.store(contract, SLOT_TWO, toBeHex(0xbbbb, 32));
+        await waitFor(() => connection.pushed.length >= 3);
+
+        const numbers = connection.pushed.map(({ block }) =>
+            Number(block.header.number)
+        );
+        expect(numbers).to.deep.equal(
+            numbers.map((_, index) => numbers[0] + index)
+        );
+        expect(numbers).to.include(receipt.blockNumber);
     });
 
     it("pushes no block to a removed subscription", async function () {
@@ -83,11 +120,12 @@ describe("Light client endpoints", function () {
         await kept.subscribe(subscription);
 
         await node.store(contract, SLOT_ONE, toBeHex(0xaaaa, 32));
-        await waitFor(() => removed.pushed.length === 1);
+        await waitFor(() => removed.pushedWithLogs.length === 1);
         expect(await removed.unsubscribe(removedId)).to.equal(true);
+        const pushedBeforeRemoval = removed.pushed.length;
         await node.store(contract, SLOT_ONE, toBeHex(0xbbbb, 32));
-        await waitFor(() => kept.pushed.length === 2);
+        await waitFor(() => kept.pushedWithLogs.length === 2);
 
-        expect(removed.pushed.length).to.equal(1);
+        expect(removed.pushed.length).to.equal(pushedBeforeRemoval);
     });
 });

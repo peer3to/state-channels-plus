@@ -40,6 +40,15 @@ describe("SubstrateHeader", function () {
         expect(read.stateRoot).to.equal(header.stateRoot);
     });
 
+    it("reads the hash of the block before it in lower case", function () {
+        const read = new SubstrateHeader({
+            ...header,
+            parentHash: `0x${header.parentHash.slice(2).toUpperCase()}`
+        });
+        expect(read.parentHash).to.equal(header.parentHash);
+        expect(read.hash).to.equal(first.substrateBlockHash);
+    });
+
     it("reads the Ethereum block hash Frontier wrote into each recorded digest", function () {
         for (const push of pushes)
             expect(

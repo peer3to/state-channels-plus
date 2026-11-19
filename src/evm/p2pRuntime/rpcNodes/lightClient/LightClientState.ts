@@ -10,7 +10,7 @@ import {
     StorageCache
 } from "@ethereumjs/statemanager";
 import { Account, type Address } from "@ethereumjs/util";
-import { getBytes, hexlify, keccak256 } from "ethers";
+import { type BytesLike, getBytes, hexlify, keccak256 } from "ethers";
 
 /** Keccak-256 of empty code, the code hash of an account without code. */
 const EMPTY_CODE_HASH = getBytes(keccak256("0x"));
@@ -205,10 +205,42 @@ export class LightClientState extends RPCStateManager {
         });
     }
 
-    /** Forgets the proven state: it held at another block. */
-    forgetProvenState(): void {
-        this.accounts.clear();
+    /**
+     * Forgets the proven state: it held at another block. The storage of
+     * the contracts in `carried` stays, because the caller brings it to the
+     * new block; their nonce, balance and code are forgotten like the rest.
+     */
+    forgetProvenState(carried: ReadonlySet<AccountAddress> = new Set()): void {
+        for (const [address, account] of this.accounts) {
+            if (!carried.has(address)) this.accounts.delete(address);
+            else this.accounts.set(address, { storage: account.storage });
+        }
         this.misses.clear();
+    }
+
+    /** The proven storage of `address`: each held slot and its 32-byte word. */
+    heldStorage(address: AccountAddress): Map<StorageSlotKey, string> {
+        const held = new Map<StorageSlotKey, string>();
+        for (const [slot, word] of this.accounts.get(address)?.storage ?? [])
+            held.set(slot, hexlify(word));
+        return held;
+    }
+
+    /**
+     * Brings the held storage of `address` to a block that wrote `writes`.
+     * A written slot that is not held stays unheld: only what a read used is
+     * kept.
+     */
+    applyWrites(
+        address: AccountAddress,
+        writes: { slot: BytesLike; value: string }[]
+    ): void {
+        const storage = this.accounts.get(address)?.storage;
+        if (!storage) return;
+        for (const { slot, value } of writes) {
+            const key = hexlify(slot);
+            if (storage.has(key)) storage.set(key, getBytes(value));
+        }
     }
 
     /**
