@@ -1,7 +1,8 @@
-// @spec-test-coverage-ignore: hand-encoded trie nodes used by the mapped SubstrateTrieProof and FrontierStorageProofVerifier declarations
+// @spec-test-coverage-ignore: hand-encoded trie nodes used by the mapped SubstrateTrieProof, FrontierStorageProofVerifier and FrontierAccountProofVerifier declarations
 
+import { encodeCompact } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/ScaleReader";
 import { blake2b } from "@noble/hashes/blake2b";
-import { concat, dataLength, getBytes, hexlify } from "ethers";
+import { concat, dataLength, getBytes, hexlify, toBeHex } from "ethers";
 
 /** The state root of a trie whose only node is `encodedNode`. */
 export function rootOfSingleNodeTrie(encodedNode: string): string {
@@ -10,7 +11,7 @@ export function rootOfSingleNodeTrie(encodedNode: string): string {
 
 /**
  * The leaf node of a trie that holds one entry, which is also its root node.
- * `value` must be shorter than 64 bytes and `trieKey` shorter than 159 bytes.
+ * `trieKey` must be shorter than 159 bytes.
  */
 export function singleLeafNode(trieKey: string, value: string): string {
     const nibbleCount = dataLength(trieKey) * 2;
@@ -20,8 +21,37 @@ export function singleLeafNode(trieKey: string, value: string): string {
     return concat([
         new Uint8Array(header),
         trieKey,
-        new Uint8Array([dataLength(value) << 2]),
+        encodeCompact(dataLength(value)),
         value
+    ]);
+}
+
+/** A SCALE fixed-width unsigned integer of `length` bytes: little-endian. */
+function encodeUnsigned(value: bigint, length: number): Uint8Array {
+    return getBytes(toBeHex(value, length)).reverse();
+}
+
+/**
+ * A hand-encoded `System.Account` entry: the nonce, the reference counts of
+ * an account one provider keeps alive, and its balances.
+ */
+export function encodedAccountInfo(account: {
+    nonce: bigint;
+    free: bigint;
+    reserved: bigint;
+    frozen: bigint;
+}): string {
+    return concat([
+        encodeUnsigned(account.nonce, 4),
+        // consumers, providers, sufficients
+        encodeUnsigned(0n, 4),
+        encodeUnsigned(1n, 4),
+        encodeUnsigned(0n, 4),
+        encodeUnsigned(account.free, 16),
+        encodeUnsigned(account.reserved, 16),
+        encodeUnsigned(account.frozen, 16),
+        // flags
+        encodeUnsigned(1n << 127n, 16)
     ]);
 }
 

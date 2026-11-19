@@ -46,6 +46,28 @@ its declaration, and all passed with the code restored. Not covered: a distribut
 worker protocol provides the node binary and the orchestrator skips these tasks with a warning; a node that
 leaves a write out of a pushed block; the node's own endpoint, which does not exist yet.
 
+[FrontierAccountProofVerifier.test.ts](../verification/tests/test/unit/FrontierAccountProofVerifier.test.ts.md)
+(18 declarations, added 2026-11-19) covers all 18 planned cases of [`REQ-STPROOF-4-XK5S64` (An account's nonce, balance and code are accepted only when the proof decides…)](../specification/runtime/storage-proofs.md#req-stproof-4-xk5s64). Its positive oracles are
+proofs recorded from a peer3 dev node (`zero-fee-node` at d845dbfb, run locally that day) for five addresses
+at one block, with that node's own `eth_getTransactionCount`, `eth_getBalance` and `eth_getCode` answers.
+Balances with a frozen or reserved part were not recorded from the node, which holds none on the dev chain:
+those cases use hand-encoded account entries, so the rule for them rests on the cited runtime source, not on
+a chain answer. Each of 10 single-line faults put into the account verifier and the key derivations (each
+part of the balance rule, the field order, each refusal, each absent-entry answer, each key prefix) failed
+at least one declaration, and all passed with the source restored.
+
+[LightClientProvenReads.test.ts](../verification/tests/test/lightClient/LightClientProvenReads.test.ts.md) (6
+declarations, added 2026-11-19) covers the six planned cases of [`REQ-STPROOF-5-HRDXEG.T1`](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg.t1) on a peer3 node of each
+declaration's own, discovered only with `--lc-tests`. The oracles are the node's own block hash, Ethereum
+block and Ethereum reads at the same block. The refusals put the existing `RpcNodeProxy` in front of the
+node and make it answer one request in the node's place, with the node's real proof of an earlier block or
+with no proof or header. Each of eight single-line faults put into the reader (the block hash left out of
+the proof request, each shape check off, the empty-read shortcut off, a wrong key for the account, the code
+or a slot, the state root taken from another field) failed its declaration, and all passed with the source
+restored. Not covered: a distributed worker, as for the suite above, so CI does not run this suite yet; a
+node that gives the header of another chain; a read at the genesis block, whose header names no Ethereum
+block.
+
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 
 PR #579 review cards TO4, TO5, TY2 and TY3.

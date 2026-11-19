@@ -43,6 +43,17 @@ shape of the pushed block (header, written slots, proof, matching logs) follows 
 participant notices a write an endpoint left out. The plan [`REQ-STPROOF-3-NVJGR0.T2`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2), added the same
 day, asks for the same check on blocks a running chain node pushes.
 
+[`REQ-STPROOF-4-XK5S64` (An account's nonce, balance and code are accepted only when the proof decides…)](../specification/runtime/storage-proofs.md#req-stproof-4-xk5s64) and [`REQ-STPROOF-5-HRDXEG` (A read from a node yields only what its proof decides, at one block)](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg) were added on 2026-11-19 for the read a participant makes itself.
+[`REQ-STPROOF-4-XK5S64` (An account's nonce, balance and code are accepted only when the proof decides…)](../specification/runtime/storage-proofs.md#req-stproof-4-xk5s64) extends the rule of [`REQ-STPROOF-1-J20P5Y` (A slot value is accepted only when the proof decides it)](../specification/runtime/storage-proofs.md#req-stproof-1-j20p5y) to an account's nonce, balance and code, which a
+local EVM needs next to storage and which a pushed block does not carry (user decision of 2026-11-19: prove
+them through the same read, no unverified answers). The Frontier balance is not a stored value: it is the free
+balance less what the chain keeps back, with the existential deposit supplied by the caller because it is a
+runtime constant the state does not hold; the document records that a wrong deposit gives a wrong balance
+only. [`REQ-STPROOF-5-HRDXEG` (A read from a node yields only what its proof decides, at one block)](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg) states the read: the node's best block, one proof for everything asked at that block's
+hash, and only proven values returned. The best block is taken on the node's word, like a pushed header;
+binding a block to the chain stays future work. Not specified yet: when a participant reads, what it
+keeps, and what it does after a failed read.
+
 ## 2026-10-26 — Application chain access, local join-signature answers, closed-transport frames
 
 Luka decided these in the shared poker client manager plan (poker-contracts

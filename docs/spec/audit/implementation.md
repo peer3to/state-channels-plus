@@ -38,6 +38,25 @@ yet. A test-owned sidecar (`test/fixtures/lightClient/LightClientSidecar.ts`) st
 in front of a peer3 node that builds the pushed blocks from the node's wildcard storage subscription,
 which the node allows only with unsafe RPC methods. Nothing in `src` calls the new code yet.
 
+Added on 2026-11-19 for accounts and for the read from a node ([`REQ-STPROOF-4-XK5S64` (An account's nonce, balance and code are accepted only when the proof decides…)](../specification/runtime/storage-proofs.md#req-stproof-4-xk5s64), [`REQ-STPROOF-5-HRDXEG` (A read from a node yields only what its proof decides, at one block)](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg)):
+[AAccountProofVerifier.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/AAccountProofVerifier.ts.md)
+is the interface for nonce, balance and code;
+[FrontierAccountProofVerifier.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierAccountProofVerifier.ts.md)
+reads them from `System.Account` and pallet-evm's `AccountCodes`;
+[frontierStateKeys.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/frontierStateKeys.ts.md)
+holds the three trie key derivations, the storage one moved there unchanged from the storage verifier;
+[AProvenStateReader.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/AProvenStateReader.ts.md)
+is the interface of a read from a node and
+[FrontierProvenStateReader.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierProvenStateReader.ts.md)
+its Substrate RPC form: `chain_getHeader` for the best block, one `state_getReadProof` per read. The balance
+rule follows pallet-evm's `account_basic` at Frontier `24fcbdb1` (the revision peer3-parachain pins), which
+reports `reducible_balance(Preserve, Polite)`, and pallet-balances at polkadot-sdk `stable2603`. The account
+verifier holds only for a runtime with `IdentityAddressMapping` and 20-byte accounts, as peer3's
+`runtime/src/configs/frontier.rs` has at d845dbfb. The existential deposit is a constructor argument; peer3's
+is 1,000,000,000 (`MILLI_UNIT`). The code key prefix was first recorded wrongly as the prefix of
+`AccountCodesMetadata`, whose keys have the same shape; the tests against the node's own `eth_getCode`
+caught it. Nothing in `src` calls the reader yet.
+
 ## Discovery joins after the dispose cut — 2026-11-02
 
 What changed (Luke: refuse a late join where it registers):
