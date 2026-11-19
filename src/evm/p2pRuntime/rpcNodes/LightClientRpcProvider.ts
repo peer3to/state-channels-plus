@@ -1,4 +1,4 @@
-import { LightClient } from "./lightClient/LightClient";
+import type { LightClient } from "./lightClient/LightClient";
 import type { LightClientChain } from "./lightClient/LightClientChain";
 import { NotLocalError } from "./lightClient/LightClientUnavailableError";
 import { LIGHT_CLIENT_METHODS } from "./lightClient/lightClientWire";
@@ -39,7 +39,9 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         failed: 0,
         unsupported: 0
     };
-    private readonly lightClient: LightClient;
+    private readonly chain: LightClientChain;
+    /** Started by the first read it may answer, so that a provider that answers none loads no EVM. */
+    private lightClient?: Promise<LightClient>;
     /** Whether the nodes list the light client endpoints, once asked. */
     private endpointsListed?: Promise<boolean>;
 
@@ -49,14 +51,7 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         chain: LightClientChain
     ) {
         super(nodes, logger);
-        this.lightClient = new LightClient({
-            reader: chain.createReader((method, params) =>
-                this.requestNode(method, params)
-            ),
-            chainPrecompiles: chain.chainPrecompiles,
-            getChainId: async () => (await this.getNetwork()).chainId,
-            logger
-        });
+        this.chain = chain;
     }
 
     // Overrides MultiRpcProvider.answer: reads the light client can answer
@@ -73,7 +68,7 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         try {
             const answer = {
                 id: request.id,
-                ...(await read(this.lightClient))
+                ...(await read(await this.getLightClient()))
             } as JsonRpcResult | JsonRpcError;
             this.lightClientCounters.answeredLocally++;
             return answer;
@@ -96,6 +91,29 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
             }
         }
         return this.forward(request);
+    }
+
+    private getLightClient(): Promise<LightClient> {
+        // a failed start is not kept: the next read starts it again
+        this.lightClient ??= this.startLightClient().catch((error) => {
+            this.lightClient = undefined;
+            throw error;
+        });
+        return this.lightClient;
+    }
+
+    private async startLightClient(): Promise<LightClient> {
+        // Loaded here, not at import: the light client brings the EVM's
+        // module graph, which only a provider that answers reads pays for.
+        const { LightClient } = await import("./lightClient/LightClient");
+        return new LightClient({
+            reader: this.chain.createReader((method, params) =>
+                this.requestNode(method, params)
+            ),
+            chainPrecompiles: this.chain.chainPrecompiles,
+            getChainId: async () => (await this.getNetwork()).chainId,
+            logger: this.logger
+        });
     }
 
     private hasEndpoints(): Promise<boolean> {

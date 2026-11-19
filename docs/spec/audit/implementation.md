@@ -72,7 +72,9 @@ what is specific to peer3;
 [FrontierEthereumHeader.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierEthereumHeader.ts.md)
 reads the block values. The state, the pass loop and the parser are taken from the closed mirror provider
 (`origin/b1384-mirror-provider`, PR #589) with everything of the storage diff service removed. The
-provider is created by `createRpcNodesProvider` when `LIGHT_CLIENT` is true. The local EVM is the one
+provider is created by `createRpcNodesProvider` when `LIGHT_CLIENT` is true. The provider loads the light
+client, and with it the EVM's modules, at the first read it may answer: the host-root entry must load no
+EVM (`packageHostRootExport.test.ts`), and it imports the provider. The local EVM is the one
 `createEvm` builds, so its hardfork is the SDK's and not read from the chain. peer3's own precompile
 address (`0x…0800`, `XCM_PRECOMPILE` in `runtime/src/free_lane_rules.rs`) and its constants are written
 into the source and must follow a runtime upgrade by hand. The header check against the Ethereum block
