@@ -11,7 +11,7 @@ import type {
 } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
-import { HarnessOptions } from "@test/harness/core/types";
+import { HarnessOptions, TestPeer } from "@test/harness/core/types";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { BytesLike } from "ethers";
@@ -213,6 +213,19 @@ export class LifecycleActions<
             `Channel opened successfully with fork ID: ${this.harness.activeForkId}`
         );
         return this.harness.activeForkId;
+    }
+
+    /**
+     * Dispose peer `peerIndex` and start it again with the same key, without
+     * connecting it. A persistent peer resumes the channel from its partition;
+     * any other comes back as a fresh node.
+     */
+    async restartPeer(peerIndex: number): Promise<TestPeer<THost>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await peer.p2pInstance.dispose();
+        peer.logger.dispose();
+        await this.harness.createPeer(peerIndex, peer.signer);
+        return this.harness.getPeer(peerIndex);
     }
 
     /**

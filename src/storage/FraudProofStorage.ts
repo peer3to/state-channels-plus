@@ -28,10 +28,10 @@ export class FraudProofStorage {
     public storeFraudProof(fraudProof: FraudProofStruct): Hash {
         const proofHash = hash(fraudProof.encodedProof);
         // Store the fraud proof; a stored one is kept as is
-        this.fraudProofs.update(
-            proofHash,
-            (existing) => existing ?? fraudProof
-        );
+        if (!this.fraudProofs.has(proofHash)) {
+            this.fraudProofs.set(proofHash, fraudProof);
+            this.indexProof(proofHash, fraudProof);
+        }
         return proofHash;
     }
 
@@ -56,16 +56,19 @@ export class FraudProofStorage {
         return this.fraudProofs.get(proofHash);
     }
 
-    public rebuildIndexes(): void {
+    // after a load, in store order
+    private rebuildIndexes(): void {
         this.participantToProofs.clear();
         for (const [proofHash, proof] of this.fraudProofs.entries()) {
-            const participant = String(
-                proof.participant
-            ).toLowerCase() as Address;
-            const hashes =
-                this.participantToProofs.get(participant) ?? new Set<Hash>();
-            hashes.add(proofHash);
-            this.participantToProofs.set(participant, hashes);
+            this.indexProof(proofHash, proof);
         }
+    }
+
+    private indexProof(proofHash: Hash, proof: FraudProofStruct): void {
+        const participant = String(proof.participant).toLowerCase() as Address;
+        const hashes =
+            this.participantToProofs.get(participant) ?? new Set<Hash>();
+        hashes.add(proofHash);
+        this.participantToProofs.set(participant, hashes);
     }
 }

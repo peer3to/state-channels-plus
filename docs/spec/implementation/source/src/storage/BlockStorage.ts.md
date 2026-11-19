@@ -48,6 +48,8 @@ Tip and traversal bounds
 - [x] `UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P4` — out-of-order store
 - [x] `UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P5` — a fork without blocks: latest height -1, next height 0
 - [x] `UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P6` — latest and next height follow the highest stored block
+- [x] `UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P7` — a block first stored for history only and stored again normally leaves the tip
+- [x] `UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P8` — a block first stored normally and stored again for history only keeps the tip at its height
 
 ## UNIT-TEST-BLOCK-STORAGE-32-DHXM4N
 

@@ -13,6 +13,10 @@
 - [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../../../../../../specification/storage/queue.md#req-qstore-2-vywjaq)
 - [`REQ-SDK-ARCH-6-8DE4ER` (Chain spending is observable)](../../../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er)
 - [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
+- [`REQ-STOR-7-K1J7EA` (Write-behind disk copy loaded once)](../../../../../../specification/storage/durability.md#req-stor-7-k1j7ea)
+- [`REQ-STOR-9-ZR8A92` (Closed by the one disposal)](../../../../../../specification/storage/durability.md#req-stor-9-zr8a92)
+- [`REQ-STOR-11-Q4AT07` (Partition identity, ownership, and survival)](../../../../../../specification/storage/durability.md#req-stor-11-q4at07)
+- [`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](../../../../../../specification/storage/durability.md#req-stor-8-25d06n)
 
 ## UNIT-TEST-P2P-RUNTIME-HOST-1-TJYWGM
 

@@ -37,8 +37,8 @@ results and domain state. Each placement also runs the same real two-peer channe
 - `rejects and cleans up failed custom root readiness in inline mode`: REQ-RUNTIME-3-VQXW59.T1.P5, UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P6, UNIT-TEST-P2P-RUNTIME-HOST-1-TJYWGM.P6
 - `rejects and cleans up failed custom root readiness in worker mode`: REQ-RUNTIME-3-VQXW59.T1.P7, UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P8, UNIT-TEST-P2P-RUNTIME-HOST-1-TJYWGM.P11
 - `generates a host-owned signer when no secret is supplied`: REQ-ID-3-KR0BE3.T1.P6
-- `recovers the persisted channel signer after a restart in worker mode`: none
-- `refuses a persisted channel restarted with another signer's key in worker mode`: none
+- `recovers the persisted channel signer after a restart in worker mode`: REQ-STOR-11-Q4AT07.T1.P3
+- `refuses a persisted channel restarted with another signer's key in worker mode`: REQ-STOR-11-Q4AT07.T1.P3
 - `fails a corrupt persisted partition with its location and resets it only on request in worker mode`: none
 - `uploads both threads when the sdk thread crashes`: UNIT-TEST-P2P-RUNTIME-HOST-1-TJYWGM.P12, REQ-LOG-8-B7VN3J.T1.P4
 - `report-a-bug returns its local result and reaches the SDK receiver`: none

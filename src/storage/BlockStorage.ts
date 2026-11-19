@@ -316,19 +316,12 @@ export class BlockStorage {
         }
     }
 
-    // after every change: the hash index and the tip of every fork; a key
-    // stored under an explicit hash keeps it
+    // after a load: the hash index and the tip of every fork
     private rebuildIndexes(): void {
-        const storedHashes = new Map(
-            [...this.hashToCoordinatesMap].map(([hash, key]) => [key, hash])
-        );
         this.hashToCoordinatesMap.clear();
         this.forkIdToMaxHeightMap.clear();
         for (const [key, record] of this.coordinatesToBlockMap.entries()) {
-            this.hashToCoordinatesMap.set(
-                storedHashes.get(key) ?? record.block.hash,
-                key
-            );
+            this.hashToCoordinatesMap.set(record.block.hash, key);
             if (record.advancesTip) {
                 this._updateMaxHeight(
                     record.coordinates.forkId,

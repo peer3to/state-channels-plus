@@ -55,15 +55,25 @@ export class MessageBlockStorage {
             options?.hash ??
             hash(Codec.encode(messageBlock, Type.MessageBlock));
 
-        this.normalizeBlockHeight(messageBlock.blockHeight);
+        const blockHeight = this.normalizeBlockHeight(messageBlock.blockHeight);
         // a later store of a held hash keeps its first content
-        this.blockMap.update(blockHash, (record) => {
-            return {
+        const record = this.blockMap.get(blockHash);
+        if (!record || (!record.advancesTip && !options?.justPersist)) {
+            this.blockMap.set(blockHash, {
                 block: record?.block ?? messageBlock,
-                advancesTip:
-                    (record?.advancesTip ?? false) || !options?.justPersist
-            };
-        });
+                advancesTip: !options?.justPersist
+            });
+        }
+
+        if (options?.justPersist) return blockHash;
+
+        if (
+            this.latestBlockHeight === undefined ||
+            blockHeight >= this.latestBlockHeight
+        ) {
+            this.latestBlockHeight = blockHeight;
+            this.latestBlockHash = blockHash;
+        }
         return blockHash;
     }
 
@@ -135,7 +145,8 @@ export class MessageBlockStorage {
         return this.latestBlockHeight;
     }
 
-    rebuildIndexes(): void {
+    // after a load: the latest pointers
+    private rebuildIndexes(): void {
         this.latestBlockHash = undefined;
         this.latestBlockHeight = undefined;
         for (const [hashValue, record] of this.blockMap.entries()) {

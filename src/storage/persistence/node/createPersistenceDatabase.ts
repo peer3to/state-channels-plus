@@ -12,7 +12,8 @@ export async function createPersistenceDatabase(
     const root = options.location ?? getDefaultRoot();
     const location = path.join(root, options.namespace);
     await mkdir(root, { recursive: true, mode: 0o700 });
-    await chmod(root, 0o700);
+    // only the root the SDK creates: a caller's location keeps its mode
+    if (options.location === undefined) await chmod(root, 0o700);
 
     let ClassicLevel: typeof import("classic-level").ClassicLevel;
     try {

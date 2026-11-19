@@ -73,6 +73,7 @@ assert none happened (`6.P3`, credited to the plain upload). One test holds the 
 (`disputeAndKillSharingHeldRead`), starts a dispute and a kill against it, and asserts one pending
 read and no send while it is held, then one resolved read and both sends at their own recorded
 estimate plus the replay gas, the kill mined without error (`6.P11`). A non-timeout dispute refused as a previous-producer mismatch queues no mismatch retry: the ZeroAddress participant guard suppresses the re-arm, so no mismatch task exists without a nonzero submitted timeout.
+The restored-head test restarts a persistent participant (`LifecycleActions.restartPeer`) without connecting it and calls `dispute()` host-side while it is held at `SYNCED`: no upload is recorded and no marker is left. After it connects and participates, the same call records one upload.
 
 One construction case stages a top-up consumed as the snapshot's inbound head (`PrunedInboundStaging`), stores a forged-inbound proof against the
 honest block that consumed it through the real `FraudProofService` producer, and runs
@@ -191,3 +192,4 @@ author is added.
 - `WrongGenesis proof stored, then the chain passes genesis before dispute() → the empty dispute is refused, nobody slashed`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P23
 - `RaceConditionBlockHeightTooOld on the wait → no rejection, one rebuilt dispute is sent`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P56
 - `RaceConditionBlockHeightTooOld on the apply → consumed, no rejection, no detached error`: UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P14
+- `a restored head held for its restart sync authors no dispute, and authors one once that sync settled`: REQ-STOR-3-4RJGER.T1.P24

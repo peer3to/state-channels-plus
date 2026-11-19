@@ -5,6 +5,7 @@
 ## Requirements
 
 - [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)
+  Missing: `BlacklistStorage` keeps recorded verdicts in memory only, also with persistence enabled, so a verdict does not outlive the runtime ([`FIND-STORAGE-8-CS91XW`](../../../../audit/open-findings.md#find-storage-8-cs91xw)).
 - [`REQ-ID-2-F3Y8J4` (Normalized identity comparison)](../../../../specification/protocol-model/identity.md#req-id-2-f3y8j4)
 
 ## UNIT-TEST-BLACKLIST-STORAGE-1-C0XQYF
