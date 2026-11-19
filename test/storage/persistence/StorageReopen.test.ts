@@ -393,10 +393,10 @@ describe("Storage reopen", function () {
             );
             expect(storage.blocks.getLatestBlockHeight(forkId)).to.equal(2);
             expect(
-                storage.fraudProofs.getFraudProofForParticipant(
+                storage.fraudProofs.getFraudProofsForParticipant(
                     proof.participant as string
                 )
-            ).to.not.equal(undefined);
+            ).to.have.lengthOf(1);
             expect(storage.inboundMessages.getLatestBlockHash()).to.equal(head);
             expect(storage.forceJoin.startJoin(2, 1_800_000_000).id).to.equal(
                 join.id + 1
@@ -421,12 +421,13 @@ describe("Storage reopen", function () {
             storage = await reopen(database, storage);
 
             expect(
-                ethers.hexlify(
-                    storage.fraudProofs.getFraudProofForParticipant(
-                        participant
-                    )!.encodedProof
-                )
-            ).to.equal(ethers.hexlify(first.encodedProof));
+                storage.fraudProofs
+                    .getFraudProofsForParticipant(participant)
+                    .map((stored) => ethers.hexlify(stored.encodedProof))
+            ).to.deep.equal([
+                ethers.hexlify(first.encodedProof),
+                ethers.hexlify(second.encodedProof)
+            ]);
             expect(
                 storage.disputeFraudProofs
                     .getDisputeFraudProofs()

@@ -72,6 +72,26 @@ contract StateSnapshotFacetOpenChannelRegistryTest is DiamondHarness {
         assertTrue(open);
     }
 
+    function test_updateStateSnapshotSameFork_finalClosePrunesTheInboundHeadWithOneStorageClear() public {
+        _openChannel(CHANNEL_A, _privateKeys());
+        bytes32 openInboundHash = diamond.getChannelBalance(CHANNEL_A).latestInboundMessageBlockHash;
+        bytes32 headInboundHash = keccak256(abi.encode(_deposit(CHANNEL_A, ALICE_PK, 5)));
+
+        vm.recordLogs();
+        _closeChannel(CHANNEL_A);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        uint256 clearCount;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] != StateChannelManagerEvents.ChannelStorageCleared.selector) continue;
+            clearCount += 1;
+            assertEq(abi.decode(logs[i].data, (bytes32)), headInboundHash, "the close names the snapshot head");
+        }
+        assertEq(clearCount, 1, "one storage clear");
+        assertFalse(diamond.hasInboundMessageBlock(CHANNEL_A, headInboundHash), "head pruned");
+        assertFalse(diamond.hasInboundMessageBlock(CHANNEL_A, openInboundHash), "below the head pruned");
+    }
+
     function test_lifecycleEvents_reconstructPagedOpenChannelRegistry() public {
         vm.recordLogs();
         _openThreeChannels();
@@ -121,6 +141,21 @@ contract StateSnapshotFacetOpenChannelRegistryTest is DiamondHarness {
         diamond.updateStateSnapshotSameFork(channelId, proofs, snapshots, new MessageBlock[](0));
         (bool open,) = diamond.isChannelOpen(channelId);
         assertFalse(open);
+    }
+
+    function _deposit(bytes32 channelId, uint256 pk, uint256 amount)
+        internal
+        returns (MessageBlock memory messageBlock)
+    {
+        JoinChannel[] memory joins = new JoinChannel[](1);
+        joins[0] = JoinChannel({
+            channelId: channelId,
+            participant: vm.addr(pk),
+            deadlineTimestamp: block.timestamp + 1 days,
+            balance: Balance({amount: amount, data: ""})
+        });
+        vm.prank(address(diamond));
+        (messageBlock,,) = diamond.depositAssetsComposable(joins, true);
     }
 
     function _assertRegistry(bytes32[] memory expected) internal view {

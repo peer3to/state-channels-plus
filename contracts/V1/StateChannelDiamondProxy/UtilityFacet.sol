@@ -263,9 +263,11 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
         returns (bool)
     {
         if (newSnapshot.blockHeight > currentSnapshot.blockHeight) return true;
+        // block 0's snapshot may replace the genesis, but never one that still looks like a genesis -> the chain
+        // would keep judging the fork as at genesis and slash block 0's honest author
         if (
             newSnapshot.blockHeight == 0 && currentSnapshot.blockHeight == 0
-                && isGenesisSnapshotWithoutTimeCheck(currentSnapshot)
+                && isGenesisSnapshotWithoutTimeCheck(currentSnapshot) && !isGenesisSnapshotWithoutTimeCheck(newSnapshot)
                 && keccak256(abi.encode(newSnapshot)) != keccak256(abi.encode(currentSnapshot))
         ) return true;
         return false;
@@ -327,6 +329,14 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
 
     function hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash) public view returns (bool) {
         return _hasInboundMessageBlock(channelId, messageBlockHash);
+    }
+
+    function isUncommittedInboundMessageBlock(bytes32 channelId, MessageBlock memory messageBlock)
+        public
+        view
+        returns (bool)
+    {
+        return _isUncommittedInboundMessageBlock(channelId, messageBlock);
     }
 
     function getOnChainSlashedParticipantsUpToTimestamp(bytes32 channelId, uint256 timestamp)

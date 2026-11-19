@@ -1,6 +1,7 @@
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 import {
+    isHexString,
     JsonRpcApiProvider,
     type JsonRpcError,
     type Listener,
@@ -26,6 +27,44 @@ const RECONNECT_WARNING_INTERVAL_MS = 60_000;
 
 /** Marks a request whose socket ended before it answered. */
 const SOCKET_ENDED = Symbol("socket ended");
+
+/** JSON-RPC's error code for a node that failed to process a request. */
+const JSON_RPC_INTERNAL_ERROR = -32603;
+
+/**
+ * Sends a signed transaction. Its internal error never fails over: the node
+ * may have pooled the transaction, and a second send can fail it twice.
+ */
+const SEND_TRANSACTION_METHOD = "eth_sendRawTransaction";
+
+/** The errors of reads a node answered with its internal error. */
+const nodeInternalErrors = new WeakSet<Error>();
+
+/**
+ * Whether `error` is a node's answer to a read that it failed internally,
+ * not an answer about the request. Besu sends it e.g. for a call at a head
+ * block whose state it has not stored yet; another node of the chain can
+ * answer.
+ */
+export function isNodeInternalError(error: unknown): boolean {
+    return error instanceof Error && nodeInternalErrors.has(error);
+}
+
+/**
+ * Whether a JSON-RPC error carries revert data: a hex `data`, or a `data`
+ * object holding one. Hardhat answers every revert with -32603 and such
+ * data, "0x" included; Besu's internal error has none.
+ */
+function hasRevertData({ error }: JsonRpcError): boolean {
+    const { data } = error;
+    if (isHexString(data)) return true;
+    return (
+        typeof data === "object" &&
+        data !== null &&
+        "data" in data &&
+        isHexString(data.data)
+    );
+}
 
 /**
  * Called with each open socket of a node. `reopened` is false for the call
@@ -72,6 +111,21 @@ class NodeSocket extends WebSocketProvider {
                 throw error;
             });
         return answer;
+    }
+
+    // Overrides JsonRpcApiProvider.getRpcError: ethers turns every error
+    // answer to a call into a CALL_EXCEPTION, so the answer's code is read
+    // here, where the node's own answer is still at hand. Only a read's
+    // internal error without revert data marks a node fault.
+    override getRpcError(payload: JsonRpcPayload, error: JsonRpcError): Error {
+        const converted = super.getRpcError(payload, error);
+        if (
+            error.error.code === JSON_RPC_INTERNAL_ERROR &&
+            payload.method !== SEND_TRANSACTION_METHOD &&
+            !hasRevertData(error)
+        )
+            nodeInternalErrors.add(converted);
+        return converted;
     }
 }
 

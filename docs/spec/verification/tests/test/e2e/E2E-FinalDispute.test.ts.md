@@ -9,7 +9,7 @@ channel via the harness helpers `submitFinalDispute` / `submitFinalDisputeFromSt
 resolves them on-chain with `resolveFinalDispute`. It asserts the final-dispute fast path in the
 reduction stack: the exact final output (fork id and genesis timestamp) is installed without
 running `validateDispute`, a late non-final delivery of the dispute against the source fork, which
-is no longer current, enters no validation and leaves the successor authoring and finalizing blocks, a queued ordinary reduction task released afterwards is a no-op (no
+is no longer current, replayed at the final dispute's own log coordinate, enters no validation and leaves the successor authoring and finalizing blocks, a queued ordinary reduction task released afterwards is a no-op (no
 second `onSetState`; the completed reduction joins the final fork), duplicate completion via
 `awaitReduction` is idempotent, and a peer whose `DisputeCommitted` delivery was withheld still
 lands on the exact final output during reduction. A participant with a pending leave whose turn falls

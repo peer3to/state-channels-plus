@@ -197,7 +197,8 @@ predicate establishes, never by who is processing it:
   participant by that participant's own signature: double-signing (same author, two different
   blocks at one fork/height); an invalid state transition by the author (failed execution,
   commitment mismatch, extending the committed predecessor differently, or authoring out of turn);
-  a wrong genesis, when the node holds the fork's genesis to prove it; a fabricated inbound
+  a wrong genesis, when the node holds the fork's genesis to prove it and the chain still holds that
+  fork at its genesis to judge it; a fabricated inbound
   message block; an objective timestamp violation; and — for on-chain postings — an unauthentic
   posted block, a fault of the poster. Evidence against the offender is constructible entirely
   from data the node already holds ([`REQ-BLOCK-PIPE-8-N529VH`](block-processing.md#req-block-pipe-8-n529vh)).
@@ -208,6 +209,12 @@ predicate establishes, never by who is processing it:
   attribution, never a channel signature). Special case: stray non-member signatures on an
   otherwise valid block are junk signatures, not a junk block — they are stripped, exactly their
   suppliers are penalized, and the block continues ([`REQ-BLOCK-PIPE-11-DCHAJ2`](block-processing.md#req-block-pipe-11-dchaj2)).
+- **Past-genesis block zero.** A block zero that does not link to the genesis, on a fork the chain
+  holds past its genesis, proves no fault: the chain no longer judges it. A live participant cuts
+  the suppliers and the author when it stores a block zero, and otherwise drops the block with no
+  verdict (its own genesis may be the wrong one). A spectator handles it the same way and keeps
+  spectating. Dispute replay never meets it, since a block at or below the chain anchor is not
+  challenge-eligible.
 - **Not-yet-ready.** No misbehavior is demonstrated; the node lacks the context to judge: channel
   not yet open or a block beyond the next expected height. The entry is restored to the queue unchanged; its fixed lifetime is not
   extended ([`REQ-BLOCK-PIPE-5-WJ31RG`](block-processing.md#req-block-pipe-5-wj31rg)).

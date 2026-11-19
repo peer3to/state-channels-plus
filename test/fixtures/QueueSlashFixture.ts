@@ -132,20 +132,6 @@ export async function assertSlashAdmission(
             // Reconnect only to exercise intake after the normal slash disconnect.
             // This clears transport punishment, never the membership service's slash evidence.
             await h.network.reconnectPeers([observer.index, spammer.index]);
-            await waitFor(
-                async () =>
-                    await h
-                        .control(observer)
-                        .handshake.isHandshakeCompleted(spammer.address)
-                        .request()
-            );
-            await waitFor(
-                async () =>
-                    await h
-                        .control(spammer)
-                        .handshake.isHandshakeCompleted(observer.address)
-                        .request()
-            );
         }
         await h
             .control(spammer)
@@ -234,20 +220,6 @@ export async function assertSlashPreservesHonestWork() {
         // Stored copies enter the normal merge directly; they have no queue record.
         expect(f.retained).to.equal(null);
         await h.network.reconnectPeers([observer.index, spammer.index]);
-        await waitFor(
-            async () =>
-                await h
-                    .control(observer)
-                    .handshake.isHandshakeCompleted(spammer.address)
-                    .request()
-        );
-        await waitFor(
-            async () =>
-                await h
-                    .control(spammer)
-                    .handshake.isHandshakeCompleted(observer.address)
-                    .request()
-        );
         await h
             .control(observer)
             .stub.observeAdmission({ source: spammer.address })

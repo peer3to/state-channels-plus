@@ -11,6 +11,25 @@ type JsonRpcId = number | string;
 /** A subscription notification held at the proxy, and the log's transaction. */
 type WithheldNotification = { transactionHash: unknown; send: () => void };
 
+/** The `error` object of a JSON-RPC error answer. */
+type JsonRpcErrorObject = { code: number; message: string; data?: unknown };
+
+/** JSON-RPC's internal error, as Besu sends it: no revert data. */
+const NODE_INTERNAL_ERROR: JsonRpcErrorObject = {
+    code: -32603,
+    message: "Internal error"
+};
+
+/** Hardhat's answer to a revert without a reason: -32603 with data "0x". */
+const HARDHAT_REVERT_ERROR: JsonRpcErrorObject = {
+    code: -32603,
+    message: "Error: Transaction reverted without a reason string",
+    data: {
+        message: "Error: Transaction reverted without a reason string",
+        data: "0x"
+    }
+};
+
 /** One request a client sent through the proxy. */
 export type ForwardedRequest = { method: JsonRpcMethod; params: unknown };
 
@@ -116,10 +135,17 @@ export class RpcNodeProxy {
     private readonly failingMethods = new Map<JsonRpcMethod, number>();
     /** Method -> how many of its next requests pass before one fails. */
     private readonly delayedFailures = new Map<JsonRpcMethod, number>();
+    /** Method -> the -32603 error its next request is answered with. */
+    private readonly internallyFailingMethods = new Map<
+        JsonRpcMethod,
+        JsonRpcErrorObject
+    >();
     /** Requests this proxy answered with an error, in order. */
     private readonly failedRequests: ForwardedRequest[] = [];
     /** Method -> the result this proxy answers its requests with, unforwarded. */
     private readonly answeredMethods = new Map<JsonRpcMethod, unknown>();
+    /** Methods {@link answeredMethods} answers only once. */
+    private readonly answeredOnceMethods = new Set<JsonRpcMethod>();
     /** Most blocks an eth_getLogs may span before this proxy rejects it. */
     private maxLogSpan?: number;
     /**
@@ -186,6 +212,22 @@ export class RpcNodeProxy {
         this.failingMethods.set(method, 1);
     }
 
+    /**
+     * Answer the next `method` request, unforwarded, with JSON-RPC's internal
+     * error, as Besu does for a call at a head block it has not stored yet.
+     */
+    failNextRequestInternally(method: JsonRpcMethod): void {
+        this.internallyFailingMethods.set(method, NODE_INTERNAL_ERROR);
+    }
+
+    /**
+     * Answer the next `method` request, unforwarded, with a revert as
+     * Hardhat sends it: JSON-RPC's internal error carrying revert data.
+     */
+    revertNextRequestInternally(method: JsonRpcMethod): void {
+        this.internallyFailingMethods.set(method, HARDHAT_REVERT_ERROR);
+    }
+
     /** Let `passing` `method` requests through, then fail the next one. */
     failRequestAfter(method: JsonRpcMethod, passing: number): void {
         this.delayedFailures.set(method, passing);
@@ -214,11 +256,19 @@ export class RpcNodeProxy {
     /** Answer every `method` request with `result` itself, unforwarded. */
     answerRequests(method: JsonRpcMethod, result: unknown): void {
         this.answeredMethods.set(method, result);
+        this.answeredOnceMethods.delete(method);
+    }
+
+    /** Answer the next `method` request with `result` itself, unforwarded. */
+    answerNextRequest(method: JsonRpcMethod, result: unknown): void {
+        this.answeredMethods.set(method, result);
+        this.answeredOnceMethods.add(method);
     }
 
     /** Forward `method`'s requests to the node again after {@link answerRequests}. */
     stopAnsweringRequests(method: JsonRpcMethod): void {
         this.answeredMethods.delete(method);
+        this.answeredOnceMethods.delete(method);
     }
 
     /** Reject eth_getLogs requests spanning more than `maxSpan` blocks. */
@@ -363,6 +413,15 @@ export class RpcNodeProxy {
                     this.failingMethods.set(method, 1);
                 } else this.delayedFailures.set(method, passing - 1);
             }
+            const internalError = method
+                ? this.internallyFailingMethods.get(method)
+                : undefined;
+            if (method && id !== undefined && internalError) {
+                this.internallyFailingMethods.delete(method);
+                this.failedRequests.push({ method, params });
+                reply({ error: internalError });
+                return;
+            }
             const failures = method
                 ? this.failingMethods.get(method)
                 : undefined;
@@ -379,6 +438,8 @@ export class RpcNodeProxy {
                 this.answeredMethods.has(method)
             ) {
                 reply({ result: this.answeredMethods.get(method) });
+                if (this.answeredOnceMethods.delete(method))
+                    this.answeredMethods.delete(method);
                 return;
             }
             if (

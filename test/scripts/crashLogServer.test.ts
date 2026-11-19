@@ -1,23 +1,40 @@
 import {
     decodeChunk,
     encodeChunk,
+    holdMergedRead,
     listenOn,
     loadCrashLogServer,
     logEntries,
     paddedLogEntries,
+    uploadIncompressibleLog,
     withInflateCeiling,
+    withMergedReadTimeout,
     upload as uploadTo,
     uploadBody
 } from "@test/fixtures/logging/crashLogServer.fixture";
+import {
+    createUploaderOverLoggedStore,
+    paddedMessages
+} from "@test/fixtures/logging/LogUploader.fixture";
 import { expect } from "chai";
-import { mkdirSync, readdirSync, rmSync, utimesSync } from "node:fs";
-import type { Server } from "node:http";
+import { randomBytes } from "node:crypto";
+import { once } from "node:events";
+import {
+    mkdirSync,
+    readdirSync,
+    rmSync,
+    unlinkSync,
+    utimesSync
+} from "node:fs";
+import { get, type Server } from "node:http";
+import { setTimeout as delay } from "node:timers/promises";
 import path from "path";
 
 const {
     app,
     sanitizeSegment,
     validateUploadBody,
+    MAX_UPLOAD_BODY_BYTES,
     logDir: TEST_LOG_DIR
 } = loadCrashLogServer();
 
@@ -160,6 +177,50 @@ describe("crash-log-server routes", function () {
         ]);
     });
 
+    // a merged read streams its body: a client gone mid-body must neither take
+    // the server down nor keep the merged read turn from the next read
+    it("serves the next merged read, with no unhandled rejection, after a client leaves one mid-body", async function () {
+        const channelId = "0x" + "56".repeat(32);
+        const peerAddress = "0x" + "9a".repeat(20);
+        // random stacks do not compress: the body outgrows the socket buffers
+        const entries = logEntries(2_500).map((entry) => ({
+            ...(entry as object),
+            stack: randomBytes(1_400).toString("hex")
+        }));
+        expect(
+            await upload(
+                uploadBody({
+                    channelId,
+                    peerAddress,
+                    compressedLogs: encodeChunk(entries),
+                    toSeq: entries.length - 1
+                })
+            )
+        ).to.equal(200);
+        const url = `${baseUrl}/logs/${channelId}/${peerAddress}`;
+        // the deployed server has no handler: an unhandled rejection exits it
+        const unhandled: unknown[] = [];
+        const record = (reason: unknown) => unhandled.push(reason);
+        process.on("unhandledRejection", record);
+        try {
+            const left = get(url);
+            const [response] = (await once(left, "response")) as [
+                NodeJS.ReadableStream
+            ];
+            await once(response, "data");
+            left.destroy();
+
+            const read = await fetch(url);
+            expect(read.status).to.equal(200);
+            expect(decodeChunk(await read.text())).to.have.length(
+                entries.length
+            );
+        } finally {
+            process.off("unhandledRejection", record);
+        }
+        expect(unhandled).to.deep.equal([]);
+    });
+
     it("keeps two stores with the same sequence range apart", async function () {
         const channelId = "0x" + "12".repeat(32);
         const peerAddress = "0x" + "34".repeat(20);
@@ -286,6 +347,193 @@ describe("crash-log-server routes", function () {
         expect(
             messages.some((message) => message.startsWith("new run"))
         ).to.equal(true);
+    });
+
+    it("accepts every chunk of a delta the uploader splits at the server's limit", async function () {
+        const channelId = "0x" + "7c".repeat(32);
+        const peerAddress = "0x" + "7d".repeat(20);
+        const maxSizeMb = 0.25;
+        const messages = paddedMessages(400);
+
+        const { deltaBytes, maxChunkBytes, outcome } = await withInflateCeiling(
+            String(maxSizeMb),
+            async () => {
+                const uploader = createUploaderOverLoggedStore({
+                    uploadEndpoint: `${baseUrl}/logs/upload`,
+                    sharedContext: { threadName: "vm", channelId, peerAddress },
+                    messages,
+                    // room for every entry with the harness's unlimited stack depth
+                    maxStoreBytes: 64 * 1024 * 1024,
+                    maxChunkBytes: () => maxSizeMb * 1024 * 1024
+                });
+                return {
+                    ...uploader,
+                    outcome: await uploader.logUploader.uploadLogs()
+                };
+            }
+        );
+
+        // sent as one chunk, the server would refuse it
+        expect(deltaBytes).to.be.above(maxChunkBytes);
+        expect(outcome).to.deep.equal({ ok: true, entries: messages.length });
+        const read = await fetch(`${baseUrl}/logs/${channelId}/${peerAddress}`);
+        expect(read.status).to.equal(200);
+        expect(
+            decodeChunk(await read.text()).map((entry) => entry.message)
+        ).to.deep.equal(messages);
+    });
+
+    it("accepts a chunk that does not compress, up to the inflate limit", async function () {
+        // random base64 barely compresses: packed, the chunk stays about as
+        // large as unpacked, a third larger once base64'd for the body
+        const entries = logEntries(145).map((entry) => ({
+            ...(entry as Record<string, unknown>),
+            message: randomBytes(48 * 1024).toString("base64")
+        }));
+        const compressedLogs = encodeChunk(entries);
+
+        expect(compressedLogs.length).to.be.above(8 * 1024 * 1024);
+        expect(
+            await upload(
+                uploadBody({
+                    channelId: "0x" + "6e".repeat(32),
+                    compressedLogs,
+                    fromSeq: 0,
+                    toSeq: entries.length - 1
+                })
+            )
+        ).to.equal(200);
+    });
+
+    it("refuses a body past the upload body limit with 413 and stores nothing", async function () {
+        const body = uploadBody({
+            channelId: "0x" + "e1".repeat(32),
+            compressedLogs: randomBytes(
+                Math.ceil((MAX_UPLOAD_BODY_BYTES * 3) / 4) + 1
+            ).toString("base64")
+        });
+
+        expect(await upload(body)).to.equal(413);
+        const read = await fetch(
+            `${baseUrl}/logs/${body.channelId}/${body.peerAddress}`
+        );
+        expect(read.status).to.equal(404);
+    });
+
+    it("refuses a small chunk that inflates past the limit with 400 and stores nothing", async function () {
+        const body = uploadBody({
+            channelId: "0x" + "e2".repeat(32),
+            compressedLogs: encodeChunk(paddedLogEntries(200, "fat")),
+            toSeq: 199
+        });
+
+        const response = await withInflateCeiling("0.05", () =>
+            fetch(`${baseUrl}/logs/upload`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body)
+            })
+        );
+
+        expect(response.status).to.equal(400);
+        expect(((await response.json()) as { error: string }).error).to.include(
+            "inflates past"
+        );
+        const read = await fetch(
+            `${baseUrl}/logs/${body.channelId}/${body.peerAddress}`
+        );
+        expect(read.status).to.equal(404);
+    });
+
+    // one merged read at a time; a client that stops reading is cut at the
+    // stall timeout and the queued read runs right after
+    it("runs a second merged read only after a stalled one is cut at the timeout", async function () {
+        const channelId = "0x" + "e3".repeat(32);
+        const stalledPeer = "0x" + "e4".repeat(20);
+        const queuedPeer = "0x" + "e5".repeat(20);
+        await uploadIncompressibleLog(baseUrl, channelId, stalledPeer, 3);
+        expect(
+            await upload(uploadBody({ channelId, peerAddress: queuedPeer }))
+        ).to.equal(200);
+
+        const timeoutMs = 500;
+        const { waitedMs, entries } = await withMergedReadTimeout(
+            timeoutMs,
+            async () => {
+                const stalled = await holdMergedRead(
+                    `${baseUrl}/logs/${channelId}/${stalledPeer}`
+                );
+                try {
+                    const read = await fetch(
+                        `${baseUrl}/logs/${channelId}/${queuedPeer}`
+                    );
+                    expect(read.status).to.equal(200);
+                    return {
+                        entries: decodeChunk(await read.text()),
+                        waitedMs: Date.now() - stalled.startedAt
+                    };
+                } finally {
+                    stalled.destroy();
+                }
+            }
+        );
+
+        expect(entries).to.have.length(3);
+        // the queued read waited for the stalled one's timeout to cut it
+        expect(waitedMs).to.be.at.least(timeoutMs);
+    });
+
+    // a queued read holds none of its chunks: it reads them once it has the turn
+    it("reads a queued merged read's chunks only once it gets the turn", async function () {
+        const channelId = "0x" + "e6".repeat(32);
+        const stalledPeer = "0x" + "e7".repeat(20);
+        const queuedPeer = "0x" + "e8".repeat(20);
+        await uploadIncompressibleLog(baseUrl, channelId, stalledPeer, 3);
+        for (const [fromSeq, storeId] of [
+            [0, "kept0000"],
+            [3, "deleted0"]
+        ] as const)
+            expect(
+                await upload(
+                    uploadBody({
+                        channelId,
+                        peerAddress: queuedPeer,
+                        storeId,
+                        fromSeq,
+                        toSeq: fromSeq + 2
+                    })
+                )
+            ).to.equal(200);
+        const channelDir = readdirSync(TEST_LOG_DIR).find((name) =>
+            name.startsWith(channelId)
+        )!;
+        const deletedStore = path.join(
+            TEST_LOG_DIR,
+            channelDir,
+            queuedPeer,
+            "vm",
+            "deleted0"
+        );
+
+        const entries = await withMergedReadTimeout(500, async () => {
+            const stalled = await holdMergedRead(
+                `${baseUrl}/logs/${channelId}/${stalledPeer}`
+            );
+            try {
+                const queued = fetch(
+                    `${baseUrl}/logs/${channelId}/${queuedPeer}`
+                );
+                // the queued request reaches the server, then a chunk goes away
+                await delay(200);
+                for (const name of readdirSync(deletedStore))
+                    unlinkSync(path.join(deletedStore, name));
+                return decodeChunk(await (await queued).text());
+            } finally {
+                stalled.destroy();
+            }
+        });
+
+        expect(entries).to.have.length(3);
     });
 
     it("lists stored chunks in the index", async function () {

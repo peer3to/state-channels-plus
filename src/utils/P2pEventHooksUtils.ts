@@ -190,7 +190,8 @@ export default class P2pEventHooksUtils {
             timeConfig.p2pTime,
             timeConfig.agreementTime,
             timeConfig.chainFallbackTime,
-            relevantTimestamp
+            relevantTimestamp,
+            currentTimestamp
         );
     }
 

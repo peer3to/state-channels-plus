@@ -119,18 +119,16 @@ contract StateSnapshotFacet is StateChannelCommon {
         if (newSnapshot.snapshotData.participants.length == 0) {
             _removeOpenChannel(channelId);
             // Clear storage when channel is closed (0 participants)
-            _clearStorage(channelId, newSnapshot.snapshotData.latestInboundMessageBlockHash);
+            _clearStorage(channelId, newSnapshot.snapshotData.latestInboundMessageBlockHash, true);
             // Clear the state snapshot
             delete stateSnapshots[channelId];
             // TODO! send all remaining funds to the treasury
-        }
-
-        //check if last fork -> clearStorage
-        if (
+        } else if (
             disputeData[channelId].disputeWindowMap[newSnapshot.forkId].evidence.creationTimestamp == 0
                 && shouldClearStorage
         ) {
-            _clearStorage(channelId, newSnapshot.snapshotData.latestInboundMessageBlockHash);
+            // last fork of an open channel -> clear its storage (the close above already did)
+            _clearStorage(channelId, newSnapshot.snapshotData.latestInboundMessageBlockHash, false);
         }
         emit StateSnapshotUpdated(channelId, newSnapshot);
     }
@@ -186,10 +184,17 @@ contract StateSnapshotFacet is StateChannelCommon {
         emit WithdrawalsUpdated(channelId, totalWithdrawals);
     }
 
-    function _clearStorage(bytes32 channelId, bytes32 snapshotLatestInboundMessageBlockHash) internal {
+    function _clearStorage(bytes32 channelId, bytes32 snapshotLatestInboundMessageBlockHash, bool isChannelClosed)
+        internal
+    {
         _clearDisputeData(channelId);
-        _clearOldInboundMessageBlocks(channelId, snapshotLatestInboundMessageBlockHash);
-        emit ChannelStorageCleared(channelId, snapshotLatestInboundMessageBlockHash);
+        // an open channel keeps the snapshot's inbound head: a reduction reads its height and the next inbound block
+        // links to it. A closed channel prunes it too
+        bytes32 firstPrunedInboundMessageBlockHash = isChannelClosed
+            ? snapshotLatestInboundMessageBlockHash
+            : inboundMessageBlockMap[channelId][snapshotLatestInboundMessageBlockHash].previousBlockHash;
+        _clearOldInboundMessageBlocks(channelId, firstPrunedInboundMessageBlockHash);
+        emit ChannelStorageCleared(channelId, firstPrunedInboundMessageBlockHash);
     }
 
     function _clearDisputeData(bytes32 channelId) internal {
@@ -202,9 +207,9 @@ contract StateSnapshotFacet is StateChannelCommon {
         delete disputeData.disputedForks;
     }
 
-    function _clearOldInboundMessageBlocks(bytes32 channelId, bytes32 snapshotLatestInboundMessageBlockHash) internal {
-        // start from the snapshot head (prune it too) and walk backwards
-        bytes32 keyToDelete = snapshotLatestInboundMessageBlockHash;
+    function _clearOldInboundMessageBlocks(bytes32 channelId, bytes32 firstPrunedInboundMessageBlockHash) internal {
+        // start from the first pruned block and walk backwards
+        bytes32 keyToDelete = firstPrunedInboundMessageBlockHash;
         bytes32 prev;
         while (keyToDelete != bytes32(0)) {
             prev = inboundMessageBlockMap[channelId][keyToDelete].previousBlockHash;

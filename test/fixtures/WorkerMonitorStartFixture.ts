@@ -21,6 +21,49 @@ class MonitorProbeRoot extends AInternalRpcRoot {
     }
 }
 
+/** A worker-mode compute root that turns its thread's fatal delay off. */
+class ComputeProbeRoot extends AInternalRpcRoot {
+    protected override readonly performanceMonitorOptions = {
+        delayErrorThresholdMs: 0
+    };
+
+    constructor() {
+        super(() => {}, null, { mode: "worker" });
+    }
+
+    public async start(): Promise<void> {}
+
+    public dispose(): Promise<void> {
+        return this.disposeRoot(() => {});
+    }
+}
+
+/**
+ * A worker root starts its thread's monitor with its own monitor options and
+ * the thread label.
+ */
+export async function assertWorkerMonitorOptions(): Promise<void> {
+    const threshold = config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS;
+    config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS = 3600;
+    const root = new ComputeProbeRoot();
+    const starts: sinon.SinonSpy = sinon.spy(
+        root.logger.attachedLogger,
+        "startPerformanceMonitoring"
+    );
+    try {
+        await root.startRuntime({ mode: "worker" });
+        expect(starts.lastCall.args[0]).to.deep.equal({
+            delayErrorThresholdMs: 0,
+            threadLabel: globalThis.threadName
+        });
+    } finally {
+        starts.restore();
+        root.logger.attachedLogger.stopPerformanceMonitoring();
+        await root.dispose();
+        config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS = threshold;
+    }
+}
+
 /**
  * A worker root's event-loop monitor starts before its start only with
  * `EVENT_LOOP_MONITOR_STARTUP`; either way it runs once the root started.

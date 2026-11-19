@@ -1,5 +1,9 @@
 // @spec-test-coverage-ignore: log receiver and uploader staging shared by the logging suites; the suites own the declarations
-import { decodeLogs, decompressFromBase64 } from "@/utils/logging/logEncoder";
+import {
+    decodeLogs,
+    decompressFromBase64,
+    encodeLogChunk
+} from "@/utils/logging/logEncoder";
 import {
     LogEntry,
     type LogThreadName,
@@ -194,10 +198,15 @@ export function createUploaderFixture(opts: {
     // replaces the default channel/peer identity, e.g. a thread name and no channel
     sharedContext?: SharedLoggerContext;
     maxStoreBytes?: number;
+    /** an existing store to upload from, in place of a new one */
+    logStore?: LogStore;
+    /** the server's chunk limit the uploader splits a delta at */
+    maxChunkBytes?: number;
     /** The uploader class, e.g. from a second copy of the module. */
     Uploader?: typeof NodeLogUploader;
 }): UploaderFixture {
-    const logStore = new LogStore(opts.maxStoreBytes ?? 1024 * 1024, true);
+    const logStore =
+        opts.logStore ?? new LogStore(opts.maxStoreBytes ?? 1024 * 1024, true);
     const sharedContext: SharedLoggerContext = opts.sharedContext ?? {
         channelId: ethers.ZeroHash,
         peerAddress: ethers.Wallet.createRandom().address
@@ -206,7 +215,8 @@ export function createUploaderFixture(opts: {
         logStore,
         {
             uploadEndpoint: opts.uploadEndpoint,
-            jitterMaxMs: opts.jitterMaxMs ?? 0
+            jitterMaxMs: opts.jitterMaxMs ?? 0,
+            maxChunkBytes: opts.maxChunkBytes
         },
         { component: "LogUploaderTest" },
         sharedContext,
@@ -252,6 +262,54 @@ export function loadSeparateNodeLogUploader(): typeof NodeLogUploader {
             require.cache[path] = loaded[index];
         });
     }
+}
+
+/** about 1 KB per message, numbered so order shows */
+export function paddedMessages(count: number, marker = "entry"): string[] {
+    return Array.from({ length: count }, (_unused, index) =>
+        `${marker} ${index} `.padEnd(1_000, "x")
+    );
+}
+
+/**
+ * An uploader over a store already holding `messages`, with a chunk limit
+ * set from that store's delta size as the server counts it, so a limit can
+ * sit exactly at the delta: every entry carries its own stack trace.
+ */
+export function createUploaderOverLoggedStore(opts: {
+    uploadEndpoint: string;
+    messages: string[];
+    maxChunkBytes: (deltaBytes: number) => number;
+    sharedContext?: SharedLoggerContext;
+    maxStoreBytes?: number;
+}): {
+    logUploader: NodeLogUploader;
+    deltaBytes: number;
+    maxChunkBytes: number;
+} {
+    const { logger, logStore } = createUploaderFixture({
+        uploadEndpoint: opts.uploadEndpoint,
+        sharedContext: opts.sharedContext,
+        maxStoreBytes: opts.maxStoreBytes
+    });
+    for (const message of opts.messages) logger.info(message);
+    const deltaBytes = encodeLogChunk(logStore.getAllLogs()).length;
+    const maxChunkBytes = opts.maxChunkBytes(deltaBytes);
+    const { logUploader } = createUploaderFixture({
+        uploadEndpoint: opts.uploadEndpoint,
+        sharedContext: opts.sharedContext,
+        logStore,
+        maxChunkBytes
+    });
+    return { logUploader, deltaBytes, maxChunkBytes };
+}
+
+/** an upload's size as the server counts it: UTF-8 bytes once inflated */
+export function inflatedBytesOf(received: ReceivedUpload): number {
+    return Buffer.byteLength(
+        decompressFromBase64(received.compressedLogs),
+        "utf8"
+    );
 }
 
 export function messagesOf(receiver: LogReceiver, index: number): string[] {

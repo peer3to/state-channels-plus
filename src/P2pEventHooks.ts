@@ -23,7 +23,10 @@ type P2pEventHooks = {
         turnTime: number,
         agreementTime: number,
         chainFallbackTime: number,
-        turnStartedAtBlockTimestamp?: number
+        turnStartedAtBlockTimestamp?: number,
+        // the runtime's chain time at this notification, on the same clock as
+        // the turn start: their difference is the turn's elapsed time
+        currentTimestamp?: number
     ) => void;
 
     /** Fires instead of onTurn when this pending-leave peer can author its exit. */

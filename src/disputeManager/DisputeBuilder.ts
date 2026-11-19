@@ -5,6 +5,7 @@ import { StateSnapshot } from "../models";
 import { Address, ChannelId, ForkId, Hash } from "../types/types";
 import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import Storage from "@/storage";
+import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
 import {
     hash,
     intersection,
@@ -20,7 +21,10 @@ import { errorMessage } from "@/utils/errorMessage";
 import { preferLocal } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
-import { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    SnapshotDataStruct,
+    StateSnapshotStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeConfirmationStruct,
     DisputeStruct,
@@ -333,14 +337,54 @@ export default class DisputeBuilder {
         }
 
         const fraudProofsToApply: FraudProofStruct[] = [];
+        // read once, and only when a WrongGenesis proof is stored
+        let chainSnapshot: StateSnapshotStruct | undefined;
         for (const participant of difference(participants, slashedOnChain)) {
-            const fraudProof =
-                this.storage.fraudProofs.getFraudProofForParticipant(
-                    participant
-                );
-            if (fraudProof) {
+            for (const fraudProof of this.storage.fraudProofs.getFraudProofsForParticipant(
+                participant
+            )) {
+                // a forged-inbound proof the chain no longer judges reverts the whole multicall -> try the next proof
+                if (
+                    Number(fraudProof.proofType) ===
+                        toSolidityFraudProofType(
+                            FraudProofType.ForgedInboundMessageBlock
+                        ) &&
+                    !(await this.stateChannelManagerContract.isUncommittedInboundMessageBlock(
+                        this.channelId,
+                        Codec.decode(
+                            fraudProof.encodedProof,
+                            FraudProofType.ForgedInboundMessageBlock
+                        ).forgedInboundMessageBlock
+                    ))
+                )
+                    continue;
+                // a WrongGenesis proof the chain no longer judges (its fork past genesis) reverts the multicall too
+                if (
+                    Number(fraudProof.proofType) ===
+                    toSolidityFraudProofType(FraudProofType.WrongGenesis)
+                ) {
+                    chainSnapshot ??=
+                        await this.stateChannelManagerContract.getStateSnapshot(
+                            this.channelId
+                        );
+                    const invalidBlock = Codec.decode(
+                        Codec.decode(
+                            fraudProof.encodedProof,
+                            FraudProofType.WrongGenesis
+                        ).invalidBlock.encodedBlock,
+                        Type.Block
+                    );
+                    if (
+                        await this.diamondStateMachine.isForkPastGenesis(
+                            chainSnapshot,
+                            String(invalidBlock.transaction.header.forkId)
+                        )
+                    )
+                        continue;
+                }
                 fraudProofsToApply.push(fraudProof);
                 slashedOnChain.add(participant);
+                break;
             }
         }
         // Only participants of the latest state may be listed: a slash of

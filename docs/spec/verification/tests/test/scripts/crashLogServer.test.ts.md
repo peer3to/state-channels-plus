@@ -7,9 +7,11 @@ Test file: [test/scripts/crashLogServer.test.ts](../../../../../../test/scripts/
 The suite exercises the crash-log receiver script: its path-segment sanitizer, its upload body
 validation, and the POST and GET routes end to end on a real listening app with a temporary log
 directory. Route oracles are HTTP statuses and the decoded merged read. It covers a chunk stored and
-read back; two stores with the same sequence range kept apart; eight concurrent uploads for one
+read back; a client that leaves a large merged read mid-body raising no unhandled rejection while
+the next read of the same log still answers whole; two stores with the same sequence range kept apart; eight concurrent uploads for one
 channel landing in one directory; a merged read that runs out of inflate budget dropping the oldest
-run and announcing the drop on a header; the index listing; and, with a token configured, a send
+run and announcing the drop on a header; a real uploader whose delta is measured past a lowered 0.25 MB server limit getting every chunk accepted and the merged read returning every entry
+in order; a chunk of random base64 just under the 10 MiB inflate limit, over 8 MiB once packed, accepted with 200; a body one byte past the upload body limit refused with 413 and a small chunk that inflates past a lowered ceiling refused with 400 "inflates past", neither stored; merged reads served one at a time, a read queued behind a client that stopped reading answering only once the lowered stall timeout cut that client; a queued read reading its chunks only once it has the turn, so a chunk deleted while it waits is not in its answer; the index listing; and, with a token configured, a send
 with no token or the wrong one refused and not stored while a later valid send is accepted.
 
 ## Tests
@@ -24,9 +26,16 @@ with no token or the wrong one refused and not stored while a later valid send i
 - `rejects a chunk whose entry count disagrees with its range`: none
 - `rejects a body with no thread name`: none
 - `stores an uploaded chunk and reads it back merged`: none
+- `serves the next merged read, with no unhandled rejection, after a client leaves one mid-body`: none
 - `keeps two stores with the same sequence range apart`: REQ-LOG-6-Q8KY4N.T1.P4
 - `keeps concurrent uploads for one channel in a single directory`: REQ-LOG-5-ST6S0G.T1.P4
 - `keeps the newest store when a merged read runs out of budget`: REQ-LOG-7-M2RC5W.T1.P2
+- `accepts every chunk of a delta the uploader splits at the server's limit`: REQ-LOG-7-M2RC5W.T1.P8
+- `accepts a chunk that does not compress, up to the inflate limit`: REQ-LOG-7-M2RC5W.T1.P10
+- `refuses a body past the upload body limit with 413 and stores nothing`: none
+- `refuses a small chunk that inflates past the limit with 400 and stores nothing`: REQ-LOG-7-M2RC5W.T1.P1
+- `runs a second merged read only after a stalled one is cut at the timeout`: none
+- `reads a queued merged read's chunks only once it gets the turn`: none
 - `lists stored chunks in the index`: none
 - `refuses an upload with no token`: REQ-LOG-7-M2RC5W.T1.P4
 - `refuses an upload with the wrong token`: REQ-LOG-7-M2RC5W.T1.P5
