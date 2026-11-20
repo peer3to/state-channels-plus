@@ -963,7 +963,7 @@ Specification cases tested: 18/18.
 Specification cases tested: 18/18.
 
 [`REQ-STPROOF-5-HRDXEG` (A read from a node yields only what its proof decides, at one block)](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg)
-Specification cases tested: 6/6.
+Specification cases tested: 12/12.
 
 [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../specification/peer-communication/synchronization.md#req-sync-1-t2589h)
 Specification cases tested: 17/20. Untested: T1.P2, T1.P4, T1.P7.
