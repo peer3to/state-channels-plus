@@ -35,13 +35,21 @@ after a failed check are named as separate subjects and are not specified yet. R
 the document: a root taken from the same endpoint as the proof catches that endpoint's faults and
 omissions, not a consistent lie.
 
+The plan [`REQ-STPROOF-3-NVJGR0.T2`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2) of the requirement below, added on 2026-11-18, checks
+the same way the blocks a running chain node pushes.
+
 [`REQ-STPROOF-3-NVJGR0` (A pushed block is accepted only under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0) was added the same day for a block an endpoint pushes: the writes are accepted
 only under the state root of the header pushed with them, the block is identified by the header hash and
 by the Ethereum block hash the chain wrote into the header, and a rejected block yields no write. The
-shape of the pushed block (header, written slots, proof, matching logs) follows the user's decisions of
-2026-11-18 and is not confirmed by Luka yet. Not specified: which blocks an endpoint must push, and how a
-participant notices a write an endpoint left out. The plan [`REQ-STPROOF-3-NVJGR0.T2`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2), added the same
-day, asks for the same check on blocks a running chain node pushes.
+shape of the pushed block (header, written slots, proof, matching logs) follows the engineer's decisions of
+2026-11-18 and 2026-11-19; Luka reviews it in the pull requests. Which blocks an endpoint must push, and how
+a participant notices a write an endpoint left out, are specified with the subscription.
+
+Added on 2026-11-19 on the engineer's decisions of that day: pushed logs are hints whose content is not
+proven and that never change what a participant holds; only the header hash binds a pushed block to a
+block the participant trusts; a pushed block of the wrong shape is rejected. They are stated as
+assumptions of [storage-proofs.md](../specification/runtime/storage-proofs.md). Which blocks an endpoint
+pushes, and which writes, is decided too and specified with the subscription.
 
 ## 2026-10-26 — Application chain access, local join-signature answers, closed-transport frames
 
