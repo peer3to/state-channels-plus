@@ -64,7 +64,7 @@ uncertain, and leave final fingerprint approval to the engineer.
 
 ### Canonical test command and parallel run logs
 
-`yarn test:parallel:distributed --test-parallel-script --test-browser` is the canonical full test gate (also used by CI). Without those flags, parallel-runner self-tests and browser tests are excluded. The full gate runs three
+`yarn test:parallel:distributed --parachain --test-parallel-script --test-browser` is the canonical full test gate (also used by CI): it runs on the parachain dev node. Without those flags, parallel-runner self-tests and browser tests are excluded. The full gate runs three
 tiers across the configured distributed workers: all Mocha tests, the forge
 tests and the browser gates (`test/browser/run-*.mjs`). Pass `--e2e-only` to
 limit Mocha discovery to `test/e2e`; it also drops the forge and browser tiers.

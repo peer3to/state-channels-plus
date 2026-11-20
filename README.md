@@ -747,5 +747,5 @@ yarn test:parallel:distributed --test-browser
 yarn test:parallel:distributed --test-parallel-script --test-browser
 ```
 
-CI passes both flags for the full test gate. `--browser-only` still selects only
+CI passes both flags, and `--parachain`, for the full test gate. `--browser-only` still selects only
 browser gates. `--e2e-only` retains its existing tier restrictions.
