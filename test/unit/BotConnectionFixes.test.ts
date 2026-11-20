@@ -51,7 +51,10 @@ import {
     stageLeavePostClosingBeforeAdoption
 } from "@test/fixtures/NonFinalZeroParticipantReductionStaging";
 import { postSnapshotFrom } from "@test/fixtures/ProofOwnerStaging";
-import { MathTestSession as TestSession } from "@test/harness";
+import {
+    MathTestSession as TestSession,
+    MIN_TEST_TIME_CONFIG
+} from "@test/harness";
 import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -748,7 +751,11 @@ describe("Unit: bot-connection fixes", function () {
             const { joiner, leaver, disputes, posts } =
                 await stageLeaveAwaitingTurn(h, {
                     watchdogMs: 60_000,
-                    forwardDisputes: true
+                    forwardDisputes: true,
+                    // the leaver's self-removal must land within the
+                    // evidence period of the dispute it observes; the
+                    // staging's 4 s is two parachain blocks
+                    evidenceTime: MIN_TEST_TIME_CONFIG.evidenceTime
                 });
             const forkId = h.activeForkId!;
             const comparisons = await h.rpcStub.recordEvidenceComparisons(
@@ -795,7 +802,11 @@ describe("Unit: bot-connection fixes", function () {
             const { joiner, leaver, disputes } =
                 await stageInboundBlockedProtocolExit(h, {
                     watchdogMs: 60_000,
-                    forwardDisputes: true
+                    forwardDisputes: true,
+                    // the leaver's self-removal must land within the
+                    // evidence period of the dispute it observes; the
+                    // staging's 4 s is two parachain blocks
+                    evidenceTime: MIN_TEST_TIME_CONFIG.evidenceTime
                 });
             const forkId = h.activeForkId!;
             const comparisons = await h.rpcStub.recordEvidenceComparisons(
@@ -840,7 +851,11 @@ describe("Unit: bot-connection fixes", function () {
             const { joiner, leaver, disputes, expireWatchdog } =
                 await stageLeaveAwaitingTurn(h, {
                     holdWatchdog: true,
-                    forwardDisputes: true
+                    forwardDisputes: true,
+                    // the leaver's self-removal must land within the
+                    // evidence period of the dispute it observes; the
+                    // staging's 4 s is two parachain blocks
+                    evidenceTime: MIN_TEST_TIME_CONFIG.evidenceTime
                 });
             const forkId = h.activeForkId!;
             const hostErrors = recordHostErrors(leaver);
