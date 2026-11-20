@@ -7171,6 +7171,42 @@
       "peakRssGb": 0.507,
       "measurementReason": null
     },
+    "hardhat|test/lightClient/LightClientProvenReads.test.ts|Light client proven reads asks the node for no proof when a read asks nothing": {
+      "durationMs": 3242,
+      "avgCores": 3.714,
+      "peakRssGb": 0.626,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvenReads.test.ts|Light client proven reads reads a block's own state after the chain moved on": {
+      "durationMs": 8304,
+      "avgCores": 1.466,
+      "peakRssGb": 0.612,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvenReads.test.ts|Light client proven reads reads slots, code and accounts proven at the node's best block, equal to the node's own answers": {
+      "durationMs": 5451,
+      "avgCores": 2.205,
+      "peakRssGb": 0.608,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvenReads.test.ts|Light client proven reads throws when the node answers a read with no proof": {
+      "durationMs": 3277,
+      "avgCores": 3.784,
+      "peakRssGb": 0.625,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvenReads.test.ts|Light client proven reads throws when the node answers no block header": {
+      "durationMs": 3863,
+      "avgCores": 3.207,
+      "peakRssGb": 0.626,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvenReads.test.ts|Light client proven reads throws when the node answers with the proof of another block": {
+      "durationMs": 8046,
+      "avgCores": 1.52,
+      "peakRssGb": 0.618,
+      "measurementReason": null
+    },
     "hardhat|test/lightClient/LightClientPushedBlocks.test.ts|Light client pushed blocks proves a slot a live node pushed as cleared": {
       "durationMs": 7471,
       "avgCores": 1.668,
@@ -20039,6 +20075,114 @@
       "durationMs": 2396,
       "avgCores": 0.643,
       "peakRssGb": 0.201,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierAccountProofVerifier.test.ts|FrontierAccountProofVerifier counts a freeze against the reserved balance before the free balance": {
+      "durationMs": 561,
+      "avgCores": 0.517,
+      "peakRssGb": 0.079,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierAccountProofVerifier.test.ts|FrontierAccountProofVerifier keeps back a frozen balance that exceeds the existential deposit": {
+      "durationMs": 720,
+      "avgCores": 0.75,
+      "peakRssGb": 0.092,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierAccountProofVerifier.test.ts|FrontierAccountProofVerifier keeps back the existential deposit of a balance nothing is frozen of": {
+      "durationMs": 384,
+      "avgCores": 0.938,
+      "peakRssGb": 0.083,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierAccountProofVerifier.test.ts|FrontierAccountProofVerifier proves a contract's nonce and its zero balance to the node's own answers": {
+      "durationMs": 452,
+      "avgCores": 0.664,
+      "peakRssGb": 0.083,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierAccountProofVerifier.test.ts|FrontierAccountProofVerifier proves a free balance of no more than what is kept back as zero": {
+      "durationMs": 295,
+      "avgCores": 0.407,
+      "peakRssGb": 0.062,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierAccountProofVerifier.test.ts|FrontierAccountProofVerifier proves a funded account's nonce and balance to the node's own answers": {
+      "durationMs": 524,
+      "avgCores": 0.592,
+      "peakRssGb": 0.078,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierAccountProofVerifier.test.ts|FrontierAccountProofVerifier proves an account the chain holds no code for as empty": {
+      "durationMs": 332,
+      "avgCores": 1.114,
+      "peakRssGb": 0.093,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierAccountProofVerifier.test.ts|FrontierAccountProofVerifier proves an address the chain holds nothing for as nonce and balance zero": {
+      "durationMs": 532,
+      "avgCores": 0.545,
+      "peakRssGb": 0.08,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierAccountProofVerifier.test.ts|FrontierAccountProofVerifier proves code the trie holds by hash to the node's own eth_getCode": {
+      "durationMs": 315,
+      "avgCores": 1.206,
+      "peakRssGb": 0.095,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierAccountProofVerifier.test.ts|FrontierAccountProofVerifier proves code the trie holds inside its leaf to the node's own eth_getCode": {
+      "durationMs": 553,
+      "avgCores": 0.524,
+      "peakRssGb": 0.077,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierAccountProofVerifier.test.ts|FrontierAccountProofVerifier proves several accounts from one shared proof": {
+      "durationMs": 320,
+      "avgCores": 1.219,
+      "peakRssGb": 0.094,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierAccountProofVerifier.test.ts|FrontierAccountProofVerifier proves the code of several contracts from one shared proof": {
+      "durationMs": 329,
+      "avgCores": 1.125,
+      "peakRssGb": 0.095,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierAccountProofVerifier.test.ts|FrontierAccountProofVerifier refuses an address that is not 20 bytes": {
+      "durationMs": 328,
+      "avgCores": 1.098,
+      "peakRssGb": 0.088,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierAccountProofVerifier.test.ts|FrontierAccountProofVerifier throws for an account the proof was not built for": {
+      "durationMs": 564,
+      "avgCores": 0.55,
+      "peakRssGb": 0.077,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierAccountProofVerifier.test.ts|FrontierAccountProofVerifier throws for code the proof was not built for": {
+      "durationMs": 307,
+      "avgCores": 1.173,
+      "peakRssGb": 0.06,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierAccountProofVerifier.test.ts|FrontierAccountProofVerifier throws when the proof node that carries hashed code is left out": {
+      "durationMs": 306,
+      "avgCores": 0.392,
+      "peakRssGb": 0.062,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierAccountProofVerifier.test.ts|FrontierAccountProofVerifier throws when the proven account is not as long as an account entry": {
+      "durationMs": 295,
+      "avgCores": 0.373,
+      "peakRssGb": 0.063,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierAccountProofVerifier.test.ts|FrontierAccountProofVerifier throws when the proven code is not as long as it announces": {
+      "durationMs": 377,
+      "avgCores": 0.981,
+      "peakRssGb": 0.084,
       "measurementReason": null
     },
     "hardhat|test/unit/FrontierStorageProofVerifier.test.ts|FrontierStorageProofVerifier proves a slot cleared on a peer3 dev node as zero, and not with the proof of the block before": {
