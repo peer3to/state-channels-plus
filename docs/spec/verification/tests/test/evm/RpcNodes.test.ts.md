@@ -80,7 +80,7 @@ within the one-second window (every node was destroyed).
 - `fails a transaction over to the next node while the first is cut`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P2, REQ-CHAINOBS-2-2NCSQ3.T1.P2
 - `holds a transaction while no node is connected and sends it once one reconnects`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P3, REQ-CHAINOBS-2-2NCSQ3.T1.P5
 - `answers reads through the next node while the first is cut`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P4, REQ-CHAINOBS-2-2NCSQ3.T1.P3
-- `estimates gas at the pending block, which holds a transaction not yet sealed`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P29
+- `estimates gas at the pending block, for a call valid only after the latest block's second`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P29
 - `estimates at the latest block when only the pending block reverts the call`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P30
 - `estimates at the latest block with the sender's managed nonce while its own transaction is unsealed`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P32
 - `rejects an estimate the latest block also reverts, with the pending block's revert`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P31
