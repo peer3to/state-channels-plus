@@ -151,6 +151,8 @@ class DisputeManager {
         }
     ): Promise<{ lostEvidenceRace?: CustomEvmError }> {
         let txResponse;
+        // a replaying multicall's capped limit, kept by a retry of its revert
+        let replayGasLimit: bigint | undefined;
         let rethrow: unknown;
         let refreshSlashes = false;
         let retryWithoutStaleProof = false;
@@ -266,11 +268,14 @@ class DisputeManager {
                 // their slashes, and stay landed when the upload is refused
                 calls.push(uploadDisputeCalldata);
                 const estimate = this.estimateBestEffortMulticall(calls);
+                const replays =
+                    (!!killProof && replaysStateTransition(killProof)) ||
+                    fraudProofsToApply.some(replaysStateTransition);
                 const gasLimit = await this.fraudProofGasLimit(
                     estimate.then(({ gas }) => gas),
-                    (!!killProof && replaysStateTransition(killProof)) ||
-                        fraudProofsToApply.some(replaysStateTransition)
+                    replays
                 );
+                if (replays) replayGasLimit = gasLimit;
                 estimatedUploadRefusal = (await estimate).refusal;
                 txResponse =
                     await this.stateChannelManagerContract.multicallBestEffortLast(
@@ -309,6 +314,7 @@ class DisputeManager {
             const success = await tryHandleEvmError(error, {
                 // a mined multicall is never resent: its kill already landed
                 tx: uploadRefusedInMulticall ? undefined : txResponse,
+                gasLimit: replayGasLimit,
                 logger: this.logger,
                 forkId,
                 signer: this.signer,
@@ -525,6 +531,8 @@ class DisputeManager {
         const disputeMeta = LoggerUtils.getDisputeMetadata(dispute);
         const formattedHash = LoggerUtils.formatHash(disputeMeta.disputeHash);
         let txResponse;
+        // a replaying kill's capped limit, kept by a retry of its revert
+        let replayGasLimit: bigint | undefined;
         try {
             // a mutex is not needed since we observe and validate a dispute only once and create only 1 disputeFraudProof for it
             const disputeFraudProof = this.getStoredDisputeFraudProof(dispute);
@@ -547,20 +555,21 @@ class DisputeManager {
                 })
             });
             const disputeFraudProofs = [disputeFraudProof];
+            const replays = replaysStateTransition(disputeFraudProof);
+            const gasLimit = await this.fraudProofGasLimit(
+                this.estimateGas(
+                    this.stateChannelManagerContract.interface.encodeFunctionData(
+                        "applyDisputeFraudProofs",
+                        [disputeFraudProofs]
+                    )
+                ),
+                replays
+            );
+            if (replays) replayGasLimit = gasLimit;
             txResponse =
                 await this.stateChannelManagerContract.applyDisputeFraudProofs(
                     disputeFraudProofs,
-                    {
-                        gasLimit: await this.fraudProofGasLimit(
-                            this.estimateGas(
-                                this.stateChannelManagerContract.interface.encodeFunctionData(
-                                    "applyDisputeFraudProofs",
-                                    [disputeFraudProofs]
-                                )
-                            ),
-                            replaysStateTransition(disputeFraudProof)
-                        )
-                    }
+                    { gasLimit }
                 );
 
             await txResponse.wait();
@@ -570,6 +579,7 @@ class DisputeManager {
         } catch (error) {
             const success = await tryHandleEvmError(error, {
                 tx: txResponse,
+                gasLimit: replayGasLimit,
                 logger: this.logger,
                 forkId: dispute.input.forkId,
                 signer: this.signer,

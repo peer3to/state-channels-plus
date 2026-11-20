@@ -927,6 +927,8 @@ export class StubService extends ANetworkRpcService<
     completeWithGenesisCount = 0;
     // fraudProofGasLimit block reads answered by stubReplayGasBlockRead
     replayGasBlockReadsStubbed = 0;
+    // replay preflights answered as passed by stubPassReplayPreflight
+    replayPreflightsPassed = 0;
     /** The state the state-mutex hold installed, while it is held. */
     stateMutexStateHold?: StateMutexStateHold;
     /** State for the dispute-audit hold at the on-chain-slashes query. */
@@ -5699,12 +5701,15 @@ export class StubService extends ANetworkRpcService<
      * reports a different figure for the same transaction (a spent-gas
      * estimator answers below the replay requirement, a searching one at or
      * above it); the transaction itself is unchanged and still sent for real
-     * by the caller. Other estimates pass through unrecorded.
+     * by the caller. With `times`, only the first `times` recorded estimates
+     * are scaled; later ones are answered real. Other estimates pass through
+     * unrecorded.
      */
     public installReplayGasEstimateScale(
         methods: ReplayGasEstimateMethod[],
         numerator: number,
-        denominator: number
+        denominator: number,
+        times?: number
     ): void {
         const contract = this.sm.stateChannelManagerContract;
         this.restoreReplayGasEstimateScale();
@@ -5721,8 +5726,11 @@ export class StubService extends ANetworkRpcService<
                 const estimate = await estimateGas(tx);
                 const method = selectors.get(String(tx.data).slice(0, 10));
                 if (method === undefined) return estimate;
-                const answer =
-                    (estimate * BigInt(numerator)) / BigInt(denominator);
+                const scaled =
+                    times == null || this.recordedGasEstimates.length < times;
+                const answer = scaled
+                    ? (estimate * BigInt(numerator)) / BigInt(denominator)
+                    : estimate;
                 this.recordedGasEstimates.push({
                     method,
                     estimate: String(estimate),
@@ -5735,6 +5743,36 @@ export class StubService extends ANetworkRpcService<
 
     public restoreReplayGasEstimateScale(): boolean {
         return this.restoreManagerEstimateGas("replayGasEstimates");
+    }
+
+    /**
+     * Answer this peer's next `applyDisputeFraudProofs` call that declares a
+     * gas limit (tryHandleEvmError's preflight of a mined replay revert) as
+     * passed, without running it, so the handler resends; later calls run.
+     */
+    public installPassedReplayPreflight(): void {
+        const provider = this.chainProvider;
+        const call = provider.call.bind(provider);
+        const selector =
+            this.sm.stateChannelManagerContract.interface.getFunction(
+                "applyDisputeFraudProofs"
+            ).selector;
+        let passed = false;
+        Reflect.set(
+            provider,
+            "call",
+            async (transaction: TransactionRequest): Promise<string> => {
+                if (
+                    passed ||
+                    transaction.gasLimit == null ||
+                    !String(transaction.data).startsWith(selector)
+                )
+                    return call(transaction);
+                passed = true;
+                this.replayPreflightsPassed += 1;
+                return "0x";
+            }
+        );
     }
 
     /**

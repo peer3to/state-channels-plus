@@ -1,7 +1,7 @@
 # DisputeManager.test.ts
 
 Test file: [test/unit/DisputeManager.test.ts](../../../../../../test/unit/DisputeManager.test.ts)
-Exercises: [DisputeManager.ts](../../../../implementation/source/src/disputeManager/DisputeManager.ts.md), [DisputeBuilder.ts](../../../../implementation/source/src/disputeManager/DisputeBuilder.ts.md), [ADiamondStateMachine.ts](../../../../implementation/source/src/ADiamondStateMachine.ts.md)
+Exercises: [DisputeManager.ts](../../../../implementation/source/src/disputeManager/DisputeManager.ts.md), [DisputeBuilder.ts](../../../../implementation/source/src/disputeManager/DisputeBuilder.ts.md), [ADiamondStateMachine.ts](../../../../implementation/source/src/ADiamondStateMachine.ts.md), [evmErrorHandler.ts](../../../../implementation/source/src/utils/evmErrorHandler.ts.md)
 
 ## Overview
 
@@ -79,7 +79,16 @@ gas, and the submitter is slashed. The read-sharing cases store an invalid-trans
 timeout dispute, so the dispute and the kill both replay: one resolved read is shared by a dispute
 and a later kill, and a rejected read sends nothing and is retried by the next dispute or kill. The
 apply recorder forwards the send overrides, so the kill path's computed `gasLimit` reaches the
-chain.
+chain. Two dispute cases scale the multicall estimate past the caps: one is sent at
+`MAX_TRANSACTION_GAS`, one at a stubbed 16M block gas limit. The below-need cases stub the
+latest-block read to answer the replay gas alone, so the chain admits a send that cannot fund
+the replay. Sends are counted from the killer's gas usage table, resends included. A capped kill is
+mined once and reverts, is not resent, rejects, and the timeout dispute stays committed with no
+slash; a capped kill-and-dispute multicall is mined once and reverts, `dispute` rejects, and the
+kill sent alone reads the block again, lands and slashes the disputer. A one-shot stub passes the
+handler's preflight at the capped limit, and the resend is held to the replay gas: two reverted
+sends burn exactly twice the replay gas. A spam kill whose first estimate is cut to a third runs
+out of its headroom, is resent at a fresh unscaled estimate, and lands.
 The multicall tests of the submission branch assert only that the limit exceeds the replay gas.
 The plain and calldata upload tests of the submission branch also record the replay-gas reads and
 assert none happened (`6.P3`, credited to the plain upload). One test holds the replay-gas read
@@ -184,11 +193,17 @@ author is added.
 - `live kill window → the stored proof is submitted and its transaction awaited`: UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P1
 - `two killDispute calls inside one live kill window → one slash, the loser lands as a no-op`: none
 - `a dispute sends the multicall at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P14
+- `a dispute whose estimate plus the replay requirement exceeds MAX_TRANSACTION_GAS sends the multicall at MAX_TRANSACTION_GAS`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P26
+- `a dispute whose estimate plus the replay requirement exceeds the block gas limit sends the multicall at the block gas limit`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P27
 - `a kill whose estimate covers only part of the work still lands at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P15
 - `a kill whose proof replays no transition is sent at its estimate plus the signer's headroom, without the replay requirement, and lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P20
 - `a dispute that kills a dispute whose proof replays no transition sends the multicall at its estimate plus the signer's headroom, without the replay requirement, and the kill lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P23
 - `a kill whose estimate plus the replay requirement exceeds the block gas limit is sent at the block gas limit`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P18
 - `a kill whose estimate plus the replay requirement exceeds MAX_TRANSACTION_GAS is sent at MAX_TRANSACTION_GAS and lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P21, REQ-ENFSM-1-DKJCY2.T1.P25
+- `a kill capped below what its replay needs is mined and reverts, is not resent, and leaves the timeout dispute committed`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P28, REQ-ENFSM-1-DKJCY2.T1.P26, UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P42
+- `a capped kill whose preflight at its limit passes is resent at the replay gas, and both sends revert`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P30, UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P43
+- `a kill whose proof replays no transition and runs out of its headroom is resent at a fresh estimate and lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P31, UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P44
+- `a dispute whose kill-and-dispute multicall is capped below what its replay needs is mined and reverts without a resend, then the kill sent alone lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P29
 - `a kill whose latest-block read fails is sent at its estimate plus the replay requirement, lands, and slashes the disputer`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P19
 - `a kill that refutes a timeout with posted calldata replays the block and lands at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P17
 - `a dispute that kills a timeout dispute by refuting it with posted calldata sends the multicall at its estimate plus the replay requirement, and the kill lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P24

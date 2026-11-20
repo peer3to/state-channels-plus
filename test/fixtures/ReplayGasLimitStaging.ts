@@ -21,8 +21,15 @@ import { waitFor } from "@test/utils/waitFor";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { expect } from "chai";
 
-/** Estimate scale as a fraction of the chain's real estimate, without headroom. */
-export type EstimateScale = { numerator: number; denominator: number };
+/**
+ * Estimate scale as a fraction of the chain's real estimate, without
+ * headroom; with `times`, only the first `times` estimates are scaled.
+ */
+export type EstimateScale = {
+    numerator: number;
+    denominator: number;
+    times?: number;
+};
 
 /** Run `dispute()` on a peer's host for the active fork. */
 export async function disputeOnHost(
@@ -61,15 +68,18 @@ export async function killStoredDisputeOnHost(
  * A settled fork whose peer 0 holds an invalid-transition fraud proof, so its
  * `dispute()` sends the fraud-proof multicall. The upload is recorded, not
  * sent (a real one derails the session); the chain's estimate for it is
- * answered scaled by `scale`.
+ * answered scaled by `scale`. With `blockRead`, the dispute's latest-block
+ * read answers `blockRead.gasLimit` as the block's gas limit.
  */
 export async function disputeWithScaledEstimate(
     h: MathPeerTestHarness,
-    scale: EstimateScale
+    scale: EstimateScale,
+    options: { blockRead?: { gasLimit: bigint } } = {}
 ): Promise<{
     submissions: RecordedDisputeSubmission[];
     estimates: RecordedGasEstimate[];
     replayGas: bigint;
+    stubbedBlockReads: number;
 }> {
     await h.lifecycle.start(3, 3);
     const peer = h.getPeer(0);
@@ -79,11 +89,17 @@ export async function disputeWithScaledEstimate(
         methods: ["multicall"],
         ...scale
     });
+    const stub = h.control(peer).stub;
+    if (options.blockRead)
+        await stub
+            .stubReplayGasBlockRead(String(options.blockRead.gasLimit))
+            .request();
     await disputeOnHost(h, peer.index);
     return {
         submissions: await recorded.submissions(),
         estimates: await estimates.estimates(),
-        replayGas: await h.channelManager.getStateTransitionReplayGas()
+        replayGas: await h.channelManager.getStateTransitionReplayGas(),
+        stubbedBlockReads: await stub.getStubbedReplayGasBlockReads().request()
     };
 }
 
@@ -91,7 +107,7 @@ export async function disputeWithScaledEstimate(
  * A committed spam dispute the killer holds a dispute fraud proof against,
  * whose check replays no transition; the killer's `killDispute` sends the
  * real `applyDisputeFraudProofs`, with the chain's estimate for it answered
- * scaled by `scale`.
+ * scaled by `scale`. `sends` counts the mined kill sends, resends included.
  */
 export async function killWithScaledEstimate(
     h: MathPeerTestHarness,
@@ -102,6 +118,7 @@ export async function killWithScaledEstimate(
     estimates: RecordedGasEstimate[];
     slashed: string[];
     spammer: string;
+    sends: SendOutcomes;
 }> {
     const { killer, spammer } = await h.scenario.stageUnkilledSpamDispute();
     const recorded = await h.rpcStub.recordDisputeFraudProofApplies(
@@ -111,13 +128,19 @@ export async function killWithScaledEstimate(
         methods: ["applyDisputeFraudProofs"],
         ...scale
     });
+    const before = await fraudProofSendOutcomes(h, killer.index);
     await killStoredDisputeOnHost(h, killer.index);
+    const after = await fraudProofSendOutcomes(h, killer.index);
     return {
         storedProofTypes: await storedDisputeFraudProofTypes(h, killer.index),
         applies: await recorded.applies(),
         estimates: await estimates.estimates(),
         slashed: await h.query.onChainSlashedParticipants(),
-        spammer: spammer.address
+        spammer: spammer.address,
+        sends: sendDelta(
+            before.applyDisputeFraudProofs,
+            after.applyDisputeFraudProofs
+        )
     };
 }
 
@@ -176,6 +199,51 @@ async function storedDisputeFraudProofTypes(
         {},
         { timeoutMs: h.event.hostExecTimeoutMs() }
     );
+}
+
+/** Mined outcomes of one manager function's sends, from a peer's gas usage. */
+export type SendOutcomes = {
+    succeeded: number;
+    reverted: number;
+    /** Gas the reverted sends burned. */
+    revertedGasUsed: bigint;
+};
+
+/**
+ * Mined outcomes of the fraud-proof sends a peer's chain signer broadcast,
+ * resends included, per manager function.
+ */
+async function fraudProofSendOutcomes(
+    h: MathPeerTestHarness,
+    peerIndex: number
+): Promise<
+    Record<"applyDisputeFraudProofs" | "multicallBestEffortLast", SendOutcomes>
+> {
+    const { gasUsage } = await h
+        .control(h.getPeer(peerIndex))
+        .query.getGasUsageTable()
+        .request();
+    const outcomes = (functionName: string): SendOutcomes => {
+        const row = gasUsage.find((r) => r.functionName === functionName);
+        return {
+            succeeded: row?.successCount ?? 0,
+            reverted: row?.revertedCount ?? 0,
+            revertedGasUsed: BigInt(row?.revertedGasUsed ?? 0)
+        };
+    };
+    return {
+        applyDisputeFraudProofs: outcomes("applyDisputeFraudProofs"),
+        multicallBestEffortLast: outcomes("multicallBestEffortLast")
+    };
+}
+
+/** The sends mined between two reads of a peer's send outcomes. */
+function sendDelta(before: SendOutcomes, after: SendOutcomes): SendOutcomes {
+    return {
+        succeeded: after.succeeded - before.succeeded,
+        reverted: after.reverted - before.reverted,
+        revertedGasUsed: after.revertedGasUsed - before.revertedGasUsed
+    };
 }
 
 /** Whether `dispute` is still committed in its fork's on-chain window. */
@@ -274,15 +342,20 @@ export async function stageUnkilledTimeoutCalldataDispute(
  * The killer's `killDispute` of the staged timeout dispute (see
  * stageUnkilledTimeoutCalldataDispute) sends the real
  * `applyDisputeFraudProofs`, with the chain's estimate for it answered scaled
- * by `scale`. The kill's latest-block read fails (`"fail"`) or answers
- * `blockRead.gasLimit` as the block's gas limit.
+ * by `scale`. The kill's latest-block read fails (`"fail"`), answers
+ * `blockRead.gasLimit` as the block's gas limit, or answers the manager's
+ * replay requirement (`"replayGas"`), a limit below what the replay needs.
+ * With `passPreflight`, the handler's preflight of the mined revert at the
+ * kill's limit is answered as passed once, so it resends.
+ * `rejected` is the kill's rejection message, empty when it resolved.
  */
 export async function killTimeoutCalldataRefutationWithScaledEstimate(
     h: MathPeerTestHarness,
     scale: EstimateScale,
     options: {
-        blockRead?: { gasLimit: bigint } | "fail";
+        blockRead?: { gasLimit: bigint } | "fail" | "replayGas";
         stateMachineGasLimit?: number;
+        passPreflight?: boolean;
     } = {}
 ): Promise<{
     storedProofTypes: number[];
@@ -293,6 +366,9 @@ export async function killTimeoutCalldataRefutationWithScaledEstimate(
     disputer: string;
     committedAfterKill: boolean;
     stubbedBlockReads: number;
+    rejected: string;
+    sends: SendOutcomes;
+    passedPreflights: number;
 }> {
     const { killerIndex, disputerIndex, dispute } =
         await stageUnkilledTimeoutCalldataDispute(h, {
@@ -306,25 +382,46 @@ export async function killTimeoutCalldataRefutationWithScaledEstimate(
         ...scale
     });
     const killer = h.control(h.getPeer(killerIndex)).stub;
+    const replayGas = await h.channelManager.getStateTransitionReplayGas();
     const { blockRead } = options;
     if (blockRead)
         await killer
             .stubReplayGasBlockRead(
-                blockRead === "fail" ? null : String(blockRead.gasLimit)
+                blockRead === "fail"
+                    ? null
+                    : String(
+                          blockRead === "replayGas"
+                              ? replayGas
+                              : blockRead.gasLimit
+                      )
             )
             .request();
-    await killStoredDisputeOnHost(h, killerIndex);
+    if (options.passPreflight) await killer.stubPassReplayPreflight().request();
+    const before = await fraudProofSendOutcomes(h, killerIndex);
+    let rejected = "";
+    try {
+        await killStoredDisputeOnHost(h, killerIndex);
+    } catch (error) {
+        rejected = error instanceof Error ? error.message : String(error);
+    }
+    const after = await fraudProofSendOutcomes(h, killerIndex);
     return {
         storedProofTypes,
         applies: await recorded.applies(),
         estimates: await estimates.estimates(),
-        replayGas: await h.channelManager.getStateTransitionReplayGas(),
+        replayGas,
         slashed: await h.query.onChainSlashedParticipants(),
         disputer: h.getPeer(disputerIndex).address,
         committedAfterKill: await isDisputeCommittedOnChain(h, dispute),
         stubbedBlockReads: await killer
             .getStubbedReplayGasBlockReads()
-            .request()
+            .request(),
+        rejected,
+        sends: sendDelta(
+            before.applyDisputeFraudProofs,
+            after.applyDisputeFraudProofs
+        ),
+        passedPreflights: await killer.getPassedReplayPreflights().request()
     };
 }
 
@@ -333,45 +430,71 @@ export async function killTimeoutCalldataRefutationWithScaledEstimate(
  * stageUnkilledTimeoutCalldataDispute) has not disputed yet, so its
  * `dispute(forkId, { kill })` sends the replaying refutation and its own
  * dispute in one best-effort multicall, forwarded to the chain and recorded,
- * with the chain's estimate for it answered scaled by `scale`.
+ * with the chain's estimate for it answered scaled by `scale`. A kill sent
+ * alone after a failed multicall is recorded too. With `blockRead:
+ * "replayGas"`, the multicall's latest-block read (the first one) answers
+ * the manager's replay requirement, a limit below what the replay needs.
  */
 export async function killAndDisputeTimeoutCalldataRefutationWithScaledEstimate(
     h: MathPeerTestHarness,
     scale: EstimateScale,
-    options: { stateMachineGasLimit?: number } = {}
+    options: { stateMachineGasLimit?: number; blockRead?: "replayGas" } = {}
 ): Promise<{
     rejected: string;
     submissions: RecordedDisputeSubmission[];
+    applies: RecordedFraudProofApply[];
     estimates: RecordedGasEstimate[];
     replayGas: bigint;
     slashed: string[];
     disputer: string;
     committedAfterKill: boolean;
+    multicallSends: SendOutcomes;
+    killSends: SendOutcomes;
 }> {
     const { killerIndex, disputerIndex, dispute } =
-        await stageUnkilledTimeoutCalldataDispute(h, options);
+        await stageUnkilledTimeoutCalldataDispute(h, {
+            stateMachineGasLimit: options.stateMachineGasLimit
+        });
     const recorded = await h.rpcStub.recordDisputeSubmissions(killerIndex, {
         forward: true
     });
+    const applies = await h.rpcStub.recordDisputeFraudProofApplies(killerIndex);
     const estimates = await h.rpcStub.scaleReplayGasEstimates(killerIndex, {
         methods: ["multicall"],
         ...scale
     });
+    const replayGas = await h.channelManager.getStateTransitionReplayGas();
+    if (options.blockRead === "replayGas")
+        await h
+            .control(h.getPeer(killerIndex))
+            .stub.stubReplayGasBlockRead(String(replayGas))
+            .request();
     const disputer = h.getPeer(disputerIndex).address;
+    const before = await fraudProofSendOutcomes(h, killerIndex);
     const { rejected } = await killAndDisputeStoredDispute(
         h,
         killerIndex,
         disputer,
         dispute.input.forkId
     );
+    const after = await fraudProofSendOutcomes(h, killerIndex);
     return {
         rejected,
         submissions: await recorded.submissions(),
+        applies: await applies.applies(),
         estimates: await estimates.estimates(),
-        replayGas: await h.channelManager.getStateTransitionReplayGas(),
+        replayGas,
         slashed: await h.query.onChainSlashedParticipants(),
         disputer,
-        committedAfterKill: await isDisputeCommittedOnChain(h, dispute)
+        committedAfterKill: await isDisputeCommittedOnChain(h, dispute),
+        multicallSends: sendDelta(
+            before.multicallBestEffortLast,
+            after.multicallBestEffortLast
+        ),
+        killSends: sendDelta(
+            before.applyDisputeFraudProofs,
+            after.applyDisputeFraudProofs
+        )
     };
 }
 

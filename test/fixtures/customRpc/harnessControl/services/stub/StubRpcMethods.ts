@@ -2795,19 +2795,32 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     /**
      * Answer this peer's chain-signer estimates for `methods` scaled by
-     * `numerator / denominator`, recording each real estimate.
+     * `numerator / denominator` (only the first `times`, when given),
+     * recording each real estimate.
      */
     public stubScaleReplayGasEstimates(
         methods: ReplayGasEstimateMethod[],
         numerator: number,
-        denominator: number
+        denominator: number,
+        times?: number
     ): boolean {
         this.service.installReplayGasEstimateScale(
             methods,
             numerator,
-            denominator
+            denominator,
+            times
         );
         return true;
+    }
+
+    /** Pass this peer's next replay preflight at a caller gas limit. */
+    public stubPassReplayPreflight(): boolean {
+        this.service.installPassedReplayPreflight();
+        return true;
+    }
+
+    public getPassedReplayPreflights(): number {
+        return this.service.replayPreflightsPassed;
     }
 
     public getRecordedReplayGasEstimates(): RecordedGasEstimate[] {

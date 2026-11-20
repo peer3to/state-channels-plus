@@ -3011,6 +3011,41 @@ describe("Unit: DisputeManager", function () {
             );
         });
 
+        it("a dispute whose estimate plus the replay requirement exceeds MAX_TRANSACTION_GAS sends the multicall at MAX_TRANSACTION_GAS", async function () {
+            const transactionCap = BigInt(config.MAX_TRANSACTION_GAS);
+            const { submissions, estimates, replayGas } =
+                await disputeWithScaledEstimate(TestSession.getHarness(), {
+                    numerator: 100_000,
+                    denominator: 1
+                });
+            expect(
+                BigInt(estimates[0].answer) + replayGas > transactionCap
+            ).to.equal(true);
+            expect(submissions.map((s) => s.method)).to.deep.equal([
+                "multicallBestEffortLast"
+            ]);
+            expect(submissions[0].gasLimit).to.equal(String(transactionCap));
+        });
+
+        it("a dispute whose estimate plus the replay requirement exceeds the block gas limit sends the multicall at the block gas limit", async function () {
+            // below MAX_TRANSACTION_GAS, so the block gas limit is the cap
+            const blockGasLimit = 16_000_000n;
+            const { submissions, estimates, replayGas, stubbedBlockReads } =
+                await disputeWithScaledEstimate(
+                    TestSession.getHarness(),
+                    { numerator: 100_000, denominator: 1 },
+                    { blockRead: { gasLimit: blockGasLimit } }
+                );
+            expect(stubbedBlockReads).to.equal(1);
+            expect(
+                BigInt(estimates[0].answer) + replayGas > blockGasLimit
+            ).to.equal(true);
+            expect(submissions.map((s) => s.method)).to.deep.equal([
+                "multicallBestEffortLast"
+            ]);
+            expect(submissions[0].gasLimit).to.equal(String(blockGasLimit));
+        });
+
         it("a kill whose estimate covers only part of the work still lands at its estimate plus the replay requirement", async function () {
             const { applies, estimates, replayGas, slashed, disputer } =
                 await killTimeoutCalldataRefutationWithScaledEstimate(
@@ -3114,6 +3149,119 @@ describe("Unit: DisputeManager", function () {
             expect(applies[0].error).to.equal(null);
             expect(applies[0].waited).to.equal(true);
             expect(slashed).to.include(disputer);
+        });
+
+        it("a kill capped below what its replay needs is mined and reverts, is not resent, and leaves the timeout dispute committed", async function () {
+            // the block gas limit read answers the replay requirement alone:
+            // the chain admits the send, which cannot fund the replay
+            const {
+                applies,
+                replayGas,
+                slashed,
+                disputer,
+                committedAfterKill,
+                stubbedBlockReads,
+                rejected,
+                sends
+            } = await killTimeoutCalldataRefutationWithScaledEstimate(
+                TestSession.getHarness(),
+                { numerator: 1, denominator: 1 },
+                { blockRead: "replayGas" }
+            );
+            expect(stubbedBlockReads).to.equal(1);
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.equal(String(replayGas));
+            expect(applies[0].error).to.not.equal(null);
+            expect(applies[0].waited).to.equal(false);
+            // one broadcast, mined and reverted: the failure is not resent
+            expect(sends).to.include({ succeeded: 0, reverted: 1 });
+            expect(rejected).to.not.equal("");
+            // no verdict
+            expect(committedAfterKill).to.equal(true);
+            expect(slashed).to.not.include(disputer);
+        });
+
+        it("a capped kill whose preflight at its limit passes is resent at the replay gas, and both sends revert", async function () {
+            const {
+                applies,
+                replayGas,
+                slashed,
+                disputer,
+                committedAfterKill,
+                rejected,
+                sends,
+                passedPreflights
+            } = await killTimeoutCalldataRefutationWithScaledEstimate(
+                TestSession.getHarness(),
+                { numerator: 1, denominator: 1 },
+                { blockRead: "replayGas", passPreflight: true }
+            );
+            expect(passedPreflights).to.equal(1);
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.equal(String(replayGas));
+            // the resend keeps the replay gas: both sends run out of it
+            expect(sends).to.deep.equal({
+                succeeded: 0,
+                reverted: 2,
+                revertedGasUsed: 2n * replayGas
+            });
+            expect(rejected).to.not.equal("");
+            expect(committedAfterKill).to.equal(true);
+            expect(slashed).to.not.include(disputer);
+        });
+
+        it("a kill whose proof replays no transition and runs out of its headroom is resent at a fresh estimate and lands", async function () {
+            const { applies, estimates, slashed, spammer, sends } =
+                await killWithScaledEstimate(TestSession.getHarness(), {
+                    // only the first send's estimate is short
+                    numerator: 1,
+                    denominator: 3,
+                    times: 1
+                });
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.equal(
+                String(withGasHeadroom(BigInt(estimates[0].answer)))
+            );
+            expect(applies[0].error).to.not.equal(null);
+            // the resend took the chain's real estimate again
+            expect(estimates.length).to.equal(2);
+            expect(estimates[1].answer).to.equal(estimates[1].estimate);
+            expect(sends).to.include({ succeeded: 1, reverted: 1 });
+            expect(slashed).to.include(spammer);
+        });
+
+        it("a dispute whose kill-and-dispute multicall is capped below what its replay needs is mined and reverts without a resend, then the kill sent alone lands", async function () {
+            const {
+                rejected,
+                submissions,
+                applies,
+                replayGas,
+                slashed,
+                disputer,
+                committedAfterKill,
+                multicallSends,
+                killSends
+            } = await killAndDisputeTimeoutCalldataRefutationWithScaledEstimate(
+                TestSession.getHarness(),
+                { numerator: 1, denominator: 1 },
+                { blockRead: "replayGas" }
+            );
+            expect(submissions.map((s) => s.method)).to.deep.equal([
+                "multicallBestEffortLast"
+            ]);
+            expect(submissions[0].gasLimit).to.equal(String(replayGas));
+            expect(submissions[0].waited).to.equal(false);
+            // one multicall broadcast, mined and reverted: it is not resent
+            expect(multicallSends).to.include({ succeeded: 0, reverted: 1 });
+            expect(rejected).to.not.equal("");
+            // the kill sent alone reads the block again and is funded
+            expect(applies.length).to.equal(1);
+            expect(BigInt(applies[0].gasLimit!) > replayGas).to.equal(true);
+            expect(applies[0].error).to.equal(null);
+            expect(applies[0].waited).to.equal(true);
+            expect(killSends).to.include({ succeeded: 1, reverted: 0 });
+            expect(slashed).to.include(disputer);
+            expect(committedAfterKill).to.equal(false);
         });
 
         it("a kill whose latest-block read fails is sent at its estimate plus the replay requirement, lands, and slashes the disputer", async function () {
