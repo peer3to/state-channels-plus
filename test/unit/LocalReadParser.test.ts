@@ -1,4 +1,10 @@
-import { parseLocalRead } from "@/evm/p2pRuntime/rpcNodes/lightClient/LocalReadParser";
+import { NotLocalError } from "@/evm/p2pRuntime/rpcNodes/lightClient/LightClientUnavailableError";
+import {
+    callAnswer,
+    parseCall,
+    parseLocalRead,
+    REVERT_ERROR_CODE
+} from "@/evm/p2pRuntime/rpcNodes/lightClient/LocalReadParser";
 import { expect } from "chai";
 
 const CONTRACT = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
@@ -8,14 +14,25 @@ const SLOT = "0x0";
 
 describe("LocalReadParser", function () {
     it("answers a call at the latest block locally, with or without a sender, value and tag", function () {
-        const calls = [
-            [{ to: CONTRACT, data: CALL_DATA }],
-            [{ to: CONTRACT, data: CALL_DATA }, "latest"],
-            [
-                { from: SENDER, to: CONTRACT, data: CALL_DATA, value: "0x1" },
+        expect(parseCall([{ to: CONTRACT, data: CALL_DATA }])).to.deep.equal({
+            from: undefined,
+            to: CONTRACT,
+            data: CALL_DATA,
+            value: undefined
+        });
+        expect(
+            parseCall([
+                { from: SENDER, to: CONTRACT, data: CALL_DATA, value: "0x1f" },
                 "latest"
-            ],
-            [
+            ])
+        ).to.deep.equal({
+            from: SENDER,
+            to: CONTRACT,
+            data: CALL_DATA,
+            value: 31n
+        });
+        expect(
+            parseCall([
                 {
                     to: CONTRACT,
                     data: CALL_DATA,
@@ -23,22 +40,25 @@ describe("LocalReadParser", function () {
                     chainId: "0x668ea"
                 },
                 "latest"
-            ],
-            [{ to: CONTRACT }, "latest"]
-        ];
-        for (const params of calls)
-            expect(
-                parseLocalRead({
-                    jsonrpc: "2.0",
-                    id: 1,
-                    method: "eth_call",
-                    params
-                }),
-                JSON.stringify(params)
-            ).to.be.a("function");
+            ])
+        ).to.deep.include({ to: CONTRACT, data: CALL_DATA });
+        expect(parseCall([{ to: CONTRACT }, "latest"])).to.deep.include({
+            data: "0x"
+        });
+        expect(
+            parseLocalRead({
+                jsonrpc: "2.0",
+                id: 1,
+                method: "eth_call",
+                params: [{ to: CONTRACT, data: CALL_DATA }, "latest"]
+            })
+        ).to.be.a("function");
     });
 
     it("answers a call that carries its data as input locally", function () {
+        expect(
+            parseCall([{ to: CONTRACT, input: CALL_DATA }, "latest"])
+        ).to.deep.include({ data: CALL_DATA });
         expect(
             parseLocalRead({
                 jsonrpc: "2.0",
@@ -47,6 +67,27 @@ describe("LocalReadParser", function () {
                 params: [{ to: CONTRACT, input: CALL_DATA }, "latest"]
             })
         ).to.be.a("function");
+    });
+
+    it("answers a returned call with its data, and a reverted one with the node's revert error and data", function () {
+        expect(callAnswer({ kind: "return", data: "0x2a" })).to.deep.equal({
+            result: "0x2a"
+        });
+        expect(
+            callAnswer({ kind: "revert", data: "0x08c379a0" })
+        ).to.deep.equal({
+            error: {
+                code: REVERT_ERROR_CODE,
+                message: "execution reverted",
+                data: "0x08c379a0"
+            }
+        });
+    });
+
+    it("leaves a call that failed locally without reverting to the node", function () {
+        expect(() =>
+            callAnswer({ kind: "failure", message: "out of gas" })
+        ).to.throw(NotLocalError, /out of gas/);
     });
 
     it("answers storage, balance, code and transaction count at the latest block locally", function () {

@@ -1,4 +1,4 @@
-import type { LightClient, LocalCall } from "./LightClient";
+import type { LightClient, LocalCall, LocalCallOutcome } from "./LightClient";
 import { NotLocalError } from "./LightClientUnavailableError";
 import { paramsOf } from "../RpcNodeProvider";
 import {
@@ -57,7 +57,8 @@ function isQuantity(value: unknown): value is string {
     );
 }
 
-function parseCall(params: unknown[]): LocalCall | undefined {
+/** The call `eth_call`'s `params` ask for, or undefined when the nodes must run it. */
+export function parseCall(params: unknown[]): LocalCall | undefined {
     const [tx, tag] = params;
     if (params.length > 2 || !isLatestTag(tag)) return undefined;
     if (typeof tx !== "object" || tx === null) return undefined;
@@ -79,6 +80,27 @@ function parseCall(params: unknown[]): LocalCall | undefined {
         data,
         value: value === undefined ? undefined : BigInt(value)
     };
+}
+
+/**
+ * The answer a node gives for a call that ended as `outcome`. Throws
+ * {@link NotLocalError} for a call that failed without reverting.
+ */
+export function callAnswer(outcome: LocalCallOutcome): LocalAnswer {
+    if (outcome.kind === "return") return { result: outcome.data };
+    if (outcome.kind === "revert")
+        return {
+            error: {
+                code: REVERT_ERROR_CODE,
+                message: "execution reverted",
+                data: outcome.data
+            }
+        };
+    // out of gas, an invalid opcode: the local EVM keeps no gas accounting
+    // of the chain's, so only the node can say
+    throw new NotLocalError(
+        `The local call failed without reverting: ${outcome.message}`
+    );
 }
 
 /**
@@ -117,23 +139,8 @@ export function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
         case "eth_call": {
             const call = parseCall(params);
             if (!call) return undefined;
-            return async (lightClient) => {
-                const outcome = await lightClient.call(call);
-                if (outcome.kind === "return") return { result: outcome.data };
-                if (outcome.kind === "revert")
-                    return {
-                        error: {
-                            code: REVERT_ERROR_CODE,
-                            message: "execution reverted",
-                            data: outcome.data
-                        }
-                    };
-                // out of gas, an invalid opcode: the local EVM keeps no
-                // gas accounting of the chain's, so only the node can say
-                throw new NotLocalError(
-                    `The local call failed without reverting: ${outcome.message}`
-                );
-            };
+            return async (lightClient) =>
+                callAnswer(await lightClient.call(call));
         }
         case "eth_getStorageAt": {
             const [address, slot, tag] = params;
