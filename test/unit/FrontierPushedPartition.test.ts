@@ -199,6 +199,31 @@ describe("FrontierPushedPartition", function () {
             ).to.throw(StorageProofError, /no storage block/);
     });
 
+    it("refuses a message without the node's stages and holds nothing until the next sync, and hands on the stages of one it accepts", function () {
+        const partition = new FrontierPushedPartition(PEER3_CHAIN_CONSTANTS);
+        const malformed = [
+            { ...messages[1], stages: undefined },
+            { ...messages[1], stages: { ...messages[1].stages, builtAt: "1" } },
+            {
+                ...messages[1],
+                stages: { ...messages[1].stages, executedAt: undefined }
+            }
+        ];
+        for (const message of malformed) {
+            partition.accept(messages[0]);
+            expect(
+                () => partition.accept(message),
+                JSON.stringify(message.stages)
+            ).to.throw(StorageProofError, /no storage block/);
+            expect(partition.block).to.equal(undefined);
+        }
+
+        partition.accept(messages[0]);
+        expect(partition.accept(messages[1]).stages).to.deep.equal(
+            messages[1].stages
+        );
+    });
+
     it("keeps only the proof nodes the held keys use under the new root", function () {
         const partition = new FrontierPushedPartition(PEER3_CHAIN_CONSTANTS);
         partition.accept(messages[0]);

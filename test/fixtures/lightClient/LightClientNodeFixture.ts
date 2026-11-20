@@ -13,8 +13,11 @@ import {
     HDNodeWallet,
     JsonRpcProvider,
     Mnemonic,
+    type Provider,
+    type Signer,
     toBeHex,
-    type TransactionReceipt
+    type TransactionReceipt,
+    type TransactionResponse
 } from "ethers";
 
 /** What a light client test fails with on a node without the endpoints. */
@@ -353,6 +356,24 @@ export class LightClientNodeFixture {
             )
                 return receipts;
         }
+    }
+
+    /**
+     * Sends `transaction` from the funded account through `provider`, with
+     * the account's next nonce, without waiting for it; also the account as
+     * a signer over `provider`.
+     */
+    async sendThrough(
+        provider: Provider,
+        transaction: { to: string; data: string; gasLimit: bigint }
+    ): Promise<{ sent: TransactionResponse; signer: Signer }> {
+        const signer = this.wallet.connect(provider);
+        const sent = await signer.sendTransaction({
+            ...transaction,
+            ...TRANSACTION_FEES,
+            nonce: this.nextNonce++
+        });
+        return { sent, signer };
     }
 
     private async open(url: string): Promise<JsonRpcSocket> {

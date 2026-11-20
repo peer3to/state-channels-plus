@@ -16,6 +16,7 @@ import type {
     PausedConstructDisputeStatus,
     PausedReductionStatus,
     RecordedBestEffortEstimate,
+    RecordedChainFollow,
     RecordedDisputeSubmission,
     RecordedFraudProofApply,
     RecordedGasEstimate,
@@ -1691,6 +1692,20 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public restoreChainCalls(): boolean {
         this.service.restoreChainCalls();
+        return true;
+    }
+
+    public recordChainFollows(): boolean {
+        this.service.recordChainFollows();
+        return true;
+    }
+
+    public getRecordedChainFollows(): RecordedChainFollow[] {
+        return this.service.getRecordedChainFollows();
+    }
+
+    public restoreChainFollows(): boolean {
+        this.service.restoreChainFollows();
         return true;
     }
 

@@ -108,6 +108,14 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
         return this.service.restoreChannelListener();
     }
 
+    public async selectChannelListener(channelId: string): Promise<boolean> {
+        return this.service.selectChannelListener(channelId);
+    }
+
+    public async disposeChannelListener(): Promise<boolean> {
+        return this.service.disposeChannelListener();
+    }
+
     public async probeChannelSelectionRace(
         first: "select" | "clear"
     ): Promise<ChannelSelectionRaceProbe> {

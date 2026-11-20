@@ -168,18 +168,18 @@ export class LightClientProviderFixture {
         );
     }
 
-    /** The numbers of the blocks pushed to the provider's socket, in order. */
+    /** The numbers of the blocks pushed to the provider's socket, in order; a subscription's end carries none. */
     private pushedBlockNumbers(): number[] {
         return this.proxy.sentNotifications
             .filter(
                 ({ method }) => method === LIGHT_CLIENT_METHODS.notification
             )
-            .map(({ params }) =>
-                Number(
-                    (params as { result: LightClientStorageBlock }).result
-                        .header.number
-                )
-            );
+            .map(
+                ({ params }) =>
+                    (params as { result?: LightClientStorageBlock }).result
+            )
+            .filter((block) => block !== undefined)
+            .map((block) => Number(block.header.number));
     }
 
     /** How many of the reads the light client may answer the provider sent to its endpoint. */

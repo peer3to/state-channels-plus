@@ -11,6 +11,7 @@ import FrontierStorageProofVerifier from "./FrontierStorageProofVerifier";
 import SubstrateHeader from "./SubstrateHeader";
 import SubstrateTrieProof from "./SubstrateTrieProof";
 import type {
+    LightClientStages,
     LightClientStorageBlock,
     SubstrateHeaderJson
 } from "../../lightClientWire";
@@ -41,6 +42,17 @@ function isHeader(answer: unknown): answer is SubstrateHeaderJson {
     );
 }
 
+function isStages(value: unknown): value is LightClientStages {
+    const stages = value as Partial<LightClientStages> | null;
+    return (
+        typeof stages === "object" &&
+        stages !== null &&
+        (stages.executedAt === null || typeof stages.executedAt === "number") &&
+        typeof stages.builtAt === "number" &&
+        typeof stages.sentAt === "number"
+    );
+}
+
 /** Whether `pushed` has the shape of a block a node pushes to a light client subscription. */
 export function isStorageBlock(
     pushed: unknown
@@ -59,7 +71,8 @@ export function isStorageBlock(
                 (entry.value === null || isHexString(entry.value))
         ) &&
         Array.isArray(block.proofNodes) &&
-        block.proofNodes.every(isHexString)
+        block.proofNodes.every(isHexString) &&
+        isStages(block.stages)
     );
 }
 

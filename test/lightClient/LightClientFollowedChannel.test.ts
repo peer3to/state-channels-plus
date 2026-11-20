@@ -1,9 +1,11 @@
 // @distributed-requires: lightClient
+import { tryHandleEvmError } from "@/utils/evmErrorHandler";
 import { PARTITION_CONTRACT } from "@test/fixtures/lightClient/LightClientNodeFixture";
 import { LightClientProviderFixture } from "@test/fixtures/lightClient/LightClientProviderFixture";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { toBeHex } from "ethers";
+import { isError, toBeHex, toQuantity } from "ethers";
+import { ethers } from "hardhat";
 
 /** Channel ids, which the partition contract logs as its second topic. */
 const CHANNEL_A = toBeHex(0xa1, 32);
@@ -12,6 +14,8 @@ const SUBSCRIBE = "lightClient_subscribeStorage";
 const UNSUBSCRIBE = "lightClient_unsubscribeStorage";
 const PUSHED_BLOCK = "lightClient_storage";
 const REFUSED_BLOCK = "Light client refused a pushed block";
+/** Enough for the light client probe's deployment. */
+const PROBE_DEPLOY_GAS = 9_000_000n;
 /** The requests a proven read makes of the node when the pushed state does not answer it. */
 const PROOF_REQUESTS = ["chain_getHeader", "state_getReadProof"];
 
@@ -20,6 +24,8 @@ type PushedParams = {
     subscription: string;
     result: { values: { key: string; value: string | null }[] };
 };
+/** A pushed block's header as the proxy hands it to a test to change. */
+type PushedHeaderParams = { result: { header: { number: string } } };
 
 describe("Light client followed channel", function () {
     let fixture: LightClientProviderFixture | undefined;
@@ -227,6 +233,13 @@ describe("Light client followed channel", function () {
         await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
 
         provider.followChannel(contract, CHANNEL_A);
+        // time is the oracle: three blocks give a subscription time to be made
+        const followedAt = await node.provider.getBlockNumber();
+        await waitFor(
+            async () => (await node.provider.getBlockNumber()) >= followedAt + 3
+        );
+        expect(proxy.forwardedCount(SUBSCRIBE)).to.equal(0);
+        expect(provider.pushedStateCounters.acceptedBlocks).to.equal(0);
 
         expect(await provider.getStorage(contract, 10)).to.equal(
             toBeHex(7, 32)
@@ -359,5 +372,216 @@ describe("Light client followed channel", function () {
         expect(written.receivedAt).to.be.at.most(written.verifiedAt);
         expect(written.newNodes).to.be.above(0);
         expect(written.heldNodes).to.be.at.least(written.newNodes);
+    });
+
+    it("reads at the block the endpoint serving its requests pushed, not at a higher one another endpoint pushes", async function () {
+        fixture = await LightClientProviderFixture.start({ endpoints: 2 });
+        const { node, provider, proxies } = fixture;
+        const [first, second] = proxies;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        // slot 11 is only channel B's
+        await node.readWriteLog(contract, CHANNEL_B, 11, 11, 3);
+        let forgedThrough = -1;
+        second.changeNotifications(PUSHED_BLOCK, (params) => {
+            const pushed = params as PushedHeaderParams;
+            const number = Number(pushed.result.header.number);
+            forgedThrough = Math.max(forgedThrough, number);
+            // a made-up header far ahead, over the block's own state root
+            pushed.result.header.number = toQuantity(number + 1_000_000);
+            return pushed;
+        });
+        await fixture.follow(contract, CHANNEL_A);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(receipt.blockNumber);
+        await waitFor(() => forgedThrough >= receipt.blockNumber);
+        const proofsBefore = first.forwardedCount("state_getReadProof");
+
+        expect(await provider.getStorage(contract, 11)).to.equal(
+            toBeHex(3, 32)
+        );
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(7, 32)
+        );
+        expect(first.forwardedCount("state_getReadProof")).to.equal(
+            proofsBefore + 1
+        );
+        // the made-up headers were taken, so only the read rule kept them out
+        expect(provider.pushedStateCounters.refusedBlocks).to.equal(0);
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 1,
+            withFallbackRead: 1,
+            failed: 0
+        });
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("uses nothing a connection pushed once it ended: a read before the new sync is proven at the endpoint's best block", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        const written = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(written.blockNumber);
+
+        proxy.cut();
+        // the new connection is pushed nothing, so no sync replaces the old state
+        proxy.changeNotifications(PUSHED_BLOCK, () => undefined);
+        await node.readWriteLog(contract, CHANNEL_A, 10, 10, 1);
+        proxy.restore();
+        await waitFor(() => proxy.forwardedCount(SUBSCRIBE) === 2);
+        const headersBefore = proxy.forwardedCount("chain_getHeader");
+
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(8, 32)
+        );
+        expect(proxy.forwardedCount("chain_getHeader")).to.equal(
+            headersBefore + 1
+        );
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 0,
+            withFallbackRead: 1,
+            failed: 0
+        });
+    });
+
+    it("opens a subscription the endpoint ended again, counts it and answers from its new sync", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        let ended = false;
+        proxy.changeNotifications(PUSHED_BLOCK, (params) => {
+            if (ended) return params;
+            ended = true;
+            // how the node ends a subscription that fell behind
+            return {
+                subscription: (params as PushedParams).subscription,
+                error: { code: -32000, message: "subscription fell behind" }
+            };
+        });
+
+        await waitFor(() => proxy.forwardedCount(SUBSCRIBE) === 2);
+        proxy.stopChangingNotifications(PUSHED_BLOCK);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 10, 10, 1);
+        await fixture.pushedThrough(receipt.blockNumber);
+        const requestsBefore = fixture.forwardedCount(...PROOF_REQUESTS);
+
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(8, 32)
+        );
+        expect(fixture.forwardedCount(...PROOF_REQUESTS)).to.equal(
+            requestsBefore
+        );
+        expect(proxy.forwardedCount(UNSUBSCRIBE)).to.equal(1);
+        expect(provider.pushedStateCounters).to.deep.include({
+            refusedBlocks: 0,
+            resubscriptions: 1
+        });
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("answers a partition read while another read waits for its proof, and the waiting read keeps its block", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        // slot 11 is only channel B's
+        await node.readWriteLog(contract, CHANNEL_B, 11, 11, 3);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(receipt.blockNumber);
+        const proofsBefore = proxy.forwardedCount("state_getReadProof");
+        const release = proxy.holdRequests("state_getReadProof", 1);
+
+        const waiting = provider.getStorage(contract, 11);
+        await waitFor(
+            () =>
+                proxy.forwardedCount("state_getReadProof") === proofsBefore + 1
+        );
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(7, 32)
+        );
+        // a later block changes the waiting read's slot, and a read moves to it
+        const later = await node.readWriteLog(contract, CHANNEL_B, 11, 11, 1);
+        await fixture.pushedThrough(later.blockNumber);
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(7, 32)
+        );
+        release();
+
+        expect(await waiting).to.equal(toBeHex(3, 32));
+        expect(proxy.forwardedCount("state_getReadProof")).to.equal(
+            proofsBefore + 1
+        );
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 2,
+            withFallbackRead: 1,
+            failed: 0
+        });
+    });
+
+    it("starts following once the endpoint answers the methods question that failed when the channel was followed", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        proxy.failNextRequest("rpc_methods");
+
+        provider.followChannel(contract, CHANNEL_A);
+        await waitFor(() => proxy.forwardedCount(SUBSCRIBE) === 1);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(receipt.blockNumber);
+        const requestsBefore = fixture.forwardedCount(...PROOF_REQUESTS);
+
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(7, 32)
+        );
+        expect(fixture.forwardedCount(...PROOF_REQUESTS)).to.equal(
+            requestsBefore
+        );
+        expect(proxy.forwardedCount("rpc_methods")).to.equal(2);
+        expect(fixture.loggedErrorMessages()).to.deep.equal([
+            "Light client could not start following; trying again"
+        ]);
+    });
+
+    it("replays a transaction mined with no revert data at its receipt's block, past the pushed block, and sends nothing again", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        const probe = await ethers.getContractFactory("LightClientProbe");
+        const address = await node.deploy(probe.bytecode, PROBE_DEPLOY_GAS);
+        await fixture.follow(contract, CHANNEL_A);
+        // the pushed state stays at a block where the probe's value is unset
+        proxy.changeNotifications(PUSHED_BLOCK, () => undefined);
+        await node.transact(
+            address,
+            probe.interface.encodeFunctionData("setValue", [1n])
+        );
+        const { sent, signer } = await node.sendThrough(provider, {
+            to: address,
+            data: probe.interface.encodeFunctionData("requireUnset"),
+            gasLimit: 100_000n
+        });
+        const failure: unknown = await sent.wait().then(
+            () => undefined,
+            (error: unknown) => error
+        );
+        if (!isError(failure, "CALL_EXCEPTION") || !failure.receipt)
+            throw new Error("Expected the transaction to be mined and fail");
+        const requestsBefore = proxy.forwardedRequests.length;
+
+        expect(await tryHandleEvmError(failure, { tx: sent, signer })).to.equal(
+            false
+        );
+
+        const requests = proxy.forwardedRequests.slice(requestsBefore);
+        expect(
+            requests
+                .filter(({ method }) => method === "eth_call")
+                .map(({ params }) => (params as unknown[])[1])
+        ).to.deep.equal([toQuantity(failure.receipt.blockNumber)]);
+        const methods = requests.map(({ method }) => method);
+        expect(methods).to.not.include("eth_estimateGas");
+        expect(methods).to.not.include("eth_sendRawTransaction");
     });
 });

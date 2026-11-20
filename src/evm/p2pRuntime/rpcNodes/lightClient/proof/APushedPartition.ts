@@ -4,6 +4,7 @@ import type {
     ProvenAccountState,
     ProvenBlock
 } from "./AProvenStateReader";
+import type { LightClientStages } from "../lightClientWire";
 
 /** What a partition decides of reads at its block. */
 export type PartitionDecision = {
@@ -23,6 +24,8 @@ export type AcceptedBlock = {
     newNodes: number;
     /** Proof nodes the partition holds now. */
     heldNodes: number;
+    /** The stages the node gives for the block and the message. */
+    stages: LightClientStages;
 };
 
 /**

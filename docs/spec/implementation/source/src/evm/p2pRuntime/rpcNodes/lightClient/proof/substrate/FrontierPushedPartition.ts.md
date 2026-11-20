@@ -24,3 +24,4 @@ Holding the partition a Frontier node pushes to one subscription
 - [x] `UNIT-TEST-STPROOF-8-F5SF0T.P8` — the Ethereum header of another block
 - [x] `UNIT-TEST-STPROOF-8-F5SF0T.P9` — a message of another shape
 - [x] `UNIT-TEST-STPROOF-8-F5SF0T.P10` — the nodes no held key uses under the new root are dropped
+- [x] `UNIT-TEST-STPROOF-8-F5SF0T.P11` — a message without the node's stages, or with one of another type; the stages of an accepted message handed on

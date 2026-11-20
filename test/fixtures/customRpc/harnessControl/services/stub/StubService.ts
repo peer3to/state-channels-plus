@@ -7,6 +7,7 @@ import { localExecutorConnection } from "../mirror/MirrorService";
 import { recoverSigner } from "@/cache";
 import Clock from "@/Clock";
 import type DisputeBuilder from "@/disputeManager/DisputeBuilder";
+import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import { Block } from "@/models";
 import StateSnapshot from "@/models/StateSnapshot";
 import type P2PManager from "@/P2PManager";
@@ -49,6 +50,7 @@ import {
     tryDecodeCustomError,
     Type
 } from "@/utils";
+import { type ChannelKey, channelKey } from "@/utils/channelKey";
 import { errorMessage } from "@/utils/errorMessage";
 import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
 import { Mutex } from "@/utils/Mutex";
@@ -214,6 +216,13 @@ export type StubKey =
     | "handshakeRequestSkew"
     | "dropHandshakeAcks"
     | "openingSubmission";
+
+/** A follow or unfollow call of the runtime's chain access: the contract in lower case and the channel's key. */
+export type RecordedChainFollow = {
+    call: "follow" | "unfollow";
+    contract: string;
+    channelKey: ChannelKey;
+};
 
 export type HeldLobbyReplyKind = "pick" | "commit";
 export type HeldNegotiationReplyKind = "exchangeTerms" | "openProposal";
@@ -607,6 +616,9 @@ export class StubService extends ANetworkRpcService<
      */
     private chainCallNames: string[] = [];
     private restoreChainCallRecording?: () => void;
+    /** The follow and unfollow calls of the runtime's chain access, in call order. */
+    private chainFollows: RecordedChainFollow[] = [];
+    private restoreChainFollowRecording?: () => void;
     private chainMembershipReadCount = 0;
     private restoreChainMembership?: () => void;
     /** Answers of the recorded `isSignerOnChain` reads, in settle order. */
@@ -2418,6 +2430,45 @@ export class StubService extends ANetworkRpcService<
     public restoreChainCalls(): void {
         this.restoreChainCallRecording?.();
         this.restoreChainCallRecording = undefined;
+    }
+
+    /** Record each follow and unfollow call of the runtime's chain access; each still runs. */
+    public recordChainFollows(): void {
+        this.restoreChainFollows();
+        const provider = this.chainProvider;
+        if (!(provider instanceof MultiRpcProvider))
+            throw new Error("Expected the runtime RPC node provider");
+        const { followChannel, unfollowChannel } = provider;
+        this.chainFollows = [];
+        this.restoreChainFollowRecording = () => {
+            provider.followChannel = followChannel;
+            provider.unfollowChannel = unfollowChannel;
+        };
+        provider.followChannel = (contract, channelId) => {
+            this.chainFollows.push({
+                call: "follow",
+                contract: contract.toLowerCase(),
+                channelKey: channelKey(channelId)
+            });
+            followChannel.call(provider, contract, channelId);
+        };
+        provider.unfollowChannel = (contract, channelId) => {
+            this.chainFollows.push({
+                call: "unfollow",
+                contract: contract.toLowerCase(),
+                channelKey: channelKey(channelId)
+            });
+            unfollowChannel.call(provider, contract, channelId);
+        };
+    }
+
+    public getRecordedChainFollows(): RecordedChainFollow[] {
+        return [...this.chainFollows];
+    }
+
+    public restoreChainFollows(): void {
+        this.restoreChainFollowRecording?.();
+        this.restoreChainFollowRecording = undefined;
     }
 
     public restoreSyncFinalityReads(): void {

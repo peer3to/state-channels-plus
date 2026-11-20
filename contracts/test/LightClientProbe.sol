@@ -14,7 +14,8 @@ contract LightClientProbeChild {
  * Calls whose answer depends on how the EVM runs them, for the light client's
  * tests to compare its local run with the node's: writes in a frame that
  * reverts, value transfers, created contracts, the code
- * size limit, precompile addresses, and reads that each name the next slot.
+ * size limit, precompile addresses, and reads that each name the next slot;
+ * and a revert with no data that depends on the state.
  */
 contract LightClientProbe {
     uint256 public value;
@@ -33,6 +34,13 @@ contract LightClientProbe {
     function writeAndRevert(uint256 newValue) external {
         value = newValue;
         revert("reverted");
+    }
+
+    /**
+     * Reverts with no data once `value` is set.
+     */
+    function requireUnset() external view {
+        require(value == 0);
     }
 
     /**

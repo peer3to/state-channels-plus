@@ -18,7 +18,6 @@ whether a header belongs to the chain.
 - `hashes each recorded header to the block hash its node reports`: REQ-STPROOF-3-NVJGR0.T1.P14, UNIT-TEST-STPROOF-3-W0K47W.P1
 - `hashes to another value when the state root is changed`: UNIT-TEST-STPROOF-3-W0K47W.P2
 - `reads the number and the state root of the header`: UNIT-TEST-STPROOF-3-W0K47W.P3
-- `reads the hash of the block before it in lower case`: UNIT-TEST-STPROOF-3-W0K47W.P10
 - `reads the Ethereum block hash Frontier wrote into each recorded digest`: REQ-STPROOF-3-NVJGR0.T1.P15, UNIT-TEST-STPROOF-3-W0K47W.P4
 - `throws when the digest holds no Frontier log`: REQ-STPROOF-3-NVJGR0.T1.P12, UNIT-TEST-STPROOF-3-W0K47W.P5
 - `throws when the digest holds two Frontier logs`: REQ-STPROOF-3-NVJGR0.T1.P13, UNIT-TEST-STPROOF-3-W0K47W.P6

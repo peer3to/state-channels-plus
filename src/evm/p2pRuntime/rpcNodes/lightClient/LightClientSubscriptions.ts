@@ -19,13 +19,20 @@ type SubscriptionKey = string;
  */
 const MAX_EARLY_NOTIFICATIONS = 64;
 
-/** How long a socket waits before it tries a failed subscription change again: a peer3 block time. */
-const RETRY_DELAY_MS = 2000;
+/** Most unknown subscription ids whose notifications are kept while a subscribe waits for its id. */
+const MAX_EARLY_SUBSCRIPTIONS = 4;
+
+/** How long a failed subscription change waits before it is tried again: a peer3 block time. */
+export const SUBSCRIPTION_RETRY_DELAY_MS = 2000;
 
 /** What the subscriptions hand on. */
 export type LightClientSubscriptionListener = {
-    /** A node subscription for `contract` began. */
-    subscribed(key: SubscriptionKey, contract: ContractAddress): void;
+    /** A subscription for `contract` on a socket of `node` began. */
+    subscribed(
+        key: SubscriptionKey,
+        contract: ContractAddress,
+        node: RpcNodeProvider
+    ): void;
     /** It ended: on unsubscribe, when its socket closed, or before it is opened again. */
     unsubscribed(key: SubscriptionKey): void;
     /**
@@ -50,8 +57,13 @@ type SubscribedSocket = {
     held: Map<ContractAddress, HeldSubscription>;
     /** Each subscription of this socket, by the id the node gave it. */
     byId: Map<SubscriptionId, HeldSubscription>;
-    /** Notifications for an id this socket does not know yet, in order. */
+    /**
+     * Notifications for an id this socket does not know yet, in order: kept
+     * only while a subscribe waits for its id, and dropped once it has it.
+     */
     early: Map<SubscriptionId, { params: unknown; receivedAt: number }[]>;
+    /** Whether a subscribe on this socket waits for its id. */
+    subscribing: boolean;
     /** This socket's subscription changes, one after another. */
     changes: Promise<void>;
     /** The pending retry of a failed change, if one is pending. */
@@ -61,10 +73,10 @@ type SubscribedSocket = {
 
 /**
  * Keeps one light client subscription per followed contract on every node
- * socket and hands on each message a node pushes for it. A socket that opens
- * later is subscribed too, and syncs from the node's whole partition. A
- * subscription the node ends, or whose push the listener refuses, is opened
- * again.
+ * socket, once started, and hands on each message a node pushes for it. A
+ * socket that opens later is subscribed too, and syncs from the node's whole
+ * partition. A subscription the node ends, or whose push the listener
+ * refuses, is opened again.
  */
 export class LightClientSubscriptions {
     private readonly logger: Logger;
@@ -74,6 +86,8 @@ export class LightClientSubscriptions {
     private readonly sockets = new Map<NodeSocket, SubscribedSocket>();
     private readonly unwatchNodes: (() => void)[] = [];
     private nextKey = 0;
+    /** Whether the sockets subscribe: what is followed before it is only kept. */
+    private started = false;
 
     constructor(
         nodes: readonly RpcNodeProvider[],
@@ -106,6 +120,13 @@ export class LightClientSubscriptions {
         this.subscribeSockets();
     }
 
+    /** Subscribes what is followed, from now on: the listener takes what the nodes push. */
+    start(): void {
+        if (this.started) return;
+        this.started = true;
+        this.subscribeSockets();
+    }
+
     /** Hands on nothing any more. The subscriptions end with the sockets. */
     close(): void {
         for (const unwatch of this.unwatchNodes.splice(0)) unwatch();
@@ -121,6 +142,7 @@ export class LightClientSubscriptions {
             held: new Map(),
             byId: new Map(),
             early: new Map(),
+            subscribing: false,
             changes: Promise.resolve(),
             unwatchNotifications: socket.watchNotifications(
                 LIGHT_CLIENT_METHODS.notification,
@@ -146,10 +168,16 @@ export class LightClientSubscriptions {
         if (subscription === undefined) return;
         const held = subscribed.byId.get(subscription);
         if (!held) {
-            const early = subscribed.early.get(subscription) ?? [];
+            // only the id a subscribe still waits for can be one of ours
+            if (!subscribed.subscribing) return;
+            let early = subscribed.early.get(subscription);
+            if (!early) {
+                if (subscribed.early.size >= MAX_EARLY_SUBSCRIPTIONS) return;
+                early = [];
+                subscribed.early.set(subscription, early);
+            }
             if (early.length < MAX_EARLY_NOTIFICATIONS)
                 early.push({ params, receivedAt });
-            subscribed.early.set(subscription, early);
             return;
         }
         // the node ends a subscription that fell behind with an error
@@ -176,8 +204,9 @@ export class LightClientSubscriptions {
         this.subscribeSockets();
     }
 
-    /** Brings every socket's subscriptions to what is followed now. */
+    /** Brings every socket's subscriptions to what is followed now, once started. */
     private subscribeSockets(): void {
+        if (!this.started) return;
         for (const [socket, subscribed] of this.sockets)
             this.subscribeSocket(socket, subscribed);
     }
@@ -200,7 +229,7 @@ export class LightClientSubscriptions {
                     subscribed.retry = undefined;
                     if (this.sockets.get(socket) === subscribed)
                         this.subscribeSocket(socket, subscribed);
-                }, RETRY_DELAY_MS);
+                }, SUBSCRIPTION_RETRY_DELAY_MS);
             });
     }
 
@@ -218,21 +247,25 @@ export class LightClientSubscriptions {
                 await this.unsubscribe(socket, subscribed, held);
             }
             const key = String(this.nextKey++);
-            this.listener.subscribed(key, address);
+            this.listener.subscribed(key, address, subscribed.node);
             let id: SubscriptionId;
+            subscribed.subscribing = true;
             try {
                 id = (await socket.send(LIGHT_CLIENT_METHODS.subscribe, [
                     { address, topics }
                 ])) as SubscriptionId;
             } catch (error) {
+                subscribed.subscribing = false;
+                subscribed.early.clear();
                 this.listener.unsubscribed(key);
                 throw error;
             }
+            subscribed.subscribing = false;
             const subscription = { id, key, topics };
             subscribed.held.set(address, subscription);
             subscribed.byId.set(id, subscription);
             const early = subscribed.early.get(id) ?? [];
-            subscribed.early.delete(id);
+            subscribed.early.clear();
             for (const { params, receivedAt } of early)
                 this.notified(socket, subscribed, params, receivedAt);
         }

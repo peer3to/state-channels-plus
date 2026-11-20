@@ -5,7 +5,10 @@ import type {
     PushedBlockTiming,
     PushedStateCounters
 } from "./lightClient/LightClientCounters";
-import { LightClientSubscriptions } from "./lightClient/LightClientSubscriptions";
+import {
+    LightClientSubscriptions,
+    SUBSCRIPTION_RETRY_DELAY_MS
+} from "./lightClient/LightClientSubscriptions";
 import { NotLocalError } from "./lightClient/LightClientUnavailableError";
 import { LIGHT_CLIENT_METHODS } from "./lightClient/lightClientWire";
 import { parseLocalRead, type LocalRead } from "./lightClient/LocalReadParser";
@@ -75,8 +78,10 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
     private startedLightClient?: LightClient;
     /** Whether the nodes list the light client endpoints, once they answered. */
     private endpointsListed?: Promise<boolean>;
-    /** The follow and unfollow calls, one after another. */
-    private following: Promise<void> = Promise.resolve();
+    /** The start of the subscriptions, once a channel is followed; unset again after it failed. */
+    private subscriptionsStart?: Promise<void>;
+    /** The pending retry of a failed start of the subscriptions. */
+    private subscriptionsStartRetry?: ReturnType<typeof setTimeout>;
 
     constructor(
         nodes: readonly RpcNodeProvider[],
@@ -87,8 +92,8 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         this.chain = chain;
         // a light client that did not start follows nothing
         this.subscriptions = new LightClientSubscriptions(nodes, this.logger, {
-            subscribed: (key, contract) =>
-                this.startedLightClient?.subscribed(key, contract),
+            subscribed: (key, contract, node) =>
+                this.startedLightClient?.subscribed(key, contract, node),
             unsubscribed: (key) => this.startedLightClient?.unsubscribed(key),
             pushed: (key, message, receivedAt) =>
                 this.startedLightClient?.pushed(key, message, receivedAt) ??
@@ -100,24 +105,19 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
     // Overrides MultiRpcProvider.followChannel: the nodes push the channel's
     // partition of the contract's state from now on.
     override followChannel(contract: string, channelId: ChannelId): void {
-        this.changeFollowing(async () => {
-            if (!(await this.hasEndpoints())) return;
-            await this.getLightClient();
-            this.subscriptions.follow(
-                contract.toLowerCase(),
-                channelTopic(channelId)
-            );
-        });
+        this.subscriptions.follow(
+            contract.toLowerCase(),
+            channelTopic(channelId)
+        );
+        this.startSubscriptions();
     }
 
     // Overrides MultiRpcProvider.unfollowChannel: ends what followChannel
     // began.
     override unfollowChannel(contract: string, channelId: ChannelId): void {
-        this.changeFollowing(async () =>
-            this.subscriptions.unfollow(
-                contract.toLowerCase(),
-                channelTopic(channelId)
-            )
+        this.subscriptions.unfollow(
+            contract.toLowerCase(),
+            channelTopic(channelId)
         );
     }
 
@@ -129,6 +129,7 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
                 ...this.lightClientCounters,
                 ...this.pushedStateCounters
             });
+        clearTimeout(this.subscriptionsStartRetry);
         this.subscriptions.close();
         super.destroy();
     }
@@ -198,6 +199,7 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
                 this.requestNode(method, params)
             ),
             createPartition: () => this.chain.createPartition(),
+            servingNode: () => this.servingNode(),
             chainPrecompiles: this.chain.chainPrecompiles,
             hardfork: this.chain.hardfork,
             ethereumPrecompiles: this.chain.ethereumPrecompiles,
@@ -210,15 +212,27 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         return this.startedLightClient;
     }
 
-    private changeFollowing(change: () => Promise<void>): void {
-        this.following = this.following
-            .then(change)
-            .catch((error: unknown) =>
-                this.logger.error(
-                    "Light client could not change what it follows",
-                    { error }
-                )
+    /**
+     * Starts the subscriptions once the nodes list the light client endpoints
+     * and the light client runs, so that it takes the first push. Without the
+     * endpoints they stay off. A failed start is logged and tried again.
+     */
+    private startSubscriptions(): void {
+        this.subscriptionsStart ??= (async () => {
+            if (!(await this.hasEndpoints())) return;
+            await this.getLightClient();
+            this.subscriptions.start();
+        })().catch((error: unknown) => {
+            this.subscriptionsStart = undefined;
+            if (this.isClosed) return;
+            this.logger.error(
+                "Light client could not start following; trying again",
+                { error }
             );
+            this.subscriptionsStartRetry = setTimeout(() => {
+                if (!this.isClosed) this.startSubscriptions();
+            }, SUBSCRIPTION_RETRY_DELAY_MS);
+        });
     }
 
     private hasEndpoints(): Promise<boolean> {

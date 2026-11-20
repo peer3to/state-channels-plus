@@ -579,6 +579,18 @@ export class ValidationProbeService extends ANetworkRpcService<
         return true;
     }
 
+    /** Select another channel on the event listener. */
+    public async selectChannelListener(channelId: ChannelId): Promise<boolean> {
+        await this.sm.stateChannelEventListener.setChannelId(channelId);
+        return true;
+    }
+
+    /** Dispose the event listener, as the runtime's disposal does. */
+    public async disposeChannelListener(): Promise<boolean> {
+        await this.sm.stateChannelEventListener.dispose();
+        return true;
+    }
+
     /**
      * Start a select of a new channel, or a clear, on the listener of the
      * selected channel, then at once a select of another new channel. The

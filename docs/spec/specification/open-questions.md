@@ -854,7 +854,9 @@ implementation
 
 Open (2026-11-20). The engineer decided on that day that the light client is on when the endpoint serves
 it, that calls with a gas limit, fee fields, an earlier block's hash or a chain precompile go to the
-endpoint, and that peer3's constants stay in the source. The implementing agent made these further
+endpoint, and that peer3's constants stay in the source. The same day the engineer decided that with
+several endpoints a read uses only what the endpoint serving the participant's requests pushed. The
+implementing agent made these further
 choices while building the card's design, and the engineer has not confirmed them:
 
 1. A partition holds raw state trie keys: contract slots, code and code metadata, and the account

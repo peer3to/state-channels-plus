@@ -6,6 +6,7 @@
 
 ## Requirements
 
+- [`REQ-LC-2-PMY1VG` (What cannot be answered from proven state goes to the endpoint)](../../../../../specification/runtime/light-client.md#req-lc-2-pmy1vg)
 - [`REQ-SDK-ARCH-1-7H14H6` (Explicit ownership)](../../../../../specification/runtime/sdk.md#req-sdk-arch-1-7h14h6)
 - [`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally pending before acknowledgement)](../../../../../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75)
 - [`INV-TJOIN-2-H7JSQM` (Local pending protection for submitted joins)](../../../../../specification/peer-communication/targeted-channel-join.md#inv-tjoin-2-h7jsqm)

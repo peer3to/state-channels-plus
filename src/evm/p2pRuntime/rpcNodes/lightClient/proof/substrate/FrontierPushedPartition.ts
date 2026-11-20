@@ -198,7 +198,8 @@ export default class FrontierPushedPartition extends APushedPartition {
             sync: message.sync,
             values: message.values.length,
             newNodes,
-            heldNodes: nodes.size
+            heldNodes: nodes.size,
+            stages: message.stages
         };
     }
 

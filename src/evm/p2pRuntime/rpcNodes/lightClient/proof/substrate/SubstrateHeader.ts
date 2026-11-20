@@ -18,8 +18,6 @@ const HASH_LENGTH = 32;
  */
 export default class SubstrateHeader {
     readonly number: number;
-    /** The hash of the block before this one. */
-    readonly parentHash: string;
     readonly stateRoot: string;
     /** Blake2-256 of the SCALE-encoded header. */
     readonly hash: string;
@@ -27,7 +25,6 @@ export default class SubstrateHeader {
 
     constructor(header: SubstrateHeaderJson) {
         this.number = Number(header.number);
-        this.parentHash = header.parentHash.toLowerCase();
         this.stateRoot = header.stateRoot;
         this.digestLogs = header.digest.logs;
         for (const root of [

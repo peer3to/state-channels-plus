@@ -8,6 +8,7 @@ import {
     LightClientUnavailableError,
     NotLocalError
 } from "./LightClientUnavailableError";
+import type RpcNodeProvider from "../RpcNodeProvider";
 import type AProvenStateReader from "./proof/AProvenStateReader";
 import type {
     AccountStateRead,
@@ -45,8 +46,12 @@ function isAnswer(): boolean {
 /** Identifies one node subscription; a node's id for it holds on that node's socket only. */
 type SubscriptionKey = string;
 
-/** The state one node subscription pushed, for the contract it follows. */
-type Subscription = { contract: string; partition: APushedPartition };
+/** The state one subscription on a socket of `node` pushed, for the contract it follows. */
+type Subscription = {
+    contract: string;
+    node: RpcNodeProvider;
+    partition: APushedPartition;
+};
 
 /** What a node proved for one read, kept so that each pass can fill it again. */
 type Fetched = { read: AccountStateRead; proven: ProvenAccountState };
@@ -70,6 +75,12 @@ export type LightClientOptions = {
     reader: AProvenStateReader;
     /** A partition of the chain's proof representation, for one subscription. */
     createPartition: () => APushedPartition;
+    /**
+     * The node the chain access sends its requests to now. Only what its
+     * subscriptions pushed is read: another endpoint's pushes cannot move
+     * the block a read is made at.
+     */
+    servingNode: () => RpcNodeProvider | undefined;
     /**
      * Addresses the chain answers with a precompile of its own that the
      * local EVM does not reproduce, lowercase.
@@ -95,9 +106,9 @@ export type LightClientOptions = {
  * that state. A read the light client cannot answer throws, and the caller
  * asks the RPC node instead.
  *
- * The block is the newest one a subscription pushed and the light client
- * verified, and a read takes from the pushed partitions everything they prove
- * at that block, without a request. What they do not reach, it has the node
+ * The block is the newest one a subscription on the serving node pushed and
+ * the light client verified, and a read takes from that node's pushed
+ * partitions everything they prove at that block, without a request. What they do not reach, it has the node
  * prove at that block. With nothing pushed yet it reads at the node's best
  * block and has the node prove everything.
  */
@@ -127,10 +138,15 @@ export class LightClient {
         });
     }
 
-    /** Subscription `key` of a node follows the contract at `contract`: its pushes go to a partition of its own. */
-    subscribed(key: SubscriptionKey, contract: string): void {
+    /** Subscription `key` on a socket of `node` follows the contract at `contract`: its pushes go to a partition of its own. */
+    subscribed(
+        key: SubscriptionKey,
+        contract: string,
+        node: RpcNodeProvider
+    ): void {
         this.subscriptions.set(key, {
             contract,
+            node,
             partition: this.options.createPartition()
         });
     }
@@ -155,7 +171,7 @@ export class LightClient {
         try {
             const accepted = subscription.partition.accept(message);
             this.options.pushedState.acceptedBlocks++;
-            const { stages } = message as { stages: PushedBlockTiming };
+            const { stages } = accepted;
             const timings = this.options.pushedBlockTimings;
             timings.push({
                 number: accepted.block.number,
@@ -308,14 +324,14 @@ export class LightClient {
         );
     }
 
-    /** The newest block a subscription pushed and the light client holds, with its environment. */
+    /** The newest block a subscription on the serving node pushed and the light client holds, with its environment. */
     private newestPushedBlock():
         | { block: ProvenBlock; environment: BlockEnvironment }
         | undefined {
         let newest:
             | { block: ProvenBlock; environment: BlockEnvironment }
             | undefined;
-        for (const { partition } of this.subscriptions.values()) {
+        for (const partition of this.servingPartitions()) {
             const { block, environment } = partition;
             if (
                 block &&
@@ -344,13 +360,13 @@ export class LightClient {
             );
     }
 
-    /** Fills what the partitions pushed at `block` decide of `misses`; the rest, for the node. */
+    /** Fills what the serving node's partitions pushed at `block` decide of `misses`; the rest, for the node. */
     private fillFromPartitions(
         block: ProvenBlock,
         misses: AccountStateRead[]
     ): AccountStateRead[] {
         let undecided = misses;
-        for (const { partition } of this.subscriptions.values()) {
+        for (const partition of this.servingPartitions()) {
             if (undecided.length === 0) break;
             if (partition.block?.hash !== block.hash) continue;
             const decision = partition.decide(undecided);
@@ -361,6 +377,14 @@ export class LightClient {
             undecided = decision.undecided;
         }
         return undecided;
+    }
+
+    /** The partitions of the subscriptions on the node the chain access sends its requests to now. */
+    private servingPartitions(): APushedPartition[] {
+        const serving = this.options.servingNode();
+        return [...this.subscriptions.values()]
+            .filter(({ node }) => node === serving)
+            .map(({ partition }) => partition);
     }
 
     private getEvm(): Promise<EVM> {

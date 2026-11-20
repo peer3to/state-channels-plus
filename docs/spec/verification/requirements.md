@@ -600,7 +600,7 @@ Specification cases tested: 7/7.
 Specification cases tested: 15/16. Untested: T1.P16.
 
 [`REQ-LC-2-PMY1VG` (What cannot be answered from proven state goes to the endpoint)](../specification/runtime/light-client.md#req-lc-2-pmy1vg)
-Specification cases tested: 5/5.
+Specification cases tested: 6/6.
 
 [`REQ-LC-3-W7RRHM` (A failed read falls back to the endpoint and is made known)](../specification/runtime/light-client.md#req-lc-3-w7rrhm)
 Specification cases tested: 4/4.
@@ -609,16 +609,16 @@ Specification cases tested: 4/4.
 Specification cases tested: 5/5.
 
 [`REQ-LC-5-MM0BM9` (A followed channel is subscribed on every connection)](../specification/runtime/light-client.md#req-lc-5-mm0bm9)
-Specification cases tested: 6/6.
+Specification cases tested: 8/8.
 
 [`REQ-LC-7-W8WDN3` (A refused or ended subscription syncs again and is made known)](../specification/runtime/light-client.md#req-lc-7-w8wdn3)
-Specification cases tested: 1/2. Untested: T1.P4.
+Specification cases tested: 2/2.
 
 [`REQ-LC-8-BBYC51` (A participant follows the channel it has selected)](../specification/runtime/light-client.md#req-lc-8-bbyc51)
-Specification cases tested: 0/3.
+Specification cases tested: 6/10. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
 
 [`REQ-LC-9-KWXV43` (A read takes from the pushed partitions what they prove at its block)](../specification/runtime/light-client.md#req-lc-9-kwxv43)
-Specification cases tested: 4/4.
+Specification cases tested: 6/6.
 
 [`REQ-LC-10-YCP80W` (The stages of each accepted pushed block are kept)](../specification/runtime/light-client.md#req-lc-10-ycp80w)
 Specification cases tested: 1/1.
@@ -984,7 +984,7 @@ Specification cases tested: 11/11.
 Specification cases tested: 4/4.
 
 [`REQ-STPROOF-3-NVJGR0` (A pushed partition is accepted only as its proof decides it under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0)
-Specification cases tested: 20/20.
+Specification cases tested: 21/21.
 
 [`REQ-STPROOF-4-XK5S64` (An account's nonce, balance and code are accepted only when the proof decides…)](../specification/runtime/storage-proofs.md#req-stproof-4-xk5s64)
 Specification cases tested: 18/18.

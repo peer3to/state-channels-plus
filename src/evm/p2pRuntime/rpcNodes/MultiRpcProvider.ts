@@ -293,6 +293,11 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
         return this.send(method, params);
     }
 
+    /** The node a request goes to now: the first with an open socket. */
+    protected servingNode(): RpcNodeProvider | undefined {
+        return this.nodes.find((node) => node.isConnected);
+    }
+
     protected async forward(request: JsonRpcPayload): Promise<JsonRpcResult> {
         const params = paramsOf(request);
         let hasRetriedMissingBlock = false;
