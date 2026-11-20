@@ -10,7 +10,7 @@ Three more slow-auditor cases (staging in `test/fixtures/DisputeAuditStaging.ts`
 no-op, checked by one shared assertion: the multicall landed with its kill first, the dispute did not land,
 the marker rolled back, no kill was sent alone and the event pipeline has no failed block and is not
 disposed. In the first a stub answers the best-effort estimate with the least gas at which the multicall
-succeeds; the recorded estimates show the all-or-nothing estimate refused with
+succeeds, which the kill (replaying nothing) declares with the signer's headroom; the recorded estimates show the all-or-nothing estimate refused with
 `RaceConditionDisputeEvidencePeriodExpired` and the best-effort estimate accepted, and the mined refusal
 still names that race. In the second the upload is refused with no revert data (`0x`); in the third its
 facet reverts without data, which the proxy reports as `Error("StateChannelManagerProxy - Delegatecall failed")`.

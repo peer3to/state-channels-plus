@@ -498,17 +498,15 @@ because the refusal makes every lower gas fail, so there the sum declares more t
 excess never changes a verdict, but it is not free: it reserves block space and must fit the block
 gas limit (below). The integrator `try/catch` assumption is no longer needed.
 
-Accepted residual (cost and block fit, not correctness): every replay transaction declares more
-than the requirement, and with a searching estimator the estimate already contains the requirement,
-the signer's 50% headroom applies to it, and the requirement is added again, so the declared limit
-is at least 2.5 × the requirement. With poker's budgets it still fits a 30M block.
-Nothing caps the declared limit at the block gas limit; a replay whose declared limit exceeds it is
-refused by the node at submission, so that fraud stays unproven on-chain until the budget is lowered.
-Blocks are packed by declared limit, so each replay transaction also reserves that much block space. A submitter
-still cannot make an honest transition fail for lack of gas; the worst case of the residual is a
-fraud proof that cannot be sent, never a wrong verdict. The engineer confirmed this rule (review 5,
-FO1); the estimator models, the block-fit dependence on the consumer's budget, the missing cap and
-the missing send test against a searching 30M-block node are open together as
+Accepted residual (cost and transaction fit, not correctness): a replay transaction declares its
+estimate without headroom plus the requirement, capped at `MAX_TRANSACTION_GAS` (the peer3
+parachain's 17,916,000 by default) and the block gas limit; with a searching estimator that is about
+twice the requirement. A runtime whose requirement exceeds the cap does not start (revised
+2026-11-21, Luke). A dispute that bundles several replays needs about one transition budget per
+replay before the last and can still exceed the cap; the node then refuses it at submission and that
+fraud stays unproven on-chain. A submitter still cannot make an honest transition fail for lack of
+gas; the worst case of the residual is a fraud proof that cannot be sent, never a wrong verdict.
+Splitting replays across transactions is open as
 [`FIND-GASEST-2-94YFZ6`](open-findings.md#find-gasest-2-94yfz6).
 
 ## Local EVM call gas — 2026-09-26

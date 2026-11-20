@@ -50,23 +50,29 @@ expired one), `killDispute` on peer 0's still-stored proof resolves and the reco
 sees no send.
 
 The `fraud-proof replay gas limit` describe (staging in `test/fixtures/ReplayGasLimitStaging.ts`)
-sends real fraud-proof transactions. A record-only stub scales the signer's `estimateGas` answer for
-the replay sends (`stubScaleReplayGasEstimates`): to one tenth, standing in for an estimator that
-reports only the gas a run spends, or left at the real estimate. Another stub records or fails the
-`getStateTransitionReplayGas` reads (`stubRecordReplayGasReads`). The oracles are the recorded
-estimate, the exact `gasLimit` of the recorded multicall or dispute-fraud-proof apply (the recorded
-estimate plus the replay gas, for both scales), the apply mined without error and the spammer in the
-on-chain slash set for kills, and the recorded reads: one resolved read shared by a dispute and a
-later kill, and a rejected read that sends nothing and is retried by the next dispute or kill. The
+sends real fraud-proof transactions. A record-only stub scales the chain's `estimateGas` answer (the
+provider's, without the signer's headroom) for the fraud-proof sends (`stubScaleReplayGasEstimates`):
+to one tenth (the dispute) or one half (the refutation kill, about the gas it spends), standing in
+for an estimator that reports only the gas a run spends, to a large multiple, or left at the real
+estimate. Another stub records or fails the
+`getStateTransitionReplayGas` reads (`stubRecordReplayGasReads`). Replaying kills refute a timeout
+with posted calldata (`stageUnkilledTimeoutCalldataDispute`): four peers advance two blocks, one
+peer rejects every later confirmation and is disconnected, the next author posts its block as
+calldata, and that peer then uploads a forced timeout against the author. The killer's stored
+proof is a `TimeoutCalldataPosted` refutation, whose apply replays the posted block. The oracles are
+the recorded estimate, the exact `gasLimit` of the recorded multicall or dispute-fraud-proof apply
+(the recorded estimate plus the replay gas; the block gas limit when a stubbed block read answers
+16M; `MAX_TRANSACTION_GAS` when the estimate is scaled past it), the apply mined without error, the
+disputer in the on-chain slash set and the timeout dispute no longer committed. The one-half kill
+shows that the sum still lands when the estimate misses the unused replay budget. One replaying kill runs
+on a poker-sized 6.5M transition budget and asserts the declared limit is within
+`MAX_TRANSACTION_GAS` and the kill lands. A kill of a spam dispute, whose `InvalidDisputeReason`
+proof replays nothing, is sent at exactly its estimate plus the signer's headroom and slashes the
+spammer. The read-sharing cases store an invalid-transition fraud proof on the killer before the
+timeout dispute, so the dispute and the kill both replay: one resolved read is shared by a dispute
+and a later kill, and a rejected read sends nothing and is retried by the next dispute or kill. The
 apply recorder forwards the send overrides, so the kill path's computed `gasLimit` reaches the
-chain; the one-tenth kill shows that the sum still lands when the estimate misses most of the work.
-One kill refutes a timeout with posted calldata (`killTimeoutCalldataRefutationWithScaledEstimate`):
-four peers advance two blocks, one peer rejects every later confirmation and is disconnected, the
-next author posts its block as calldata, and that peer then uploads a forced timeout against the
-author. The killer's stored proof is a `TimeoutCalldataPosted` refutation, whose apply replays the
-posted block. The test asserts one `applyDisputeFraudProofs` estimate, one apply naming the
-disputer at exactly the estimate plus the replay gas, mined with no error, the disputer in the
-on-chain slash set, and the timeout dispute no longer committed.
+chain.
 The multicall tests of the submission branch assert only that the limit exceeds the replay gas.
 The plain and calldata upload tests of the submission branch also record the replay-gas reads and
 assert none happened (`6.P3`, credited to the plain upload). One test holds the replay-gas read
@@ -172,14 +178,16 @@ author is added.
 - `two killDispute calls inside one live kill window → one slash, the loser lands as a no-op`: none
 - `a dispute sends the multicall at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P14
 - `a kill whose estimate covers only part of the work still lands at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P15
-- `a kill with the real estimate lands at the estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P16
+- `a kill whose proof replays no transition is sent at its estimate plus the signer's headroom, without the replay requirement, and lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P20
 - `a kill whose estimate plus the replay requirement exceeds the block gas limit is sent at the block gas limit`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P18
-- `a kill whose latest-block read fails is sent uncapped at its estimate plus the replay requirement, lands, and slashes the disputer`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P19
+- `a kill whose estimate plus the replay requirement exceeds MAX_TRANSACTION_GAS is sent at MAX_TRANSACTION_GAS and lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P21, REQ-ENFSM-1-DKJCY2.T1.P25
+- `a kill whose latest-block read fails is sent at its estimate plus the replay requirement, lands, and slashes the disputer`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P19
 - `a kill that refutes a timeout with posted calldata replays the block and lands at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P17
+- `a poker-sized transition budget's timeout refutation kill lands within MAX_TRANSACTION_GAS at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P22
 - `the dispute and kill sends share one replay requirement read`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P10
 - `concurrent dispute and kill sends wait on one held replay requirement read and both land at estimate plus requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P11
-- `a rejected replay requirement read rejects the dispute without sending it and the next dispute reads again`: none
-- `a rejected replay requirement read rejects the kill without sending it and the next kill reads again`: none
+- `a rejected replay requirement read rejects the dispute without sending it and the next dispute reads again`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P12
+- `a rejected replay requirement read rejects the kill without sending it and the next kill reads again`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P13
 - `fraud proof stored while constructDispute is held at getStateProof → lands in fraudProofsToApply and onChainSlashes`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P1, UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P8
 - `a non-timeout dispute refused as a predecessor mismatch queues no mismatch retry`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P45, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P17
 - `stored forged-inbound proof whose inbound block is the snapshot's inbound head → constructDispute leaves it out, author not marked slashed`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P17

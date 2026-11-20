@@ -1684,3 +1684,33 @@ tests release it in `finally`
 [ChannelJoinService.ts.md](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md),
 [LocalP2pSigner.ts.md](../implementation/source/src/evm/signer/LocalP2pSigner.ts.md),
 [ANetworkRpcService.ts.md](../implementation/source/src/rpc/network/ANetworkRpcService.ts.md).
+
+## Replay sends within the per-transaction gas cap — 2026-11-21
+
+**What.** `DisputeManager.fraudProofGasLimit` sizes both fraud-proof send paths (the dispute
+multicall and `killDispute`) from the chain provider's estimate, without the signer's headroom. A
+send whose proof replays a transition, decided by one predicate on the proof type
+(`replaysStateTransition`), declares that estimate plus `getStateTransitionReplayGas`, capped at the
+new `MAX_TRANSACTION_GAS` configuration field (default 17,916,000, the peer3 parachain's
+`MAX_TX_GAS`) and the latest block's gas limit; any other fraud-proof send declares the estimate plus
+the signer's headroom and reads no requirement. `P2pRuntimeHostRoot` refuses to start when the
+manager's requirement exceeds `MAX_TRANSACTION_GAS`
+([DisputeManager.ts](../../../src/disputeManager/DisputeManager.ts),
+[config.ts](../../../src/utils/config.ts),
+[P2pRuntimeHostRoot.ts](../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts)).
+
+**Why.** Decision by Luke (2026-11-21), delegated to the implementing agent: the parachain rejected a
+poker-sized single-replay kill declared at 19.6M
+([`FIND-GASEST-2-94YFZ6`](open-findings.md#find-gasest-2-94yfz6),
+[`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)).
+A dispute bundling several replays can still exceed the cap; splitting replays is #608's follow-up.
+
+**Tests.** `DisputeManager.test.ts` "fraud-proof replay gas limit": replaying kills now use the
+`TimeoutCalldataPosted` refutation staging; new cases for the non-replaying kill (headroom, no
+requirement), the `MAX_TRANSACTION_GAS` cap and a poker-sized 6.5M budget kill that lands within the
+cap. `ContractExecutorCallGas.test.ts`: startup with the cap one gas below and equal to the
+requirement. The large-budget local EVM tests raise `MAX_TRANSACTION_GAS` to admit their 17M budget.
+The estimate probes wrap the chain provider's `estimateGas`. Mirrors:
+[DisputeManager.ts.md](../implementation/source/src/disputeManager/DisputeManager.ts.md),
+[P2pRuntimeHostRoot.ts.md](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md),
+[config.ts.md](../implementation/source/src/utils/config.ts.md).

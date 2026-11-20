@@ -2554,54 +2554,44 @@ boundary, so no normative statement requires identical acceptance of exempt enve
 
 ### FIND-GASEST-2-94YFZ6
 
-**Defect:** _Open (2026-09-27), engineer decision recorded; revisit gas and estimation as one
-topic._ Fraud-proof replay sends
-([DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md)
-`replayGasLimit`) declare `gasLimit` =
-the signer estimate with its 50% headroom ([gas.ts](../implementation/source/src/utils/gas.ts.md))
-plus the manager's replay requirement `getStateTransitionReplayGas`
-([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)).
-The rule is correct for both estimator models but exact for only one. (1) **Spent-based estimator**
-(the peer3 hardhat fork used by the poker consumer: one run, gas needed before refunds plus 30%,
-capped at the block gas limit; [`FIND-GASEST-1-28J88D`](open-findings.md#find-gasest-1-28j88d)): the
-estimate counts the gas the transition used, never the unused part of the stipend that must be free
-when the replay starts, and the variable work before the replay (proof checks, setting the machine's
-state, deleting the previous transition's outbound messages) can exceed any fixed margin; a poker
-dispute needed about 9.5M (about 3.9M before the replay, requirement 5.64M) while
-`max(estimate, requirement × 1.3)` gave 8.89M and failed the poker gate. The sum is needed there.
-(2) **Searching estimator** (geth, anvil, stock hardhat, and the SDK's in-process EDR test node,
-measured to search): the upfront refusal makes every lower gas fail, so the estimate already
-contains the requirement; the headroom applies to it and the requirement is added again, so the
-declared limit is at least about 2.5 × the requirement. The excess changes no verdict, but blocks
-are packed by declared limit, so it reserves block space and must fit the block gas limit. (3) **Block
-fit depends on the consumer's dispute budget.** With poker's 6.5M transition budget (engineer
-decision 2026-09-27, review 5 MO1) the requirement is about 7.3M and the declared limit about 24M,
-inside a 30M block; with the earlier 16M budget it was not, and any consumer whose transition budget
-exceeds roughly 9M has fraud proofs that a searching node refuses at submission, so that fraud stays
-unproven on-chain. (4) **Resolved (2026-10-15):** `DisputeManager.replayGasLimit` caps the declared limit at the latest
-block's gas limit; a failed block read leaves it uncapped. (5) **No
-send test** exercises a fraud-proof transaction with this rule against a searching node with a 30M
-block: block fit is shown by arithmetic, and the poker replay fixture only runs `eth_call`. History:
-review 3 (FR1 🔴, TO1) and review 4 (FR1 🔴, TO2) flagged the double count on searching estimators and
-proposed a branch (`estimate ≥ requirement ? headroom : estimate + requirement`, capped at the block
-limit) or estimation handled at the provider boundary; the branch was not tried and has a hole on
-the fork (an estimate just above the requirement with a large outer cost gets only headroom). Review
-5 (FO1, TY3) proposed a config switch `GAS_ESTIMATOR_MODEL: "spent" | "search"` and a `search`-path
-send test on the EDR node with a 6.5M/10M budget; neither was built. Review 6 (XO5, TO25) aligned
-the documents with the sum and asked for a real 30M-block poker send; TO25 is deferred to this
-finding.
-
-**Proposed direction:** Decision (Luka, 2026-09-27, review 5 FO1): keep
-`estimate + replay requirement` for this change. Revisit gas and estimation together: choose between
-an estimator-model switch (`GAS_ESTIMATOR_MODEL`) and a rule that is exact on both models, cap the
-declared limit at the block gas limit, and add a fraud-proof send against a searching node with a
-30M block and the consumer's budgets (review 6 TO25), asserting inclusion, the correct verdict and
-the declared limit. Until then the residual above is accepted: cost and block fit, never a wrong
-verdict. (Cap: done 2026-10-15, see item 4.) On the peer3 parachain, which caps a transaction at
-17,916,000 gas, the declared limit exceeds the cap: a poker-sized (`G` = 6.5M) single-replay kill
-declares 19.62M and is rejected, and a dispute bundling several replays exceeds it too. Measurements
-and a reviewed design that splits replays across transactions:
+**Defect:** _Open (2026-09-27); single-replay sends fixed 2026-11-21, bundled replays open._ The
+peer3 parachain rejects a transaction above 17,916,000 gas (its runtime's `MAX_TX_GAS`); its block
+gas limit is 75M. Fraud-proof replay sends
+([DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md)) declared the
+signer estimate with its 50% headroom ([gas.ts](../implementation/source/src/utils/gas.ts.md)) plus the
+manager's replay requirement `getStateTransitionReplayGas`
+([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)),
+capped only at the block gas limit. The parachain's estimator searches, so its estimate already
+contains the requirement, and the declared limit counted it about 2.5 times: measured on a local
+parachain node with poker's 6.5M transition budget, a single-replay `TimeoutCalldataPosted` kill
+estimated 12,242,374 with headroom (8,161,583 without), the requirement was 7,382,510, and the
+declared 19,624,884 was rejected ("exceeds transaction gas limit cap"), so a false timeout claim
+against an honest player stayed committed. **Resolved (2026-11-21):** `fraudProofGasLimit` declares,
+for a send whose proof replays a transition (`BlockInvalidStateTransition`, a `TimeoutCalldataPosted`
+refutation, `DisputeInvalidBlockInStateProofApplyFraudProof`), the chain's estimate without the
+signer's headroom plus the requirement, capped at the configured `MAX_TRANSACTION_GAS` (default
+17,916,000) and the latest block's gas limit; a send whose proofs replay nothing declares the
+estimate with the headroom and no requirement. Runtime startup refuses a deployment whose
+requirement exceeds `MAX_TRANSACTION_GAS`. The poker-sized kill above now declares about 15.5M and
+lands. **Still open:** `DisputeManager.dispute` bundles every fraud proof into one multicall; each
+replay before the last can burn a full transition budget, so a dispute with several replays needs
+about `(n−1)·G + R(G)` plus the upload and exceeds the cap at poker's budget from two replays. The
+reviewed design that splits replays across transactions, the parachain filter shape it needs, the
+64 KiB calldata check and the reduction-boundary race are follow-ups:
 [peer3to/state-channels-plus#608](https://github.com/peer3to/state-channels-plus/issues/608).
+History: review 3 (FR1 🔴, TO1) and review 4 (FR1 🔴, TO2) flagged the double count on searching
+estimators; review 5 (FO1, TY3) proposed an estimator-model switch `GAS_ESTIMATOR_MODEL`; review 6
+(XO5, TO25) asked for a real send against a searching node; the block-gas-limit cap landed
+2026-10-15.
+
+**Proposed direction:** Decision (Luke, 2026-11-21, delegated to the implementing agent and recorded
+under that delegation; the target chain is the peer3 parachain, not Ethereum): one configuration
+field `MAX_TRANSACTION_GAS` caps replay sends, with the parachain runtime's `MAX_TX_GAS` as the
+default for every chain, Hardhat included; replay sends drop the headroom and add the requirement,
+which a spent-gas estimator needs and which covers the concurrent-dispute race the headroom was for;
+whether a send replays is decided by the proof type alone; no estimator-model switch. This
+supersedes Luka's 2026-09-27 decision (review 5 FO1) to keep the signer estimate plus the
+requirement for replay sends. Remaining work: split replays across transactions (#608 steps 1–2).
 
 <a id="find-dispute-5-mzpttc"></a>
 

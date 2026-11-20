@@ -462,7 +462,7 @@ Specification cases tested: 2/5. Untested: T1.P2, T1.P3, T1.P4.
 Specification cases tested: 0/5.
 
 [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
-Specification cases tested: 19/22. Untested: T1.P1, T1.P2, T1.P3.
+Specification cases tested: 22/25. Untested: T1.P1, T1.P2, T1.P3.
 
 [`REQ-ENFSM-2-G4HBKG` (Adapter confinement)](../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg)
 Specification cases tested: 0/4.
