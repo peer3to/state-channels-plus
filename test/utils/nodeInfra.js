@@ -177,14 +177,19 @@ async function startHardhatNode({
  * directory of its own. The directory is removed when the node exits, or by a
  * later start when the process that would have removed it was killed first.
  */
-async function startPeer3Node({ port, logPath, label = "peer3 node" } = {}) {
+async function startPeer3Node({
+    port,
+    logPath,
+    label = "peer3 node",
+    nodesDir = PEER3_NODES_DIR
+} = {}) {
     const nodeBin = process.env.PEER3_NODE_BIN;
     if (!nodeBin) throw new Error("PEER3_NODE_BIN names no peer3 node binary");
     const nodePort = port ?? (await getFreePort());
     // --dev alone keeps the database in the system temp dir and leaves it there
-    fs.mkdirSync(PEER3_NODES_DIR, { recursive: true });
-    removeDeadPeer3NodeDirs();
-    const basePath = fs.mkdtempSync(path.join(PEER3_NODES_DIR, "node-"));
+    fs.mkdirSync(nodesDir, { recursive: true });
+    removeDeadPeer3NodeDirs(nodesDir);
+    const basePath = fs.mkdtempSync(path.join(nodesDir, "node-"));
     const proc = spawn(
         nodeBin,
         [
@@ -214,23 +219,25 @@ async function startPeer3Node({ port, logPath, label = "peer3 node" } = {}) {
     proc.once("exit", removeBasePath);
     // a binary that cannot be spawned emits no exit
     proc.once("error", removeBasePath);
-    if (proc.pid !== undefined)
-        fs.writeFileSync(
-            path.join(basePath, PEER3_NODE_PID_FILE),
-            String(proc.pid)
-        );
+    if (proc.pid !== undefined) {
+        // written whole by a rename, so a sweep never reads half of it
+        const pidFile = path.join(basePath, PEER3_NODE_PID_FILE);
+        fs.writeFileSync(`${pidFile}.tmp`, String(proc.pid));
+        fs.renameSync(`${pidFile}.tmp`, pidFile);
+    }
     // the node logs every block, and an unread pipe would fill and stall it
     const outputTail = logPath ? undefined : keepOutputTail(proc);
     return nodeHandleWhenReady(proc, nodePort, { logPath, label, outputTail });
 }
 
 /**
- * Removes the database directory of every peer3 node whose process is gone. A
- * directory without a process id is one whose node is being started right now.
+ * Removes the database directory of every peer3 node in `nodesDir` whose
+ * process is gone. A directory without a valid process id is one whose node is
+ * being started right now, and is kept.
  */
-function removeDeadPeer3NodeDirs() {
-    for (const entry of fs.readdirSync(PEER3_NODES_DIR)) {
-        const dir = path.join(PEER3_NODES_DIR, entry);
+function removeDeadPeer3NodeDirs(nodesDir) {
+    for (const entry of fs.readdirSync(nodesDir)) {
+        const dir = path.join(nodesDir, entry);
         let pid;
         try {
             pid = Number(
@@ -239,7 +246,7 @@ function removeDeadPeer3NodeDirs() {
         } catch {
             continue;
         }
-        if (!isProcessAlive(pid))
+        if (Number.isInteger(pid) && pid > 0 && !isProcessAlive(pid))
             fs.rmSync(dir, { recursive: true, force: true });
     }
 }
@@ -613,6 +620,8 @@ module.exports = {
     waitForHardhatNode,
     startHardhatNode,
     startPeer3Node,
+    PEER3_NODES_DIR,
+    PEER3_NODE_PID_FILE,
     startDiscoveryRegistry,
     jsonRpc,
     resetSlotCacheDir,

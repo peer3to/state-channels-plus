@@ -1,46 +1,69 @@
 // @spec-test-coverage-ignore: stand-in binaries for the peer3 node launcher's self-tests; executable evidence belongs to its calling test declarations
-import { startPeer3Node } from "@test/utils/nodeInfra";
+import {
+    PEER3_NODE_PID_FILE,
+    PEER3_NODES_DIR,
+    startPeer3Node
+} from "@test/utils/nodeInfra";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
 
-/** Where the launcher keeps each peer3 node's database directory. */
-export const PEER3_NODES_DIR = path.join(process.cwd(), "temp", "peer3-nodes");
-/** The file in a node's database directory that names its process. */
-const PEER3_NODE_PID_FILE = "node.pid";
-
-/** The node database directories that exist now. */
-export function peer3NodeDirs(): Set<string> {
-    if (!fs.existsSync(PEER3_NODES_DIR)) return new Set();
-    return new Set(fs.readdirSync(PEER3_NODES_DIR));
-}
-
 /**
- * An executable shell script that stands in for the node binary: it prints
- * `stderrLine` to stderr and exits with `code`.
+ * A directory under the checkout's `temp`, removed when the test process
+ * exits. A worker's system temp dir can forbid running files from it.
  */
-export function failingNodeBinary(stderrLine: string, code: number): string {
-    // a worker's system temp dir can forbid running files from it
-    const binDir = path.join(process.cwd(), "temp", "peer3-node-bins");
-    fs.mkdirSync(binDir, { recursive: true });
-    const dir = fs.mkdtempSync(path.join(binDir, "bin-"));
+function testDir(prefix: string): string {
+    const parent = path.join(path.dirname(PEER3_NODES_DIR), "peer3-launcher");
+    fs.mkdirSync(parent, { recursive: true });
+    const dir = fs.mkdtempSync(path.join(parent, prefix));
     process.once("exit", () =>
         fs.rmSync(dir, { recursive: true, force: true })
     );
-    const binary = path.join(dir, "zero-fee-node");
+    return dir;
+}
+
+/** A nodes directory of this test alone, for `startPeer3Node`'s `nodesDir`. */
+export function freshNodesDir(): string {
+    return testDir("nodes-");
+}
+
+/** The node database directories in `nodesDir`. */
+export function nodeDirsIn(nodesDir: string): string[] {
+    return fs.readdirSync(nodesDir).sort();
+}
+
+/**
+ * An executable shell script that stands in for the node binary: it writes
+ * its arguments one per line next to itself, prints `stderrLine` to stderr
+ * and exits with `code`.
+ */
+export function failingNodeBinary(stderrLine: string, code: number): string {
+    const binary = path.join(testDir("bin-"), "zero-fee-node");
     fs.writeFileSync(
         binary,
-        `#!/bin/sh\necho ${JSON.stringify(stderrLine)} >&2\nexit ${code}\n`,
+        `#!/bin/sh\nprintf '%s\\n' "$@" > "$0.args"\n` +
+            `echo ${JSON.stringify(stderrLine)} >&2\nexit ${code}\n`,
         { mode: 0o755 }
     );
     return binary;
 }
 
-/** What starting a peer3 node failed with; a node that starts is stopped. */
-export async function peer3NodeStartFailure(): Promise<unknown> {
+/** The `--base-path` the launcher gave the stand-in `binary`. */
+export function basePathGivenTo(binary: string): string {
+    const args = fs.readFileSync(`${binary}.args`, "utf8").split("\n");
+    return args[args.indexOf("--base-path") + 1];
+}
+
+/**
+ * What starting a peer3 node with its database in `nodesDir` failed with; a
+ * node that starts is stopped.
+ */
+export async function peer3NodeStartFailure(
+    nodesDir: string
+): Promise<unknown> {
     try {
-        const node = await startPeer3Node();
+        const node = await startPeer3Node({ nodesDir });
         node.stop();
     } catch (error) {
         return error;
@@ -71,18 +94,17 @@ export async function exitedProcessId(): Promise<number> {
     return child.pid!;
 }
 
-/** A node database directory as the launcher leaves it, naming process `pid`. */
-export function nodeDirOfProcess(pid: number): string {
-    fs.mkdirSync(PEER3_NODES_DIR, { recursive: true });
-    const dir = fs.mkdtempSync(path.join(PEER3_NODES_DIR, "node-"));
-    fs.writeFileSync(path.join(dir, PEER3_NODE_PID_FILE), String(pid));
+/**
+ * A node database directory in `nodesDir` as the launcher leaves it: its
+ * process id file holds `pid`, is empty when `pid` is "", or is missing when
+ * `pid` is undefined.
+ */
+export function nodeDirWithPid(
+    nodesDir: string,
+    pid: number | "" | undefined
+): string {
+    const dir = fs.mkdtempSync(path.join(nodesDir, "node-"));
+    if (pid !== undefined)
+        fs.writeFileSync(path.join(dir, PEER3_NODE_PID_FILE), String(pid));
     return path.basename(dir);
-}
-
-/** Removes a node database directory a test made. */
-export function removeNodeDir(name: string): void {
-    fs.rmSync(path.join(PEER3_NODES_DIR, name), {
-        recursive: true,
-        force: true
-    });
 }
