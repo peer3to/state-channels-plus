@@ -340,7 +340,9 @@ const RUNS_AFTER_CREATION_INIT_CODE =
     "0x426000556d6000544211600c57600080fd5b00600052600e6012f3";
 const RUNS_AT_CREATION_INIT_CODE =
     "0x426000556e600054421115600d57600080fd5b00600052600f6011f3";
-const ALWAYS_REVERTS_INIT_CODE = "0x6460006000fd6000526005601bf3";
+// reverts always, with the word 1 after the creation second and 0 within it
+const REVERTS_WITH_LATENESS_INIT_CODE =
+    "0x426000556c6000544211600052602060" + "00fd600052600d6013f3";
 
 /**
  * `initCode` deployed and sealed on a manual-seal node, then the wall clock
@@ -356,12 +358,20 @@ async function deploySealed(
         nonce: await node.getTransactionCount(deployer.address)
     });
     // a fixed limit: the peer3 node underestimates the constructor's storage write
-    await deployer.sendTransaction({ data: initCode, gasLimit: 200_000 });
-    // the node may import the deployment after a seal: seal until it landed
-    await waitFor(async () => {
-        await mineBlocks(node, 1);
-        return (await node.getCode(to)) !== "0x";
+    const { hash } = await deployer.sendTransaction({
+        data: initCode,
+        gasLimit: 200_000
     });
+    // one seal once the pool holds it: every seal moves the dev node's
+    // clock on, so extra seals would leave the creation second behind
+    await waitFor(
+        async () =>
+            (await node.send("eth_getTransactionByHash", [hash])) !== null
+    );
+    await mineBlocks(node, 1);
+    await waitFor(
+        async () => (await node.getTransactionReceipt(hash)) !== null
+    );
     const sealed = Number(
         (await node.send("eth_getBlockByNumber", ["latest", false])).timestamp
     );
@@ -442,11 +452,18 @@ export async function assertRevertAtBothBlocksRejects(): Promise<void> {
         1,
         async ({ node, proxies, nodes, logger }) => {
             const provider = new MultiRpcProvider(nodes, logger);
-            const call = await deploySealed(node, ALWAYS_REVERTS_INIT_CODE);
+            const call = await deploySealed(
+                node,
+                REVERTS_WITH_LATENESS_INIT_CODE
+            );
 
             const rejection = await rejectionOf(provider.estimateGas(call));
 
             expect(isError(rejection, "CALL_EXCEPTION")).to.equal(true);
+            // the pending block's revert, not the latest block's
+            expect(
+                isError(rejection, "CALL_EXCEPTION") && BigInt(rejection.data!)
+            ).to.equal(1n);
             expect(estimateBlocks(proxies[0])).to.deep.equal([
                 "pending",
                 "latest"

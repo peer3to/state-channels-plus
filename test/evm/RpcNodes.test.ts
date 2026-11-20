@@ -127,7 +127,7 @@ describe("MultiRpcProvider", () => {
         await assertPendingOnlyRevertFallsBackToLatest();
     });
 
-    it("rejects an estimate the latest block also reverts", async () => {
+    it("rejects an estimate the latest block also reverts, with the pending block's revert", async () => {
         await assertRevertAtBothBlocksRejects();
     });
 

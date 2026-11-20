@@ -240,16 +240,21 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     }
 
     // Overrides AbstractProvider.estimateGas: a revert at the pending block is
-    // confirmed against the latest block before it stands. The pending block
-    // holds other senders' unmined transactions -> a competitor's pending
-    // reduce makes ours revert there, but it may never land.
+    // confirmed against the latest block before it stands, and the pending
+    // block's revert is the one reported. The pending block holds other
+    // senders' unmined transactions -> a competitor's pending reduce makes
+    // ours revert there, but it may never land.
     override async estimateGas(tx: TransactionRequest): Promise<bigint> {
         try {
             return await super.estimateGas(tx);
         } catch (error) {
             if (!isError(error, "CALL_EXCEPTION") || tx.blockTag != null)
                 throw error;
-            return await super.estimateGas({ ...tx, blockTag: "latest" });
+            try {
+                return await super.estimateGas({ ...tx, blockTag: "latest" });
+            } catch {
+                throw error;
+            }
         }
     }
 
