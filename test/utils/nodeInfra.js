@@ -128,30 +128,81 @@ function infraNodeFlags() {
     return flags ? flags.split(" ").filter(Boolean) : [];
 }
 
+// --parachain (PARACHAIN=1) starts the parachain dev node (PEER3_NODE_BIN,
+// default `zero-fee-node` on PATH) on the funded test chain instead of hardhat.
+const isParachain = () => process.env.PARACHAIN === "1";
+
+/**
+ * The peer3 dev node's arguments: `seal` is "interval" or "manual", `chain`
+ * is "test" or "test-other" (the same chain under a second EVM chain id).
+ * Archive state: Frontier's eth_getLogs skips blocks whose state is pruned
+ * (by default all but the last 256), without an error.
+ */
+function peer3NodeArgs(nodePort, seal, chain, basePath) {
+    return [
+        "--dev",
+        "--base-path",
+        basePath,
+        "--chain",
+        chain,
+        "--dev-seal",
+        seal,
+        "--state-pruning",
+        "archive",
+        "--rpc-port",
+        String(nodePort),
+        "--rpc-max-connections",
+        "10000",
+        "--port",
+        "0",
+        "--no-mdns",
+        "--no-prometheus",
+        "--no-telemetry",
+        "--no-hardware-benchmarks"
+    ];
+}
+
 async function startHardhatNode({
     port,
     logPath,
     label = "hardhat node",
-    env = {}
+    env = {},
+    seal = "interval",
+    chain = "test"
 } = {}) {
     const nodePort = port ?? (await getFreePort());
-    const proc = spawn(
-        process.execPath,
-        [
-            ...infraNodeFlags(),
-            HARDHAT_CLI,
-            "node",
-            "--hostname",
-            "127.0.0.1",
-            "--port",
-            String(nodePort)
-        ],
-        {
-            cwd: PROJECT_ROOT,
-            env: { ...process.env, ...env },
-            stdio: ["ignore", "pipe", "pipe"]
-        }
-    );
+    // the node's database grows past a container's small /tmp, so it lives in the project's temp dir
+    const nodesDir = path.join(PROJECT_ROOT, "temp", "peer3-nodes");
+    if (isParachain()) fs.mkdirSync(nodesDir, { recursive: true });
+    const basePath = isParachain()
+        ? fs.mkdtempSync(path.join(nodesDir, "node-"))
+        : undefined;
+    const [command, args] = isParachain()
+        ? [
+              process.env.PEER3_NODE_BIN || "zero-fee-node",
+              peer3NodeArgs(nodePort, seal, chain, basePath)
+          ]
+        : [
+              process.execPath,
+              [
+                  ...infraNodeFlags(),
+                  HARDHAT_CLI,
+                  "node",
+                  "--hostname",
+                  "127.0.0.1",
+                  "--port",
+                  String(nodePort)
+              ]
+          ];
+    const proc = spawn(command, args, {
+        cwd: PROJECT_ROOT,
+        env: { ...process.env, ...env },
+        stdio: ["ignore", "pipe", "pipe"]
+    });
+    if (basePath)
+        proc.once("exit", () =>
+            fs.rmSync(basePath, { recursive: true, force: true })
+        );
     let resolveExit;
     const exited = new Promise((resolve) => {
         resolveExit = resolve;
@@ -188,10 +239,11 @@ async function startHardhatNode({
             }
         });
         waitForHardhatNode(url).then(
-            () =>
-                settled ||
-                ((settled = true),
-                resolve({ proc, url, stop, exited, logClosed })),
+            () => {
+                if (settled) return;
+                settled = true;
+                resolve({ proc, url, stop, exited, logClosed });
+            },
             (err) => {
                 if (!settled) {
                     settled = true;

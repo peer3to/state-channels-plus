@@ -32,3 +32,14 @@ Released provider lifecycle
 
 - [x] `UNIT-TEST-CLOCK-RELEASE-1-B836QF.P1` — released provider destroyed on replacement
 - [x] `UNIT-TEST-CLOCK-RELEASE-1-B836QF.P2` — owned provider kept on replacement
+
+## UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0
+
+Average block time measurement
+
+- Setup: Init on a private chain whose genesis has timestamp 0, with 1 and 4 blocks mined 2 s apart, and 15 blocks whose first four intervals are 10 s and last ten 2 s
+- Oracle: The average covers at most the last ten blocks and never the genesis interval; a chain one block past genesis measures 0
+
+- [x] `UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0.P1` — a chain younger than eleven blocks measures its real block time
+- [x] `UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0.P2` — a chain one block past genesis measures 0
+- [x] `UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0.P3` — an older chain measures over its last ten blocks

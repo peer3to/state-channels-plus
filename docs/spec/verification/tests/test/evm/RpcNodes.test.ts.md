@@ -71,6 +71,7 @@ within the one-second window (every node was destroyed).
 - `fails a transaction over to the next node while the first is cut`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P2, REQ-CHAINOBS-2-2NCSQ3.T1.P2
 - `holds a transaction while no node is connected and sends it once one reconnects`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P3, REQ-CHAINOBS-2-2NCSQ3.T1.P5
 - `answers reads through the next node while the first is cut`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P4, REQ-CHAINOBS-2-2NCSQ3.T1.P3
+- `estimates gas at the pending block, which holds a transaction not yet sealed`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P29
 - `fails a read over to the next node when the first drops mid-request`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P5, REQ-CHAINOBS-2-2NCSQ3.T1.P4
 - `relays each new block once from the node sockets without polling`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P6
 - `relays each matching log once from the node sockets`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P15, REQ-CHAINOBS-4-JA3YF8.T1.P1

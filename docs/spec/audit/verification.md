@@ -11,6 +11,23 @@ scores are what they are** and which lever moves each one.
 
 The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
 
+## Gas estimates at the pending block, genesis-free block time, parachain test runs — 2026-11-20
+
+Engineer decisions (Luke, 2026-11-20):
+
+- The runtime's provider estimates gas at the `pending` block, the one a transaction lands in. ethers
+  sends no block, and geth and Frontier then estimate at the latest block's timestamp, so a timeout
+  claim sent at its `minTimeStamp` failed its first estimate. The peer3 node stamps its pending block
+  with the current time. [RpcNodes.test.ts](../verification/tests/test/evm/RpcNodes.test.ts.md)
+  checks that the estimate sees a contract deployed only in the pending block
+  ([`UNIT-TEST-MULTI-RPC-1-SVGGZ5`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5) `.P29`);
+  it fails without the tag.
+- The clock leaves genesis out of the measured block time: a fresh parachain's genesis has timestamp 0
+  ([`UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0`](../implementation/source/src/Clock.ts.md#unit-test-clock-average-1-6pdvr0)).
+- `--parachain` runs the slot nodes, the isolated test nodes and the tests on the parachain dev node,
+  locally or on the workers, whose runner image carries the node built by
+  `parachain-node.Dockerfile`. Four timeout E2E cases pass on both Hardhat and the parachain node.
+
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 
 PR #579 review cards TO4, TO5, TY2 and TY3.

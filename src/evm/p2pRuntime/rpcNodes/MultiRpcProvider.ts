@@ -16,6 +16,7 @@ import {
     type Listener,
     Log,
     makeError,
+    type PerformActionRequest,
     type ProviderEvent,
     type Subscriber,
     type Subscription
@@ -234,6 +235,19 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
         const requests = Array.isArray(payload) ? payload : [payload];
         this.sentRequestCount += requests.length;
         return Promise.all(requests.map((request) => this.forward(request)));
+    }
+
+    // Overrides JsonRpcApiProvider.getRpcRequest: estimate gas against the
+    // pending block, the one the transaction will land in. ethers sends no
+    // block, so geth and Frontier estimate against the latest block and its
+    // older timestamp -> a transaction that only became valid since then (a
+    // timeout claim right at its minTimeStamp) fails the estimate.
+    override getRpcRequest(
+        req: PerformActionRequest
+    ): null | { method: string; args: Array<unknown> } {
+        const request = super.getRpcRequest(req);
+        if (req.method !== "estimateGas" || !request) return request;
+        return { method: request.method, args: [...request.args, "pending"] };
     }
 
     // Overrides JsonRpcApiProvider._getSubscriber: block events and contract

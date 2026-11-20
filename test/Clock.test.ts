@@ -1,12 +1,43 @@
 import Clock from "@/Clock";
 import { expect } from "chai";
 import { BrowserProvider } from "ethers";
-import { ethers, network } from "hardhat";
+import { config, ethers, network } from "hardhat";
+import { createProvider } from "hardhat/internal/core/providers/construction";
 
 // A second real ethers provider over the same in-process hardhat network:
 // distinct instance, live chain reads, no mocking.
 function createSecondProvider(): BrowserProvider {
     return new BrowserProvider(network.provider);
+}
+
+// A private in-process chain whose genesis has timestamp 0, as on the
+// parachain, then block 1 and one block per entry of `intervals` (seconds
+// after the previous block), the last one at the wall clock.
+async function createZeroGenesisChain(
+    intervals: number[]
+): Promise<BrowserProvider> {
+    const chain = await createProvider(
+        {
+            ...config,
+            networks: {
+                ...config.networks,
+                hardhat: {
+                    ...config.networks.hardhat,
+                    initialDate: new Date(0).toISOString(),
+                    mining: { ...config.networks.hardhat.mining, auto: true }
+                }
+            }
+        },
+        "hardhat"
+    );
+    let timestamp =
+        Math.floor(Date.now() / 1000) - intervals.reduce((a, b) => a + b, 0);
+    await chain.request({ method: "evm_mine", params: [timestamp] });
+    for (const interval of intervals) {
+        timestamp += interval;
+        await chain.request({ method: "evm_mine", params: [timestamp] });
+    }
+    return new BrowserProvider(chain);
 }
 
 describe("Clock", () => {
@@ -79,6 +110,36 @@ describe("Clock", () => {
         expect(Clock.ownsProvider(live)).to.equal(true);
         const time = await Clock.getBlockchainTime();
         expect(time.blockNumber).to.be.greaterThanOrEqual(0);
+    });
+
+    it("measures a young chain's block time without its zero-timestamp genesis", async () => {
+        const young = await createZeroGenesisChain([2, 2, 2]);
+
+        await Clock.init(young);
+
+        expect(Clock.getAverageOnChainBlockTime()).to.equal(2);
+        young.destroy();
+    });
+
+    it("measures no block time on a chain one block past genesis", async () => {
+        const fresh = await createZeroGenesisChain([]);
+
+        await Clock.init(fresh);
+
+        expect(Clock.getAverageOnChainBlockTime()).to.equal(0);
+        fresh.destroy();
+    });
+
+    it("measures an older chain's block time over its last ten blocks", async () => {
+        // blocks 1-5 are 10 s apart, blocks 5-15 2 s apart -> an uncapped window averages ~4.29
+        const older = await createZeroGenesisChain([
+            10, 10, 10, 10, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2
+        ]);
+
+        await Clock.init(older);
+
+        expect(Clock.getAverageOnChainBlockTime()).to.equal(2);
+        older.destroy();
     });
 
     it("settles overlapping different-provider initializations on one live owner", async () => {

@@ -172,6 +172,12 @@ function rejectPending(error) {
 
 async function start(config) {
     configuration = config;
+    // the run's test chain decides what the slot nodes run; on the parachain
+    // every test process and its SDK threads preload the fee quote
+    if (config.baseEnv.PARACHAIN) {
+        process.env.PARACHAIN = config.baseEnv.PARACHAIN;
+        config.baseEnv.NODE_OPTIONS += ` -r ${path.join(config.projectRoot, "test/utils/peer3FeeData.js")}`;
+    }
     const provisioned = await provisionSlots(
         config.slotCount,
         config.infraLogDir

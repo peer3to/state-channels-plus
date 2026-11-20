@@ -5,6 +5,7 @@ import {
     assertDestroyDuringPendingAttemptStaysQuiet,
     assertFailedLogPageAnsweredForRetry,
     assertFirstNodeErrorAnswerIsFinal,
+    assertGasEstimateSeesPendingBlock,
     assertHeartbeatErrorAnswerKeepsNode,
     assertInvalidLogWindowRejectsStartup,
     assertInvalidSecretOpensNoNode,
@@ -114,6 +115,10 @@ describe("MultiRpcProvider", () => {
 
     it("answers reads through the next node while the first is cut", async () => {
         await assertReadsFailOverToNextNode();
+    });
+
+    it("estimates gas at the pending block, which holds a transaction not yet sealed", async () => {
+        await assertGasEstimateSeesPendingBlock();
     });
 
     it("fails a read over to the next node when the first drops mid-request", async () => {
