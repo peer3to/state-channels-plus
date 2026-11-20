@@ -136,7 +136,10 @@ const isParachain = () => process.env.PARACHAIN === "1";
  * The peer3 dev node's arguments: `seal` is "interval" or "manual", `chain`
  * is "test" or "test-other" (the same chain under a second EVM chain id).
  * Archive state: Frontier's eth_getLogs skips blocks whose state is pruned
- * (by default all but the last 256), without an error.
+ * (by default all but the last 256), without an error. A pool ten times the
+ * default: the future queue holds a tenth of it (2 MB by default), and the
+ * opening wave of concurrent tests sends contract deploys out of nonce order,
+ * so a smaller queue silently evicts deploys their senders then wait on.
  */
 function peer3NodeArgs(nodePort, seal, chain, basePath) {
     return [
@@ -153,6 +156,10 @@ function peer3NodeArgs(nodePort, seal, chain, basePath) {
         String(nodePort),
         "--rpc-max-connections",
         "10000",
+        "--pool-limit",
+        "81920",
+        "--pool-kbytes",
+        "204800",
         "--port",
         "0",
         "--no-mdns",
