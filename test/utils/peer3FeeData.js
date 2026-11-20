@@ -1,7 +1,7 @@
 // @spec-test-coverage-ignore: test-chain fee quote for the peer3 dev node; executable evidence belongs to the tests that send transactions
 // Test transactions on the peer3 dev node run paid: the node's base fee and
 // eth_gasPrice are 0, which asks for the free lane, and tests set no lane
-// target. Every ethers provider on the test chain id quotes twice the lane's
+// target. Every ethers provider on the test chain id quotes 256 times the lane's
 // current paid floor instead. Loaded through NODE_OPTIONS so the SDK's worker
 // threads, which build their own providers, get the same quote.
 const { FetchUrlFeeDataNetworkPlugin, Network } = require("ethers");
@@ -14,8 +14,13 @@ const LANE_STATE_KEY =
 /** free_lane_rules.rs: floor = P0 << (min(exponent, MAX_PAID_EXP) / 4). */
 const P0 = 1_000_000_000n;
 const MAX_PAID_EXP = 128;
-/** The exponent may rise one a block; four steps ahead is twice the floor. */
-const EXPONENT_MARGIN = 4;
+/**
+ * The exponent rises one a block while the paid lane is over its target, and a
+ * quote below the floor is never included. A run's first tests each deploy the
+ * eight facets at a 12M gas limit at once, which lifted it 12 steps on a test
+ * node; 32 steps ahead (256 times the floor) outlasts that burst.
+ */
+const EXPONENT_MARGIN = 32;
 
 function paidFloor(exponent) {
     return P0 << BigInt(Math.floor(Math.min(exponent, MAX_PAID_EXP) / 4));
