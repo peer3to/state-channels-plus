@@ -173,6 +173,14 @@ submits a top-up with a made-up snapshot pin. No runtime stores that pin, so the
 both the pinned and the new snapshot stored, is not met, and the test still returns `false` (passed in the
 full gate).
 
+## Test timing inputs — 2026-11-20
+
+Engineer decision (Luke, 2026-11-20, PR #606): `disputerThrottle.test.ts` widens its active-window
+`evidenceTime` from 5 to 10 for the two "within evidenceTime" cases. On the parachain the second
+dispute's estimate is judged at the block it lands in, a 2 s slot after the build, so construction under
+farm load plus one or two blocks can outlast 5 s and the throttle has run out; 10 s leaves room. No
+oracle changed.
+
 ## Test timing inputs — 2026-10-15
 
 Engineer decision (Luka, 2026-10-15, PR #551): raise the test evidence windows by a few seconds;
