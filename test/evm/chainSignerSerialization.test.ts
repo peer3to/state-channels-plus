@@ -99,27 +99,23 @@ describe("chain signer serialization", () => {
     });
 
     it("rejects fields that cannot cross the runtime port", async () => {
-        await withIsolatedHardhatNode(async (provider) => {
-            const sender = await testAccount(provider, 0);
-            const recipient = await testAccount(provider, 1);
-
-            let serializationError: unknown;
-            try {
-                await serializeTransactionRequest(
-                    {
-                        to: recipient.address,
-                        customData: { transport: "private" }
-                    },
-                    provider
-                );
-            } catch (error) {
-                serializationError = error;
-            }
-
-            expect(serializationError).to.be.instanceOf(Error);
-            expect((serializationError as Error).message).to.include(
-                "custom transaction data cannot cross the runtime port"
+        // the check runs before the provider is read: no node needed
+        let serializationError: unknown;
+        try {
+            await serializeTransactionRequest(
+                {
+                    to: ethers.Wallet.createRandom().address,
+                    customData: { transport: "private" }
+                },
+                null
             );
-        });
+        } catch (error) {
+            serializationError = error;
+        }
+
+        expect(serializationError).to.be.instanceOf(Error);
+        expect((serializationError as Error).message).to.include(
+            "custom transaction data cannot cross the runtime port"
+        );
     });
 });

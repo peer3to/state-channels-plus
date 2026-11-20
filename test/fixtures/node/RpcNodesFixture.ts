@@ -362,12 +362,8 @@ async function deploySealed(
         data: initCode,
         gasLimit: 200_000
     });
-    // one seal once the pool holds it: every seal moves the dev node's
-    // clock on, so extra seals would leave the creation second behind
-    await waitFor(
-        async () =>
-            (await node.send("eth_getTransactionByHash", [hash])) !== null
-    );
+    // one seal: every seal moves the dev node's clock on, so extra seals
+    // would leave the creation second behind
     await mineBlocks(node, 1);
     await waitFor(
         async () => (await node.getTransactionReceipt(hash)) !== null
@@ -438,6 +434,40 @@ export async function assertPendingOnlyRevertFallsBackToLatest(): Promise<void> 
             expect(estimate).to.equal(
                 BigInt(await node.send("eth_estimateGas", [call, "latest"]))
             );
+            expect(estimateBlocks(proxies[0])).to.deep.equal([
+                "pending",
+                "latest"
+            ]);
+        },
+        { seal: "manual" }
+    );
+}
+
+export async function assertManagedNonceEstimateFallsBackToLatest(): Promise<void> {
+    await withProxiedNodes(
+        1,
+        async ({ node, proxies, nodes, logger }) => {
+            const provider = new MultiRpcProvider(nodes, logger);
+            const call = await deploySealed(node, RUNS_AT_CREATION_INIT_CODE);
+            // the sender's own transfer stays unsealed, so its managed nonce
+            // runs one past the latest block's
+            const sender = await testAccount(node, 0);
+            await sender.sendTransaction({
+                to: Wallet.createRandom().address,
+                value: NEW_ACCOUNT_VALUE,
+                gasLimit: 21_000
+            });
+            const nonce = await provider.getTransactionCount(
+                call.from,
+                "pending"
+            );
+            expect(nonce).to.equal(
+                (await provider.getTransactionCount(call.from, "latest")) + 1
+            );
+
+            const estimate = await provider.estimateGas({ ...call, nonce });
+
+            expect(estimate > 21_000n).to.equal(true);
             expect(estimateBlocks(proxies[0])).to.deep.equal([
                 "pending",
                 "latest"

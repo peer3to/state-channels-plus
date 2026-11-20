@@ -20,7 +20,8 @@ that runs only after the creation second reverts at the latest block, and the pr
 succeeds through the forwarded `pending` block. A call that runs only within the creation second
 reverts at the pending block only, and the provider estimates it at the latest block (the proxy
 sees `pending`, then `latest`). A call that reverts at both blocks with different data rejects as
-`CALL_EXCEPTION` carrying the pending block's revert.
+`CALL_EXCEPTION` carrying the pending block's revert. The fallback case is repeated with the
+estimate carrying the sender's pending nonce while its own transfer is still unsealed.
 
 Later cases check that a node destroyed during a pending attempt logs nothing and raises no
 unhandled rejection (a logger whose entries the test reads), that a heartbeat answered with an
@@ -81,6 +82,7 @@ within the one-second window (every node was destroyed).
 - `answers reads through the next node while the first is cut`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P4, REQ-CHAINOBS-2-2NCSQ3.T1.P3
 - `estimates gas at the pending block, which holds a transaction not yet sealed`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P29
 - `estimates at the latest block when only the pending block reverts the call`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P30
+- `estimates at the latest block with the sender's managed nonce while its own transaction is unsealed`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P32
 - `rejects an estimate the latest block also reverts, with the pending block's revert`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P31
 - `fails a read over to the next node when the first drops mid-request`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P5, REQ-CHAINOBS-2-2NCSQ3.T1.P4
 - `relays each new block once from the node sockets without polling`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P6

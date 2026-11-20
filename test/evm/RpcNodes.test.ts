@@ -6,6 +6,7 @@ import {
     assertFailedLogPageAnsweredForRetry,
     assertFirstNodeErrorAnswerIsFinal,
     assertGasEstimateSeesPendingBlock,
+    assertManagedNonceEstimateFallsBackToLatest,
     assertPendingOnlyRevertFallsBackToLatest,
     assertRevertAtBothBlocksRejects,
     assertHeartbeatErrorAnswerKeepsNode,
@@ -125,6 +126,10 @@ describe("MultiRpcProvider", () => {
 
     it("estimates at the latest block when only the pending block reverts the call", async () => {
         await assertPendingOnlyRevertFallsBackToLatest();
+    });
+
+    it("estimates at the latest block with the sender's managed nonce while its own transaction is unsealed", async () => {
+        await assertManagedNonceEstimateFallsBackToLatest();
     });
 
     it("rejects an estimate the latest block also reverts, with the pending block's revert", async () => {
