@@ -17,18 +17,21 @@ Engineer decisions (Luke, 2026-11-20, PR #605):
 
 - The runtime's provider estimates gas at the `pending` block, the one a transaction lands in. ethers
   sends no block, and geth and Frontier then estimate at the latest block's timestamp, so a timeout
-  claim sent at its `minTimeStamp` failed its first estimate. The peer3 node stamps its pending block
-  with the current time. [RpcNodes.test.ts](../verification/tests/test/evm/RpcNodes.test.ts.md)
-  checks that the estimate sees a contract deployed only in the pending block
-  ([`UNIT-TEST-MULTI-RPC-1-SVGGZ5`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5) `.P29`);
-  it fails without the tag. A revert at the pending block is confirmed at the latest block before it
-  stands: the pending block holds other senders' unmined transactions, and a competitor's pending
-  reduce that never lands must not end ours (`.P30`, `.P31`; `.P30` fails without the fallback).
+  claim sent at its `minTimeStamp` failed its first estimate. Frontier runs even a `pending` estimate
+  on the head's state and timestamp, so the peer3 node answers a `pending` estimate of a call on a
+  pending block of its own, stamped with the next block's slot time (peer3-parachain #1).
+  [RpcNodes.test.ts](../verification/tests/test/evm/RpcNodes.test.ts.md) checks that a call valid
+  only after the latest block's second estimates
+  ([`UNIT-TEST-MULTI-RPC-1-SVGGZ5`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5) `.P29`).
+  A revert at the pending block is confirmed at the latest block before it stands, and the pending
+  block's revert is the one reported: a pending block can hold other senders' unmined transactions
+  (geth's does), and a competitor's pending reduce that never lands must not end ours (`.P30`, `.P31`;
+  each fails without its rule).
 - The clock leaves genesis out of the measured block time: a fresh parachain's genesis has timestamp 0
   ([`UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0`](../implementation/source/src/Clock.ts.md#unit-test-clock-average-1-6pdvr0)).
 - `--parachain` runs the slot nodes, the isolated test nodes and the tests on the parachain dev node,
-  locally or on the workers, whose runner image carries the node built by
-  `parachain-node.Dockerfile`. In E2E-Timeouts, "should handle timeout when next peer to write does not
+  locally or on the workers, whose runner image copies the node image peer3-parachain publishes
+  (`docker/zero-fee-node.Dockerfile` there). In E2E-Timeouts, "should handle timeout when next peer to write does not
   author a block", "should demonstrate timeout creates disputes", "should handle timeout when non-author
   peer disconnects (calldata posting)" and "should handle timeout when author peer disconnects" passed
   locally on Hardhat (run-1112) and on the parachain dev node built from peer3-parachain `d845dbf`

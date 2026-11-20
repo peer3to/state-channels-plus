@@ -164,8 +164,8 @@ browser tiers with it. Use `--mocha-test-pattern`, `--forge-test-pattern` or
 
 `--parachain` runs the slot nodes and tests on the parachain dev node
 (`PEER3_NODE_BIN`, default `zero-fee-node` on `PATH`) instead of Hardhat. The
-runner image carries the node; `parachain-node.Dockerfile` only republishes it
-when the pinned peer3-parachain commit moves.
+runner image copies the node from the image peer3-parachain publishes
+(`docker/zero-fee-node.Dockerfile` there), pinned by digest.
 
 Forge tasks need no Hardhat node, so they take neither a warm slot nor a funded
 account partition. Local and distributed runs build the contracts and the

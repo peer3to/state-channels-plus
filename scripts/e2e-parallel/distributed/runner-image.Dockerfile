@@ -1,8 +1,8 @@
 ARG NODE_IMAGE=node@sha256:35531c52ce27b6575d69755c73e65d4468dba93a25644eed56dc12879cae9213
 ARG FOUNDRY_IMAGE=ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd
-# the parachain dev node for --parachain runs, built by parachain-node.Dockerfile
-# (peer3-parachain d845dbf), pulled from the private GHCR package
-ARG PEER3_NODE_IMAGE=ghcr.io/peer3to/zero-fee-node@sha256:170826532e68b0421bb39c366bcce528921629eaa714997e69ea0685311e68b1
+# the parachain dev node for --parachain runs, published by peer3-parachain
+# (peer3-parachain 4c52532), pulled from the private GHCR package
+ARG PEER3_NODE_IMAGE=ghcr.io/peer3to/zero-fee-node@sha256:758b503811f1e1166b6ec4c62b143681d8ed5003bac12cfbd0410f41c07d35c3
 FROM ${FOUNDRY_IMAGE} AS foundry
 FROM ${PEER3_NODE_IMAGE} AS peer3node
 
