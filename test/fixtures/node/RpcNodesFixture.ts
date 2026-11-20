@@ -813,6 +813,11 @@ export async function assertLogsBelowRememberedBlocksNotDelivered(): Promise<voi
                 const withheld = proxy.withholdNotifications();
                 const oldest = await emitter.emitLog();
                 const older = await emitter.emitLog();
+                // a node that seals after the send notifies later: keep
+                // withholding until both logs are held
+                await waitFor(
+                    () => withheld.holds(oldest) && withheld.holds(older)
+                );
                 withheld.stop();
                 const oldestBlock = (await minedReceiptOf(node, oldest))
                     .blockNumber;
