@@ -1707,8 +1707,9 @@ A dispute bundling several replays can still exceed the cap; splitting replays i
 
 **Tests.** `DisputeManager.test.ts` "fraud-proof replay gas limit": replaying kills now use the
 `TimeoutCalldataPosted` refutation staging; new cases for the non-replaying kill (headroom, no
-requirement), the `MAX_TRANSACTION_GAS` cap and a poker-sized 6.5M budget kill that lands within the
-cap. `ContractExecutorCallGas.test.ts`: startup with the cap one gas below and equal to the
+requirement), the `MAX_TRANSACTION_GAS` cap, a poker-sized 6.5M budget kill that lands within the
+cap, kill-and-dispute multicalls with a non-replaying and a replaying kill, and a
+`DisputeInvalidBlockInStateProofApplyFraudProof` kill. `ContractExecutorCallGas.test.ts`: startup with the cap one gas below and equal to the
 requirement. The large-budget local EVM tests raise `MAX_TRANSACTION_GAS` to admit their 17M budget.
 The estimate probes wrap the chain provider's `estimateGas`. Mirrors:
 [DisputeManager.ts.md](../implementation/source/src/disputeManager/DisputeManager.ts.md),

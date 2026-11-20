@@ -499,7 +499,7 @@ export class P2pRuntimeHostRoot<
                 "Deployed maximum participant count is not a positive safe integer"
             );
         }
-        // a fraud proof that replays a transition could never be sent
+        // a fraud proof that replays a transition could never succeed
         if (
             stateTransitionReplayGas >
             BigInt(payload.config.MAX_TRANSACTION_GAS)

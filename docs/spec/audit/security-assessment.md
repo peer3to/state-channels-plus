@@ -486,8 +486,11 @@ budget. History can still lower that cost (under EIP-2200 a slot that held data 
 the transaction is cheaper to write again), which can only let a transition finish, never make an
 honest one fail. The count-reset version this replaced made the same transition cost about 2.3 ×
 more after long old payloads (932,855 against 399,861 gas). The node sends every
-fraud-proof replay with `gasLimit` = its estimate with the signer's 50% headroom plus the
-requirement (engineer decision 2026-09-27). An estimator that reports only the gas spent (the peer3
+fraud-proof replay with `gasLimit` = its estimate without the signer's headroom plus the
+requirement, capped at `MAX_TRANSACTION_GAS` and the block gas limit; a fraud-proof send that
+replays nothing keeps the estimate with headroom (Luke, 2026-11-21, superseding the 2026-09-27
+estimate-with-headroom-plus-requirement decision; see
+[`FIND-GASEST-2-94YFZ6`](open-findings.md#find-gasest-2-94yfz6)). An estimator that reports only the gas spent (the peer3
 hardhat fork used by the poker consumer) counts the gas the transition used, never the unused
 budget that must be free when the replay starts, and the work before the replay (proof checks,
 setting the machine's state) can exceed any fixed margin: on a poker dispute it was about 3.9M with a
@@ -503,9 +506,10 @@ estimate without headroom plus the requirement, capped at `MAX_TRANSACTION_GAS` 
 parachain's 17,916,000 by default) and the block gas limit; with a searching estimator that is about
 twice the requirement. A runtime whose requirement exceeds the cap does not start (revised
 2026-11-21, Luke). A dispute that bundles several replays needs about one transition budget per
-replay before the last and can still exceed the cap; the node then refuses it at submission and that
-fraud stays unproven on-chain. A submitter still cannot make an honest transition fail for lack of
-gas; the worst case of the residual is a fraud proof that cannot be sent, never a wrong verdict.
+replay before the last and can still need more than the cap; the node declares it at the cap, so
+the chain admits it and it fails on-chain, charged its full limit, and that fraud stays unproven
+on-chain. A submitter still cannot make an honest transition fail for lack of gas; the worst case
+of the residual is a charged, failed fraud proof, never a wrong verdict.
 Splitting replays across transactions is open as
 [`FIND-GASEST-2-94YFZ6`](open-findings.md#find-gasest-2-94yfz6).
 

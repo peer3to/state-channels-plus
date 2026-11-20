@@ -2418,11 +2418,13 @@ transition can catch an inner out-of-gas and still succeed or fail with its own 
 [StateChannelManagerProxy.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)
 routes it, re-raises the refusal and rejects empty-returndata machine frames;
 [DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md) sends the
-fraud-proof multicall and `applyDisputeFraudProofs` with the signer estimate (with its headroom)
-plus that requirement (engineer decision 2026-09-27: an estimator that reports gas spent misses the
+fraud-proof multicall and `applyDisputeFraudProofs`, when a proof replays a transition, with the
+estimate without headroom plus that requirement, capped at `MAX_TRANSACTION_GAS` and the block gas
+limit (Luke, 2026-11-21, superseding the 2026-09-27 decision to add the requirement to the signer
+estimate with its headroom: an estimator that reports gas spent misses the
 unused budget that must be free when the replay starts and the work before the replay, which
 exceeded a fixed 30% margin on a poker dispute; with a searching estimator the sum declares more
-than needed, at least about 2.5 × the requirement, which changes no verdict but must still fit a
+than needed, about 2 × the requirement, which changes no verdict but must still fit a
 block; open as [`FIND-GASEST-2-94YFZ6`](open-findings.md#find-gasest-2-94yfz6));
 [ContractExecutor.ts](../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md)
 funds each local EVM call with the larger of the EVM default, the dispute-execution budget and the
@@ -2576,7 +2578,9 @@ requirement exceeds `MAX_TRANSACTION_GAS`; the check is necessary, not sufficien
 fixed work around a replay (about 0.8M measured at poker's budget) must fit too. The poker-sized kill above now declares about 15.5M and
 lands. **Still open:** `DisputeManager.dispute` bundles every fraud proof into one multicall; each
 replay before the last can burn a full transition budget, so a dispute with several replays needs
-about `(n−1)·G + R(G)` plus the upload and exceeds the cap at poker's budget from two replays. The
+about `(n−1)·G + R(G)` plus the upload and exceeds the cap at poker's budget from about three replays. Such a send is
+declared at the cap, so the parachain admits it and it fails on-chain, charged to the sender, where
+the uncapped limit was refused at submission; splitting replays removes the case. The
 reviewed design that splits replays across transactions, the parachain filter shape it needs, the
 64 KiB calldata check and the reduction-boundary race are follow-ups:
 [peer3to/state-channels-plus#608](https://github.com/peer3to/state-channels-plus/issues/608).
@@ -2592,7 +2596,9 @@ default for every chain, Hardhat included; replay sends drop the headroom and ad
 which a spent-gas estimator needs and which covers the concurrent-dispute race the headroom was for;
 whether a send replays is decided by the proof type alone; no estimator-model switch. This
 supersedes Luka's 2026-09-27 decision (review 5 FO1) to keep the signer estimate plus the
-requirement for replay sends. Remaining work: split replays across transactions (#608 steps 1–2).
+requirement for replay sends. The 64 KiB calldata startup check is deferred to the replay split,
+whose split decides the worst-case calldata. Remaining work: split replays across transactions
+(#608 steps 1–2).
 
 <a id="find-dispute-5-mzpttc"></a>
 
@@ -2614,8 +2620,7 @@ about 5 chain `eth_call`s. (2) **Dispute construction**
 ([Stage 2](../specification/disputes/dispute-processing.md#stage-2--construction-and-submission-disputer-role))
 took 1–3 s. (3) **Gas estimation** of the kill-and-dispute multicall
 ([DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md)
-`fraudProofGasLimit` around `estimateBestEffortMulticall`,
-[L268-L273](../../../src/disputeManager/DisputeManager.ts#L268-L273); 2.4–3.1M gas each) took 2–4 s,
+`fraudProofGasLimit` around `estimateBestEffortMulticall`; 2.4–3.1M gas each) took 2–4 s,
 because the single Hardhat node ran the five estimates one after another. (4) **Block inclusion**
 took 1–3 s; the node mined 7 blocks in 12 s at a 1 s interval (chain time behind wall time, see
 [`OQ-SPEC-CLOCK-1-Z8TBFE` (Keeping runtime clocks in agreement over a session)](../specification/open-questions.md#oq-spec-clock-1-z8tbfe)).
