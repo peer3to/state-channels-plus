@@ -120,7 +120,7 @@ describe("MultiRpcProvider", () => {
         await assertReadsFailOverToNextNode();
     });
 
-    it("estimates gas at the pending block, which holds a transaction not yet sealed", async () => {
+    it("estimates gas at the pending block, for a call valid only after the latest block's second", async () => {
         await assertGasEstimateSeesPendingBlock();
     });
 
