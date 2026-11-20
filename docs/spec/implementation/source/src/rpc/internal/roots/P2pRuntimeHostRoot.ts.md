@@ -90,9 +90,9 @@ Local EVM call-gas wiring
 Replay requirement within the per-transaction gas cap
 
 - Setup: Start a host against the Math manager with `MAX_TRANSACTION_GAS` set one gas below, then equal to, the manager's `getStateTransitionReplayGas`
-- Oracle: Below, readiness rejects with an error naming the requirement and the cap; equal, the runtime starts
+- Oracle: Below, readiness rejects with an error naming the requirement and the cap, and every runtime root it started is closed; equal, the runtime starts
 
-- [x] `UNIT-TEST-P2P-RUNTIME-HOST-35-YY8P9R.P1` — a replay requirement one gas above `MAX_TRANSACTION_GAS` fails host startup naming both figures
+- [x] `UNIT-TEST-P2P-RUNTIME-HOST-35-YY8P9R.P1` — a replay requirement one gas above `MAX_TRANSACTION_GAS` fails host startup naming both figures and closes every runtime root it started
 - [x] `UNIT-TEST-P2P-RUNTIME-HOST-35-YY8P9R.P2` — a replay requirement equal to `MAX_TRANSACTION_GAS` starts the host
 
 ## UNIT-TEST-P2P-RUNTIME-HOST-34-517JAX

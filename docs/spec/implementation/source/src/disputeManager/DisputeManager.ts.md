@@ -21,7 +21,7 @@
 - [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv)
 - [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
-  Partial: `fraudProofGasLimit` funds one replay per transaction within `MAX_TRANSACTION_GAS`, but `dispute` bundles every fraud proof into one multicall, so a dispute carrying several replays can exceed the cap and be refused ([`FIND-GASEST-2-94YFZ6`](../../../../audit/open-findings.md#find-gasest-2-94yfz6)).
+  Partial: `fraudProofGasLimit` funds one replay per transaction within `MAX_TRANSACTION_GAS`, but `dispute` bundles every fraud proof into one multicall, so a dispute carrying several replays can need more than the cap; it is then sent at the cap and fails on-chain ([`FIND-GASEST-2-94YFZ6`](../../../../audit/open-findings.md#find-gasest-2-94yfz6)).
 - [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)
 - [`REQ-IX-5-6XHJJB` (On-chain adjudication)](../../../../specification/interactions.md#req-ix-5-6xhjjb)
 - [`REQ-ID-3-KR0BE3` (Confined signing authority)](../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)
@@ -126,7 +126,7 @@ Kill preconditions and races
 
 Replay sends funded upfront
 
-- Setup: `dispute(forkId)` with a held fraud proof and `killDispute(dispute)` with a stored proof and an open window on a running peer; a replaying kill refutes a timeout with posted calldata (`TimeoutCalldataPosted`), a non-replaying kill answers a spam dispute (`InvalidDisputeReason`); record-only stubs record each send's overrides, scale the chain's `estimateGas` answer (no signer headroom) to a fraction or a multiple of the real estimate or leave it real (`stubScaleReplayGasEstimates`), record or fail the `getStateTransitionReplayGas` reads, and answer or fail the latest-block read; one kill runs on a 6.5M (poker-sized) transition budget
+- Setup: `dispute(forkId)` with a held fraud proof and `killDispute(dispute)` with a stored proof and an open window on a running peer; a replaying kill refutes a timeout with posted calldata (`TimeoutCalldataPosted`), a non-replaying kill answers a spam dispute (`InvalidDisputeReason`), each also sent as the kill of a kill-and-dispute `multicall`; a replaying kill challenges a self-removal dispute whose state proof ends in an invalid transition (`DisputeInvalidBlockInStateProofApplyFraudProof`); record-only stubs record each send's overrides, scale the chain's `estimateGas` answer (no signer headroom) to a fraction or a multiple of the real estimate or leave it real (`stubScaleReplayGasEstimates`), record or fail the `getStateTransitionReplayGas` reads, and answer or fail the latest-block read; one kill runs on a 6.5M (poker-sized) transition budget
 - Oracle: A send whose proof replays a transition carries `gasLimit` = min(estimate + replay gas, `MAX_TRANSACTION_GAS`, latest block gas limit), without the block term when the block read fails, and lands (the disputer or spammer is slashed on a kill); a send whose proofs replay nothing carries the estimate plus the signer's headroom; the plain and calldata uploads carry no `gasLimit`; one read serves every later replaying send; a failed read sends nothing and the next send reads again
 
 - [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P3` — an upload without fraud proofs (plain or calldata) carries no gas limit and reads no replay gas
@@ -143,6 +143,8 @@ Replay sends funded upfront
 - [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P23` — a dispute that kills a spam dispute (`InvalidDisputeReason`, no replay) sends its kill-and-dispute `multicall` at its estimate plus the signer's headroom, without the replay gas, and the kill lands
 - [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P21` — a replaying kill whose estimate plus replay gas exceeds `MAX_TRANSACTION_GAS` is sent at `MAX_TRANSACTION_GAS`, is mined, and slashes the disputer
 - [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P22` — a replaying kill on a 6.5M transition budget is sent at its estimate plus the replay gas, within `MAX_TRANSACTION_GAS`, is mined, slashes the disputer, and removes the timeout dispute's commitment
+- [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P24` — a dispute that kills a timeout dispute by refuting it with posted calldata (`TimeoutCalldataPosted`, the only replaying proof) sends its kill-and-dispute `multicall` at its estimate plus the replay gas, the kill lands, slashes the disputer, and removes the timeout dispute's commitment
+- [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P25` — a kill whose stored proof is a `DisputeInvalidBlockInStateProofApplyFraudProof` (a state-proof block with an invalid transition) is sent at its estimate plus the replay gas, is mined, and slashes the submitter
 
 ## UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM
 

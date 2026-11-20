@@ -53,7 +53,9 @@ import {
     disputeOnHost,
     disputeThenKillRecordingReads,
     disputeWithScaledEstimate,
+    killAndDisputeTimeoutCalldataRefutationWithScaledEstimate,
     killAndDisputeWithScaledEstimate,
+    killStateProofChallengeWithScaledEstimate,
     killStoredDisputeOnHost,
     killTimeoutCalldataRefutationWithScaledEstimate,
     killWithScaledEstimate,
@@ -3170,6 +3172,64 @@ describe("Unit: DisputeManager", function () {
             // the replay was funded: the timeout dispute is killed on-chain
             expect(slashed).to.include(disputer);
             expect(committedAfterKill).to.equal(false);
+        });
+
+        it("a dispute that kills a timeout dispute by refuting it with posted calldata sends the multicall at its estimate plus the replay requirement, and the kill lands", async function () {
+            const {
+                rejected,
+                submissions,
+                estimates,
+                replayGas,
+                slashed,
+                disputer,
+                committedAfterKill
+            } = await killAndDisputeTimeoutCalldataRefutationWithScaledEstimate(
+                TestSession.getHarness(),
+                { numerator: 1, denominator: 1 }
+            );
+            expect(rejected).to.equal("");
+            expect(estimates.map((e) => e.method)).to.deep.equal(["multicall"]);
+            expect(submissions.map((s) => s.method)).to.deep.equal([
+                "multicallBestEffortLast"
+            ]);
+            // the kill is the only replaying proof: no transition fraud proof rides along
+            expect(submissions[0].innerMethods[0]).to.equal(
+                "applyDisputeFraudProofs"
+            );
+            expect(submissions[0].innerMethods).to.not.include(
+                "applyFraudProofs"
+            );
+            expect(submissions[0].gasLimit).to.equal(
+                String(BigInt(estimates[0].answer) + replayGas)
+            );
+            expect(slashed).to.include(disputer);
+            expect(committedAfterKill).to.equal(false);
+        });
+
+        it("a kill whose state proof holds a block with an invalid transition replays it and lands at its estimate plus the replay requirement", async function () {
+            const {
+                storedProofTypes,
+                applies,
+                estimates,
+                replayGas,
+                slashed,
+                submitter
+            } = await killStateProofChallengeWithScaledEstimate(
+                TestSession.getHarness(),
+                { numerator: 1, denominator: 1 }
+            );
+            expect(storedProofTypes).to.include(
+                toSolidityDisputeFraudProofType(
+                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
+                )
+            );
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.equal(
+                String(BigInt(estimates[0].answer) + replayGas)
+            );
+            expect(applies[0].error).to.equal(null);
+            expect(applies[0].waited).to.equal(true);
+            expect(slashed).to.include(submitter);
         });
 
         it("a poker-sized transition budget's timeout refutation kill lands within MAX_TRANSACTION_GAS at its estimate plus the replay requirement", async function () {

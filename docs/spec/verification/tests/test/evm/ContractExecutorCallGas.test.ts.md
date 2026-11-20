@@ -40,7 +40,8 @@ and that every started root was closed.
 
 Two tests start a real runtime against the Math manager with `MAX_TRANSACTION_GAS` set from the
 manager's `getStateTransitionReplayGas` (`startWithTransactionCapFromReplayGas`): one gas below it,
-setup rejects with an error naming the requirement and the cap; equal to it, the runtime starts
+setup rejects with an error naming the requirement and the cap, and every runtime root it
+started is closed; equal to it, the runtime starts
 and is disposed.
 
 ## Tests
@@ -54,5 +55,5 @@ and is disposed.
 - `a dedicated executor thread runs a transition whose replay requirement exceeds the default call gas`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P2
 - `a rejected startup replay requirement read rejects readiness, ends the inline executor it started, and closes the runtime`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P3
 - `a rejected startup replay requirement read rejects readiness, ends the dedicated executor thread it started, and closes the runtime`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P4
-- `a replay requirement one gas above MAX_TRANSACTION_GAS rejects readiness naming both figures`: UNIT-TEST-P2P-RUNTIME-HOST-35-YY8P9R.P1, REQ-ENFSM-1-DKJCY2.T1.P23
+- `a replay requirement one gas above MAX_TRANSACTION_GAS rejects readiness naming both figures and closes the runtime`: UNIT-TEST-P2P-RUNTIME-HOST-35-YY8P9R.P1, REQ-ENFSM-1-DKJCY2.T1.P23
 - `a replay requirement equal to MAX_TRANSACTION_GAS starts the runtime`: UNIT-TEST-P2P-RUNTIME-HOST-35-YY8P9R.P2, REQ-ENFSM-1-DKJCY2.T1.P24

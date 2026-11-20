@@ -1,11 +1,18 @@
 // @spec-test-coverage-ignore: shared staging for the mapped fraud-proof replay gas-limit cases
+import {
+    ANCHORED_TAIL,
+    appendInvalidTransition,
+    prependStoredBlocks,
+    stageAnchorBeforeUnfinalizedTail,
+    uploadSelfRemovalDispute
+} from "./ChallengeBoundaryStaging";
 import type {
     RecordedDisputeSubmission,
     RecordedFraudProofApply,
     RecordedGasEstimate,
     RecordedReplayGasRead
 } from "./customRpc/harnessControl/services/stub/StubService";
-import { killAndDisputeSpamDispute } from "./EvidenceComparisonStaging";
+import { killAndDisputeStoredDispute } from "./EvidenceComparisonStaging";
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import type { ForkId } from "@/types/types";
 import { Codec, Type, hash, sleep } from "@/utils";
@@ -140,7 +147,7 @@ export async function killAndDisputeWithScaledEstimate(
         methods: ["multicall"],
         ...scale
     });
-    const { rejected } = await killAndDisputeSpamDispute(
+    const { rejected } = await killAndDisputeStoredDispute(
         h,
         killer.index,
         spammer.address,
@@ -318,6 +325,109 @@ export async function killTimeoutCalldataRefutationWithScaledEstimate(
         stubbedBlockReads: await killer
             .getStubbedReplayGasBlockReads()
             .request()
+    };
+}
+
+/**
+ * The killer of the staged timeout dispute (see
+ * stageUnkilledTimeoutCalldataDispute) has not disputed yet, so its
+ * `dispute(forkId, { kill })` sends the replaying refutation and its own
+ * dispute in one best-effort multicall, forwarded to the chain and recorded,
+ * with the chain's estimate for it answered scaled by `scale`.
+ */
+export async function killAndDisputeTimeoutCalldataRefutationWithScaledEstimate(
+    h: MathPeerTestHarness,
+    scale: EstimateScale,
+    options: { stateMachineGasLimit?: number } = {}
+): Promise<{
+    rejected: string;
+    submissions: RecordedDisputeSubmission[];
+    estimates: RecordedGasEstimate[];
+    replayGas: bigint;
+    slashed: string[];
+    disputer: string;
+    committedAfterKill: boolean;
+}> {
+    const { killerIndex, disputerIndex, dispute } =
+        await stageUnkilledTimeoutCalldataDispute(h, options);
+    const recorded = await h.rpcStub.recordDisputeSubmissions(killerIndex, {
+        forward: true
+    });
+    const estimates = await h.rpcStub.scaleReplayGasEstimates(killerIndex, {
+        methods: ["multicall"],
+        ...scale
+    });
+    const disputer = h.getPeer(disputerIndex).address;
+    const { rejected } = await killAndDisputeStoredDispute(
+        h,
+        killerIndex,
+        disputer,
+        dispute.input.forkId
+    );
+    return {
+        rejected,
+        submissions: await recorded.submissions(),
+        estimates: await estimates.estimates(),
+        replayGas: await h.channelManager.getStateTransitionReplayGas(),
+        slashed: await h.query.onChainSlashedParticipants(),
+        disputer,
+        committedAfterKill: await isDisputeCommittedOnChain(h, dispute)
+    };
+}
+
+/**
+ * A committed self-removal dispute whose state proof ends in a block with an
+ * invalid transition after the anchor (stageAnchorBeforeUnfinalizedTail).
+ * Every auditor's automatic kill is suppressed until peer 0 stored its
+ * DisputeInvalidBlockInStateProofApplyFraudProof, then peer 0's
+ * `killDispute` sends the real `applyDisputeFraudProofs`, with the chain's
+ * estimate for it answered scaled by `scale`.
+ */
+export async function killStateProofChallengeWithScaledEstimate(
+    h: MathPeerTestHarness,
+    scale: EstimateScale
+): Promise<{
+    storedProofTypes: number[];
+    applies: RecordedFraudProofApply[];
+    estimates: RecordedGasEstimate[];
+    replayGas: bigint;
+    slashed: string[];
+    submitter: string;
+}> {
+    const killerIndex = 0;
+    const { submitterIndex, offlineIndex } = ANCHORED_TAIL;
+    await stageAnchorBeforeUnfinalizedTail(h);
+    const kills = await Promise.all(
+        [killerIndex, 1, offlineIndex].map((index) =>
+            h.rpcStub.suppressDisputeKill(index)
+        )
+    );
+    await uploadSelfRemovalDispute(
+        h,
+        submitterIndex,
+        async (dispute) => {
+            await prependStoredBlocks(h, dispute, [0, 1]);
+            await appendInvalidTransition(h, dispute, submitterIndex);
+        },
+        { markMalicious: true }
+    );
+    // the skipped kill is the moment the killer stored its fraud proof
+    await kills[0].waitUntilSkipped();
+    await kills[0].restore();
+    const recorded =
+        await h.rpcStub.recordDisputeFraudProofApplies(killerIndex);
+    const estimates = await h.rpcStub.scaleReplayGasEstimates(killerIndex, {
+        methods: ["applyDisputeFraudProofs"],
+        ...scale
+    });
+    await killStoredDisputeOnHost(h, killerIndex);
+    return {
+        storedProofTypes: await storedDisputeFraudProofTypes(h, killerIndex),
+        applies: await recorded.applies(),
+        estimates: await estimates.estimates(),
+        replayGas: await h.channelManager.getStateTransitionReplayGas(),
+        slashed: await h.query.onChainSlashedParticipants(),
+        submitter: h.getPeer(submitterIndex).address
     };
 }
 

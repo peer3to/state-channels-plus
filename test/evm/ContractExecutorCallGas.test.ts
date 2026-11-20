@@ -128,9 +128,10 @@ describe("ContractExecutor call gas", function () {
         await assertStartupReplayGasReadFailure(true);
     });
 
-    it("a replay requirement one gas above MAX_TRANSACTION_GAS rejects readiness naming both figures", async function () {
-        const { replayGas, failure } =
+    it("a replay requirement one gas above MAX_TRANSACTION_GAS rejects readiness naming both figures and closes the runtime", async function () {
+        const { replayGas, failure, rootsClosed } =
             await startWithTransactionCapFromReplayGas(-1n);
+        expect(rootsClosed).to.equal(true);
         expect(failure).to.be.instanceOf(Error);
         expect((failure as Error).message).to.include(
             `State transition replay requirement ${replayGas} exceeds MAX_TRANSACTION_GAS ${replayGas - 1n}`

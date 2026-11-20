@@ -63,12 +63,19 @@ proof is a `TimeoutCalldataPosted` refutation, whose apply replays the posted bl
 the recorded estimate, the exact `gasLimit` of the recorded multicall or dispute-fraud-proof apply
 (the recorded estimate plus the replay gas; the block gas limit when a stubbed block read answers
 16M; `MAX_TRANSACTION_GAS` when the estimate is scaled past it), the apply mined without error, the
-disputer in the on-chain slash set and the timeout dispute no longer committed. The one-half kill
+disputer in the on-chain slash set and, for the timeout refutations, the timeout dispute no longer committed. The one-half kill
 shows that the sum still lands when the estimate misses the unused replay budget. One replaying kill runs
 on a poker-sized 6.5M transition budget and asserts the declared limit is within
 `MAX_TRANSACTION_GAS` and the kill lands. A kill of a spam dispute, whose `InvalidDisputeReason`
 proof replays nothing, is sent at exactly its estimate plus the signer's headroom and slashes the
-spammer. The read-sharing cases store an invalid-transition fraud proof on the killer before the
+spammer. Two cases send the kill inside the killer's own dispute, as one forwarded best-effort
+`multicall` whose first inner call is `applyDisputeFraudProofs`: the spam kill is sent at its
+estimate plus the headroom; the timeout refutation, with no `applyFraudProofs` beside it, at its
+estimate plus the replay gas, and the timeout dispute is no longer committed. One kill challenges a
+self-removal dispute whose state proof ends in a block with an invalid transition
+(`stageAnchorBeforeUnfinalizedTail`): the killer stores a
+`DisputeInvalidBlockInStateProofApplyFraudProof`, its apply is sent at its estimate plus the replay
+gas, and the submitter is slashed. The read-sharing cases store an invalid-transition fraud proof on the killer before the
 timeout dispute, so the dispute and the kill both replay: one resolved read is shared by a dispute
 and a later kill, and a rejected read sends nothing and is retried by the next dispute or kill. The
 apply recorder forwards the send overrides, so the kill path's computed `gasLimit` reaches the
@@ -184,6 +191,8 @@ author is added.
 - `a kill whose estimate plus the replay requirement exceeds MAX_TRANSACTION_GAS is sent at MAX_TRANSACTION_GAS and lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P21, REQ-ENFSM-1-DKJCY2.T1.P25
 - `a kill whose latest-block read fails is sent at its estimate plus the replay requirement, lands, and slashes the disputer`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P19
 - `a kill that refutes a timeout with posted calldata replays the block and lands at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P17
+- `a dispute that kills a timeout dispute by refuting it with posted calldata sends the multicall at its estimate plus the replay requirement, and the kill lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P24
+- `a kill whose state proof holds a block with an invalid transition replays it and lands at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P25
 - `a poker-sized transition budget's timeout refutation kill lands within MAX_TRANSACTION_GAS at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P22
 - `the dispute and kill sends share one replay requirement read`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P10
 - `concurrent dispute and kill sends wait on one held replay requirement read and both land at estimate plus requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P11
