@@ -194,6 +194,8 @@ async function withIsolatedPeer3Node<T>(
     });
     let provider: JsonRpcProvider | undefined;
     let stopSealing: (() => Promise<void>) | undefined;
+    let sealFailure: unknown;
+    let result: T;
     try {
         const chainId = Number(await jsonRpc(node.url, "eth_chainId"));
         provider = new JsonRpcProvider(node.url, chainId, {
@@ -201,14 +203,19 @@ async function withIsolatedPeer3Node<T>(
         });
         if (options.seal === "perTransaction")
             stopSealing = sealEachTransaction(provider);
-        return await use(provider);
+        result = await use(provider);
     } finally {
-        await stopSealing?.();
+        // a failed seal never skips the teardown, nor hides the test's own failure
+        await stopSealing?.().catch((error: unknown) => {
+            sealFailure = error;
+        });
         provider?.destroy();
         const exited = node.exited;
         node.stop();
         await exited;
     }
+    if (sealFailure !== undefined) throw sealFailure;
+    return result;
 }
 
 /**

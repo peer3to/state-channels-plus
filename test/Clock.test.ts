@@ -1,43 +1,13 @@
 import Clock from "@/Clock";
+import { createZeroGenesisChain } from "@test/fixtures/node/ZeroGenesisChain";
 import { expect } from "chai";
 import { BrowserProvider } from "ethers";
-import { config, ethers, network } from "hardhat";
-import { createProvider } from "hardhat/internal/core/providers/construction";
+import { ethers, network } from "hardhat";
 
 // A second real ethers provider over the same in-process hardhat network:
 // distinct instance, live chain reads, no mocking.
 function createSecondProvider(): BrowserProvider {
     return new BrowserProvider(network.provider);
-}
-
-// A private in-process chain whose genesis has timestamp 0, as on the
-// parachain, then block 1 and one block per entry of `intervals` (seconds
-// after the previous block), the last one at the wall clock.
-async function createZeroGenesisChain(
-    intervals: number[]
-): Promise<BrowserProvider> {
-    const chain = await createProvider(
-        {
-            ...config,
-            networks: {
-                ...config.networks,
-                hardhat: {
-                    ...config.networks.hardhat,
-                    initialDate: new Date(0).toISOString(),
-                    mining: { ...config.networks.hardhat.mining, auto: true }
-                }
-            }
-        },
-        "hardhat"
-    );
-    let timestamp =
-        Math.floor(Date.now() / 1000) - intervals.reduce((a, b) => a + b, 0);
-    await chain.request({ method: "evm_mine", params: [timestamp] });
-    for (const interval of intervals) {
-        timestamp += interval;
-        await chain.request({ method: "evm_mine", params: [timestamp] });
-    }
-    return new BrowserProvider(chain);
 }
 
 describe("Clock", () => {

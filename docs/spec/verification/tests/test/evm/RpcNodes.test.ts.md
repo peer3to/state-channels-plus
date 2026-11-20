@@ -5,14 +5,21 @@ Exercises: [RpcNodeProvider.ts](../../../../implementation/source/src/evm/p2pRun
 
 ## Overview
 
-Every case except the pure backoff check runs a private Hardhat node per test with one or two
-WebSocket proxies in front of it ([fixture](../../../../../../test/fixtures/node/RpcNodesFixture.ts)).
+Every case except the pure backoff check runs a private node per test (Hardhat, or the parachain
+dev node under `--parachain`) with one or two WebSocket proxies in front of it ([fixture](../../../../../../test/fixtures/node/RpcNodesFixture.ts)).
 A proxy stands in for a separate endpoint of the same chain: a test cuts its sockets, refuses new
 ones, restores it, or holds one method's requests, and the proxy records which methods reached it.
 Oracles compare answers with the node's own HTTP answers and check which proxy saw
 `eth_getBalance`, `eth_sendRawTransaction` or `eth_subscribe`. Absence checks use a one-second
 window as the test input. Transaction receipts are read from the node directly; ethers' receipt
 wait is tested once, with two confirmations, after both sockets reconnected. Further cases blackhole a proxy (socket open, nothing forwarded) to prove the heartbeat ends a silent socket, swallow a forwarded transaction's reply before cutting the node, start a second private chain to prove a node on another chain is refused, and destroy or stop the provider with requests in flight or waiting.
+
+One case holds a contract deployment unsealed on a manual-seal node and estimates a call to it
+through the provider: the forwarded `eth_estimateGas` names the `pending` block, and the estimate
+exceeds the latest-block estimate by at least a fresh storage write. Two cases seal a set-once contract
+and leave a call that sets it unsealed: a second call reverts only at the pending block, so the
+provider estimates it at the latest block (the proxy sees `pending`, then `latest`); once the set
+is sealed, both blocks revert and the estimate rejects as `CALL_EXCEPTION`.
 
 Later cases check that a node destroyed during a pending attempt logs nothing and raises no
 unhandled rejection (a logger whose entries the test reads), that a heartbeat answered with an
@@ -72,6 +79,8 @@ within the one-second window (every node was destroyed).
 - `holds a transaction while no node is connected and sends it once one reconnects`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P3, REQ-CHAINOBS-2-2NCSQ3.T1.P5
 - `answers reads through the next node while the first is cut`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P4, REQ-CHAINOBS-2-2NCSQ3.T1.P3
 - `estimates gas at the pending block, which holds a transaction not yet sealed`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P29
+- `estimates at the latest block when only the pending block reverts the call`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P30
+- `rejects an estimate the latest block also reverts`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P31
 - `fails a read over to the next node when the first drops mid-request`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P5, REQ-CHAINOBS-2-2NCSQ3.T1.P4
 - `relays each new block once from the node sockets without polling`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P6
 - `relays each matching log once from the node sockets`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P15, REQ-CHAINOBS-4-JA3YF8.T1.P1

@@ -6,6 +6,8 @@ import {
     assertFailedLogPageAnsweredForRetry,
     assertFirstNodeErrorAnswerIsFinal,
     assertGasEstimateSeesPendingBlock,
+    assertPendingOnlyRevertFallsBackToLatest,
+    assertRevertAtBothBlocksRejects,
     assertHeartbeatErrorAnswerKeepsNode,
     assertInvalidLogWindowRejectsStartup,
     assertInvalidSecretOpensNoNode,
@@ -119,6 +121,14 @@ describe("MultiRpcProvider", () => {
 
     it("estimates gas at the pending block, which holds a transaction not yet sealed", async () => {
         await assertGasEstimateSeesPendingBlock();
+    });
+
+    it("estimates at the latest block when only the pending block reverts the call", async () => {
+        await assertPendingOnlyRevertFallsBackToLatest();
+    });
+
+    it("rejects an estimate the latest block also reverts", async () => {
+        await assertRevertAtBothBlocksRejects();
     });
 
     it("fails a read over to the next node when the first drops mid-request", async () => {

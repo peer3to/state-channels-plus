@@ -15,11 +15,13 @@ import {
     type JsonRpcResult,
     type Listener,
     Log,
+    isError,
     makeError,
     type PerformActionRequest,
     type ProviderEvent,
     type Subscriber,
-    type Subscription
+    type Subscription,
+    type TransactionRequest
 } from "ethers";
 
 /** A block height. */
@@ -237,17 +239,33 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
         return Promise.all(requests.map((request) => this.forward(request)));
     }
 
+    // Overrides AbstractProvider.estimateGas: a revert at the pending block is
+    // confirmed against the latest block before it stands. The pending block
+    // holds other senders' unmined transactions -> a competitor's pending
+    // reduce makes ours revert there, but it may never land.
+    override async estimateGas(tx: TransactionRequest): Promise<bigint> {
+        try {
+            return await super.estimateGas(tx);
+        } catch (error) {
+            if (!isError(error, "CALL_EXCEPTION") || tx.blockTag != null)
+                throw error;
+            return await super.estimateGas({ ...tx, blockTag: "latest" });
+        }
+    }
+
     // Overrides JsonRpcApiProvider.getRpcRequest: estimate gas against the
-    // pending block, the one the transaction will land in. ethers sends no
-    // block, so geth and Frontier estimate against the latest block and its
-    // older timestamp -> a transaction that only became valid since then (a
-    // timeout claim right at its minTimeStamp) fails the estimate.
+    // pending block, the one the transaction will land in, unless the request
+    // names a block. ethers sends no block, so geth and Frontier estimate
+    // against the latest block and its older timestamp -> a transaction that
+    // only became valid since then (a timeout claim right at its
+    // minTimeStamp) fails the estimate.
     override getRpcRequest(
         req: PerformActionRequest
     ): null | { method: string; args: Array<unknown> } {
         const request = super.getRpcRequest(req);
         if (req.method !== "estimateGas" || !request) return request;
-        return { method: request.method, args: [...request.args, "pending"] };
+        const block = req.transaction.blockTag ?? "pending";
+        return { method: request.method, args: [...request.args, block] };
     }
 
     // Overrides JsonRpcApiProvider._getSubscriber: block events and contract

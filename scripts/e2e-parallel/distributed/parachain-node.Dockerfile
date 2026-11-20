@@ -1,9 +1,10 @@
 # The parachain dev node for --parachain runs, built against the runner image's
-# Debian release so its glibc matches. Build context: a peer3-parachain checkout
-# at the pinned commit; the image is pushed to ghcr.io/peer3to/zero-fee-node and
-# runner-image.Dockerfile pins its digest.
+# Debian release so its glibc matches. Context: a clean export of one
+# peer3-parachain commit; the image is pushed to ghcr.io/peer3to/zero-fee-node
+# and runner-image.Dockerfile pins its digest.
+#   git -C <peer3-parachain> archive <commit> | tar -x -C <empty dir>
 #   docker build -t ghcr.io/peer3to/zero-fee-node:<commit> \
-#     -f scripts/e2e-parallel/distributed/parachain-node.Dockerfile <checkout>
+#     -f scripts/e2e-parallel/distributed/parachain-node.Dockerfile <empty dir>
 FROM rust:1.91.1-bookworm AS build
 
 RUN apt-get update \

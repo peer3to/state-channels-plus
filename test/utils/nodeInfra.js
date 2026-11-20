@@ -162,6 +162,11 @@ function peer3NodeArgs(nodePort, seal, chain, basePath) {
     ];
 }
 
+/** Bytes of a node's latest output kept for its startup failure. */
+const NODE_OUTPUT_TAIL = 4096;
+/** How long a node may take to report its RPC port, as waitForHardhatNode. */
+const NODE_READY_MS = 30000;
+
 async function startHardhatNode({
     port,
     logPath,
@@ -170,7 +175,10 @@ async function startHardhatNode({
     seal = "interval",
     chain = "test"
 } = {}) {
-    const nodePort = port ?? (await getFreePort());
+    // a parachain node without a given port binds port 0 and prints the one it
+    // got: a port reserved and released first can be taken before the node binds it
+    const readsBoundPort = isParachain() && port === undefined;
+    const nodePort = readsBoundPort ? 0 : (port ?? (await getFreePort()));
     // the node's database grows past a container's small /tmp, so it lives in the project's temp dir
     const nodesDir = path.join(PROJECT_ROOT, "temp", "peer3-nodes");
     if (isParachain()) fs.mkdirSync(nodesDir, { recursive: true });
@@ -209,6 +217,22 @@ async function startHardhatNode({
     });
     proc.once("exit", (code, signal) => resolveExit({ code, signal }));
     const logStream = pipeLogs(proc, logPath);
+    // the output is always read, so a full pipe never blocks the node; its
+    // tail goes into a startup failure
+    let outputTail = "";
+    let resolveBoundPort;
+    const boundPort = new Promise((resolve) => {
+        resolveBoundPort = resolve;
+    });
+    const readOutput = (chunk) => {
+        outputTail = (outputTail + chunk.toString()).slice(-NODE_OUTPUT_TAIL);
+        const bound = /Running JSON-RPC server: addr=127\.0\.0\.1:(\d+)/.exec(
+            outputTail
+        );
+        if (bound) resolveBoundPort(Number(bound[1]));
+    };
+    proc.stdout.on("data", readOutput);
+    proc.stderr.on("data", readOutput);
     const logClosed = logStream
         ? new Promise((resolve) => {
               if (logStream.closed) resolve();
@@ -216,18 +240,20 @@ async function startHardhatNode({
           })
         : Promise.resolve();
     proc.once("close", () => logStream?.end());
-    const url = `http://127.0.0.1:${nodePort}`;
     const stop = () => {
         if (!proc.killed) proc.kill("SIGTERM");
     };
 
     return new Promise((resolve, reject) => {
         let settled = false;
-        proc.on("exit", (code) => {
+        // close, not exit: the output read so far is complete
+        proc.once("close", (code) => {
             if (!settled) {
                 settled = true;
                 reject(
-                    new Error(`${label} exited with code ${code} before ready`)
+                    new Error(
+                        `${label} exited with code ${code} before ready:\n${outputTail}`
+                    )
                 );
             }
         });
@@ -238,20 +264,42 @@ async function startHardhatNode({
                 reject(err);
             }
         });
-        waitForHardhatNode(url).then(
-            () => {
-                if (settled) return;
-                settled = true;
-                resolve({ proc, url, stop, exited, logClosed });
-            },
-            (err) => {
-                if (!settled) {
+        let url;
+        (readsBoundPort
+            ? Promise.race([
+                  boundPort,
+                  new Promise((_, rejectPort) =>
+                      setTimeout(
+                          () =>
+                              rejectPort(
+                                  new Error(
+                                      `${label} reported no RPC port within ${NODE_READY_MS}ms:\n${outputTail}`
+                                  )
+                              ),
+                          NODE_READY_MS
+                      ).unref()
+                  )
+              ])
+            : Promise.resolve(nodePort)
+        )
+            .then((boundTo) => {
+                url = `http://127.0.0.1:${boundTo}`;
+                return waitForHardhatNode(url);
+            })
+            .then(
+                () => {
+                    if (settled) return;
                     settled = true;
-                    stop();
-                    reject(err);
+                    resolve({ proc, url, stop, exited, logClosed });
+                },
+                (err) => {
+                    if (!settled) {
+                        settled = true;
+                        stop();
+                        reject(err);
+                    }
                 }
-            }
-        );
+            );
     });
 }
 

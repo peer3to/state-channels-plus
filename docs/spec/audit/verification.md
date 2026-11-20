@@ -13,7 +13,7 @@ The simplification coverage uses real pre-deployment ports, authenticated host p
 
 ## Gas estimates at the pending block, genesis-free block time, parachain test runs — 2026-11-20
 
-Engineer decisions (Luke, 2026-11-20):
+Engineer decisions (Luke, 2026-11-20, PR #605):
 
 - The runtime's provider estimates gas at the `pending` block, the one a transaction lands in. ethers
   sends no block, and geth and Frontier then estimate at the latest block's timestamp, so a timeout
@@ -21,12 +21,18 @@ Engineer decisions (Luke, 2026-11-20):
   with the current time. [RpcNodes.test.ts](../verification/tests/test/evm/RpcNodes.test.ts.md)
   checks that the estimate sees a contract deployed only in the pending block
   ([`UNIT-TEST-MULTI-RPC-1-SVGGZ5`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5) `.P29`);
-  it fails without the tag.
+  it fails without the tag. A revert at the pending block is confirmed at the latest block before it
+  stands: the pending block holds other senders' unmined transactions, and a competitor's pending
+  reduce that never lands must not end ours (`.P30`, `.P31`; `.P30` fails without the fallback).
 - The clock leaves genesis out of the measured block time: a fresh parachain's genesis has timestamp 0
   ([`UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0`](../implementation/source/src/Clock.ts.md#unit-test-clock-average-1-6pdvr0)).
 - `--parachain` runs the slot nodes, the isolated test nodes and the tests on the parachain dev node,
   locally or on the workers, whose runner image carries the node built by
-  `parachain-node.Dockerfile`. Four timeout E2E cases pass on both Hardhat and the parachain node.
+  `parachain-node.Dockerfile`. In E2E-Timeouts, "should handle timeout when next peer to write does not
+  author a block", "should demonstrate timeout creates disputes", "should handle timeout when non-author
+  peer disconnects (calldata posting)" and "should handle timeout when author peer disconnects" passed
+  locally on Hardhat (run-1112) and on the parachain dev node built from peer3-parachain `d845dbf`
+  (run-1110).
 
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 

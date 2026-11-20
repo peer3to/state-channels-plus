@@ -163,7 +163,9 @@ browser tiers with it. Use `--mocha-test-pattern`, `--forge-test-pattern` or
 `--browser-test-pattern` when only one tier needs a filename filter.
 
 `--parachain` runs the slot nodes and tests on the parachain dev node
-(`PEER3_NODE_BIN`, default `zero-fee-node` on `PATH`) instead of Hardhat.
+(`PEER3_NODE_BIN`, default `zero-fee-node` on `PATH`) instead of Hardhat. The
+runner image carries the node; `parachain-node.Dockerfile` only republishes it
+when the pinned peer3-parachain commit moves.
 
 Forge tasks need no Hardhat node, so they take neither a warm slot nor a funded
 account partition. Local and distributed runs build the contracts and the
@@ -392,13 +394,17 @@ SCP_TEST_POOL_SECRET=<the-same-random-secret-on-every-device>
 ```
 
 Both runner entry points load `.env` automatically. On a manually provisioned
-worker, install dependencies and build the runner image from
+worker, log docker in to GHCR with a token that has `read:packages` (the runner
+image copies the parachain dev node from the private
+`ghcr.io/peer3to/zero-fee-node` package, on every host, also for runs without
+`--parachain`), install dependencies and build the runner image from
 `scripts/e2e-parallel/distributed/runner-image.Dockerfile` with
 `yarn test:parallel:image`, which labels the image with the Dockerfile's
 revision and prints its immutable local image ID. Configure that ID or a
 published repository digest of such an image:
 
 ```shell
+docker login ghcr.io
 yarn
 yarn test:parallel:image
 export SCP_TEST_RUNNER_IMAGE='sha256:<local-image-id>'

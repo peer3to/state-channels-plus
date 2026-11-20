@@ -334,39 +334,123 @@ export async function assertReadsFailOverToNextNode(): Promise<void> {
     });
 }
 
-// init code deploying the runtime `PUSH1 1 PUSH1 0 SSTORE`: a call writes slot 0
-const SSTORE_CONTRACT_INIT_CODE = "0x6460016000556000526005601bf3";
+// init codes that store the creation block's timestamp in slot 0 and deploy a
+// runtime that runs only after that second, only within it, or never
+const RUNS_AFTER_CREATION_INIT_CODE =
+    "0x426000556d6000544211600c57600080fd5b00600052600e6012f3";
+const RUNS_AT_CREATION_INIT_CODE =
+    "0x426000556e600054421115600d57600080fd5b00600052600f6011f3";
+const ALWAYS_REVERTS_INIT_CODE = "0x6460006000fd6000526005601bf3";
+
+/**
+ * `initCode` deployed and sealed on a manual-seal node, then the wall clock
+ * past the sealed block's second: the pending block is later than the latest.
+ */
+async function deploySealed(
+    node: JsonRpcProvider,
+    initCode: string
+): Promise<{ from: string; to: string }> {
+    const deployer = await testAccount(node, 0);
+    const to = ethers.getCreateAddress({
+        from: deployer.address,
+        nonce: await node.getTransactionCount(deployer.address)
+    });
+    // a fixed limit: the peer3 node underestimates the constructor's storage write
+    await deployer.sendTransaction({ data: initCode, gasLimit: 200_000 });
+    // the node may import the deployment after a seal: seal until it landed
+    await waitFor(async () => {
+        await mineBlocks(node, 1);
+        return (await node.getCode(to)) !== "0x";
+    });
+    const sealed = Number(
+        (await node.send("eth_getBlockByNumber", ["latest", false])).timestamp
+    );
+    await waitFor(() => Math.floor(Date.now() / 1000) > sealed + 1);
+    return { from: deployer.address, to };
+}
+
+/** The block each eth_estimateGas the proxy forwarded named. */
+function estimateBlocks(proxy: RpcNodeProxy): unknown[] {
+    return proxy.forwardedRequests
+        .filter((request) => request.method === "eth_estimateGas")
+        .map((request) => (request.params as unknown[])[1]);
+}
+
+async function rejectionOf(work: Promise<unknown>): Promise<unknown> {
+    try {
+        await work;
+    } catch (error) {
+        return error;
+    }
+    return undefined;
+}
 
 export async function assertGasEstimateSeesPendingBlock(): Promise<void> {
     await withProxiedNodes(
         1,
         async ({ node, proxies, nodes, logger }) => {
             const provider = new MultiRpcProvider(nodes, logger);
-            const deployer = await testAccount(node, 0);
-            const contract = ethers.getCreateAddress({
-                from: deployer.address,
-                nonce: await node.getTransactionCount(deployer.address)
-            });
-            // the contract exists in the pending block only: nothing is sealed
-            await deployer.sendTransaction({ data: SSTORE_CONTRACT_INIT_CODE });
-            const call = { from: deployer.address, to: contract };
-            // premise - at the latest block the call runs no code
-            const atLatest = BigInt(
-                await node.send("eth_estimateGas", [call, "latest"])
+            const call = await deploySealed(
+                node,
+                RUNS_AFTER_CREATION_INIT_CODE
             );
+            // premise - at the latest block's timestamp the call reverts
+            expect(
+                await rejectionOf(
+                    node.send("eth_estimateGas", [call, "latest"])
+                )
+            ).to.not.equal(undefined);
+
+            const estimate = await provider.estimateGas(call);
+
+            expect(estimate > 21_000n).to.equal(true);
+            expect(estimateBlocks(proxies[0])).to.deep.equal(["pending"]);
+        },
+        { seal: "manual" }
+    );
+}
+
+export async function assertPendingOnlyRevertFallsBackToLatest(): Promise<void> {
+    await withProxiedNodes(
+        1,
+        async ({ node, proxies, nodes, logger }) => {
+            const provider = new MultiRpcProvider(nodes, logger);
+            const call = await deploySealed(node, RUNS_AT_CREATION_INIT_CODE);
+            // premise - the call reverts at the pending block only
+            expect(
+                await rejectionOf(
+                    node.send("eth_estimateGas", [call, "pending"])
+                )
+            ).to.not.equal(undefined);
 
             const estimate = await provider.estimateGas(call);
 
             expect(estimate).to.equal(
-                BigInt(await node.send("eth_estimateGas", [call, "pending"]))
+                BigInt(await node.send("eth_estimateGas", [call, "latest"]))
             );
-            // the contract's SSTORE of a fresh slot costs 20,000 more
-            expect(estimate - atLatest >= 20_000n).to.equal(true);
-            const sent = proxies[0].forwardedRequests.filter(
-                (request) => request.method === "eth_estimateGas"
-            );
-            expect(sent).to.have.length(1);
-            expect((sent[0].params as unknown[])[1]).to.equal("pending");
+            expect(estimateBlocks(proxies[0])).to.deep.equal([
+                "pending",
+                "latest"
+            ]);
+        },
+        { seal: "manual" }
+    );
+}
+
+export async function assertRevertAtBothBlocksRejects(): Promise<void> {
+    await withProxiedNodes(
+        1,
+        async ({ node, proxies, nodes, logger }) => {
+            const provider = new MultiRpcProvider(nodes, logger);
+            const call = await deploySealed(node, ALWAYS_REVERTS_INIT_CODE);
+
+            const rejection = await rejectionOf(provider.estimateGas(call));
+
+            expect(isError(rejection, "CALL_EXCEPTION")).to.equal(true);
+            expect(estimateBlocks(proxies[0])).to.deep.equal([
+                "pending",
+                "latest"
+            ]);
         },
         { seal: "manual" }
     );
