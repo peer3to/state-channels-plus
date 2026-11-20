@@ -1715,7 +1715,11 @@ cap, kill-and-dispute multicalls with a non-replaying and a replaying kill, and 
 `DisputeInvalidBlockInStateProofApplyFraudProof` kill; dispute multicalls at `MAX_TRANSACTION_GAS` and at a
 16M block limit; a kill and a kill-and-dispute multicall capped at the replay gas alone (one mined
 revert, no resend, then the lone kill lands); a capped kill whose passed preflight resends at the
-replay gas; and a non-replaying kill run out of gas that is resent at a fresh estimate and lands. `ContractExecutorCallGas.test.ts`: startup with the cap one gas below and equal to the
+replay gas; a non-replaying kill run out of gas that is resent at a fresh estimate and lands;
+non-replaying kills, kill-and-dispute multicalls and a `BlockDoubleSign`-only dispute that read neither the
+requirement nor the block (one kill landing while that read would fail); a multicall with a
+non-replaying kill and a replaying transition proof at estimate plus requirement; and a kill whose
+failed block read leaves it capped at `MAX_TRANSACTION_GAS`. `ContractExecutorCallGas.test.ts`: startup with the cap one gas below and equal to the
 requirement. The large-budget local EVM tests raise `MAX_TRANSACTION_GAS` to admit their 17M budget.
 The estimate probes wrap the chain provider's `estimateGas`. Mirrors:
 [DisputeManager.ts.md](../implementation/source/src/disputeManager/DisputeManager.ts.md),

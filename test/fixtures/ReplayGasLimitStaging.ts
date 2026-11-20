@@ -16,7 +16,6 @@ import { killAndDisputeStoredDispute } from "./EvidenceComparisonStaging";
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import type { ForkId } from "@/types/types";
 import { Codec, Type, hash, sleep } from "@/utils";
-import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { expect } from "chai";
@@ -104,14 +103,58 @@ export async function disputeWithScaledEstimate(
 }
 
 /**
+ * Peer 1 double-signs a block, so peers 0 and 2 each hold a BlockDoubleSign
+ * proof against it and dispute on their own: a fraud-proof multicall whose
+ * only proof replays nothing. Both peers' uploads are recorded, not sent, so
+ * no dispute reaches the chain first. Peer 0's chain estimate for its
+ * multicall is recorded unscaled, and its replay requirement and
+ * latest-block reads are recorded.
+ */
+export async function disputeWithDoubleSignProof(
+    h: MathPeerTestHarness
+): Promise<{
+    submissions: RecordedDisputeSubmission[];
+    estimates: RecordedGasEstimate[];
+    reads: RecordedReplayGasRead[];
+    stubbedBlockReads: number;
+}> {
+    await h.lifecycle.start(3, 2);
+    const peer = h.getPeer(0);
+    const recorded = await h.rpcStub.recordDisputeSubmissions(peer.index);
+    await h.rpcStub.recordDisputeSubmissions(2);
+    const estimates = await h.rpcStub.scaleReplayGasEstimates(peer.index, {
+        methods: ["multicall"],
+        numerator: 1,
+        denominator: 1
+    });
+    const reads = await h.rpcStub.recordReplayGasReads(peer.index);
+    const stub = h.control(peer).stub;
+    await stub.stubReplayGasBlockRead(null).request();
+    await h.byzantine.submitDoubleSignBlock(1);
+    await waitFor(
+        async () => (await recorded.submissions()).length > 0,
+        h.event.protocolEventTimeoutMs()
+    );
+    return {
+        submissions: await recorded.submissions(),
+        estimates: await estimates.estimates(),
+        reads: await reads.reads(),
+        stubbedBlockReads: await stub.getStubbedReplayGasBlockReads().request()
+    };
+}
+
+/**
  * A committed spam dispute the killer holds a dispute fraud proof against,
  * whose check replays no transition; the killer's `killDispute` sends the
  * real `applyDisputeFraudProofs`, with the chain's estimate for it answered
  * scaled by `scale`. `sends` counts the mined kill sends, resends included.
+ * The kill's replay requirement and latest-block reads are recorded; with
+ * `failReplayGasRead`, the first requirement read fails.
  */
 export async function killWithScaledEstimate(
     h: MathPeerTestHarness,
-    scale: EstimateScale
+    scale: EstimateScale,
+    options: { failReplayGasRead?: boolean } = {}
 ): Promise<{
     storedProofTypes: number[];
     applies: RecordedFraudProofApply[];
@@ -119,8 +162,15 @@ export async function killWithScaledEstimate(
     slashed: string[];
     spammer: string;
     sends: SendOutcomes;
+    reads: RecordedReplayGasRead[];
+    stubbedBlockReads: number;
 }> {
     const { killer, spammer } = await h.scenario.stageUnkilledSpamDispute();
+    const reads = await h.rpcStub.recordReplayGasReads(killer.index, {
+        failFirst: options.failReplayGasRead ? 1 : 0
+    });
+    const stub = h.control(killer).stub;
+    await stub.stubReplayGasBlockRead(null).request();
     const recorded = await h.rpcStub.recordDisputeFraudProofApplies(
         killer.index
     );
@@ -140,29 +190,58 @@ export async function killWithScaledEstimate(
         sends: sendDelta(
             before.applyDisputeFraudProofs,
             after.applyDisputeFraudProofs
-        )
+        ),
+        reads: await reads.reads(),
+        stubbedBlockReads: await stub.getStubbedReplayGasBlockReads().request()
     };
 }
 
 /**
  * The killer of a committed spam dispute (see killWithScaledEstimate) has not
  * disputed yet, so its `dispute(forkId, { kill })` sends the kill and its own
- * dispute in one best-effort multicall, forwarded to the chain and recorded;
- * no proof in it replays a transition. The chain's estimate for the
- * multicall is answered scaled by `scale`.
+ * dispute in one best-effort multicall, forwarded to the chain and recorded.
+ * The kill replays no transition; with `storeTransitionProof`, the killer
+ * also holds an invalid-transition fraud proof (stored before the spam
+ * dispute), which the multicall bundles and which replays. The chain's
+ * estimate for the multicall is answered scaled by `scale`, and the replay
+ * requirement reads are recorded; without `storeTransitionProof` the
+ * latest-block reads are counted too.
  */
 export async function killAndDisputeWithScaledEstimate(
     h: MathPeerTestHarness,
-    scale: EstimateScale
+    scale: EstimateScale,
+    options: { storeTransitionProof?: boolean } = {}
 ): Promise<{
     rejected: string;
     submissions: RecordedDisputeSubmission[];
     estimates: RecordedGasEstimate[];
     slashed: string[];
     spammer: string;
+    reads: RecordedReplayGasRead[];
+    stubbedBlockReads: number;
+    replayGas: bigint;
 }> {
+    const killerIndex = 0;
     const { forkId, killer, spammer } =
-        await h.scenario.stageUnkilledSpamDispute();
+        await h.scenario.stageUnkilledSpamDispute({
+            killerIndex,
+            // a fourth peer, so the transition proof's offender is neither
+            // the spammer (the kill slashes it first) nor the next writer
+            peerCount: options.storeTransitionProof ? 4 : undefined,
+            beforeDispute: options.storeTransitionProof
+                ? async () => {
+                      const nextWriter = await h.query.getNextPeerToWrite();
+                      const offender = [2, 3].find(
+                          (index) =>
+                              h.getPeer(index).address !== nextWriter.address
+                      )!;
+                      await h.byzantine.storeInvalidTransitionFraudProof(
+                          killerIndex,
+                          { offenderIndex: offender }
+                      );
+                  }
+                : undefined
+        });
     const recorded = await h.rpcStub.recordDisputeSubmissions(killer.index, {
         forward: true
     });
@@ -170,6 +249,10 @@ export async function killAndDisputeWithScaledEstimate(
         methods: ["multicall"],
         ...scale
     });
+    const reads = await h.rpcStub.recordReplayGasReads(killer.index);
+    const stub = h.control(killer).stub;
+    if (!options.storeTransitionProof)
+        await stub.stubReplayGasBlockRead(null).request();
     const { rejected } = await killAndDisputeStoredDispute(
         h,
         killer.index,
@@ -181,7 +264,10 @@ export async function killAndDisputeWithScaledEstimate(
         submissions: await recorded.submissions(),
         estimates: await estimates.estimates(),
         slashed: await h.query.onChainSlashedParticipants(),
-        spammer: spammer.address
+        spammer: spammer.address,
+        reads: await reads.reads(),
+        stubbedBlockReads: await stub.getStubbedReplayGasBlockReads().request(),
+        replayGas: await h.channelManager.getStateTransitionReplayGas()
     };
 }
 
@@ -280,8 +366,8 @@ export async function stageUnkilledTimeoutCalldataDispute(
 }> {
     const killerIndex = 0;
     const disputerIndex = 3;
-    await h.lifecycle.start(4, 0, {
-        timeConfig: resolveTestTimeConfig({ evidenceTime: 12 }),
+    await h.lifecycle.timeoutSetup(4, 0, {
+        timeConfig: { evidenceTime: 12 },
         stateMachineGasLimit: options.stateMachineGasLimit
     });
     // height 1 exists, so the posted block gets no first-block grace

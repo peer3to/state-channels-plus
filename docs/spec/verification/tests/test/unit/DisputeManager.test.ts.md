@@ -88,7 +88,13 @@ slash; a capped kill-and-dispute multicall is mined once and reverts, `dispute` 
 kill sent alone reads the block again, lands and slashes the disputer. A one-shot stub passes the
 handler's preflight at the capped limit, and the resend is held to the replay gas: two reverted
 sends burn exactly twice the replay gas. A spam kill whose first estimate is cut to a third runs
-out of its headroom, is resent at a fresh unscaled estimate, and lands.
+out of its headroom, is resent at a fresh unscaled estimate, and lands. The non-replaying sends (the
+spam kill, its kill-and-dispute multicall, and a dispute whose only proof is a `BlockDoubleSign`
+proof against a peer that double-signed) record no replay-requirement read and no latest-block
+read; one spam kill lands while its requirement read is set to fail. A kill-and-dispute multicall
+whose kill replays nothing but which bundles an invalid-transition fraud proof is sent at its
+estimate plus the replay gas after one read. A kill whose block read fails and whose estimate is
+scaled past the cap is sent at `MAX_TRANSACTION_GAS` and lands.
 The multicall tests of the submission branch assert only that the limit exceeds the replay gas.
 The plain and calldata upload tests of the submission branch also record the replay-gas reads and
 assert none happened (`6.P3`, credited to the plain upload). One test holds the replay-gas read
@@ -198,12 +204,16 @@ author is added.
 - `a kill whose estimate covers only part of the work still lands at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P15
 - `a kill whose proof replays no transition is sent at its estimate plus the signer's headroom, without the replay requirement, and lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P20
 - `a dispute that kills a dispute whose proof replays no transition sends the multicall at its estimate plus the signer's headroom, without the replay requirement, and the kill lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P23
+- `a kill whose proof replays no transition lands while the replay requirement read would fail, without reading it`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P32
+- `a dispute whose only fraud proof replays no transition sends the multicall at its estimate plus the signer's headroom, without reading the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P33
+- `a dispute that kills a dispute whose proof replays no transition and bundles a replaying fraud proof sends the multicall at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P34
 - `a kill whose estimate plus the replay requirement exceeds the block gas limit is sent at the block gas limit`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P18
 - `a kill whose estimate plus the replay requirement exceeds MAX_TRANSACTION_GAS is sent at MAX_TRANSACTION_GAS and lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P21, REQ-ENFSM-1-DKJCY2.T1.P25
 - `a kill capped below what its replay needs is mined and reverts, is not resent, and leaves the timeout dispute committed`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P28, REQ-ENFSM-1-DKJCY2.T1.P26, UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P42
 - `a capped kill whose preflight at its limit passes is resent at the replay gas, and both sends revert`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P30, UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P43
 - `a kill whose proof replays no transition and runs out of its headroom is resent at a fresh estimate and lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P31, UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P44
 - `a dispute whose kill-and-dispute multicall is capped below what its replay needs is mined and reverts without a resend, then the kill sent alone lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P29
+- `a kill whose latest-block read fails and whose estimate plus the replay requirement exceeds MAX_TRANSACTION_GAS is sent at MAX_TRANSACTION_GAS and lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P35
 - `a kill whose latest-block read fails is sent at its estimate plus the replay requirement, lands, and slashes the disputer`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P19
 - `a kill that refutes a timeout with posted calldata replays the block and lands at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P17
 - `a dispute that kills a timeout dispute by refuting it with posted calldata sends the multicall at its estimate plus the replay requirement, and the kill lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P24

@@ -2580,8 +2580,9 @@ lands. **Still open:** `DisputeManager.dispute` bundles every fraud proof into o
 replay before the last can burn a full transition budget, so a dispute with several replays needs
 about `(n−1)·G + R(G)` plus the upload and exceeds the cap at poker's budget from about three replays. Such a send is
 declared at the cap, so the parachain admits it and it fails on-chain, charged to the sender, where
-the uncapped limit was refused at submission; the retry after the mined revert preflights at the
-same capped limit, so it sends no second transaction; splitting replays removes the case. The
+the uncapped limit was refused at submission; the retry after the mined revert preflights and
+resends at the same capped limit, so a reproduced failure sends no second transaction and any
+resend stays within the cap; splitting replays removes the case. The
 reviewed design that splits replays across transactions, the parachain filter shape it needs, the
 64 KiB calldata check and the reduction-boundary race are follow-ups:
 [peer3to/state-channels-plus#608](https://github.com/peer3to/state-channels-plus/issues/608).

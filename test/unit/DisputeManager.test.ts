@@ -53,6 +53,7 @@ import {
     disputeOnHost,
     disputeThenKillRecordingReads,
     disputeWithScaledEstimate,
+    disputeWithDoubleSignProof,
     killAndDisputeTimeoutCalldataRefutationWithScaledEstimate,
     killAndDisputeWithScaledEstimate,
     killStateProofChallengeWithScaledEstimate,
@@ -3067,11 +3068,21 @@ describe("Unit: DisputeManager", function () {
         });
 
         it("a kill whose proof replays no transition is sent at its estimate plus the signer's headroom, without the replay requirement, and lands", async function () {
-            const { storedProofTypes, applies, estimates, slashed, spammer } =
-                await killWithScaledEstimate(TestSession.getHarness(), {
-                    numerator: 1,
-                    denominator: 1
-                });
+            const {
+                storedProofTypes,
+                applies,
+                estimates,
+                slashed,
+                spammer,
+                reads,
+                stubbedBlockReads
+            } = await killWithScaledEstimate(TestSession.getHarness(), {
+                numerator: 1,
+                denominator: 1
+            });
+            // neither the requirement nor the latest block is read
+            expect(reads).to.deep.equal([]);
+            expect(stubbedBlockReads).to.equal(0);
             // the kill sends a proof that replays nothing
             expect(storedProofTypes[0]).to.equal(
                 toSolidityDisputeFraudProofType(
@@ -3088,11 +3099,21 @@ describe("Unit: DisputeManager", function () {
         });
 
         it("a dispute that kills a dispute whose proof replays no transition sends the multicall at its estimate plus the signer's headroom, without the replay requirement, and the kill lands", async function () {
-            const { rejected, submissions, estimates, slashed, spammer } =
-                await killAndDisputeWithScaledEstimate(
-                    TestSession.getHarness(),
-                    { numerator: 1, denominator: 1 }
-                );
+            const {
+                rejected,
+                submissions,
+                estimates,
+                slashed,
+                spammer,
+                reads,
+                stubbedBlockReads
+            } = await killAndDisputeWithScaledEstimate(
+                TestSession.getHarness(),
+                { numerator: 1, denominator: 1 }
+            );
+            // neither the requirement nor the latest block is read
+            expect(reads).to.deep.equal([]);
+            expect(stubbedBlockReads).to.equal(0);
             expect(rejected).to.equal("");
             expect(estimates.map((e) => e.method)).to.deep.equal(["multicall"]);
             expect(submissions.map((s) => s.method)).to.deep.equal([
@@ -3105,6 +3126,70 @@ describe("Unit: DisputeManager", function () {
                 String(withGasHeadroom(BigInt(estimates[0].answer)))
             );
             expect(submissions[0].revert).to.equal(null);
+            expect(slashed).to.include(spammer);
+        });
+
+        it("a kill whose proof replays no transition lands while the replay requirement read would fail, without reading it", async function () {
+            const { applies, estimates, slashed, spammer, reads } =
+                await killWithScaledEstimate(
+                    TestSession.getHarness(),
+                    { numerator: 1, denominator: 1 },
+                    { failReplayGasRead: true }
+                );
+            expect(reads).to.deep.equal([]);
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.equal(
+                String(withGasHeadroom(BigInt(estimates[0].answer)))
+            );
+            expect(applies[0].error).to.equal(null);
+            expect(slashed).to.include(spammer);
+        });
+
+        it("a dispute whose only fraud proof replays no transition sends the multicall at its estimate plus the signer's headroom, without reading the replay requirement", async function () {
+            const { submissions, estimates, reads, stubbedBlockReads } =
+                await disputeWithDoubleSignProof(TestSession.getHarness());
+            expect(submissions.map((s) => s.method)).to.deep.equal([
+                "multicallBestEffortLast"
+            ]);
+            expect(submissions[0].innerMethods[0]).to.equal("applyFraudProofs");
+            expect(submissions[0].innerMethods).to.not.include(
+                "applyDisputeFraudProofs"
+            );
+            expect(submissions[0].gasLimit).to.equal(
+                String(withGasHeadroom(BigInt(estimates[0].answer)))
+            );
+            expect(reads).to.deep.equal([]);
+            expect(stubbedBlockReads).to.equal(0);
+        });
+
+        it("a dispute that kills a dispute whose proof replays no transition and bundles a replaying fraud proof sends the multicall at its estimate plus the replay requirement", async function () {
+            const {
+                rejected,
+                submissions,
+                estimates,
+                slashed,
+                spammer,
+                reads,
+                replayGas
+            } = await killAndDisputeWithScaledEstimate(
+                TestSession.getHarness(),
+                { numerator: 1, denominator: 1 },
+                { storeTransitionProof: true }
+            );
+            expect(rejected).to.equal("");
+            expect(submissions.map((s) => s.method)).to.deep.equal([
+                "multicallBestEffortLast"
+            ]);
+            expect(submissions[0].innerMethods.slice(0, 2)).to.deep.equal([
+                "applyDisputeFraudProofs",
+                "applyFraudProofs"
+            ]);
+            expect(submissions[0].gasLimit).to.equal(
+                String(BigInt(estimates[0].answer) + replayGas)
+            );
+            expect(reads).to.deep.equal([
+                { outcome: "resolved", replayGas: String(replayGas) }
+            ]);
             expect(slashed).to.include(spammer);
         });
 
@@ -3262,6 +3347,31 @@ describe("Unit: DisputeManager", function () {
             expect(killSends).to.include({ succeeded: 1, reverted: 0 });
             expect(slashed).to.include(disputer);
             expect(committedAfterKill).to.equal(false);
+        });
+
+        it("a kill whose latest-block read fails and whose estimate plus the replay requirement exceeds MAX_TRANSACTION_GAS is sent at MAX_TRANSACTION_GAS and lands", async function () {
+            const transactionCap = BigInt(config.MAX_TRANSACTION_GAS);
+            const {
+                applies,
+                estimates,
+                replayGas,
+                slashed,
+                disputer,
+                stubbedBlockReads
+            } = await killTimeoutCalldataRefutationWithScaledEstimate(
+                TestSession.getHarness(),
+                { numerator: 100_000, denominator: 1 },
+                { blockRead: "fail" }
+            );
+            expect(stubbedBlockReads).to.equal(1);
+            expect(
+                BigInt(estimates[0].answer) + replayGas > transactionCap
+            ).to.equal(true);
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.equal(String(transactionCap));
+            expect(applies[0].error).to.equal(null);
+            expect(applies[0].waited).to.equal(true);
+            expect(slashed).to.include(disputer);
         });
 
         it("a kill whose latest-block read fails is sent at its estimate plus the replay requirement, lands, and slashes the disputer", async function () {

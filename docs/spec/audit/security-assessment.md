@@ -508,8 +508,8 @@ twice the requirement. A runtime whose requirement exceeds the cap does not star
 2026-11-21, Luke). A dispute that bundles several replays needs about one transition budget per
 replay before the last and can still need more than the cap; the node declares it at the cap, so
 the chain admits it and it fails on-chain, charged its full limit, and that fraud stays unproven
-on-chain; the retry after that mined revert preflights at the same capped limit, so no second
-transaction is sent. A submitter still cannot make an honest transition fail for lack of gas; the worst case
+on-chain; the retry after that mined revert preflights and resends at the same capped limit, so a
+reproduced failure sends no second transaction and any resend stays within the cap. A submitter still cannot make an honest transition fail for lack of gas; the worst case
 of the residual is a charged, failed fraud proof, never a wrong verdict.
 Splitting replays across transactions is open as
 [`FIND-GASEST-2-94YFZ6`](open-findings.md#find-gasest-2-94yfz6).
