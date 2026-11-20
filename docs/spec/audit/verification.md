@@ -38,9 +38,10 @@ a hand-encoded branch that holds its value by hash (state version 1), with and w
 node and under a 16-nibble partial key; one in SubstrateHeader.test.ts reads the Frontier log variant that
 holds the Ethereum block hash alone; six in proveFrontierStorageBlock.test.ts refuse malformed pushed
 blocks. Each of six faults (the branch's partial-key width, the branch read as an inline value, the log
-variant number, and each of three shape checks switched off) failed a declaration. Two permutation numbers
-are skipped because a later pull request of the same card allocates them. A node only state version 0 produces, an inline value longer than 32 bytes, is
-tested in the pull request whose crafted leaf can hold one.
+variant number, and each of three shape checks switched off) failed a declaration. A node only state
+version 0 produces, an inline value longer than 32 bytes, is tested in the pull request whose crafted leaf
+can hold one. On 2026-11-20, after the second review, two more declarations refuse a proof node and a
+digest log of odd-length hex; with odd lengths let through, both failed.
 
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 

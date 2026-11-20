@@ -184,4 +184,30 @@ describe("proveFrontierStorageBlock", function () {
                 /malformed/
             );
     });
+
+    it("throws a StorageProofError when a proof node is hex of odd length", function () {
+        const block = {
+            ...oneWrite.block,
+            proofNodes: [...oneWrite.block.proofNodes, "0x0"]
+        };
+        expect(() => proveFrontierStorageBlock(block, address)).to.throw(
+            StorageProofError,
+            /malformed/
+        );
+    });
+
+    it("throws a StorageProofError when a digest log is hex of odd length", function () {
+        const header = oneWrite.block.header;
+        const block = {
+            ...oneWrite.block,
+            header: {
+                ...header,
+                digest: { logs: [...header.digest.logs, "0x123"] }
+            }
+        };
+        expect(() => proveFrontierStorageBlock(block, address)).to.throw(
+            StorageProofError,
+            /malformed/
+        );
+    });
 });

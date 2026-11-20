@@ -13,7 +13,9 @@ function isHash(value: unknown): value is string {
 }
 
 function isHexList(value: unknown): value is string[] {
-    return Array.isArray(value) && value.every((item) => isHexString(item));
+    return (
+        Array.isArray(value) && value.every((item) => isHexString(item, true))
+    );
 }
 
 /**

@@ -27,9 +27,11 @@ block can show.
 - `throws when the block carries the header of another block`: REQ-STPROOF-3-NVJGR0.T1.P9, UNIT-TEST-STPROOF-4-220T2R.P9
 - `throws when the proof belongs to another block's state root`: REQ-STPROOF-3-NVJGR0.T1.P10, UNIT-TEST-STPROOF-4-220T2R.P10
 - `throws when a pushed log is of another Ethereum block`: REQ-STPROOF-3-NVJGR0.T1.P11, UNIT-TEST-STPROOF-4-220T2R.P11
-- `throws a StorageProofError when a pushed slot is not 32 bytes long`: UNIT-TEST-STPROOF-4-220T2R.P13
-- `throws a StorageProofError when a pushed value is not 32 bytes long`: UNIT-TEST-STPROOF-4-220T2R.P14
-- `throws a StorageProofError when a proof node is not hex`: UNIT-TEST-STPROOF-4-220T2R.P15
-- `throws a StorageProofError when a header field is not hex`: UNIT-TEST-STPROOF-4-220T2R.P16
-- `throws a StorageProofError when a pushed log has no block hash`: UNIT-TEST-STPROOF-4-220T2R.P17
-- `throws a StorageProofError when the pushed block is not an object`: UNIT-TEST-STPROOF-4-220T2R.P18
+- `throws a StorageProofError when a pushed slot is not 32 bytes long`: UNIT-TEST-STPROOF-4-220T2R.P12
+- `throws a StorageProofError when a pushed value is not 32 bytes long`: UNIT-TEST-STPROOF-4-220T2R.P13
+- `throws a StorageProofError when a proof node is not hex`: UNIT-TEST-STPROOF-4-220T2R.P14
+- `throws a StorageProofError when a header field is not hex`: UNIT-TEST-STPROOF-4-220T2R.P15
+- `throws a StorageProofError when a pushed log has no block hash`: UNIT-TEST-STPROOF-4-220T2R.P16
+- `throws a StorageProofError when the pushed block is not an object`: UNIT-TEST-STPROOF-4-220T2R.P17
+- `throws a StorageProofError when a proof node is hex of odd length`: UNIT-TEST-STPROOF-4-220T2R.P18
+- `throws a StorageProofError when a digest log is hex of odd length`: UNIT-TEST-STPROOF-4-220T2R.P19

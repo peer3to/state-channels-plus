@@ -24,9 +24,11 @@ Checking a block a Frontier node pushed
 - [x] `UNIT-TEST-STPROOF-4-220T2R.P9` — the header of another block
 - [x] `UNIT-TEST-STPROOF-4-220T2R.P10` — the proof of another block
 - [x] `UNIT-TEST-STPROOF-4-220T2R.P11` — a log with another block's Ethereum hash
-- [x] `UNIT-TEST-STPROOF-4-220T2R.P13` — a pushed slot of 1 byte
-- [x] `UNIT-TEST-STPROOF-4-220T2R.P14` — a pushed value of 2 bytes
-- [x] `UNIT-TEST-STPROOF-4-220T2R.P15` — a proof node that is not hex
-- [x] `UNIT-TEST-STPROOF-4-220T2R.P16` — a header field that is not hex
-- [x] `UNIT-TEST-STPROOF-4-220T2R.P17` — a pushed log without a block hash
-- [x] `UNIT-TEST-STPROOF-4-220T2R.P18` — `null`, a string and a list in place of a block
+- [x] `UNIT-TEST-STPROOF-4-220T2R.P12` — a pushed slot of 1 byte
+- [x] `UNIT-TEST-STPROOF-4-220T2R.P13` — a pushed value of 2 bytes
+- [x] `UNIT-TEST-STPROOF-4-220T2R.P14` — a proof node that is not hex
+- [x] `UNIT-TEST-STPROOF-4-220T2R.P15` — a header field that is not hex
+- [x] `UNIT-TEST-STPROOF-4-220T2R.P16` — a pushed log without a block hash
+- [x] `UNIT-TEST-STPROOF-4-220T2R.P17` — `null`, a string and a list in place of a block
+- [x] `UNIT-TEST-STPROOF-4-220T2R.P18` — a proof node that is hex of odd length
+- [x] `UNIT-TEST-STPROOF-4-220T2R.P19` — a digest log that is hex of odd length
