@@ -33,9 +33,9 @@ Engineer decisions (Luke, 2026-11-20, PR #605):
   locally or on the workers, whose runner image copies the node image peer3-parachain publishes
   (`docker/zero-fee-node.Dockerfile` there). In E2E-Timeouts, "should handle timeout when next peer to write does not
   author a block", "should demonstrate timeout creates disputes", "should handle timeout when non-author
-  peer disconnects (calldata posting)" and "should handle timeout when author peer disconnects" passed
-  locally on Hardhat (run-1112) and on the parachain dev node built from peer3-parachain `d845dbf`
-  (run-1110).
+  peer disconnects (calldata posting)" and "should handle timeout when author peer disconnects", with
+  all of RpcNodes.test.ts, passed on the farm with `--parachain` on the pinned node, peer3-parachain
+  `4b19548` (run-1155, 57 passing).
 
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 
