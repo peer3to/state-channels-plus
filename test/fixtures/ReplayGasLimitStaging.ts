@@ -81,19 +81,21 @@ export async function disputeWithScaledEstimate(
 /**
  * A committed spam dispute the killer holds a dispute fraud proof against;
  * the killer's `killDispute` sends the real `applyDisputeFraudProofs`, with
- * the chain signer's estimate for it answered scaled by `scale`.
+ * the chain signer's estimate for it answered scaled by `scale`. The kill's
+ * latest-block read fails with `failBlockRead`, or answers `blockGasLimit`
+ * as the block's gas limit.
  */
 export async function killWithScaledEstimate(
     h: MathPeerTestHarness,
     scale: EstimateScale,
-    options: { failBlockRead?: boolean } = {}
+    options: { failBlockRead?: boolean; blockGasLimit?: bigint } = {}
 ): Promise<{
     applies: RecordedFraudProofApply[];
     estimates: RecordedGasEstimate[];
     replayGas: bigint;
     slashed: string[];
     spammer: string;
-    blockReadFailures: number;
+    stubbedBlockReads: number;
 }> {
     const { killer, spammer } = await h.scenario.stageUnkilledSpamDispute();
     const recorded = await h.rpcStub.recordDisputeFraudProofApplies(
@@ -104,7 +106,12 @@ export async function killWithScaledEstimate(
         ...scale
     });
     if (options.failBlockRead)
-        await h.control(killer).stub.stubFailReplayGasBlockRead().request();
+        await h.control(killer).stub.stubReplayGasBlockRead(null).request();
+    if (options.blockGasLimit !== undefined)
+        await h
+            .control(killer)
+            .stub.stubReplayGasBlockRead(String(options.blockGasLimit))
+            .request();
     await killStoredDisputeOnHost(h, killer.index);
     return {
         applies: await recorded.applies(),
@@ -112,9 +119,9 @@ export async function killWithScaledEstimate(
         replayGas: await h.channelManager.getStateTransitionReplayGas(),
         slashed: await h.query.onChainSlashedParticipants(),
         spammer: spammer.address,
-        blockReadFailures: await h
+        stubbedBlockReads: await h
             .control(killer)
-            .stub.getReplayGasBlockReadFailures()
+            .stub.getStubbedReplayGasBlockReads()
             .request()
     };
 }
