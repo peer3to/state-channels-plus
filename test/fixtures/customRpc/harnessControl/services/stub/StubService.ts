@@ -5039,7 +5039,6 @@ export class StubService extends ANetworkRpcService<
         if (!receipt || receipt.status !== 0) return;
         const transaction = await provider.getTransaction(transactionHash);
         if (!transaction) throw new Error("mined opening submission is gone");
-        let revertData = "0x";
         try {
             await provider.call({
                 from: transaction.from,
@@ -5049,12 +5048,12 @@ export class StubService extends ANetworkRpcService<
                 gasLimit: transaction.gasLimit,
                 blockTag: receipt.blockNumber
             });
+            this.openingSubmissionRejections.push("undecoded");
         } catch (error) {
-            revertData = (error as { data?: string }).data ?? "0x";
+            this.openingSubmissionRejections.push(
+                tryDecodeCustomError(error)?.name ?? "undecoded"
+            );
         }
-        this.openingSubmissionRejections.push(
-            tryDecodeCustomError({ data: revertData })?.name ?? "undecoded"
-        );
     }
 
     get chainProvider() {

@@ -3048,7 +3048,7 @@ describe("Unit: DisputeManager", function () {
             } = await killWithScaledEstimate(
                 TestSession.getHarness(),
                 { numerator: 100_000, denominator: 1 },
-                { blockGasLimit }
+                { blockRead: { gasLimit: blockGasLimit } }
             );
             expect(stubbedBlockReads).to.equal(1);
             expect(
@@ -3072,7 +3072,7 @@ describe("Unit: DisputeManager", function () {
             } = await killWithScaledEstimate(
                 TestSession.getHarness(),
                 { numerator: 1, denominator: 1 },
-                { failBlockRead: true }
+                { blockRead: "fail" }
             );
             expect(stubbedBlockReads).to.equal(1);
             expect(applies.length).to.equal(1);

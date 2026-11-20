@@ -340,7 +340,8 @@ with the suite still green.
 - Typecheck: `yarn tsc --noEmit -p tsconfig.json` (the `TestPeer`/control surface
   is fully typed — a removed/renamed field is a compile error, your free
   checklist).
-- Canonical full gate: `yarn test:parallel:distributed`, which runs the Mocha,
+- Canonical full gate: the command in root `AGENTS.md`
+  (`yarn test:parallel:distributed --parachain --test-parallel-script --test-browser`), which runs the Mocha,
   forge and browser tiers. Add `--e2e-only` to run only E2E tests (it drops the
   forge and browser tiers), or `--grep <regexp>` for the narrowest relevant
   task.
@@ -362,6 +363,6 @@ with the suite still green.
   for cross-run comparison. Only the current run's dir is cleared. See root
   `AGENTS.md` ("Canonical test command and parallel run logs").
 - Distributed runner: start workers with `yarn test:parallel:server` and run the
-  canonical full gate with `yarn test:parallel:distributed`. See the "Distributed
+  canonical full gate from root `AGENTS.md`. See the "Distributed
   parallel tests" section in `README.md` for setup and options.
 - Narrow first: run the single `*.test.ts` you touched before the suite.

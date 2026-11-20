@@ -82,13 +82,13 @@ export async function disputeWithScaledEstimate(
  * A committed spam dispute the killer holds a dispute fraud proof against;
  * the killer's `killDispute` sends the real `applyDisputeFraudProofs`, with
  * the chain signer's estimate for it answered scaled by `scale`. The kill's
- * latest-block read fails with `failBlockRead`, or answers `blockGasLimit`
- * as the block's gas limit.
+ * latest-block read fails (`"fail"`) or answers `blockRead.gasLimit` as the
+ * block's gas limit.
  */
 export async function killWithScaledEstimate(
     h: MathPeerTestHarness,
     scale: EstimateScale,
-    options: { failBlockRead?: boolean; blockGasLimit?: bigint } = {}
+    options: { blockRead?: { gasLimit: bigint } | "fail" } = {}
 ): Promise<{
     applies: RecordedFraudProofApply[];
     estimates: RecordedGasEstimate[];
@@ -105,12 +105,13 @@ export async function killWithScaledEstimate(
         methods: ["applyDisputeFraudProofs"],
         ...scale
     });
-    if (options.failBlockRead)
-        await h.control(killer).stub.stubReplayGasBlockRead(null).request();
-    if (options.blockGasLimit !== undefined)
+    const { blockRead } = options;
+    if (blockRead)
         await h
             .control(killer)
-            .stub.stubReplayGasBlockRead(String(options.blockGasLimit))
+            .stub.stubReplayGasBlockRead(
+                blockRead === "fail" ? null : String(blockRead.gasLimit)
+            )
             .request();
     await killStoredDisputeOnHost(h, killer.index);
     return {
