@@ -386,7 +386,9 @@ describe("Unit: bot-connection fixes", function () {
                         ).includes(leaver.address),
                     h.event.protocolEventTimeoutMs()
                 );
-                const results = await posts.results();
+                // the landing post records its result once its own wait
+                // returns, which can follow the chain's update
+                const results = await posts.resultsWait(await posts.started());
                 expect(results.at(-1)).to.equal("posted");
                 expect(results.slice(0, -1)).to.deep.equal(
                     results
@@ -968,7 +970,12 @@ describe("Unit: bot-connection fixes", function () {
                 expect(
                     await h.channelManager.getParticipants(h.channelId)
                 ).to.not.include(leaver.address);
-                expect((await posts.results()).at(-1)).to.equal("posted");
+                // the landing post records its result once its own wait
+                // returns, which can follow the leave
+                const started = await posts.started();
+                expect((await posts.resultsWait(started)).at(-1)).to.equal(
+                    "posted"
+                );
                 // a started exit is never retracted
                 expect(await readForceExit(h, leaver)).to.equal(true);
                 expect(await disputes.submissions()).to.deep.equal([]);
