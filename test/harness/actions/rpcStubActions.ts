@@ -479,7 +479,11 @@ export class RpcStubActions<
     async failMembershipReceipt(
         peerIndex: number,
         kind: HeldMembershipReceiptKind,
-        options: { once?: boolean; isReplayPassing?: boolean } = {}
+        options: {
+            once?: boolean;
+            isReplayPassing?: boolean;
+            isReceiptBlockNamed?: boolean;
+        } = {}
     ): Promise<() => Promise<number>> {
         const peer = this.harness.getPeer(peerIndex);
         await this.harness
@@ -487,7 +491,8 @@ export class RpcStubActions<
             .stub.failMembershipReceipt(
                 kind,
                 options.once ?? false,
-                options.isReplayPassing ?? false
+                options.isReplayPassing ?? false,
+                options.isReceiptBlockNamed ?? false
             )
             .request();
         return async () =>

@@ -64,6 +64,7 @@ import type {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import type { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import {
+    type BlockTag,
     type ContractTransactionResponse,
     getBytes,
     hexlify,
@@ -222,6 +223,12 @@ export type RecordedChainFollow = {
     call: "follow" | "unfollow";
     contract: string;
     channelKey: ChannelKey;
+};
+
+/** A replay of a failed membership submission: the block its receipt named, and the block tag the replay ran at (null for latest). */
+export type RecordedMembershipReplay = {
+    receiptBlock: number | null;
+    blockTag: BlockTag | null;
 };
 
 export type HeldLobbyReplyKind = "pick" | "commit";
@@ -974,6 +981,8 @@ export class StubService extends ANetworkRpcService<
     private openedStatusRefreshCallCount = 0;
     private heldMembershipReceipt?: HeldRpcReply;
     private heldMembershipReceiptKind?: HeldMembershipReceiptKind;
+    /** The passing replays of the failed submissions `failMembershipReceipt` made, in order. */
+    private membershipReplays: RecordedMembershipReplay[] = [];
     /** The latest call a membership submission hold let through. */
     private releasedMembershipSubmission?: Promise<unknown>;
     private heldJoinSendAfterEstimate?: HeldRpcReply;
@@ -3276,20 +3285,27 @@ export class StubService extends ANetworkRpcService<
      * `once` only the first, and later ones run for real. The replay of a
      * failed one reverts with no data, or with `isReplayPassing` runs the same
      * call on the real chain (nothing is sent). Every submission is counted
-     * in `getHeldMembershipReceiptCount`; none is held.
+     * in `getHeldMembershipReceiptCount`; none is held. With
+     * `isReceiptBlockNamed`, the failed receipt names the chain's block at the
+     * failure, and each passing replay is recorded in
+     * `getMembershipReplays` with that block and the block tag it ran at.
      */
     public failMembershipReceipt(
         kind: HeldMembershipReceiptKind,
         once = false,
-        isReplayPassing = false
+        isReplayPassing = false,
+        isReceiptBlockNamed = false
     ): void {
         const { contract, original } = this.captureMembershipMethod(kind);
         const submissions = this.countMembershipSubmissions(kind);
+        this.membershipReplays = [];
         Reflect.set(contract, kind, async (...parameters: unknown[]) => {
             submissions.entered += 1;
             if (once && submissions.entered > 1)
                 return Reflect.apply(original, contract, parameters);
-            if (isReplayPassing)
+            if (isReplayPassing) {
+                let receiptBlock: number | null = null;
+                const chain = this.chainProvider;
                 return {
                     to: await contract.getAddress(),
                     from: await this.sm.signer.getAddress(),
@@ -3298,11 +3314,25 @@ export class StubService extends ANetworkRpcService<
                         parameters
                     ),
                     value: 0n,
-                    provider: this.chainProvider,
+                    provider: {
+                        call: async (transaction: TransactionRequest) => {
+                            this.membershipReplays.push({
+                                receiptBlock,
+                                blockTag: transaction.blockTag ?? null
+                            });
+                            return chain.call(transaction);
+                        }
+                    },
                     wait: async () => {
-                        throw this.injectedReceiptFailure(kind);
+                        if (isReceiptBlockNamed)
+                            receiptBlock = await chain.getBlockNumber();
+                        throw this.injectedReceiptFailure(
+                            kind,
+                            receiptBlock ?? undefined
+                        );
                     }
                 };
+            }
             return {
                 // the replay of a reverting call reverts too
                 provider: {
@@ -3318,11 +3348,19 @@ export class StubService extends ANetworkRpcService<
     }
 
     /** A mined membership submission that reverted, with no revert data. */
-    private injectedReceiptFailure(kind: HeldMembershipReceiptKind): Error {
+    /** A mined, failed receipt's error; the receipt names `blockNumber` when given. */
+    private injectedReceiptFailure(
+        kind: HeldMembershipReceiptKind,
+        blockNumber?: number
+    ): Error {
         return Object.assign(new Error(`injected ${kind} receipt failure`), {
             code: "CALL_EXCEPTION",
-            receipt: { status: 0 }
+            receipt: { status: 0, blockNumber }
         });
+    }
+
+    public getMembershipReplays(): RecordedMembershipReplay[] {
+        return [...this.membershipReplays];
     }
 
     public landMembershipSubmissionThenFail(

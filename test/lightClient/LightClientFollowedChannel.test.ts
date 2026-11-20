@@ -35,6 +35,39 @@ describe("Light client followed channel", function () {
         fixture = undefined;
     });
 
+    it("takes a sync pushed before the subscription's id reached it and answers reads from it", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        const subscribeAnswers = proxy.holdReplies(SUBSCRIBE);
+
+        provider.followChannel(contract, CHANNEL_A);
+        // the node's first push for the new id goes out before the id does
+        await waitFor(
+            () =>
+                subscribeAnswers.heldReplies() === 1 &&
+                proxy.sentNotifications.some(
+                    ({ method }) => method === PUSHED_BLOCK
+                )
+        );
+        subscribeAnswers.release();
+        await fixture.pushedThrough(receipt.blockNumber + 1);
+        const requestsBefore = fixture.forwardedCount(...PROOF_REQUESTS);
+
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(7, 32)
+        );
+        expect(fixture.forwardedCount(...PROOF_REQUESTS)).to.equal(
+            requestsBefore
+        );
+        expect(provider.pushedStateCounters).to.deep.include({
+            refusedBlocks: 0,
+            resubscriptions: 0
+        });
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
     it("answers reads of a followed channel's partition from the pushed state without a request to the node", async function () {
         fixture = await LightClientProviderFixture.start();
         const { node, provider } = fixture;

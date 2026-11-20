@@ -609,7 +609,7 @@ Specification cases tested: 4/4.
 Specification cases tested: 5/5.
 
 [`REQ-LC-5-MM0BM9` (A followed channel is subscribed on every connection)](../specification/runtime/light-client.md#req-lc-5-mm0bm9)
-Specification cases tested: 8/8.
+Specification cases tested: 9/9.
 
 [`REQ-LC-7-W8WDN3` (A refused or ended subscription syncs again and is made known)](../specification/runtime/light-client.md#req-lc-7-w8wdn3)
 Specification cases tested: 2/2.

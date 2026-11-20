@@ -20,6 +20,7 @@ import type {
     RecordedDisputeSubmission,
     RecordedFraudProofApply,
     RecordedGasEstimate,
+    RecordedMembershipReplay,
     RecordedReplayGasRead,
     ReductionSimulationErrorName,
     RefusedUploadKind,
@@ -4250,10 +4251,20 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     public failMembershipReceipt(
         kind: HeldMembershipReceiptKind,
         once?: boolean,
-        isReplayPassing?: boolean
+        isReplayPassing?: boolean,
+        isReceiptBlockNamed?: boolean
     ): boolean {
-        this.service.failMembershipReceipt(kind, once, isReplayPassing);
+        this.service.failMembershipReceipt(
+            kind,
+            once,
+            isReplayPassing,
+            isReceiptBlockNamed
+        );
         return true;
+    }
+
+    public getMembershipReplays(): RecordedMembershipReplay[] {
+        return this.service.getMembershipReplays();
     }
 
     public landMembershipSubmissionThenFail(

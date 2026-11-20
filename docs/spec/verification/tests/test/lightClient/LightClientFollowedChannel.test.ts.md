@@ -13,6 +13,7 @@ the proxy saw: a read the pushed partition answers asks the endpoint nothing. It
 
 ## Tests
 
+- `takes a sync pushed before the subscription's id reached it and answers reads from it`: REQ-LC-5-MM0BM9.T1.P18
 - `answers reads of a followed channel's partition from the pushed state without a request to the node`: REQ-LC-9-KWXV43.T1.P1
 - `runs a call from the channel's sender over the pushed partition without a request to the node`: REQ-LC-9-KWXV43.T1.P2
 - `proves a read outside the partition at the pushed block, without asking for the best block`: REQ-LC-9-KWXV43.T1.P3

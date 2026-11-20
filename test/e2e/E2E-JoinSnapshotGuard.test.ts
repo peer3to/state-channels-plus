@@ -1261,6 +1261,37 @@ describe("E2E: join snapshot guard", function () {
         expect(joiner.eventSpies.onLeftChannel?.callCount ?? 0).to.equal(0);
     });
 
+    it("a connect's join whose mined submission reverts with no revert data in a block its receipt names is replayed at that block, and submitted again when the replay passes: true after two submissions, one replay tagged with the receipt's block", async function () {
+        const h = TestSession.getHarness();
+        const joiner = await h.scenario.syncSpectator();
+        await h.rpcStub.failMembershipReceipt(joiner.index, "joinChannel", {
+            once: true,
+            isReplayPassing: true,
+            isReceiptBlockNamed: true
+        });
+
+        expect(
+            await joiner.p2pInstance.p2pSigner.connectToChannel(h.channelId!, {
+                shouldJoin: true,
+                balance: { amount: 5n, data: "0x00" }
+            })
+        ).to.equal(true);
+
+        const replays = await h
+            .control(joiner)
+            .stub.getMembershipReplays()
+            .request();
+        expect(replays).to.have.length(1);
+        expect(replays[0].receiptBlock).to.be.a("number");
+        expect(replays[0].blockTag).to.equal(replays[0].receiptBlock);
+        expect(
+            await h
+                .control(joiner)
+                .stub.getHeldMembershipReceiptCount()
+                .request()
+        ).to.equal(2);
+    });
+
     it("a connect's join whose mined submission reverts with no revert data while its replay passes is submitted again, and that resubmission, estimated before another join lands and mined after it, is refused for the widened threshold set: it is collected again, countersigned by the landed joiner, and lands on its third submission with no abort", async function () {
         const h = TestSession.getHarness();
         const first = await h.scenario.syncSpectator();
