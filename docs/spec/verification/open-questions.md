@@ -8,10 +8,11 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 
 ## Index
 
-| ID                                               | Question                                                                            | Source                  | Affected documents                                            | Status |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------- | ------ |
-| [`OQ-4-JGDCNX`](open-questions.md#oq-4-jgdcnx)   | Dispute-reduction order-independence: proof and permutation testing                 | Specification analysis  | [protocol/disputes.md](../specification/disputes/disputes.md) | Open   |
-| [`OQ-46-YWF8AM`](open-questions.md#oq-46-ywf8am) | Gas usage: component-level evidence for an unused participant and a second contract | Implementation analysis | [runtime/sdk.md](../specification/runtime/sdk.md)             | Open   |
+| ID                                               | Question                                                                            | Source                  | Affected documents                                                      | Status |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------------- | ------ |
+| [`OQ-4-JGDCNX`](open-questions.md#oq-4-jgdcnx)   | Dispute-reduction order-independence: proof and permutation testing                 | Specification analysis  | [protocol/disputes.md](../specification/disputes/disputes.md)           | Open   |
+| [`OQ-46-YWF8AM`](open-questions.md#oq-46-ywf8am) | Gas usage: component-level evidence for an unused participant and a second contract | Implementation analysis | [runtime/sdk.md](../specification/runtime/sdk.md)                       | Open   |
+| [`OQ-47-8W9VT0`](open-questions.md#oq-47-8w9vt0) | Live light client evidence: no CI environment runs the peer3 node tests             | Verification analysis   | [runtime/storage-proofs.md](../specification/runtime/storage-proofs.md) | Open   |
 
 <a id="oq-4-jgdcnx"></a>
 
@@ -38,3 +39,21 @@ or prove and permutation-test independence including kills and slash-application
 [`REQ-SDK-ARCH-6-8DE4ER.T1.P1`](../specification/runtime/sdk.md#req-sdk-arch-6-8de4er.t1.p1) (a participant that sent nothing) and [`REQ-SDK-ARCH-6-8DE4ER.T1.P5`](../specification/runtime/sdk.md#req-sdk-arch-6-8de4er.t1.p5) (one selector on
 two contract addresses) keep component-level evidence on the pure table. A session has only one
 manager contract, so no existing fixture can drive either through a live participant.
+
+<a id="oq-47-8w9vt0"></a>
+
+## OQ-47-8W9VT0 — Live light client evidence outside CI
+
+The three tests of [`REQ-STPROOF-3-NVJGR0.T2`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2)
+([`P1`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2.p1) to
+[`P3`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2.p3)) start a peer3 dev
+node from `PEER3_NODE_BIN` and run only on the local runner with `--lc-tests`. CI runs the
+distributed gate, which leaves Mocha files marked `@distributed-requires: lightClient` out, and no
+worker protocol can run them. The register still counts T2 as tested, so a break on the live path
+(the node's proof format, the Frontier digest layout, the test sidecar) shows only when someone runs
+the suite by hand. [`REQ-STPROOF-3-NVJGR0.T1`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t1)
+keeps checking the proof logic in CI on recorded blocks.
+
+Engineer decision of 2026-11-20: accepted for now. The question closes when CI runs these tests,
+either through a CI job that fetches a pinned `zero-fee-node` and runs them on the local runner, or
+through a runner image that carries the binary (the farm rollout of the Light Clients card).
