@@ -208,11 +208,19 @@ jobs:
     browser:
         runs-on: ubuntu-latest
         timeout-minutes: 30
+        permissions:
+            contents: read
+            # the runner image copies the parachain node from a private GHCR package
+            packages: read
         steps:
             - name: Checkout repository
               uses: actions/checkout@v4
               with:
                   submodules: recursive
+            - name: Log in to GHCR
+              run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
             - name: Build the distributed runner image
               run: node scripts/e2e-parallel/distributed/buildRunnerImage.js --tag scp-runner:ci
             # The gates run where the browser tier runs on a worker: inside the
