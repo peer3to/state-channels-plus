@@ -12,6 +12,10 @@ const machineInterface = MathStateMachine__factory.createInterface();
 // default, so the local call gas is raised to twice the replay requirement.
 export const BUDGET_ABOVE_DEFAULT = 17_000_000n;
 
+// Its replay requirement is above the default MAX_TRANSACTION_GAS, so a
+// runtime on this budget starts only with a chain cap that admits it.
+export const TRANSACTION_CAP_ABOVE_BUDGET = Number(2n * BUDGET_ABOVE_DEFAULT);
+
 // For the default 500k budget and the default call gas: copying the input
 // runs the call's own frame out of gas before the stipend check.
 export const INPUT_ABOVE_DEFAULT_CALL_GAS = 4_096 * 1024;
@@ -156,7 +160,10 @@ export async function startWithTransitionBudget(
 ): Promise<bigint> {
     await h.lifecycle.start(3, 0, {
         stateMachineGasLimit: gasLimit,
-        configOverrides: { VM_DEDICATED_THREAD: vmDedicatedThread }
+        configOverrides: {
+            VM_DEDICATED_THREAD: vmDedicatedThread,
+            MAX_TRANSACTION_GAS: TRANSACTION_CAP_ABOVE_BUDGET
+        }
     });
     return h.channelManager.getStateTransitionReplayGas();
 }

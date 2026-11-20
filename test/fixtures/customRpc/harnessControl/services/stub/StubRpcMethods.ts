@@ -2989,7 +2989,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     /**
      * Answer the next latest-block read made by the dispute manager's gas
-     * limit (`replayGasLimit`) with the block's gas limit set to `gasLimit`
+     * limit (`fraudProofGasLimit`) with the block's gas limit set to `gasLimit`
      * (decimal), or reject it when `gasLimit` is null; every other read of
      * the shared provider passes.
      */
@@ -3003,7 +3003,10 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             provider,
             "getBlock",
             async (...args: Parameters<typeof getBlock>) => {
-                if (stubbed || !new Error().stack?.includes("replayGasLimit"))
+                if (
+                    stubbed ||
+                    !new Error().stack?.includes("fraudProofGasLimit")
+                )
                     return getBlock(...args);
                 stubbed = true;
                 this.service.replayGasBlockReadsStubbed += 1;

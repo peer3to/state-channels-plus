@@ -494,11 +494,11 @@ export type RecordedFraudProofApply = {
 /** Manager methods whose sends carry a fraud-proof replay. */
 export type ReplayGasEstimateMethod = "multicall" | "applyDisputeFraudProofs";
 
-/** One chain-signer estimate taken by the replay-gas estimate probe. */
+/** One chain estimate taken by the replay-gas estimate probe. */
 export type RecordedGasEstimate = {
     /** Manager method the estimated transaction calls. */
     method: ReplayGasEstimateMethod;
-    /** The signer's real estimate (its headroom included), decimal. */
+    /** The chain's real estimate, without the signer's headroom, decimal. */
     estimate: string;
     /** What the probe answered the caller, decimal. */
     answer: string;
@@ -925,7 +925,7 @@ export class StubService extends ANetworkRpcService<
     stateProofBuildCount = 0;
     // reductionManager.completeWithGenesis calls counted by stubCountCompleteWithGenesis
     completeWithGenesisCount = 0;
-    // replayGasLimit block reads answered by stubReplayGasBlockRead
+    // fraudProofGasLimit block reads answered by stubReplayGasBlockRead
     replayGasBlockReadsStubbed = 0;
     /** The state the state-mutex hold installed, while it is held. */
     stateMutexStateHold?: StateMutexStateHold;
@@ -1834,22 +1834,24 @@ export class StubService extends ANetworkRpcService<
         return entered;
     }
 
-    /** Wraps the manager contract's `estimateGas` under `key` until `restoreManagerEstimateGas(key)`. */
+    /**
+     * Wraps the chain provider's `estimateGas` under `key` until
+     * `restoreManagerEstimateGas(key)`. Every estimate of a manager call goes
+     * through it: the signer's, before its headroom, and a fraud-proof send's.
+     */
     private wrapManagerEstimateGas(
         key: StubKey,
         wrap: (estimateGas: EstimateGas) => EstimateGas
     ): void {
-        const runner = this.sm.stateChannelManagerContract.runner;
-        if (!runner?.estimateGas)
-            throw new Error("the manager contract's runner cannot estimate");
+        const provider = this.chainProvider;
         this.stubOriginals.set(
             key,
-            Object.getOwnPropertyDescriptor(runner, "estimateGas") ?? null
+            Object.getOwnPropertyDescriptor(provider, "estimateGas") ?? null
         );
         Reflect.set(
-            runner,
+            provider,
             "estimateGas",
-            wrap(runner.estimateGas.bind(runner))
+            wrap(provider.estimateGas.bind(provider))
         );
     }
 
@@ -1858,9 +1860,9 @@ export class StubService extends ANetworkRpcService<
         const original = this.stubOriginals.get(
             key
         ) as PropertyDescriptor | null;
-        const runner = this.sm.stateChannelManagerContract.runner!;
-        if (original) Object.defineProperty(runner, "estimateGas", original);
-        else Reflect.deleteProperty(runner, "estimateGas");
+        const provider = this.chainProvider;
+        if (original) Object.defineProperty(provider, "estimateGas", original);
+        else Reflect.deleteProperty(provider, "estimateGas");
         this.stubOriginals.delete(key);
         return true;
     }
@@ -5690,9 +5692,9 @@ export class StubService extends ANetworkRpcService<
     }
 
     /**
-     * Probe on this peer's chain-signer estimates for transactions calling
-     * one of `methods` on the manager: each estimate is taken by the real
-     * signer (its headroom included), recorded, and answered scaled by
+     * Probe on this peer's chain estimates for transactions calling one of
+     * `methods` on the manager: each estimate is taken by the real chain
+     * (without the signer's headroom), recorded, and answered scaled by
      * `numerator / denominator`. Scaling stands in for an estimator that
      * reports a different figure for the same transaction (a spent-gas
      * estimator answers below the replay requirement, a searching one at or
@@ -5736,63 +5738,54 @@ export class StubService extends ANetworkRpcService<
     }
 
     /**
-     * Probe on this peer's chain-signer estimates of a dispute multicall. The
+     * Probe on this peer's chain estimates of a dispute multicall. The
      * all-or-nothing `multicall` estimate is taken for real and recorded with
-     * its refusal. The `multicallBestEffortLast` estimate is answered so that,
-     * once the dispute adds the manager's replay requirement, the gas limit
-     * is the least at which the best-effort call succeeds: a searching
-     * estimator with no headroom. The search replays the call on the chain.
-     * Other estimates pass through unrecorded.
+     * its refusal. The `multicallBestEffortLast` estimate is answered with
+     * the least gas at which the best-effort call succeeds: a searching
+     * estimator. The search replays the call on the chain. Other estimates
+     * pass through unrecorded.
      */
     public installMinimumBestEffortEstimate(): void {
         const contract = this.sm.stateChannelManagerContract;
-        const runner = contract.runner;
-        if (!runner?.estimateGas)
-            throw new Error("the manager contract's runner cannot estimate");
         this.restoreMinimumBestEffortEstimate();
-        this.stubOriginals.set(
-            "bestEffortEstimates",
-            Object.getOwnPropertyDescriptor(runner, "estimateGas") ?? null
-        );
-        const estimateGas = runner.estimateGas.bind(runner);
         const multicall = contract.interface.getFunction("multicall").selector;
         const bestEffort = contract.interface.getFunction(
             "multicallBestEffortLast"
         ).selector;
         this.recordedBestEffortEstimates.length = 0;
-        Reflect.set(
-            runner,
-            "estimateGas",
-            async (tx: TransactionRequest): Promise<bigint> => {
-                const selector = String(tx.data).slice(0, 10);
-                if (selector === multicall) {
-                    const estimate = estimateGas(tx);
-                    const refusal = await estimate.then(
-                        () => null,
-                        (error: unknown) =>
-                            tryDecodeCustomError(error)?.name ?? String(error)
+        this.wrapManagerEstimateGas(
+            "bestEffortEstimates",
+            (estimateGas) =>
+                async (tx: TransactionRequest): Promise<bigint> => {
+                    const selector = String(tx.data).slice(0, 10);
+                    if (selector === multicall) {
+                        const estimate = estimateGas(tx);
+                        const refusal = await estimate.then(
+                            () => null,
+                            (error: unknown) =>
+                                tryDecodeCustomError(error)?.name ??
+                                String(error)
+                        );
+                        this.recordedBestEffortEstimates.push({
+                            method: "multicall",
+                            refusal,
+                            answer:
+                                refusal === null ? String(await estimate) : null
+                        });
+                        return estimate;
+                    }
+                    if (selector !== bestEffort) return estimateGas(tx);
+                    const least = await this.leastSucceedingGas(
+                        tx,
+                        await estimateGas(tx)
                     );
                     this.recordedBestEffortEstimates.push({
-                        method: "multicall",
-                        refusal,
-                        answer: refusal === null ? String(await estimate) : null
+                        method: "multicallBestEffortLast",
+                        refusal: null,
+                        answer: String(least)
                     });
-                    return estimate;
+                    return least;
                 }
-                if (selector !== bestEffort) return estimateGas(tx);
-                const least = await this.leastSucceedingGas(
-                    tx,
-                    await estimateGas(tx)
-                );
-                const answer =
-                    least - (await contract.getStateTransitionReplayGas());
-                this.recordedBestEffortEstimates.push({
-                    method: "multicallBestEffortLast",
-                    refusal: null,
-                    answer: String(answer)
-                });
-                return answer;
-            }
         );
     }
 
@@ -5819,15 +5812,7 @@ export class StubService extends ANetworkRpcService<
     }
 
     public restoreMinimumBestEffortEstimate(): boolean {
-        if (!this.stubOriginals.has("bestEffortEstimates")) return false;
-        const original = this.stubOriginals.get(
-            "bestEffortEstimates"
-        ) as PropertyDescriptor | null;
-        const runner = this.sm.stateChannelManagerContract.runner!;
-        if (original) Object.defineProperty(runner, "estimateGas", original);
-        else Reflect.deleteProperty(runner, "estimateGas");
-        this.stubOriginals.delete("bestEffortEstimates");
-        return true;
+        return this.restoreManagerEstimateGas("bestEffortEstimates");
     }
 
     /**

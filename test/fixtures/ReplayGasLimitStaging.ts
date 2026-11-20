@@ -8,11 +8,12 @@ import type {
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import type { ForkId } from "@/types/types";
 import { Codec, Type, hash, sleep } from "@/utils";
+import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { expect } from "chai";
 
-/** Estimate scale as a fraction of the chain signer's real estimate. */
+/** Estimate scale as a fraction of the chain's real estimate, without headroom. */
 export type EstimateScale = { numerator: number; denominator: number };
 
 /** Run `dispute()` on a peer's host for the active fork. */
@@ -51,8 +52,8 @@ export async function killStoredDisputeOnHost(
 /**
  * A settled fork whose peer 0 holds an invalid-transition fraud proof, so its
  * `dispute()` sends the fraud-proof multicall. The upload is recorded, not
- * sent (a real one derails the session); the chain signer's estimate for it
- * is answered scaled by `scale`.
+ * sent (a real one derails the session); the chain's estimate for it is
+ * answered scaled by `scale`.
  */
 export async function disputeWithScaledEstimate(
     h: MathPeerTestHarness,
@@ -79,23 +80,20 @@ export async function disputeWithScaledEstimate(
 }
 
 /**
- * A committed spam dispute the killer holds a dispute fraud proof against;
- * the killer's `killDispute` sends the real `applyDisputeFraudProofs`, with
- * the chain signer's estimate for it answered scaled by `scale`. The kill's
- * latest-block read fails (`"fail"`) or answers `blockRead.gasLimit` as the
- * block's gas limit.
+ * A committed spam dispute the killer holds a dispute fraud proof against,
+ * whose check replays no transition; the killer's `killDispute` sends the
+ * real `applyDisputeFraudProofs`, with the chain's estimate for it answered
+ * scaled by `scale`.
  */
 export async function killWithScaledEstimate(
     h: MathPeerTestHarness,
-    scale: EstimateScale,
-    options: { blockRead?: { gasLimit: bigint } | "fail" } = {}
+    scale: EstimateScale
 ): Promise<{
+    storedProofTypes: number[];
     applies: RecordedFraudProofApply[];
     estimates: RecordedGasEstimate[];
-    replayGas: bigint;
     slashed: string[];
     spammer: string;
-    stubbedBlockReads: number;
 }> {
     const { killer, spammer } = await h.scenario.stageUnkilledSpamDispute();
     const recorded = await h.rpcStub.recordDisputeFraudProofApplies(
@@ -105,26 +103,30 @@ export async function killWithScaledEstimate(
         methods: ["applyDisputeFraudProofs"],
         ...scale
     });
-    const { blockRead } = options;
-    if (blockRead)
-        await h
-            .control(killer)
-            .stub.stubReplayGasBlockRead(
-                blockRead === "fail" ? null : String(blockRead.gasLimit)
-            )
-            .request();
     await killStoredDisputeOnHost(h, killer.index);
     return {
+        storedProofTypes: await storedDisputeFraudProofTypes(h, killer.index),
         applies: await recorded.applies(),
         estimates: await estimates.estimates(),
-        replayGas: await h.channelManager.getStateTransitionReplayGas(),
         slashed: await h.query.onChainSlashedParticipants(),
-        spammer: spammer.address,
-        stubbedBlockReads: await h
-            .control(killer)
-            .stub.getStubbedReplayGasBlockReads()
-            .request()
+        spammer: spammer.address
     };
+}
+
+/** Solidity proof types of the dispute fraud proofs a peer stored. */
+async function storedDisputeFraudProofTypes(
+    h: MathPeerTestHarness,
+    peerIndex: number
+): Promise<number[]> {
+    return h.execOnHost(
+        h.getPeer(peerIndex),
+        async (sm) =>
+            sm.storage.disputeFraudProofs
+                .getDisputeFraudProofs()
+                .map((proof) => Number(proof.proofType)),
+        {},
+        { timeoutMs: h.event.hostExecTimeoutMs() }
+    );
 }
 
 /** Whether `dispute` is still committed in its fork's on-chain window. */
@@ -144,26 +146,26 @@ async function isDisputeCommittedOnChain(
  * who posted that block's calldata on-chain because peer 3 could not confirm
  * it. The killer (peer 0) refutes it with a TimeoutCalldataPosted dispute
  * fraud proof, whose check replays the posted block's transition on-chain.
- * Every peer's automatic kill is suppressed until the killer stored its proof;
- * the killer's `killDispute` then sends the real `applyDisputeFraudProofs`,
- * with the chain signer's estimate for it answered scaled by `scale`.
+ * Every peer's automatic kill is suppressed until the killer stored its proof,
+ * then the killer's `killDispute` is restored so a test can drive the kill.
+ * `beforeDispute` runs on the healthy fork, before the timeout dispute.
  */
-export async function killTimeoutCalldataRefutationWithScaledEstimate(
+export async function stageUnkilledTimeoutCalldataDispute(
     h: MathPeerTestHarness,
-    scale: EstimateScale
+    options: {
+        stateMachineGasLimit?: number;
+        beforeDispute?: () => Promise<void>;
+    } = {}
 ): Promise<{
-    storedProofTypes: number[];
-    applies: RecordedFraudProofApply[];
-    estimates: RecordedGasEstimate[];
-    replayGas: bigint;
-    slashed: string[];
-    disputer: string;
-    committedAfterKill: boolean;
+    killerIndex: number;
+    disputerIndex: number;
+    dispute: DisputeStruct;
 }> {
     const killerIndex = 0;
     const disputerIndex = 3;
-    await h.lifecycle.timeoutSetup(4, 0, {
-        timeConfig: { evidenceTime: 12 }
+    await h.lifecycle.start(4, 0, {
+        timeConfig: resolveTestTimeConfig({ evidenceTime: 12 }),
+        stateMachineGasLimit: options.stateMachineGasLimit
     });
     // height 1 exists, so the posted block gets no first-block grace
     await h.transition.advanceState({ count: 2 });
@@ -194,6 +196,7 @@ export async function killTimeoutCalldataRefutationWithScaledEstimate(
     await sleep(h.event.evidencePeriodWaitMs());
     h.contextApi.captureOriginalFork();
     h.event.resetEventSpies();
+    await options.beforeDispute?.();
 
     const kills = await Promise.all(
         h.peers.map((peer) => h.rpcStub.suppressDisputeKill(peer.index))
@@ -215,22 +218,52 @@ export async function killTimeoutCalldataRefutationWithScaledEstimate(
         await isDisputeCommittedOnChain(h, dispute),
         "the timeout dispute is committed before the kill"
     ).to.equal(true);
+    return { killerIndex, disputerIndex, dispute };
+}
 
-    const storedProofTypes = await h.execOnHost(
-        h.getPeer(killerIndex),
-        async (sm) =>
-            sm.storage.disputeFraudProofs
-                .getDisputeFraudProofs()
-                .map((proof) => Number(proof.proofType)),
-        {},
-        { timeoutMs: h.event.hostExecTimeoutMs() }
-    );
+/**
+ * The killer's `killDispute` of the staged timeout dispute (see
+ * stageUnkilledTimeoutCalldataDispute) sends the real
+ * `applyDisputeFraudProofs`, with the chain's estimate for it answered scaled
+ * by `scale`. The kill's latest-block read fails (`"fail"`) or answers
+ * `blockRead.gasLimit` as the block's gas limit.
+ */
+export async function killTimeoutCalldataRefutationWithScaledEstimate(
+    h: MathPeerTestHarness,
+    scale: EstimateScale,
+    options: {
+        blockRead?: { gasLimit: bigint } | "fail";
+        stateMachineGasLimit?: number;
+    } = {}
+): Promise<{
+    storedProofTypes: number[];
+    applies: RecordedFraudProofApply[];
+    estimates: RecordedGasEstimate[];
+    replayGas: bigint;
+    slashed: string[];
+    disputer: string;
+    committedAfterKill: boolean;
+    stubbedBlockReads: number;
+}> {
+    const { killerIndex, disputerIndex, dispute } =
+        await stageUnkilledTimeoutCalldataDispute(h, {
+            stateMachineGasLimit: options.stateMachineGasLimit
+        });
+    const storedProofTypes = await storedDisputeFraudProofTypes(h, killerIndex);
     const recorded =
         await h.rpcStub.recordDisputeFraudProofApplies(killerIndex);
     const estimates = await h.rpcStub.scaleReplayGasEstimates(killerIndex, {
         methods: ["applyDisputeFraudProofs"],
         ...scale
     });
+    const killer = h.control(h.getPeer(killerIndex)).stub;
+    const { blockRead } = options;
+    if (blockRead)
+        await killer
+            .stubReplayGasBlockRead(
+                blockRead === "fail" ? null : String(blockRead.gasLimit)
+            )
+            .request();
     await killStoredDisputeOnHost(h, killerIndex);
     return {
         storedProofTypes,
@@ -239,18 +272,21 @@ export async function killTimeoutCalldataRefutationWithScaledEstimate(
         replayGas: await h.channelManager.getStateTransitionReplayGas(),
         slashed: await h.query.onChainSlashedParticipants(),
         disputer: h.getPeer(disputerIndex).address,
-        committedAfterKill: await isDisputeCommittedOnChain(h, dispute)
+        committedAfterKill: await isDisputeCommittedOnChain(h, dispute),
+        stubbedBlockReads: await killer
+            .getStubbedReplayGasBlockReads()
+            .request()
     };
 }
 
 /**
- * One peer sends both fraud-proof transactions: its dispute (the fraud-proof
- * multicall, recorded instead of sent) and its kill of a committed spam
- * dispute (sent for real), with every read of the manager's replay
- * requirement recorded. The transition fraud proof is stored on the healthy
- * fork, before the spam dispute; the killer's dispute may already be sent by
- * its own audit of the spam dispute, so the explicit `dispute()` below is a
- * no-op then.
+ * One peer sends both replaying fraud-proof transactions: its dispute (the
+ * fraud-proof multicall, recorded instead of sent) and its kill of the staged
+ * timeout dispute (sent for real, see stageUnkilledTimeoutCalldataDispute),
+ * with every read of the manager's replay requirement recorded. The
+ * transition fraud proof is stored on the healthy fork, before the timeout
+ * dispute; the killer's dispute may already be sent by its own audit of the
+ * timeout dispute, so the explicit `dispute()` below is a no-op then.
  */
 export async function disputeThenKillRecordingReads(
     h: MathPeerTestHarness
@@ -261,14 +297,14 @@ export async function disputeThenKillRecordingReads(
     replayGas: bigint;
 }> {
     const killerIndex = 0;
-    const { killer } = await h.scenario.stageUnkilledSpamDispute({
-        killerIndex,
+    await stageUnkilledTimeoutCalldataDispute(h, {
         beforeDispute: async () => {
             await h.rpcStub.recordReplayGasReads(killerIndex);
             await h.rpcStub.recordDisputeSubmissions(killerIndex);
             await h.byzantine.storeInvalidTransitionFraudProof(killerIndex);
         }
     });
+    const killer = h.getPeer(killerIndex);
     const applies = await h.rpcStub.recordDisputeFraudProofApplies(
         killer.index
     );
@@ -286,12 +322,12 @@ export async function disputeThenKillRecordingReads(
 
 /**
  * One peer's dispute (the fraud-proof multicall, recorded instead of sent)
- * and its kill of a committed spam dispute (sent for real) run concurrently
- * while the manager's replay-requirement read is held. `whileHeld` is taken
+ * and its kill of the staged timeout dispute (sent for real), both replaying,
+ * run concurrently while the manager's replay-requirement read is held. `whileHeld` is taken
  * once both sends have asked for their gas limit (each send's estimate is
  * taken beside the requirement read, so a recorded estimate means its send
  * waits on the requirement) and before the read is released. Estimates are
- * the signer's real ones, recorded.
+ * the chain's real ones, recorded.
  */
 export async function disputeAndKillSharingHeldRead(
     h: MathPeerTestHarness
@@ -308,8 +344,7 @@ export async function disputeAndKillSharingHeldRead(
     replayGas: bigint;
 }> {
     const killerIndex = 0;
-    const { killer } = await h.scenario.stageUnkilledSpamDispute({
-        killerIndex,
+    await stageUnkilledTimeoutCalldataDispute(h, {
         beforeDispute: async () => {
             await h.rpcStub.recordReplayGasReads(killerIndex, { hold: true });
             await h.rpcStub.recordDisputeSubmissions(killerIndex);
@@ -321,6 +356,7 @@ export async function disputeAndKillSharingHeldRead(
             await h.byzantine.storeInvalidTransitionFraudProof(killerIndex);
         }
     });
+    const killer = h.getPeer(killerIndex);
     const applies = await h.rpcStub.recordDisputeFraudProofApplies(
         killer.index
     );

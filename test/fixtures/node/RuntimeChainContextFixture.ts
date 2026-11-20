@@ -187,6 +187,47 @@ export async function assertStartupReplayGasReadFailure(
     }
 }
 
+/**
+ * Real runtime startup against the Math manager with MAX_TRANSACTION_GAS set
+ * `offset` gas from the manager's replay requirement. Returns that
+ * requirement and the startup failure, or undefined when the runtime started
+ * (it is disposed again).
+ */
+export async function startWithTransactionCapFromReplayGas(
+    offset: bigint
+): Promise<{ replayGas: bigint; failure: unknown }> {
+    await startRuntimeTransportModesFixture();
+    try {
+        const setup = await prepareRuntimeSetup({
+            runSdkInThread: false,
+            vmDedicatedThread: false,
+            readyOptions: {}
+        });
+        const replayGas = await setup.scm.getStateTransitionReplayGas();
+        let failure: unknown;
+        try {
+            const instance = await setupP2pRuntime(
+                setup.scm,
+                setup.deployedStateMachine,
+                setup.deployStateMachine,
+                {
+                    ...setup.setupOptions,
+                    config: {
+                        ...setup.setupOptions.config,
+                        MAX_TRANSACTION_GAS: Number(replayGas + offset)
+                    }
+                }
+            );
+            await instance.dispose();
+        } catch (error) {
+            failure = error;
+        }
+        return { replayGas, failure };
+    } finally {
+        await stopRuntimeTransportModesFixture();
+    }
+}
+
 export async function assertSubscriptionCleanup(
     subscribed: boolean
 ): Promise<void> {

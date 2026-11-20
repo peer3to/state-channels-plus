@@ -10,7 +10,10 @@ import {
 } from "@/evm/contractExecutor/ContractExecutor";
 import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import { EVM } from "@ethereumjs/evm";
-import { assertStartupReplayGasReadFailure } from "@test/fixtures/node/RuntimeChainContextFixture";
+import {
+    assertStartupReplayGasReadFailure,
+    startWithTransactionCapFromReplayGas
+} from "@test/fixtures/node/RuntimeChainContextFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
@@ -123,5 +126,19 @@ describe("ContractExecutor call gas", function () {
 
     it("a rejected startup replay requirement read rejects readiness, ends the dedicated executor thread it started, and closes the runtime", async function () {
         await assertStartupReplayGasReadFailure(true);
+    });
+
+    it("a replay requirement one gas above MAX_TRANSACTION_GAS rejects readiness naming both figures", async function () {
+        const { replayGas, failure } =
+            await startWithTransactionCapFromReplayGas(-1n);
+        expect(failure).to.be.instanceOf(Error);
+        expect((failure as Error).message).to.include(
+            `State transition replay requirement ${replayGas} exceeds MAX_TRANSACTION_GAS ${replayGas - 1n}`
+        );
+    });
+
+    it("a replay requirement equal to MAX_TRANSACTION_GAS starts the runtime", async function () {
+        const { failure } = await startWithTransactionCapFromReplayGas(0n);
+        expect(failure).to.equal(undefined);
     });
 });
