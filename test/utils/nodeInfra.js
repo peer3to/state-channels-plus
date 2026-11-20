@@ -28,6 +28,12 @@ const { resolveProjectHardhatCli } = require(
     )
 );
 const HARDHAT_CLI = resolveProjectHardhatCli(PROJECT_ROOT);
+// Each peer3 node keeps its database in a directory of its own under here.
+const PEER3_NODES_DIR = path.join(PROJECT_ROOT, "temp", "peer3-nodes");
+// The file in a peer3 node's directory that names the node's process.
+const PEER3_NODE_PID_FILE = "node.pid";
+// How many lines of a node's output an error that it failed to start carries.
+const OUTPUT_TAIL_LINES = 50;
 const DISCOVERY_SCRIPT = path.join(
     PACKAGE_ROOT,
     "scripts",
@@ -78,10 +84,19 @@ async function startDhtBootstrapper(host, { port, attempts = 20 } = {}) {
     }
 }
 
-/** Poll a node's RPC endpoint until it responds or the timeout expires. */
-async function waitForHardhatNode(url, timeoutMs = 30000) {
+/**
+ * Poll a node's RPC endpoint until it responds or the timeout expires. Polling
+ * ends early, without an error, once `signal` aborts.
+ */
+async function waitForHardhatNode(
+    url,
+    timeoutMs = 30000,
+    label = "Hardhat node",
+    signal = undefined
+) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
+        if (signal?.aborted) return;
         const ready = await new Promise((resolve) => {
             const req = http.request(
                 url,
@@ -103,7 +118,7 @@ async function waitForHardhatNode(url, timeoutMs = 30000) {
         if (ready) return;
         await new Promise((r) => setTimeout(r, 250));
     }
-    throw new Error(`Hardhat node not ready at ${url} within ${timeoutMs}ms`);
+    throw new Error(`${label} not ready at ${url} within ${timeoutMs}ms`);
 }
 
 function pipeLogs(child, logPath) {
@@ -159,17 +174,17 @@ async function startHardhatNode({
  * Spawn the peer3 dev node at `PEER3_NODE_BIN` (on `port` or a free one), wait
  * until its RPC is ready, and return `{ proc, url, stop }`. The node seals a
  * block every block time on the funded test chain and keeps its database in a
- * directory of its own, removed when it exits.
+ * directory of its own. The directory is removed when the node exits, or by a
+ * later start when the process that would have removed it was killed first.
  */
 async function startPeer3Node({ port, logPath, label = "peer3 node" } = {}) {
     const nodeBin = process.env.PEER3_NODE_BIN;
     if (!nodeBin) throw new Error("PEER3_NODE_BIN names no peer3 node binary");
     const nodePort = port ?? (await getFreePort());
     // --dev alone keeps the database in the system temp dir and leaves it there
-    const nodesDir = path.join(PROJECT_ROOT, "temp", "peer3-nodes");
-    fs.mkdirSync(nodesDir, { recursive: true });
-    const basePath = fs.mkdtempSync(path.join(nodesDir, "node-"));
-    const output = logPath ? "pipe" : "ignore";
+    fs.mkdirSync(PEER3_NODES_DIR, { recursive: true });
+    removeDeadPeer3NodeDirs();
+    const basePath = fs.mkdtempSync(path.join(PEER3_NODES_DIR, "node-"));
     const proc = spawn(
         nodeBin,
         [
@@ -192,19 +207,70 @@ async function startPeer3Node({ port, logPath, label = "peer3 node" } = {}) {
             "--no-telemetry",
             "--no-hardware-benchmarks"
         ],
-        // the node logs every block, and an unread pipe would fill and stall it
-        { cwd: PROJECT_ROOT, stdio: ["ignore", output, output] }
+        { cwd: PROJECT_ROOT, stdio: ["ignore", "pipe", "pipe"] }
     );
     const removeBasePath = () =>
         fs.rmSync(basePath, { recursive: true, force: true });
     proc.once("exit", removeBasePath);
     // a binary that cannot be spawned emits no exit
     proc.once("error", removeBasePath);
-    return nodeHandleWhenReady(proc, nodePort, { logPath, label });
+    if (proc.pid !== undefined)
+        fs.writeFileSync(
+            path.join(basePath, PEER3_NODE_PID_FILE),
+            String(proc.pid)
+        );
+    // the node logs every block, and an unread pipe would fill and stall it
+    const outputTail = logPath ? undefined : keepOutputTail(proc);
+    return nodeHandleWhenReady(proc, nodePort, { logPath, label, outputTail });
+}
+
+/**
+ * Removes the database directory of every peer3 node whose process is gone. A
+ * directory without a process id is one whose node is being started right now.
+ */
+function removeDeadPeer3NodeDirs() {
+    for (const entry of fs.readdirSync(PEER3_NODES_DIR)) {
+        const dir = path.join(PEER3_NODES_DIR, entry);
+        let pid;
+        try {
+            pid = Number(
+                fs.readFileSync(path.join(dir, PEER3_NODE_PID_FILE), "utf8")
+            );
+        } catch {
+            continue;
+        }
+        if (!isProcessAlive(pid))
+            fs.rmSync(dir, { recursive: true, force: true });
+    }
+}
+
+function isProcessAlive(pid) {
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (error) {
+        // EPERM: the process exists and belongs to another user
+        return error.code === "EPERM";
+    }
+}
+
+/**
+ * Drains a child's stdout and stderr and keeps their last lines, so that an
+ * error can say what the child printed before it failed.
+ */
+function keepOutputTail(child) {
+    const lines = [];
+    const keep = (chunk) => {
+        lines.push(...chunk.toString().split("\n").filter(Boolean));
+        lines.splice(0, Math.max(0, lines.length - OUTPUT_TAIL_LINES));
+    };
+    child.stdout?.on("data", keep);
+    child.stderr?.on("data", keep);
+    return () => lines.join("\n");
 }
 
 /** The handle of a spawned node once its RPC on `nodePort` answers. */
-function nodeHandleWhenReady(proc, nodePort, { logPath, label }) {
+function nodeHandleWhenReady(proc, nodePort, { logPath, label, outputTail }) {
     let resolveExit;
     const exited = new Promise((resolve) => {
         resolveExit = resolve;
@@ -223,15 +289,31 @@ function nodeHandleWhenReady(proc, nodePort, { logPath, label }) {
         if (!proc.killed) proc.kill("SIGTERM");
     };
 
+    // a node that exits or cannot start ends the readiness polling
+    const polling = new AbortController();
+    proc.once("exit", () => polling.abort());
+    proc.once("error", () => polling.abort());
+
     return new Promise((resolve, reject) => {
         let settled = false;
+        const withOutput = (message) =>
+            outputTail
+                ? `${message}; its last output:\n${outputTail()}`
+                : message;
         proc.on("exit", (code) => {
-            if (!settled) {
-                settled = true;
+            if (settled) return;
+            settled = true;
+            const fail = () =>
                 reject(
-                    new Error(`${label} exited with code ${code} before ready`)
+                    new Error(
+                        withOutput(
+                            `${label} exited with code ${code} before ready`
+                        )
+                    )
                 );
-            }
+            // its output can still be on the way when it exits
+            if (outputTail) proc.once("close", fail);
+            else fail();
         });
         proc.on("error", (err) => {
             logStream?.end();
@@ -240,7 +322,7 @@ function nodeHandleWhenReady(proc, nodePort, { logPath, label }) {
                 reject(err);
             }
         });
-        waitForHardhatNode(url).then(
+        waitForHardhatNode(url, undefined, label, polling.signal).then(
             () =>
                 settled ||
                 ((settled = true),
@@ -249,7 +331,7 @@ function nodeHandleWhenReady(proc, nodePort, { logPath, label }) {
                 if (!settled) {
                     settled = true;
                     stop();
-                    reject(err);
+                    reject(new Error(withOutput(err.message)));
                 }
             }
         );

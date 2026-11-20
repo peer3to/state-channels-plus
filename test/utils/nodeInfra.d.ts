@@ -70,7 +70,9 @@ export function startPeer3Node(
 ): Promise<NodeHandle>;
 export function waitForHardhatNode(
     url: string,
-    timeoutMs?: number
+    timeoutMs?: number,
+    label?: string,
+    signal?: AbortSignal
 ): Promise<void>;
 export function startDiscoveryRegistry(
     opts?: StartInfraOptions

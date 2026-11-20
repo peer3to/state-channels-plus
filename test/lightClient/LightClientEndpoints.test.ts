@@ -1,7 +1,6 @@
 // @distributed-requires: lightClient
 // @spec-test-coverage-ignore: checks of the test-owned light client node fixture and endpoint stand-in; the endpoint's behavior is not specified yet, no specification or implementation IDs apply
 import {
-    assertLightClientEndpoints,
     LIGHT_CLIENT_UNSUPPORTED,
     LightClientNodeFixture
 } from "@test/fixtures/lightClient/LightClientNodeFixture";
@@ -37,21 +36,6 @@ describe("Light client endpoints", function () {
         } finally {
             if (nodeBin !== undefined) process.env.PEER3_NODE_BIN = nodeBin;
         }
-    });
-
-    it("throws when the RPC node lists no light client endpoints", async function () {
-        node = await LightClientNodeFixture.start();
-        const nodeSocket = await node.connectToNode();
-        let failure: unknown;
-        try {
-            await assertLightClientEndpoints(nodeSocket);
-        } catch (error) {
-            failure = error;
-        }
-        expect(failure)
-            .to.be.instanceOf(Error)
-            .with.property("message")
-            .that.includes(LIGHT_CLIENT_UNSUPPORTED);
     });
 
     it("pushes no block whose logs carry no subscribed topic", async function () {

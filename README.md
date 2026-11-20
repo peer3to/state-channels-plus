@@ -379,7 +379,7 @@ discovered only with `--lc-tests`; the legacy `yarn test` leaves
 `test/lightClient` out.
 
 ```shell
-PEER3_NODE_BIN=/path/to/zero-fee-node yarn test:parallel --lc-tests --mocha-test-pattern "lightClient/*.ts"
+PEER3_NODE_BIN=/path/to/zero-fee-node yarn test:parallel --lc-tests --no-forge --mocha-test-pattern "lightClient/*.ts"
 ```
 
 `PEER3_NODE_BIN` names a peer3 node binary (`zero-fee-node` of
@@ -762,7 +762,7 @@ Enable them explicitly, including when using `--grep`:
 yarn test:parallel:distributed --test-parallel-script
 yarn test:parallel:distributed --test-browser
 yarn test:parallel:distributed --test-parallel-script --test-browser
-PEER3_NODE_BIN=/path/to/zero-fee-node yarn test:parallel --lc-tests
+PEER3_NODE_BIN=/path/to/zero-fee-node yarn test:parallel --lc-tests --no-forge --mocha-test-pattern "lightClient/*.ts"
 ```
 
 CI passes the first two flags for the full test gate; see

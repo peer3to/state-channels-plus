@@ -341,7 +341,8 @@ with the suite still green.
   is fully typed — a removed/renamed field is a compile error, your free
   checklist).
 - Canonical full gate: `yarn test:parallel:distributed`, which runs the Mocha,
-  forge and browser tiers. Add `--e2e-only` to run only E2E tests (it drops the
+  forge and browser tiers. Mocha files marked `@distributed-requires: lightClient`
+  are left out of it and of CI; they run only locally with `--lc-tests`. Add `--e2e-only` to run only E2E tests (it drops the
   forge and browser tiers), or `--grep <regexp>` for the narrowest relevant
   task.
 - Browser gates and Mocha files marked `// @distributed-requires: browser` need
