@@ -190,7 +190,11 @@ describe("FrontierPushedPartition", function () {
             { ...messages[0], sync: "true" },
             { ...messages[0], ethereumHeader: undefined },
             { ...messages[0], proofNodes: [7] },
-            { ...messages[1], values: [{ key: "0x00" }] }
+            { ...messages[1], values: [{ key: "0x00" }] },
+            // hex that is not whole bytes
+            { ...messages[0], ethereumHeader: "0x123" },
+            { ...messages[1], values: [{ key: "0x123", value: null }] },
+            { ...messages[1], proofNodes: [...messages[1].proofNodes, "0x123"] }
         ];
         for (const message of malformed)
             expect(

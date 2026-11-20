@@ -23,9 +23,11 @@ import AProvenStateReader, {
     type ProvenBlock
 } from "../AProvenStateReader";
 import StorageProofError from "../StorageProofError";
+import { isHexString } from "ethers";
 
-function isHexString(value: unknown): value is string {
-    return typeof value === "string" && /^0x[0-9a-f]*$/i.test(value);
+/** Whether `value` is hex of whole bytes, as every hash, log and proof node is. */
+function isBytes(value: unknown): value is string {
+    return isHexString(value, true);
 }
 
 function isHeader(answer: unknown): answer is SubstrateHeaderJson {
@@ -33,12 +35,12 @@ function isHeader(answer: unknown): answer is SubstrateHeaderJson {
     return (
         typeof header === "object" &&
         header !== null &&
-        isHexString(header.parentHash) &&
+        isBytes(header.parentHash) &&
         isHexString(header.number) &&
-        isHexString(header.stateRoot) &&
-        isHexString(header.extrinsicsRoot) &&
+        isBytes(header.stateRoot) &&
+        isBytes(header.extrinsicsRoot) &&
         Array.isArray(header.digest?.logs) &&
-        header.digest.logs.every(isHexString)
+        header.digest.logs.every(isBytes)
     );
 }
 
@@ -62,16 +64,16 @@ export function isStorageBlock(
         typeof block === "object" &&
         block !== null &&
         isHeader(block.header) &&
-        isHexString(block.ethereumHeader) &&
+        isBytes(block.ethereumHeader) &&
         typeof block.sync === "boolean" &&
         Array.isArray(block.values) &&
         block.values.every(
             (entry) =>
-                isHexString(entry?.key) &&
-                (entry.value === null || isHexString(entry.value))
+                isBytes(entry?.key) &&
+                (entry.value === null || isBytes(entry.value))
         ) &&
         Array.isArray(block.proofNodes) &&
-        block.proofNodes.every(isHexString) &&
+        block.proofNodes.every(isBytes) &&
         isStages(block.stages)
     );
 }
@@ -177,7 +179,7 @@ export default class FrontierProvenStateReader extends AProvenStateReader {
             block.hash
         ])) as { proof?: unknown } | null;
         const proofNodes = answer?.proof;
-        if (!Array.isArray(proofNodes) || !proofNodes.every(isHexString))
+        if (!Array.isArray(proofNodes) || !proofNodes.every(isBytes))
             throw new StorageProofError("The node answered no read proof");
         return proofNodes;
     }
