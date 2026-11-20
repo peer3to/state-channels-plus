@@ -38,9 +38,9 @@ omissions, not a consistent lie.
 [`REQ-STPROOF-3-NVJGR0` (A pushed block is accepted only under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0) was added the same day for a block an endpoint pushes: the writes are accepted
 only under the state root of the header pushed with them, the block is identified by the header hash and
 by the Ethereum block hash the chain wrote into the header, and a rejected block yields no write. The
-shape of the pushed block (header, written slots, proof, matching logs) follows the user's decisions of
-2026-11-18 and is not confirmed by Luka yet. Not specified: which blocks an endpoint must push, and how a
-participant notices a write an endpoint left out.
+shape of the pushed block (header, written slots, proof, matching logs) follows the engineer's decisions of
+2026-11-18 and 2026-11-19; Luka reviews it in the pull requests. Which blocks an endpoint must push, and how
+a participant notices a write an endpoint left out, are specified with the subscription.
 
 Added on 2026-11-19 on the engineer's decisions of that day: pushed logs are hints whose content is not
 proven and that never change what a participant holds; only the header hash binds a pushed block to a
