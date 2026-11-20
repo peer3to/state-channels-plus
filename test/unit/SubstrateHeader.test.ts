@@ -117,4 +117,21 @@ describe("SubstrateHeader", function () {
         expect(encoded(2 ** 30)).to.equal("0x0300000040");
         expect(encoded(2 ** 32 - 1)).to.equal("0x03ffffffff");
     });
+
+    it("throws when the block number is empty hex or not hex", function () {
+        for (const number of ["0x", "7"])
+            expect(() => new SubstrateHeader({ ...header, number })).to.throw(
+                StorageProofError,
+                /is no hex u32/
+            );
+    });
+
+    it("throws when the block number is wider than 32 bits, and reads the widest one", function () {
+        expect(
+            () => new SubstrateHeader({ ...header, number: "0x100000000" })
+        ).to.throw(StorageProofError, /is no hex u32/);
+        expect(
+            new SubstrateHeader({ ...header, number: "0xffffffff" }).number
+        ).to.equal(2 ** 32 - 1);
+    });
 });

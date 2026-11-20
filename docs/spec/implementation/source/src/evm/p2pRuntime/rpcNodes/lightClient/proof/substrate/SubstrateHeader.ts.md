@@ -23,3 +23,5 @@ Hash, state root and Ethereum block hash of a Substrate header
 - [x] `UNIT-TEST-STPROOF-3-W0K47W.P8` — a Frontier log that ends before its hash
 - [x] `UNIT-TEST-STPROOF-3-W0K47W.P9` — a state root of 31 bytes
 - [x] `UNIT-TEST-STPROOF-3-W0K47W.P10` — a Frontier log of the variant that holds the Ethereum block hash alone
+- [x] `UNIT-TEST-STPROOF-3-W0K47W.P11` — a block number of `0x` and of `7`
+- [x] `UNIT-TEST-STPROOF-3-W0K47W.P12` — a block number of `0x100000000` refused, of `0xffffffff` read
