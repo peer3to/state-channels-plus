@@ -2572,7 +2572,8 @@ refutation, `DisputeInvalidBlockInStateProofApplyFraudProof`), the chain's estim
 signer's headroom plus the requirement, capped at the configured `MAX_TRANSACTION_GAS` (default
 17,916,000) and the latest block's gas limit; a send whose proofs replay nothing declares the
 estimate with the headroom and no requirement. Runtime startup refuses a deployment whose
-requirement exceeds `MAX_TRANSACTION_GAS`. The poker-sized kill above now declares about 15.5M and
+requirement exceeds `MAX_TRANSACTION_GAS`; the check is necessary, not sufficient, since the
+fixed work around a replay (about 0.8M measured at poker's budget) must fit too. The poker-sized kill above now declares about 15.5M and
 lands. **Still open:** `DisputeManager.dispute` bundles every fraud proof into one multicall; each
 replay before the last can burn a full transition budget, so a dispute with several replays needs
 about `(n−1)·G + R(G)` plus the upload and exceeds the cap at poker's budget from two replays. The
@@ -2613,8 +2614,8 @@ about 5 chain `eth_call`s. (2) **Dispute construction**
 ([Stage 2](../specification/disputes/dispute-processing.md#stage-2--construction-and-submission-disputer-role))
 took 1–3 s. (3) **Gas estimation** of the kill-and-dispute multicall
 ([DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md)
-`replayGasLimit` around `multicall.estimateGas`,
-[L224-L227](../../../src/disputeManager/DisputeManager.ts#L224-L227); 2.4–3.1M gas each) took 2–4 s,
+`fraudProofGasLimit` around `estimateBestEffortMulticall`,
+[L268-L273](../../../src/disputeManager/DisputeManager.ts#L268-L273); 2.4–3.1M gas each) took 2–4 s,
 because the single Hardhat node ran the five estimates one after another. (4) **Block inclusion**
 took 1–3 s; the node mined 7 blocks in 12 s at a 1 s interval (chain time behind wall time, see
 [`OQ-SPEC-CLOCK-1-Z8TBFE` (Keeping runtime clocks in agreement over a session)](../specification/open-questions.md#oq-spec-clock-1-z8tbfe)).

@@ -53,6 +53,7 @@ import {
     disputeOnHost,
     disputeThenKillRecordingReads,
     disputeWithScaledEstimate,
+    killAndDisputeWithScaledEstimate,
     killStoredDisputeOnHost,
     killTimeoutCalldataRefutationWithScaledEstimate,
     killWithScaledEstimate,
@@ -3012,8 +3013,8 @@ describe("Unit: DisputeManager", function () {
             const { applies, estimates, replayGas, slashed, disputer } =
                 await killTimeoutCalldataRefutationWithScaledEstimate(
                     TestSession.getHarness(),
-                    // half of a searching estimate: about the gas the
-                    // refutation spends, without the unused replay budget
+                    // half the chain's estimate still covers the work
+                    // before the replay; the replay requirement funds the rest
                     { numerator: 1, denominator: 2 }
                 );
             expect(estimates.map((e) => e.method)).to.deep.equal([
@@ -3046,6 +3047,27 @@ describe("Unit: DisputeManager", function () {
             );
             expect(applies[0].error).to.equal(null);
             expect(applies[0].waited).to.equal(true);
+            expect(slashed).to.include(spammer);
+        });
+
+        it("a dispute that kills a dispute whose proof replays no transition sends the multicall at its estimate plus the signer's headroom, without the replay requirement, and the kill lands", async function () {
+            const { rejected, submissions, estimates, slashed, spammer } =
+                await killAndDisputeWithScaledEstimate(
+                    TestSession.getHarness(),
+                    { numerator: 1, denominator: 1 }
+                );
+            expect(rejected).to.equal("");
+            expect(estimates.map((e) => e.method)).to.deep.equal(["multicall"]);
+            expect(submissions.map((s) => s.method)).to.deep.equal([
+                "multicallBestEffortLast"
+            ]);
+            expect(submissions[0].innerMethods[0]).to.equal(
+                "applyDisputeFraudProofs"
+            );
+            expect(submissions[0].gasLimit).to.equal(
+                String(withGasHeadroom(BigInt(estimates[0].answer)))
+            );
+            expect(submissions[0].revert).to.equal(null);
             expect(slashed).to.include(spammer);
         });
 

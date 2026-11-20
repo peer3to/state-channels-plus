@@ -5,6 +5,7 @@ import type {
     RecordedGasEstimate,
     RecordedReplayGasRead
 } from "./customRpc/harnessControl/services/stub/StubService";
+import { killAndDisputeSpamDispute } from "./EvidenceComparisonStaging";
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import type { ForkId } from "@/types/types";
 import { Codec, Type, hash, sleep } from "@/utils";
@@ -107,6 +108,47 @@ export async function killWithScaledEstimate(
     return {
         storedProofTypes: await storedDisputeFraudProofTypes(h, killer.index),
         applies: await recorded.applies(),
+        estimates: await estimates.estimates(),
+        slashed: await h.query.onChainSlashedParticipants(),
+        spammer: spammer.address
+    };
+}
+
+/**
+ * The killer of a committed spam dispute (see killWithScaledEstimate) has not
+ * disputed yet, so its `dispute(forkId, { kill })` sends the kill and its own
+ * dispute in one best-effort multicall, forwarded to the chain and recorded;
+ * no proof in it replays a transition. The chain's estimate for the
+ * multicall is answered scaled by `scale`.
+ */
+export async function killAndDisputeWithScaledEstimate(
+    h: MathPeerTestHarness,
+    scale: EstimateScale
+): Promise<{
+    rejected: string;
+    submissions: RecordedDisputeSubmission[];
+    estimates: RecordedGasEstimate[];
+    slashed: string[];
+    spammer: string;
+}> {
+    const { forkId, killer, spammer } =
+        await h.scenario.stageUnkilledSpamDispute();
+    const recorded = await h.rpcStub.recordDisputeSubmissions(killer.index, {
+        forward: true
+    });
+    const estimates = await h.rpcStub.scaleReplayGasEstimates(killer.index, {
+        methods: ["multicall"],
+        ...scale
+    });
+    const { rejected } = await killAndDisputeSpamDispute(
+        h,
+        killer.index,
+        spammer.address,
+        forkId
+    );
+    return {
+        rejected,
+        submissions: await recorded.submissions(),
         estimates: await estimates.estimates(),
         slashed: await h.query.onChainSlashedParticipants(),
         spammer: spammer.address

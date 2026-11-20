@@ -140,6 +140,7 @@ Replay sends funded upfront
 - [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P19` — a replaying kill whose latest-block read fails is sent at its estimate plus the replay gas (below `MAX_TRANSACTION_GAS`), is mined, and slashes the disputer
 - [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P17` — a kill whose stored proof is a `TimeoutCalldataPosted` refutation (a dispute fraud proof that replays the posted block) is sent at its `applyDisputeFraudProofs` estimate plus the replay gas, is mined, slashes the disputer, and removes the timeout dispute's commitment
 - [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P20` — a kill whose stored proof replays no transition (`InvalidDisputeReason`) is sent at its estimate plus the signer's headroom, without the replay gas, is mined, and slashes the spammer
+- [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P23` — a dispute that kills a spam dispute (`InvalidDisputeReason`, no replay) sends its kill-and-dispute `multicall` at its estimate plus the signer's headroom, without the replay gas, and the kill lands
 - [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P21` — a replaying kill whose estimate plus replay gas exceeds `MAX_TRANSACTION_GAS` is sent at `MAX_TRANSACTION_GAS`, is mined, and slashes the disputer
 - [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P22` — a replaying kill on a 6.5M transition budget is sent at its estimate plus the replay gas, within `MAX_TRANSACTION_GAS`, is mined, slashes the disputer, and removes the timeout dispute's commitment
 

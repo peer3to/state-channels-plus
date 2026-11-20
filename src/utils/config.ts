@@ -102,7 +102,8 @@ const DEFAULT_CONFIG: Config = {
     LEAVE_CHANNEL_WATCHDOG_MS: 15_000,
     JOIN_CHANNEL_DEADLINE_SECONDS: DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS,
     GAS_USAGE_SETTLE_MS: 2_000,
-    // the peer3 parachain runtime's MAX_TX_GAS (TransactionGasLimit)
+    // the peer3 parachain runtime's MAX_TX_GAS (TransactionGasLimit). startup
+    // refuses a replay requirement above it; the work around a replay must fit too
     MAX_TRANSACTION_GAS: 17_916_000,
     // Crash log collection is enabled when upload endpoint is configured.
     CRASH_LOG_UPLOAD_ENDPOINT: "",

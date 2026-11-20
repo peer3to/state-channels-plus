@@ -179,6 +179,7 @@ author is added.
 - `a dispute sends the multicall at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P14
 - `a kill whose estimate covers only part of the work still lands at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P15
 - `a kill whose proof replays no transition is sent at its estimate plus the signer's headroom, without the replay requirement, and lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P20
+- `a dispute that kills a dispute whose proof replays no transition sends the multicall at its estimate plus the signer's headroom, without the replay requirement, and the kill lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P23
 - `a kill whose estimate plus the replay requirement exceeds the block gas limit is sent at the block gas limit`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P18
 - `a kill whose estimate plus the replay requirement exceeds MAX_TRANSACTION_GAS is sent at MAX_TRANSACTION_GAS and lands`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P21, REQ-ENFSM-1-DKJCY2.T1.P25
 - `a kill whose latest-block read fails is sent at its estimate plus the replay requirement, lands, and slashes the disputer`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P19
