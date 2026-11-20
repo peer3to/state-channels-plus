@@ -32,6 +32,12 @@ const SOCKET_ENDED = Symbol("socket ended");
 const JSON_RPC_INTERNAL_ERROR = -32603;
 
 /**
+ * Error codes of a node that does not serve a method: JSON-RPC's "method not
+ * found", and the "method not supported" Hardhat answers with.
+ */
+const METHOD_NOT_SERVED_CODES: ReadonlySet<number> = new Set([-32601, -32004]);
+
+/**
  * Sends a signed transaction. Its internal error never fails over: the node
  * may have pooled the transaction, and a second send can fail it twice.
  */
@@ -39,6 +45,9 @@ const SEND_TRANSACTION_METHOD = "eth_sendRawTransaction";
 
 /** The errors of reads a node answered with its internal error. */
 const nodeInternalErrors = new WeakSet<Error>();
+
+/** The errors of requests a node answered that it does not serve the method. */
+const methodNotServedErrors = new WeakSet<Error>();
 
 /**
  * Whether `error` is a node's answer to a read that it failed internally,
@@ -48,6 +57,11 @@ const nodeInternalErrors = new WeakSet<Error>();
  */
 export function isNodeInternalError(error: unknown): boolean {
     return error instanceof Error && nodeInternalErrors.has(error);
+}
+
+/** Whether `error` is a node's answer that it does not serve the method. */
+export function isMethodNotServed(error: unknown): boolean {
+    return error instanceof Error && methodNotServedErrors.has(error);
 }
 
 /**
@@ -142,7 +156,14 @@ export class NodeSocket extends WebSocketProvider {
     // method goes to its listeners. ethers knows eth_subscription only and
     // reports any other notification as an unexpected message.
     override async _processMessage(message: string): Promise<void> {
-        if (this.notificationListeners.size > 0) {
+        // only a frame that names a watched method is parsed here; ethers
+        // parses every frame again
+        if (
+            this.notificationListeners.size > 0 &&
+            [...this.notificationListeners.keys()].some((method) =>
+                message.includes(method)
+            )
+        ) {
             const notification = readNotification(message);
             const listeners = notification
                 ? this.notificationListeners.get(notification.method)
@@ -187,6 +208,8 @@ export class NodeSocket extends WebSocketProvider {
             !hasRevertData(error)
         )
             nodeInternalErrors.add(converted);
+        if (METHOD_NOT_SERVED_CODES.has(error.error.code))
+            methodNotServedErrors.add(converted);
         return converted;
     }
 }

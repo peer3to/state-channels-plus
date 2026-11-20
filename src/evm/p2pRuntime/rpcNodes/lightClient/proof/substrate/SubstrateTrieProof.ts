@@ -5,7 +5,7 @@ import { blake2b } from "@noble/hashes/blake2b";
 import { getBytes, hexlify } from "ethers";
 
 /** 0x-prefixed hex of a trie node's Blake2-256 hash. */
-type NodeHash = string;
+export type NodeHash = string;
 /** Half a key byte, 0 to 15: the trie branches on one nibble at a time. */
 type Nibble = number;
 
@@ -126,6 +126,11 @@ function decodeNode(encodedNode: Uint8Array): TrieNode {
     throw new StorageProofError("A proof node has an unknown header");
 }
 
+/** The hash a trie node is referred to by. */
+export function trieNodeHash(encodedNode: Uint8Array): NodeHash {
+    return hexlify(blake2_256(encodedNode));
+}
+
 /**
  * A Substrate read proof (`state_getReadProof`): the nodes of a Blake2-256
  * state trie on the paths to the proven keys. Reads state version 1 nodes and
@@ -137,7 +142,7 @@ export default class SubstrateTrieProof {
     constructor(proofNodes: Bytes[]) {
         for (const proofNode of proofNodes) {
             const encodedNode = getBytes(proofNode);
-            this.nodesByHash.set(hexlify(blake2_256(encodedNode)), encodedNode);
+            this.nodesByHash.set(trieNodeHash(encodedNode), encodedNode);
         }
     }
 
@@ -145,10 +150,11 @@ export default class SubstrateTrieProof {
      * The value at `key` in the trie with root `stateRoot`, or `null` when the
      * proof shows the key holds nothing. Throws {@link StorageProofError} when
      * the proof does not reach the key or a node on its path is malformed.
+     * The hashes of the nodes the read used are added to `used`.
      */
-    read(stateRoot: Hash, key: Bytes): Uint8Array | null {
+    read(stateRoot: Hash, key: Bytes, used?: Set<NodeHash>): Uint8Array | null {
         const keyNibbles = toNibbles(getBytes(key));
-        let encodedNode = this.nodeWithHash(getBytes(stateRoot));
+        let encodedNode = this.nodeWithHash(getBytes(stateRoot), used);
         let position = 0;
         for (;;) {
             const node = decodeNode(encodedNode);
@@ -160,22 +166,29 @@ export default class SubstrateTrieProof {
             position += node.partial.length;
             const isKeyEnd = position === keyNibbles.length;
             if (node.kind === "leaf")
-                return isKeyEnd ? this.valueOf(node.value) : null;
-            if (isKeyEnd) return node.value ? this.valueOf(node.value) : null;
+                return isKeyEnd ? this.valueOf(node.value, used) : null;
+            if (isKeyEnd)
+                return node.value ? this.valueOf(node.value, used) : null;
             const child = node.children[keyNibbles[position]];
             if (!child) return null;
             position += 1;
             encodedNode =
-                child.length === HASH_LENGTH ? this.nodeWithHash(child) : child;
+                child.length === HASH_LENGTH
+                    ? this.nodeWithHash(child, used)
+                    : child;
         }
     }
 
-    private valueOf(value: TrieValue): Uint8Array {
-        return "inline" in value ? value.inline : this.nodeWithHash(value.hash);
+    private valueOf(value: TrieValue, used?: Set<NodeHash>): Uint8Array {
+        return "inline" in value
+            ? value.inline
+            : this.nodeWithHash(value.hash, used);
     }
 
-    private nodeWithHash(hash: Uint8Array): Uint8Array {
-        const encodedNode = this.nodesByHash.get(hexlify(hash));
+    private nodeWithHash(hash: Uint8Array, used?: Set<NodeHash>): Uint8Array {
+        const nodeHash = hexlify(hash);
+        used?.add(nodeHash);
+        const encodedNode = this.nodesByHash.get(nodeHash);
         if (!encodedNode)
             throw new StorageProofError(
                 `The proof holds no node with hash ${hexlify(hash)}`

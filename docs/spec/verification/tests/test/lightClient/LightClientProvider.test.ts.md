@@ -31,5 +31,12 @@ that lies about its best block, more than one endpoint, or a distributed worker.
 - `leaves to the node a call that reaches the chain's own precompile or reads an earlier block's hash`: REQ-LC-2-PMY1VG.T1.P2
 - `asks the node, logs an error and counts the failure when a proof is refused`: REQ-LC-3-W7RRHM.T1.P1
 - `asks the node, logs an error and counts the failure when the node gives no block header`: REQ-LC-3-W7RRHM.T1.P2
-- `asks the node for every read and logs one error when the node lists no light client endpoints`: REQ-LC-4-E29Y46.T1.P1
-- `is the plain provider unless the light client is switched on`: REQ-LC-4-E29Y46.T1.P2
+- `asks the node for every read and says once that the node lists no light client endpoints`: REQ-LC-4-E29Y46.T1.P1
+- `asks the node once which methods it serves, at the first read the light client may answer`: REQ-LC-4-E29Y46.T1.P6
+- `leaves to the node a call that runs out of gas or hits an invalid opcode locally`: REQ-LC-2-PMY1VG.T1.P3
+- `asks the node for every read when the node answers that it does not know rpc_methods`: REQ-LC-4-E29Y46.T1.P3
+- `asks the node for every read when the node answers, as Hardhat does, that it does not support rpc_methods`: REQ-LC-4-E29Y46.T1.P4
+- `asks the node again which methods it serves when the question failed`: REQ-LC-4-E29Y46.T1.P5
+- `fails reads still running at destroy as a plain provider would, without counting or logging them`: REQ-LC-3-W7RRHM.T1.P3
+- `sends the node a pending read and a call with a gas price`: REQ-LC-2-PMY1VG.T1.P4
+- `answers a call with the caller and origin the node gives it`: REQ-LC-1-JT5PKT.T1.P10

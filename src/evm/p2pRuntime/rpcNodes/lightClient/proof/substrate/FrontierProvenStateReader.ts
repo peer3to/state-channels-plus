@@ -8,7 +8,6 @@ import {
     systemAccountKey
 } from "./frontierStateKeys";
 import FrontierStorageProofVerifier from "./FrontierStorageProofVerifier";
-import proveFrontierStorageBlock from "./proveFrontierStorageBlock";
 import SubstrateHeader from "./SubstrateHeader";
 import SubstrateTrieProof from "./SubstrateTrieProof";
 import type {
@@ -20,11 +19,9 @@ import AProvenStateReader, {
     type BlockEnvironment,
     type NodeRequest,
     type ProvenAccountState,
-    type ProvenBlock,
-    type ProvenPushedBlock
+    type ProvenBlock
 } from "../AProvenStateReader";
 import StorageProofError from "../StorageProofError";
-import type { ChecksumAddress } from "@/types/types";
 
 function isHexString(value: unknown): value is string {
     return typeof value === "string" && /^0x[0-9a-f]*$/i.test(value);
@@ -44,22 +41,25 @@ function isHeader(answer: unknown): answer is SubstrateHeaderJson {
     );
 }
 
-function isStorageBlock(pushed: unknown): pushed is LightClientStorageBlock {
+/** Whether `pushed` has the shape of a block a node pushes to a light client subscription. */
+export function isStorageBlock(
+    pushed: unknown
+): pushed is LightClientStorageBlock {
     const block = pushed as Partial<LightClientStorageBlock> | null;
     return (
         typeof block === "object" &&
         block !== null &&
         isHeader(block.header) &&
-        Array.isArray(block.writes) &&
-        block.writes.every(
-            (write) =>
-                isHexString(write?.slot) &&
-                (write.value === null || isHexString(write.value))
+        isHexString(block.ethereumHeader) &&
+        typeof block.sync === "boolean" &&
+        Array.isArray(block.values) &&
+        block.values.every(
+            (entry) =>
+                isHexString(entry?.key) &&
+                (entry.value === null || isHexString(entry.value))
         ) &&
         Array.isArray(block.proofNodes) &&
-        block.proofNodes.every(isHexString) &&
-        Array.isArray(block.logs) &&
-        block.logs.every((log) => isHexString(log?.blockHash))
+        block.proofNodes.every(isHexString)
     );
 }
 
@@ -111,16 +111,7 @@ export default class FrontierProvenStateReader extends AProvenStateReader {
             );
         const header = new FrontierEthereumHeader(encodedBlock);
         header.assertHash(block.ethereumBlockHash);
-        return {
-            number: header.number,
-            // a contract reads the runtime's clock in whole seconds
-            timestamp: header.timestampMs / 1000n,
-            coinbase: header.beneficiary,
-            gasLimit: header.gasLimit,
-            difficulty: header.difficulty,
-            prevRandao: header.mixHash,
-            baseFeePerGas: this.constants.baseFeePerGas
-        };
+        return header.environment(this.constants.baseFeePerGas);
     }
 
     async read(
@@ -161,25 +152,6 @@ export default class FrontierProvenStateReader extends AProvenStateReader {
                 )
             })
         }));
-    }
-
-    pushedBlock(address: ChecksumAddress, pushed: unknown): ProvenPushedBlock {
-        if (!isStorageBlock(pushed))
-            throw new StorageProofError("The node pushed no storage block");
-        const { header, ethereumBlockHash, writes } = proveFrontierStorageBlock(
-            pushed,
-            address
-        );
-        return {
-            block: {
-                number: header.number,
-                hash: header.hash,
-                ethereumBlockHash,
-                stateRoot: header.stateRoot
-            },
-            parentHash: header.parentHash,
-            writes
-        };
     }
 
     /** One proof of all of `keys` at `block`, as the node gave it. */

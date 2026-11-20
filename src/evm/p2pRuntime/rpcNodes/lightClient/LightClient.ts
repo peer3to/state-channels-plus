@@ -1,3 +1,8 @@
+import type {
+    LightClientCounters,
+    PushedBlockTiming,
+    PushedStateCounters
+} from "./LightClientCounters";
 import { LightClientState } from "./LightClientState";
 import {
     LightClientUnavailableError,
@@ -7,10 +12,10 @@ import type AProvenStateReader from "./proof/AProvenStateReader";
 import type {
     AccountStateRead,
     BlockEnvironment,
-    ProvenBlock,
-    ProvenPushedBlock
+    ProvenAccountState,
+    ProvenBlock
 } from "./proof/AProvenStateReader";
-import type { PushedStateCounters } from "./PushedStateCounters";
+import type APushedPartition from "./proof/APushedPartition";
 import { createEvm } from "@/evm/EvmFactory";
 import type { Logger } from "@/utils/logging/Logger";
 import { Mutex } from "@/utils/Mutex";
@@ -24,24 +29,27 @@ import { getBytes, hexlify, toBeHex, zeroPadValue } from "ethers";
  */
 const MAX_DISCOVERY_PASSES = 256;
 
-/**
- * Most pushed blocks kept per followed contract while no read uses them;
- * past it the oldest goes, and the next read proves the held storage again.
- */
-const MAX_WAITING_PUSHED_BLOCKS = 256;
+/** Most accepted pushed blocks whose timings are kept; past it the oldest goes. */
+const MAX_PUSHED_BLOCK_TIMINGS = 1024;
 
-/** A lowercase 0x-prefixed contract address. */
-type ContractAddress = string;
-/** A block hash, lowercase 0x-prefixed. */
-type BlockHash = string;
+/** Whether a call's outcome answers it: a call that failed locally goes to the node. */
+function isCallAnswer(outcome: LocalCallOutcome): boolean {
+    return outcome.kind !== "failure";
+}
 
-/** A contract whose storage is kept across blocks. */
-type FollowedContract = {
-    /** Checked pushed blocks no read has used yet, by their hash. */
-    waiting: Map<BlockHash, ProvenPushedBlock>;
-    /** The number of the block at which all its held storage was last proven in one read. */
-    provenAt?: number;
-};
+/** A storage, balance, nonce or code read is answered by any value. */
+function isAnswer(): boolean {
+    return true;
+}
+
+/** Identifies one node subscription; a node's id for it holds on that node's socket only. */
+type SubscriptionKey = string;
+
+/** The state one node subscription pushed, for the contract it follows. */
+type Subscription = { contract: string; partition: APushedPartition };
+
+/** What a node proved for one read, kept so that each pass can fill it again. */
+type Fetched = { read: AccountStateRead; proven: ProvenAccountState };
 
 /** An `eth_call` the light client can run: a call, not a creation. */
 export type LocalCall = {
@@ -49,7 +57,6 @@ export type LocalCall = {
     to: string;
     data: string;
     value?: bigint;
-    gasPrice?: bigint;
 };
 
 /** How a call ended, as an RPC node would report it. */
@@ -61,48 +68,54 @@ export type LocalCallOutcome =
 export type LightClientOptions = {
     /** Proves the state this light client reads. */
     reader: AProvenStateReader;
+    /** A partition of the chain's proof representation, for one subscription. */
+    createPartition: () => APushedPartition;
     /**
      * Addresses the chain answers with a precompile of its own that the
      * local EVM does not reproduce, lowercase.
      */
     chainPrecompiles: readonly string[];
+    /** The Ethereum hardfork whose rules the chain's EVM runs. */
+    hardfork: string;
+    /** The addresses of Ethereum's precompiles the chain serves, lowercase; the local EVM runs no other. */
+    ethereumPrecompiles: readonly string[];
     getChainId: () => Promise<bigint>;
-    /**
-     * Blocks after which the held storage of a followed contract is proven
-     * again instead of carried by the pushed blocks. 1 proves it at every
-     * block.
-     */
-    reproofIntervalBlocks: number;
-    counters: PushedStateCounters;
+    /** Counted on: the reads this light client answers. */
+    counters: LightClientCounters;
+    /** Counted on: the pushed blocks it takes. */
+    pushedState: PushedStateCounters;
+    /** Appended to: the stages of each accepted pushed block, at most the last 1024. */
+    pushedBlockTimings: PushedBlockTiming[];
     logger: Logger;
 };
 
 /**
  * Answers chain reads from state a node proved: every value a read uses was
- * checked against the state root of the node's best block. A call runs in a
- * local EVM over that state. A read the light client cannot answer throws,
- * and the caller asks the RPC node instead.
+ * checked against the state root of one block. A call runs in a local EVM over
+ * that state. A read the light client cannot answer throws, and the caller
+ * asks the RPC node instead.
  *
- * The storage of a followed contract is kept across blocks: the blocks the
- * node pushes for it carry its proven writes, and while they link the block
- * the storage was held at to the read's block, the storage is brought there
- * without a request. Otherwise, and every `reproofIntervalBlocks` blocks,
- * all of it is proven again in one request. Everything else is proven at
- * each block that reads it.
+ * The block is the newest one a subscription pushed and the light client
+ * verified, and a read takes from the pushed partitions everything they prove
+ * at that block, without a request. What they do not reach, it has the node
+ * prove at that block. With nothing pushed yet it reads at the node's best
+ * block and has the node prove everything.
  */
 export class LightClient {
     private readonly options: LightClientOptions;
     private readonly state: LightClientState;
     /** Precompile addresses of the local EVM; they have no account on chain. */
     private readonly precompileAddresses = new Set<string>();
+    /** Lowercase addresses the chain serves with a precompile of its own. */
     private readonly chainPrecompiles: ReadonlySet<string>;
-    /** One read at a time: the state and the EVM are one read's while it runs. */
+    /**
+     * One pass at a time: the state and the EVM are one pass's while it runs.
+     * A read waiting for a node's proof does not hold it.
+     */
     private readonly lock = new Mutex();
-    private readonly followed = new Map<ContractAddress, FollowedContract>();
+    private readonly subscriptions = new Map<SubscriptionKey, Subscription>();
     /** The block the held state was proven at. */
     private block?: ProvenBlock;
-    /** The environment of {@link block}, once a call needed it. */
-    private environment?: BlockEnvironment;
     private evm?: Promise<EVM>;
 
     constructor(options: LightClientOptions) {
@@ -114,52 +127,67 @@ export class LightClient {
         });
     }
 
-    /** Keeps the storage of the contract at `address` across blocks from now on. */
-    follow(address: ContractAddress): void {
-        if (!this.followed.has(address))
-            this.followed.set(address, { waiting: new Map() });
+    /** Subscription `key` of a node follows the contract at `contract`: its pushes go to a partition of its own. */
+    subscribed(key: SubscriptionKey, contract: string): void {
+        this.subscriptions.set(key, {
+            contract,
+            partition: this.options.createPartition()
+        });
     }
 
-    /** The storage of the contract at `address` is proven at each block again. */
-    unfollow(address: ContractAddress): void {
-        this.followed.delete(address);
+    /** Subscription `key` ended: what it pushed is not used any more. */
+    unsubscribed(key: SubscriptionKey): void {
+        this.subscriptions.delete(key);
     }
 
     /**
-     * Takes a block a node pushed for the followed contract at `address`.
-     * The block is checked now and used by the first read at it or after
-     * it. A refused block is not used: the read that would have needed it
-     * proves the held storage again.
+     * Takes a message pushed to subscription `key`, received at `receivedAt`.
+     * False when it is refused: the subscription holds nothing, and it must
+     * sync again.
      */
-    pushed(address: ContractAddress, pushed: unknown): void {
-        const followed = this.followed.get(address);
-        if (!followed) return;
-        let proven: ProvenPushedBlock;
+    pushed(
+        key: SubscriptionKey,
+        message: unknown,
+        receivedAt: number
+    ): boolean {
+        const subscription = this.subscriptions.get(key);
+        if (!subscription) return true;
         try {
-            proven = this.options.reader.pushedBlock(address, pushed);
+            const accepted = subscription.partition.accept(message);
+            this.options.pushedState.acceptedBlocks++;
+            const { stages } = message as { stages: PushedBlockTiming };
+            const timings = this.options.pushedBlockTimings;
+            timings.push({
+                number: accepted.block.number,
+                executedAt: stages.executedAt,
+                builtAt: stages.builtAt,
+                sentAt: stages.sentAt,
+                receivedAt,
+                verifiedAt: Date.now(),
+                newNodes: accepted.newNodes,
+                heldNodes: accepted.heldNodes
+            });
+            if (timings.length > MAX_PUSHED_BLOCK_TIMINGS) timings.shift();
+            return true;
         } catch (error) {
-            this.options.counters.refusedBlocks++;
+            this.options.pushedState.refusedBlocks++;
             this.options.logger.error("Light client refused a pushed block", {
-                contract: address,
+                contract: subscription.contract,
                 error
             });
-            return;
+            return false;
         }
-        this.options.counters.acceptedBlocks++;
-        // the held state is at or past it
-        if (this.block && proven.block.number <= this.block.number) return;
-        followed.waiting.set(proven.block.hash, proven);
-        if (followed.waiting.size > MAX_WAITING_PUSHED_BLOCKS)
-            for (const oldest of followed.waiting.keys()) {
-                followed.waiting.delete(oldest);
-                break;
-            }
     }
 
     async call(request: LocalCall): Promise<LocalCallOutcome> {
+        // the chain keeps its existential deposit back from the balance it
+        // reports for an account the value makes; the local EVM does not
+        if (request.value)
+            throw new NotLocalError(
+                "A call that carries value runs on the node"
+            );
         const evm = await this.getEvm();
-        return await this.run(async (block) => {
-            const environment = await this.environmentOf(block);
+        return await this.run(true, isCallAnswer, async (environment) => {
             try {
                 const result = await evm.runCall({
                     caller: request.from
@@ -168,7 +196,6 @@ export class LightClient {
                     to: Address.fromString(request.to),
                     data: getBytes(request.data),
                     value: request.value,
-                    gasPrice: request.gasPrice,
                     gasLimit: environment.gasLimit,
                     block: this.blockOf(environment)
                 });
@@ -188,7 +215,7 @@ export class LightClient {
     /** The 32-byte word of `slot`. */
     async getStorageAt(address: string, slot: string): Promise<string> {
         const key = getBytes(zeroPadValue(toBeHex(BigInt(slot)), 32));
-        return await this.run(async () =>
+        return await this.run(false, isAnswer, async () =>
             hexlify(
                 await this.state.getContractStorage(
                     Address.fromString(address),
@@ -200,6 +227,8 @@ export class LightClient {
 
     async getBalance(address: string): Promise<bigint> {
         return await this.run(
+            false,
+            isAnswer,
             async () =>
                 this.state.readAccountOf(Address.fromString(address)).balance
         );
@@ -207,145 +236,131 @@ export class LightClient {
 
     async getTransactionCount(address: string): Promise<bigint> {
         return await this.run(
+            false,
+            isAnswer,
             async () =>
                 this.state.readAccountOf(Address.fromString(address)).nonce
         );
     }
 
     async getCode(address: string): Promise<string> {
-        return await this.run(async () =>
+        return await this.run(false, isAnswer, async () =>
             hexlify(this.state.readCodeOf(Address.fromString(address)))
         );
     }
 
     /**
-     * Runs `read` with the state proven at the node's best block. State the
-     * read finds missing is proven in one request at that block and the read
-     * runs again from the start, so one read sees one block.
+     * Runs `read` on state proven at one block, and with that block's
+     * environment when `needsEnvironment`. State a pass finds missing is
+     * taken from the partitions pushed at that block, or proven by the node
+     * at that block, and the read runs again from the start, so one read sees
+     * one block.
      */
-    private async run<T>(read: (block: ProvenBlock) => Promise<T>): Promise<T> {
-        await this.lock.lock();
-        try {
-            const block = await this.options.reader.head();
-            if (block.hash !== this.block?.hash) await this.moveTo(block);
-            for (let pass = 0; pass < MAX_DISCOVERY_PASSES; pass++) {
+    private async run<T>(
+        needsEnvironment: boolean,
+        isAnswer: (value: T) => boolean,
+        read: (environment: BlockEnvironment) => Promise<T>
+    ): Promise<T> {
+        const pushed = this.newestPushedBlock();
+        let askedNode = pushed === undefined;
+        const block = pushed?.block ?? (await this.options.reader.head());
+        let environment = pushed?.environment;
+        if (needsEnvironment && !environment) {
+            askedNode = true;
+            environment = await this.options.reader.environment(block);
+        }
+        const fetched: Fetched[] = [];
+        for (let pass = 0; pass < MAX_DISCOVERY_PASSES; pass++) {
+            let undecided: AccountStateRead[];
+            await this.lock.lock();
+            try {
+                this.moveTo(block, fetched);
                 let outcome: { value: T } | { error: unknown };
                 try {
-                    outcome = { value: await read(block) };
+                    // a read that needs no environment never reads it
+                    outcome = { value: await read(environment!) };
                 } catch (error) {
                     outcome = { error };
                 }
                 const misses = this.state.takeMisses();
                 if (misses.length === 0) {
                     if ("error" in outcome) throw outcome.error;
+                    if (isAnswer(outcome.value)) {
+                        if (askedNode) this.options.counters.withFallbackRead++;
+                        else this.options.counters.fromPushedState++;
+                    }
                     return outcome.value;
                 }
                 // the pass ran on placeholders: its outcome is discarded
-                this.state.fill(
-                    misses,
-                    await this.options.reader.read(block, misses)
-                );
+                undecided = this.fillFromPartitions(block, misses);
+            } finally {
+                this.lock.unlock();
             }
-            throw new LightClientUnavailableError(
-                "The read keeps finding state missing"
+            if (undecided.length === 0) continue;
+            askedNode = true;
+            const proven = await this.options.reader.read(block, undecided);
+            undecided.forEach((missing, index) =>
+                fetched.push({ read: missing, proven: proven[index] })
             );
-        } finally {
-            this.lock.unlock();
         }
+        throw new LightClientUnavailableError(
+            "The read keeps finding state missing"
+        );
+    }
+
+    /** The newest block a subscription pushed and the light client holds, with its environment. */
+    private newestPushedBlock():
+        | { block: ProvenBlock; environment: BlockEnvironment }
+        | undefined {
+        let newest:
+            | { block: ProvenBlock; environment: BlockEnvironment }
+            | undefined;
+        for (const { partition } of this.subscriptions.values()) {
+            const { block, environment } = partition;
+            if (
+                block &&
+                environment &&
+                block.number > (newest?.block.number ?? -1)
+            )
+                newest = { block, environment };
+        }
+        return newest;
     }
 
     /**
-     * Moves the held state to `block`. What is held was proven at another
-     * block: it is forgotten, except the storage of the followed contracts,
-     * which the pushed blocks bring to `block` or one request proves again.
+     * Holds the state proven at `block`: what is held of another block is
+     * forgotten. What the node proved for this read is filled again, since
+     * another read may have moved the state in between.
      */
-    private async moveTo(block: ProvenBlock): Promise<void> {
-        const heldAt = this.block;
-        const carried = new Set<ContractAddress>();
-        const reproofs: {
-            read: AccountStateRead;
-            /**
-             * Each held slot index and the 32-byte word the pushed blocks
-             * say it holds, both as hex, if they reach `block`.
-             */
-            expected?: Map<string, string>;
-        }[] = [];
-        for (const [address, followed] of this.followed) {
-            const link = heldAt && this.linkOf(followed, heldAt, block);
-            for (const [hash, waiting] of followed.waiting)
-                if (waiting.block.number <= block.number)
-                    followed.waiting.delete(hash);
-            for (const { writes } of link ?? [])
-                this.state.applyWrites(address, writes);
-            const isDue =
-                followed.provenAt === undefined ||
-                block.number - followed.provenAt >=
-                    this.options.reproofIntervalBlocks;
-            if (link && !isDue) {
-                carried.add(address);
-                continue;
-            }
-            // what is held of it from here on is proven at `block` or later
-            followed.provenAt = block.number;
-            const held = this.state.heldStorage(address);
-            if (held.size > 0)
-                reproofs.push({
-                    read: {
-                        address,
-                        slots: [...held.keys()],
-                        account: false,
-                        code: false
-                    },
-                    expected: link && held
-                });
+    private moveTo(block: ProvenBlock, fetched: Fetched[]): void {
+        if (block.hash !== this.block?.hash) {
+            this.state.forgetProvenState();
+            this.block = block;
         }
-        this.state.forgetProvenState(carried);
-        this.environment = undefined;
-        this.block = block;
-        if (reproofs.length === 0) return;
-        const reads = reproofs.map(({ read }) => read);
-        const proven = await this.options.reader.read(block, reads);
-        this.state.fill(reads, proven);
-        reproofs.forEach(({ read, expected }, index) => {
-            this.options.counters.reproofs++;
-            const changed = read.slots.filter(
-                (slot, slotIndex) =>
-                    expected !== undefined &&
-                    expected.get(String(slot)) !==
-                        proven[index].storage[slotIndex]
+        if (fetched.length > 0)
+            this.state.fill(
+                fetched.map(({ read }) => read),
+                fetched.map(({ proven }) => proven)
             );
-            if (changed.length === 0) return;
-            this.options.counters.changedUnpushed += changed.length;
-            this.options.logger.warn(
-                "Light client held storage that changed in blocks pushed without the write",
-                { contract: read.address, slots: changed.length }
-            );
-        });
     }
 
-    /**
-     * The pushed blocks after `from` up to `to`, oldest first, when every
-     * block between the two was pushed; undefined otherwise.
-     */
-    private linkOf(
-        followed: FollowedContract,
-        from: ProvenBlock,
-        to: ProvenBlock
-    ): ProvenPushedBlock[] | undefined {
-        const link: ProvenPushedBlock[] = [];
-        let hash = to.hash;
-        while (hash !== from.hash) {
-            const pushed = followed.waiting.get(hash);
-            if (!pushed) return undefined;
-            link.unshift(pushed);
-            hash = pushed.parentHash;
+    /** Fills what the partitions pushed at `block` decide of `misses`; the rest, for the node. */
+    private fillFromPartitions(
+        block: ProvenBlock,
+        misses: AccountStateRead[]
+    ): AccountStateRead[] {
+        let undecided = misses;
+        for (const { partition } of this.subscriptions.values()) {
+            if (undecided.length === 0) break;
+            if (partition.block?.hash !== block.hash) continue;
+            const decision = partition.decide(undecided);
+            this.state.fill(
+                decision.decided.map(({ read }) => read),
+                decision.decided.map(({ proven }) => proven)
+            );
+            undecided = decision.undecided;
         }
-        return link;
-    }
-
-    private async environmentOf(block: ProvenBlock): Promise<BlockEnvironment> {
-        this.environment ??= await this.options.reader.environment(block);
-        return this.environment;
+        return undecided;
     }
 
     private getEvm(): Promise<EVM> {
@@ -359,19 +374,22 @@ export class LightClient {
 
     private async createLocalEvm(): Promise<EVM> {
         const evm = await createEvm(
-            {
-                allowUnlimitedContractSize: true,
-                stateManager: this.state,
-                blockchain: this.blockHashes()
-            },
+            { stateManager: this.state, blockchain: this.blockHashes() },
             this.options.logger
         );
         const chainId = await this.options.getChainId();
         // the EVM's own Common is a nested package this module cannot
         // construct a copy of; its chain id is the one CHAINID reads
         evm.common.chainId = () => chainId;
-        for (const address of evm.precompiles.keys())
-            this.precompileAddresses.add(`0x${address}`);
+        // the chain's rules; the change makes the EVM list its precompiles again
+        evm.common.setHardfork(this.options.hardfork);
+        const served = new Set(this.options.ethereumPrecompiles);
+        for (const address of [...evm.precompiles.keys()]) {
+            // the hardfork's later precompiles and the console's are plain accounts on the chain
+            if (served.has(`0x${address}`))
+                this.precompileAddresses.add(`0x${address}`);
+            else evm.precompiles.delete(address);
+        }
         return evm;
     }
 

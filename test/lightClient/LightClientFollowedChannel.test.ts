@@ -1,32 +1,24 @@
 // @distributed-requires: lightClient
-import { STORE_LOG_AND_READ_CONTRACT } from "@test/fixtures/lightClient/LightClientNodeFixture";
+import { PARTITION_CONTRACT } from "@test/fixtures/lightClient/LightClientNodeFixture";
 import { LightClientProviderFixture } from "@test/fixtures/lightClient/LightClientProviderFixture";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { toBeHex } from "ethers";
 
-/** The contract logs the slot a transaction stored at: a slot stands for a channel id. */
-const SLOT_ONE = toBeHex(1, 32);
-const SLOT_TWO = toBeHex(2, 32);
-const FIRST = toBeHex(0xaaaa, 32);
-const SECOND = toBeHex(0xbbbb, 32);
-/** Above the chain's existential deposit, which a balance read keeps back. */
-const PAID = 3_000_000_000_000_000n;
+/** Channel ids, which the partition contract logs as its second topic. */
+const CHANNEL_A = toBeHex(0xa1, 32);
+const CHANNEL_B = toBeHex(0xa2, 32);
 const SUBSCRIBE = "lightClient_subscribeStorage";
 const UNSUBSCRIBE = "lightClient_unsubscribeStorage";
 const PUSHED_BLOCK = "lightClient_storage";
 const REFUSED_BLOCK = "Light client refused a pushed block";
-const CHANGED_UNPUSHED =
-    "Light client held storage that changed in blocks pushed without the write";
-const NOTHING_WRONG = { refusedBlocks: 0, changedUnpushed: 0 };
+/** The requests a proven read makes of the node when the pushed state does not answer it. */
+const PROOF_REQUESTS = ["chain_getHeader", "state_getReadProof"];
 
 /** A pushed block as the proxy hands it to a test to change. */
 type PushedParams = {
     subscription: string;
-    result: {
-        writes: { slot: string; value: string | null }[];
-        proofNodes: string[];
-    };
+    result: { values: { key: string; value: string | null }[] };
 };
 
 describe("Light client followed channel", function () {
@@ -37,360 +29,193 @@ describe("Light client followed channel", function () {
         fixture = undefined;
     });
 
-    it("reads a followed contract's storage at a later block from the pushed blocks without a proof", async function () {
+    it("answers reads of a followed channel's partition from the pushed state without a request to the node", async function () {
         fixture = await LightClientProviderFixture.start();
         const { node, provider } = fixture;
-        const contract = await node.deploy(STORE_LOG_AND_READ_CONTRACT);
-        await node.store(contract, SLOT_ONE, FIRST);
-        const followedAt = await fixture.follow(contract, SLOT_ONE);
-        await fixture.readAtBlock(followedAt);
-        expect(await provider.getStorage(contract, SLOT_ONE)).to.equal(FIRST);
-        expect(await provider.getStorage(contract, SLOT_TWO)).to.equal(
-            toBeHex(0, 32)
-        );
-
-        const receipt = await node.store(contract, SLOT_ONE, SECOND);
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
         await fixture.pushedThrough(receipt.blockNumber);
-        await fixture.readAtBlock(receipt.blockNumber);
-        const proofsBefore = fixture.provenSlotCounts().length;
+        const requestsBefore = fixture.forwardedCount(...PROOF_REQUESTS);
 
-        expect(await provider.getStorage(contract, SLOT_ONE)).to.equal(SECOND);
-        expect(await provider.getStorage(contract, SLOT_TWO)).to.equal(
-            toBeHex(0, 32)
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(7, 32)
         );
-        expect(
-            await node.provider.getStorage(
-                contract,
-                SLOT_ONE,
-                receipt.blockNumber
-            )
-        ).to.equal(SECOND);
-        expect(fixture.provenSlotCounts().length).to.equal(proofsBefore);
-        expect(provider.pushedStateCounters).to.deep.include({
-            reproofs: 0,
-            ...NOTHING_WRONG
-        });
-        expect(provider.pushedStateCounters.acceptedBlocks).to.be.at.least(
-            receipt.blockNumber - followedAt
+        expect(await provider.getStorage(contract, 5)).to.equal(toBeHex(0, 32));
+        expect(await provider.getCode(contract)).to.equal(
+            await node.provider.getCode(contract)
         );
+        expect(await provider.getTransactionCount(node.senderAddress)).to.equal(
+            await node.provider.getTransactionCount(node.senderAddress)
+        );
+
+        expect(fixture.forwardedCount(...PROOF_REQUESTS)).to.equal(
+            requestsBefore
+        );
+        expect(fixture.forwardedReadCount()).to.equal(0);
         expect(provider.lightClientCounters).to.deep.include({
-            answeredLocally: 4,
+            fromPushedState: 4,
             failed: 0
         });
         expect(fixture.loggedErrors()).to.deep.equal([]);
     });
 
-    it("runs a call over a followed contract's pushed storage without proving a slot", async function () {
+    it("runs a call from the channel's sender over the pushed partition without a request to the node", async function () {
         fixture = await LightClientProviderFixture.start();
         const { node, provider } = fixture;
-        const contract = await node.deploy(STORE_LOG_AND_READ_CONTRACT);
-        await node.store(contract, SLOT_ONE, FIRST);
-        const followedAt = await fixture.follow(contract, SLOT_ONE);
-        await fixture.readAtBlock(followedAt);
-        const call = { to: contract, data: SLOT_ONE };
-        expect(await provider.call(call)).to.equal(FIRST);
-
-        const receipt = await node.store(contract, SLOT_ONE, SECOND);
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
         await fixture.pushedThrough(receipt.blockNumber);
-        await fixture.readAtBlock(receipt.blockNumber);
-        const proofsBefore = fixture.provenSlotCounts().length;
+        const requestsBefore = fixture.forwardedCount(...PROOF_REQUESTS);
+        const call = {
+            from: node.senderAddress,
+            to: contract,
+            data: toBeHex(10, 32)
+        };
 
-        expect(await provider.call(call)).to.equal(SECOND);
-        expect(
-            await node.provider.call({
-                ...call,
-                blockTag: receipt.blockNumber
-            })
-        ).to.equal(SECOND);
-        // the block's values, the contract's account and code: no slot
-        expect(
-            fixture
-                .provenSlotCounts()
-                .slice(proofsBefore)
-                .every((slots) => slots === 0)
-        ).to.equal(true);
-        expect(provider.pushedStateCounters).to.deep.include({
-            reproofs: 0,
-            ...NOTHING_WRONG
-        });
+        expect(await provider.call(call)).to.equal(toBeHex(7, 32));
+        expect(await node.provider.call(call)).to.equal(toBeHex(7, 32));
         expect(fixture.loggedErrors()).to.deep.equal([]);
-    });
-
-    it("proves a slot the pushed blocks wrote but no read held before", async function () {
-        fixture = await LightClientProviderFixture.start();
-        const { node, provider } = fixture;
-        const contract = await node.deploy(STORE_LOG_AND_READ_CONTRACT);
-        const followedAt = await fixture.follow(contract, SLOT_ONE);
-        await fixture.readAtBlock(followedAt);
-        expect(await provider.getStorage(contract, SLOT_TWO)).to.equal(
-            toBeHex(0, 32)
-        );
-
-        const receipt = await node.store(contract, SLOT_ONE, FIRST);
-        await fixture.pushedThrough(receipt.blockNumber);
-        await fixture.readAtBlock(receipt.blockNumber);
-        const proofsBefore = fixture.provenSlotCounts().length;
-
-        expect(await provider.getStorage(contract, SLOT_ONE)).to.equal(FIRST);
-        expect(fixture.provenSlotCounts().slice(proofsBefore)).to.deep.equal([
-            1
-        ]);
-        expect(provider.pushedStateCounters).to.deep.include({
-            reproofs: 0,
-            ...NOTHING_WRONG
+        expect(provider.lightClientCounters).to.deep.equal({
+            fromPushedState: 1,
+            withFallbackRead: 0,
+            leftToNodes: 0,
+            failed: 0,
+            unsupported: 0
         });
+
+        expect(fixture.forwardedCount(...PROOF_REQUESTS)).to.equal(
+            requestsBefore
+        );
+        expect(fixture.forwardedReadCount()).to.equal(0);
+        expect(provider.lightClientCounters.fromPushedState).to.equal(1);
     });
 
-    it("proves a followed contract's balance at the read's block, because only its storage is kept", async function () {
-        fixture = await LightClientProviderFixture.start();
-        const { node, provider } = fixture;
-        const contract = await node.deploy(STORE_LOG_AND_READ_CONTRACT);
-        const followedAt = await fixture.follow(contract, SLOT_ONE);
-        await fixture.readAtBlock(followedAt);
-        expect(await provider.getStorage(contract, SLOT_ONE)).to.equal(
-            toBeHex(0, 32)
-        );
-        expect(await provider.getBalance(contract)).to.equal(0n);
-
-        const receipt = await node.store(contract, SLOT_ONE, FIRST, PAID);
-        await fixture.pushedThrough(receipt.blockNumber);
-        await fixture.readAtBlock(receipt.blockNumber);
-
-        const balance = await provider.getBalance(contract);
-        expect(balance).to.equal(
-            await node.provider.getBalance(contract, receipt.blockNumber)
-        );
-        expect(balance > 0n).to.equal(true);
-        expect(await provider.getStorage(contract, SLOT_ONE)).to.equal(FIRST);
-        expect(provider.pushedStateCounters).to.deep.include({
-            reproofs: 0,
-            ...NOTHING_WRONG
-        });
-        expect(fixture.loggedErrors()).to.deep.equal([]);
-    });
-
-    it("proves all held storage of a followed contract in one request when the pushed blocks do not reach the read's block", async function () {
+    it("proves a read outside the partition at the pushed block, without asking for the best block", async function () {
         fixture = await LightClientProviderFixture.start();
         const { node, provider, proxy } = fixture;
-        const contract = await node.deploy(STORE_LOG_AND_READ_CONTRACT);
-        await node.store(contract, SLOT_ONE, FIRST);
-        const followedAt = await fixture.follow(contract, SLOT_ONE);
-        await fixture.readAtBlock(followedAt);
-        expect(await provider.getStorage(contract, SLOT_ONE)).to.equal(FIRST);
-        expect(await provider.getStorage(contract, SLOT_TWO)).to.equal(
-            toBeHex(0, 32)
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        // slot 11 is only channel B's
+        await node.readWriteLog(contract, CHANNEL_B, 11, 11, 3);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(receipt.blockNumber);
+        const headersBefore = proxy.forwardedCount("chain_getHeader");
+        const proofsBefore = proxy.forwardedCount("state_getReadProof");
+
+        expect(await provider.getStorage(contract, 11)).to.equal(
+            toBeHex(3, 32)
         );
 
-        proxy.changeNotifications(PUSHED_BLOCK, () => undefined);
-        const receipt = await node.store(contract, SLOT_ONE, SECOND);
-        await fixture.readAtBlock(receipt.blockNumber);
-        const proofsBefore = fixture.provenSlotCounts().length;
-
-        expect(await provider.getStorage(contract, SLOT_ONE)).to.equal(SECOND);
-        expect(await provider.getStorage(contract, SLOT_TWO)).to.equal(
-            toBeHex(0, 32)
+        expect(proxy.forwardedCount("chain_getHeader")).to.equal(headersBefore);
+        expect(proxy.forwardedCount("state_getReadProof")).to.equal(
+            proofsBefore + 1
         );
-        expect(fixture.provenSlotCounts().slice(proofsBefore)).to.deep.equal([
-            2
-        ]);
-        expect(provider.pushedStateCounters).to.deep.include({
-            reproofs: 1,
-            ...NOTHING_WRONG
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 0,
+            withFallbackRead: 1
         });
-        expect(fixture.loggedErrors()).to.deep.equal([]);
-        expect(fixture.loggedWarningMessages()).to.deep.equal([]);
     });
 
-    it("keeps a slot a block pushed without its write changed until the interval's proof finds it", async function () {
-        fixture = await LightClientProviderFixture.start({ reproofBlocks: 5 });
+    it("answers with the value another channel's transaction wrote to a held key", async function () {
+        fixture = await LightClientProviderFixture.start();
         const { node, provider } = fixture;
-        const contract = await node.deploy(STORE_LOG_AND_READ_CONTRACT);
-        await node.store(contract, SLOT_TWO, FIRST);
-        const followedAt = await fixture.follow(contract, SLOT_ONE);
-        await fixture.readAtBlock(followedAt);
-        expect(await provider.getStorage(contract, SLOT_TWO)).to.equal(FIRST);
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        // channel B's transaction writes slot 5, which channel A's read
+        const receipt = await node.readWriteLog(contract, CHANNEL_B, 11, 5, 9);
+        await fixture.pushedThrough(receipt.blockNumber);
+        const requestsBefore = fixture.forwardedCount(...PROOF_REQUESTS);
 
-        // logs slot two only: the block is pushed with its header alone
-        const receipt = await node.store(contract, SLOT_TWO, SECOND);
-        expect(receipt.blockNumber).to.be.below(followedAt + 4);
-        await fixture.pushedThrough(followedAt + 4);
-        await fixture.readAtBlock(followedAt + 4);
-        const proofsBefore = fixture.provenSlotCounts().length;
-
-        expect(await provider.getStorage(contract, SLOT_TWO)).to.equal(FIRST);
-        expect(
-            await node.provider.getStorage(contract, SLOT_TWO, followedAt + 4)
-        ).to.equal(SECOND);
-        expect(fixture.provenSlotCounts().length).to.equal(proofsBefore);
-        expect(provider.pushedStateCounters).to.deep.include({
-            reproofs: 0,
-            ...NOTHING_WRONG
-        });
-
-        await fixture.pushedThrough(followedAt + 5);
-        await fixture.readAtBlock(followedAt + 5);
-
-        expect(await provider.getStorage(contract, SLOT_TWO)).to.equal(SECOND);
-        expect(fixture.provenSlotCounts().slice(proofsBefore)).to.deep.equal([
-            1
-        ]);
-        expect(provider.pushedStateCounters).to.deep.include({
-            reproofs: 1,
-            refusedBlocks: 0,
-            changedUnpushed: 1
-        });
-        expect(fixture.loggedWarningMessages()).to.deep.equal([
-            CHANGED_UNPUSHED
-        ]);
-        expect(fixture.loggedErrors()).to.deep.equal([]);
+        expect(await provider.getStorage(contract, 5)).to.equal(toBeHex(9, 32));
+        expect(fixture.forwardedCount(...PROOF_REQUESTS)).to.equal(
+            requestsBefore
+        );
+        expect(provider.lightClientCounters.fromPushedState).to.equal(1);
     });
 
-    it("refuses a pushed block whose write is not the proven one and proves the storage itself", async function () {
+    it("refuses a push the proof decides otherwise, subscribes again and keeps answering proven reads", async function () {
         fixture = await LightClientProviderFixture.start();
         const { node, provider, proxy } = fixture;
-        const contract = await node.deploy(STORE_LOG_AND_READ_CONTRACT);
-        await node.store(contract, SLOT_ONE, FIRST);
-        const followedAt = await fixture.follow(contract, SLOT_ONE);
-        await fixture.readAtBlock(followedAt);
-        expect(await provider.getStorage(contract, SLOT_ONE)).to.equal(FIRST);
-
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await waitFor(() => provider.pushedStateCounters.acceptedBlocks > 1);
+        let changed = false;
         proxy.changeNotifications(PUSHED_BLOCK, (params) => {
-            const { subscription, result } = params as PushedParams;
-            return {
-                subscription,
-                result: {
-                    ...result,
-                    writes: result.writes.map(({ slot }) => ({
-                        slot,
-                        value: toBeHex(0xdead, 32)
-                    }))
-                }
-            };
+            const pushed = params as PushedParams;
+            if (changed || pushed.result.values.length === 0) return params;
+            changed = true;
+            // no key of this partition ever holds this value
+            pushed.result.values[0].value = toBeHex(0xdead, 32);
+            return pushed;
         });
-        const receipt = await node.store(contract, SLOT_ONE, SECOND);
-        await waitFor(() => provider.pushedStateCounters.refusedBlocks === 1);
-        await fixture.readAtBlock(receipt.blockNumber);
-        const proofsBefore = fixture.provenSlotCounts().length;
 
-        expect(await provider.getStorage(contract, SLOT_ONE)).to.equal(SECOND);
-        expect(fixture.provenSlotCounts().slice(proofsBefore)).to.deep.equal([
-            1
-        ]);
-        expect(provider.pushedStateCounters).to.deep.include({
-            reproofs: 1,
-            refusedBlocks: 1,
-            changedUnpushed: 0
-        });
-        expect(fixture.loggedErrorMessages()).to.deep.equal([REFUSED_BLOCK]);
-        expect(provider.lightClientCounters).to.deep.include({ failed: 0 });
-    });
-
-    it("refuses a pushed block that comes without the proof of its writes", async function () {
-        fixture = await LightClientProviderFixture.start();
-        const { node, provider, proxy } = fixture;
-        const contract = await node.deploy(STORE_LOG_AND_READ_CONTRACT);
-        await node.store(contract, SLOT_ONE, FIRST);
-        const followedAt = await fixture.follow(contract, SLOT_ONE);
-        await fixture.readAtBlock(followedAt);
-        expect(await provider.getStorage(contract, SLOT_ONE)).to.equal(FIRST);
-
-        proxy.changeNotifications(PUSHED_BLOCK, (params) => {
-            const { subscription, result } = params as PushedParams;
-            return { subscription, result: { ...result, proofNodes: [] } };
-        });
-        const receipt = await node.store(contract, SLOT_ONE, SECOND);
-        await waitFor(() => provider.pushedStateCounters.refusedBlocks === 1);
-        await fixture.readAtBlock(receipt.blockNumber);
-
-        expect(await provider.getStorage(contract, SLOT_ONE)).to.equal(SECOND);
-        expect(provider.pushedStateCounters).to.deep.include({
-            reproofs: 1,
-            refusedBlocks: 1,
-            changedUnpushed: 0
-        });
-        expect(fixture.loggedErrorMessages()).to.deep.equal([REFUSED_BLOCK]);
-    });
-
-    it("proves a contract's storage at each block again once its channel is unfollowed", async function () {
-        fixture = await LightClientProviderFixture.start();
-        const { node, provider, proxy } = fixture;
-        const contract = await node.deploy(STORE_LOG_AND_READ_CONTRACT);
-        await node.store(contract, SLOT_ONE, FIRST);
-        const followedAt = await fixture.follow(contract, SLOT_ONE);
-        await fixture.readAtBlock(followedAt);
-        expect(await provider.getStorage(contract, SLOT_ONE)).to.equal(FIRST);
-
-        provider.unfollowChannel(contract, SLOT_ONE);
-        await waitFor(() => proxy.forwardedCount(UNSUBSCRIBE) === 1);
-        const receipt = await node.store(contract, SLOT_ONE, SECOND);
-        await fixture.readAtBlock(receipt.blockNumber);
-        const proofsBefore = fixture.provenSlotCounts().length;
-
-        expect(await provider.getStorage(contract, SLOT_ONE)).to.equal(SECOND);
-        expect(fixture.provenSlotCounts().slice(proofsBefore)).to.deep.equal([
-            1
-        ]);
-        expect(proxy.forwardedCount(SUBSCRIBE)).to.equal(1);
-        expect(provider.pushedStateCounters).to.deep.include({
-            reproofs: 0,
-            ...NOTHING_WRONG
-        });
-        expect(fixture.loggedErrors()).to.deep.equal([]);
-    });
-
-    it("gets the writes of a second channel of the contract once that channel is followed too", async function () {
-        fixture = await LightClientProviderFixture.start();
-        const { node, provider, proxy } = fixture;
-        const contract = await node.deploy(STORE_LOG_AND_READ_CONTRACT);
-        await node.store(contract, SLOT_TWO, FIRST);
-        await fixture.follow(contract, SLOT_ONE);
-
-        provider.followChannel(contract, SLOT_TWO);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 10, 10, 1);
         await waitFor(() => proxy.forwardedCount(SUBSCRIBE) === 2);
+        proxy.stopChangingNotifications(PUSHED_BLOCK);
+        await fixture.pushedThrough(receipt.blockNumber + 1);
+
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(8, 32)
+        );
+        expect(provider.pushedStateCounters).to.deep.include({
+            refusedBlocks: 1,
+            resubscriptions: 1
+        });
         expect(proxy.forwardedCount(UNSUBSCRIBE)).to.equal(1);
-        const followedBothAt = await fixture.nextPushedBlock();
-        await fixture.readAtBlock(followedBothAt);
-        expect(await provider.getStorage(contract, SLOT_TWO)).to.equal(FIRST);
-
-        const receipt = await node.store(contract, SLOT_TWO, SECOND);
-        await fixture.pushedThrough(receipt.blockNumber);
-        await fixture.readAtBlock(receipt.blockNumber);
-        const proofsBefore = fixture.provenSlotCounts().length;
-
-        expect(await provider.getStorage(contract, SLOT_TWO)).to.equal(SECOND);
-        expect(fixture.provenSlotCounts().length).to.equal(proofsBefore);
-        expect(provider.pushedStateCounters).to.deep.include(NOTHING_WRONG);
-        expect(fixture.loggedErrors()).to.deep.equal([]);
+        expect(fixture.loggedErrorMessages()).to.deep.equal([REFUSED_BLOCK]);
     });
 
-    it("subscribes again on a socket that reopened and proves the held storage again", async function () {
+    it("subscribes again on a socket that reopened and answers from its new sync", async function () {
         fixture = await LightClientProviderFixture.start();
         const { node, provider, proxy } = fixture;
-        const contract = await node.deploy(STORE_LOG_AND_READ_CONTRACT);
-        await node.store(contract, SLOT_ONE, FIRST);
-        const followedAt = await fixture.follow(contract, SLOT_ONE);
-        await fixture.readAtBlock(followedAt);
-        expect(await provider.getStorage(contract, SLOT_ONE)).to.equal(FIRST);
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
 
         proxy.cut();
         // a block the provider is not pushed
-        const receipt = await node.store(contract, SLOT_ONE, SECOND);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 10, 10, 1);
         proxy.restore();
         await waitFor(() => proxy.forwardedCount(SUBSCRIBE) === 2);
-        const resubscribedAt = await fixture.nextPushedBlock();
-        await fixture.readAtBlock(resubscribedAt);
-        const proofsBefore = fixture.provenSlotCounts().length;
+        await fixture.pushedThrough(receipt.blockNumber);
+        const requestsBefore = fixture.forwardedCount(...PROOF_REQUESTS);
 
-        expect(resubscribedAt).to.be.above(receipt.blockNumber);
-        expect(await provider.getStorage(contract, SLOT_ONE)).to.equal(SECOND);
-        expect(fixture.provenSlotCounts().slice(proofsBefore)).to.deep.equal([
-            1
-        ]);
-        expect(provider.pushedStateCounters).to.deep.include({
-            reproofs: 1,
-            ...NOTHING_WRONG
-        });
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(8, 32)
+        );
+        expect(fixture.forwardedCount(...PROOF_REQUESTS)).to.equal(
+            requestsBefore
+        );
+        expect(provider.lightClientCounters.fromPushedState).to.equal(1);
         expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("reads at the node's best block again once the channel is unfollowed", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(receipt.blockNumber);
+
+        provider.unfollowChannel(contract, CHANNEL_A);
+        await waitFor(() => proxy.forwardedCount(UNSUBSCRIBE) === 1);
+        const headersBefore = proxy.forwardedCount("chain_getHeader");
+
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(7, 32)
+        );
+        expect(proxy.forwardedCount("chain_getHeader")).to.equal(
+            headersBefore + 1
+        );
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 0,
+            withFallbackRead: 1
+        });
     });
 
     it("follows nothing on a node without the light client endpoints", async function () {
@@ -398,19 +223,141 @@ describe("Light client followed channel", function () {
             withoutEndpoints: true
         });
         const { node, provider, proxy } = fixture;
-        const contract = await node.deploy(STORE_LOG_AND_READ_CONTRACT);
-        await node.store(contract, SLOT_ONE, FIRST);
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
 
-        provider.followChannel(contract, SLOT_ONE);
+        provider.followChannel(contract, CHANNEL_A);
 
-        expect(await provider.getStorage(contract, SLOT_ONE)).to.equal(FIRST);
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(7, 32)
+        );
         expect(proxy.forwardedCount("rpc_methods")).to.equal(1);
         expect(proxy.forwardedCount(SUBSCRIBE)).to.equal(0);
-        expect(fixture.loggedErrorMessages()).to.have.length(1);
-        expect(provider.pushedStateCounters).to.deep.equal({
-            acceptedBlocks: 0,
-            reproofs: 0,
-            ...NOTHING_WRONG
+        expect(provider.lightClientCounters).to.deep.include({
+            unsupported: 1
         });
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+        expect(fixture.loggedInfoMessages()).to.include(
+            "RPC node doesn't support LC endpoints; it answers the chain reads itself"
+        );
+    });
+
+    it("follows over two endpoints and keeps answering from pushed state when one of them goes", async function () {
+        fixture = await LightClientProviderFixture.start({ endpoints: 2 });
+        const { node, provider, proxies } = fixture;
+        const [first, second] = proxies;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        await waitFor(() =>
+            proxies.every((proxy) => proxy.forwardedCount(SUBSCRIBE) === 1)
+        );
+        await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+
+        first.cut();
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 10, 10, 1);
+        await waitFor(() =>
+            second.sentNotifications.some(
+                ({ method, params }) =>
+                    method === PUSHED_BLOCK &&
+                    Number(
+                        (params as { result: { header: { number: string } } })
+                            .result.header.number
+                    ) >= receipt.blockNumber
+            )
+        );
+        const requestsBefore = fixture.forwardedCount(...PROOF_REQUESTS);
+
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(8, 32)
+        );
+        expect(fixture.forwardedCount(...PROOF_REQUESTS)).to.equal(
+            requestsBefore
+        );
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 1,
+            failed: 0
+        });
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("keeps the other channel's subscription when one of two channels is unfollowed", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        provider.followChannel(contract, CHANNEL_B);
+        await waitFor(() => proxy.forwardedCount(SUBSCRIBE) === 2);
+
+        provider.unfollowChannel(contract, CHANNEL_A);
+        await waitFor(() => proxy.forwardedCount(SUBSCRIBE) === 3);
+
+        const subscriptions = proxy.forwardedRequests
+            .filter(({ method }) => method === SUBSCRIBE)
+            .map(({ params }) => (params as [{ topics: string[] }])[0].topics);
+        expect(subscriptions).to.deep.equal([
+            [CHANNEL_A],
+            [CHANNEL_A, CHANNEL_B],
+            [CHANNEL_B]
+        ]);
+        expect(proxy.forwardedCount(UNSUBSCRIBE)).to.equal(2);
+        const receipt = await node.readWriteLog(contract, CHANNEL_B, 5, 12, 4);
+        await fixture.pushedThrough(receipt.blockNumber);
+        const requestsBefore = fixture.forwardedCount(...PROOF_REQUESTS);
+        expect(await provider.getStorage(contract, 12)).to.equal(
+            toBeHex(4, 32)
+        );
+        expect(fixture.forwardedCount(...PROOF_REQUESTS)).to.equal(
+            requestsBefore
+        );
+    });
+
+    it("tries a subscription that failed on an open connection again", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        proxy.failNextRequest(SUBSCRIBE);
+
+        provider.followChannel(contract, CHANNEL_A);
+        await waitFor(() => proxy.forwardedCount(SUBSCRIBE) === 2);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(receipt.blockNumber);
+        const requestsBefore = fixture.forwardedCount(...PROOF_REQUESTS);
+
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(7, 32)
+        );
+        expect(fixture.forwardedCount(...PROOF_REQUESTS)).to.equal(
+            requestsBefore
+        );
+        expect(fixture.loggedErrorMessages()).to.deep.equal([
+            "Light client subscription failed"
+        ]);
+    });
+
+    it("keeps the stages of each accepted pushed block, in block order", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(receipt.blockNumber + 1);
+
+        const timings = provider.pushedBlockTimings;
+        expect(timings.length).to.equal(
+            provider.pushedStateCounters.acceptedBlocks
+        );
+        expect(timings.map(({ number }) => number)).to.deep.equal(
+            timings.map((_, index) => timings[0].number + index)
+        );
+        const written = timings.find(
+            ({ number }) => number === receipt.blockNumber
+        )!;
+        expect(written.executedAt).to.be.a("number");
+        expect(written.executedAt!).to.be.at.most(written.builtAt);
+        expect(written.builtAt).to.be.at.most(written.sentAt);
+        expect(written.sentAt).to.be.at.most(written.receivedAt);
+        expect(written.receivedAt).to.be.at.most(written.verifiedAt);
+        expect(written.newNodes).to.be.above(0);
+        expect(written.heldNodes).to.be.at.least(written.newNodes);
     });
 });

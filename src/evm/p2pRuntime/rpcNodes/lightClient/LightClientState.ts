@@ -10,7 +10,7 @@ import {
     StorageCache
 } from "@ethereumjs/statemanager";
 import { Account, type Address } from "@ethereumjs/util";
-import { type BytesLike, getBytes, hexlify, keccak256 } from "ethers";
+import { getBytes, hexlify, keccak256 } from "ethers";
 
 /** Keccak-256 of empty code, the code hash of an account without code. */
 const EMPTY_CODE_HASH = getBytes(keccak256("0x"));
@@ -68,6 +68,11 @@ export class LightClientState extends RPCStateManager {
     private readonly accounts = new Map<AccountAddress, HeldAccount>();
     /** What the running pass found missing, by address. */
     private readonly misses = new Map<AccountAddress, AccountStateRead>();
+    /**
+     * The code the call had created at each open checkpoint, by the address
+     * string the base keys it with: a revert goes back to it.
+     */
+    private createdCodeCheckpoints: Map<string, Uint8Array>[] = [];
 
     constructor(options: LightClientStateOptions) {
         super({ provider: UNUSED_PROVIDER_URL, blockTag: 0n });
@@ -160,6 +165,27 @@ export class LightClientState extends RPCStateManager {
         return this.readCode(accountAddress) ?? new Uint8Array();
     }
 
+    // Overrides RPCStateManager.checkpoint: also keeps the code the call has
+    // created so far, which the base's checkpoints do not cover.
+    override async checkpoint(): Promise<void> {
+        this.createdCodeCheckpoints.push(new Map(this._contractCache));
+        await super.checkpoint();
+    }
+
+    // Overrides RPCStateManager.commit: the created code stays.
+    override async commit(): Promise<void> {
+        this.createdCodeCheckpoints.pop();
+        await super.commit();
+    }
+
+    // Overrides RPCStateManager.revert: the base forgets all created code,
+    // also what an outer frame created; this goes back to the checkpoint's.
+    override async revert(): Promise<void> {
+        const created = this.createdCodeCheckpoints.pop();
+        await super.revert();
+        this._contractCache = created ?? new Map();
+    }
+
     // Overrides RPCStateManager.getProof: the base would ask eth_getProof.
     override async getProof(): Promise<never> {
         throw new Error("The light client state serves no Ethereum proof");
@@ -205,42 +231,10 @@ export class LightClientState extends RPCStateManager {
         });
     }
 
-    /**
-     * Forgets the proven state: it held at another block. The storage of
-     * the contracts in `carried` stays, because the caller brings it to the
-     * new block; their nonce, balance and code are forgotten like the rest.
-     */
-    forgetProvenState(carried: ReadonlySet<AccountAddress> = new Set()): void {
-        for (const [address, account] of this.accounts) {
-            if (!carried.has(address)) this.accounts.delete(address);
-            else this.accounts.set(address, { storage: account.storage });
-        }
+    /** Forgets the proven state: it held at another block. */
+    forgetProvenState(): void {
+        this.accounts.clear();
         this.misses.clear();
-    }
-
-    /** The proven storage of `address`: each held slot and its 32-byte word. */
-    heldStorage(address: AccountAddress): Map<StorageSlotKey, string> {
-        const held = new Map<StorageSlotKey, string>();
-        for (const [slot, word] of this.accounts.get(address)?.storage ?? [])
-            held.set(slot, hexlify(word));
-        return held;
-    }
-
-    /**
-     * Brings the held storage of `address` to a block that wrote `writes`.
-     * A written slot that is not held stays unheld: only what a read used is
-     * kept.
-     */
-    applyWrites(
-        address: AccountAddress,
-        writes: { slot: BytesLike; value: string }[]
-    ): void {
-        const storage = this.accounts.get(address)?.storage;
-        if (!storage) return;
-        for (const { slot, value } of writes) {
-            const key = hexlify(slot);
-            if (storage.has(key)) storage.set(key, getBytes(value));
-        }
     }
 
     /**
@@ -257,6 +251,7 @@ export class LightClientState extends RPCStateManager {
             type: CacheType.ORDERED_MAP
         });
         this._contractCache = new Map();
+        this.createdCodeCheckpoints = [];
         this.originalStorageCache.clear();
     }
 

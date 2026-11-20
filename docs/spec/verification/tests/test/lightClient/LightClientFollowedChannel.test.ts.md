@@ -1,38 +1,27 @@
 # LightClientFollowedChannel.test.ts
 
 Test file: [test/lightClient/LightClientFollowedChannel.test.ts](../../../../../../test/lightClient/LightClientFollowedChannel.test.ts)
-Exercises: [LightClientRpcProvider.ts](../../../../implementation/source/src/evm/p2pRuntime/rpcNodes/LightClientRpcProvider.ts.md), [LightClient.ts](../../../../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/LightClient.ts.md), [LightClientSubscriptions.ts](../../../../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/LightClientSubscriptions.ts.md)
+Exercises: [LightClientRpcProvider.ts](../../../../implementation/source/src/evm/p2pRuntime/rpcNodes/LightClientRpcProvider.ts.md)
 
 ## Overview
 
-Every declaration starts a peer3 dev node of its own from the binary `PEER3_NODE_BIN` names, with the
-test-owned light client sidecar in front of it and a test-owned proxy in front of the sidecar. The
-runner discovers the file only with `--lc-tests`. The provider under test is the one the SDK builds
-with `createRpcNodesProvider` and `LIGHT_CLIENT` on, given the proxy's address. The contract is
-hand-assembled: a transaction stores a word at a slot and logs the slot as its only topic, and a call
-returns the word at a slot. A slot so stands for a channel id, and a test follows one slot through
-`followChannel`. Transactions go to the node directly. The proxy records each block the sidecar
-pushes to the provider, so a test knows which blocks reached the provider's socket. It answers the
-best block request with the node's own header of an earlier block, so a read is made at a block
-whose pushed block was sent before the answer, on the same socket. Without that a read would race
-the push of a block the node sealed in between. The proxy also drops or changes pushed blocks. The
-oracles are the node's own answers at the read's block, the slots each read proof was asked to
-prove, the subscription requests the proxy saw, the provider's counters and what it logged as
-warnings and errors. The suite does not cover more than one endpoint, a pushed block that arrives
-while a read runs, the limit of pushed blocks kept while no read uses them, or a runtime that follows
-its channel.
+The suite has the SDK's chain access follow a channel of a contract on a peer3 node of its own with
+`--light-client`, behind one proxy per endpoint that records what the endpoint was asked and can
+change what it pushes or cut the connection. The oracles are the node's own answers and the requests
+the proxy saw: a read the pushed partition answers asks the endpoint nothing. It runs only with
+`--lc-tests`.
 
 ## Tests
 
-- `reads a followed contract's storage at a later block from the pushed blocks without a proof`: REQ-LC-5-MM0BM9.T1.P1
-- `runs a call over a followed contract's pushed storage without proving a slot`: REQ-LC-5-MM0BM9.T1.P2
-- `proves a slot the pushed blocks wrote but no read held before`: REQ-LC-5-MM0BM9.T1.P3
-- `proves a followed contract's balance at the read's block, because only its storage is kept`: REQ-LC-5-MM0BM9.T1.P4
-- `proves all held storage of a followed contract in one request when the pushed blocks do not reach the read's block`: REQ-LC-5-MM0BM9.T1.P5
-- `keeps a slot a block pushed without its write changed until the interval's proof finds it`: REQ-LC-6-NEFA2N.T1.P1
-- `refuses a pushed block whose write is not the proven one and proves the storage itself`: REQ-LC-7-W8WDN3.T1.P1
-- `refuses a pushed block that comes without the proof of its writes`: REQ-LC-7-W8WDN3.T1.P2
-- `proves a contract's storage at each block again once its channel is unfollowed`: REQ-LC-5-MM0BM9.T1.P6
-- `gets the writes of a second channel of the contract once that channel is followed too`: REQ-LC-5-MM0BM9.T1.P7
-- `subscribes again on a socket that reopened and proves the held storage again`: REQ-LC-5-MM0BM9.T1.P8
-- `follows nothing on a node without the light client endpoints`: REQ-LC-5-MM0BM9.T1.P9
+- `answers reads of a followed channel's partition from the pushed state without a request to the node`: REQ-LC-9-KWXV43.T1.P1
+- `runs a call from the channel's sender over the pushed partition without a request to the node`: REQ-LC-9-KWXV43.T1.P2
+- `proves a read outside the partition at the pushed block, without asking for the best block`: REQ-LC-9-KWXV43.T1.P3
+- `answers with the value another channel's transaction wrote to a held key`: REQ-LC-9-KWXV43.T1.P4
+- `refuses a push the proof decides otherwise, subscribes again and keeps answering proven reads`: REQ-LC-7-W8WDN3.T1.P3
+- `subscribes again on a socket that reopened and answers from its new sync`: REQ-LC-5-MM0BM9.T1.P10
+- `reads at the node's best block again once the channel is unfollowed`: REQ-LC-5-MM0BM9.T1.P11
+- `follows nothing on a node without the light client endpoints`: REQ-LC-5-MM0BM9.T1.P12
+- `follows over two endpoints and keeps answering from pushed state when one of them goes`: REQ-LC-5-MM0BM9.T1.P13
+- `keeps the other channel's subscription when one of two channels is unfollowed`: REQ-LC-5-MM0BM9.T1.P14
+- `tries a subscription that failed on an open connection again`: REQ-LC-5-MM0BM9.T1.P15
+- `keeps the stages of each accepted pushed block, in block order`: REQ-LC-10-YCP80W.T1.P1

@@ -26,13 +26,13 @@ one of the first 28 declarations, and all 28 passed with the source restored; th
 were added afterwards. Not covered: the browser build beyond its typecheck.
 
 [SubstrateHeader.test.ts](../verification/tests/test/unit/SubstrateHeader.test.ts.md) (10 declarations) and
-[proveFrontierStorageBlock.test.ts](../verification/tests/test/unit/proveFrontierStorageBlock.test.ts.md) (11
-declarations) cover all 15 planned cases of [`REQ-STPROOF-3-NVJGR0` (A pushed block is accepted only under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0). Their data is three blocks a peer3 dev
+`proveFrontierStorageBlock.test.ts` (removed on 2026-11-20) (11
+declarations) cover all 15 planned cases of [`REQ-STPROOF-3-NVJGR0` (A pushed partition is accepted only as its proof decides it under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0). Their data is three blocks a peer3 dev
 node pushed through the sidecar on 2026-11-18, with the block hashes that node reported. Each of 11
 single-line faults put into the three source files failed at least one declaration, and all 51 light client
 declarations passed with the source restored. The recorded blocks were the sidecar's only evidence until the live suite below.
 
-[LightClientPushedBlocks.test.ts](../verification/tests/test/lightClient/LightClientPushedBlocks.test.ts.md) (3
+`LightClientPushedBlocks.test.ts` (removed on 2026-11-20) (3
 declarations, added 2026-11-18) is the first suite that starts a peer3 node: each declaration runs the
 binary `PEER3_NODE_BIN` names with the sidecar in front of it, and the runner discovers the file only with
 `--lc-tests`. Its declarations cover the three live cases of [`REQ-STPROOF-3-NVJGR0.T2`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2) with the node's own
@@ -81,19 +81,30 @@ all passed with the source restored. Not covered: the same suite in CI, because 
 distributed worker has the node binary; more than one endpoint; a read while the provider's endpoint is
 down; the pass limit; the full SDK suite with the light client on, which is the farm rollout.
 
-[LightClientFollowedChannel.test.ts](../verification/tests/test/lightClient/LightClientFollowedChannel.test.ts.md)
-(12 declarations, added 2026-11-19) covers [`REQ-LC-5-MM0BM9.T1`](../specification/runtime/light-client.md#req-lc-5-mm0bm9.t1), [`REQ-LC-6-NEFA2N.T1`](../specification/runtime/light-client.md#req-lc-6-nefa2n.t1) and [`REQ-LC-7-W8WDN3.T1`](../specification/runtime/light-client.md#req-lc-7-w8wdn3.t1) on a
-peer3 node of its own behind `--lc-tests`. A read is made at a block the proxy names, whose pushed block
-the proxy sent on before; otherwise the read would race the push of a block sealed in between.
-[LightClientReproofBlocks.test.ts](../verification/tests/test/unit/LightClientReproofBlocks.test.ts.md)
-(3 declarations) covers [`REQ-LC-6-NEFA2N.T2`](../specification/runtime/light-client.md#req-lc-6-nefa2n.t2) without a node. One more declaration each in
-[SubstrateHeader.test.ts](../verification/tests/test/unit/SubstrateHeader.test.ts.md),
-[proveFrontierStorageBlock.test.ts](../verification/tests/test/unit/proveFrontierStorageBlock.test.ts.md) and
-[LightClientPushedBlocks.test.ts](../verification/tests/test/lightClient/LightClientPushedBlocks.test.ts.md)
-covers the header-only block and the parent hash. Each of 16 single-line faults put into the light client, its state, the subscriptions, the provider and the pushed-block check failed a declaration, and all passed with the source restored. Not covered:
-[`REQ-LC-8-BBYC51.T1`](../specification/runtime/light-client.md#req-lc-8-bbyc51.t1), which needs a runtime on a peer3 node with the channel contract deployed and comes
-with the farm rollout; more than one endpoint; a pushed block that arrives while a read runs; the limit
-of waiting pushed blocks; the same suites in CI.
+Reworked on 2026-11-20 with the partitions a peer3 node pushes. Every suite runs on a peer3 node of its
+own started with `--light-client` (peer3-parachain PR #3), behind `--lc-tests`; the sidecar and its
+recorded pushes are gone.
+[FrontierPushedPartition.test.ts](../verification/tests/test/unit/FrontierPushedPartition.test.ts.md) (10
+declarations) covers the new [`REQ-STPROOF-3-NVJGR0.T1`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t1) cases on five messages recorded from such a node, with
+the node's own answers at each block as the oracle; it needs no node and runs in CI.
+[LightClientPushedPartitions.test.ts](../verification/tests/test/lightClient/LightClientPushedPartitions.test.ts.md) (6 declarations) covers [`REQ-STPROOF-3-NVJGR0.T2`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2) live.
+[LightClientFollowedChannel.test.ts](../verification/tests/test/lightClient/LightClientFollowedChannel.test.ts.md) (12 declarations) covers [`REQ-LC-5-MM0BM9.T1`](../specification/runtime/light-client.md#req-lc-5-mm0bm9.t1),
+[`REQ-LC-7-W8WDN3.T1`](../specification/runtime/light-client.md#req-lc-7-w8wdn3.t1), [`REQ-LC-9-KWXV43.T1`](../specification/runtime/light-client.md#req-lc-9-kwxv43.t1) and [`REQ-LC-10-YCP80W.T1`](../specification/runtime/light-client.md#req-lc-10-ycp80w.t1); a read of the followed partition is checked to ask
+the endpoint nothing. [LightClientLocalRuns.test.ts](../verification/tests/test/lightClient/LightClientLocalRuns.test.ts.md) (7 declarations) and seven new
+declarations of [LightClientProvider.test.ts](../verification/tests/test/lightClient/LightClientProvider.test.ts.md) cover the new cases of [`REQ-LC-1-JT5PKT.T1`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1)
+to [`REQ-LC-4-E29Y46.T1`](../specification/runtime/light-client.md#req-lc-4-e29y46.t1), with the node's own answer to the same call as the oracle. The light client suites passed
+85 of 85 locally, and the whole Mocha suite on the distributed runner, where every runtime now uses the
+light client provider over Hardhat, passed 3553 of 3554; the one failure passed alone. Faults: of 11
+single-line faults put in together, one each into the partition's pruning and header check, the
+resubscription, the created-code checkpoints, the precompile filter, the value rule, the endpoint
+question's retry, the closed-provider rule, Hardhat's error code, the subscription retry and the stage
+record, each failed its own declaration; a fault that skips the partitions in a read failed every
+pushed-state declaration; a fault that drops early pushes failed six declarations. Two faults failed
+none: using a lost connection's pushes, and ignoring the endpoint's end of a subscription. Not covered:
+those two, the endpoint ending a lagging subscription
+([`REQ-LC-7-W8WDN3.T1.P4`](../specification/runtime/light-client.md#req-lc-7-w8wdn3.t1.p4), a gap), [`REQ-LC-8-BBYC51.T1`](../specification/runtime/light-client.md#req-lc-8-bbyc51.t1), which needs a runtime on a peer3 node with the
+channel contract deployed, and the full SDK suite on peer3 nodes with the light client on; the
+`--lc-tests` suites in CI, because no distributed worker has the node binary.
 
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 

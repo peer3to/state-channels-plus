@@ -180,6 +180,8 @@ async function startPeer3Node({ port, logPath, label = "peer3 node" } = {}) {
             "test",
             "--dev-seal",
             "interval",
+            // the light client endpoints
+            "--light-client",
             "--rpc-port",
             String(nodePort),
             // the wildcard storage subscription is an unsafe method

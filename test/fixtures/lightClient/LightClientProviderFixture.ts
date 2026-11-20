@@ -12,62 +12,71 @@ import { recordingLogger } from "@test/fixtures/node/RpcNodesFixture";
 import { waitFor } from "@test/utils/waitFor";
 import { ethers } from "hardhat";
 
-/** `twox128("EVM") ++ twox128("AccountStorages")`: the start of every contract storage key. */
-const ACCOUNT_STORAGES_PREFIX =
-    "0x1da53b775b270400e7e61ed5cbc5a146ab1160471b1418779239ba8e2b847e42";
-
 /**
- * The SDK's RPC provider with the light client on, over a peer3 node of this
- * test's own. A proxy sits between the provider and its endpoint, so a test
- * sees what the provider asked the node and can answer in the node's place.
+ * The SDK's RPC provider over a peer3 node of this test's own, which serves
+ * the light client endpoints. A proxy sits between the provider and the node,
+ * so a test sees what the provider asked the node and can answer in the
+ * node's place.
  */
 export class LightClientProviderFixture {
     readonly node: LightClientNodeFixture;
-    /** Between the provider and the endpoint it was given. */
+    /** Between the provider and the endpoint it was given first. */
     readonly proxy: RpcNodeProxy;
+    /** One per endpoint the provider was given, in its order; the first is {@link proxy}. */
+    readonly proxies: readonly RpcNodeProxy[];
     readonly provider: LightClientRpcProvider;
-    /** Everything the provider logged as a warning or an error. */
+    /** Everything the provider logged. */
     private readonly logged: () => LogEntry[];
     private readonly disposeLogger: () => void;
 
     private constructor(
         node: LightClientNodeFixture,
-        proxy: RpcNodeProxy,
+        proxies: RpcNodeProxy[],
         provider: LightClientRpcProvider,
         logged: () => LogEntry[],
         disposeLogger: () => void
     ) {
         this.node = node;
-        this.proxy = proxy;
+        this.proxies = proxies;
+        this.proxy = proxies[0];
         this.provider = provider;
         this.logged = logged;
         this.disposeLogger = disposeLogger;
     }
 
     /**
-     * Starts the node and the provider. The provider's endpoint serves the
-     * light client endpoints unless `withoutEndpoints`, which gives it the
-     * node itself.
+     * Starts the node and the provider, over `endpoints` endpoints to the
+     * node (one when unset), each behind a proxy of its own. With
+     * `withoutEndpoints`, the first proxy answers `rpc_methods` with the
+     * node's list less the light client methods, as a node without them
+     * would.
      */
     static async start(
-        options: {
-            withoutEndpoints?: boolean;
-            /** The provider's `LIGHT_CLIENT_REPROOF_BLOCKS`; its default when unset. */
-            reproofBlocks?: number;
-        } = {}
+        options: { withoutEndpoints?: boolean; endpoints?: number } = {}
     ): Promise<LightClientProviderFixture> {
         const node = await LightClientNodeFixture.start();
         try {
             await node.firstBlockSealed();
-            const proxy = options.withoutEndpoints
-                ? await node.proxyToNode()
-                : await node.proxyToEndpoints();
-            const { logger, entries } = recordingLogger("warn");
+            const proxies: RpcNodeProxy[] = [];
+            for (let index = 0; index < (options.endpoints ?? 1); index++)
+                proxies.push(await node.proxyToNode());
+            const [proxy] = proxies;
+            if (options.withoutEndpoints) {
+                const { methods } = (await node.provider.send(
+                    "rpc_methods",
+                    []
+                )) as { methods: string[] };
+                proxy.answerRequests("rpc_methods", {
+                    methods: methods.filter(
+                        (method) => !method.startsWith("lightClient_")
+                    )
+                });
+            }
+            const { logger, entries } = recordingLogger("debug");
             const provider = await createRpcNodesProvider(
                 {
                     PROVIDER_URL: proxy.url,
-                    LIGHT_CLIENT: true,
-                    LIGHT_CLIENT_REPROOF_BLOCKS: options.reproofBlocks
+                    PROVIDER_URLS: proxies.map(({ url }) => url)
                 },
                 logger
             );
@@ -75,7 +84,7 @@ export class LightClientProviderFixture {
                 throw new Error("Expected the light client provider");
             return new LightClientProviderFixture(
                 node,
-                proxy,
+                proxies,
                 provider,
                 entries,
                 () => logger.dispose()
@@ -96,6 +105,13 @@ export class LightClientProviderFixture {
     async deployNumberStorage(): Promise<string> {
         const factory = await ethers.getContractFactory("SimpleNumberStorage");
         return this.node.deploy(factory.bytecode);
+    }
+
+    /** The messages the provider logged at info level, in order. */
+    loggedInfoMessages(): string[] {
+        return this.logged()
+            .filter((entry) => entry.level === "info")
+            .map((entry) => entry.message);
     }
 
     /** Everything the provider logged at error level. */
@@ -140,35 +156,16 @@ export class LightClientProviderFixture {
         );
     }
 
-    /**
-     * Makes the endpoint name block `number` as its best block from now on,
-     * so that a read is made at that block whatever the node sealed since.
-     * The header is the node's own.
-     */
-    async readAtBlock(number: number): Promise<void> {
-        const hash: string = await this.node.provider.send(
-            "chain_getBlockHash",
-            [number]
+    /** How many requests of `methods` the provider sent its endpoints. */
+    forwardedCount(...methods: string[]): number {
+        return this.proxies.reduce(
+            (count, proxy) =>
+                methods.reduce(
+                    (sum, method) => sum + proxy.forwardedCount(method),
+                    count
+                ),
+            0
         );
-        this.proxy.answerRequests(
-            "chain_getHeader",
-            await this.node.provider.send("chain_getHeader", [hash])
-        );
-    }
-
-    /**
-     * The contract storage slots each read proof the provider asked its
-     * endpoint for was to prove, one count per request, in order.
-     */
-    provenSlotCounts(): number[] {
-        return this.proxy.forwardedRequests
-            .filter(({ method }) => method === "state_getReadProof")
-            .map(
-                ({ params }) =>
-                    (params as [keys: string[]])[0].filter((key) =>
-                        key.startsWith(ACCOUNT_STORAGES_PREFIX)
-                    ).length
-            );
     }
 
     /** The numbers of the blocks pushed to the provider's socket, in order. */
@@ -193,9 +190,6 @@ export class LightClientProviderFixture {
             "eth_getCode",
             "eth_getBalance",
             "eth_getTransactionCount"
-        ].reduce(
-            (count, method) => count + this.proxy.forwardedCount(method),
-            0
-        );
+        ].reduce((count, method) => count + this.forwardedCount(method), 0);
     }
 }

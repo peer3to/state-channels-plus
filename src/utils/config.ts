@@ -5,17 +5,6 @@ export type Config = {
     // RPC nodes in priority order. The first one sends transactions while it
     // is connected. Unset or empty means the single node PROVIDER_URL.
     PROVIDER_URLS?: string[];
-    // true answers chain reads from state the RPC node proves instead of
-    // trusting its answers, when the node serves the light client endpoints.
-    // A node without them keeps answering the reads itself, with an error
-    // logged.
-    LIGHT_CLIENT: boolean;
-    // With LIGHT_CLIENT: blocks after which the storage held of the channel's
-    // contract is proven again instead of carried by the blocks the node
-    // pushes. Until then a write the node pushed no block for is not seen;
-    // keep the interval inside the shortest on-chain deadline. 1 proves the
-    // storage at every block. A positive integer.
-    LIGHT_CLIENT_REPROOF_BLOCKS: number;
     // Most blocks one eth_getLogs read may span. Event catch-up and recovery
     // read longer ranges in windows of this size; set it at or below the
     // endpoints' own range limit. A positive integer.
@@ -85,18 +74,9 @@ export type Config = {
 /** Default lifetime of a prepared join authorization, in chain seconds. */
 export const DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS = 120;
 
-/**
- * Default re-proof interval of the light client, in blocks: 20 s of peer3's
- * 2 s blocks, inside the 30 s the shortest on-chain deadline of the peer3
- * deployment leaves.
- */
-export const DEFAULT_LIGHT_CLIENT_REPROOF_BLOCKS = 10;
-
 const DEFAULT_CONFIG: Config = {
     PROVIDER_URL: "http://localhost:8545",
     PROVIDER_URLS: [],
-    LIGHT_CLIENT: false,
-    LIGHT_CLIENT_REPROOF_BLOCKS: DEFAULT_LIGHT_CLIENT_REPROOF_BLOCKS,
     LOG_QUERY_MAX_BLOCKS: 1000,
     DEBUG_STATE_MANAGER: false,
     DEBUG_DISPUTE_HANDLER: false,
@@ -137,17 +117,6 @@ export function assertLogQueryMaxBlocks(maxBlocks: number): void {
     if (!Number.isSafeInteger(maxBlocks) || maxBlocks < 1)
         throw new Error(
             `LOG_QUERY_MAX_BLOCKS must be a positive integer, got ${maxBlocks}`
-        );
-}
-
-/**
- * Rejects a re-proof interval that is not a positive integer: storage is
- * proven again after a whole number of blocks, at least one.
- */
-export function assertLightClientReproofBlocks(blocks: number): void {
-    if (!Number.isSafeInteger(blocks) || blocks < 1)
-        throw new Error(
-            `LIGHT_CLIENT_REPROOF_BLOCKS must be a positive integer, got ${blocks}`
         );
 }
 

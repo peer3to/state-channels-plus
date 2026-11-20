@@ -1,16 +1,19 @@
 // @distributed-requires: lightClient
 import LightClientRpcProvider from "@/evm/p2pRuntime/rpcNodes/LightClientRpcProvider";
-import { createRpcNodesProvider } from "@/index";
 import {
     BLOCK_VALUES_CONTRACT,
+    CALLER_AND_ORIGIN_CONTRACT,
+    INVALID_OPCODE_CONTRACT,
+    OUT_OF_GAS_CONTRACT,
     PREVIOUS_BLOCK_HASH_CONTRACT,
     STATIC_FORWARDER_CONTRACT
 } from "@test/fixtures/lightClient/LightClientNodeFixture";
 import { LightClientProviderFixture } from "@test/fixtures/lightClient/LightClientProviderFixture";
-import { recordingLogger } from "@test/fixtures/node/RpcNodesFixture";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import {
     AbiCoder,
+    Wallet,
     concat,
     Contract,
     sha256,
@@ -19,7 +22,8 @@ import {
 } from "ethers";
 import { ethers } from "hardhat";
 
-const NO_FALLBACK = { leftToNodes: 0, failed: 0, unsupported: 0 };
+/** No read was answered by the nodes. */
+const NO_NODE_ANSWER = { leftToNodes: 0, failed: 0, unsupported: 0 };
 const XCM_PRECOMPILE = "0x0000000000000000000000000000000000000800";
 const FAILED_READ = "Light client failed a read; asking the nodes";
 
@@ -57,8 +61,9 @@ describe("Light client provider", function () {
         expect(await viaLightClient.getValue()).to.equal(42n);
         expect(await viaNode.getValue()).to.equal(42n);
         expect(provider.lightClientCounters).to.deep.equal({
-            answeredLocally: 1,
-            ...NO_FALLBACK
+            fromPushedState: 0,
+            withFallbackRead: 1,
+            ...NO_NODE_ANSWER
         });
         expect(fixture.forwardedReadCount()).to.equal(0);
         expect(fixture.loggedErrors()).to.deep.equal([]);
@@ -89,8 +94,9 @@ describe("Light client provider", function () {
             .to.have.property("data")
             .that.equals((nodeFailure as { data: string }).data);
         expect(provider.lightClientCounters).to.deep.equal({
-            answeredLocally: 1,
-            ...NO_FALLBACK
+            fromPushedState: 0,
+            withFallbackRead: 1,
+            ...NO_NODE_ANSWER
         });
         expect(fixture.forwardedReadCount()).to.equal(0);
     });
@@ -113,8 +119,9 @@ describe("Light client provider", function () {
         expect(await provider.call(call)).to.equal(toBeHex(7n, 32));
         expect(await node.provider.call(call)).to.equal(toBeHex(7n, 32));
         expect(provider.lightClientCounters).to.deep.equal({
-            answeredLocally: 1,
-            ...NO_FALLBACK
+            fromPushedState: 0,
+            withFallbackRead: 1,
+            ...NO_NODE_ANSWER
         });
         expect(fixture.forwardedReadCount()).to.equal(0);
     });
@@ -131,8 +138,9 @@ describe("Light client provider", function () {
         expect(await provider.call(toSha256)).to.equal(sha256("0x1234"));
         expect(await node.provider.call(toSha256)).to.equal(sha256("0x1234"));
         expect(provider.lightClientCounters).to.deep.equal({
-            answeredLocally: 1,
-            ...NO_FALLBACK
+            fromPushedState: 0,
+            withFallbackRead: 1,
+            ...NO_NODE_ANSWER
         });
         // the block's values, then the forwarder and the caller: nothing of
         // the precompile
@@ -190,8 +198,9 @@ describe("Light client provider", function () {
         expect(chainId).to.equal((await node.provider.getNetwork()).chainId);
         expect(timestamp > 0n && gasLimit > 0n).to.equal(true);
         expect(provider.lightClientCounters).to.deep.equal({
-            answeredLocally: 1,
-            ...NO_FALLBACK
+            fromPushedState: 0,
+            withFallbackRead: 1,
+            ...NO_NODE_ANSWER
         });
     });
 
@@ -222,8 +231,9 @@ describe("Light client provider", function () {
             .and.to.equal(2);
         expect(await provider.getTransactionCount(address)).to.equal(1);
         expect(provider.lightClientCounters).to.deep.equal({
-            answeredLocally: 8,
-            ...NO_FALLBACK
+            fromPushedState: 0,
+            withFallbackRead: 8,
+            ...NO_NODE_ANSWER
         });
         expect(fixture.forwardedReadCount()).to.equal(0);
     });
@@ -242,8 +252,9 @@ describe("Light client provider", function () {
         expect(await provider.getStorage(address, 0)).to.equal(toBeHex(2n, 32));
 
         expect(provider.lightClientCounters).to.deep.equal({
-            answeredLocally: 3,
-            ...NO_FALLBACK
+            fromPushedState: 0,
+            withFallbackRead: 3,
+            ...NO_NODE_ANSWER
         });
         expect(fixture.forwardedReadCount()).to.equal(0);
     });
@@ -271,8 +282,9 @@ describe("Light client provider", function () {
         );
         expect(await provider.call(increment)).to.equal(toBeHex(43n, 32));
         expect(provider.lightClientCounters).to.deep.equal({
-            answeredLocally: 4,
-            ...NO_FALLBACK
+            fromPushedState: 0,
+            withFallbackRead: 4,
+            ...NO_NODE_ANSWER
         });
     });
 
@@ -302,8 +314,9 @@ describe("Light client provider", function () {
             toBeHex(22n, 32)
         ]);
         expect(provider.lightClientCounters).to.deep.equal({
-            answeredLocally: 5,
-            ...NO_FALLBACK
+            fromPushedState: 0,
+            withFallbackRead: 5,
+            ...NO_NODE_ANSWER
         });
         expect(fixture.forwardedReadCount()).to.equal(0);
     });
@@ -343,8 +356,9 @@ describe("Light client provider", function () {
 
         expect(fixture.forwardedReadCount()).to.equal(4);
         expect(provider.lightClientCounters).to.deep.equal({
-            answeredLocally: 0,
-            ...NO_FALLBACK
+            fromPushedState: 0,
+            withFallbackRead: 0,
+            ...NO_NODE_ANSWER
         });
         expect(fixture.loggedErrors()).to.deep.equal([]);
     });
@@ -363,7 +377,8 @@ describe("Light client provider", function () {
             await outcomeOf(node.provider.call(toPrecompile))
         );
         expect(provider.lightClientCounters).to.deep.equal({
-            answeredLocally: 0,
+            fromPushedState: 0,
+            withFallbackRead: 0,
             leftToNodes: 1,
             failed: 0,
             unsupported: 0
@@ -373,7 +388,8 @@ describe("Light client provider", function () {
         expect(blockHash).to.match(/^0x[0-9a-f]{64}$/);
         expect(blockHash).to.not.equal(toBeHex(0n, 32));
         expect(provider.lightClientCounters).to.deep.equal({
-            answeredLocally: 0,
+            fromPushedState: 0,
+            withFallbackRead: 0,
             leftToNodes: 2,
             failed: 0,
             unsupported: 0
@@ -397,7 +413,8 @@ describe("Light client provider", function () {
             toBeHex(42n, 32)
         );
         expect(provider.lightClientCounters).to.deep.equal({
-            answeredLocally: 0,
+            fromPushedState: 0,
+            withFallbackRead: 0,
             leftToNodes: 0,
             failed: 1,
             unsupported: 0
@@ -423,7 +440,8 @@ describe("Light client provider", function () {
             toBeHex(42n, 32)
         );
         expect(provider.lightClientCounters).to.deep.equal({
-            answeredLocally: 2,
+            fromPushedState: 0,
+            withFallbackRead: 2,
             leftToNodes: 0,
             failed: 2,
             unsupported: 0
@@ -442,7 +460,8 @@ describe("Light client provider", function () {
         expect(await provider.getStorage(address, 0)).to.equal(toBeHex(5n, 32));
 
         expect(provider.lightClientCounters).to.deep.equal({
-            answeredLocally: 0,
+            fromPushedState: 0,
+            withFallbackRead: 0,
             leftToNodes: 0,
             failed: 1,
             unsupported: 0
@@ -452,10 +471,10 @@ describe("Light client provider", function () {
             "read failed"
         );
         expect(await provider.getStorage(address, 0)).to.equal(toBeHex(5n, 32));
-        expect(provider.lightClientCounters.answeredLocally).to.equal(1);
+        expect(provider.lightClientCounters.withFallbackRead).to.equal(1);
     });
 
-    it("asks the node for every read and logs one error when the node lists no light client endpoints", async function () {
+    it("asks the node for every read and says once that the node lists no light client endpoints", async function () {
         fixture = await LightClientProviderFixture.start({
             withoutEndpoints: true
         });
@@ -469,7 +488,8 @@ describe("Light client provider", function () {
         expect(await provider.getStorage(address, 0)).to.equal(toBeHex(9n, 32));
 
         expect(provider.lightClientCounters).to.deep.equal({
-            answeredLocally: 0,
+            fromPushedState: 0,
+            withFallbackRead: 0,
             leftToNodes: 0,
             failed: 0,
             unsupported: 2
@@ -477,33 +497,219 @@ describe("Light client provider", function () {
         expect(fixture.forwardedReadCount()).to.equal(2);
         expect(proxy.forwardedCount("rpc_methods")).to.equal(1);
         expect(proxy.forwardedCount("chain_getHeader")).to.equal(0);
-        expect(fixture.loggedErrorMessages()).to.deep.equal([
+        // the light client is optional: a node without it is no fault
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+        expect(
+            fixture
+                .loggedInfoMessages()
+                .filter((message) => message.includes("LC endpoints"))
+        ).to.deep.equal([
             "RPC node doesn't support LC endpoints; it answers the chain reads itself"
         ]);
     });
 
-    it("is the plain provider unless the light client is switched on", async function () {
+    it("asks the node once which methods it serves, at the first read the light client may answer", async function () {
         fixture = await LightClientProviderFixture.start();
-        const { node, proxy } = fixture;
+        const { node, provider, proxy } = fixture;
         const abi = await numberStorageInterface();
         const address = await fixture.deployNumberStorage();
         await node.transact(address, abi.encodeFunctionData("setValue", [3n]));
-        const { logger } = recordingLogger("error");
-        const plain = await createRpcNodesProvider(
-            { PROVIDER_URL: proxy.url },
-            logger
+
+        expect(provider).to.be.instanceOf(LightClientRpcProvider);
+        await provider.getBlockNumber();
+        expect(proxy.forwardedCount("rpc_methods")).to.equal(0);
+        expect(await provider.getStorage(address, 0)).to.equal(toBeHex(3n, 32));
+        expect(await provider.getStorage(address, 0)).to.equal(toBeHex(3n, 32));
+        expect(proxy.forwardedCount("rpc_methods")).to.equal(1);
+        expect(provider.lightClientCounters.withFallbackRead).to.equal(2);
+    });
+
+    it("leaves to the node a call that runs out of gas or hits an invalid opcode locally", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider } = fixture;
+        const outOfGas = { to: await node.deploy(OUT_OF_GAS_CONTRACT) };
+        const invalid = { to: await node.deploy(INVALID_OPCODE_CONTRACT) };
+
+        expect(await outcomeOf(provider.call(outOfGas))).to.deep.equal(
+            await outcomeOf(node.provider.call(outOfGas))
+        );
+        expect(await outcomeOf(provider.call(invalid))).to.deep.equal(
+            await outcomeOf(node.provider.call(invalid))
         );
 
-        try {
-            expect(plain).to.not.be.instanceOf(LightClientRpcProvider);
-            expect(await plain.getStorage(address, 0)).to.equal(
-                toBeHex(3n, 32)
-            );
-            expect(proxy.forwardedCount("eth_getStorageAt")).to.equal(1);
-            expect(proxy.forwardedCount("rpc_methods")).to.equal(0);
-        } finally {
-            plain.destroy();
-            logger.dispose();
-        }
+        expect(provider.lightClientCounters).to.deep.equal({
+            fromPushedState: 0,
+            withFallbackRead: 0,
+            leftToNodes: 2,
+            failed: 0,
+            unsupported: 0
+        });
+        expect(fixture.forwardedCount("eth_call")).to.equal(2);
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("asks the node for every read when the node answers that it does not know rpc_methods", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        proxy.rejectRequests("rpc_methods", {
+            code: -32601,
+            message: "Method not found"
+        });
+        const address = await fixture.deployNumberStorage();
+
+        expect(await provider.getStorage(address, 0)).to.equal(toBeHex(0, 32));
+        expect(await provider.getCode(address)).to.equal(
+            await node.provider.getCode(address)
+        );
+
+        expect(provider.lightClientCounters).to.deep.include({
+            unsupported: 2,
+            failed: 0
+        });
+        expect(proxy.forwardedCount("rpc_methods")).to.equal(1);
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("asks the node for every read when the node answers, as Hardhat does, that it does not support rpc_methods", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { provider, proxy } = fixture;
+        proxy.rejectRequests("rpc_methods", {
+            code: -32004,
+            message: "Method rpc_methods is not supported"
+        });
+        const address = await fixture.deployNumberStorage();
+
+        expect(await provider.getStorage(address, 0)).to.equal(toBeHex(0, 32));
+        expect(await provider.getStorage(address, 0)).to.equal(toBeHex(0, 32));
+
+        expect(provider.lightClientCounters).to.deep.include({
+            unsupported: 2,
+            failed: 0
+        });
+        expect(proxy.forwardedCount("rpc_methods")).to.equal(1);
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("asks the node again which methods it serves when the question failed", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { provider, proxy } = fixture;
+        const address = await fixture.deployNumberStorage();
+        proxy.failNextRequest("rpc_methods");
+
+        expect(await provider.getStorage(address, 0)).to.equal(toBeHex(0, 32));
+        expect(provider.lightClientCounters).to.deep.include({
+            failed: 1,
+            unsupported: 0
+        });
+        expect(fixture.loggedErrors()[0].meta[0].reason).to.equal(
+            "read failed"
+        );
+
+        expect(await provider.getStorage(address, 0)).to.equal(toBeHex(0, 32));
+        expect(provider.lightClientCounters).to.deep.include({
+            withFallbackRead: 1,
+            failed: 1
+        });
+        expect(proxy.forwardedCount("rpc_methods")).to.equal(2);
+        expect(
+            fixture
+                .loggedInfoMessages()
+                .filter((message) => message.includes("LC endpoints"))
+        ).to.deep.equal([]);
+    });
+
+    it("fails reads still running at destroy as a plain provider would, without counting or logging them", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { provider, proxy } = fixture;
+        const address = await fixture.deployNumberStorage();
+        // the endpoint question is answered before the reads start
+        expect(await provider.getStorage(address, 0)).to.equal(toBeHex(0, 32));
+        const countersBefore = { ...provider.lightClientCounters };
+        const proofsBefore = proxy.forwardedCount("state_getReadProof");
+        proxy.holdRequests("state_getReadProof");
+
+        // slots no read held yet: each read waits for a proof from the node
+        const reads = [1, 2, 3].map((slot) =>
+            provider.getStorage(address, slot).then(
+                () => undefined,
+                (error: unknown) => error
+            )
+        );
+        await waitFor(
+            () => proxy.forwardedCount("state_getReadProof") >= proofsBefore + 3
+        );
+        provider.destroy();
+        const failures = await Promise.all(reads);
+
+        for (const failure of failures)
+            expect(failure)
+                .to.be.instanceOf(Error)
+                .with.property("message")
+                .that.includes("destroyed");
+        expect(provider.lightClientCounters).to.deep.equal(countersBefore);
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("sends the node a pending read and a call with a gas price", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider } = fixture;
+        const abi = await numberStorageInterface();
+        const address = await fixture.deployNumberStorage();
+        await node.transact(address, abi.encodeFunctionData("setValue", [4n]));
+        const getValue = abi.encodeFunctionData("getValue");
+
+        expect(
+            await provider.getBalance(node.senderAddress, "pending")
+        ).to.equal(await node.provider.getBalance(node.senderAddress));
+        expect(await provider.getStorage(address, 0, "pending")).to.equal(
+            toBeHex(4n, 32)
+        );
+        expect(
+            await provider.call({
+                to: address,
+                data: getValue,
+                blockTag: "pending"
+            })
+        ).to.equal(toBeHex(4n, 32));
+        expect(
+            await provider.call({
+                to: address,
+                data: getValue,
+                gasPrice: 10_000_000_000n
+            })
+        ).to.equal(toBeHex(4n, 32));
+
+        expect(fixture.forwardedReadCount()).to.equal(4);
+        expect(provider.lightClientCounters).to.deep.equal({
+            fromPushedState: 0,
+            withFallbackRead: 0,
+            ...NO_NODE_ANSWER
+        });
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("answers a call with the caller and origin the node gives it", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider } = fixture;
+        const probe = await node.deploy(CALLER_AND_ORIGIN_CONTRACT);
+        const wallet = Wallet.createRandom(provider);
+        const expected = AbiCoder.defaultAbiCoder().encode(
+            ["address", "address"],
+            [wallet.address, wallet.address]
+        );
+
+        expect(await wallet.call({ to: probe })).to.equal(expected);
+        expect(
+            await provider.call({ from: wallet.address, to: probe })
+        ).to.equal(expected);
+        expect(
+            await node.provider.call({ from: wallet.address, to: probe })
+        ).to.equal(expected);
+
+        expect(fixture.forwardedReadCount()).to.equal(0);
+        expect(provider.lightClientCounters).to.deep.include({
+            withFallbackRead: 2,
+            failed: 0
+        });
     });
 });

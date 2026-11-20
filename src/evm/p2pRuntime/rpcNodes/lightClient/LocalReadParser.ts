@@ -1,7 +1,12 @@
-import type { LightClient, LocalCall } from "./LightClient";
+import type { LightClient, LocalCall, LocalCallOutcome } from "./LightClient";
 import { NotLocalError } from "./LightClientUnavailableError";
 import { paramsOf } from "../RpcNodeProvider";
-import { toQuantity, type JsonRpcError, type JsonRpcPayload } from "ethers";
+import {
+    isHexString,
+    toQuantity,
+    type JsonRpcError,
+    type JsonRpcPayload
+} from "ethers";
 
 /** The part of a JSON-RPC answer a local read produces. */
 export type LocalAnswer =
@@ -19,8 +24,9 @@ export const REVERT_ERROR_CODE = 3;
  * a call that carries a gas limit runs whole on the node as well: the local
  * EVM charges no transaction gas (21,000 and calldata), and the chain's gas
  * accounting is the chain's own, so only the node can tell the least limit at
- * which a call succeeds. The EIP-1559 fee fields are absent too: the gas
- * price a call sees from them is the node's to work out against its base fee.
+ * which a call succeeds. The fee fields, `gasPrice` and the EIP-1559 ones, are
+ * absent too: a node checks the sender's balance against the fee they ask
+ * for, against its own gas cap and base fee.
  */
 const SUPPORTED_CALL_FIELDS: ReadonlySet<string> = new Set([
     "from",
@@ -28,22 +34,20 @@ const SUPPORTED_CALL_FIELDS: ReadonlySet<string> = new Set([
     "data",
     "input",
     "value",
-    "gasPrice",
     "type",
     "chainId"
 ]);
 
-/** Whether `tag` names the chain's newest state; an absent tag means latest. */
-function isHeadTag(tag: unknown, allowPending: boolean): boolean {
-    return (
-        tag === undefined ||
-        tag === "latest" ||
-        (allowPending && tag === "pending")
-    );
+/**
+ * Whether `tag` names the latest block; an absent tag means latest. A pending
+ * read includes the node's transaction pool, which the light client lacks.
+ */
+function isLatestTag(tag: unknown): boolean {
+    return tag === undefined || tag === "latest";
 }
 
 function isAddress(value: unknown): value is string {
-    return typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value);
+    return isHexString(value, 20);
 }
 
 function isQuantity(value: unknown): value is string {
@@ -53,31 +57,50 @@ function isQuantity(value: unknown): value is string {
     );
 }
 
-function parseCall(params: unknown[]): LocalCall | undefined {
+/** The call `eth_call`'s `params` ask for, or undefined when the nodes must run it. */
+export function parseCall(params: unknown[]): LocalCall | undefined {
     const [tx, tag] = params;
-    if (params.length > 2 || !isHeadTag(tag, true)) return undefined;
+    if (params.length > 2 || !isLatestTag(tag)) return undefined;
     if (typeof tx !== "object" || tx === null) return undefined;
     const fields = tx as Record<string, unknown>;
     if (!Object.keys(fields).every((name) => SUPPORTED_CALL_FIELDS.has(name)))
         return undefined;
     const data = fields.data ?? fields.input ?? "0x";
-    const { from, to, value, gasPrice } = fields;
+    const { from, to, value } = fields;
     if (
         !isAddress(to) ||
         (from !== undefined && !isAddress(from)) ||
-        typeof data !== "string" ||
-        !/^0x([0-9a-fA-F]{2})*$/.test(data) ||
-        (value !== undefined && !isQuantity(value)) ||
-        (gasPrice !== undefined && !isQuantity(gasPrice))
+        !isHexString(data, true) ||
+        (value !== undefined && !isQuantity(value))
     )
         return undefined;
     return {
         from,
         to,
         data,
-        value: value === undefined ? undefined : BigInt(value),
-        gasPrice: gasPrice === undefined ? undefined : BigInt(gasPrice)
+        value: value === undefined ? undefined : BigInt(value)
     };
+}
+
+/**
+ * The answer a node gives for a call that ended as `outcome`. Throws
+ * {@link NotLocalError} for a call that failed without reverting.
+ */
+export function callAnswer(outcome: LocalCallOutcome): LocalAnswer {
+    if (outcome.kind === "return") return { result: outcome.data };
+    if (outcome.kind === "revert")
+        return {
+            error: {
+                code: REVERT_ERROR_CODE,
+                message: "execution reverted",
+                data: outcome.data
+            }
+        };
+    // out of gas, an invalid opcode: the local EVM keeps no gas accounting
+    // of the chain's, so only the node can say
+    throw new NotLocalError(
+        `The local call failed without reverting: ${outcome.message}`
+    );
 }
 
 /**
@@ -116,23 +139,8 @@ export function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
         case "eth_call": {
             const call = parseCall(params);
             if (!call) return undefined;
-            return async (lightClient) => {
-                const outcome = await lightClient.call(call);
-                if (outcome.kind === "return") return { result: outcome.data };
-                if (outcome.kind === "revert")
-                    return {
-                        error: {
-                            code: REVERT_ERROR_CODE,
-                            message: "execution reverted",
-                            data: outcome.data
-                        }
-                    };
-                // out of gas, an invalid opcode: the local EVM keeps no
-                // gas accounting of the chain's, so only the node can say
-                throw new NotLocalError(
-                    `The local call failed without reverting: ${outcome.message}`
-                );
-            };
+            return async (lightClient) =>
+                callAnswer(await lightClient.call(call));
         }
         case "eth_getStorageAt": {
             const [address, slot, tag] = params;
@@ -141,7 +149,7 @@ export function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
                 !isAddress(address) ||
                 typeof slot !== "string" ||
                 !/^0x[0-9a-fA-F]{1,64}$/.test(slot) ||
-                !isHeadTag(tag, true)
+                !isLatestTag(tag)
             )
                 return undefined;
             return async (lightClient) => ({
@@ -151,13 +159,8 @@ export function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
         case "eth_getBalance":
         case "eth_getCode":
         case "eth_getTransactionCount": {
-            // a pending count includes the node's mempool, which the light client lacks
             const [address, tag] = params;
-            if (
-                params.length > 2 ||
-                !isAddress(address) ||
-                !isHeadTag(tag, request.method !== "eth_getTransactionCount")
-            )
+            if (params.length > 2 || !isAddress(address) || !isLatestTag(tag))
                 return undefined;
             return ACCOUNT_READS[request.method](address);
         }

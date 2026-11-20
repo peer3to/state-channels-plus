@@ -142,6 +142,11 @@ export class RpcNodeProxy {
         JsonRpcMethod,
         JsonRpcErrorObject
     >();
+    /** Method -> the error this proxy answers every request of it with, unforwarded. */
+    private readonly rejectedMethods = new Map<
+        JsonRpcMethod,
+        JsonRpcErrorObject
+    >();
     /** Requests this proxy answered with an error, in order. */
     private readonly failedRequests: ForwardedRequest[] = [];
     /** Method -> the result this proxy answers its requests with, unforwarded. */
@@ -252,6 +257,11 @@ export class RpcNodeProxy {
     /** The [fromBlock, toBlock] of every eth_getLogs this proxy failed, in order. */
     failedLogWindows(): [number, number][] {
         return toLogWindows(this.failedRequests);
+    }
+
+    /** Answer every `method` request with `error`, unforwarded, as a node that does not serve it. */
+    rejectRequests(method: JsonRpcMethod, error: JsonRpcErrorObject): void {
+        this.rejectedMethods.set(method, error);
     }
 
     /** Answer every `method` request with an error until {@link stopFailingRequests}. */
@@ -447,6 +457,14 @@ export class RpcNodeProxy {
                 this.internallyFailingMethods.delete(method);
                 this.failedRequests.push({ method, params });
                 reply({ error: internalError });
+                return;
+            }
+            const rejection = method
+                ? this.rejectedMethods.get(method)
+                : undefined;
+            if (method && id !== undefined && rejection) {
+                this.failedRequests.push({ method, params });
+                reply({ error: rejection });
                 return;
             }
             const failures = method

@@ -189,11 +189,19 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     private allNodesDownWarned = false;
     /** Requests sent so far; a slow setup's step timings count them. */
     private sentRequestCount = 0;
-    /** The id of the next request this provider itself sends to the nodes. */
-    private nextNodeRequestId = 0;
-
     get requestCount(): number {
         return this.sentRequestCount;
+    }
+
+    /**
+     * Whether a request can no longer be answered: the provider is destroyed,
+     * or no node is connected and none reconnects.
+     */
+    protected get isClosed(): boolean {
+        return (
+            this.destroyed ||
+            (!this.reconnects && !this.nodes.some((node) => node.isConnected))
+        );
     }
 
     constructor(nodes: readonly RpcNodeProvider[], logger: Logger) {
@@ -281,17 +289,8 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     }
 
     /** Sends one request to the nodes as {@link forward} does; a node's rejection is thrown. */
-    protected async requestNode(
-        method: string,
-        params: unknown[]
-    ): Promise<unknown> {
-        const { result } = await this.forward({
-            jsonrpc: "2.0",
-            id: this.nextNodeRequestId++,
-            method,
-            params
-        });
-        return result;
+    protected requestNode(method: string, params: unknown[]): Promise<unknown> {
+        return this.send(method, params);
     }
 
     protected async forward(request: JsonRpcPayload): Promise<JsonRpcResult> {

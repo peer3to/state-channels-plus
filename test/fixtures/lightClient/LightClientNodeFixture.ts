@@ -1,6 +1,5 @@
 // @spec-test-coverage-ignore: test-owned peer3 node with light client endpoints; executable evidence belongs to its calling test declarations
 import { JsonRpcSocket } from "./JsonRpcSocket";
-import { LightClientSidecar } from "./LightClientSidecar";
 import {
     LIGHT_CLIENT_METHODS,
     type LightClientStorageBlock,
@@ -14,6 +13,7 @@ import {
     HDNodeWallet,
     JsonRpcProvider,
     Mnemonic,
+    toBeHex,
     type TransactionReceipt
 } from "ethers";
 
@@ -68,6 +68,48 @@ export const STATIC_FORWARDER_CONTRACT =
 export const PREVIOUS_BLOCK_HASH_CONTRACT =
     "0x600d80600b6000396000f3" + "60014303406000526020" + "6000f3";
 
+/**
+ * Creation code of a contract that, called with 128 bytes `[topic, r, w, v]`,
+ * stores `sload(r) + v` at slot `w` and logs with `topic` as its second topic
+ * (its first is 1), as the state channel manager logs a channel id; called
+ * with 32 bytes, it returns the word at the slot they name.
+ */
+export const PARTITION_CONTRACT =
+    "0x602b80600b6000396000f3" +
+    "36608014601357" +
+    "6000355460005260206000f3" +
+    "5b" +
+    "602035546060350160403555" +
+    "600035" +
+    "6001" +
+    "60006000a2" +
+    "00";
+
+/** Creation code of a contract whose code is the invalid opcode `0xfe`. */
+export const INVALID_OPCODE_CONTRACT = "0x600180600b6000396000f3" + "fe";
+
+/** Creation code of a contract that reads memory at 2^32 - 1 and so runs out of any gas. */
+export const OUT_OF_GAS_CONTRACT =
+    "0x600780600b6000396000f3" + "63ffffffff5100";
+
+/**
+ * Creation code of a contract that, called with a word, stores it in
+ * transient slot 0; called with or without one, it returns what transient
+ * slot 0 holds.
+ */
+export const TRANSIENT_STORAGE_CONTRACT =
+    "0x601780600b6000396000f3" +
+    "3615600b57" +
+    "6000356000" +
+    "5d" +
+    "5b6000" +
+    "5c" +
+    "60005260206000f3";
+
+/** Creation code of a contract that returns CALLER and ORIGIN, one word each. */
+export const CALLER_AND_ORIGIN_CONTRACT =
+    "0x600d80600b6000396000f3" + "336000523260205260406000f3";
+
 /** A subscription id a light client endpoint gave. */
 type SubscriptionId = string;
 
@@ -114,11 +156,6 @@ export class LightClientConnection {
         });
     }
 
-    /** The pushed blocks in which a log matched the subscription, in arrival order. */
-    get pushedWithLogs() {
-        return this.pushed.filter(({ block }) => block.logs.length > 0);
-    }
-
     subscribe(subscription: LightClientSubscription): Promise<SubscriptionId> {
         return this.socket.request(LIGHT_CLIENT_METHODS.subscribe, [
             subscription
@@ -139,24 +176,21 @@ export class LightClientConnection {
 }
 
 /**
- * A peer3 dev node of this test's own with light client endpoints in front of
- * it. The node is the binary `PEER3_NODE_BIN` names. Until the node serves the
- * endpoints itself, the test-owned sidecar adds them.
+ * A peer3 dev node of this test's own, serving the light client endpoints.
+ * The node is the binary `PEER3_NODE_BIN` names.
  */
 export class LightClientNodeFixture {
-    /** Reads straight from the node, past the light client endpoints. */
+    /** Reads straight from the node. */
     readonly provider: JsonRpcProvider;
     private readonly node: NodeHandle;
-    private readonly sidecar: LightClientSidecar;
     private readonly wallet: HDNodeWallet;
     private readonly sockets: JsonRpcSocket[] = [];
     private readonly proxies: RpcNodeProxy[] = [];
     /** The funded account's next nonce; several transactions can share a block. */
     private nextNonce = 0;
 
-    private constructor(node: NodeHandle, sidecar: LightClientSidecar) {
+    private constructor(node: NodeHandle) {
         this.node = node;
-        this.sidecar = sidecar;
         this.provider = new JsonRpcProvider(node.url, undefined, {
             staticNetwork: true,
             // a receipt is asked for well inside the node's block time
@@ -169,52 +203,34 @@ export class LightClientNodeFixture {
     }
 
     /**
-     * Starts the node and its light client endpoints. Throws
-     * {@link LIGHT_CLIENT_UNSUPPORTED} at once when no peer3 node binary is
-     * named, because the Hardhat test node has no such endpoints.
+     * Starts the node. Throws {@link LIGHT_CLIENT_UNSUPPORTED} at once when no
+     * peer3 node binary is named, because the Hardhat test node has no light
+     * client endpoints.
      */
     static async start(): Promise<LightClientNodeFixture> {
         if (!process.env.PEER3_NODE_BIN)
             throw new Error(
                 `${LIGHT_CLIENT_UNSUPPORTED}: PEER3_NODE_BIN names no peer3 node binary`
             );
-        const node = await startPeer3Node();
-        try {
-            const sidecar = await LightClientSidecar.start(node.url);
-            return new LightClientNodeFixture(node, sidecar);
-        } catch (error) {
-            node.stop();
-            throw error;
-        }
+        return new LightClientNodeFixture(await startPeer3Node());
     }
 
     async stop(): Promise<void> {
         for (const socket of this.sockets) socket.close();
         for (const proxy of this.proxies) await proxy.close();
         this.provider.destroy();
-        await this.sidecar.close();
         this.node.stop();
         await this.node.exited;
     }
 
     /** A connection to the light client endpoints, after checking the node lists them. */
     async connect(): Promise<LightClientConnection> {
-        const socket = await this.open(this.sidecar.url);
+        const socket = await this.open(this.node.url);
         await assertLightClientEndpoints(socket);
         return new LightClientConnection(socket);
     }
 
-    /**
-     * A proxy in front of the light client endpoints, which the test makes
-     * answer in their place. The fixture closes it on stop.
-     */
-    async proxyToEndpoints(): Promise<RpcNodeProxy> {
-        const proxy = await RpcNodeProxy.start(this.sidecar.url);
-        this.proxies.push(proxy);
-        return proxy;
-    }
-
-    /** A proxy in front of the node itself, past the light client endpoints. */
+    /** A proxy in front of the node, which the test makes answer in the node's place. */
     async proxyToNode(): Promise<RpcNodeProxy> {
         const proxy = await RpcNodeProxy.start(this.node.url);
         this.proxies.push(proxy);
@@ -248,7 +264,7 @@ export class LightClientNodeFixture {
 
     /** The account that sends this fixture's transactions. */
     get senderAddress(): string {
-        return this.wallet.address.toLowerCase();
+        return this.wallet.address;
     }
 
     /** Deploys a contract that stores what it is called with and logs the slot as its topic. */
@@ -256,17 +272,46 @@ export class LightClientNodeFixture {
         return this.deploy(STORE_AND_LOG_CONTRACT);
     }
 
-    /** Deploys the contract `creationCode` creates; its lowercase address. */
-    async deploy(creationCode: string): Promise<string> {
-        const receipt = await this.mined({ data: creationCode });
+    /** Deploys the contract `creationCode` creates, with `gasLimit` when given; its address. */
+    async deploy(creationCode: string, gasLimit?: bigint): Promise<string> {
+        const receipt = await this.mined({ data: creationCode, gasLimit });
         if (!receipt.contractAddress)
             throw new Error("The deployment created no contract");
-        return receipt.contractAddress.toLowerCase();
+        return receipt.contractAddress;
     }
 
-    /** Calls `contract` with `data` in a transaction; the receipt of the included transaction. */
-    transact(contract: string, data: string): Promise<TransactionReceipt> {
-        return this.mined({ to: contract, data });
+    /**
+     * Calls {@link PARTITION_CONTRACT} at `contract` in a transaction: stores
+     * `sload(read) + add` at slot `write`, logged with `topic`.
+     */
+    readWriteLog(
+        contract: string,
+        topic: string,
+        read: number,
+        write: number,
+        add: number
+    ): Promise<TransactionReceipt> {
+        return this.transact(
+            contract,
+            concat([
+                topic,
+                toBeHex(read, 32),
+                toBeHex(write, 32),
+                toBeHex(add, 32)
+            ])
+        );
+    }
+
+    /**
+     * Calls `contract` with `data` in a transaction, with `gasLimit` when
+     * given; the receipt of the included transaction.
+     */
+    transact(
+        contract: string,
+        data: string,
+        gasLimit?: bigint
+    ): Promise<TransactionReceipt> {
+        return this.mined({ to: contract, data, gasLimit });
     }
 
     /**
@@ -320,11 +365,12 @@ export class LightClientNodeFixture {
         to?: string;
         data: string;
         value?: bigint;
+        gasLimit?: bigint;
     }): Promise<TransactionReceipt> {
         const sent = await this.wallet.sendTransaction({
             ...transaction,
             ...TRANSACTION_FEES,
-            gasLimit: 1_000_000n,
+            gasLimit: transaction.gasLimit ?? 1_000_000n,
             nonce: this.nextNonce++
         });
         const receipt = await sent.wait();
