@@ -35,7 +35,7 @@ Engineer decisions (Luke, 2026-11-20, PR #605):
   author a block", "should demonstrate timeout creates disputes", "should handle timeout when non-author
   peer disconnects (calldata posting)" and "should handle timeout when author peer disconnects", with
   all of RpcNodes.test.ts, passed on the farm with `--parachain` on the pinned node, peer3-parachain
-  `4b19548` (run-1155, 57 passing).
+  `eda0df1` (run-1197, 57 passing).
 
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 
