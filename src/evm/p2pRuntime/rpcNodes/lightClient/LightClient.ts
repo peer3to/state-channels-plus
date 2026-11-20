@@ -24,7 +24,6 @@ export type LocalCall = {
     to: string;
     data: string;
     value?: bigint;
-    gasPrice?: bigint;
 };
 
 /** How a call ended, as an RPC node would report it. */
@@ -56,6 +55,7 @@ export class LightClient {
     private readonly state: LightClientState;
     /** Precompile addresses of the local EVM; they have no account on chain. */
     private readonly precompileAddresses = new Set<string>();
+    /** Lowercase addresses the chain serves with a precompile of its own. */
     private readonly chainPrecompiles: ReadonlySet<string>;
     /** One read at a time: the state and the EVM are one read's while it runs. */
     private readonly lock = new Mutex();
@@ -86,7 +86,6 @@ export class LightClient {
                     to: Address.fromString(request.to),
                     data: getBytes(request.data),
                     value: request.value,
-                    gasPrice: request.gasPrice,
                     gasLimit: environment.gasLimit,
                     block: this.blockOf(environment)
                 });

@@ -1,13 +1,5 @@
 /** The light client cannot answer now; the request goes to the RPC node. */
-export class LightClientUnavailableError extends Error {
-    /** What made the light client unavailable, if something failed. */
-    readonly cause?: unknown;
-
-    constructor(message: string, options?: { cause?: unknown }) {
-        super(message);
-        this.cause = options?.cause;
-    }
-}
+export class LightClientUnavailableError extends Error {}
 
 /**
  * The call would run here differently from the node (an address the chain
