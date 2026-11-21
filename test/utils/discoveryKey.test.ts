@@ -1,5 +1,5 @@
 import { channelIdToDiscoveryKey, channelIdToTargetedJoinTopic } from "@/utils";
-import { requireBytes32 } from "@/utils/bytes32";
+import { indexedTopic, requireBytes32 } from "@/utils/bytes32";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
@@ -77,5 +77,17 @@ describe("discovery key", function () {
     });
     it("validates bytes32 without returning a normalized value", function () {
         expect(requireBytes32(ethers.ZeroHash, "invalid")).to.equal(undefined);
+    });
+
+    it("makes a 32-byte channel id the log topic it is, unchanged", function () {
+        const channelId = ethers.id("channel");
+        expect(indexedTopic(channelId)).to.equal(channelId);
+    });
+
+    it("left-pads a shorter indexed value to the 32-byte topic it is", function () {
+        expect(indexedTopic("0xab")).to.equal(ethers.zeroPadValue("0xab", 32));
+        expect(indexedTopic(new Uint8Array([0xab]))).to.equal(
+            ethers.zeroPadValue("0xab", 32)
+        );
     });
 });

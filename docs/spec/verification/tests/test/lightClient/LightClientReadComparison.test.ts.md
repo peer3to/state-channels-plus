@@ -23,3 +23,4 @@ read, to make the endpoint disagree or give no answer.
 - `counts a revert the node answers with other revert data as differed`: REQ-LC-11-MTCBF9.T1.P11
 - `counts a call the node fails without revert data as differed`: REQ-LC-11-MTCBF9.T1.P12
 - `counts a read whose node connection ends before the node answers as not compared, with a warning`: REQ-LC-11-MTCBF9.T1.P13
+- `counts a call at a block the node no longer has as not compared, with a warning`: REQ-LC-11-MTCBF9.T1.P14

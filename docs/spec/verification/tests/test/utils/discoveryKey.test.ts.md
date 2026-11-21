@@ -25,3 +25,5 @@ and inequality with the unchanged raw discovery key.
 - `preserves mixed-case channel bytes and targeted derivation`: UNIT-TEST-DISCOVERY-KEY-32-F0QWHX.P4
 - `uses the caller message for undefined bytes32 input`: UNIT-TEST-BYTES32-32-E6KC18.P1
 - `validates bytes32 without returning a normalized value`: UNIT-TEST-BYTES32-32-E6KC18.P2
+- `makes a 32-byte channel id the log topic it is, unchanged`: UNIT-TEST-BYTES32-32-E6KC18.P3
+- `left-pads a shorter indexed value to the 32-byte topic it is`: UNIT-TEST-BYTES32-32-E6KC18.P4

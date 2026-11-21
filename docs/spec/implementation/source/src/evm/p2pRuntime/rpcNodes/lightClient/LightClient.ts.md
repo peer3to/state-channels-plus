@@ -11,3 +11,4 @@
 - [`REQ-LC-5-MM0BM9` (A followed channel is subscribed on every connection)](../../../../../../../specification/runtime/light-client.md#req-lc-5-mm0bm9)
 - [`REQ-LC-7-W8WDN3` (A refused or ended subscription syncs again and is made known)](../../../../../../../specification/runtime/light-client.md#req-lc-7-w8wdn3)
 - [`REQ-LC-11-MTCBF9` (With the reads compared, each answer is checked against the endpoint's at its…)](../../../../../../../specification/runtime/light-client.md#req-lc-11-mtcbf9)
+- [`REQ-LC-3-W7RRHM` (A failed read falls back to the endpoint and is made known)](../../../../../../../specification/runtime/light-client.md#req-lc-3-w7rrhm)

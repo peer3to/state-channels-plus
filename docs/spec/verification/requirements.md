@@ -597,7 +597,7 @@ Specification cases tested: 6/6.
 Specification cases tested: 7/7.
 
 [`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../specification/runtime/light-client.md#req-lc-1-jt5pkt)
-Specification cases tested: 19/20. Untested: T1.P16.
+Specification cases tested: 22/23. Untested: T1.P16.
 
 [`REQ-LC-2-PMY1VG` (What cannot be answered from proven state goes to the endpoint)](../specification/runtime/light-client.md#req-lc-2-pmy1vg)
 Specification cases tested: 7/7.
@@ -606,25 +606,25 @@ Specification cases tested: 7/7.
 Specification cases tested: 4/4.
 
 [`REQ-LC-4-E29Y46` (The light client is on when the endpoint serves it)](../specification/runtime/light-client.md#req-lc-4-e29y46)
-Specification cases tested: 6/6.
+Specification cases tested: 7/7.
 
 [`REQ-LC-5-MM0BM9` (A followed channel is subscribed on every connection)](../specification/runtime/light-client.md#req-lc-5-mm0bm9)
 Specification cases tested: 9/9.
 
 [`REQ-LC-7-W8WDN3` (A refused or ended subscription syncs again and is made known)](../specification/runtime/light-client.md#req-lc-7-w8wdn3)
-Specification cases tested: 3/3.
+Specification cases tested: 5/5.
 
 [`REQ-LC-8-BBYC51` (A participant follows the channel it has selected)](../specification/runtime/light-client.md#req-lc-8-bbyc51)
 Specification cases tested: 6/10. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
 
 [`REQ-LC-9-KWXV43` (A read takes from the pushed partitions what they prove at its block)](../specification/runtime/light-client.md#req-lc-9-kwxv43)
-Specification cases tested: 6/6.
+Specification cases tested: 7/7.
 
 [`REQ-LC-10-YCP80W` (The stages of each accepted pushed block are kept)](../specification/runtime/light-client.md#req-lc-10-ycp80w)
 Specification cases tested: 1/1.
 
 [`REQ-LC-11-MTCBF9` (With the reads compared, each answer is checked against the endpoint's at its…)](../specification/runtime/light-client.md#req-lc-11-mtcbf9)
-Specification cases tested: 13/13.
+Specification cases tested: 14/14.
 
 [`REQ-LIF-1-A5BN02` (The best-case complete lifecycle needs at least two base-layer transactions)](../specification/settlement/lifecycle.md#req-lif-1-a5bn02)
 Specification cases tested: 2/13. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13.
