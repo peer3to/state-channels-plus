@@ -173,6 +173,17 @@ submits a top-up with a made-up snapshot pin. No runtime stores that pin, so the
 both the pinned and the new snapshot stored, is not met, and the test still returns `false` (passed in the
 full gate).
 
+## Test timing inputs — 2026-11-21
+
+Engineer decision (Luke, 2026-11-21, PR #606), standing: a parachain test whose `evidenceTime` is
+below the harness minimum `MIN_TEST_TIME_CONFIG.evidenceTime` (10) may be raised to 10 once its log
+shows `RaceConditionDisputeEvidencePeriodExpired` refusing in-window work; each raise still gets an
+entry here. The rule is mirrored in `test/AGENTS.md` ("Protocol wait budgets"). First use: the three U72 cases in
+`BotConnectionFixes.test.ts` whose leaver submits its self-removal for an observed dispute go from
+the staging's 4 to 10. On the parachain, observing the dispute, building the self-removal and
+landing it spans two or three 2 s blocks, so 4 s let the chain refuse it with
+`RaceConditionDisputeEvidencePeriodExpired`. No oracle changed.
+
 ## Test timing inputs — 2026-11-20
 
 Engineer decision (Luke, 2026-11-20, PR #606): `disputerThrottle.test.ts` widens its active-window
