@@ -1260,7 +1260,8 @@ export class RpcStubActions<
      * Answer a peer's chain-signer estimates for the manager `methods` scaled
      * by `numerator / denominator` (the real estimate is still taken and
      * recorded). Stands in for an estimator that reports a smaller or larger
-     * figure for the same fraud-proof transaction.
+     * figure for the same fraud-proof transaction. With `times`, only the
+     * first `times` estimates are scaled.
      */
     async scaleReplayGasEstimates(
         peerIndex: number,
@@ -1268,6 +1269,7 @@ export class RpcStubActions<
             methods: ReplayGasEstimateMethod[];
             numerator: number;
             denominator: number;
+            times?: number;
         }
     ): Promise<{
         estimates: () => Promise<RecordedGasEstimate[]>;
@@ -1278,7 +1280,8 @@ export class RpcStubActions<
             .stubScaleReplayGasEstimates(
                 options.methods,
                 options.numerator,
-                options.denominator
+                options.denominator,
+                options.times
             )
             .request();
         return {

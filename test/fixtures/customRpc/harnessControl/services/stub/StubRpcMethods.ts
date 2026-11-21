@@ -2795,19 +2795,32 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     /**
      * Answer this peer's chain-signer estimates for `methods` scaled by
-     * `numerator / denominator`, recording each real estimate.
+     * `numerator / denominator` (only the first `times`, when given),
+     * recording each real estimate.
      */
     public stubScaleReplayGasEstimates(
         methods: ReplayGasEstimateMethod[],
         numerator: number,
-        denominator: number
+        denominator: number,
+        times?: number
     ): boolean {
         this.service.installReplayGasEstimateScale(
             methods,
             numerator,
-            denominator
+            denominator,
+            times
         );
         return true;
+    }
+
+    /** Pass this peer's next replay preflight at a caller gas limit. */
+    public stubPassReplayPreflight(): boolean {
+        this.service.installPassedReplayPreflight();
+        return true;
+    }
+
+    public getPassedReplayPreflights(): number {
+        return this.service.replayPreflightsPassed;
     }
 
     public getRecordedReplayGasEstimates(): RecordedGasEstimate[] {
@@ -2989,7 +3002,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     /**
      * Answer the next latest-block read made by the dispute manager's gas
-     * limit (`replayGasLimit`) with the block's gas limit set to `gasLimit`
+     * limit (`fraudProofGasLimit`) with the block's gas limit set to `gasLimit`
      * (decimal), or reject it when `gasLimit` is null; every other read of
      * the shared provider passes.
      */
@@ -3003,7 +3016,10 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             provider,
             "getBlock",
             async (...args: Parameters<typeof getBlock>) => {
-                if (stubbed || !new Error().stack?.includes("replayGasLimit"))
+                if (
+                    stubbed ||
+                    !new Error().stack?.includes("fraudProofGasLimit")
+                )
                     return getBlock(...args);
                 stubbed = true;
                 this.service.replayGasBlockReadsStubbed += 1;
