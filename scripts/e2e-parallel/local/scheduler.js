@@ -125,8 +125,8 @@ async function runScheduler({
         retryMs: tickMs,
         canRun: async (running, assignment, activeAssignments) => {
             if (!assignment && coordinator.queue.length === 0) return false;
-            // the worker's account and resource admission, for the next
-            // queued task when none is prefetched
+            // the worker's account and resource admission; with nothing
+            // prefetched, the queue head's account need and no cost
             return allowsWorkerAssignment(
                 {
                     scheduler,
@@ -141,8 +141,9 @@ async function runScheduler({
                     logging
                 },
                 running,
-                assignment ?? coordinator.queue[0],
-                activeAssignments
+                assignment,
+                activeAssignments,
+                (assignment ?? coordinator.queue[0])?.task
             );
         },
         requestTask: async () =>

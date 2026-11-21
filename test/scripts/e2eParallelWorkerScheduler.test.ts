@@ -7,6 +7,7 @@ import fs from "fs";
 import http from "http";
 import os from "os";
 import path from "path";
+import { setTimeout as sleep } from "timers/promises";
 
 const {
     validateWorkerStats
@@ -1660,6 +1661,107 @@ describe("distributed worker scheduler", function () {
             memory: null,
             cpu: null
         });
+    });
+
+    it("starts a cheap local task beside a running heavy one under cost while the next heavy task does not fit", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-backfill-"));
+        const costCachePath = path.join(root, ".cache/test-costs.json");
+        const entry = (avgCores: number) => ({
+            durationMs: 1000,
+            avgCores,
+            peakRssGb: 0.1,
+            measurementReason: null
+        });
+        fs.writeFileSync(
+            path.join(root, "test-costs.json"),
+            JSON.stringify({
+                version: 1,
+                tasks: {
+                    "forge||heavy-a": entry(2),
+                    "forge||heavy-b": entry(2),
+                    "forge||light": entry(0.1)
+                }
+            })
+        );
+        // a budget that holds one heavy task and the light one, not two heavy
+        const resourceGate = {
+            cpuUtil: 0,
+            occupiedGb: 0,
+            allows: async (
+                _running: number,
+                _cap: number,
+                cost: {
+                    runningCost: { cores: number };
+                    nextCost: { cores: number };
+                }
+            ) => cost.runningCost.cores + cost.nextCost.cores <= 2.5,
+            costBudget: (runningCost: { cores: number }) => ({
+                cores: 2.5 - runningCost.cores,
+                rssGb: 10
+            }),
+            stats: () => ({
+                peakCpu: 0,
+                avgCpu: 0,
+                cpuSampleCount: 1,
+                peakOccupiedGb: 0,
+                avgPerTestGb: 0,
+                memorySampleCount: 1,
+                memBoundGb: 10
+            })
+        };
+        let lightStarted!: () => void;
+        const lightStart = new Promise<void>((resolve) => {
+            lightStarted = resolve;
+        });
+        let lightStartedBesideHeavy = false;
+        try {
+            const local = await runScheduler({
+                tasks: ["heavy-a", "heavy-b", "light"].map((label) => ({
+                    label,
+                    logName: label,
+                    runner: "forge",
+                    args: []
+                })),
+                slots: [],
+                slotCount: 0,
+                concurrencyCap: 3,
+                targetLoad: 1,
+                memBoundGb: 10,
+                baseEnv: {},
+                logDir: root,
+                infraPids: () => [],
+                tickMs: 1,
+                resourceGate,
+                schedule: "cost",
+                projectRoot: root,
+                costCachePath,
+                costCacheReadOnly: true,
+                runTaskImpl: async (
+                    _cmd: string,
+                    _args: string[],
+                    _env: unknown,
+                    label: string
+                ) => {
+                    if (label === "light") lightStarted();
+                    if (label === "heavy-a")
+                        lightStartedBesideHeavy = await Promise.race([
+                            lightStart.then(() => true),
+                            sleep(2_000).then(() => false)
+                        ]);
+                    return {
+                        code: 0,
+                        label,
+                        stdout: "",
+                        stderr: "",
+                        durationMs: 5
+                    };
+                }
+            });
+            expect(local.completed).to.equal(3);
+            expect(lightStartedBesideHeavy).to.equal(true);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it("schedules by the committed costs but writes nothing in read-only runs", async function () {
