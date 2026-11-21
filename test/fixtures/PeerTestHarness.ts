@@ -98,6 +98,8 @@ const HARDHAT_MNEMONIC =
     "test test test test test test test test test test test junk";
 
 const DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
+/** How often a deploy still waiting reports the deployer's chain state. */
+const DEPLOY_STALL_LOG_MS = 20_000;
 
 /**
  * Main test harness for E2E peer-to-peer testing
@@ -531,6 +533,50 @@ export class PeerTestHarness<
         // The dispute/verification facets are stateless and identical for
         // every configuration, so one deployment per node serves every test:
         // the marker cache deploys them once and later tests reuse them.
+        // a deploy waiting on its receipt reports what the chain holds for
+        // the deployer: a pending nonce past the latest one is a sent
+        // transaction the chain has not included, at the quote it was sent at
+        const deployer = await deployerSigner.getAddress();
+        const quote = async () => (await this.provider.getFeeData()).gasPrice;
+        const quotedAtStart = await quote();
+        const stallLog = setInterval(() => {
+            void (async () => {
+                this.logger.warn("Harness deploy still waiting", {
+                    deployer,
+                    latestNonce: await this.provider.getTransactionCount(
+                        deployer,
+                        "latest"
+                    ),
+                    pendingNonce: await this.provider.getTransactionCount(
+                        deployer,
+                        "pending"
+                    ),
+                    quotedAtStart,
+                    quotedNow: await quote(),
+                    blockNumber: await this.provider.getBlockNumber()
+                });
+            })().catch(() => undefined);
+        }, DEPLOY_STALL_LOG_MS);
+        try {
+            await this.resolveDeployments(
+                deployment,
+                deployerSigner,
+                deployKey,
+                cacheDir,
+                hasCode
+            );
+        } finally {
+            clearInterval(stallLog);
+        }
+    }
+
+    private async resolveDeployments(
+        deployment: HarnessDeploymentConfig<TStateMachine>,
+        deployerSigner: NonceManager,
+        deployKey: string,
+        cacheDir: string | undefined,
+        hasCode: (address: string) => Promise<boolean>
+    ): Promise<void> {
         const facetResolution = await resolveOrDeployShared({
             cacheDir,
             markerName: "scm-facets.json",
