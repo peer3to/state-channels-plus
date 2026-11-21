@@ -33,7 +33,7 @@ export async function assertGasUsageReportedOnceOnDisposal(): Promise<void> {
     // the subject is the report of the receipt outstanding at disposal, not
     // the settle bound: the bound is lifted past any load-delayed block
     const sdk = await createLoggerSdkFixture(receiver, {
-        config: { GAS_USAGE_SETTLE_MS: 30_000 }
+        config: { GAS_USAGE_SETTLE_BLOCKS: 15 }
     });
     try {
         expect(

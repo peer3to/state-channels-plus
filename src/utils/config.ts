@@ -48,11 +48,12 @@ export type Config = {
     // Chain seconds a join authorization stays valid after it is prepared;
     // no block after its deadline admits the join.
     JOIN_CHANNEL_DEADLINE_SECONDS: number;
-    // How long a gas-usage read (the public table read and the disposal
-    // report) waits for outstanding receipts before it answers with the rows
-    // already recorded. A receipt still pending then shows up on a later
-    // read. No read may hang on the chain.
-    GAS_USAGE_SETTLE_MS: number;
+    // How many blocks, at the Clock's measured block time, a gas-usage read
+    // (the public table read and the disposal report) waits for outstanding
+    // receipts before it answers with the rows already recorded. A receipt
+    // still pending then shows up on a later read. No read may hang on the
+    // chain.
+    GAS_USAGE_SETTLE_BLOCKS: number;
     // Most gas the chain admits in one transaction. A fraud-proof replay is
     // sent at no more than this, and a runtime whose replay requirement is
     // above it does not start.
@@ -101,9 +102,7 @@ const DEFAULT_CONFIG: Config = {
     SIGNER_RECOVERY_CACHE_MAX: 100_000,
     LEAVE_CHANNEL_WATCHDOG_MS: 15_000,
     JOIN_CHANNEL_DEADLINE_SECONDS: DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS,
-    // three 2 s parachain blocks: a receipt outstanding at a gas-usage read
-    // still lands in it
-    GAS_USAGE_SETTLE_MS: 6_000,
+    GAS_USAGE_SETTLE_BLOCKS: 3,
     // the peer3 parachain runtime's MAX_TX_GAS (TransactionGasLimit). startup
     // refuses a replay requirement above it; the work around a replay must fit too
     MAX_TRANSACTION_GAS: 17_916_000,

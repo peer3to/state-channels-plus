@@ -112,6 +112,24 @@ describe("Clock", () => {
         older.destroy();
     });
 
+    it("spans blocks at the measured block time", async () => {
+        const young = await createZeroGenesisChain([2, 2, 2]);
+
+        await Clock.init(young);
+
+        expect(Clock.getBlockSpanMs(3)).to.equal(6_000);
+        young.destroy();
+    });
+
+    it("spans blocks at one second each before a block time is measured", async () => {
+        const fresh = await createZeroGenesisChain([]);
+
+        await Clock.init(fresh);
+
+        expect(Clock.getBlockSpanMs(3)).to.equal(3_000);
+        fresh.destroy();
+    });
+
     it("settles overlapping different-provider initializations on one live owner", async () => {
         const first = createSecondProvider();
         const second = createSecondProvider();
