@@ -71,6 +71,97 @@ contract (one slot, four slots known together, eight slots that each name the ne
 dependent read repeated at the same block, a call without a sender, and a balance. After the
 comparison the losing strategies are removed.
 
+## State freshness
+
+This section follows one read through the code, from the request to the answer.
+
+**What "latest" means.** A read at the latest block (`eth_call`, `eth_getStorageAt`, `eth_getCode`,
+`eth_getBalance`, `eth_getTransactionCount`) is answered at one block: the newest block that a
+subscription on the serving endpoint pushed and the light client accepted. Only the serving
+endpoint's pushes count; another endpoint's pushes cannot move the block
+(`src/evm/p2pRuntime/rpcNodes/lightClient/LightClient.ts`, `newestPushedBlock`). When no
+subscription holds a block, the read is made at the serving endpoint's best block, from
+`chain_getHeader` (`FrontierProvenStateReader.head`).
+
+**How the block and its state root are learned.** Each push carries a Substrate header and the
+Ethereum header of that block. The light client hashes the Substrate header, takes its state root,
+and checks that the Ethereum header hashes to the Ethereum block hash the header's digest names
+(`FrontierPushedPartition.take`). The block values a call reads (number, timestamp, base fee) come
+from that Ethereum header. The Substrate header itself is taken on the endpoint's word: no validator
+signature is checked, so an endpoint that invents a consistent header and the state under it is not
+caught. This is the trust the card allows.
+
+**A peer that is behind.** The read must not be answered below a block floor: the highest block the
+serving endpoint has shown, in its new heads, the logs it delivered, and the receipts, blocks, logs
+and block numbers it answered, a pending block excepted (`LightClientRpcProvider`,
+`highestSeenBlocks`, `seenBlockNumbers`, `noteDeliveredLog`). A read whose newest pushed block is
+below the floor waits for that push for at most one block time (`pushedBlockAtFloor`). When the wait
+times out, the read is made at the endpoint's best block, through proofs. If that best block is below
+the floor too, the read is left to the endpoint, logged and counted as failed (`headAtFloor`). Tests:
+`reads at the block of a log the serving endpoint delivered, waiting for its push` and
+`leaves a read to the endpoint as a failed one when the endpoint's best block is below the block it has shown`.
+
+**A newer head during a call.** The block is fixed when the read starts. Every pass of the read runs
+at that block under a lock, and every fallback proof is asked for that block's hash. A push that
+arrives during the call is accepted into the partition, but the running read keeps its block: one
+read sees one block. The next read starts at the newer block. When the block moves, the state held
+for the old block is dropped (`moveTo`).
+
+**When proofs are verified.** At three points.
+
+1. On receipt of a push. Every key the partition holds, pushed now or earlier, is read again from the
+   held proof nodes under the new state root, and must equal the value the partition holds. A message
+   that fails is refused, the partition holds nothing, and the subscription syncs again. So "apply"
+   and "verify" are one step: a push is held only once it has verified
+   (`FrontierPushedPartition.take`).
+2. When a read reaches a value. The partition decides it from the nodes it already holds
+   (`FrontierPushedPartition.decide`). This covers keys the push named and keys whose path the held
+   nodes happen to cover.
+3. When a fallback proof arrives. `state_getReadProof` at the read's block, verified against that
+   block's state root (`FrontierProvenStateReader.read`, `FrontierStorageProofVerifier`,
+   `FrontierAccountProofVerifier`).
+
+**Verified data, proven absence and missing evidence.** One check tells them apart:
+`SubstrateTrieProof.read`. It walks the key's path from the state root through nodes it holds. A
+value at the end of the path is verified data. A path that ends at an empty node, a branch with no
+child for the next nibble, or a node whose partial key departs from the key is proven absence:
+`null`, which the storage verifier turns into a zero slot. A node on the path that the proof does not
+hold throws `StorageProofError`. In the partition that means "undecided", and the key goes to a
+fallback request. In a fallback proof the read fails: it is logged as an error, counted as failed,
+and answered by the endpoint. A read is never answered from a guess.
+
+**When a pushed proof suffices and when a fallback runs.** A call runs in passes
+(`LightClient.run`). In each pass, state not held answers a placeholder and is recorded as missing
+(`LightClientState`). After the pass, the partitions decide what they can at the read's block. What
+is left is proven in one `state_getReadProof` request at that block, and the call runs again from the
+start. A pass that finds nothing missing gives the answer. The read counts as served from pushed state
+only if nothing it used came from a fallback proof, including one fetched for an earlier read at the
+same block.
+
+**Example.** One call reads two slots of the followed contract and four slots of another contract
+it calls, as a channel contract reads an ERC-20 balance. The test is
+`reads the followed contract's slots from the push and proves another contract's account, then its slots, in two requests`
+(`test/lightClient/LightClientFollowedChannel.test.ts`, `REQ-LC-9-KWXV43.T1.P11`).
+
+- Pass 1: the caller's account, the followed contract's code and its two slots are held: the
+  channel's transactions touched them, so the push carried them. The call reaches the other contract
+  and finds its account and code missing. With no code for the other contract in this pass, the call
+  stops there. The partition does not decide them, so one request proves the account and the code
+  together: 2 keys.
+- Pass 2: the other contract's code now runs and reads its four slots. All four are missing, and all
+  four are known in this pass, because none depends on another: one request proves them together, 4
+  keys.
+- Pass 3: nothing is missing. The answer (21) equals the node's own `eth_call`, and the read counts
+  as one that needed a fallback.
+
+The account and code are known only after the call reaches the other contract, and the slots only
+after its code has run. That is two dependent steps, so two requests. Reads that each name the next key cost one request per step, as the benchmark's chain walk shows. Stale
+inputs do not arise inside one read: the partition's held values are re-proven at every accepted
+block, and a fallback proof is asked for the read's own block. Altered and missing inputs are refused
+by the tests of `test/unit/FrontierPushedPartition.test.ts`, for example
+`refuses a pushed value the proof decides otherwise, and holds nothing until the next sync` and
+`leaves to the node what the held proof does not reach`.
+
 ## Not covered
 
 - Collator and full-node import costs: capacity runs against one dev node with interval sealing, not
