@@ -35,6 +35,7 @@ import { TimeConfig } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
 import { Address, ChannelId, ForkId, Hash } from "@/types/types";
 import {
+    addressesEqual,
     EventBarrier,
     LocalDiscoveryServer,
     Logger,
@@ -65,7 +66,8 @@ import { TransitionActions } from "@test/harness/actions/TransitionActions";
 import { PeerIdentityExecutionContext } from "@test/harness/core/peerErrorAttribution";
 import {
     slotAccountIndex,
-    slotDeployerIndex
+    slotDeployerIndex,
+    slotDeployerSigner
 } from "@test/harness/core/slotAccounts";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import {
@@ -98,6 +100,8 @@ const HARDHAT_MNEMONIC =
     "test test test test test test test test test test test junk";
 
 const DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
+/** How often a deploy still waiting reports the deployer's chain state. */
+const DEPLOY_STALL_LOG_MS = 20_000;
 
 /**
  * Main test harness for E2E peer-to-peer testing
@@ -483,7 +487,7 @@ export class PeerTestHarness<
         // Dedicated deployer account: top of this slot's stride, disjoint from
         // all peer accounts (0..STRIDE-2). Wrapped in NonceManager so deploy txs
         // don't collide with each other on a strict external node.
-        const deployerSigner = new NonceManager(
+        const deployerSigner = slotDeployerSigner(
             this.signerFor(slotDeployerIndex())
         );
         const deployment = this.deployment;
@@ -531,6 +535,59 @@ export class PeerTestHarness<
         // The dispute/verification facets are stateless and identical for
         // every configuration, so one deployment per node serves every test:
         // the marker cache deploys them once and later tests reuse them.
+        // a deploy waiting on its receipt reports what the chain holds for
+        // the deployer: a pending nonce past the latest one is a sent
+        // transaction the chain has not included, at the quote it was sent at
+        const deployer = await deployerSigner.getAddress();
+        const quote = async () => (await this.provider.getFeeData()).gasPrice;
+        const quotedAtStart = await quote();
+        const stallLog = setInterval(() => {
+            void (async () => {
+                this.logger.warn("Harness deploy still waiting", {
+                    deployer,
+                    latestNonce: await this.provider.getTransactionCount(
+                        deployer,
+                        "latest"
+                    ),
+                    pendingNonce: await this.provider.getTransactionCount(
+                        deployer,
+                        "pending"
+                    ),
+                    // ready and queued: a missing nonce below them is a gap
+                    pooledNonces: (
+                        (await this.provider.send(
+                            "eth_pendingTransactions",
+                            []
+                        )) as { from: string; nonce: string }[]
+                    )
+                        .filter((tx) => addressesEqual(tx.from, deployer))
+                        .map((tx) => Number(tx.nonce)),
+                    quotedAtStart,
+                    quotedNow: await quote(),
+                    blockNumber: await this.provider.getBlockNumber()
+                });
+            })().catch(() => undefined);
+        }, DEPLOY_STALL_LOG_MS);
+        try {
+            await this.resolveDeployments(
+                deployment,
+                deployerSigner,
+                deployKey,
+                cacheDir,
+                hasCode
+            );
+        } finally {
+            clearInterval(stallLog);
+        }
+    }
+
+    private async resolveDeployments(
+        deployment: HarnessDeploymentConfig<TStateMachine>,
+        deployerSigner: NonceManager,
+        deployKey: string,
+        cacheDir: string | undefined,
+        hasCode: (address: string) => Promise<boolean>
+    ): Promise<void> {
         const facetResolution = await resolveOrDeployShared({
             cacheDir,
             markerName: "scm-facets.json",
@@ -1034,13 +1091,13 @@ export class PeerTestHarness<
      * channel events and without any node-wide test RPC.
      */
     async produceBlocks(count: number): Promise<void> {
-        const deployer = this.signerFor(slotDeployerIndex());
+        const deployer = slotDeployerSigner(
+            this.signerFor(slotDeployerIndex())
+        );
+        const address = await deployer.getAddress();
         for (let block = 0; block < count; block++) {
             await (
-                await deployer.sendTransaction({
-                    to: deployer.address,
-                    value: 0n
-                })
+                await deployer.sendTransaction({ to: address, value: 0n })
             ).wait();
         }
     }

@@ -2597,7 +2597,11 @@ an estimator-model switch (`GAS_ESTIMATOR_MODEL`) and a rule that is exact on bo
 declared limit at the block gas limit, and add a fraud-proof send against a searching node with a
 30M block and the consumer's budgets (review 6 TO25), asserting inclusion, the correct verdict and
 the declared limit. Until then the residual above is accepted: cost and block fit, never a wrong
-verdict. (Cap: done 2026-10-15, see item 4.)
+verdict. (Cap: done 2026-10-15, see item 4.) On the peer3 parachain, which caps a transaction at
+17,916,000 gas, the declared limit exceeds the cap: a poker-sized (`G` = 6.5M) single-replay kill
+declares 19.62M and is rejected, and a dispute bundling several replays exceeds it too. Measurements
+and a reviewed design that splits replays across transactions:
+[peer3to/state-channels-plus#608](https://github.com/peer3to/state-channels-plus/issues/608).
 
 <a id="find-dispute-5-mzpttc"></a>
 

@@ -925,8 +925,8 @@ export class StubService extends ANetworkRpcService<
     stateProofBuildCount = 0;
     // reductionManager.completeWithGenesis calls counted by stubCountCompleteWithGenesis
     completeWithGenesisCount = 0;
-    // replayGasLimit block reads rejected by stubFailReplayGasBlockRead
-    replayGasBlockReadFailures = 0;
+    // replayGasLimit block reads answered by stubReplayGasBlockRead
+    replayGasBlockReadsStubbed = 0;
     /** The state the state-mutex hold installed, while it is held. */
     stateMutexStateHold?: StateMutexStateHold;
     /** State for the dispute-audit hold at the on-chain-slashes query. */
@@ -5030,29 +5030,30 @@ export class StubService extends ANetworkRpcService<
     /**
      * Record the contract error of a mined opening submission that reverted.
      * An interval-mined node accepts the transaction and reverts it in its
-     * block, so the error is read back from the read-only transaction trace.
+     * block, so the error is read back by replaying it as a call at that
+     * block, which every node serves (the peer3 node has no debug traces).
      */
     async recordMinedOpeningRejection(transactionHash: string): Promise<void> {
         const provider = this.jsonRpcChainProvider;
         const receipt = await provider.waitForTransaction(transactionHash);
         if (!receipt || receipt.status !== 0) return;
-        const trace: { returnValue: string } = await provider.send(
-            "debug_traceTransaction",
-            [
-                transactionHash,
-                {
-                    disableMemory: true,
-                    disableStack: true,
-                    disableStorage: true
-                }
-            ]
-        );
-        const revertData = trace.returnValue.startsWith("0x")
-            ? trace.returnValue
-            : `0x${trace.returnValue}`;
-        this.openingSubmissionRejections.push(
-            tryDecodeCustomError({ data: revertData })?.name ?? "undecoded"
-        );
+        const transaction = await provider.getTransaction(transactionHash);
+        if (!transaction) throw new Error("mined opening submission is gone");
+        try {
+            await provider.call({
+                from: transaction.from,
+                to: transaction.to,
+                data: transaction.data,
+                value: transaction.value,
+                gasLimit: transaction.gasLimit,
+                blockTag: receipt.blockNumber
+            });
+            this.openingSubmissionRejections.push("undecoded");
+        } catch (error) {
+            this.openingSubmissionRejections.push(
+                tryDecodeCustomError(error)?.name ?? "undecoded"
+            );
+        }
     }
 
     get chainProvider() {

@@ -203,7 +203,8 @@ describe("e2e-parallel argParser - logDir validation", function () {
             "--forward-env",
             "--forge-only",
             "--no-forge",
-            "--forge-threads"
+            "--forge-threads",
+            "--parachain"
         ]) {
             expect(help).to.include(option);
         }

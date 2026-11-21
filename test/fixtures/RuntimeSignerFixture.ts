@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
+import { NEW_ACCOUNT_VALUE } from "./node/IsolatedHardhatNode";
 import { withRuntimeRpc } from "./RpcRouterFixture";
 import {
     deserializeTransactionResponse,
@@ -34,16 +35,25 @@ export async function assertRuntimeSignerFields(
         const provider = signer.provider!;
         const fees = await provider.getFeeData();
         const recipient = ethers.Wallet.createRandom().address;
-        const storageKey = ethers.ZeroHash;
+        // the peer3 dev node quotes only a gas price: a legacy transaction there,
+        // EIP-1559 with an access list where the chain quotes its fields
+        const feeFields =
+            fees.maxFeePerGas === null
+                ? { type: 0, gasPrice: fees.gasPrice! }
+                : {
+                      type: 2,
+                      maxFeePerGas: fees.maxFeePerGas,
+                      maxPriorityFeePerGas: fees.maxPriorityFeePerGas!,
+                      accessList: [
+                          { address: recipient, storageKeys: [ethers.ZeroHash] }
+                      ]
+                  };
         const response = await signer.sendTransaction({
-            type: 2,
+            ...feeFields,
             to: recipient,
-            value: 7n,
+            value: NEW_ACCOUNT_VALUE,
             data: ethers.hexlify(bytes),
-            gasLimit: 30_000n,
-            maxFeePerGas: fees.maxFeePerGas!,
-            maxPriorityFeePerGas: fees.maxPriorityFeePerGas!,
-            accessList: [{ address: recipient, storageKeys: [storageKey] }]
+            gasLimit: 30_000n
         });
         const receipt = await response.wait();
         expect(receipt?.status).to.equal(1);
@@ -53,8 +63,8 @@ export async function assertRuntimeSignerFields(
         expect(response.from).to.equal(address);
         expect(response.to).to.equal(recipient);
         expect(response.nonce).to.equal(mined.nonce);
-        expect(response.type).to.equal(2);
-        expect(response.value).to.equal(7n);
+        expect(response.type).to.equal(feeFields.type);
+        expect(response.value).to.equal(NEW_ACCOUNT_VALUE);
         expect(response.data).to.equal("0x00017fff");
         expect(response.gasLimit).to.equal(30_000n);
         expect(response.maxFeePerGas).to.equal(mined.maxFeePerGas);
@@ -87,7 +97,7 @@ export async function assertRuntimeSignerGasHeadroom(
         const provider = signer.provider!;
         const request = {
             to: ethers.Wallet.createRandom().address,
-            value: 1n,
+            value: NEW_ACCOUNT_VALUE,
             data: "0x1234"
         };
         const estimate = await provider.estimateGas({

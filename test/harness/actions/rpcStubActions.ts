@@ -1478,7 +1478,11 @@ export class RpcStubActions<
                     withFirstBlockGrace: true
                 })
             ) => ctl().waitForHeldSnapshotPostSend().request({ timeoutMs }),
-            release: () => ctl().restoreSnapshotPostSend().request()
+            // the released send's outcome waits for its block
+            release: () =>
+                ctl().restoreSnapshotPostSend().request({
+                    timeoutMs: this.harness.event.protocolEventTimeoutMs()
+                })
         };
     }
 
