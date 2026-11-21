@@ -25,7 +25,7 @@ the proxy saw: a read the pushed partition answers asks the endpoint nothing. It
 - `follows over two endpoints and keeps answering from pushed state when one of them goes`: REQ-LC-5-MM0BM9.T1.P13
 - `keeps the other channel's subscription when one of two channels is unfollowed`: REQ-LC-5-MM0BM9.T1.P14
 - `tries a subscription that failed on an open connection again`: REQ-LC-5-MM0BM9.T1.P15
-- `keeps the stages of each accepted pushed block, in block order`: REQ-LC-10-YCP80W.T1.P1
+- `keeps the stages of each accepted pushed block, in block order`: REQ-LC-10-YCP80W.T1.P1, REQ-LC-10-YCP80W.T1.P2
 - `reads at the block the endpoint serving its requests pushed, not at a higher one another endpoint pushes`: REQ-LC-9-KWXV43.T1.P5
 - `uses nothing a connection pushed once it ended: a read before the new sync is proven at the endpoint's best block`: REQ-LC-5-MM0BM9.T1.P16
 - `opens a subscription the endpoint ended again, counts it and answers from its new sync`: REQ-LC-7-W8WDN3.T1.P4

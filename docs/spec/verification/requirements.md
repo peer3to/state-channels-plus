@@ -621,7 +621,7 @@ Specification cases tested: 6/10. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
 Specification cases tested: 11/11.
 
 [`REQ-LC-10-YCP80W` (The stages of each accepted pushed block are kept)](../specification/runtime/light-client.md#req-lc-10-ycp80w)
-Specification cases tested: 1/1.
+Specification cases tested: 2/2.
 
 [`REQ-LC-11-MTCBF9` (With the reads compared, each answer is checked against the endpoint's at its…)](../specification/runtime/light-client.md#req-lc-11-mtcbf9)
 Specification cases tested: 14/14.

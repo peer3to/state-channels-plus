@@ -424,6 +424,10 @@ describe("Light client followed channel", function () {
         expect(timings.map(({ number }) => number)).to.deep.equal(
             timings.map((_, index) => timings[0].number + index)
         );
+        // the sync, at the deployment's block or later: the node executed it
+        const [sync] = timings;
+        expect(sync.executedAt).to.be.a("number");
+        expect(sync.executedAt!).to.be.at.most(sync.builtAt);
         const written = timings.find(
             ({ number }) => number === receipt.blockNumber
         )!;
