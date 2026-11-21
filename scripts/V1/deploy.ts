@@ -1,4 +1,4 @@
-import { ContractFactory, Signer, ethers } from "ethers";
+import { ContractFactory, NonceManager, Signer, ethers } from "ethers";
 
 import StateChannelManagerProxyArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol/StateChannelManagerProxy.json";
 import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol/LocalDiamond.json";
@@ -130,12 +130,19 @@ export async function deployFacets(
     libs: Record<string, string> = {}
 ): Promise<string[]> {
     const nextNonce = await signer.getNonce("pending");
+    // A NonceManager replaces a transaction's nonce with its next one on every
+    // send, so a retried facet would leave its own nonce unsent and queue every
+    // later facet behind that gap. Send through the wrapped signer with the
+    // explicit nonces, and reserve them on the manager for its later sends.
+    const sender = signer instanceof NonceManager ? signer.signer : signer;
+    if (signer instanceof NonceManager)
+        for (const _ of routedFacetArtifacts) signer.increment();
     return Promise.all(
         routedFacetArtifacts.map(async (artifact, index) => {
             for (let attempt = 0; ; attempt++) {
                 try {
                     return (
-                        await deployArtifact(artifact, signer, {
+                        await deployArtifact(artifact, sender, {
                             libs,
                             txOverrides: {
                                 nonce: nextNonce + index,

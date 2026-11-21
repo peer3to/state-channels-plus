@@ -35,6 +35,7 @@ import { TimeConfig } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
 import { Address, ChannelId, ForkId, Hash } from "@/types/types";
 import {
+    addressesEqual,
     EventBarrier,
     LocalDiscoveryServer,
     Logger,
@@ -65,7 +66,8 @@ import { TransitionActions } from "@test/harness/actions/TransitionActions";
 import { PeerIdentityExecutionContext } from "@test/harness/core/peerErrorAttribution";
 import {
     slotAccountIndex,
-    slotDeployerIndex
+    slotDeployerIndex,
+    slotDeployerSigner
 } from "@test/harness/core/slotAccounts";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import {
@@ -485,7 +487,7 @@ export class PeerTestHarness<
         // Dedicated deployer account: top of this slot's stride, disjoint from
         // all peer accounts (0..STRIDE-2). Wrapped in NonceManager so deploy txs
         // don't collide with each other on a strict external node.
-        const deployerSigner = new NonceManager(
+        const deployerSigner = slotDeployerSigner(
             this.signerFor(slotDeployerIndex())
         );
         const deployment = this.deployment;
@@ -551,6 +553,15 @@ export class PeerTestHarness<
                         deployer,
                         "pending"
                     ),
+                    // ready and queued: a missing nonce below them is a gap
+                    pooledNonces: (
+                        (await this.provider.send(
+                            "eth_pendingTransactions",
+                            []
+                        )) as { from: string; nonce: string }[]
+                    )
+                        .filter((tx) => addressesEqual(tx.from, deployer))
+                        .map((tx) => Number(tx.nonce)),
                     quotedAtStart,
                     quotedNow: await quote(),
                     blockNumber: await this.provider.getBlockNumber()
@@ -1080,13 +1091,13 @@ export class PeerTestHarness<
      * channel events and without any node-wide test RPC.
      */
     async produceBlocks(count: number): Promise<void> {
-        const deployer = this.signerFor(slotDeployerIndex());
+        const deployer = slotDeployerSigner(
+            this.signerFor(slotDeployerIndex())
+        );
+        const address = await deployer.getAddress();
         for (let block = 0; block < count; block++) {
             await (
-                await deployer.sendTransaction({
-                    to: deployer.address,
-                    value: 0n
-                })
+                await deployer.sendTransaction({ to: address, value: 0n })
             ).wait();
         }
     }

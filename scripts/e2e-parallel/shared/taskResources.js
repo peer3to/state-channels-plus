@@ -38,34 +38,28 @@ function addressesOf(partition) {
 }
 
 /**
- * Whether no account of `partition` has a ready transaction in the node's
- * pool. A transaction queued behind a dropped one's nonce gap is not seen: the
- * parachain node serves no txpool RPC, and pending counts only ready ones.
+ * Whether no account of `partition` has a transaction in the node's pool,
+ * ready or queued behind a nonce gap (`eth_pendingTransactions` lists both).
  */
 async function isPartitionSettled(nodeUrl, partition) {
-    const calls = addressesOf(partition).flatMap((address) =>
-        ["latest", "pending"].map((tag) => ({
-            jsonrpc: "2.0",
-            id: `${address}:${tag}`,
-            method: "eth_getTransactionCount",
-            params: [address, tag]
-        }))
-    );
     const response = await fetch(nodeUrl, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(calls),
+        body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "eth_pendingTransactions",
+            params: []
+        }),
         signal: AbortSignal.timeout(SETTLE_READ_MS)
     });
-    const answers = await response.json();
-    if (!Array.isArray(answers))
-        throw new Error(`${nodeUrl} refused a JSON-RPC batch`);
-    const counts = new Map(answers.map((answer) => [answer.id, answer.result]));
-    return addressesOf(partition).every(
-        (address) =>
-            counts.get(`${address}:latest`) !== undefined &&
-            counts.get(`${address}:latest`) === counts.get(`${address}:pending`)
+    const { result } = await response.json();
+    if (!Array.isArray(result))
+        throw new Error(`${nodeUrl} gave no eth_pendingTransactions list`);
+    const accounts = new Set(
+        addressesOf(partition).map((address) => address.toLowerCase())
     );
+    return !result.some((tx) => accounts.has(String(tx.from).toLowerCase()));
 }
 
 /**

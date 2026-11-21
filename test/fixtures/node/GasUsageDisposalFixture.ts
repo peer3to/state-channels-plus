@@ -30,7 +30,12 @@ function uploadedGasUsageReports(receiver: LogReceiver): GasUsageReport[] {
  */
 export async function assertGasUsageReportedOnceOnDisposal(): Promise<void> {
     const receiver = await startLogReceiver();
-    const sdk = await createLoggerSdkFixture(receiver);
+    // the subject is the report of the receipt outstanding at disposal, not
+    // the settle bound: one 2 s parachain block under load outlasts the
+    // default 2 s bound
+    const sdk = await createLoggerSdkFixture(receiver, {
+        config: { GAS_USAGE_SETTLE_MS: 30_000 }
+    });
     try {
         expect(
             uploadedGasUsageReports(receiver),
