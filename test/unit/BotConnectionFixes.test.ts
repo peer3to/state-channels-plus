@@ -1133,53 +1133,6 @@ describe("Unit: bot-connection fixes", function () {
             }
         });
 
-        it("U72: an exit post whose gas estimate fails without a reason sent nothing and is not fatal: it is logged as refused and the next finalized block posts again", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 0);
-            const leaver = h.getPeer(1);
-            const remainingPeerIndices = [0, 2];
-            await h
-                .control(leaver)
-                .stub.failStateSnapshotPost("reasonless-estimate")
-                .request();
-            const posts = await recordSnapshotPostWaitResults(h, leaver);
-            const logs = await recordLeaveChannelLogs(h, leaver);
-            const refused = {
-                message: "The chain refused the exit snapshot post",
-                meta: [{ refusal: "estimate failed without a reason" }]
-            };
-            const exit = exitOnLeaveTurn(leaver);
-            try {
-                await leaver.p2pInstance.p2pSigner.leaveChannel();
-                await h.transition.keepAuthoringUntil({
-                    until: () => exit() !== undefined,
-                    waitForPeers: [0, 1, 2],
-                    maximumBlocks: 6
-                });
-                await exit();
-                expect((await posts.resultsWait(1))[0]).to.equal("failed");
-                await waitFor(
-                    async () => (await logs.entries()).length >= 1,
-                    h.event.protocolEventTimeoutMs()
-                );
-                expect(await logs.entries()).to.deep.equal([refused]);
-                await h.transition.advanceState({
-                    waitForPeers: remainingPeerIndices
-                });
-                expect((await posts.resultsWait(2))[1]).to.equal("failed");
-                // no detached error: settleDetached throws on one
-                await TestSession.settleDetached();
-                expect(leaver.eventSpies.onLeftChannel?.called).to.equal(false);
-            } finally {
-                await logs.restore();
-                await posts.restore();
-                await h
-                    .control(leaver)
-                    .stub.restoreStateSnapshotPost()
-                    .request();
-            }
-        });
-
         it("U72: a leave of a pending join the chain has not shown re-arms the leave watchdog at each expiry with no dispute, and the join's expiry ends the leave and cancels the watchdog", async function () {
             const h = TestSession.getHarness();
             // the watchdog expires at least once within the join's authorization

@@ -84,6 +84,7 @@ within the one-second window (every node was destroyed).
 - `estimates at the latest block when only the pending block reverts the call`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P30
 - `estimates at the latest block with the sender's managed nonce while its own transaction is unsealed`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P32
 - `rejects an estimate the latest block also reverts, with the pending block's revert`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P31
+- `rejects with the latest block's revert when the node cannot build its pending block for the estimate`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P33
 - `fails a read over to the next node when the first drops mid-request`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P5, REQ-CHAINOBS-2-2NCSQ3.T1.P4
 - `relays each new block once from the node sockets without polling`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P6
 - `relays each matching log once from the node sockets`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P15, REQ-CHAINOBS-4-JA3YF8.T1.P1

@@ -127,27 +127,28 @@ async function runScheduler({
         canRun: async (running, assignment, activeAssignments) => {
             if (!assignment && coordinator.queue.length === 0) return false;
             // a finished task's partition returns once its transactions settle
-            if (
-                !taskResources.canAcquire(
-                    assignment?.task ?? coordinator.queue[0]?.task
-                )
-            )
-                return false;
-            const allowed = await resources.allows(
-                running,
-                concurrencyCap,
-                admissionCost(schedule, assignment, activeAssignments)
+            const accountsAvailable = taskResources.canAcquire(
+                assignment?.task ?? coordinator.queue[0]?.task
             );
-            if (!allowed && coordinator.finish().pending) {
-                const next = assignment ?? coordinator.queue[0];
-                const reason = holdReason({
-                    schedule,
+            const allowed =
+                accountsAvailable &&
+                (await resources.allows(
                     running,
                     concurrencyCap,
-                    resourceGate: resources,
-                    memBoundGb,
-                    targetLoad
-                });
+                    admissionCost(schedule, assignment, activeAssignments)
+                ));
+            if (!allowed && coordinator.finish().pending) {
+                const next = assignment ?? coordinator.queue[0];
+                const reason = !accountsAvailable
+                    ? "waiting for a funded account partition"
+                    : holdReason({
+                          schedule,
+                          running,
+                          concurrencyCap,
+                          resourceGate: resources,
+                          memBoundGb,
+                          targetLoad
+                      });
                 logging.hold({
                     seq: next?.seq || tasks.length,
                     total: tasks.length,
