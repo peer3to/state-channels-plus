@@ -24,17 +24,17 @@ node's answer pinned to the same block hash (compare mode, `LIGHT_CLIENT_COMPARE
 
 The SDK needs no extra counters for this. The numbers come from outside it:
 
-| Quantity                                                  | Source                                                                                                         |
-| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| RPC requests per method, and requests removed             | the WebSocket proxy between peer and node (`test/fixtures/node/RpcNodeProxy.ts`), path off against path on     |
-| Remote simulations                                        | `eth_call` and `eth_estimateGas` requests the proxy forwarded                                                  |
-| Fallback round trips and keys per call                    | `state_getReadProof` requests the proxy forwarded between one call's start and end, calls issued one at a time |
-| Calls served from pushed state, with a fallback, by nodes | the provider's `lightClientCounters`                                                                           |
-| Push bytes, values changed, proof nodes refreshed         | each push the proxy delivered, and `newNodes` in the provider's `pushedBlockTimings`                           |
-| Stage times                                               | `executedAt`, `builtAt`, `sentAt` from the node, `receivedAt`, `verifiedAt` from the peer                      |
-| Node CPU, memory, outbound bytes                          | the operating system (cgroup statistics on the farm hosts), node started with and without `--light-client`     |
-| Peer CPU and memory                                       | the operating system, per peer process                                                                         |
-| Backlog and dropped updates                               | at the peers: `sentAt` drifting behind `executedAt`, gaps in pushed block numbers, resubscriptions             |
+| Quantity                                                  | Source                                                                                                                                                                                                       |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| RPC requests per method, and requests removed             | the WebSocket proxy between peer and node (`test/fixtures/node/RpcNodeProxy.ts`), path off against path on                                                                                                   |
+| Remote simulations                                        | `eth_call` and `eth_estimateGas` requests the proxy forwarded                                                                                                                                                |
+| Fallback round trips and keys per call                    | `state_getReadProof` requests the proxy forwarded between one call's start and end, calls issued one at a time                                                                                               |
+| Calls served from pushed state, with a fallback, by nodes | the provider's `lightClientCounters`                                                                                                                                                                         |
+| Push bytes, values changed, proof nodes refreshed         | each push the proxy delivered, and `newNodes` in the provider's `pushedBlockTimings`                                                                                                                         |
+| Stage times                                               | `executedAt`, `builtAt`, `sentAt` from the node, `receivedAt`, `verifiedAt` from the peer                                                                                                                    |
+| Node CPU, memory, outbound bytes                          | the operating system (cgroup statistics on the farm hosts), node started with and without `--light-client`                                                                                                   |
+| Peer CPU and memory                                       | per call, the peer process's CPU (`process.cpuUsage`); per push, the time the peer's thread spends verifying and applying it; the peer threads' heap after a full collection, and what each added peer costs |
+| Backlog and dropped updates                               | at the peers: `sentAt` drifting behind `executedAt`, gaps in pushed block numbers, resubscriptions                                                                                                           |
 
 Stage times compare clocks of two processes, so node and peers run on one host for the readiness
 numbers. Capacity runs put the node on its own host.
