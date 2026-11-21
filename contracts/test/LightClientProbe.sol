@@ -14,7 +14,8 @@ contract LightClientProbeChild {
  * Calls whose answer depends on how the EVM runs them, for the light client's
  * tests to compare its local run with the node's: writes in a frame that
  * reverts, value transfers, created contracts, the code
- * size limit, precompile addresses, and reads that each name the next slot;
+ * size limit, precompile addresses, reads that each name the next slot and
+ * reads of several slots that do not depend on each other;
  * and a revert with no data that depends on the state.
  */
 contract LightClientProbe {
@@ -125,6 +126,15 @@ contract LightClientProbe {
     function link(uint256 length) external {
         for (uint256 slot = 0; slot < length; slot++) {
             next[slot] = slot + 1;
+        }
+    }
+
+    /**
+     * The sum of what the slots `slots` name, each read without the others.
+     */
+    function sumOf(uint256[] calldata slots) external view returns (uint256 total) {
+        for (uint256 i = 0; i < slots.length; i++) {
+            total += next[slots[i]];
         }
     }
 

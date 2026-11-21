@@ -81,6 +81,12 @@ export class LightClientState extends RPCStateManager {
     private createdCodeCheckpoints: Map<string, Uint8Array>[] = [];
     /** Whether a read since {@link takeUsedNodeProof} used state a node proved on request. */
     private hasUsedNodeProof = false;
+    /**
+     * Set for a pass that has missing state proven as the read reaches it:
+     * stores what it proves with {@link fill}. Unset, missing state answers a
+     * placeholder and is recorded for the next pass.
+     */
+    fetchMissing?: (missing: AccountStateRead) => Promise<void>;
 
     constructor(options: LightClientStateOptions) {
         super({ provider: UNUSED_PROVIDER_URL, blockTag: 0n });
@@ -123,6 +129,13 @@ export class LightClientState extends RPCStateManager {
         this.assertRunsHere(accountAddress);
         const slot = hexlify(key);
         const account = this.accountOf(accountAddress);
+        if (!account.storage.has(slot))
+            await this.fetchMissing?.({
+                address: accountAddress,
+                slots: [slot],
+                account: false,
+                code: false
+            });
         const known = account.storage.get(slot);
         if (known !== undefined) {
             if (account.fromNode.slots.has(slot)) this.hasUsedNodeProof = true;
@@ -145,6 +158,15 @@ export class LightClientState extends RPCStateManager {
         if (this.isLocalOnly(accountAddress)) return undefined;
         this.assertRunsHere(accountAddress);
         const account = this.accountOf(accountAddress);
+        const isAccountMissing =
+            account.balance === undefined || account.nonce === undefined;
+        if (isAccountMissing || account.code === undefined)
+            await this.fetchMissing?.({
+                address: accountAddress,
+                slots: [],
+                account: isAccountMissing,
+                code: account.code === undefined
+            });
         this.noteAccountRead(accountAddress, account);
         if (account.code === undefined)
             this.missing(accountAddress).code = true;
@@ -174,6 +196,13 @@ export class LightClientState extends RPCStateManager {
         if (created !== undefined) return created;
         const accountAddress = toAccountAddress(address);
         this.assertRunsHere(accountAddress);
+        if (this.accountOf(accountAddress).code === undefined)
+            await this.fetchMissing?.({
+                address: accountAddress,
+                slots: [],
+                account: false,
+                code: true
+            });
         return this.readCode(accountAddress) ?? new Uint8Array();
     }
 

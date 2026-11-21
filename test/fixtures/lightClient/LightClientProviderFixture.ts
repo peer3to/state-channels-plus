@@ -58,6 +58,8 @@ export class LightClientProviderFixture {
             endpoints?: number;
             /** Ask the node every read the light client answers too, and count how they match. */
             comparesReads?: boolean;
+            /** Prove missing state key by key as a read reaches it (strategy 1 of the benchmarks). */
+            fetchesEachMiss?: boolean;
         } = {}
     ): Promise<LightClientProviderFixture> {
         const node = await LightClientNodeFixture.start();
@@ -83,7 +85,9 @@ export class LightClientProviderFixture {
                 {
                     PROVIDER_URL: proxy.url,
                     PROVIDER_URLS: proxies.map(({ url }) => url),
-                    LIGHT_CLIENT_COMPARE_READS: options.comparesReads ?? false
+                    LIGHT_CLIENT_COMPARE_READS: options.comparesReads ?? false,
+                    LIGHT_CLIENT_FETCH_EACH_MISS:
+                        options.fetchesEachMiss ?? false
                 },
                 logger
             );

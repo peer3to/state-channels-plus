@@ -8,6 +8,16 @@ import { ethers } from "hardhat";
 /** Enough for the probe's deployment and for a list of 300 slots. */
 const LARGE_GAS = 9_000_000n;
 const FAILED_READ = "Light client failed a read; asking the nodes";
+/** Slots of the probe's list that `sumOf` reads, none depending on another. */
+const INDEPENDENT_SLOTS = [0n, 1n, 2n, 3n];
+
+/** How many keys each proof request the provider sent asked for, in order, from `from` on. */
+function proofKeyCounts(fixture: LightClientProviderFixture, from: number) {
+    return fixture.proxy.forwardedRequests
+        .slice(from)
+        .filter(({ method }) => method === "state_getReadProof")
+        .map(({ params }) => (params as [string[]])[0].length);
+}
 
 describe("Light client local runs", function () {
     let fixture: LightClientProviderFixture | undefined;
@@ -192,5 +202,85 @@ describe("Light client local runs", function () {
             failed: 1
         });
         expect(fixture.forwardedCount("eth_call")).to.equal(1);
+    });
+
+    it("proves the slots a call needs, known together, in one request", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider } = fixture;
+        const factory = await ethers.getContractFactory("LightClientProbe");
+        const address = await node.deploy(factory.bytecode, LARGE_GAS);
+        await node.transact(
+            address,
+            factory.interface.encodeFunctionData("link", [8n])
+        );
+        const sent = fixture.proxy.forwardedRequests.length;
+
+        expect(
+            await new Contract(address, factory.interface, provider).sumOf(
+                INDEPENDENT_SLOTS
+            )
+        ).to.equal(
+            await new Contract(address, factory.interface, node.provider).sumOf(
+                INDEPENDENT_SLOTS
+            )
+        );
+        expect(proofKeyCounts(fixture, sent)).to.include(
+            INDEPENDENT_SLOTS.length
+        );
+    });
+
+    it("with each miss fetched, proves the slots a call needs one request each as the call reaches them", async function () {
+        fixture = await LightClientProviderFixture.start({
+            fetchesEachMiss: true
+        });
+        const { node, provider } = fixture;
+        const factory = await ethers.getContractFactory("LightClientProbe");
+        const address = await node.deploy(factory.bytecode, LARGE_GAS);
+        await node.transact(
+            address,
+            factory.interface.encodeFunctionData("link", [8n])
+        );
+        const sent = fixture.proxy.forwardedRequests.length;
+
+        expect(
+            await new Contract(address, factory.interface, provider).sumOf(
+                INDEPENDENT_SLOTS
+            )
+        ).to.equal(
+            await new Contract(address, factory.interface, node.provider).sumOf(
+                INDEPENDENT_SLOTS
+            )
+        );
+        const keyCounts = proofKeyCounts(fixture, sent);
+        // an account and its code are asked together, a slot alone
+        expect(Math.max(...keyCounts)).to.be.at.most(2);
+        expect(keyCounts.filter((count) => count === 1).length).to.be.at.least(
+            INDEPENDENT_SLOTS.length
+        );
+        expect(provider.lightClientCounters).to.deep.include({
+            withFallbackRead: 1,
+            failed: 0
+        });
+    });
+
+    it("with each miss fetched, walks slots that each name the next as the node does", async function () {
+        fixture = await LightClientProviderFixture.start({
+            fetchesEachMiss: true
+        });
+        const { node, provider } = fixture;
+        const factory = await ethers.getContractFactory("LightClientProbe");
+        const address = await node.deploy(factory.bytecode, LARGE_GAS);
+        await node.transact(
+            address,
+            factory.interface.encodeFunctionData("link", [8n])
+        );
+
+        expect(
+            await new Contract(address, factory.interface, provider).walk()
+        ).to.equal(8n);
+        expect(provider.lightClientCounters).to.deep.include({
+            withFallbackRead: 1,
+            failed: 0
+        });
     });
 });

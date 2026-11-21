@@ -20,3 +20,6 @@ names the next. The oracle is the node's own answer to the same call. It runs on
 - `leaves no code where a frame that reverted created a contract`: REQ-LC-1-JT5PKT.T1.P14
 - `refuses code over the size limit and runs only the precompiles the chain serves, as the node does`: REQ-LC-1-JT5PKT.T1.P15
 - `gives up a read that keeps finding state missing, asks the node and logs it`: REQ-LC-3-W7RRHM.T1.P4
+- `proves the slots a call needs, known together, in one request`: REQ-LC-9-KWXV43.T1.P8
+- `with each miss fetched, proves the slots a call needs one request each as the call reaches them`: REQ-LC-9-KWXV43.T1.P9
+- `with each miss fetched, walks slots that each name the next as the node does`: REQ-LC-9-KWXV43.T1.P10

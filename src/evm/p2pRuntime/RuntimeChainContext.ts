@@ -83,7 +83,10 @@ function anyNodeConnected(nodes: readonly RpcNodeProvider[]): Promise<boolean> {
 export async function createRpcNodesProvider(
     config: Pick<
         Config,
-        "PROVIDER_URL" | "PROVIDER_URLS" | "LIGHT_CLIENT_COMPARE_READS"
+        | "PROVIDER_URL"
+        | "PROVIDER_URLS"
+        | "LIGHT_CLIENT_COMPARE_READS"
+        | "LIGHT_CLIENT_FETCH_EACH_MISS"
     >,
     logger: Logger
 ): Promise<MultiRpcProvider> {
@@ -106,7 +109,8 @@ export async function createRpcNodesProvider(
         );
     }
     return new LightClientRpcProvider(nodes, logger, PEER3_LIGHT_CLIENT_CHAIN, {
-        comparesReads: config.LIGHT_CLIENT_COMPARE_READS
+        comparesReads: config.LIGHT_CLIENT_COMPARE_READS,
+        fetchesEachMiss: config.LIGHT_CLIENT_FETCH_EACH_MISS
     });
 }
 

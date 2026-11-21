@@ -123,6 +123,8 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
     };
     /** Whether each read answered locally is also asked of the node, for tests. */
     private readonly comparesReads: boolean;
+    /** Whether missing state is proven key by key as a read reaches it, for benchmarks. */
+    private readonly fetchesEachMiss: boolean;
     private readonly chain: LightClientChain;
     private readonly subscriptions: LightClientSubscriptions;
     /**
@@ -159,11 +161,15 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         nodes: readonly RpcNodeProvider[],
         logger: Logger,
         chain: LightClientChain,
-        { comparesReads = false }: { comparesReads?: boolean } = {}
+        {
+            comparesReads = false,
+            fetchesEachMiss = false
+        }: { comparesReads?: boolean; fetchesEachMiss?: boolean } = {}
     ) {
         super(nodes, logger);
         this.chain = chain;
         this.comparesReads = comparesReads;
+        this.fetchesEachMiss = fetchesEachMiss;
         // a node on a new socket may be another node behind the same URL: it is asked again
         for (const node of nodes)
             this.unwatchNodes.push(
@@ -438,6 +444,7 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
                 return node && this.highestSeenBlocks.get(node);
             },
             pushWaitMs: this.chain.blockTimeMs,
+            fetchesEachMiss: this.fetchesEachMiss,
             counters: this.lightClientCounters,
             pushedState: this.pushedStateCounters,
             pushedBlockTimings: this.pushedBlockTimings,
