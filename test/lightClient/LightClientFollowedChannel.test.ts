@@ -918,6 +918,107 @@ describe("Light client followed channel", function () {
         expect(fixture.loggedErrors()).to.deep.equal([]);
     });
 
+    it("reads at the block of a log the serving endpoint answered a log search with, waiting for its push", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        // only the answered log search raises the block floor
+        proxy.changeNotifications("eth_subscription", withoutNewHeads);
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(first.blockNumber);
+        const late = proxy.holdNotifications(PUSHED_BLOCK);
+        const write = await node.readWriteLog(contract, CHANNEL_A, 10, 10, 1);
+        const logs = await provider.getLogs({
+            address: contract,
+            fromBlock: write.blockNumber,
+            toBlock: write.blockNumber
+        });
+        expect(logs.map((log) => log.blockNumber)).to.include(
+            write.blockNumber
+        );
+
+        const read = provider.getStorage(contract, 10);
+        // released well within the wait, which the read is in
+        await sleep(PUSH_WAIT_MS / 4);
+        late.release();
+
+        expect(await read).to.equal(toBeHex(8, 32));
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 1,
+            failed: 0
+        });
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("reads at a block the serving endpoint answered by number, waiting for its push", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        // only the answered block raises the block floor
+        proxy.changeNotifications("eth_subscription", withoutNewHeads);
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(first.blockNumber);
+        const late = proxy.holdNotifications(PUSHED_BLOCK);
+        const write = await node.readWriteLog(contract, CHANNEL_A, 10, 10, 1);
+        expect((await provider.getBlock(write.blockNumber))?.number).to.equal(
+            write.blockNumber
+        );
+
+        const read = provider.getStorage(contract, 10);
+        // released well within the wait, which the read is in
+        await sleep(PUSH_WAIT_MS / 4);
+        late.release();
+
+        expect(await read).to.equal(toBeHex(8, 32));
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 1,
+            failed: 0
+        });
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("raises no block floor from the pending block the serving endpoint answered, and reads from the pushed state at once", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        // only the answered pending block could raise the block floor
+        proxy.changeNotifications("eth_subscription", withoutNewHeads);
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        const write = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(write.blockNumber);
+        // no later push arrives, so a floor above the pushed blocks is never met from pushed state
+        const later = proxy.holdNotifications(PUSHED_BLOCK);
+        // the peer3 node numbers its pending block at its best block; the
+        // endpoint answers it one above, as geth and Hardhat number it
+        const pending = await node.provider.send("eth_getBlockByNumber", [
+            "pending",
+            false
+        ]);
+        const above = toQuantity(Number(pending.number) + 1);
+        proxy.answerRequests("eth_getBlockByNumber", {
+            ...pending,
+            number: above
+        });
+        expect(
+            (await provider.send("eth_getBlockByNumber", ["pending", false]))
+                .number
+        ).to.equal(above);
+
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(7, 32)
+        );
+
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 1,
+            withFallbackRead: 0,
+            failed: 0
+        });
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+        later.release();
+    });
+
     it("leaves a read to the endpoint as a failed one when the endpoint's best block is below the block it has shown", async function () {
         fixture = await LightClientProviderFixture.start();
         const { node, provider, proxy } = fixture;

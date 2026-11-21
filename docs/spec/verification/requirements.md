@@ -597,7 +597,7 @@ Specification cases tested: 6/6.
 Specification cases tested: 7/7.
 
 [`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../specification/runtime/light-client.md#req-lc-1-jt5pkt)
-Specification cases tested: 22/23. Untested: T1.P16.
+Specification cases tested: 25/26. Untested: T1.P16.
 
 [`REQ-LC-2-PMY1VG` (What cannot be answered from proven state goes to the endpoint)](../specification/runtime/light-client.md#req-lc-2-pmy1vg)
 Specification cases tested: 7/7.

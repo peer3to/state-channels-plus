@@ -59,19 +59,23 @@ function isSameAnswer(local: ComparedAnswer, node: ComparedAnswer): boolean {
     return normalized(local) === normalized(node);
 }
 
-/** The block numbers a node's answer to `method` shows it has seen. */
-function seenBlockNumbers(method: string, result: unknown): unknown[] {
+/** The block numbers a node's answer to `request` shows it has seen. */
+function seenBlockNumbers(request: JsonRpcPayload, result: unknown): unknown[] {
     const field = (value: unknown, name: string): unknown =>
         typeof value === "object" && value !== null
             ? (value as Record<string, unknown>)[name]
             : undefined;
-    switch (method) {
+    switch (request.method) {
         case "eth_blockNumber":
             return [result];
         case "eth_getTransactionReceipt":
             return [field(result, "blockNumber")];
         case "eth_getBlockByNumber":
-            return [field(result, "number")];
+            // a pending block is not mined, so it shows no block the node has
+            return Array.isArray(request.params) &&
+                request.params[0] === "pending"
+                ? []
+                : [field(result, "number")];
         case "eth_getLogs":
             return Array.isArray(result)
                 ? result.map((log) => field(log, "blockNumber"))
@@ -271,17 +275,17 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         const answer = read && (await this.answerLocally(request, read));
         if (answer) return answer;
         const { answer: forwarded, answeredBy } = await this.forward(request);
-        this.noteSeenBlock(answeredBy, request.method, forwarded.result);
+        this.noteSeenBlock(answeredBy, request, forwarded.result);
         return forwarded;
     }
 
     /** Raises the block `node` was seen at by a receipt, block, logs or block number it answered. */
     private noteSeenBlock(
         node: RpcNodeProvider,
-        method: string,
+        request: JsonRpcPayload,
         result: unknown
     ): void {
-        for (const blockNumber of seenBlockNumbers(method, result))
+        for (const blockNumber of seenBlockNumbers(request, result))
             if (typeof blockNumber === "string" && isHexString(blockNumber))
                 this.raiseSeenBlock(node, Number(blockNumber));
     }
