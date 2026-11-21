@@ -119,6 +119,13 @@ reading the blob base fee ([`REQ-LC-2-PMY1VG.T1.P7`](../specification/runtime/li
 ([`REQ-LC-1-JT5PKT.T1.P17`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p17), [`P18`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p18)), an earlier pushed block refused ([`REQ-STPROOF-3-NVJGR0.T1.P28`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t1.p28)), and the replay at
 the receipt's block in the default tier ([`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P42`](../implementation/source/src/utils/evmErrorHandler.ts.md#unit-test-evm-error-handler-1-dp1mjf), `P43`). The light client
 suites passed 68 of 68 locally against the node built from peer3-parachain PR #3 with that day's fixes.
+The bot review that followed added three declarations, and each failed with its fix removed: new heads
+a million blocks ahead from the endpoint that does not serve the requests keep no read off the pushed
+state ([`REQ-LC-1-JT5PKT.T1.P19`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p19), failed with the floor taken from every endpoint), pushes held past a
+read's wait are waited for again once they arrive ([`P20`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p20), failed with the stall kept after an
+accepted push), and another block of the held height is taken
+([`REQ-STPROOF-3-NVJGR0.T1.P31`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t1.p31), failed with a same-height block refused). The light client suites then
+passed 70 of 70.
 
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 

@@ -28,3 +28,4 @@ recorded message. The suite needs no node, so it runs in the normal CI tier.
 - `ignores a change of the block it holds, and refuses one of an earlier block and holds nothing until the next sync`: REQ-STPROOF-3-NVJGR0.T1.P28, UNIT-TEST-STPROOF-8-F5SF0T.P12
 - `refuses a header whose digest names another Ethereum block, and holds nothing until the next sync`: REQ-STPROOF-3-NVJGR0.T1.P29, UNIT-TEST-STPROOF-8-F5SF0T.P13
 - `refuses a header whose state root is not the one its proof leads to, and holds nothing until the next sync`: REQ-STPROOF-3-NVJGR0.T1.P30, UNIT-TEST-STPROOF-8-F5SF0T.P14
+- `takes a change of another block of the height it holds`: REQ-STPROOF-3-NVJGR0.T1.P31, UNIT-TEST-STPROOF-8-F5SF0T.P15

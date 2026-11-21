@@ -97,8 +97,9 @@ export type LightClientOptions = {
     ethereumPrecompiles: readonly string[];
     getChainId: () => Promise<bigint>;
     /**
-     * The highest block the chain access has seen, from the nodes' new heads
-     * and the receipts it returned: no read is made at an earlier block.
+     * The highest block the serving node has shown the chain access, in its
+     * new heads and the receipts and block numbers it answered: no read is
+     * made at an earlier block. Other nodes' blocks do not count.
      */
     blockFloor: () => number | undefined;
     /** The longest a read waits for the serving node to push the block at {@link blockFloor}. */

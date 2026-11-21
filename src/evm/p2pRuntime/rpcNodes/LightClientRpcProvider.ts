@@ -14,7 +14,7 @@ import { LIGHT_CLIENT_METHODS } from "./lightClient/lightClientWire";
 import { parseLocalRead, type LocalRead } from "./lightClient/LocalReadParser";
 import StorageProofError from "./lightClient/proof/StorageProofError";
 import MultiRpcProvider from "./MultiRpcProvider";
-import { isMethodNotServed } from "./RpcNodeProvider";
+import { isMethodNotServed, NodeSocketSubscriptions } from "./RpcNodeProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
 import type { ChannelId } from "@/types/types";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -88,11 +88,17 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
     /** The pending retry of a failed start of the subscriptions. */
     private subscriptionsStartRetry?: ReturnType<typeof setTimeout>;
     /**
-     * The highest block number seen in the nodes' new heads and in the
-     * receipts and block numbers the nodes answered: no read is answered at
-     * an earlier block.
+     * Per node, the highest block number in its own new heads and in the
+     * receipts and block numbers it answered: no read is answered at an
+     * earlier block than the serving node's. Another node's blocks never
+     * raise it, so a node ahead of the serving one, or one that names a block
+     * that does not exist, cannot keep reads off the pushed state.
      */
-    private highestSeenBlock?: number;
+    private readonly highestSeenBlocks = new Map<RpcNodeProvider, number>();
+    /** The node sockets whose new heads raise {@link highestSeenBlocks}. */
+    private readonly headSockets = new NodeSocketSubscriptions();
+    /** Stop handing each node's new sockets to {@link headSockets}. */
+    private readonly unwatchHeads: (() => void)[] = [];
 
     constructor(
         nodes: readonly RpcNodeProvider[],
@@ -157,6 +163,8 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
             });
         clearTimeout(this.subscriptionsStartRetry);
         this.subscriptions.close();
+        for (const unwatch of this.unwatchHeads.splice(0)) unwatch();
+        void this.headSockets.clear();
         super.destroy();
     }
 
@@ -168,13 +176,17 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         const read = parseLocalRead(request);
         const answer = read && (await this.answerLocally(request, read));
         if (answer) return answer;
-        const forwarded = await this.forward(request);
-        this.noteSeenBlock(request.method, forwarded.result);
+        const { answer: forwarded, answeredBy } = await this.forward(request);
+        this.noteSeenBlock(answeredBy, request.method, forwarded.result);
         return forwarded;
     }
 
-    /** Raises {@link highestSeenBlock} by a receipt or a block number a node answered. */
-    private noteSeenBlock(method: string, result: unknown): void {
+    /** Raises the block `node` was seen at by a receipt or a block number it answered. */
+    private noteSeenBlock(
+        node: RpcNodeProvider,
+        method: string,
+        result: unknown
+    ): void {
         const blockNumber =
             method === "eth_getTransactionReceipt"
                 ? (result as { blockNumber?: unknown } | null)?.blockNumber
@@ -182,12 +194,12 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
                   ? result
                   : undefined;
         if (typeof blockNumber === "string" && isHexString(blockNumber))
-            this.raiseSeenBlock(Number(blockNumber));
+            this.raiseSeenBlock(node, Number(blockNumber));
     }
 
-    private raiseSeenBlock(blockNumber: number): void {
-        if (blockNumber > (this.highestSeenBlock ?? -1))
-            this.highestSeenBlock = blockNumber;
+    private raiseSeenBlock(node: RpcNodeProvider, blockNumber: number): void {
+        if (blockNumber > (this.highestSeenBlocks.get(node) ?? -1))
+            this.highestSeenBlocks.set(node, blockNumber);
     }
 
     /** The light client's answer to `request`, or undefined when the nodes answer it. */
@@ -253,17 +265,28 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
             hardfork: this.chain.hardfork,
             ethereumPrecompiles: this.chain.ethereumPrecompiles,
             getChainId: async () => (await this.getNetwork()).chainId,
-            blockFloor: () => this.highestSeenBlock,
+            blockFloor: () => {
+                const node = this.servingNode();
+                return node && this.highestSeenBlocks.get(node);
+            },
             pushWaitMs: this.chain.blockTimeMs,
             counters: this.lightClientCounters,
             pushedState: this.pushedStateCounters,
             pushedBlockTimings: this.pushedBlockTimings,
             logger: this.logger
         });
-        // the nodes' new heads come over their sockets, without polling
-        void this.on("block", (blockNumber: number) =>
-            this.raiseSeenBlock(blockNumber)
-        );
+        // each node's new heads come over its sockets, without polling
+        for (const node of this.nodes)
+            this.unwatchHeads.push(
+                node.watchSockets((socket) => {
+                    void this.headSockets.add(
+                        socket,
+                        "block",
+                        (blockNumber: number) =>
+                            this.raiseSeenBlock(node, blockNumber)
+                    );
+                })
+            );
         return this.startedLightClient;
     }
 

@@ -597,7 +597,7 @@ Specification cases tested: 6/6.
 Specification cases tested: 7/7.
 
 [`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../specification/runtime/light-client.md#req-lc-1-jt5pkt)
-Specification cases tested: 17/18. Untested: T1.P16.
+Specification cases tested: 19/20. Untested: T1.P16.
 
 [`REQ-LC-2-PMY1VG` (What cannot be answered from proven state goes to the endpoint)](../specification/runtime/light-client.md#req-lc-2-pmy1vg)
 Specification cases tested: 7/7.
@@ -984,7 +984,7 @@ Specification cases tested: 15/15.
 Specification cases tested: 5/5.
 
 [`REQ-STPROOF-3-NVJGR0` (A pushed partition is accepted only as its proof decides it under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0)
-Specification cases tested: 24/24.
+Specification cases tested: 25/25.
 
 [`REQ-STPROOF-4-XK5S64` (An account's nonce, balance and code are accepted only when the proof decides…)](../specification/runtime/storage-proofs.md#req-stproof-4-xk5s64)
 Specification cases tested: 19/19.

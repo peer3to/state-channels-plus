@@ -322,4 +322,40 @@ describe("FrontierPushedPartition", function () {
         expect(partition.block).to.equal(undefined);
         expect(taken(partition, messages[0]).sync).to.equal(true);
     });
+
+    it("takes a change of another block of the height it holds", function () {
+        const partition = new FrontierPushedPartition(PEER3_CHAIN_CONSTANTS);
+        partition.accept(messages[0]);
+        partition.accept(messages[1]);
+        const held = taken(partition, messages[2]).block;
+        // another block of the same height over the same state, as a reorg pushes it
+        const sibling = structuredClone(messages[2]);
+        const { extrinsicsRoot } = sibling.header;
+        sibling.header.extrinsicsRoot =
+            extrinsicsRoot.slice(0, -2) +
+            (extrinsicsRoot.endsWith("00") ? "01" : "00");
+
+        const accepted = taken(partition, sibling);
+
+        expect(accepted.block.number).to.equal(held.number);
+        expect(accepted.block.hash).to.not.equal(held.hash);
+        expect(accepted.block.stateRoot).to.equal(held.stateRoot);
+        expect(partition.block).to.deep.equal(accepted.block);
+        const { decided } = partition.decide([
+            {
+                address: contract,
+                slots: SLOTS.map((slot) => toBeHex(slot, 32)),
+                account: false,
+                code: false
+            }
+        ]);
+        expect(decided[0].proven.storage).to.deep.equal(
+            SLOTS.map(
+                (slot) =>
+                    blocks[2].storage[
+                        String(slot) as keyof (typeof blocks)[2]["storage"]
+                    ]
+            )
+        );
+    });
 });

@@ -172,6 +172,11 @@ export class RpcNodeProxy {
      * Method -> what this proxy sends in place of the `params` of each of
      * its notifications; `undefined` drops the notification.
      */
+    /** Method -> the sends of its notifications waiting here until released. */
+    private readonly heldNotifications = new Map<
+        JsonRpcMethod,
+        (() => void)[]
+    >();
     private readonly notificationChanges = new Map<
         JsonRpcMethod,
         (params: unknown) => unknown
@@ -388,6 +393,22 @@ export class RpcNodeProxy {
         this.notificationChanges.set(method, change);
     }
 
+    /**
+     * Keep the node's `method` notifications at the proxy until `release`
+     * sends them on in order; later ones pass again.
+     */
+    holdNotifications(method: JsonRpcMethod): { release: () => void } {
+        const held: (() => void)[] = [];
+        this.heldNotifications.set(method, held);
+        return {
+            release: () => {
+                if (this.heldNotifications.get(method) === held)
+                    this.heldNotifications.delete(method);
+                for (const send of held.splice(0)) send();
+            }
+        };
+    }
+
     /** Send `method`'s notifications on as the node sent them, after {@link changeNotifications}. */
     stopChangingNotifications(method: JsonRpcMethod): void {
         this.notificationChanges.delete(method);
@@ -539,16 +560,21 @@ export class RpcNodeProxy {
                 const change = this.notificationChanges.get(method);
                 const sentParams = change ? change(params) : params;
                 if (sentParams === undefined) return;
-                this.sentNotifications.push({ method, params: sentParams });
-                if (change && client.readyState === WebSocket.OPEN)
-                    client.send(
-                        JSON.stringify({
-                            jsonrpc: "2.0",
-                            method,
-                            params: sentParams
-                        })
-                    );
-                else send();
+                const deliver = () => {
+                    this.sentNotifications.push({ method, params: sentParams });
+                    if (change && client.readyState === WebSocket.OPEN)
+                        client.send(
+                            JSON.stringify({
+                                jsonrpc: "2.0",
+                                method,
+                                params: sentParams
+                            })
+                        );
+                    else send();
+                };
+                const held = this.heldNotifications.get(method);
+                if (held) held.push(deliver);
+                else deliver();
                 return;
             }
             const heldReplies =

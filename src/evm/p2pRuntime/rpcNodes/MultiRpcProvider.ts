@@ -283,10 +283,10 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     }
 
     /** Answers one request by forwarding it to the nodes; a subclass may answer it itself. */
-    protected answer(
+    protected async answer(
         request: JsonRpcPayload
     ): Promise<JsonRpcResult | JsonRpcError> {
-        return this.forward(request);
+        return (await this.forward(request)).answer;
     }
 
     /** Sends one request to the nodes as {@link forward} does; a node's rejection is thrown. */
@@ -299,7 +299,10 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
         return this.nodes.find((node) => node.isConnected);
     }
 
-    protected async forward(request: JsonRpcPayload): Promise<JsonRpcResult> {
+    /** The answer to `request` from the first node that gives one, and that node. */
+    protected async forward(
+        request: JsonRpcPayload
+    ): Promise<{ answer: JsonRpcResult; answeredBy: RpcNodeProvider }> {
         const params = paramsOf(request);
         let hasRetriedMissingBlock = false;
         for (;;) {
@@ -321,7 +324,10 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
                             sent.result
                         )
                     )
-                        return { id: request.id, result: sent.result };
+                        return {
+                            answer: { id: request.id, result: sent.result },
+                            answeredBy: node
+                        };
                     fault = missingBlock = makeError(
                         "RPC node answered the latest block read with no block",
                         "UNKNOWN_ERROR",

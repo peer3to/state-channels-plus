@@ -1,6 +1,7 @@
 // @distributed-requires: lightClient
 import { PEER3_LIGHT_CLIENT_CHAIN } from "@/evm/p2pRuntime/rpcNodes/lightClient/LightClientChain";
 import { SUBSCRIPTION_RETRY_DELAY_MS } from "@/evm/p2pRuntime/rpcNodes/lightClient/LightClientSubscriptions";
+import { sleep } from "@/utils";
 import { tryHandleEvmError } from "@/utils/evmErrorHandler";
 import { PARTITION_CONTRACT } from "@test/fixtures/lightClient/LightClientNodeFixture";
 import { LightClientProviderFixture } from "@test/fixtures/lightClient/LightClientProviderFixture";
@@ -573,6 +574,86 @@ describe("Light client followed channel", function () {
         expect(provider.lightClientCounters).to.deep.include({
             fromPushedState: 0,
             withFallbackRead: 2,
+            failed: 0
+        });
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("waits again for pushes once they arrive after a read stopped waiting, and reads from them", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(first.blockNumber);
+        const stalled = proxy.holdNotifications(PUSHED_BLOCK);
+        const missed = await node.readWriteLog(contract, CHANNEL_A, 10, 10, 1);
+        await provider.getTransactionReceipt(missed.hash);
+        // the push of the receipt's block is held past the read's wait
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(8, 32)
+        );
+        stalled.release();
+        await fixture.pushedThrough(missed.blockNumber);
+        const late = proxy.holdNotifications(PUSHED_BLOCK);
+        const write = await node.readWriteLog(contract, CHANNEL_A, 10, 10, 1);
+        await provider.getTransactionReceipt(write.hash);
+        const requestsBefore = fixture.forwardedCount(...PROOF_REQUESTS);
+
+        const read = provider.getStorage(contract, 10);
+        // released well within the wait, which the read is in
+        await sleep(PUSH_WAIT_MS / 4);
+        late.release();
+
+        expect(await read).to.equal(toBeHex(9, 32));
+        expect(fixture.forwardedCount(...PROOF_REQUESTS)).to.equal(
+            requestsBefore
+        );
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 1,
+            withFallbackRead: 1,
+            failed: 0
+        });
+        expect(provider.pushedStateCounters.refusedBlocks).to.equal(0);
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("waits for no push of a block only an endpoint that does not serve the requests names in its new heads", async function () {
+        fixture = await LightClientProviderFixture.start({ endpoints: 2 });
+        const { node, provider, proxies } = fixture;
+        const [, second] = proxies;
+        let forgedHeads = 0;
+        second.changeNotifications("eth_subscription", (params) => {
+            const notified = params as {
+                result: { number?: string; parentHash?: string };
+            };
+            if (notified.result.parentHash === undefined) return params;
+            forgedHeads++;
+            // a new head a million blocks ahead of the chain
+            notified.result.number = toQuantity(
+                Number(notified.result.number) + 1_000_000
+            );
+            return notified;
+        });
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(receipt.blockNumber);
+        await waitFor(() => forgedHeads > 0);
+        const requestsBefore = fixture.forwardedCount(...PROOF_REQUESTS);
+
+        const readFrom = Date.now();
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(7, 32)
+        );
+
+        expect(Date.now() - readFrom).to.be.below(PUSH_WAIT_MS);
+        expect(fixture.forwardedCount(...PROOF_REQUESTS)).to.equal(
+            requestsBefore
+        );
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 1,
+            withFallbackRead: 0,
             failed: 0
         });
         expect(fixture.loggedErrors()).to.deep.equal([]);
