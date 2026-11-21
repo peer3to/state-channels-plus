@@ -61,7 +61,8 @@ const {
 const {
     TaskResourcePool,
     addressesOf,
-    isPartitionSettled
+    isPartitionSettled,
+    settlePartition
 } = require("../../scripts/e2e-parallel/shared/taskResources.js");
 const {
     WorkerScheduler
@@ -2684,6 +2685,69 @@ describe("distributed worker scheduler", function () {
             pendingAhead = false;
             expect(await isPartitionSettled(nodeUrl, 0)).to.equal(true);
         } finally {
+            server.close();
+        }
+    });
+
+    it("settles a partition after a failed read and a pending send clear, and gives up with the last read's failure after its deadline", async function () {
+        // answers: a refused read, then one account ahead, then settled
+        let reads = 0;
+        const busy = addressesOf(0)[0];
+        const server = http.createServer((request, response) => {
+            let body = "";
+            request.on("data", (chunk) => (body += chunk));
+            request.on("end", () => {
+                reads++;
+                response.setHeader("content-type", "application/json");
+                if (reads === 1) {
+                    response.end(JSON.stringify({ error: "batch refused" }));
+                    return;
+                }
+                const calls = JSON.parse(body) as Array<{
+                    id: string;
+                    params: [string, string];
+                }>;
+                response.end(
+                    JSON.stringify(
+                        calls.map(({ id, params: [address, tag] }) => ({
+                            jsonrpc: "2.0",
+                            id,
+                            result:
+                                reads === 2 &&
+                                address === busy &&
+                                tag === "pending"
+                                    ? "0x2"
+                                    : "0x1"
+                        }))
+                    )
+                );
+            });
+        });
+        await new Promise<void>((resolve) =>
+            server.listen(0, "127.0.0.1", resolve)
+        );
+        const { port } = server.address() as { port: number };
+        const originalWarn = console.warn;
+        const warnings: string[] = [];
+        console.warn = (message: string) => warnings.push(message);
+        try {
+            const slot = { nodeUrl: `http://127.0.0.1:${port}` };
+            expect(
+                await settlePartition(slot, 0, { settleMs: 5_000, pollMs: 1 })
+            ).to.equal(true);
+            expect(reads).to.equal(3);
+            expect(warnings).to.deep.equal([]);
+            // a node that refuses every read never settles
+            server.close();
+            expect(
+                await settlePartition(slot, 0, { settleMs: 50, pollMs: 1 })
+            ).to.equal(false);
+            expect(warnings).to.have.length(1);
+            expect(warnings[0]).to.match(
+                /^Account partition 0: the last settle read failed: /
+            );
+        } finally {
+            console.warn = originalWarn;
             server.close();
         }
     });

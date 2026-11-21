@@ -75,8 +75,12 @@ async function isPartitionSettled(nodeUrl, partition) {
  * behind a gap. False after PARTITION_SETTLE_MS: the partition stays out of
  * the pool.
  */
-async function settlePartition(slot, partition) {
-    const deadline = Date.now() + PARTITION_SETTLE_MS;
+async function settlePartition(
+    slot,
+    partition,
+    { settleMs = PARTITION_SETTLE_MS, pollMs = SETTLE_POLL_MS } = {}
+) {
+    const deadline = Date.now() + settleMs;
     let lastError;
     for (;;) {
         try {
@@ -92,7 +96,8 @@ async function settlePartition(slot, partition) {
                 );
             return false;
         }
-        await new Promise((resolve) => setTimeout(resolve, SETTLE_POLL_MS));
+        // unref'd: a run that finished does not wait on a settle
+        await new Promise((resolve) => setTimeout(resolve, pollMs).unref());
     }
 }
 
@@ -158,4 +163,9 @@ class TaskResourcePool {
     }
 }
 
-module.exports = { TaskResourcePool, addressesOf, isPartitionSettled };
+module.exports = {
+    TaskResourcePool,
+    addressesOf,
+    isPartitionSettled,
+    settlePartition
+};
