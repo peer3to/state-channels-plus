@@ -13,6 +13,7 @@
 - [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
 - [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../../../../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
   Contradicts: `persistVerifiedProof` can retain unexecuted proof support that contaminates installed history ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds)).
+- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
 - [`REQ-IX-4-BB35GC`](../../../../specification/disputes/README.md#req-ix-4-bb35gc)
 - [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)
 - [`REQ-FIN-4-ZFDDS6` (Consequently, in a channel with N participants, N consecutive blocks authored…)](../../../../specification/protocol-model/finality.md#req-fin-4-zfdds6)
@@ -90,6 +91,8 @@ Proof construction
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P64` — A spectator audits a real join proof above its frozen view, then constructs exactly the join point with later union votes; canonical verification accepts, the join is the only milestone, and the view stays frozen
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P65` — For an exact target after an earlier join, audit-persisted evidence above a frozen view produces both overlapping hops with their full union signatures; canonical verification ends at exactly the target and the view stays frozen
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P66` — `tryBuildStateProof` below the mirrored anchor returns no proof: this view is behind the chain, and no proof is built from history below the anchor
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P67` — chain reads proven and the local diamond lagging a newer chain anchor: construction starts at the chain's anchor, which the chain walk accepts
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P68` — chain reads proven and no local finalized state above the anchor: the tiers are the chain's walk alone, with no local `verifyMilestones` read
 
 ## UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX
 

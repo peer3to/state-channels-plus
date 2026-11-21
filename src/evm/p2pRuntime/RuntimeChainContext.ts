@@ -81,7 +81,10 @@ function anyNodeConnected(nodes: readonly RpcNodeProvider[]): Promise<boolean> {
  * nodes prove.
  */
 export async function createRpcNodesProvider(
-    config: Pick<Config, "PROVIDER_URL" | "PROVIDER_URLS">,
+    config: Pick<
+        Config,
+        "PROVIDER_URL" | "PROVIDER_URLS" | "LIGHT_CLIENT_COMPARE_READS"
+    >,
     logger: Logger
 ): Promise<MultiRpcProvider> {
     const expectedChain: ExpectedChain = {};
@@ -102,7 +105,9 @@ export async function createRpcNodesProvider(
             `Chain access requires a reachable WebSocket provider at ${reasons.join("; ")}`
         );
     }
-    return new LightClientRpcProvider(nodes, logger, PEER3_LIGHT_CLIENT_CHAIN);
+    return new LightClientRpcProvider(nodes, logger, PEER3_LIGHT_CLIENT_CHAIN, {
+        comparesReads: config.LIGHT_CLIENT_COMPARE_READS
+    });
 }
 
 /**

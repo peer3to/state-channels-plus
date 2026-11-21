@@ -71,7 +71,8 @@ signers on the consecutive run, including signatures supplied above its first bl
 ## Construction
 
 **<a id="req-sp-8-9zccej"></a>`REQ-SP-8-9ZCCEJ`.** Construct proofs from the mirrored chain anchor,
-which may lag the chain but must not lead it. Do not use a peer's newer private final point as the
+which may lag the chain but must not lead it. While the chain access answers contract reads from
+proven state, construct them from the chain's anchor instead ([`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../enforcement/local-mirror.md#req-mirror-5-n5szc9)). Do not use a peer's newer private final point as the
 construction anchor. Keep the required finalized membership changes after the anchor, with the
 shortest forward evidence that establishes each hop. Search backward from the requested active
 head for the latest point that can be proved final. Add that final point as a separate last
@@ -84,7 +85,9 @@ block of the last milestone, never its evidence tail. An anchor-only update make
 ## Verification and replay
 
 **<a id="req-sp-9-rnxp56"></a>`REQ-SP-9-RNXP56`.** Both synchronization and dispute audit try the
-peer's latest finalized state, then the local mirror, then the canonical chain. An absent local
+peer's latest finalized state, then the local mirror, then the canonical chain. While the chain
+access answers contract reads from proven state, the local mirror tier is skipped
+([`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../enforcement/local-mirror.md#req-mirror-5-n5szc9)); the mirror tiers described below apply when reads are not proven. An absent local
 final state or a completed false result advances to the next tier. The chain determines the
 verdict when earlier starts cannot establish the proof. An independent valid counter may end an
 audit before these tiers: a conflict with a known final state is not a required fallback case.
@@ -757,9 +760,9 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-8-9zccej.t2.p6"></a>`REQ-SP-8-9ZCCEJ.T2.P6` — When block n+1 supplies finality evidence for n, both full and finalized-only proofs keep n+1; snapshot preparation targets n and has update calldata.
 
-<a id="req-sp-8-9zccej.t2.p7"></a>`REQ-SP-8-9ZCCEJ.T2.P7` — Construction with a current mirrored anchor starts at that same anchor, retains only later final hops and verifies from the chain anchor.
+<a id="req-sp-8-9zccej.t2.p7"></a>`REQ-SP-8-9ZCCEJ.T2.P7` — With chain reads not proven, construction with a current mirrored anchor starts at that same anchor, retains only later final hops and verifies from the chain anchor.
 
-<a id="req-sp-8-9zccej.t2.p8"></a>`REQ-SP-8-9ZCCEJ.T2.P8` — Construction with a mirror lagging the chain starts at the older genesis and still verifies from the newer canonical anchor.
+<a id="req-sp-8-9zccej.t2.p8"></a>`REQ-SP-8-9ZCCEJ.T2.P8` — With chain reads not proven, construction with a mirror lagging the chain starts at the older genesis and still verifies from the newer canonical anchor.
 
 <a id="req-sp-8-9zccej.t2.p9"></a>`REQ-SP-8-9ZCCEJ.T2.P9` — A private finalized point above genesis supplies the verification start while construction remains rooted at mirrored genesis.
 
@@ -780,6 +783,8 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 <a id="req-sp-8-9zccej.t2.p17"></a>`REQ-SP-8-9ZCCEJ.T2.P17` — With required proof material present, snapshot posting sends updateStateSnapshotSameFork and the chain adopts the newer last-milestone final point.
 
 <a id="req-sp-8-9zccej.t2.p18"></a>`REQ-SP-8-9ZCCEJ.T2.P18` — A canonical chain walk connection failure during snapshot posting propagates and leaves the chain snapshot unchanged.
+
+<a id="req-sp-8-9zccej.t2.p19"></a>`REQ-SP-8-9ZCCEJ.T2.P19` — With chain reads proven, construction starts at the chain's anchor whether or not the mirror lags it, and the mirror's anchor is not read.
 
 #### <a id="req-sp-3-sp1jg4.t3"></a>`REQ-SP-3-SP1JG4.T3`
 
@@ -884,6 +889,8 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 <a id="req-sp-9-rnxp56.t3.p19"></a>`REQ-SP-9-RNXP56.T3.P19` — Mirror executor failure during fresh sync throws with no chain walk, installed head, proof rejection or blacklist.
 
 <a id="req-sp-9-rnxp56.t3.p20"></a>`REQ-SP-9-RNXP56.T3.P20` — Node RPC failure after mirror false during fresh sync throws without installing a head or penalizing the responder.
+
+<a id="req-sp-9-rnxp56.t3.p21"></a>`REQ-SP-9-RNXP56.T3.P21` — With chain reads proven, a fresh requester's proof is verified from the chain after the peer's latest finalized state, with no mirror walk.
 
 #### <a id="req-sp-7-70emat.t3"></a>`REQ-SP-7-70EMAT.T3`
 

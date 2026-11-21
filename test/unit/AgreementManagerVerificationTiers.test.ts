@@ -84,6 +84,44 @@ describe("Unit: AgreementManager verification tiers", function () {
         expect(observation.chain.reads).to.equal(0);
     });
 
+    it("U27: chain reads proven and no local finalized state above the anchor → the mirror's walk is skipped, the chain's walk accepts the proof", async function () {
+        const h = TestSession.getHarness();
+        const { anchor, observerIndex } = await stageFinalThenUnfinalizedTail(
+            h,
+            { postAnchor: true }
+        );
+        const view = await buildProofView(h, observerIndex);
+        const peer = h.control(h.getPeer(observerIndex));
+        await peer.stub.stubProvenChainReads().request();
+        try {
+            const tiers = await walkAllTiersView(
+                h,
+                observerIndex,
+                view.stateProof
+            );
+            const observed = await h.mirror.observe(
+                observerIndex,
+                "verifyMilestones"
+            );
+            const verified = await verifyProofView(
+                h,
+                observerIndex,
+                view.stateProof
+            );
+            const observation = await observed.observation();
+            await observed.restore();
+
+            expect(tiers.map((walk) => walk.tier)).to.deep.equal(["chain"]);
+            expect(verified.walk!.tier).to.equal("chain");
+            expect(verified.walk!.valid).to.equal(true);
+            expect(verified.walk!.start!.hash).to.equal(anchor!.hash);
+            expect(observation.local.reads).to.equal(0);
+            expect(observation.chain.reads).to.equal(1);
+        } finally {
+            await peer.stub.restoreProvenChainReads().request();
+        }
+    });
+
     it("U27: the local finalized walk returns false (a conflicting block at its height) → the mirror's walk accepts the proof", async function () {
         const h = TestSession.getHarness();
         const { anchor } = await stageFinalBlocks(h, {

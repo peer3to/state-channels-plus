@@ -1,6 +1,11 @@
 // @distributed-requires: lightClient
 import LightClientRpcProvider from "@/evm/p2pRuntime/rpcNodes/LightClientRpcProvider";
 import {
+    isChainProven,
+    replicatedStateSource
+} from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
+import { connectLocalDiamond } from "@/utils/localDiamond";
+import {
     BLOB_BASE_FEE_CONTRACT,
     BLOCK_VALUES_CONTRACT,
     CALLER_AND_ORIGIN_CONTRACT,
@@ -729,5 +734,94 @@ describe("Light client provider", function () {
             withFallbackRead: 2,
             failed: 0
         });
+    });
+
+    it("says a contract's reads are proven while the serving endpoint lists the light client endpoints, not while that question fails, and reads replicated state from it then", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { provider, proxy } = fixture;
+        const contract = new Contract(
+            await fixture.deployNumberStorage(),
+            await numberStorageInterface(),
+            provider
+        );
+        proxy.failNextRequest("rpc_methods");
+
+        expect(await isChainProven(contract)).to.equal(false);
+        // the failed question is asked again
+        expect(await isChainProven(contract)).to.equal(true);
+        expect(await provider.answersFromProvenState()).to.equal(true);
+        expect(proxy.forwardedCount("rpc_methods")).to.equal(2);
+        const chain = connectLocalDiamond(String(contract.target), provider);
+        const localDiamond = connectLocalDiamond(
+            String(contract.target),
+            fixture.node.provider
+        );
+        expect(await replicatedStateSource(localDiamond, chain)).to.equal(
+            chain
+        );
+    });
+
+    it("says a contract's reads are not proven over an endpoint without the light client endpoints, or over a plain provider, and reads replicated state from the local diamond then", async function () {
+        fixture = await LightClientProviderFixture.start({
+            withoutEndpoints: true
+        });
+        const { node, provider } = fixture;
+        const address = await fixture.deployNumberStorage();
+        const abi = await numberStorageInterface();
+
+        expect(
+            await isChainProven(new Contract(address, abi, provider))
+        ).to.equal(false);
+        expect(
+            await isChainProven(new Contract(address, abi, node.provider))
+        ).to.equal(false);
+        const chain = connectLocalDiamond(address, provider);
+        const localDiamond = connectLocalDiamond(address, node.provider);
+        expect(await replicatedStateSource(localDiamond, chain)).to.equal(
+            localDiamond
+        );
+    });
+
+    it("says a contract's reads are proven while the serving endpoint lists the light client endpoints, and not once it fails over to one that does not", async function () {
+        fixture = await LightClientProviderFixture.start({ endpoints: 2 });
+        const { node, provider, proxies } = fixture;
+        const [first, second] = proxies;
+        const { methods } = (await node.provider.send("rpc_methods", [])) as {
+            methods: string[];
+        };
+        second.answerRequests("rpc_methods", {
+            methods: methods.filter(
+                (method) => !method.startsWith("lightClient_")
+            )
+        });
+        const contract = new Contract(
+            await fixture.deployNumberStorage(),
+            await numberStorageInterface(),
+            provider
+        );
+        expect(await isChainProven(contract)).to.equal(true);
+
+        first.cut();
+        await waitFor(() => !provider.nodes[0].isConnected);
+
+        expect(await isChainProven(contract)).to.equal(false);
+        first.restore();
+    });
+
+    it("says a contract's reads are not proven, without throwing, while no endpoint is connected", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { provider, proxy } = fixture;
+        const contract = new Contract(
+            await fixture.deployNumberStorage(),
+            await numberStorageInterface(),
+            provider
+        );
+        expect(await isChainProven(contract)).to.equal(true);
+
+        proxy.cut();
+        await waitFor(() => !provider.nodes[0].isConnected);
+
+        expect(await isChainProven(contract)).to.equal(false);
+        proxy.restore();
     });
 });

@@ -14,7 +14,9 @@ import {
     assertSkippedHeightNotTimedOut,
     assertUnsignedPredecessorPostDelaysCheck,
     checkTimeoutAfterDeadline,
+    assertProvenChainReadFailureRearms,
     skipHeightOnObserver,
+    stageChainOnlyWindowBeforeTimeoutDeadline,
     stageWindowBeforeTimeoutDeadline
 } from "@test/fixtures/EarlyTimeoutRetryStaging";
 import { assertTimeoutCheckWaitsForSyncInstall } from "@test/fixtures/PinnedSyncStaging";
@@ -960,6 +962,191 @@ describe("Unit: ParticipantTimeoutService", function () {
                     .stub.restoreChainReadFailures()
                     .request();
                 await uploads.restore();
+                await tasks.restore();
+            }
+        });
+    });
+
+    describe("chain reads proven", function () {
+        it("a dispute window on the chain that the local diamond has not applied, opened before the deadline → no plain timeout", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageChainOnlyWindowBeforeTimeoutDeadline(h);
+            try {
+                expect(await staged.localWindowOpenedAt()).to.equal(0);
+                await checkTimeoutAfterDeadline(h, staged.observer.index, {
+                    forkId: staged.forkId,
+                    height: staged.height,
+                    writer: staged.writer.address,
+                    isForced: false
+                });
+                expect(await staged.recorder.submissions()).to.deep.equal([]);
+            } finally {
+                await staged.restore();
+            }
+        });
+
+        it("a failed chain read of the dispute window's creation time re-arms the check and the timeout still commits", async function () {
+            await assertProvenChainReadFailureRearms(
+                TestSession.getHarness(),
+                "getDisputeWindowCreationTimestamp"
+            );
+        });
+
+        it("a failed chain read of the block's calldata commitment re-arms the check and the timeout still commits", async function () {
+            await assertProvenChainReadFailureRearms(
+                TestSession.getHarness(),
+                "getBlockCallDataCommitment"
+            );
+        });
+
+        it("a commitment the chain shows before its calldata-posted event is applied → the check recovers the calldata and re-arms, and the block is stored once the event arrives", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            await h.control(observer).stub.stubProvenChainReads().request();
+            // the observer handles no contract log, as if behind on events,
+            // and the gossiped block waits in its confirmation
+            const releaseHeldLogs = await h.rpcStub.holdContractLogs(
+                observer.index
+            );
+            let areLogsHeld = true;
+            const releaseLogs = async () => {
+                if (!areLogsHeld) return;
+                areLogsHeld = false;
+                await releaseHeldLogs();
+            };
+            const hold = await h.rpcStub.holdBlockWork(
+                observer.index,
+                "confirmation"
+            );
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index
+            );
+            try {
+                const { leader, startHeight, forkId } =
+                    await h.transition.postNextBlockOnlyOnChainWait({
+                        observerIndex: observer.index
+                    });
+                await checkTimeoutAfterDeadline(h, observer.index, {
+                    forkId,
+                    height: startHeight,
+                    writer: leader.address,
+                    isForced: false
+                });
+                expect(
+                    (await tasks.tasks()).some(({ taskName }) =>
+                        taskName.includes("currentOnChainBlockValidation")
+                    )
+                ).to.equal(true);
+                // the plain check found the commitment on the chain only:
+                // it recovered the calldata and re-armed instead of returning
+                expect(await recorder.submissions()).to.deep.equal([]);
+                await hold.release();
+                await releaseLogs();
+                await waitFor(
+                    async () =>
+                        (await h
+                            .control(observer)
+                            .query.getBlockByHeight(forkId, startHeight)
+                            .request()) !== null,
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(await recorder.submissions()).to.deep.equal([]);
+            } finally {
+                await hold.release();
+                await releaseLogs();
+                await h
+                    .control(observer)
+                    .stub.restoreProvenChainReads()
+                    .request();
+                await recorder.restore();
+                await tasks.restore();
+            }
+        });
+        it("a commitment the chain shows whose calldata log no search finds → no timeout and no re-arm", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2, { rpcNodeProxiesByPeer: { 0: 1 } });
+            const observer = h.getPeer(0);
+            await h.control(observer).stub.stubProvenChainReads().request();
+            const releaseLogs = await h.rpcStub.holdContractLogs(
+                observer.index
+            );
+            const hold = await h.rpcStub.holdBlockWork(
+                observer.index,
+                "confirmation"
+            );
+            const [proxy] = h.getRpcNodeProxies(observer.index);
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index
+            );
+            try {
+                const { leader, startHeight, forkId } =
+                    await h.transition.postNextBlockOnlyOnChainWait({
+                        observerIndex: observer.index
+                    });
+                // the post's log is beyond every search the check makes
+                proxy.answerRequests("eth_getLogs", []);
+                await h
+                    .control(observer)
+                    .stub.observeParticipantTimeoutWarnings()
+                    .request();
+                const tasksBefore = (await tasks.tasks()).length;
+                await checkTimeoutAfterDeadline(h, observer.index, {
+                    forkId,
+                    height: startHeight,
+                    writer: leader.address,
+                    isForced: false
+                });
+
+                // the check reached the guard; the runtime's own check at the
+                // deadline may reach it too, and every warning is this one
+                const warnings = await h
+                    .control(observer)
+                    .stub.getParticipantTimeoutWarnings()
+                    .request();
+                expect(warnings).to.not.deep.equal([]);
+                for (const warning of warnings)
+                    expect(warning).to.deep.equal({
+                        message:
+                            "tryTimeoutParticipant - posted commitment's calldata not found; no timeout",
+                        forkId,
+                        blockHeight: startHeight,
+                        participantAddress: leader.address
+                    });
+                // nothing re-arms the check of this post: no retry after its
+                // validation and no recheck after a failed chain read (the
+                // runtime's own check at its deadline may still reschedule)
+                const label = `block ${startHeight} - participant ${leader.address}`;
+                expect(
+                    (await tasks.tasks())
+                        .slice(tasksBefore)
+                        .filter(
+                            ({ taskName }) =>
+                                taskName.includes(label) &&
+                                (taskName.startsWith(
+                                    "timeoutParticipantAfterOnChainValidation"
+                                ) ||
+                                    taskName.startsWith(
+                                        CHAIN_READ_FAILED_RECHECK_REASON
+                                    ))
+                        )
+                ).to.deep.equal([]);
+                expect(await recorder.submissions()).to.deep.equal([]);
+            } finally {
+                await h
+                    .control(observer)
+                    .stub.restoreParticipantTimeoutWarnings()
+                    .request();
+                proxy.stopAnsweringRequests("eth_getLogs");
+                await hold.release();
+                await releaseLogs();
+                await h
+                    .control(observer)
+                    .stub.restoreProvenChainReads()
+                    .request();
+                await recorder.restore();
                 await tasks.restore();
             }
         });

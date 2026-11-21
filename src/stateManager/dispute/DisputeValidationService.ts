@@ -8,6 +8,10 @@ import {
     type ProofTierWalk,
     type StateProofEvidence
 } from "@/agreementManager/AgreementManager";
+import {
+    isChainProven,
+    replicatedStateSource
+} from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import { Block, StateSnapshot } from "@/models";
 import Storage from "@/storage";
 import type { BlockPredecessor } from "@/storage/QueueStorage";
@@ -60,8 +64,9 @@ export default class DisputeValidationService {
     /**
      * Audits `dispute`. True when no counter applies; false when a dispute
      * fraud proof is stored. The proof is verified and its tail replayed from
-     * the latest locally finalized state, then the local diamond's anchor,
-     * then the chain's anchor; only the chain tier establishes a fault. A
+     * the latest locally finalized state, then the local diamond's anchor
+     * (skipped while chain reads are proven), then the chain's anchor; only
+     * the chain tier establishes a fault. A
      * dispute that ends below the trusted final point is not replayed
      * backward. Missing required local data and read errors throw.
      */
@@ -938,10 +943,12 @@ export default class DisputeValidationService {
 
         // [check] isTimedoutTooEarly
         const timeoutTimestamp = Number(
-            await this.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
-                dispute.input.channelId,
-                forkId
-            )
+            await (
+                await replicatedStateSource(
+                    this.diamondStateMachine.localDiamondContract,
+                    this.stateChannelManagerContract
+                )
+            ).getDisputeWindowCreationTimestamp(dispute.input.channelId, forkId)
         );
         if (!timeoutTimestamp)
             throw new Error(
@@ -1141,6 +1148,7 @@ export default class DisputeValidationService {
     // ── Local-first checks ────────────────────────────────────────────────
     // Each check runs on the local diamond; only the answer that would make this
     // node act against the disputer is confirmed on-chain (see preferLocal).
+    // While chain reads are proven, the chain answers each check alone.
 
     private localFirst<T>(
         read: (contract: StateChannelManagerInterface) => Promise<T>,
@@ -1149,7 +1157,8 @@ export default class DisputeValidationService {
         return preferLocal(
             () => read(this.diamondStateMachine.localDiamondContract),
             () => read(this.stateChannelManagerContract),
-            acceptLocal
+            acceptLocal,
+            () => isChainProven(this.stateChannelManagerContract)
         );
     }
 

@@ -6,3 +6,4 @@
 
 - [`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../../../../../../../specification/runtime/light-client.md#req-lc-1-jt5pkt)
 - [`REQ-LC-2-PMY1VG` (What cannot be answered from proven state goes to the endpoint)](../../../../../../../specification/runtime/light-client.md#req-lc-2-pmy1vg)
+- [`REQ-LC-11-MTCBF9` (With the reads compared, each answer is checked against the endpoint's at its…)](../../../../../../../specification/runtime/light-client.md#req-lc-11-mtcbf9)

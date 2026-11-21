@@ -11,6 +11,7 @@
 - [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 - [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
   Contradicts: audit replay can run over history contaminated by retained, unexecuted proof support and produce an unsupported accusation ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds)).
+- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
 - [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r)
 
 ## UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09

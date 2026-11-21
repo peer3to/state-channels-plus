@@ -3,7 +3,8 @@ import type { LightClientChain } from "./lightClient/LightClientChain";
 import type {
     LightClientCounters,
     PushedBlockTiming,
-    PushedStateCounters
+    PushedStateCounters,
+    ReadComparisonCounters
 } from "./lightClient/LightClientCounters";
 import {
     LightClientSubscriptions,
@@ -11,7 +12,13 @@ import {
 } from "./lightClient/LightClientSubscriptions";
 import { NotLocalError } from "./lightClient/LightClientUnavailableError";
 import { LIGHT_CLIENT_METHODS } from "./lightClient/lightClientWire";
-import { parseLocalRead, type LocalRead } from "./lightClient/LocalReadParser";
+import {
+    paramsAtBlock,
+    parseLocalRead,
+    type LocalAnswer,
+    type LocalRead
+} from "./lightClient/LocalReadParser";
+import type { ProvenBlock } from "./lightClient/proof/AProvenStateReader";
 import StorageProofError from "./lightClient/proof/StorageProofError";
 import MultiRpcProvider from "./MultiRpcProvider";
 import { isMethodNotServed, NodeSocketSubscriptions } from "./RpcNodeProvider";
@@ -21,6 +28,7 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 import {
     hexlify,
+    isError,
     isHexString,
     type JsonRpcError,
     type JsonRpcPayload,
@@ -31,8 +39,29 @@ import {
 export type {
     LightClientCounters,
     PushedBlockTiming,
-    PushedStateCounters
+    PushedStateCounters,
+    ReadComparisonCounters
 } from "./lightClient/LightClientCounters";
+
+/** A read's answer reduced to what must match: its return data, revert data or failure. */
+type ComparedAnswer =
+    | { result: unknown }
+    | { revert: string }
+    | { failure: string };
+
+/** The node's answer to a compared read, or undefined when it gave none at that block. */
+function comparedAnswerOf(error: unknown): ComparedAnswer | undefined {
+    if (!isError(error, "CALL_EXCEPTION")) return undefined;
+    return typeof error.data === "string"
+        ? { revert: error.data }
+        : { failure: error.shortMessage };
+}
+
+function isSameAnswer(local: ComparedAnswer, node: ComparedAnswer): boolean {
+    const normalized = (answer: ComparedAnswer) =>
+        JSON.stringify(answer).toLowerCase();
+    return normalized(local) === normalized(node);
+}
 
 /** The log topic an indexed `channelId` is. */
 function channelTopic(channelId: ChannelId): string {
@@ -69,6 +98,14 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
     };
     /** The stages of the last accepted pushed blocks, oldest first, at most 1024. */
     readonly pushedBlockTimings: PushedBlockTiming[] = [];
+    /** How the compared reads matched; counted only with `comparesReads`. */
+    readonly readComparisons: ReadComparisonCounters = {
+        matched: 0,
+        differed: 0,
+        notCompared: 0
+    };
+    /** Whether each read answered locally is also asked of the node, for tests. */
+    private readonly comparesReads: boolean;
     private readonly chain: LightClientChain;
     private readonly subscriptions: LightClientSubscriptions;
     /**
@@ -103,10 +140,12 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
     constructor(
         nodes: readonly RpcNodeProvider[],
         logger: Logger,
-        chain: LightClientChain
+        chain: LightClientChain,
+        { comparesReads = false }: { comparesReads?: boolean } = {}
     ) {
         super(nodes, logger);
         this.chain = chain;
+        this.comparesReads = comparesReads;
         // a light client that did not start follows nothing
         this.subscriptions = new LightClientSubscriptions(nodes, this.logger, {
             subscribed: (key, contract, node) =>
@@ -159,13 +198,26 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         if (!this.destroyed)
             this.logger.info("Light client counts", {
                 ...this.lightClientCounters,
-                ...this.pushedStateCounters
+                ...this.pushedStateCounters,
+                ...(this.comparesReads && {
+                    comparedReads: this.readComparisons
+                })
             });
         clearTimeout(this.subscriptionsStartRetry);
         this.subscriptions.close();
         for (const unwatch of this.unwatchHeads.splice(0)) unwatch();
         void this.headSockets.clear();
         super.destroy();
+    }
+
+    // Overrides MultiRpcProvider.answersFromProvenState: true while the
+    // serving node lists the light client endpoints. A node that has not
+    // answered the question yet counts as without them, so a caller keeps
+    // its checks instead of failing.
+    override async answersFromProvenState(): Promise<boolean> {
+        const node = this.servingNode();
+        if (!node) return false;
+        return await this.hasEndpoints(node).catch(() => false);
     }
 
     // Overrides MultiRpcProvider.answer: reads the light client can answer
@@ -215,10 +267,12 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
             }
             // a node that serves the endpoints now pushes what is followed
             this.startSubscriptions();
-            return {
-                id: request.id,
-                ...(await read(await this.getLightClient()))
-            };
+            const { value: answer, block } = await read(
+                await this.getLightClient()
+            );
+            if (this.comparesReads)
+                await this.compareWithNode(node, request, answer, block);
+            return { id: request.id, ...answer };
         } catch (error) {
             // closed while the read ran: the read fails as a plain one would
             if (this.isClosed) throw error;
@@ -240,6 +294,58 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
             }
             return undefined;
         }
+    }
+
+    /**
+     * Asks `node` the read `request` at `block`, which proved `answer`, and
+     * counts whether it answers alike; a different answer is logged as an error.
+     */
+    private async compareWithNode(
+        node: RpcNodeProvider,
+        request: JsonRpcPayload,
+        answer: LocalAnswer,
+        block: ProvenBlock
+    ): Promise<void> {
+        let nodeAnswer: ComparedAnswer | undefined;
+        let failure: unknown;
+        try {
+            const sent = await node.trySendOnCurrentSocket(
+                request.method,
+                paramsAtBlock(request, block.ethereumBlockHash)
+            );
+            nodeAnswer = sent && { result: sent.result };
+        } catch (error) {
+            nodeAnswer = comparedAnswerOf(error);
+            failure = error;
+        }
+        if (!nodeAnswer) {
+            // no answer, or the node's socket ended before it answered
+            this.readComparisons.notCompared++;
+            this.logger.warn("RPC node did not answer a compared read", {
+                ...LoggerUtils.getChainReadMetadata(request),
+                block: block.number,
+                ...(failure !== undefined && { error: failure })
+            });
+            return;
+        }
+        const localAnswer: ComparedAnswer =
+            "result" in answer
+                ? { result: answer.result }
+                : { revert: String(answer.error.data) };
+        if (isSameAnswer(localAnswer, nodeAnswer)) {
+            this.readComparisons.matched++;
+            return;
+        }
+        this.readComparisons.differed++;
+        this.logger.error(
+            "Light client answered a read otherwise than the RPC node at the same block",
+            {
+                ...LoggerUtils.getChainReadMetadata(request),
+                block: block.number,
+                local: localAnswer,
+                node: nodeAnswer
+            }
+        );
     }
 
     private getLightClient(): Promise<LightClient> {

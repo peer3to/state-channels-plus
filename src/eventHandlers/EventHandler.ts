@@ -225,17 +225,11 @@ export class EventHandler {
             participant
         );
         const latestFork = this.stateManager.forkId;
-        let isDisputed =
-            await this.diamondStateMachine.localDiamondContract.isForkDisputed(
+        const isDisputed =
+            await this.stateManager.validationService.isForkDisputedOnChain(
                 channelId,
                 latestFork
             );
-        if (!isDisputed)
-            isDisputed =
-                await this.stateManager.stateChannelManagerContract.isForkDisputed(
-                    channelId,
-                    latestFork
-                );
         const participants = await this.diamondStateMachine.getParticipants();
         if (!isDisputed && participants.includes(participant.toString())) {
             await this.stateManager.disputeManager.dispute(latestFork);

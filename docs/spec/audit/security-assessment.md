@@ -540,6 +540,11 @@ Byzantine dispute can make an auditor spend up to 16.7M gas of local work per ev
 before the chain is asked. This is bounded, independent of the attacker, and the ethereumjs default
 that applied before the local-first change.
 
+While chain reads are proven ([`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)) the chain's proven answer is used alone, so none of this local
+work runs for those predicates; the cost moves to endpoint availability, and the ingest gate and the
+join countersigner's membership check stay local so a slow endpoint cannot lose a block or stall a
+countersignature.
+
 ## Client-side authenticity parity — 2026-09-26, decoding scope revised 2026-09-27
 
 Block author authenticity is decided in TypeScript under the signature carve-out of

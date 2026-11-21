@@ -46,24 +46,11 @@ class IsForkDisputedRpcMethods extends ANetworkRpcMethods<IsForkDisputedService>
             throw new Error("duplicate dispute acknowledgment request");
         }
 
-        // Check if fork is disputed locally
-        let isDisputed =
-            await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.isForkDisputed(
+        const isDisputed =
+            await this.p2pManager.stateManager.validationService.isForkDisputedOnChain(
                 channelId,
                 forkId
             );
-
-        if (!isDisputed) {
-            this.service.logger.verbose(
-                `Fork ${forkId} is NOT disputed on local diamond, checking on-chain`
-            );
-            // check on-chain
-            isDisputed =
-                await this.p2pManager.stateManager.stateChannelManagerContract.isForkDisputed(
-                    channelId,
-                    forkId
-                );
-        }
 
         if (!isDisputed) {
             // our chain view may lag the requester's -> spend its retry bound

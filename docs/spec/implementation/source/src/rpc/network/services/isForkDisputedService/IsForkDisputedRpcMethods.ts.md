@@ -6,6 +6,7 @@
 
 - [`REQ-DACK-1-ESEGGG` (One round per fork per peer pair)](../../../../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-1-eseggg)
 - [`REQ-IFD-2-13862Z` (Acknowledge only verified disputes)](../../../../../../../specification/peer-communication/dispute-acknowledgment.md#req-ifd-2-13862z)
+- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
 
 ## UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B
 

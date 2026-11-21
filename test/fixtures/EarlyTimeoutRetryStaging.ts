@@ -3,6 +3,7 @@ import { syncTargetToUnpostedReduction } from "./ReductionForkSwitchStaging";
 import { runtimeIsClosed } from "./RuntimeRootObservation";
 import Clock from "@/Clock";
 import {
+    CHAIN_READ_FAILED_RECHECK_REASON,
     EARLY_TIMEOUT_RECHECK_REASON,
     MISMATCH_TIMEOUT_RECHECK_REASON,
     PREDECESSOR_POSTED_RECHECK_REASON
@@ -698,6 +699,76 @@ export async function stageWindowBeforeTimeoutDeadline(h: MathPeerTestHarness) {
 }
 
 /**
+ * As {@link stageWindowBeforeTimeoutDeadline}, but the observer's local
+ * diamond does not apply the dispute: the window is on the chain only, and
+ * the observer's chain reads count as proven, as with the light client on.
+ */
+export async function stageChainOnlyWindowBeforeTimeoutDeadline(
+    h: MathPeerTestHarness
+) {
+    await h.lifecycle.start(3, 2);
+    const observer = h.getPeer(0);
+    const forkId = h.activeForkId!;
+    const writerAddress = await h
+        .control(observer)
+        .query.getNextToWrite()
+        .request();
+    const writer = h.peers.find((peer) => peer.address === writerAddress)!;
+    const race = await h.rpcStub.holdReductionRace(observer.index);
+    const recorder = await h.rpcStub.recordDisputeSubmissions(observer.index);
+    const mirror = await h.mirror.holdUpdates(
+        observer.index,
+        "onDisputeCommitted"
+    );
+    await h.control(observer).stub.stubProvenChainReads().request();
+    await h
+        .control(h.getPeer(1))
+        .dispute.startSelfRemovalDispute(forkId)
+        .request();
+    await waitFor(
+        async () =>
+            await h.execOnHost(
+                observer,
+                async (sm, args) =>
+                    Number(
+                        await sm.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
+                            sm.channelId,
+                            args.forkId
+                        )
+                    ) !== 0,
+                { forkId }
+            ),
+        h.event.hostExecTimeoutMs()
+    );
+    return {
+        observer,
+        writer,
+        forkId,
+        height: 2,
+        recorder,
+        /** The window creation time the observer's local diamond holds. */
+        localWindowOpenedAt: async () =>
+            await h.execOnHost(
+                observer,
+                async (sm, args) =>
+                    Number(
+                        await sm.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
+                            sm.channelId,
+                            args.forkId
+                        )
+                    ),
+                { forkId }
+            ),
+        restore: async () => {
+            await h.control(observer).stub.restoreProvenChainReads().request();
+            await mirror.release();
+            await recorder.restore();
+            await race.release({ replayEvents: false, keepTasksHeld: true });
+        }
+    };
+}
+
+/**
  * The participants author two blocks from `height`. The observer then holds
  * the later one but not `height`, as after a sync that installed
  * `height + 1` while it missed `height`. Returns the skipped block's author.
@@ -953,6 +1024,62 @@ export async function assertUnsignedPredecessorPostDelaysCheck(
         expect(Number(timeout.minTimeStamp)).to.equal(postedDeadline);
     } finally {
         await recorder.restore();
+        await tasks.restore();
+    }
+}
+
+/**
+ * With the observer's chain reads proven, its chain reads of `method` fail
+ * until restored: the timeout check re-arms on the failure, and the timeout
+ * commits once reads pass again. A commitment read fails at height 0, whose
+ * predecessor is the genesis snapshot, so the check's own read of the
+ * height's commitment is its first chain read of it.
+ */
+export async function assertProvenChainReadFailureRearms(
+    h: MathPeerTestHarness,
+    method: "getBlockCallDataCommitment" | "getDisputeWindowCreationTimestamp"
+): Promise<void> {
+    await h.lifecycle.timeoutSetup(3);
+    const observer = h.getPeer(2);
+    if (method === "getBlockCallDataCommitment") {
+        // the writer of height 0 stays silent; only the observer disputes
+        await h.dispute.suppressDisputeInitiation([
+            h.getPeer(0).index,
+            h.getPeer(1).index
+        ]);
+    } else {
+        // peer 0 authors height 0; observer 2 will time out writer 1
+        await h.transition.advanceState();
+        await h.dispute.suppressDisputeInitiation([h.getPeer(0).index]);
+    }
+    const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+    const uploads = await h.rpcStub.recordDisputeSubmissions(observer.index, {
+        forward: true
+    });
+    await h.control(observer).stub.stubProvenChainReads().request();
+    await h
+        .control(observer)
+        .stub.stubFailChainReads(method, Number.MAX_SAFE_INTEGER)
+        .request();
+    try {
+        await waitFor(
+            async () =>
+                (await tasks.tasks()).some((task) =>
+                    task.taskName.startsWith(CHAIN_READ_FAILED_RECHECK_REASON)
+                ),
+            h.event.hostExecTimeoutMs()
+        );
+        expect(await uploads.submissions()).to.deep.equal([]);
+        await h.control(observer).stub.restoreChainReadFailures().request();
+        await h.assert.dispute.committedWait({
+            peersIndices: [observer.index],
+            expectedCount: 1,
+            mode: "atLeast"
+        });
+    } finally {
+        await h.control(observer).stub.restoreChainReadFailures().request();
+        await h.control(observer).stub.restoreProvenChainReads().request();
+        await uploads.restore();
         await tasks.restore();
     }
 }

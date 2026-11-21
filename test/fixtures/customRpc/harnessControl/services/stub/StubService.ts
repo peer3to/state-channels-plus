@@ -83,6 +83,14 @@ import WebSocket, { WebSocketServer } from "ws";
 
 // `NetworkTransport` is used both for `createRPCMethods` and the captured transport.
 
+/** One warning of the participant-timeout service, with the check it names. */
+export type ParticipantTimeoutWarning = {
+    message: string;
+    forkId?: string;
+    blockHeight?: number;
+    participantAddress?: string;
+};
+
 export type BlockWorkHoldPoint =
     | "queueDequeue"
     | "authoring"
@@ -680,6 +688,12 @@ export class StubService extends ANetworkRpcService<
         warnings: number;
         restore: () => void;
     };
+    // the participant-timeout service's warnings since observation began,
+    // each forwarded to its logger
+    private participantTimeoutWarnings?: {
+        entries: ParticipantTimeoutWarning[];
+        restore: () => void;
+    };
     private admissionObservation?: {
         completedIntakes: number;
         completedSyncs: number;
@@ -731,6 +745,8 @@ export class StubService extends ANetworkRpcService<
     private timeoutBuildHold?: HeldRpcReply;
     private restoreTimeoutBuild?: () => void;
     private restoreChainReads?: () => void;
+    // undoes stubProvenChainReads: the provider's own answer again
+    private restoreProvenReads?: () => void;
     private restoreDisputedForkChecks?: () => void;
     private restoreKillPeriodReads?: () => void;
     // reads of the stubbed kill-period method: rejected, then passed through
@@ -1211,6 +1227,49 @@ export class StubService extends ANetworkRpcService<
     public restoreDisputeParticipationObservation(): void {
         this.disputeParticipationObservation?.restore();
         this.disputeParticipationObservation = undefined;
+    }
+
+    /** Record the participant-timeout service's warnings, forwarding each. */
+    public observeParticipantTimeoutWarnings(): void {
+        this.restoreParticipantTimeoutWarnings();
+        // the service's logger is private
+        const logger = this.sm.participantTimeoutService["logger"];
+        const warn = logger.warn.bind(logger);
+        const entries: ParticipantTimeoutWarning[] = [];
+        logger.warn = (message, ...meta) => {
+            const fields = (meta[0] ?? {}) as Record<string, unknown>;
+            entries.push({
+                message: String(message),
+                forkId:
+                    fields.forkId === undefined
+                        ? undefined
+                        : String(fields.forkId),
+                blockHeight:
+                    fields.blockHeight === undefined
+                        ? undefined
+                        : Number(fields.blockHeight),
+                participantAddress:
+                    fields.participantAddress === undefined
+                        ? undefined
+                        : String(fields.participantAddress)
+            });
+            return warn(message, ...meta);
+        };
+        this.participantTimeoutWarnings = {
+            entries,
+            restore: () => {
+                logger.warn = warn;
+            }
+        };
+    }
+
+    public getParticipantTimeoutWarnings(): ParticipantTimeoutWarning[] {
+        return [...(this.participantTimeoutWarnings?.entries ?? [])];
+    }
+
+    public restoreParticipantTimeoutWarnings(): void {
+        this.participantTimeoutWarnings?.restore();
+        this.participantTimeoutWarnings = undefined;
     }
 
     public observeAdmission(
@@ -2854,6 +2913,24 @@ export class StubService extends ANetworkRpcService<
             return Reflect.apply(original, contract, args);
         });
         this.restoreChainReads = () => Reflect.set(contract, method, original);
+    }
+
+    // the runtime's chain provider says its contract reads are proven, as it
+    // does with the light client on, until restore: the local-first checks
+    // and the replicated reads go to the chain contract alone. The reads
+    // still reach the session's node, unproven.
+    public stubProvenChainReads(): void {
+        const provider = this.chainProvider;
+        if (!(provider instanceof MultiRpcProvider))
+            throw new Error("Expected the runtime RPC node provider");
+        Reflect.set(provider, "answersFromProvenState", async () => true);
+        this.restoreProvenReads = () =>
+            Reflect.deleteProperty(provider, "answersFromProvenState");
+    }
+
+    public restoreProvenChainReads(): void {
+        this.restoreProvenReads?.();
+        this.restoreProvenReads = undefined;
     }
 
     public getChainReadObservation(): { failed: number; passed: number } {
