@@ -50,33 +50,28 @@ export function slotDeployerIndex(): number {
 const deployerSigners = new Map<Address, NonceManager>();
 
 /**
- * A NonceManager whose counter rereads the node after a failed send, once no
- * other send is between nonce assignment and broadcast. Overrides
- * NonceManager.sendTransaction: the base advances its counter before the
- * broadcast, so a rejected send would leave its nonce unsent and every later
- * send queued behind the gap for the rest of the process; a reset while
- * another send holds a nonce would hand that nonce out again.
+ * A NonceManager that broadcasts one send at a time and rereads the node after
+ * a failed one. Overrides NonceManager.sendTransaction: the base advances its
+ * counter before the broadcast, so a rejected send would leave its nonce
+ * unsent and every later send queued behind the gap; one at a time, no later
+ * send holds a nonce when the counter rereads the node.
  */
 class SlotDeployerSigner extends NonceManager {
-    private sending = 0;
-    private failedSend = false;
+    private lastSend: Promise<unknown> = Promise.resolve();
 
-    override async sendTransaction(
+    override sendTransaction(
         tx: TransactionRequest
     ): Promise<TransactionResponse> {
-        this.sending++;
-        try {
-            return await super.sendTransaction(tx);
-        } catch (error) {
-            this.failedSend = true;
-            throw error;
-        } finally {
-            this.sending--;
-            if (this.failedSend && this.sending === 0) {
-                this.failedSend = false;
+        const send = this.lastSend.then(async () => {
+            try {
+                return await super.sendTransaction(tx);
+            } catch (error) {
                 this.reset();
+                throw error;
             }
-        }
+        });
+        this.lastSend = send.catch(() => undefined);
+        return send;
     }
 }
 

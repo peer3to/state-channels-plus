@@ -344,7 +344,6 @@ export class DisputeTamperingActions<
                 let replayed = "not mined";
                 if (isError(error, "CALL_EXCEPTION") && error.receipt) {
                     const blockTag = error.receipt.blockNumber;
-                    replayed = "no custom error";
                     try {
                         if (dispute.postedAuditingData)
                             await channelManager.uploadDisputeWithCalldata.staticCall(
@@ -357,9 +356,11 @@ export class DisputeTamperingActions<
                                 disputeConfirmation,
                                 { blockTag }
                             );
+                        replayed = "the replay passed";
                     } catch (replayError) {
                         replayed =
-                            tryDecodeCustomError(replayError)?.name ?? replayed;
+                            tryDecodeCustomError(replayError)?.name ??
+                            "a revert with no custom error";
                     }
                 }
                 throw new Error(
