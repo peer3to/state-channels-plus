@@ -3,16 +3,15 @@ import QueryRpcMethods, {
     type BlockBundle,
     type StateProofVerification
 } from "./QueryRpcMethods";
-import Clock from "@/Clock";
 import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
 import type P2PManager from "@/P2PManager";
+import { gasUsageReadSettleMs } from "@/rpc/internal/services/chainSigner/ChainSignerService";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { BlockHeight, ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
-import { config } from "@/utils/config";
 
 /**
  * Read-only peer-state queries exposed to the test harness. Accessors live here
@@ -162,7 +161,7 @@ export class QueryService extends ANetworkRpcService<QueryRpcMethods> {
     async settledGasUsage(): Promise<{ gasUsage: GasUsageRow[] }> {
         return {
             gasUsage: await this.sm.signer.gasUsage.settledSnapshot(
-                Clock.getBlockSpanMs(config.GAS_USAGE_SETTLE_BLOCKS)
+                gasUsageReadSettleMs(this.router.defaultRequestTimeoutMs)
             )
         };
     }
