@@ -17,6 +17,7 @@ import {
     addressesEqual
 } from "@/utils";
 import type { DisputeFraudStruct } from "@/utils/Codec";
+import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import { blockStructWithTransactionHeader } from "@test/factory";
 import type {
     HarnessControlRpc,
@@ -38,6 +39,7 @@ import { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/Pro
 import {
     BytesLike,
     ContractTransactionReceipt,
+    isError,
     Signer,
     ZeroAddress
 } from "ethers";
@@ -337,8 +339,31 @@ export class DisputeTamperingActions<
                 receipt = await txResp.wait();
             } catch (error) {
                 if (!options.final) throw error;
+                // a mined revert carries no revert data: replaying the upload
+                // on the state its block left names the refusal
+                let replayed = "not mined";
+                if (isError(error, "CALL_EXCEPTION") && error.receipt) {
+                    const blockTag = error.receipt.blockNumber;
+                    replayed = "no custom error";
+                    try {
+                        if (dispute.postedAuditingData)
+                            await channelManager.uploadDisputeWithCalldata.staticCall(
+                                disputeConfirmation,
+                                auditingData,
+                                { blockTag }
+                            );
+                        else
+                            await channelManager.uploadDispute.staticCall(
+                                disputeConfirmation,
+                                { blockTag }
+                            );
+                    } catch (replayError) {
+                        replayed =
+                            tryDecodeCustomError(replayError)?.name ?? replayed;
+                    }
+                }
                 throw new Error(
-                    `Threshold-final dispute upload failed for peer ${authorPeerIndex} on fork ${targetForkId}: ${error instanceof Error ? error.message : String(error)}`
+                    `Threshold-final dispute upload failed for peer ${authorPeerIndex} on fork ${targetForkId} (replayed at its block: ${replayed}): ${error instanceof Error ? error.message : String(error)}`
                 );
             }
             if (!receipt) throw new Error("Dispute upload receipt unavailable");
