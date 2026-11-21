@@ -55,15 +55,21 @@ placeholders for the missing state, collects every miss that pass found, fetches
 earlier read reveals costs another pass. This is the card's strategy 2 (batch the keys known
 together), with re-execution as its cost.
 
-The comparison adds, behind a test-only option:
+The other two:
 
-- **Strategy 1:** fetch a proof for each miss when it is found and continue the same execution,
-  with no re-run.
-- **Strategy 3:** send the call to another RPC node for a remote simulation. A remote result
-  carries no proof, so it is a trusted answer, not a verified one.
+- **Strategy 1:** prove each missing value when the call reaches it and continue the same
+  execution, with no re-run. It runs behind `LIGHT_CLIENT_FETCH_EACH_MISS`, a configuration for
+  benchmarks (`REQ-LC-9-KWXV43`).
+- **Strategy 3:** send the call to an RPC node for a remote simulation. The current path does exactly
+  this for every call, so its cost per call is measured there. A remote result carries no proof: it
+  is a trusted answer, not a verified one.
 
-All three run identical calls pinned to one block hash, including dependent reads and repeated
-calls after the cache is filled. After the comparison the losing strategies are removed.
+The driver, `scripts/bench/lightClientCalls.ts` (`yarn bench:light-client`), runs the current path
+and both light client strategies over one node, on the same blocks and calls, each behind its own
+proxy. The calls cover a slot the followed channel holds, a simulated write, a read of another
+contract (one slot, four slots known together, eight slots that each name the next), the same
+dependent read repeated at the same block, a call without a sender, and a balance. After the
+comparison the losing strategies are removed.
 
 ## Not covered
 
