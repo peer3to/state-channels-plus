@@ -135,8 +135,17 @@ counted and logged, and a failed one was counted as not compared. The declaratio
 block named by its Substrate hash and with every answer taken as alike. With the chain's reads proven,
 the local-first reads, the mirror's state-proof tier and the eight plain mirror read sites (window
 time three times, commitment twice, slashed participants once, the proof anchor once, the spectator's
-snapshot once) go to the chain alone ([`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)); `preferLocal`'s unit suite passed 9 of 9 and the two live declarations
-passed. A first full run found a circular import (`@/utils` re-exports the local diamond module,
+snapshot once) go to the chain alone ([`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)). After the bot's first review round the evidence is:
+`preferLocal`'s unit suite with 11 declarations ([`UNIT-TEST-PREFER-LOCAL-1-XC95T6.P13`](../implementation/source/src/utils/localDiamond.ts.md#unit-test-prefer-local-1-xc95t6)-`P15` for
+proven reads); [`REQ-LC-11-MTCBF9.T1.P6`](../specification/runtime/light-client.md#req-lc-11-mtcbf9.t1.p6)-`P13` for failover, a lost connection, the proving block's
+hash after the chain moved, and each kind of differing answer; and
+[`REQ-MIRROR-5-N5SZC9.T4`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t4), run on the test chain with a harness stub that makes a runtime's chain
+reads count as proven (`stubProvenChainReads`): the timeout check's reads
+([`UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P41`](../implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md#unit-test-participant-timeout-service-1-q0paf5)-`P45`), construction and verification
+([`UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P67`](../implementation/source/src/agreementManager/AgreementManager.ts.md#unit-test-agreement-manager-1-kj6q9d), `P68`), the pending-set check and the countersigner's
+exception ([`REQ-JOINSIG-1-8X1A4V.T1.P34`](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v.t1.p34)). Each of these failed with its fix removed. On 17a2c37e4
+the whole Mocha suite passed 3615 of 3615 on the distributed runner and the light client suites 83
+of 83 against the node built from peer3-parachain PR #3. A first full run found a circular import (`@/utils` re-exports the local diamond module,
 which had imported the chain provider) that failed `InternalTransport.test.ts` 11 of 11; the helpers
 moved to `provenChainReads.ts` and the file passed 11 of 11. Not run: participants on a peer3 node
 with the light client on and the reads compared

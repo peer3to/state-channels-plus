@@ -10,6 +10,7 @@ import type { LogEntry } from "@/utils/logging/Logger";
 import type { RpcNodeProxy } from "@test/fixtures/node/RpcNodeProxy";
 import { recordingLogger } from "@test/fixtures/node/RpcNodesFixture";
 import { waitFor } from "@test/utils/waitFor";
+import type { Interface } from "ethers";
 import { ethers } from "hardhat";
 
 /**
@@ -111,6 +112,21 @@ export class LightClientProviderFixture {
     async deployNumberStorage(): Promise<string> {
         const factory = await ethers.getContractFactory("SimpleNumberStorage");
         return this.node.deploy(factory.bytecode);
+    }
+
+    /** The error of `revertWithMessage("not today")` on the number storage at `address`, read through the provider. */
+    async revertOf(address: string, abi: Interface): Promise<unknown> {
+        return await this.provider
+            .call({
+                to: address,
+                data: abi.encodeFunctionData("revertWithMessage", ["not today"])
+            })
+            .then(
+                () => {
+                    throw new Error("The call was expected to revert");
+                },
+                (error: unknown) => error
+            );
     }
 
     /** The messages the provider logged at info level, in order. */

@@ -1,6 +1,5 @@
 // @distributed-requires: lightClient
 import { REVERT_ERROR_CODE } from "@/evm/p2pRuntime/rpcNodes/lightClient/LocalReadParser";
-import type LightClientRpcProvider from "@/evm/p2pRuntime/rpcNodes/LightClientRpcProvider";
 import { LightClientProviderFixture } from "@test/fixtures/lightClient/LightClientProviderFixture";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -188,7 +187,7 @@ describe("Light client read comparison", function () {
         const address = await fixture.deployNumberStorage();
         proxy.answerRequests("eth_call", toBeHex(7, 32));
 
-        const revert = await revertOf(provider, address, abi);
+        const revert = await fixture.revertOf(address, abi);
 
         expect(revert).to.have.property("reason", "not today");
         expect(provider.readComparisons.differed).to.equal(1);
@@ -208,7 +207,7 @@ describe("Light client read comparison", function () {
             data: REVERT_DATA
         });
 
-        const revert = await revertOf(provider, address, abi);
+        const revert = await fixture.revertOf(address, abi);
 
         expect(revert).to.have.property("reason", "not today");
         expect(provider.readComparisons.differed).to.equal(1);
@@ -260,20 +259,3 @@ describe("Light client read comparison", function () {
         expect(fixture.loggedWarningMessages()).to.include(NOT_ANSWERED);
     });
 });
-
-/** The revert of `revertWithMessage("not today")` read through `provider`. */
-async function revertOf(
-    provider: LightClientRpcProvider,
-    address: string,
-    abi: Interface
-): Promise<unknown> {
-    return await provider
-        .call({
-            to: address,
-            data: abi.encodeFunctionData("revertWithMessage", ["not today"])
-        })
-        .then(
-            () => expect.fail("the call must revert"),
-            (error: unknown) => error
-        );
-}

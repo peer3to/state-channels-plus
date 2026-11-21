@@ -3,6 +3,7 @@ import { syncTargetToUnpostedReduction } from "./ReductionForkSwitchStaging";
 import { runtimeIsClosed } from "./RuntimeRootObservation";
 import Clock from "@/Clock";
 import {
+    CHAIN_READ_FAILED_RECHECK_REASON,
     EARLY_TIMEOUT_RECHECK_REASON,
     MISMATCH_TIMEOUT_RECHECK_REASON,
     PREDECESSOR_POSTED_RECHECK_REASON
@@ -1023,6 +1024,62 @@ export async function assertUnsignedPredecessorPostDelaysCheck(
         expect(Number(timeout.minTimeStamp)).to.equal(postedDeadline);
     } finally {
         await recorder.restore();
+        await tasks.restore();
+    }
+}
+
+/**
+ * With the observer's chain reads proven, its chain reads of `method` fail
+ * until restored: the timeout check re-arms on the failure, and the timeout
+ * commits once reads pass again. A commitment read fails at height 0, whose
+ * predecessor is the genesis snapshot, so the check's own read of the
+ * height's commitment is its first chain read of it.
+ */
+export async function assertProvenChainReadFailureRearms(
+    h: MathPeerTestHarness,
+    method: "getBlockCallDataCommitment" | "getDisputeWindowCreationTimestamp"
+): Promise<void> {
+    await h.lifecycle.timeoutSetup(3);
+    const observer = h.getPeer(2);
+    if (method === "getBlockCallDataCommitment") {
+        // the writer of height 0 stays silent; only the observer disputes
+        await h.dispute.suppressDisputeInitiation([
+            h.getPeer(0).index,
+            h.getPeer(1).index
+        ]);
+    } else {
+        // peer 0 authors height 0; observer 2 will time out writer 1
+        await h.transition.advanceState();
+        await h.dispute.suppressDisputeInitiation([h.getPeer(0).index]);
+    }
+    const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+    const uploads = await h.rpcStub.recordDisputeSubmissions(observer.index, {
+        forward: true
+    });
+    await h.control(observer).stub.stubProvenChainReads().request();
+    await h
+        .control(observer)
+        .stub.stubFailChainReads(method, Number.MAX_SAFE_INTEGER)
+        .request();
+    try {
+        await waitFor(
+            async () =>
+                (await tasks.tasks()).some((task) =>
+                    task.taskName.startsWith(CHAIN_READ_FAILED_RECHECK_REASON)
+                ),
+            h.event.hostExecTimeoutMs()
+        );
+        expect(await uploads.submissions()).to.deep.equal([]);
+        await h.control(observer).stub.restoreChainReadFailures().request();
+        await h.assert.dispute.committedWait({
+            peersIndices: [observer.index],
+            expectedCount: 1,
+            mode: "atLeast"
+        });
+    } finally {
+        await h.control(observer).stub.restoreChainReadFailures().request();
+        await h.control(observer).stub.restoreProvenChainReads().request();
+        await uploads.restore();
         await tasks.restore();
     }
 }

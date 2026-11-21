@@ -413,6 +413,15 @@ export default class ParticipantTimeoutService {
                 { forkId, height: blockHeight, author: participantAddress }
             );
             if (!recovery) return;
+            // re-check only while the post is on its way into the pipeline;
+            // the participant did post, so no timeout is due
+            if (!recovery.validationScheduled && !recovery.blockCalldata) {
+                this.logger.warn(
+                    "tryTimeoutParticipant - posted commitment's calldata not found; no timeout",
+                    { forkId, blockHeight, participantAddress }
+                );
+                return;
+            }
             this.scheduleTimeoutParticipantRetry(
                 forkId,
                 blockHeight,

@@ -120,10 +120,12 @@ returns each answer with its block. `preferLocal` takes a fourth argument that s
 proven, and the local-first sites pass it, so the chain answers alone while proven.
 [AgreementManager.ts](../implementation/source/src/agreementManager/AgreementManager.ts.md) skips the
 mirror's state-proof tier while proven and decides at construction how a proof starts. The replicated
-reads moved to the chain are in `ParticipantTimeoutService` (window time, commitment, and the
-participant-timeout re-arm after a failed chain read), `ChannelJoinService` and `MembershipService`
-(`isSignerPendingOnChain`), `DisputeValidationService.checkTimeout`, `DisputeBuilder` (window time,
-commitment, slashed participants, anchor) and `SpectateService` (the snapshot a sync starts from).
+reads moved to the chain, each owner once: `ParticipantTimeoutService` (window time, both commitment
+reads, re-arming the check after a failed chain read), `DisputeValidationService.checkTimeout`
+(window time), `ChannelJoinService` (window time), `DisputeBuilder` (slashed participants),
+`AgreementManager` (construction anchor, and the tier skip), `SpectateService` (the snapshot a sync
+starts from) and `MembershipService.isSignerPendingOnChain` (pending set, a local-first check).
+`ValidationService.isForkDisputedOnChain` is the one owner of the disputed flag outside ingest.
 Local while proven, by the engineer's two exceptions: the join countersigner's membership check and
 the ingest gate `ValidationService.isDisputedFork`.
 

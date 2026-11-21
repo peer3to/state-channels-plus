@@ -59,3 +59,4 @@ for the old fork.
 - `a failed chain read of the dispute window's creation time re-arms the check and the timeout still commits`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P42, REQ-MIRROR-5-N5SZC9.T4.P2
 - `a failed chain read of the block's calldata commitment re-arms the check and the timeout still commits`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P43, REQ-MIRROR-5-N5SZC9.T4.P3
 - `a commitment the chain shows before its calldata-posted event is applied → the check recovers the calldata and re-arms, and the block is stored once the event arrives`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P44, REQ-MIRROR-5-N5SZC9.T4.P4
+- `a commitment the chain shows whose calldata log no search finds → no timeout and no re-arm`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P45, REQ-MIRROR-5-N5SZC9.T4.P9

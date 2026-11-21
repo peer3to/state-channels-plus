@@ -54,3 +54,4 @@
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P42` — chain reads proven: a failed chain read of the window's creation time re-arms the check, and the timeout commits once reads pass
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P43` — chain reads proven: a failed chain read of the height's calldata commitment re-arms the check, and the timeout commits once reads pass
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P44` — chain reads proven: a commitment on the chain whose calldata-posted event is not applied makes a plain check recover the calldata and re-arm; the block is stored, no timeout
+- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P45` — chain reads proven: a commitment on the chain whose calldata log no search finds ends a plain check with a warning, no timeout and no re-arm

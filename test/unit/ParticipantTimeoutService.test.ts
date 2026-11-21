@@ -14,6 +14,7 @@ import {
     assertSkippedHeightNotTimedOut,
     assertUnsignedPredecessorPostDelaysCheck,
     checkTimeoutAfterDeadline,
+    assertProvenChainReadFailureRearms,
     skipHeightOnObserver,
     stageChainOnlyWindowBeforeTimeoutDeadline,
     stageWindowBeforeTimeoutDeadline
@@ -1063,6 +1064,55 @@ describe("Unit: ParticipantTimeoutService", function () {
                 await tasks.restore();
             }
         });
+        it("a commitment the chain shows whose calldata log no search finds → no timeout and no re-arm", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2, { rpcNodeProxiesByPeer: { 0: 1 } });
+            const observer = h.getPeer(0);
+            await h.control(observer).stub.stubProvenChainReads().request();
+            const releaseLogs = await h.rpcStub.holdContractLogs(
+                observer.index
+            );
+            const hold = await h.rpcStub.holdBlockWork(
+                observer.index,
+                "confirmation"
+            );
+            const [proxy] = h.getRpcNodeProxies(observer.index);
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index
+            );
+            try {
+                const { leader, startHeight, forkId } =
+                    await h.transition.postNextBlockOnlyOnChainWait({
+                        observerIndex: observer.index
+                    });
+                // the post's log is beyond every search the check makes
+                proxy.answerRequests("eth_getLogs", []);
+                await checkTimeoutAfterDeadline(h, observer.index, {
+                    forkId,
+                    height: startHeight,
+                    writer: leader.address,
+                    isForced: false
+                });
+
+                expect(
+                    (await tasks.tasks()).some(({ taskName }) =>
+                        taskName.includes("currentOnChainBlockValidation")
+                    )
+                ).to.equal(false);
+                expect(await recorder.submissions()).to.deep.equal([]);
+            } finally {
+                proxy.stopAnsweringRequests("eth_getLogs");
+                await hold.release();
+                await releaseLogs();
+                await h
+                    .control(observer)
+                    .stub.restoreProvenChainReads()
+                    .request();
+                await recorder.restore();
+                await tasks.restore();
+            }
+        });
     });
 
     describe("predecessor post not yet applied", function () {
@@ -1126,59 +1176,3 @@ describe("Unit: ParticipantTimeoutService", function () {
         });
     });
 });
-
-/**
- * With the observer's chain reads proven, its chain reads of `method` fail
- * until restored: the timeout check re-arms on the failure, and the timeout
- * commits once reads pass again. A commitment read fails at height 0, whose
- * predecessor is the genesis snapshot, so the check's own read of the
- * height's commitment is its first chain read of it.
- */
-async function assertProvenChainReadFailureRearms(
-    h: ReturnType<typeof TestSession.getHarness>,
-    method: "getBlockCallDataCommitment" | "getDisputeWindowCreationTimestamp"
-): Promise<void> {
-    await h.lifecycle.timeoutSetup(3);
-    const observer = h.getPeer(2);
-    if (method === "getBlockCallDataCommitment") {
-        // the writer of height 0 stays silent; only the observer disputes
-        await h.dispute.suppressDisputeInitiation([
-            h.getPeer(0).index,
-            h.getPeer(1).index
-        ]);
-    } else {
-        // peer 0 authors height 0; observer 2 will time out writer 1
-        await h.transition.advanceState();
-        await h.dispute.suppressDisputeInitiation([h.getPeer(0).index]);
-    }
-    const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
-    const uploads = await h.rpcStub.recordDisputeSubmissions(observer.index, {
-        forward: true
-    });
-    await h.control(observer).stub.stubProvenChainReads().request();
-    await h
-        .control(observer)
-        .stub.stubFailChainReads(method, Number.MAX_SAFE_INTEGER)
-        .request();
-    try {
-        await waitFor(
-            async () =>
-                (await tasks.tasks()).some((task) =>
-                    task.taskName.startsWith(CHAIN_READ_FAILED_RECHECK_REASON)
-                ),
-            h.event.hostExecTimeoutMs()
-        );
-        expect(await uploads.submissions()).to.deep.equal([]);
-        await h.control(observer).stub.restoreChainReadFailures().request();
-        await h.assert.dispute.committedWait({
-            peersIndices: [observer.index],
-            expectedCount: 1,
-            mode: "atLeast"
-        });
-    } finally {
-        await h.control(observer).stub.restoreChainReadFailures().request();
-        await h.control(observer).stub.restoreProvenChainReads().request();
-        await uploads.restore();
-        await tasks.restore();
-    }
-}
