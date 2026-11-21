@@ -1,7 +1,7 @@
 import ScaleReader, { encodeCompact } from "./ScaleReader";
+import { blake2_256 } from "./SubstrateTrieProof";
 import type { SubstrateHeaderJson } from "../../lightClientWire";
 import StorageProofError from "../StorageProofError";
-import { blake2b } from "@noble/hashes/blake2b";
 import { concat, dataLength, getBytes, hexlify } from "ethers";
 
 /** The digest item kind of a consensus log, and Frontier's engine id, "fron". */
@@ -55,9 +55,7 @@ export default class SubstrateHeader {
             encodeCompact(this.digestLogs.length),
             ...this.digestLogs
         ]);
-        this.hash = hexlify(
-            blake2b(getBytes(encodedHeader), { dkLen: HASH_LENGTH })
-        );
+        this.hash = hexlify(blake2_256(getBytes(encodedHeader)));
     }
 
     /**

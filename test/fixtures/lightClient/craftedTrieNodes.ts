@@ -1,12 +1,13 @@
 // @spec-test-coverage-ignore: hand-encoded trie nodes used by the mapped SubstrateTrieProof and FrontierStorageProofVerifier declarations
 
-import SubstrateTrieProof from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateTrieProof";
-import { blake2b } from "@noble/hashes/blake2b";
+import SubstrateTrieProof, {
+    blake2_256
+} from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateTrieProof";
 import { concat, dataLength, getBytes, hexlify } from "ethers";
 
 /** The state root of a trie whose only node is `encodedNode`. */
 export function rootOfSingleNodeTrie(encodedNode: string): string {
-    return hexlify(blake2b(getBytes(encodedNode), { dkLen: 32 }));
+    return hexlify(blake2_256(getBytes(encodedNode)));
 }
 
 /**
@@ -84,7 +85,7 @@ export function hashedValueBranch(partialKey: string, value: string) {
             partialKey,
             // child bitmap: nibble 1 only
             "0x0200",
-            blake2b(getBytes(value), { dkLen: 32 }),
+            blake2_256(getBytes(value)),
             // the inline leaf of the rest of key 0x12, holding 0xbb
             "0x10410204bb"
         ]),
