@@ -88,6 +88,24 @@ export const PARTITION_CONTRACT =
     "60006000a2" +
     "00";
 
+/**
+ * The calldata with which {@link PARTITION_CONTRACT} stores `sload(read) + add`
+ * at slot `write`, logged with `topic`.
+ */
+export function partitionWrite(
+    topic: string,
+    read: number,
+    write: number,
+    add: number
+): string {
+    return concat([
+        topic,
+        toBeHex(read, 32),
+        toBeHex(write, 32),
+        toBeHex(add, 32)
+    ]);
+}
+
 /** Creation code of a contract whose code is the invalid opcode `0xfe`. */
 export const INVALID_OPCODE_CONTRACT = "0x600180600b6000396000f3" + "fe";
 
@@ -330,15 +348,7 @@ export class LightClientNodeFixture {
         write: number,
         add: number
     ): Promise<TransactionReceipt> {
-        return this.transact(
-            contract,
-            concat([
-                topic,
-                toBeHex(read, 32),
-                toBeHex(write, 32),
-                toBeHex(add, 32)
-            ])
-        );
+        return this.transact(contract, partitionWrite(topic, read, write, add));
     }
 
     /**

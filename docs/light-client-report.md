@@ -29,6 +29,8 @@ The SDK needs no extra counters for this. The numbers come from outside it:
 | RPC requests per method, and requests removed             | the WebSocket proxy between peer and node (`test/fixtures/node/RpcNodeProxy.ts`), path off against path on                                                                                                   |
 | Remote simulations                                        | `eth_call` and `eth_estimateGas` requests the proxy forwarded                                                                                                                                                |
 | Fallback round trips and keys per call                    | `state_getReadProof` requests the proxy forwarded between one call's start and end, calls issued one at a time                                                                                               |
+| Hit rate per call kind                                    | keys a following light client proved, against the keys a light client that follows nothing proved for the same calls                                                                                         |
+| Reconnect time                                            | from dropping the peer's socket at the proxy until the light client holds the node's new sync                                                                                                                |
 | Calls served from pushed state, with a fallback, by nodes | the provider's `lightClientCounters`                                                                                                                                                                         |
 | Push bytes, values changed, proof nodes refreshed         | each push the proxy delivered, and `newNodes` in the provider's `pushedBlockTimings`                                                                                                                         |
 | Stage times                                               | `executedAt`, `builtAt`, `sentAt` from the node, `receivedAt`, `verifiedAt` from the peer                                                                                                                    |
@@ -76,7 +78,9 @@ The other two:
   benchmarks (`REQ-LC-9-KWXV43`).
 - **Strategy 3:** send the call to an RPC node for a remote simulation. The current path does exactly
   this for every call, so its cost per call is measured there. A remote result carries no proof: it
-  is a trusted answer, not a verified one.
+  is a trusted answer, not a verified one. In the driver the remote simulation runs on the same node
+  that pushes the partitions; a deployment could send it to another node, whose CPU is then not the
+  serving node's.
 
 The driver, `scripts/bench/lightClientCalls.ts` (`yarn bench:light-client`), runs the current path
 and both light client strategies over one node, on the same blocks and calls, each behind its own
@@ -84,6 +88,22 @@ proxy. The calls cover a slot the followed channel holds, a simulated write, a r
 contract (one slot, four slots known together, eight slots that each name the next), the same
 dependent read repeated at the same block, a call without a sender, and a balance. After the
 comparison the losing strategies are removed.
+
+The driver also measures:
+
+- **Hit rate.** A fourth path, `cold`, is a light client that follows nothing, so it proves every key
+  a call reads. For each call kind, the hit rate of a following path is 1 minus the keys it proved
+  divided by the keys the cold path proved. A key one call proved is held for the later calls at the
+  same block, on both paths alike, so a key counts at the first call kind of a round that reads it.
+- **Transactions over several channels.** With `BENCH_CHANNELS_PER_TX=k` one transaction writes k
+  channels, as the state channel manager's `multicall` can. Every channel such a transaction logs
+  gets all the keys it touched, so a run with k > 1 against a run with k = 1 shows what that costs
+  the followed partition: keys held (the values of its sync), values and proof nodes per push, and
+  push bytes.
+- **Reconnects.** Every `BENCH_RECONNECT_EVERY` rounds the proxy drops each following path's socket
+  and accepts the reconnect at once. Recorded per drop: the time until the light client holds the
+  first push after it, whether that push was a sync, and its size. The node's new sync is part of
+  its CPU, so the runs that measure the node's cost per path set `BENCH_RECONNECT_EVERY=0`.
 
 ## State freshness
 
@@ -183,7 +203,8 @@ were audited for that on 2026-11-21: every state channel manager function that w
 storage logs the channel's id, in `topics[1]`, on every path that writes. No gap was found and
 nothing was changed. The audit, its scope and its notes are in the
 [implementation assessment](spec/audit/implementation.md#event-coverage-of-the-state-channel-manager--2026-11-21).
-What it leaves to measurement, the slots only calls read, shows in the per-slot hit rate below.
+What it leaves to measurement, the slots only calls read, shows in the hit rate the calls driver
+measures.
 
 ## Not covered
 

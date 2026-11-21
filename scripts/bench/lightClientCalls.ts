@@ -13,10 +13,15 @@
  *   (strategy 2);
  * - fetchEachMiss: the light client proving each missing key as the call
  *   reaches it and going on (strategy 1, `LIGHT_CLIENT_FETCH_EACH_MISS`).
- * Both light client paths follow the same channel of the partition contract.
+ * - cold: the light client as batchPerPass, following no channel, so it
+ *   proves every key a call reads. The share of those keys the followed paths
+ *   did not have to prove is their hit rate.
+ * Both strategy paths follow the same channel of the partition contract.
  *
- * Each round writes to the channels, waits until both light clients hold the
- * block, then runs one call set on each path, in rotating order. Results go
+ * Each round writes to the channels, waits until the following light clients
+ * hold the block, then runs one call set on each path, in rotating order.
+ * Every few rounds each following path's socket is dropped, and the time
+ * until its light client accepts the node's new sync is recorded. Results go
  * to logs/bench/light-client-calls-<time>/results.json; a summary is printed.
  *
  *   PEER3_NODE_BIN=<zero-fee-node> yarn bench:light-client
@@ -27,7 +32,10 @@
  * light clients answer (REQ-LC-11); BENCH_PATHS (all): the paths to run, comma
  * separated, one per run giving each path a node of its own, so that the node's
  * CPU and memory are that path's; BENCH_NODE_LIGHT_CLIENT (1): 0 starts the node
- * without `--light-client`, for the current path only, the node's baseline.
+ * without `--light-client`, for the current path only, the node's baseline;
+ * BENCH_CHANNELS_PER_TX (1): channels one transaction writes, as one
+ * multicall over several channels does; BENCH_RECONNECT_EVERY (10): rounds
+ * between dropped sockets, 0 for none.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -40,20 +48,27 @@ import type { LightClientCounters } from "@/index";
 import { createRpcNodesProvider } from "@/index";
 import {
     LightClientNodeFixture,
-    PARTITION_CONTRACT
+    PARTITION_CONTRACT,
+    partitionWrite
 } from "@test/fixtures/lightClient/LightClientNodeFixture";
 import type { RpcNodeProxy } from "@test/fixtures/node/RpcNodeProxy";
 import { recordingLogger } from "@test/fixtures/node/RpcNodesFixture";
 import { waitFor } from "@test/utils/waitFor";
 import { toBeHex } from "ethers";
 import { ethers } from "hardhat";
-import { hostDescription, percentile, processUsage, sum } from "./benchUtils";
+import {
+    hostDescription,
+    percentile,
+    processUsage,
+    spread,
+    sum
+} from "./benchUtils";
 
 /** A JSON-RPC method name. */
 type RpcMethod = string;
 /** Requests the node received, per method. */
 type MethodCounts = Record<RpcMethod, number>;
-type PathName = "current" | "batchPerPass" | "fetchEachMiss";
+type PathName = "current" | "batchPerPass" | "fetchEachMiss" | "cold";
 type CallKind =
     | "storageInPartition"
     | "callReadInPartition"
@@ -69,6 +84,8 @@ type BenchPath = {
     provider: LightClientRpcProvider;
     proxy: RpcNodeProxy;
     isLightClient: boolean;
+    /** Whether the light client follows the bench's channel. */
+    follows: boolean;
 };
 
 type CallRecord = {
@@ -107,13 +124,36 @@ type PushRecord = {
     };
 };
 
-const PATHS: readonly PathName[] = ["current", "batchPerPass", "fetchEachMiss"];
+/** A dropped socket and the new sync the light client accepted after it. */
+type ReconnectRecord = {
+    round: number;
+    path: PathName;
+    /** From dropping the socket until the light client held the new sync. */
+    ms: number;
+    /** Block of the first push accepted after the drop, and whether the node sent it as a sync. */
+    number: number;
+    sync: boolean;
+    /** Values that push carried: for a sync, every key the partition holds. */
+    values: number;
+    bytes: number;
+};
+
+const PATHS: readonly PathName[] = [
+    "current",
+    "batchPerPass",
+    "fetchEachMiss",
+    "cold"
+];
 const ROUNDS = Number(process.env.BENCH_ROUNDS ?? 30);
 const CHANNELS = Number(process.env.BENCH_CHANNELS ?? 4);
 const IDLE_EVERY = Number(process.env.BENCH_IDLE_EVERY ?? 3);
 const COMPARES_READS = process.env.BENCH_COMPARE === "1";
 const RUN_PATHS = runPaths(process.env.BENCH_PATHS);
 const NODE_LIGHT_CLIENT = process.env.BENCH_NODE_LIGHT_CLIENT !== "0";
+const CHANNELS_PER_TX = Number(process.env.BENCH_CHANNELS_PER_TX ?? 1);
+const RECONNECT_EVERY = Number(process.env.BENCH_RECONNECT_EVERY ?? 10);
+/** Above the gas one write of the partition contract takes, called from the probe. */
+const GAS_PER_FORWARDED_WRITE = 100_000n;
 /** Slots per channel; channel `c` writes slots c * SLOT_SPAN + 1... */
 const SLOT_SPAN = 1000;
 const PUSH_TIMEOUT_MS = 30_000;
@@ -163,14 +203,18 @@ function counterDelta(
     return delta;
 }
 
-function pushedBlocks(proxy: RpcNodeProxy): LightClientStorageBlock[] {
-    return proxy.sentNotifications
-        .filter(({ method }) => method === LIGHT_CLIENT_METHODS.notification)
-        .map(
-            ({ params }) =>
-                (params as { result?: LightClientStorageBlock }).result
-        )
-        .filter((block) => block !== undefined);
+/** The pushed blocks `proxy` delivered from its `from`-th notification on, with their message's size. */
+function pushedBlocks(
+    proxy: RpcNodeProxy,
+    from = 0
+): { block: LightClientStorageBlock; bytes: number }[] {
+    return proxy.sentNotifications.slice(from).flatMap(({ method, params }) => {
+        if (method !== LIGHT_CLIENT_METHODS.notification) return [];
+        const block = (params as { result?: LightClientStorageBlock }).result;
+        return block === undefined
+            ? []
+            : [{ block, bytes: JSON.stringify(params).length }];
+    });
 }
 
 function pushRecords(path: BenchPath): PushRecord[] {
@@ -181,50 +225,114 @@ function pushRecords(path: BenchPath): PushRecord[] {
             timing
         ])
     );
-    return path.proxy.sentNotifications
-        .filter(({ method }) => method === LIGHT_CLIENT_METHODS.notification)
-        .flatMap(({ params }) => {
-            const block = (params as { result?: LightClientStorageBlock })
-                .result;
-            if (block === undefined) return [];
-            const number = Number(block.header.number);
-            const timing = timings.get(number);
-            return [
-                {
-                    path: path.name,
-                    number,
-                    sync: block.sync,
-                    bytes: JSON.stringify(params).length,
-                    values: block.values.length,
-                    proofNodes: block.proofNodes.length,
-                    stages: timing && {
-                        buildMs:
-                            timing.executedAt === null
-                                ? null
-                                : timing.builtAt - timing.executedAt,
-                        dispatchMs: timing.sentAt - timing.builtAt,
-                        transitMs: timing.receivedAt - timing.sentAt,
-                        verifyMs: timing.verifiedAt - timing.receivedAt,
-                        endToEndMs:
-                            timing.executedAt === null
-                                ? null
-                                : timing.verifiedAt - timing.executedAt,
-                        newNodes: timing.newNodes,
-                        heldNodes: timing.heldNodes
-                    }
-                }
-            ];
-        });
+    return pushedBlocks(path.proxy).map(({ block, bytes }) => {
+        const number = Number(block.header.number);
+        const timing = timings.get(number);
+        return {
+            path: path.name,
+            number,
+            sync: block.sync,
+            bytes,
+            values: block.values.length,
+            proofNodes: block.proofNodes.length,
+            stages: timing && {
+                buildMs:
+                    timing.executedAt === null
+                        ? null
+                        : timing.builtAt - timing.executedAt,
+                dispatchMs: timing.sentAt - timing.builtAt,
+                transitMs: timing.receivedAt - timing.sentAt,
+                verifyMs: timing.verifiedAt - timing.receivedAt,
+                endToEndMs:
+                    timing.executedAt === null
+                        ? null
+                        : timing.verifiedAt - timing.executedAt,
+                newNodes: timing.newNodes,
+                heldNodes: timing.heldNodes
+            }
+        };
+    });
+}
+
+/**
+ * Drops `path`'s socket and lets the provider connect again at once; how long
+ * until its light client held the first push the node sent after the drop.
+ */
+async function reconnect(
+    path: BenchPath,
+    round: number
+): Promise<ReconnectRecord> {
+    const { proxy, provider } = path;
+    const notificationsBefore = proxy.sentNotifications.length;
+    const droppedAt = Date.now();
+    proxy.cut();
+    proxy.restore();
+    const acceptedAfterDrop = () => {
+        const [pushed] = pushedBlocks(proxy, notificationsBefore);
+        if (pushed === undefined) return undefined;
+        const number = Number(pushed.block.header.number);
+        const timing = provider.pushedBlockTimings.find(
+            (accepted) =>
+                accepted.number === number && accepted.receivedAt >= droppedAt
+        );
+        return timing && { ...pushed, number, timing };
+    };
+    await waitFor(() => acceptedAfterDrop() !== undefined, PUSH_TIMEOUT_MS);
+    const accepted = acceptedAfterDrop();
+    if (accepted === undefined)
+        throw new Error(`${path.name} accepted no push after the drop`);
+    return {
+        round,
+        path: path.name,
+        ms: accepted.timing.verifiedAt - droppedAt,
+        number: accepted.number,
+        sync: accepted.block.sync,
+        values: accepted.block.values.length,
+        bytes: accepted.bytes
+    };
+}
+
+/** Keys the records' proof requests named; a key asked for again counts again. */
+function proofKeys(records: CallRecord[]): number {
+    return sum(
+        records.map((record) =>
+            sum(record.proofRequests.map((keys) => keys.length))
+        )
+    );
+}
+
+/**
+ * The share of the keys the cold path proved for `kind`, or for every kind
+ * when none is named, that `path` did not have to prove; null when the cold
+ * path proved none.
+ */
+function hitRate(
+    records: CallRecord[],
+    path: PathName,
+    kind?: CallKind
+): number | null {
+    const provedBy = (name: PathName) =>
+        proofKeys(
+            records.filter(
+                (record) =>
+                    record.path === name &&
+                    (kind === undefined || record.kind === kind)
+            )
+        );
+    const cold = provedBy("cold");
+    return cold === 0 ? null : 1 - provedBy(path) / cold;
 }
 
 function summarize(
     records: CallRecord[],
     pushes: PushRecord[],
+    reconnects: ReconnectRecord[],
     paths: BenchPath[]
 ) {
     const kinds = [...new Set(records.map((record) => record.kind))];
-    // the light client paths follow the same channel: one path's pushes stand for all
-    const pushPath = paths.find((path) => path.isLightClient)?.name;
+    const followingPaths = paths.filter((path) => path.follows);
+    // the following paths follow the same channel: one path's pushes stand for all
+    const pushPath = followingPaths[0]?.name;
     const deltaPushes = pushes.filter(
         (push) => push.path === pushPath && !push.sync
     );
@@ -264,21 +372,51 @@ function summarize(
                                         (record) => record.proofRequests.length
                                     )
                                 ),
-                                proofKeys: sum(
-                                    own.map((record) =>
-                                        sum(
-                                            record.proofRequests.map(
-                                                (keys) => keys.length
-                                            )
-                                        )
-                                    )
-                                ),
+                                proofKeys: proofKeys(own),
                                 bytes: sum(own.map((record) => record.bytes))
                             }
                         ];
                     })
                 )
             ])
+        ),
+        hitRate: paths.some((path) => path.name === "cold")
+            ? Object.fromEntries(
+                  followingPaths.map(({ name }) => [
+                      name,
+                      {
+                          all: hitRate(records, name),
+                          ...Object.fromEntries(
+                              kinds.map((kind) => [
+                                  kind,
+                                  hitRate(records, name, kind)
+                              ])
+                          )
+                      }
+                  ])
+              )
+            : null,
+        reconnects: Object.fromEntries(
+            followingPaths.map(({ name }) => {
+                const own = reconnects.filter(
+                    (reconnect) => reconnect.path === name
+                );
+                return [
+                    name,
+                    {
+                        count: own.length,
+                        bySync: own.filter((reconnect) => reconnect.sync)
+                            .length,
+                        ms: spread(own.map((reconnect) => reconnect.ms)),
+                        medianSyncValues: percentile(
+                            own
+                                .filter((reconnect) => reconnect.sync)
+                                .map((reconnect) => reconnect.values),
+                            0.5
+                        )
+                    }
+                ];
+            })
         ),
         nodeRequestsWholeRun: Object.fromEntries(
             paths.map((path) => [
@@ -312,6 +450,12 @@ function summarize(
             p95Bytes: percentile(
                 deltaPushes.map((push) => push.bytes),
                 0.95
+            ),
+            values: spread(deltaPushes.map((push) => push.values)),
+            newProofNodes: spread(
+                deltaPushes.flatMap((push) =>
+                    push.stages ? [push.stages.newNodes] : []
+                )
             ),
             unchangedValuesWithNewProofNodes: deltaPushes.filter(
                 (push) =>
@@ -379,9 +523,15 @@ async function main(): Promise<void> {
             );
             if (!(provider instanceof LightClientRpcProvider))
                 throw new Error("Expected the light client provider");
-            paths.push({ name, provider, proxy, isLightClient });
+            paths.push({
+                name,
+                provider,
+                proxy,
+                isLightClient,
+                follows: isLightClient && name !== "cold"
+            });
         }
-        const lightClientPaths = paths.filter((path) => path.isLightClient);
+        const followingPaths = paths.filter((path) => path.follows);
 
         const contract = await node.deploy(PARTITION_CONTRACT);
         // contracts the followed channel never touches, as an ERC-20 another
@@ -389,6 +539,11 @@ async function main(): Promise<void> {
         const probe = await ethers.getContractFactory("LightClientProbe");
         const chainProbe = await node.deploy(probe.bytecode, PROBE_DEPLOY_GAS);
         const sumProbe = await node.deploy(probe.bytecode, PROBE_DEPLOY_GAS);
+        // sends the writes of several channels as one transaction; the calls never read it
+        const multiChannelSender =
+            CHANNELS_PER_TX > 1
+                ? await node.deploy(probe.bytecode, PROBE_DEPLOY_GAS)
+                : undefined;
         for (const address of [chainProbe, sumProbe])
             await node.transact(
                 address,
@@ -403,11 +558,11 @@ async function main(): Promise<void> {
                 slotOf(channel, 1),
                 1
             );
-        for (const path of lightClientPaths)
+        for (const path of followingPaths)
             path.provider.followChannel(contract, channelId(0));
         await waitFor(
             () =>
-                lightClientPaths.every(
+                followingPaths.every(
                     (path) => pushedBlocks(path.proxy).length > 0
                 ),
             PUSH_TIMEOUT_MS
@@ -476,21 +631,35 @@ async function main(): Promise<void> {
 
         const nodeBefore = processUsage(node.pid);
         const records: CallRecord[] = [];
+        const reconnects: ReconnectRecord[] = [];
         let mismatches = 0;
         for (let round = 0; round < ROUNDS; round++) {
+            const written: number[] = [];
+            for (let channel = 0; channel < CHANNELS; channel++)
+                if (channel !== 0 || round % IDLE_EVERY !== IDLE_EVERY - 1)
+                    written.push(channel);
+            // the same slot again each round: repeated writes
+            const writeOf = (channel: number) =>
+                partitionWrite(
+                    channelId(channel),
+                    slotOf(channel, 1),
+                    slotOf(channel, 1),
+                    1
+                );
             const writes: Promise<{ blockNumber: number }>[] = [];
-            for (let channel = 0; channel < CHANNELS; channel++) {
-                if (channel === 0 && round % IDLE_EVERY === IDLE_EVERY - 1)
-                    continue;
-                // the same slot again each round: repeated writes
+            for (let at = 0; at < written.length; at += CHANNELS_PER_TX) {
+                const group = written.slice(at, at + CHANNELS_PER_TX);
                 writes.push(
-                    node.readWriteLog(
-                        contract,
-                        channelId(channel),
-                        slotOf(channel, 1),
-                        slotOf(channel, 1),
-                        1
-                    )
+                    multiChannelSender === undefined
+                        ? node.transact(contract, writeOf(group[0]))
+                        : node.transact(
+                              multiChannelSender,
+                              probe.interface.encodeFunctionData("callEach", [
+                                  contract,
+                                  group.map(writeOf)
+                              ]),
+                              GAS_PER_FORWARDED_WRITE * BigInt(group.length + 1)
+                          )
                 );
             }
             const block = Math.max(
@@ -500,9 +669,10 @@ async function main(): Promise<void> {
             );
             await waitFor(
                 () =>
-                    lightClientPaths.every((path) =>
+                    followingPaths.every((path) =>
                         pushedBlocks(path.proxy).some(
-                            (pushed) => Number(pushed.header.number) >= block
+                            ({ block: pushed }) =>
+                                Number(pushed.header.number) >= block
                         )
                     ),
                 PUSH_TIMEOUT_MS
@@ -555,12 +725,18 @@ async function main(): Promise<void> {
                     else if (first !== result) mismatches++;
                 }
             }
+            if (
+                RECONNECT_EVERY > 0 &&
+                round % RECONNECT_EVERY === RECONNECT_EVERY - 1
+            )
+                for (const path of followingPaths)
+                    reconnects.push(await reconnect(path, round));
         }
         const nodeAfter = processUsage(node.pid);
 
-        const pushes = lightClientPaths.flatMap(pushRecords);
+        const pushes = followingPaths.flatMap(pushRecords);
         const summary = {
-            ...summarize(records, pushes, paths),
+            ...summarize(records, pushes, reconnects, paths),
             resultMismatchesBetweenPaths: mismatches,
             node: {
                 cpuSeconds: nodeAfter.cpuSeconds - nodeBefore.cpuSeconds,
@@ -591,12 +767,15 @@ async function main(): Promise<void> {
                             IDLE_EVERY,
                             COMPARES_READS,
                             RUN_PATHS,
-                            NODE_LIGHT_CLIENT
+                            NODE_LIGHT_CLIENT,
+                            CHANNELS_PER_TX,
+                            RECONNECT_EVERY
                         }
                     },
                     summary,
                     calls: records,
-                    pushes
+                    pushes,
+                    reconnects
                 },
                 null,
                 2

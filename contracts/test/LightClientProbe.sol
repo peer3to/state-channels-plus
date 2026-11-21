@@ -17,7 +17,9 @@ contract LightClientProbeChild {
  * size limit, precompile addresses, reads that each name the next slot,
  * reads of several slots that do not depend on each other, and a read of
  * this contract's slots together with another contract's;
- * and a revert with no data that depends on the state.
+ * and a revert with no data that depends on the state. Also one transaction
+ * of several calls, for the benchmark's transactions that touch several
+ * channels.
  */
 contract LightClientProbe {
     uint256 public value;
@@ -166,6 +168,16 @@ contract LightClientProbe {
             total += next[slots[i]];
         }
         total += LightClientProbe(other).sumOf(otherSlots);
+    }
+
+    /**
+     * Calls `target` with each of `calls` in turn; reverts when one of them fails.
+     */
+    function callEach(address target, bytes[] calldata calls) external {
+        for (uint256 i = 0; i < calls.length; i++) {
+            (bool ok,) = target.call(calls[i]);
+            require(ok, "call failed");
+        }
     }
 
     /**
