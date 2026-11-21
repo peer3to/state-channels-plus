@@ -292,8 +292,7 @@ work; it does not cancel or dispose the feature operation.
 - The harness baseline `p2pTime` is 5 (Luka, 2026-10-10): one staging step under
   load can idle the table past `p2pTime + agreementTime`. The approved per-test
   widenings are listed in `docs/spec/audit/verification.md` ("Test timing
-  inputs"); any new one needs an engineer's explicit approval (Luka or Luke) and
-  an entry there.
+  inputs"); any new one needs Luke's explicit approval and an entry there.
 - Standing exception (Luke, 2026-11-21): a parachain test whose `evidenceTime`
   is shorter than the harness minimum `MIN_TEST_TIME_CONFIG.evidenceTime` (10)
   may be raised to 10 without asking, only after its log shows the chain refused
