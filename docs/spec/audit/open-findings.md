@@ -2591,8 +2591,8 @@ estimators; review 5 (FO1, TY3) proposed an estimator-model switch `GAS_ESTIMATO
 (XO5, TO25) asked for a real send against a searching node; the block-gas-limit cap landed
 2026-10-15.
 
-**Proposed direction:** Decision (Luke, 2026-11-21, delegated to the implementing agent and recorded
-under that delegation; the target chain is the peer3 parachain, not Ethereum): one configuration
+**Proposed direction:** Engineer decision (Luke, 2026-11-21, confirmed in PR #609 after an
+independent review of the four rules; the target chain is the peer3 parachain, not Ethereum): one configuration
 field `MAX_TRANSACTION_GAS` caps replay sends, with the parachain runtime's `MAX_TX_GAS` as the
 default for every chain, Hardhat included; replay sends drop the headroom and add the requirement,
 which a spent-gas estimator needs and which covers the concurrent-dispute race the headroom was for;

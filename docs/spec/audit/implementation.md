@@ -1702,7 +1702,7 @@ keeps the fresh estimate plus headroom
 [config.ts](../../../src/utils/config.ts),
 [P2pRuntimeHostRoot.ts](../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts)).
 
-**Why.** Decision by Luke (2026-11-21), delegated to the implementing agent: the parachain rejected a
+**Why.** Engineer decision (Luke, 2026-11-21, confirmed in PR #609): the parachain rejected a
 poker-sized single-replay kill declared at 19.6M
 ([`FIND-GASEST-2-94YFZ6`](open-findings.md#find-gasest-2-94yfz6),
 [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)).
