@@ -169,6 +169,15 @@ by the tests of `test/unit/FrontierPushedPartition.test.ts`, for example
 `refuses a pushed value the proof decides otherwise, and holds nothing until the next sync` and
 `leaves to the node what the held proof does not reach`.
 
+## Event coverage
+
+A partition holds only what the transactions that logged the channel's id touched. The contracts
+were audited for that on 2026-11-21: every state channel manager function that writes a channel's
+storage logs the channel's id, in `topics[1]`, on every path that writes. No gap was found and
+nothing was changed. The audit, its scope and its notes are in the
+[implementation assessment](spec/audit/implementation.md#event-coverage-of-the-state-channel-manager--2026-11-21).
+What it leaves to measurement, the slots only calls read, shows in the per-slot hit rate below.
+
 ## Not covered
 
 - Collator and full-node import costs: capacity runs against one dev node with interval sealing, not

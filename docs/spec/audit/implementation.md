@@ -3,6 +3,50 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## Event coverage of the state channel manager — 2026-11-21
+
+The light client assumes that the channel's contract logs the channel's id in every transaction
+whose reads and writes the channel's own reads use
+([light-client.md](../specification/runtime/light-client.md#assumptions-and-constraints)). The
+node forms a partition from any indexed topic of a log, so the id may sit in any indexed position.
+This audit read the contracts at 761be8b11 against that assumption (Trello 399, "Confirm the event
+coverage"). Nothing was changed.
+
+Scope: the 23 functions of the compiled
+[`StateChannelManagerInterface`](../implementation/source/contracts/V1/StateChannelManagerInterface.sol.md)
+that are neither `view` nor `pure`, followed through every facet and internal function they reach.
+Each path that writes channel-keyed storage (`channelBalances`, `inboundMessageBlockMap`,
+`stateSnapshots`, `blockCalldataCommitments`, `disputeData`, `disputerThrottle`, the open-channel
+set) emits an event with the channel's id as its first indexed argument, in `topics[1]`:
+`ChannelOpened`, `InboundMessagesProcessed`, `BlockCalldataPosted`, `StateSnapshotUpdated`,
+`WithdrawalsUpdated`, `ChannelStorageCleared`, `DisputeCommitted`,
+`DisputeCommittedWithAuditingData`, `DisputeReducedResultCommitted`, `ChainSlashed` and
+`DisputeKilled`. The paths that emit nothing write nothing: the early returns of
+`updateStateSnapshotFork` and `reduceAndFinalize`, fraud-proof batches that slash nobody, and a
+reverted last call of `multicallBestEffortLast`, whose `MulticallLastCallFailed` has no indexed
+argument. The timing and size settings are written only by the constructor. What
+`executeStateTransition`, `reduceOutputToSnapshotData` and `verifyBalanceInvariantCheckSnapshot`
+write is the state machine's scratch storage, not channel state.
+
+A missing event would cost reads, not correctness: the node re-reads every key a partition holds
+when any block writes it, whichever transaction did. A key no logged transaction touched is proven
+at each read instead.
+
+Notes, none needing a change:
+
+- Closing a channel moves the last open channel's entry into its place in `openChannelIds` and
+  `openChannelIndexPlusOne` and logs only the closed channel's id. Only `getOpenChannelIds` and
+  `getOpenChannelCount` read those slots, and held keys are re-read after any write.
+- `BlockCalldataPosted` also indexes `commitmentHash`, so each post forms one more partition on the
+  node that nobody subscribes to, dropped after the node's idle limit. The topic stays indexed:
+  `EventSyncService` filters calldata logs by it.
+- Coverage is of keys transactions touch. Slots only a call reads, such as an empty calldata
+  commitment a timeout check looks up, are proven at each read. The light client benchmark's
+  per-slot hit rate measures this.
+- A multicall over several channels adds everything it touched to each channel's partition.
+
+Found on the way: [`FIND-CONSUMER-1-WP31N1`](open-findings.md#find-consumer-1-wp31n1).
+
 ## Storage proof verifier for Frontier chains — 2026-11-18
 
 What changed (light client card, Trello 399):

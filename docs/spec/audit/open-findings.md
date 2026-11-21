@@ -2941,6 +2941,32 @@ The protocol trusts every application contract to meet them.
 **Proposed direction:** Ship a reusable conformance suite an integrator runs against its own state
 machine, or record these as documented integrator obligations with review guidance.
 
+<a id="find-consumer-1-wp31n1"></a>
+
+### FIND-CONSUMER-1-WP31N1
+
+**Defect:** Open (2026-11-21). Any account can call the consumer adapter's `deposit` and `withdraw`
+directly through the manager.
+[`StateChannelManagerProxy`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)
+sends every selector it does not route to the consumer facet by `delegatecall`, and
+[`AConsumerFacet`](../implementation/source/contracts/V1/StateChannelDiamondProxy/AConsumerFacet.sol.md)
+declares both hooks `external` with no `onlySelf`. The protocol's own path, `depositAssetsComposable`
+and `withdrawAssetsComposable`, is `onlySelf`; the direct path skips it, its bookkeeping and its
+events.
+[`REQ-ENFSM-2-G4HBKG` (Adapter confinement)](../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg)
+requires direct external access to be refused; its planned test
+[`REQ-ENFSM-2-G4HBKG.T1.P1`](../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg.t1.p1)
+has no evidence. A throwaway Foundry test on 761be8b11, with the deposit-counting test consumer
+facet etched in, showed it: called from an unrelated address, `deposit` returned `true`, wrote the
+manager's storage and logged nothing, and `withdraw` returned `true`. `MathConsumerFacet` does
+nothing in either hook, so the example deployment loses nothing. An adapter that holds assets would
+pay out on a direct `withdraw`.
+
+**Proposed direction:** Refuse the adapter hooks at the manager unless the manager itself calls
+them, and add the test of
+[`REQ-ENFSM-2-G4HBKG.T1.P1`](../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg.t1.p1). Where the check lives (the proxy fallback, the
+abstract adapter, or each adapter) is the engineer's decision.
+
 <a id="find-deploy-1-t2xfrk"></a>
 
 ### FIND-DEPLOY-1-T2XFRK
