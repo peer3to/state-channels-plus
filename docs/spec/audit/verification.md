@@ -11,6 +11,38 @@ scores are what they are** and which lever moves each one.
 
 The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
 
+## Storage proof verifier tests — 2026-11-18
+
+[SubstrateTrieProof.test.ts](../verification/tests/test/unit/SubstrateTrieProof.test.ts.md) (20 declarations) and
+[FrontierStorageProofVerifier.test.ts](../verification/tests/test/unit/FrontierStorageProofVerifier.test.ts.md)
+(10 declarations) cover all 15 planned cases of [`REQ-STPROOF-1-J20P5Y` (A slot value is accepted only when the proof decides it)](../specification/runtime/storage-proofs.md#req-stproof-1-j20p5y) and [`REQ-STPROOF-2-ABCQR7` (One verifier per proof representation)](../specification/runtime/storage-proofs.md#req-stproof-2-abcqr7) and the 30
+cases of [`UNIT-TEST-STPROOF-1-K1CTJZ`](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateTrieProof.ts.md#unit-test-stproof-1-k1ctjz) and [`UNIT-TEST-STPROOF-2-QT42T0`](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierStorageProofVerifier.ts.md#unit-test-stproof-2-qt42t0). The positive oracles are recorded
+chain data: read proofs of four slots of one contract on Moonbeam at block 16796696, that block's state
+root, and the chain's own `eth_getStorageAt` answers; and read proofs of three slots of a test contract on
+a peer3 dev node at two blocks, with that node's own answers. Traversal paths and malformed nodes the real
+proofs do not reach use hand-encoded one-node tries. Each of 15 single-line faults put into the two source
+files (a missing node read as empty, each refusal switched off, each traversal rule broken) failed at least
+one of the first 28 declarations, and all 28 passed with the source restored; the two peer3 declarations
+were added afterwards. Not covered: the browser build beyond its typecheck.
+
+[SubstrateHeader.test.ts](../verification/tests/test/unit/SubstrateHeader.test.ts.md) (10 declarations) and
+[proveFrontierStorageBlock.test.ts](../verification/tests/test/unit/proveFrontierStorageBlock.test.ts.md) (11
+declarations) cover all 15 planned cases of [`REQ-STPROOF-3-NVJGR0` (A pushed block is accepted only under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0). Their data is three blocks a peer3 dev
+node pushed through the sidecar on 2026-11-18, with the block hashes that node reported. Each of 11
+single-line faults put into the three source files failed at least one declaration, and all 51 light client
+declarations passed with the source restored. The sidecar has no test of its own: the recorded blocks are
+its only evidence, and no repository test starts a peer3 node yet.
+
+Added on 2026-11-19 after the first automated review: three declarations in SubstrateTrieProof.test.ts read
+a hand-encoded branch that holds its value by hash (state version 1), with and without the value's proof
+node and under a 16-nibble partial key; one in SubstrateHeader.test.ts reads the Frontier log variant that
+holds the Ethereum block hash alone; six in proveFrontierStorageBlock.test.ts refuse malformed pushed
+blocks. Each of six faults (the branch's partial-key width, the branch read as an inline value, the log
+variant number, and each of three shape checks switched off) failed a declaration. A node only state
+version 0 produces, an inline value longer than 32 bytes, is tested in the pull request whose crafted leaf
+can hold one. On 2026-11-20, after the second review, two more declarations refuse a proof node and a
+digest log of odd-length hex; with odd lengths let through, both failed.
+
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 
 PR #579 review cards TO4, TO5, TY2 and TY3.

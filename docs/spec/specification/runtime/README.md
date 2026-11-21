@@ -58,7 +58,8 @@ operational limits. It hosts every other system without changing their observabl
 - **Invariants (owned).** [`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](execution.md#inv-runtime-1-akrhak), `REQ-RUNTIME-*` ([execution.md](./execution.md));
   [`INV-SDK-ARCH-1-KNAX7F` (Coherent participant state)](sdk.md#inv-sdk-arch-1-knax7f), `REQ-SDK-ARCH-*` ([sdk.md](./sdk.md)); `REQ-CONFIG-*`
   ([configuration.md](./configuration.md)); `INV-CHAINOBS-*`, `REQ-CHAINOBS-*`
-  ([chain-observation.md](./chain-observation.md)); `INV-LOG-*`, `REQ-LOG-*` ([log-collection.md](./log-collection.md)). Durable storage is its own system:
+  ([chain-observation.md](./chain-observation.md)); `INV-LOG-*`, `REQ-LOG-*` ([log-collection.md](./log-collection.md)); `REQ-STPROOF-*`
+  ([storage-proofs.md](./storage-proofs.md)). Durable storage is its own system:
   [../storage/README.md](../storage/README.md).
 - **Failure and recovery outcomes.** Context failure is contained at its boundary; restart recovers
   from the storage system's durable set and re-enters the block-progression pipeline without
@@ -81,6 +82,7 @@ operational limits. It hosts every other system without changing their observabl
 | [configuration.md](./configuration.md) | Deployment configuration semantics: timing windows, limits, and their validation. |
 | [chain-observation.md](./chain-observation.md) | Chain access through an ordered list of RPC endpoints: per-request failover, per-endpoint event streams with reconnect and catch-up, exactly-once event processing. |
 | [log-collection.md](./log-collection.md) | Gathering a session's logs from every execution context into one stored log: coverage, termination, truthful outcome, attribution, effectively-once delivery, bounded expansion. |
+| [storage-proofs.md](./storage-proofs.md) | Contract storage checked against a trusted state root: a slot value is accepted only when the proof decides it, with one verifier per proof representation. |
 
 Durable storage and recovery were factored out into [System 9 — Storage](../storage/README.md),
 which nearly every system calls; this system consumes it like the others.
