@@ -6,6 +6,7 @@ import FrontierProvenStateReader from "@/evm/p2pRuntime/rpcNodes/lightClient/pro
 import { contractStorageKey } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/frontierStateKeys";
 import type { JsonRpcSocket } from "@test/fixtures/lightClient/JsonRpcSocket";
 import { LightClientNodeFixture } from "@test/fixtures/lightClient/LightClientNodeFixture";
+import { rejectionOf } from "@test/utils/rejectionOf";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { toBeHex, ZeroHash } from "ethers";
@@ -18,15 +19,6 @@ function readerOver(socket: JsonRpcSocket): FrontierProvenStateReader {
         (method, params) => socket.request(method, params),
         PEER3_CHAIN_CONSTANTS
     );
-}
-
-async function rejectionOf(read: Promise<unknown>): Promise<unknown> {
-    try {
-        await read;
-    } catch (error) {
-        return error;
-    }
-    return undefined;
 }
 
 describe("Light client proven reads", function () {
