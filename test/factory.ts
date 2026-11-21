@@ -57,6 +57,27 @@ export const randomWallet = (): ethers.HDNodeWallet =>
 
 export const randomAddress = (): Address => randomWallet().address as Address;
 
+/** Gas a random wallet's sends may need: a join, or a proof up to a block's worth. */
+const RANDOM_WALLET_GAS = 30_000_000n;
+
+/**
+ * Funds `to` from `funder` for RANDOM_WALLET_GAS at the chain's current fee
+ * quote, twice over: the parachain's quote rises under load, and a fixed
+ * amount either falls short there or drains the funder on Hardhat.
+ */
+export async function fundForGas(
+    funder: ethers.Signer,
+    to: Address
+): Promise<void> {
+    const { gasPrice } = await funder.provider!.getFeeData();
+    await (
+        await funder.sendTransaction({
+            to,
+            value: 2n * RANDOM_WALLET_GAS * gasPrice!
+        })
+    ).wait();
+}
+
 export const hexString = (length: number = 32): Bytes => {
     return ethers.hexlify(ethers.randomBytes(length));
 };
