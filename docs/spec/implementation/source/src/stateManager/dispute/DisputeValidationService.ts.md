@@ -223,6 +223,7 @@ Exhaustive dispute audit, persistence, timeout, and snapshot-hash paths
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P129` — while a replay holds the state mutex with the predecessor state installed on the shared state machine, a timeout audit's next-writer peek settles without the mutex and judges the disputed state; the valid timeout dispute stays valid with no `TimeoutParticipantNotNext`.
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P130` — a forced timeout of an honest first block whose calldata is on-chain stores `TimeoutCalldataPosted` against the disputer
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P131` — a forced timeout of an honest block that carries inbound message blocks and whose calldata is on-chain stores `TimeoutCalldataPosted` against the disputer
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P132` — chain reads proven, a timely timeout: the dispute window's creation time is read from the chain, not the mirror, and the timeout checks pass
 
 ## UNIT-TEST-DISPUTE-INBOUND-RECOVERY-32-6PBRKZ
 
@@ -272,3 +273,4 @@ Local-first audit predicates
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P35` — the latest-state correctness predicate reverts locally during an audit: the error propagates without a chain read, verdict, or fraud proof
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P36` — the balance-invariant predicate reverts locally during an audit: the error propagates without a chain read, verdict, or fraud proof
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P37` — the timeout-calldata predicate reverts locally during an audit: the error propagates without a chain read, verdict, or fraud proof
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P38` — chain reads proven, local final: the chain answers alone with one chain read and no local read

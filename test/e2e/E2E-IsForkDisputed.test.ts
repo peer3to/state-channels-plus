@@ -150,6 +150,37 @@ describe("E2E: Is Fork Disputed", function () {
             ).to.equal(false);
         });
 
+        it("a responder with chain reads proven asks the chain, not its mirror, about a fork it does not see as disputed and closes with a counted retry, not a blacklist", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            h.event.resetEventSpies();
+            const responder = h.control(h.getPeer(1));
+            await responder.stub.stubProvenChainReads().request();
+            try {
+                const reads = await h.mirror.observe(1, "isForkDisputed");
+
+                await h.rpc.sendFakeDisputeRequest({
+                    fromPeer: 0,
+                    toPeer: 1
+                });
+                await h.assert.rpc.peerDisconnectedFrom({
+                    peerIndex: 1,
+                    expectedFinalCount: 1
+                });
+                await h.assert.rpc.peerStruckWithoutBlacklist({
+                    observer: h.getPeer(1),
+                    target: h.getPeer(0)
+                });
+
+                const { local, chain } = await reads.observation();
+                await reads.restore();
+                expect(local.reads).to.equal(0);
+                expect(chain.answers).to.deep.equal([false]);
+            } finally {
+                await responder.stub.restoreProvenChainReads().request();
+            }
+        });
+
         it("should run stubbed RPC method via createRPCMethods wrapper", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 2);

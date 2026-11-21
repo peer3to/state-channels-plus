@@ -30,3 +30,4 @@ remains uncovered here.
 - `should disconnect peer building on acknowledged disputed fork`: REQ-DACK-3-J4Z33Y.T1.P2
 - `a request for a fork the responder does not yet see as disputed closes with a counted retry, not a blacklist`: UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P2
 - `should run stubbed RPC method via createRPCMethods wrapper`: none
+- `a responder with chain reads proven asks the chain, not its mirror, about a fork it does not see as disputed and closes with a counted retry, not a blacklist`: UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P5, REQ-MIRROR-5-N5SZC9.T4.P11

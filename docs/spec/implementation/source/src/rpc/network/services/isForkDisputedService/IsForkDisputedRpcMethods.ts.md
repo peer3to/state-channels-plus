@@ -19,3 +19,4 @@ Responder verification
 - [x] `UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P2` — a fork the responder does not see as disputed: counted close of the requester, no blacklist
 - [ ] `UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P3` — chain-fallback path
 - [x] `UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P4` — duplicate violation
+- [x] `UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P5` — chain reads proven: the responder asks the chain, not its mirror, whether the fork is disputed; a fork it does not see as disputed is a counted close of the requester, no blacklist

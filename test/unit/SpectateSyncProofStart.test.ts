@@ -154,6 +154,35 @@ describe("Unit: SpectateService sync proof verification order", function () {
         expect(outcome.walks!.storage.chain.reads).to.equal(0);
     });
 
+    it("U27: chain reads proven on a fresh requester with no local finalized state → the local diamond's walk is skipped, the chain walk accepts, the sync completes", async function () {
+        const h = TestSession.getHarness();
+        const { forkId, payload, latestHeight } =
+            await stageAnchoredSyncPayload(h);
+        const outcome = await withHeldFreshRequester(h, async (requester) => {
+            const proven = h.control(requester);
+            await proven.stub.stubProvenChainReads().request();
+            try {
+                return await applyPayloads(
+                    h,
+                    requester,
+                    String(forkId),
+                    [payload],
+                    { observeWalks: true }
+                );
+            } finally {
+                await proven.stub.restoreProvenChainReads().request();
+            }
+        });
+        expect(outcome.outcomes).to.deep.equal([
+            { accepted: true, threw: "", head: latestHeight }
+        ]);
+        expect(outcome.rejections).to.deep.equal([]);
+        expect(outcome.blacklisted).to.equal(false);
+        expect(outcome.walks!.trustedStart.local.reads).to.equal(0);
+        expect(outcome.walks!.storage.local.reads).to.equal(0);
+        expect(outcome.walks!.storage.chain.answers).to.deep.equal([true]);
+    });
+
     it("U27: a fresh requester whose chain anchor holds the fork's first outbound block and a later exit sits above it → served and stored is only the block above the anchor; its dispute carries that block and the chain accepts it", async function () {
         const h = TestSession.getHarness();
         const { forkId, anchor, remaining } = await stageOutboundAroundAnchor(

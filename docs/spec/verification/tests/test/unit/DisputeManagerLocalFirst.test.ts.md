@@ -32,3 +32,5 @@ owning reports. The fatal local-revert construction path has its own mapping bel
 - `local revert -> construction throws it, no chain read`: REQ-MIRROR-4-H9C4YS.T1.P18, UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P16
 - `local executor failure (not a revert) -> construction throws it, no chain read`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P14
 - `local final, chain RPC refuses the connection -> construction throws it`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P15
+- `chain reads proven, mirror missing the join -> the chain answers alone: one chain read, no local read, the auditing data is posted`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P24, REQ-MIRROR-5-N5SZC9.T4.P12
+- `chain reads proven -> the on-chain slashed participants are read from the chain, not the mirror`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P25, REQ-MIRROR-5-N5SZC9.T4.P13

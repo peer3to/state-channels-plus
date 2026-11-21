@@ -139,3 +139,4 @@ blacklist.
 - `genesis-case window snapshot with only the timestamp changed → rejected, window genesis timestamp mismatch, responder blacklisted, the held genesis is kept`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P127
 - `genesis-case window snapshot unaltered → accepted, responder not blacklisted, the genesis stays the genuine one`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P128
 - `genesis-case window applied while the chain has not yet expired its kill period → not synced with no verdict, the window named unsettled, responder not blacklisted, the held genesis is kept`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P129
+- `a responder whose chain reads are proven reads the on-chain snapshot from the chain, not its mirror → the payload is accepted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P133, REQ-MIRROR-5-N5SZC9.T4.P14

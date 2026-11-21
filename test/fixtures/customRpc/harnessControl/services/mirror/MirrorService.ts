@@ -44,15 +44,34 @@ export const LOCAL_ONLY_READS = [
     keyof StateChannelManagerInterface)[];
 export type LocalOnlyRead = (typeof LOCAL_ONLY_READS)[number];
 
+/**
+ * Reads of state the local diamond replicates. The runtime calls them
+ * directly (not through `staticCall`), so observing one counts those calls
+ * too: with chain reads proven, they go to the chain alone.
+ */
+export const REPLICATED_READS = [
+    "isForkDisputed",
+    "getOnChainSlashedParticipants",
+    "getStateSnapshot",
+    "getDisputeWindowCreationTimestamp"
+] as const satisfies readonly (keyof LocalDiamondContract &
+    keyof StateChannelManagerInterface)[];
+export type ReplicatedRead = (typeof REPLICATED_READS)[number];
+
 /** The local tiers' walk from a supplied start: the chain has no such read. */
 export const LOCAL_WALK =
     "verifyMilestonesFromTrustedStart" satisfies keyof LocalDiamondContract;
 
 /** Every read the service can observe. */
-export type ObservableRead = MirrorRead | LocalOnlyRead | typeof LOCAL_WALK;
+export type ObservableRead =
+    | MirrorRead
+    | LocalOnlyRead
+    | ReplicatedRead
+    | typeof LOCAL_WALK;
 const OBSERVABLE_READS: readonly ObservableRead[] = [
     ...MIRROR_READS,
     ...LOCAL_ONLY_READS,
+    ...REPLICATED_READS,
     LOCAL_WALK
 ];
 
@@ -118,6 +137,9 @@ type ObservedRead = {
 
 // A chain RPC endpoint that refuses connections (port 1 is never served).
 const REFUSING_RPC_URL = "http://127.0.0.1:1";
+
+const isDirectRead = (read: ObservableRead): boolean =>
+    (REPLICATED_READS as readonly ObservableRead[]).includes(read);
 
 const emptySide = (): MirrorReadSide => ({
     reads: 0,
@@ -364,7 +386,10 @@ export class MirrorService extends ANetworkRpcService<
         return this.replaceMethod(contract, read, (original) => {
             // the real method's helpers (`populateTransaction`, `fragment`,
             // ...) stay; only its `staticCall` is observed
-            const method = (...args: StaticCallArgs) => original(...args);
+            const method = (...args: StaticCallArgs) =>
+                isDirectRead(read)
+                    ? staticCall(original, args)
+                    : original(...args);
             const descriptors = Object.getOwnPropertyDescriptors(original);
             Reflect.deleteProperty(descriptors, "staticCall");
             Object.defineProperties(method, descriptors);

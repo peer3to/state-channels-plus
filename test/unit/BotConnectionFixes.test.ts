@@ -30,8 +30,8 @@ import {
     stageLeaveAwaitingTurn
 } from "@test/fixtures/BotConnectionFixesStaging";
 import { UNEXPECTED_SNAPSHOT_POST_FAILURE } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
-import { holdReductions } from "@test/fixtures/DisputeWindowWorkflowStaging";
 import {
+    assertForceJoinDeadlineSeesExpiredWindow,
     readForceJoinBounds,
     authorUntilForceJoinCountingStarted,
     holdForceJoinMembershipRead,
@@ -1576,80 +1576,17 @@ describe("Unit: bot-connection fixes", function () {
         });
 
         it("AO4: a force-join deadline reads a real expired evidence window and retains the pending join without submitting", async function () {
-            const h = TestSession.getHarness();
-            const prepared = await h.scenario.syncSpectatorAndPrepareJoin();
-            const joiner = h.getPeer(prepared.joiner.index);
-            const deadline = await h.rpcStub.holdScheduledTasks(
-                joiner.index,
-                "force join deadline"
+            await assertForceJoinDeadlineSeesExpiredWindow(
+                TestSession.getHarness(),
+                { chainReadsProven: false }
             );
-            const recorder = await h.rpcStub.recordDisputeSubmissions(
-                joiner.index
+        });
+
+        it("a force-join deadline with chain reads proven reads the expired window's creation time from the chain while its local diamond lacks the window → the join is retained without submitting", async function () {
+            await assertForceJoinDeadlineSeesExpiredWindow(
+                TestSession.getHarness(),
+                { chainReadsProven: true }
             );
-            await holdReductions(h);
-            await h.dispute.suppressDisputeInitiation(
-                h.peers.map((peer) => peer.index)
-            );
-            let released = false;
-            try {
-                expect(
-                    await prepared.joiner.p2pInstance.p2pSigner.joinChannel(
-                        prepared.confirmation,
-                        prepared.expectedSnapshotHash,
-                        prepared.expectedForkId
-                    )
-                ).to.equal(true);
-                await waitFor(async () => (await deadline.heldCount()) === 1);
-                await h
-                    .control(h.getPeer(0))
-                    .dispute.setForceExit(true)
-                    .request();
-                const opening = await h.dispute.fetchConstructedDispute(0);
-                await (
-                    await h
-                        .getPeer(0)
-                        .p2pInstance.stateChannelManagerContract.uploadDisputeWithCalldata(
-                            opening.disputeConfirmation,
-                            opening.auditingData
-                        )
-                ).wait();
-                const created = Number(
-                    await h.channelManager.getDisputeWindowCreationTimestamp(
-                        h.channelId,
-                        prepared.expectedForkId
-                    )
-                );
-                expect(created).to.be.greaterThan(0);
-                const bounds = await readForceJoinBounds(h, joiner);
-                await h.event.waitUntilTimestamp(
-                    created + bounds.timeConfig.evidenceTime + 1
-                );
-                await waitFor(() =>
-                    h.execOnHost(
-                        joiner,
-                        async (sm, args) =>
-                            Number(
-                                await sm.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
-                                    sm.channelId,
-                                    args.forkId
-                                )
-                            ) === args.created,
-                        { forkId: prepared.expectedForkId, created }
-                    )
-                );
-                released = true;
-                await deadline.release(true);
-                await waitForJoinChecks(h, joiner);
-                expect(await recorder.submissions()).to.deep.equal([]);
-                const after = await readForceJoinBounds(h, joiner);
-                expect(after.submissionHeight).to.equal(
-                    bounds.submissionHeight
-                );
-                expect(after.disputeStarted).to.equal(false);
-            } finally {
-                if (!released) await deadline.release(false);
-                await recorder.restore();
-            }
         });
 
         it("U74: observing its own join arms the force-join deadline at once, one full turn window per pending turn, while the counting grace still runs", async function () {

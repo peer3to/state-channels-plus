@@ -156,6 +156,8 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P126` — block 0's snapshot on chain, height 0 but not a genesis, unaltered payload: accepted with no rejection and the responder not blacklisted
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P130` — a fresh requester whose RPC node lags one block behind the newer exit snapshot its local diamond already applied from the chain's log: the sync waits for the responder's `chainBlock` and ends with no verdict, no rejection, the responder not blacklisted, and the local diamond keeps the newer anchor
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P131` — the same lagging node under the opened-status refresh (`StateManager.refreshOpenedStatusFromChain`): its pinned `isChannelOpen` read at the lagged head loses the event ordering and the local anchor keeps the newer exit snapshot
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P132` — chain reads proven on a fresh requester with no local finalized state: the local diamond's walk is skipped, the chain walk accepts, and the sync completes
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P133` — a responder whose chain reads are proven reads the on-chain snapshot from the chain, not its mirror, and the payload is accepted
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 
