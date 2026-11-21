@@ -100,7 +100,9 @@ ingest gate "is this fork disputed" keeps reading the node's own dispute record 
 for every block inside the state mutex, and a chain read there could wait a block time or fail and
 lose the block). [`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor, which may lag the chain but…)](../specification/disputes/state-proofs.md#req-sp-8-9zccej) and
 [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../specification/disputes/state-proofs.md#req-sp-9-rnxp56) now state the chain
-anchor and the skipped mirror tier for proven reads.
+anchor and the skipped mirror tier for proven reads. After the second review of the same day,
+[`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../specification/runtime/light-client.md#req-lc-1-jt5pkt) raises the serving endpoint's block floor from the logs it delivers
+and its log-search and block answers, and excepts a pending block, which is not mined.
 
 ## 2026-10-26 — Application chain access, local join-signature answers, closed-transport frames
 

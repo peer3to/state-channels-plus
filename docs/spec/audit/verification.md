@@ -174,6 +174,13 @@ verification; each failed its declaration. The node of peer3-parachain PR #3 at 
 56 Rust tests, and six faults in its partition and worker code were all caught. On e16c6a628 the
 whole Mocha suite passed 3627 of 3627 on the distributed runner, and the light client suites 91 of 91
 against the node built from 42e5e80.
+The bot review that followed added three declarations, each failing with its change removed: a
+log-search answer and a block answered by number raise the floor
+([`REQ-LC-1-JT5PKT.T1.P24`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p24), [`P25`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p25)), and a pending block raises none
+([`P26`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p26)); with them the light client fixes count twelve declarations and twelve faults, all
+caught. The peer3 node numbers its pending block at its best block, so P26 has the endpoint number it
+one above, as geth and Hardhat do. On 8a9a0178f the light client suites passed 94 of 94 against the
+node built from 42e5e80.
 
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 
