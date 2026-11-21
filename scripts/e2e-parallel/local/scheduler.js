@@ -16,9 +16,8 @@ const { TaskCoordinator } = require("../shared/taskCoordinator");
 const { CostCache } = require("../shared/costCache");
 const { WorkerScheduler } = require("../shared/workerScheduler");
 const {
-    admissionCost,
+    allowsWorkerAssignment,
     budgetHoldReason,
-    holdReason,
     requestCostBudget
 } = require("../shared/scheduling");
 const { normalizeTaskRunner } = require("../shared/taskRunners");
@@ -126,36 +125,25 @@ async function runScheduler({
         retryMs: tickMs,
         canRun: async (running, assignment, activeAssignments) => {
             if (!assignment && coordinator.queue.length === 0) return false;
-            // a finished task's partition returns once its transactions settle
-            const accountsAvailable = taskResources.canAcquire(
-                assignment?.task ?? coordinator.queue[0]?.task
+            // the worker's account and resource admission, for the next
+            // queued task when none is prefetched
+            return allowsWorkerAssignment(
+                {
+                    scheduler,
+                    taskResources,
+                    resources,
+                    config: {
+                        concurrencyCap,
+                        memBoundGb,
+                        targetLoad,
+                        taskCount: tasks.length
+                    },
+                    logging
+                },
+                running,
+                assignment ?? coordinator.queue[0],
+                activeAssignments
             );
-            const allowed =
-                accountsAvailable &&
-                (await resources.allows(
-                    running,
-                    concurrencyCap,
-                    admissionCost(schedule, assignment, activeAssignments)
-                ));
-            if (!allowed && coordinator.finish().pending) {
-                const next = assignment ?? coordinator.queue[0];
-                const reason = !accountsAvailable
-                    ? "waiting for a funded account partition"
-                    : holdReason({
-                          schedule,
-                          running,
-                          concurrencyCap,
-                          resourceGate: resources,
-                          memBoundGb,
-                          targetLoad
-                      });
-                logging.hold({
-                    seq: next?.seq || tasks.length,
-                    total: tasks.length,
-                    reason
-                });
-            }
-            return allowed;
         },
         requestTask: async () =>
             coordinator.requestTask("local", {
