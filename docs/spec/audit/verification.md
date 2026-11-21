@@ -154,6 +154,27 @@ the channel contracts deployed is planned with the farm workers step. The engine
 stay local while proven, the join countersigner's membership check and the ingest gate's disputed
 flag, and neither goes to the chain while proven.
 
+A second review of the merged stack on 2026-11-21 led to fixes in the light client and in each mirror
+read site. Each new declaration failed with its fix removed: a log the serving endpoint delivered raises
+its block floor
+([`REQ-LC-1-JT5PKT.T1.P21`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p21)), a read whose endpoint names a best block below the floor is left to the endpoint
+and counted as failed ([`P22`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p22)), the stall is kept per endpoint
+([`P23`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p23)), an endpoint is asked again after its connection reopens
+([`REQ-LC-4-E29Y46.T1.P8`](../specification/runtime/light-client.md#req-lc-4-e29y46.t1.p8)), a refused subscription is counted once and opened again when the endpoint fails to
+end it ([`REQ-LC-7-W8WDN3.T1.P6`](../specification/runtime/light-client.md#req-lc-7-w8wdn3.t1.p6), [`P7`](../specification/runtime/light-client.md#req-lc-7-w8wdn3.t1.p7)), a value the endpoint proved for an earlier read is
+counted by what the read used ([`REQ-LC-9-KWXV43.T1.P7`](../specification/runtime/light-client.md#req-lc-9-kwxv43.t1.p7)), and a compared call at a block the
+endpoint no longer has is not compared ([`REQ-LC-11-MTCBF9.T1.P14`](../specification/runtime/light-client.md#req-lc-11-mtcbf9.t1.p14)); nine declarations, nine
+faults, all caught. Every mirror read site now has a declaration with the chain's reads proven
+([`REQ-MIRROR-5-N5SZC9.T4.P10`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t4.p10)-`P17`, and
+[`P8`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t4.p8) for the spectate requester): the slash handler, the acknowledgment responder,
+dispute construction (the omission answer and the slashed participants), the spectate responder's
+snapshot, the audit's local-first predicate and window time, and the force-join deadline. Thirteen
+faults switched a site back to the mirror, or skipped the chain's anchor and tier at construction and
+verification; each failed its declaration. The node of peer3-parachain PR #3 at 42e5e80 passed 56 of
+56 Rust tests, and six faults in its partition and worker code were all caught. On e16c6a628 the
+whole Mocha suite passed 3627 of 3627 on the distributed runner, and the light client suites 91 of 91
+against the node built from 42e5e80.
+
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 
 PR #579 review cards TO4, TO5, TY2 and TY3.
