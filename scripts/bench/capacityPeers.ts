@@ -10,8 +10,10 @@
  * `{ type: "take" }` answers with what was recorded since the last take and
  * clears it, `{ type: "stop" }` closes every socket.
  */
-import { parentPort, workerData } from "node:worker_threads";
 import { performance } from "node:perf_hooks";
+import { getHeapStatistics, setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
+import { parentPort, workerData } from "node:worker_threads";
 import { LIGHT_CLIENT_METHODS } from "@/evm/p2pRuntime/rpcNodes/lightClient/lightClientWire";
 import { PEER3_CHAIN_CONSTANTS } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierChainConstants";
 import FrontierPushedPartition from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierPushedPartition";
@@ -37,6 +39,8 @@ export type PushSample = {
     verifiedAt: number;
     bytes: number;
     newNodes: number;
+    /** Milliseconds the peer's thread spent verifying and applying the push, synchronously. */
+    acceptMs: number;
 };
 
 export type PeerReport = {
@@ -52,6 +56,10 @@ export type PeerReport = {
     failedFallbackReads: number;
     /** Share of the worker's time its event loop was busy since the last take. */
     eventLoopUtilization: number;
+    /** Peers the worker hosts. */
+    peers: number;
+    /** Bytes of the worker's heap in use above what it used before its first peer opened. */
+    heapAbovePeerlessBytes: number;
 };
 
 type Peer = {
@@ -67,6 +75,12 @@ const { nodeUrl } = workerData as { nodeUrl: string };
 const peers: Peer[] = [];
 let report: PeerReport = emptyReport();
 let utilization = performance.eventLoopUtilization();
+// heap readings are taken after a full collection; a worker takes no
+// --expose-gc in its execArgv, so the flag is set here
+setFlagsFromString("--expose-gc");
+const collectGarbage = runInNewContext("gc") as () => void;
+collectGarbage();
+const peerlessHeapBytes = getHeapStatistics().used_heap_size;
 
 function emptyReport(): PeerReport {
     return {
@@ -77,7 +91,9 @@ function emptyReport(): PeerReport {
         ended: 0,
         fallbackReadMs: [],
         failedFallbackReads: 0,
-        eventLoopUtilization: 0
+        eventLoopUtilization: 0,
+        peers: 0,
+        heapAbovePeerlessBytes: 0
     };
 }
 
@@ -103,7 +119,9 @@ function onPush(peer: Peer, params: unknown): void {
         return;
     }
     try {
+        const acceptStarted = performance.now();
         const accepted = peer.partition.accept(result);
+        const acceptMs = performance.now() - acceptStarted;
         const verifiedAt = Date.now();
         if (!accepted) return;
         if (!peer.synced && accepted.sync) {
@@ -124,7 +142,8 @@ function onPush(peer: Peer, params: unknown): void {
             receivedAt,
             verifiedAt,
             bytes: Buffer.byteLength(JSON.stringify(params)),
-            newNodes: accepted.newNodes
+            newNodes: accepted.newNodes,
+            acceptMs
         });
         void fallbackRead(peer, accepted.block.hash);
     } catch {
@@ -168,6 +187,10 @@ parentPort?.on(
                 utilization
             ).utilization;
             utilization = now;
+            report.peers = peers.length;
+            collectGarbage();
+            report.heapAbovePeerlessBytes =
+                getHeapStatistics().used_heap_size - peerlessHeapBytes;
             parentPort?.postMessage({ type: "report", report });
             report = emptyReport();
         } else {

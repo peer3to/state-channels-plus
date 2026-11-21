@@ -12,6 +12,10 @@
  * threads were. A step counts as sustained when no push was missing, skipped
  * or refused, no subscription ended, and the median end-to-end lag of the
  * step's last third is not above its first third's by a block time or more.
+ * It also reports the time each peer's thread spent verifying and applying a
+ * push, the stage times of the peer whose median end-to-end lag was highest,
+ * and the peer threads' heap above what they used before any peer, with what
+ * each peer added since the previous step costs.
  *
  *   PEER3_NODE_BIN=<zero-fee-node> yarn bench:light-client:capacity
  *
@@ -109,6 +113,31 @@ function stepResult(
             const lag = endToEnd(push);
             return lag === null ? [] : [lag];
         });
+    const stages = (part: PushSample[]) => ({
+        build: spread(
+            part.flatMap((p) =>
+                p.executedAt === null ? [] : [p.builtAt - p.executedAt]
+            )
+        ),
+        dispatch: spread(part.map((p) => p.sentAt - p.builtAt)),
+        transit: spread(part.map((p) => p.receivedAt - p.sentAt)),
+        verify: spread(part.map((p) => p.verifiedAt - p.receivedAt)),
+        accept: spread(part.map((p) => p.acceptMs)),
+        endToEnd: spread(lags(part))
+    });
+    // peer id -> its pushes of the step
+    const byPeer = new Map<number, PushSample[]>();
+    for (const push of pushes)
+        byPeer.set(push.peer, [...(byPeer.get(push.peer) ?? []), push]);
+    const slowest = [...byPeer].reduce<
+        { peer: number; lag: number } | undefined
+    >((worst, [peer, own]) => {
+        const lag = percentile(lags(own), 0.5);
+        return lag !== null && (worst === undefined || lag > worst.lag)
+            ? { peer, lag }
+            : worst;
+    }, undefined);
+    const hostedPeers = reports.reduce((n, r) => n + r.peers, 0);
     const firstThirdLag = percentile(lags(byTime.slice(0, third)), 0.5);
     const lastThirdLag = percentile(lags(byTime.slice(-third)), 0.5);
     const lagGrew =
@@ -140,16 +169,16 @@ function stepResult(
             refused,
             ended
         },
-        stagesMs: {
-            build: spread(
-                pushes.flatMap((p) =>
-                    p.executedAt === null ? [] : [p.builtAt - p.executedAt]
-                )
-            ),
-            dispatch: spread(pushes.map((p) => p.sentAt - p.builtAt)),
-            transit: spread(pushes.map((p) => p.receivedAt - p.sentAt)),
-            verify: spread(pushes.map((p) => p.verifiedAt - p.receivedAt)),
-            endToEnd: spread(lags(pushes))
+        stagesMs: stages(pushes),
+        // the peer with the highest median end-to-end lag, by stage: where it waited
+        slowestPeer: slowest && {
+            peer: slowest.peer,
+            stagesMs: stages(byPeer.get(slowest.peer)!)
+        },
+        // the peer threads' heap above what they used before any peer
+        peerHeap: {
+            peers: hostedPeers,
+            bytes: reports.reduce((n, r) => n + r.heapAbovePeerlessBytes, 0)
         },
         lagMedianMs: { firstThird: firstThirdLag, lastThird: lastThirdLag },
         bytes: {
@@ -248,6 +277,8 @@ async function main(): Promise<void> {
         const fallbackEvery =
             FALLBACK_FRACTION > 0 ? Math.round(1 / FALLBACK_FRACTION) : 0;
         const steps = [];
+        /** The peer threads' heap at the previous step. */
+        let previousHeap: { peers: number; bytes: number } | undefined;
         let opened = 0;
         for (const subscribers of STEPS) {
             const added: PeerSpec[][] = workers.map(() => []);
@@ -304,7 +335,18 @@ async function main(): Promise<void> {
                 reports,
                 nodeSamples
             );
-            steps.push(result);
+            // what each peer added since the previous step costs the peer threads
+            steps.push({
+                ...result,
+                peerHeapBytesPerAddedPeer:
+                    previousHeap === undefined
+                        ? null
+                        : Math.round(
+                              (result.peerHeap.bytes - previousHeap.bytes) /
+                                  (result.peerHeap.peers - previousHeap.peers)
+                          )
+            });
+            previousHeap = result.peerHeap;
             console.log(
                 `${subscribers} subscribers: delivered ${result.pushes.delivered}/${result.pushes.expected}, ` +
                     `end-to-end median ${result.stagesMs.endToEnd.median} ms p95 ${result.stagesMs.endToEnd.p95} ms, ` +
