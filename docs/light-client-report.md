@@ -39,6 +39,13 @@ The SDK needs no extra counters for this. The numbers come from outside it:
 Stage times compare clocks of two processes, so node and peers run on one host for the readiness
 numbers. Capacity runs put the node on its own host.
 
+The node's own cost is measured per path, each in a run of its own on a fresh node
+(`BENCH_PATHS=<path> yarn bench:light-client`): the current path against a node without
+`--light-client` (`BENCH_NODE_LIGHT_CLIENT=0`), which is today's node; the current path against a
+node with it, which shows what recording the touched keys costs the node when nobody subscribes; and
+each light client path. The calls of all paths on the same blocks are compared in one run of all
+paths on one node.
+
 Development runs use a local dev node. Reported numbers come from farm hosts taken out of the test
 pool for the run, with their CPU, memory and network stated next to each result.
 

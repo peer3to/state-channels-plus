@@ -159,9 +159,15 @@ async function startHardhatNode({
  * Spawn the peer3 dev node at `PEER3_NODE_BIN` (on `port` or a free one), wait
  * until its RPC is ready, and return `{ proc, url, stop }`. The node seals a
  * block every block time on the funded test chain and keeps its database in a
- * directory of its own, removed when it exits.
+ * directory of its own, removed when it exits. With `lightClient: false` it
+ * runs without the light client endpoints, a benchmark's baseline.
  */
-async function startPeer3Node({ port, logPath, label = "peer3 node" } = {}) {
+async function startPeer3Node({
+    port,
+    logPath,
+    label = "peer3 node",
+    lightClient = true
+} = {}) {
     const nodeBin = process.env.PEER3_NODE_BIN;
     if (!nodeBin) throw new Error("PEER3_NODE_BIN names no peer3 node binary");
     const nodePort = port ?? (await getFreePort());
@@ -181,7 +187,7 @@ async function startPeer3Node({ port, logPath, label = "peer3 node" } = {}) {
             "--dev-seal",
             "interval",
             // the light client endpoints
-            "--light-client",
+            ...(lightClient ? ["--light-client"] : []),
             "--rpc-port",
             String(nodePort),
             // the wildcard storage subscription is an unsafe method

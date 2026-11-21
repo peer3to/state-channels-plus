@@ -24,7 +24,10 @@
  * BENCH_ROUNDS (30): rounds; BENCH_CHANNELS (4): channels written, the first
  * followed; BENCH_IDLE_EVERY (3): every n-th round leaves the followed
  * channel unwritten; BENCH_COMPARE (0): 1 also asks the node every read the
- * light clients answer (REQ-LC-11).
+ * light clients answer (REQ-LC-11); BENCH_PATHS (all): the paths to run, comma
+ * separated, one per run giving each path a node of its own, so that the node's
+ * CPU and memory are that path's; BENCH_NODE_LIGHT_CLIENT (1): 0 starts the node
+ * without `--light-client`, for the current path only, the node's baseline.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -109,6 +112,8 @@ const ROUNDS = Number(process.env.BENCH_ROUNDS ?? 30);
 const CHANNELS = Number(process.env.BENCH_CHANNELS ?? 4);
 const IDLE_EVERY = Number(process.env.BENCH_IDLE_EVERY ?? 3);
 const COMPARES_READS = process.env.BENCH_COMPARE === "1";
+const RUN_PATHS = runPaths(process.env.BENCH_PATHS);
+const NODE_LIGHT_CLIENT = process.env.BENCH_NODE_LIGHT_CLIENT !== "0";
 /** Slots per channel; channel `c` writes slots c * SLOT_SPAN + 1... */
 const SLOT_SPAN = 1000;
 const PUSH_TIMEOUT_MS = 30_000;
@@ -125,6 +130,20 @@ function channelId(index: number): string {
 
 function slotOf(channel: number, offset: number): number {
     return channel * SLOT_SPAN + offset;
+}
+
+/** The paths `BENCH_PATHS` names, in the order of {@link PATHS}; all of them when unset. */
+function runPaths(names: string | undefined): PathName[] {
+    if (names === undefined) return [...PATHS];
+    const named = names.split(",").map((name) => name.trim());
+    const unknown = named.filter(
+        (name) => !(PATHS as readonly string[]).includes(name)
+    );
+    if (named.length === 0 || unknown.length > 0)
+        throw new Error(
+            `BENCH_PATHS names unknown paths ${unknown.join(", ")}; known: ${PATHS.join(", ")}`
+        );
+    return PATHS.filter((name) => named.includes(name));
 }
 
 function countMethods(requests: { method: RpcMethod }[]): MethodCounts {
@@ -204,12 +223,14 @@ function summarize(
     paths: BenchPath[]
 ) {
     const kinds = [...new Set(records.map((record) => record.kind))];
+    // the light client paths follow the same channel: one path's pushes stand for all
+    const pushPath = paths.find((path) => path.isLightClient)?.name;
     const deltaPushes = pushes.filter(
-        (push) => push.path === "batchPerPass" && !push.sync
+        (push) => push.path === pushPath && !push.sync
     );
     return {
         calls: Object.fromEntries(
-            PATHS.map((pathName) => [
+            paths.map(({ name: pathName }) => [
                 pathName,
                 Object.fromEntries(
                     kinds.map((kind) => {
@@ -324,7 +345,13 @@ function summarize(
 }
 
 async function main(): Promise<void> {
-    const node = await LightClientNodeFixture.start();
+    if (!NODE_LIGHT_CLIENT && RUN_PATHS.some((name) => name !== "current"))
+        throw new Error(
+            "BENCH_NODE_LIGHT_CLIENT=0 runs only the current path: set BENCH_PATHS=current"
+        );
+    const node = await LightClientNodeFixture.start({
+        lightClient: NODE_LIGHT_CLIENT
+    });
     const { logger, entries } = recordingLogger("warn");
     const paths: BenchPath[] = [];
     try {
@@ -332,7 +359,7 @@ async function main(): Promise<void> {
         const { methods } = (await node.provider.send("rpc_methods", [])) as {
             methods: string[];
         };
-        for (const name of PATHS) {
+        for (const name of RUN_PATHS) {
             const proxy = await node.proxyToNode();
             const isLightClient = name !== "current";
             if (!isLightClient)
@@ -481,7 +508,7 @@ async function main(): Promise<void> {
                 PUSH_TIMEOUT_MS
             );
             // each path goes first in turn
-            const order = PATHS.map(
+            const order = paths.map(
                 (_, index) => paths[(index + round) % paths.length]
             );
             // call kind -> the first path's result this round
@@ -562,7 +589,9 @@ async function main(): Promise<void> {
                             ROUNDS,
                             CHANNELS,
                             IDLE_EVERY,
-                            COMPARES_READS
+                            COMPARES_READS,
+                            RUN_PATHS,
+                            NODE_LIGHT_CLIENT
                         }
                     },
                     summary,

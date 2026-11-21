@@ -216,14 +216,17 @@ export class LightClientNodeFixture {
     /**
      * Starts the node. Throws {@link LIGHT_CLIENT_UNSUPPORTED} at once when no
      * peer3 node binary is named, because the Hardhat test node has no light
-     * client endpoints.
+     * client endpoints. With `lightClient: false` the node runs without them,
+     * a benchmark's baseline.
      */
-    static async start(): Promise<LightClientNodeFixture> {
+    static async start({
+        lightClient = true
+    } = {}): Promise<LightClientNodeFixture> {
         if (!process.env.PEER3_NODE_BIN)
             throw new Error(
                 `${LIGHT_CLIENT_UNSUPPORTED}: PEER3_NODE_BIN names no peer3 node binary`
             );
-        const node = await startPeer3Node();
+        const node = await startPeer3Node({ lightClient });
         return new LightClientNodeFixture(node, node.url);
     }
 

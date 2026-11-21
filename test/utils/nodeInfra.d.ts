@@ -64,9 +64,12 @@ export function startDhtBootstrapper(
     options?: { port?: number; attempts?: number }
 ): Promise<DhtBootstrapper>;
 export function startHardhatNode(opts?: StartInfraOptions): Promise<NodeHandle>;
-/** The peer3 dev node at `PEER3_NODE_BIN`; throws when the variable is unset. */
+/**
+ * The peer3 dev node at `PEER3_NODE_BIN`; throws when the variable is unset.
+ * `lightClient` (default true) starts it with `--light-client`.
+ */
 export function startPeer3Node(
-    opts?: Omit<StartInfraOptions, "env">
+    opts?: Omit<StartInfraOptions, "env"> & { lightClient?: boolean }
 ): Promise<NodeHandle>;
 export function waitForHardhatNode(
     url: string,
