@@ -5,16 +5,18 @@ Exercises: [LightClientRpcProvider.ts](../../../../implementation/source/src/evm
 
 ## Overview
 
-Every declaration starts a peer3 dev node of its own from the binary `PEER3_NODE_BIN` names, with the
-test-owned light client sidecar in front of it and a test-owned proxy in front of the sidecar. The
-runner discovers the file only with `--lc-tests`. The provider under test is the one the SDK builds
-with `createRpcNodesProvider` and `LIGHT_CLIENT` on, given the proxy's address. The contracts are the
-repository's `SimpleNumberStorage` and three hand-assembled ones: one returns the block values a call
-reads, one forwards a static call, one returns the previous block's hash. Transactions go to the node
-directly, so the provider only reads. The oracles are the node's own answers to the same reads, the
-provider's counters, the requests the proxy saw, and the entries the provider logged at error level.
-For the failures the proxy answers one request in the node's place. The suite does not cover a node
-that lies about its best block, more than one endpoint, or a distributed worker.
+Every declaration starts a peer3 dev node of its own, with the light client endpoints, from the binary
+`PEER3_NODE_BIN` names, and a test-owned proxy in front of it. The runner discovers the file only with
+`--lc-tests`. The provider under test is the one the SDK builds with `createRpcNodesProvider`, given the
+proxy's address; it is on because the node lists the endpoints. The contracts are the repository's
+`SimpleNumberStorage` and hand-assembled ones that return the block values a call reads, forward a
+static call, return the previous block's hash, return CALLER and ORIGIN, return the blob base fee, run
+out of gas, and hit an invalid opcode. Transactions go to the node directly, so the provider only reads.
+The oracles are the node's own answers to the same reads, the provider's counters, the requests the
+proxy saw, and the entries the provider logged. For the failures the proxy answers one request in the
+node's place. Two endpoints and pushed partitions are the subject of
+[LightClientFollowedChannel.test.ts](LightClientFollowedChannel.test.ts.md). The suite does not cover a node that lies about its
+best block, or a distributed worker.
 
 ## Tests
 

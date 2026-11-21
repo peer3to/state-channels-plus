@@ -27,6 +27,7 @@ import type {
     ReplayGasEstimateMethod,
     HeldLobbyReplyKind,
     HeldMembershipReceiptKind,
+    MembershipReceiptFailure,
     HeldNegotiationReplyKind,
     HeldOpenedStatusRead,
     ReductionApplicationControl,
@@ -479,21 +480,12 @@ export class RpcStubActions<
     async failMembershipReceipt(
         peerIndex: number,
         kind: HeldMembershipReceiptKind,
-        options: {
-            once?: boolean;
-            isReplayPassing?: boolean;
-            isReceiptBlockNamed?: boolean;
-        } = {}
+        failure: MembershipReceiptFailure = {}
     ): Promise<() => Promise<number>> {
         const peer = this.harness.getPeer(peerIndex);
         await this.harness
             .control(peer)
-            .stub.failMembershipReceipt(
-                kind,
-                options.once ?? false,
-                options.isReplayPassing ?? false,
-                options.isReceiptBlockNamed ?? false
-            )
+            .stub.failMembershipReceipt(kind, failure)
             .request();
         return async () =>
             await this.harness

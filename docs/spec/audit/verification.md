@@ -106,6 +106,20 @@ those two, the endpoint ending a lagging subscription
 channel contract deployed, and the full SDK suite on peer3 nodes with the light client on; the
 `--lc-tests` suites in CI, because no distributed worker has the node binary.
 
+Follow-up on 2026-11-20 and 2026-11-21: the two faults that failed none are now caught.
+[`REQ-LC-7-W8WDN3.T1.P4`](../specification/runtime/light-client.md#req-lc-7-w8wdn3.t1.p4) has its declaration (the endpoint ends a subscription), which also checks the warning that names the
+endpoint's reason, and [`REQ-LC-5-MM0BM9.T1.P16`](../specification/runtime/light-client.md#req-lc-5-mm0bm9.t1.p16) checks that nothing a lost connection pushed is used. A review of the merged
+stack on 2026-11-21 found that the stack merge refused every push with more than one proof node (the
+lower PR's `isHexString(value, length)` met this PR's one-argument check); with the check aligned,
+`FrontierPushedPartition.test.ts` passed 11 of 11 on the merged tree, where it had failed 10 of 11. The
+fixes of that review each have a declaration, and each declaration failed with its fix removed: a
+refused or ended subscription opened again after one block time
+([`REQ-LC-7-W8WDN3.T1.P5`](../specification/runtime/light-client.md#req-lc-7-w8wdn3.t1.p5)), an endpoint without the light client endpoints among two ([`REQ-LC-4-E29Y46.T1.P7`](../specification/runtime/light-client.md#req-lc-4-e29y46.t1.p7)), a call
+reading the blob base fee ([`REQ-LC-2-PMY1VG.T1.P7`](../specification/runtime/light-client.md#req-lc-2-pmy1vg.t1.p7)), the block floor after a receipt and with the pushes stopped
+([`REQ-LC-1-JT5PKT.T1.P17`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p17), [`P18`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p18)), an earlier pushed block refused ([`REQ-STPROOF-3-NVJGR0.T1.P28`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t1.p28)), and the replay at
+the receipt's block in the default tier ([`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P42`](../implementation/source/src/utils/evmErrorHandler.ts.md#unit-test-evm-error-handler-1-dp1mjf), `P43`). The light client
+suites passed 68 of 68 locally against the node built from peer3-parachain PR #3 with that day's fixes.
+
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 
 PR #579 review cards TO4, TO5, TY2 and TY3.

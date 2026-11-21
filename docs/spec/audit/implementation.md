@@ -33,10 +33,11 @@ three `lightClient_*` methods and the pushed block;
 hashes a header and reads the Ethereum block hash from its Frontier digest log;
 `proveFrontierStorageBlock.ts` (removed on 2026-11-20)
 checks a pushed block; [ScaleReader.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/ScaleReader.ts.md)
-holds the SCALE reading the trie proof and the header share. No node serves the `lightClient_*` methods
-yet. A test-owned sidecar (`test/fixtures/lightClient/LightClientSidecar.ts`) stands in: a WebSocket proxy
-in front of a peer3 node that builds the pushed blocks from the node's wildcard storage subscription,
-which the node allows only with unsafe RPC methods. Nothing in `src` calls the new code yet.
+holds the SCALE reading the trie proof and the header share. No node served the `lightClient_*` methods
+then. A test-owned sidecar (`test/fixtures/lightClient/LightClientSidecar.ts`) stood in: a WebSocket proxy
+in front of a peer3 node that built the pushed blocks from the node's wildcard storage subscription,
+which the node allows only with unsafe RPC methods. Nothing in `src` called the new code yet. The node
+endpoint of peer3-parachain PR #3 replaced the sidecar on 2026-11-20 (below).
 
 Added on 2026-11-19 for accounts and for the read from a node ([`REQ-STPROOF-4-XK5S64` (An account's nonce, balance and code are accepted only when the proof decides…)](../specification/runtime/storage-proofs.md#req-stproof-4-xk5s64), [`REQ-STPROOF-5-HRDXEG` (A read from a node yields only what its proof decides, at one block)](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg)):
 [AAccountProofVerifier.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/AAccountProofVerifier.ts.md)
@@ -72,7 +73,8 @@ what is specific to peer3;
 [FrontierEthereumHeader.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierEthereumHeader.ts.md)
 reads the block values. The state, the pass loop and the parser are taken from the closed mirror provider
 (`origin/b1384-mirror-provider`, PR #589) with everything of the storage diff service removed. The
-provider is created by `createRpcNodesProvider` when `LIGHT_CLIENT` is true. The provider loads the light
+provider was created by `createRpcNodesProvider` when `LIGHT_CLIENT` was true; since 2026-11-20 every
+runtime gets it, and it is on when the node lists the endpoints (below). The provider loads the light
 client, and with it the EVM's modules, at the first read it may answer: the host-root entry must load no
 EVM (`packageHostRootExport.test.ts`), and it imports the provider. The local EVM is the one
 `createEvm` builds, so its hardfork is the SDK's and not read from the chain. peer3's own precompile

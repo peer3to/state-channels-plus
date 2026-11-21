@@ -5,13 +5,13 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 
 /** A lowercase 0x-prefixed contract address. */
-type ContractAddress = string;
+export type ContractAddress = string;
 /** A log topic, lowercase 0x-prefixed 32 bytes. */
 type LogTopic = string;
 /** The id a node gave a light client subscription; it holds on that node's socket only. */
 type SubscriptionId = string;
 /** Identifies one subscription across every socket: the key the listener knows it by. */
-type SubscriptionKey = string;
+export type SubscriptionKey = string;
 
 /**
  * Most notifications kept for a subscription id the socket does not know
@@ -43,6 +43,24 @@ export type LightClientSubscriptionListener = {
     /** A subscription was opened again: the node ended it, or the listener refused a push. */
     resubscribed(): void;
 };
+
+/** A `lightClient_storage` notification: a pushed message, or the error that ended the subscription. */
+type SubscriptionNotification = {
+    subscription: SubscriptionId;
+    result?: unknown;
+    error?: unknown;
+};
+
+function isSubscriptionNotification(
+    params: unknown
+): params is SubscriptionNotification {
+    return (
+        typeof params === "object" &&
+        params !== null &&
+        typeof (params as Partial<SubscriptionNotification>).subscription ===
+            "string"
+    );
+}
 
 /** The subscription one socket holds for one contract. */
 type HeldSubscription = {
@@ -163,12 +181,8 @@ export class LightClientSubscriptions {
         params: unknown,
         receivedAt: number
     ): void {
-        const { subscription, result, error } = (params ?? {}) as {
-            subscription?: SubscriptionId;
-            result?: unknown;
-            error?: unknown;
-        };
-        if (subscription === undefined) return;
+        if (!isSubscriptionNotification(params)) return;
+        const { subscription, result, error } = params;
         const held = subscribed.byId.get(subscription);
         if (!held) {
             // only the id a subscribe still waits for can be one of ours
@@ -289,12 +303,16 @@ export class LightClientSubscriptions {
             }
             const key = String(this.nextKey++);
             this.listener.subscribed(key, address, subscribed.node);
-            let id: SubscriptionId;
+            let id: unknown;
             subscribed.isSubscribing = true;
             try {
-                id = (await socket.send(LIGHT_CLIENT_METHODS.subscribe, [
+                id = await socket.send(LIGHT_CLIENT_METHODS.subscribe, [
                     { address, topics }
-                ])) as SubscriptionId;
+                ]);
+                if (typeof id !== "string")
+                    throw new Error(
+                        "The node answered a light client subscribe without a subscription id"
+                    );
             } catch (error) {
                 subscribed.isSubscribing = false;
                 subscribed.early.clear();

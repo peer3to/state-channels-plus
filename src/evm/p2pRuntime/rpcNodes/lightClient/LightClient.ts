@@ -4,6 +4,10 @@ import type {
     PushedStateCounters
 } from "./LightClientCounters";
 import { LightClientState } from "./LightClientState";
+import type {
+    ContractAddress,
+    SubscriptionKey
+} from "./LightClientSubscriptions";
 import {
     LightClientUnavailableError,
     NotLocalError
@@ -44,12 +48,9 @@ function isAnswer(): boolean {
     return true;
 }
 
-/** Identifies one node subscription; a node's id for it holds on that node's socket only. */
-type SubscriptionKey = string;
-
 /** The state one subscription on a socket of `node` pushed, for the contract it follows. */
 type Subscription = {
-    contract: string;
+    contract: ContractAddress;
     node: RpcNodeProvider;
     partition: APushedPartition;
 };
@@ -156,7 +157,7 @@ export class LightClient {
     /** Subscription `key` on a socket of `node` follows the contract at `contract`: its pushes go to a partition of its own. */
     subscribed(
         key: SubscriptionKey,
-        contract: string,
+        contract: ContractAddress,
         node: RpcNodeProvider
     ): void {
         this.subscriptions.set(key, {

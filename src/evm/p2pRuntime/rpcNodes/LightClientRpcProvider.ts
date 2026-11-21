@@ -206,7 +206,7 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
             return {
                 id: request.id,
                 ...(await read(await this.getLightClient()))
-            } as JsonRpcResult | JsonRpcError;
+            };
         } catch (error) {
             // closed while the read ran: the read fails as a plain one would
             if (this.isClosed) throw error;
@@ -323,7 +323,11 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
             throw new Error(
                 "The RPC node's socket ended before it listed its methods"
             );
-        const listed = (sent.result as { methods?: unknown } | null)?.methods;
+        const { result } = sent;
+        const listed =
+            typeof result === "object" && result !== null && "methods" in result
+                ? result.methods
+                : undefined;
         const methods: unknown[] = Array.isArray(listed) ? listed : [];
         const hasEndpoints =
             methods.includes(LIGHT_CLIENT_METHODS.subscribe) &&

@@ -234,6 +234,15 @@ export type RecordedMembershipReplay = {
 export type HeldLobbyReplyKind = "pick" | "commit";
 export type HeldNegotiationReplyKind = "exchangeTerms" | "openProposal";
 export type HeldMembershipReceiptKind = "joinChannel" | "topUpBalance";
+/** How {@link StubService.failMembershipReceipt} fails a membership submission. */
+export type MembershipReceiptFailure = {
+    /** Fail only the first submission; later ones run for real. */
+    once?: boolean;
+    /** The replay runs the same call on the real chain instead of reverting with no data. */
+    isReplayPassing?: boolean;
+    /** The failed receipt names the chain's block at the failure. */
+    isReceiptBlockNamed?: boolean;
+};
 /** Which of a connect's opened-status reads a hold parks. */
 export type HeldOpenedStatusRead = "first" | "second";
 
@@ -3292,9 +3301,11 @@ export class StubService extends ANetworkRpcService<
      */
     public failMembershipReceipt(
         kind: HeldMembershipReceiptKind,
-        once = false,
-        isReplayPassing = false,
-        isReceiptBlockNamed = false
+        {
+            once = false,
+            isReplayPassing = false,
+            isReceiptBlockNamed = false
+        }: MembershipReceiptFailure = {}
     ): void {
         const { contract, original } = this.captureMembershipMethod(kind);
         const submissions = this.countMembershipSubmissions(kind);
@@ -3347,8 +3358,7 @@ export class StubService extends ANetworkRpcService<
         });
     }
 
-    /** A mined membership submission that reverted, with no revert data. */
-    /** A mined, failed receipt's error; the receipt names `blockNumber` when given. */
+    /** A mined membership submission that reverted, with no revert data; the receipt names `blockNumber` when given. */
     private injectedReceiptFailure(
         kind: HeldMembershipReceiptKind,
         blockNumber?: number

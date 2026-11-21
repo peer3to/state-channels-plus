@@ -56,6 +56,8 @@ Classification
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P39` — `isProvenSubmissionFailure` is true for a mined submission whose receipt failed, with no decoded reason
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P40` — `isProvenSubmissionFailure` is false for a failure with no receipt and no decoded revert
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P41` — `isProvenSubmissionFailure` is false for a reverted call with no receipt and no revert data
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P42` — `replayMinedCall` runs the call again at the block the failed receipt names
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P43` — `replayMinedCall` runs the call again at the latest block when the error names no receipt
 
 ## UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W
 
