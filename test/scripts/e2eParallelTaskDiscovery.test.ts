@@ -14,6 +14,7 @@ const { discoverTasks } =
             options?: {
                 includeParallelScript?: boolean;
                 includeBrowser?: boolean;
+                includeLightClient?: boolean;
             }
         ) => {
             files: string[];
@@ -102,6 +103,36 @@ describe("parallel Mocha task discovery", function () {
                 "ordinary",
                 "runner"
             ]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("discovers light client cases only when enabled and marks their tasks", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "optional-tests-"));
+        try {
+            fs.writeFileSync(
+                path.join(root, "ordinary.test.ts"),
+                'it("ordinary", () => {});'
+            );
+            fs.writeFileSync(
+                path.join(root, "pushed.test.ts"),
+                '// @distributed-requires: lightClient\nit("pushed", () => {});'
+            );
+            const discover = (includeLightClient: boolean) =>
+                Object.fromEntries(
+                    discoverTasks(root, undefined, undefined, undefined, {
+                        includeLightClient
+                    }).tasks.map((task) => [
+                        task.fullTitle,
+                        task.requires ?? null
+                    ])
+                );
+            expect(discover(false)).to.deep.equal({ ordinary: null });
+            expect(discover(true)).to.deep.equal({
+                ordinary: null,
+                pushed: ["lightClient"]
+            });
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

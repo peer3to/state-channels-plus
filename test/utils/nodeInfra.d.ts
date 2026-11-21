@@ -64,9 +64,22 @@ export function startDhtBootstrapper(
     options?: { port?: number; attempts?: number }
 ): Promise<DhtBootstrapper>;
 export function startHardhatNode(opts?: StartInfraOptions): Promise<NodeHandle>;
+/**
+ * The peer3 dev node at `PEER3_NODE_BIN`; throws when the variable is unset.
+ * Its database directory is made in `nodesDir`, `PEER3_NODES_DIR` by default.
+ */
+export function startPeer3Node(
+    opts?: Omit<StartInfraOptions, "env"> & { nodesDir?: string }
+): Promise<NodeHandle>;
+/** Where each peer3 node keeps its database directory by default. */
+export const PEER3_NODES_DIR: string;
+/** The file in a peer3 node's database directory that names its process. */
+export const PEER3_NODE_PID_FILE: string;
 export function waitForHardhatNode(
     url: string,
-    timeoutMs?: number
+    timeoutMs?: number,
+    label?: string,
+    signal?: AbortSignal
 ): Promise<void>;
 export function startDiscoveryRegistry(
     opts?: StartInfraOptions

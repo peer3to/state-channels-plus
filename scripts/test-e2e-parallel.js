@@ -333,7 +333,8 @@ async function main(options = {}) {
                 {
                     compiled: compiledAvailable,
                     includeParallelScript: cli.testParallelScript,
-                    includeBrowser
+                    includeBrowser,
+                    includeLightClient: cli.lightClient
                 }
             );
         } catch (e) {

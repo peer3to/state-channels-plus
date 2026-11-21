@@ -35,6 +35,9 @@ after a failed check are named as separate subjects and are not specified yet. R
 the document: a root taken from the same endpoint as the proof catches that endpoint's faults and
 omissions, not a consistent lie.
 
+The plan [`REQ-STPROOF-3-NVJGR0.T2`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2) of the requirement below, added on 2026-11-18, checks
+the same way the blocks a running chain node pushes.
+
 [`REQ-STPROOF-3-NVJGR0` (A pushed block is accepted only under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0) was added the same day for a block an endpoint pushes: the writes are accepted
 only under the state root of the header pushed with them, the block is identified by the header hash and
 by the Ethereum block hash the chain wrote into the header, and a rejected block yields no write. The
