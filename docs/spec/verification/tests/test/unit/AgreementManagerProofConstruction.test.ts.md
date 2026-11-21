@@ -43,3 +43,4 @@ Blind pending-auditor staging persistently disconnects the auditor before the pa
 - `TO1: exact exit finality retains the old and new union and needs its sole later confirmation`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P63
 - `TO1: an exact join point above the frozen view keeps later audit votes without advancing the view`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P64
 - `TO1: an exact point after an earlier join builds both overlapping hops above the frozen view`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P65
+- `U24: chain reads proven and the local diamond lagging a newer chain anchor → construction starts at the chain's anchor, which the chain walk accepts`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P67, REQ-SP-8-9ZCCEJ.T2.P19, REQ-MIRROR-5-N5SZC9.T4.P7

@@ -781,4 +781,47 @@ describe("Light client provider", function () {
             localDiamond
         );
     });
+
+    it("says a contract's reads are proven while the serving endpoint lists the light client endpoints, and not once it fails over to one that does not", async function () {
+        fixture = await LightClientProviderFixture.start({ endpoints: 2 });
+        const { node, provider, proxies } = fixture;
+        const [first, second] = proxies;
+        const { methods } = (await node.provider.send("rpc_methods", [])) as {
+            methods: string[];
+        };
+        second.answerRequests("rpc_methods", {
+            methods: methods.filter(
+                (method) => !method.startsWith("lightClient_")
+            )
+        });
+        const contract = new Contract(
+            await fixture.deployNumberStorage(),
+            await numberStorageInterface(),
+            provider
+        );
+        expect(await isChainProven(contract)).to.equal(true);
+
+        first.cut();
+        await waitFor(() => !provider.nodes[0].isConnected);
+
+        expect(await isChainProven(contract)).to.equal(false);
+        first.restore();
+    });
+
+    it("says a contract's reads are not proven, without throwing, while no endpoint is connected", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { provider, proxy } = fixture;
+        const contract = new Contract(
+            await fixture.deployNumberStorage(),
+            await numberStorageInterface(),
+            provider
+        );
+        expect(await isChainProven(contract)).to.equal(true);
+
+        proxy.cut();
+        await waitFor(() => !provider.nodes[0].isConnected);
+
+        expect(await isChainProven(contract)).to.equal(false);
+        proxy.restore();
+    });
 });

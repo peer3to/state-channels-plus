@@ -194,16 +194,21 @@ export default class MembershipService {
      * The local mirror holds only JOINs the chain processed, so a mirror that
      * lists the signer answers without a chain read; otherwise the chain
      * confirms the absence, since the JOIN can land after the mirror's
-     * inbound head. A failed read rejects the caller.
+     * inbound head. While chain reads are proven the chain answers alone. A
+     * failed read rejects the caller.
      */
     public async isSignerPendingOnChain(
         channelId: ChannelId = this.stateManager.channelId
     ): Promise<boolean> {
-        if (await this.isSignerPendingInMirror(channelId)) return true;
-        return this.includesSigner(
-            (await this.stateManager.stateChannelManagerContract.getPendingParticipants(
-                channelId
-            )) as Address[]
+        const chain = this.stateManager.stateChannelManagerContract;
+        return await preferLocal(
+            () => this.isSignerPendingInMirror(channelId),
+            async () =>
+                this.includesSigner(
+                    (await chain.getPendingParticipants(channelId)) as Address[]
+                ),
+            (isListed) => isListed,
+            () => isChainProven(chain)
         );
     }
 
@@ -245,7 +250,10 @@ export default class MembershipService {
             async () =>
                 this.includesSigner(await this.getOnChainThresholdSet()),
             (isListed) => isListed,
-            () => isChainProven(sm.stateChannelManagerContract)
+            // REQ-JOINSIG-1: a countersigner answers from its local view
+            // even while chain reads are proven, so it still countersigns
+            // while its chain reads are held (engineer decision, 2026-11-21)
+            async () => false
         );
     }
 

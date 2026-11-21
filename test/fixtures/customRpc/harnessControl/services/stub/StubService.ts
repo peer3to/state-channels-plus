@@ -731,6 +731,8 @@ export class StubService extends ANetworkRpcService<
     private timeoutBuildHold?: HeldRpcReply;
     private restoreTimeoutBuild?: () => void;
     private restoreChainReads?: () => void;
+    // undoes stubProvenChainReads: the provider's own answer again
+    private restoreProvenReads?: () => void;
     private restoreDisputedForkChecks?: () => void;
     private restoreKillPeriodReads?: () => void;
     // reads of the stubbed kill-period method: rejected, then passed through
@@ -2854,6 +2856,24 @@ export class StubService extends ANetworkRpcService<
             return Reflect.apply(original, contract, args);
         });
         this.restoreChainReads = () => Reflect.set(contract, method, original);
+    }
+
+    // the runtime's chain provider says its contract reads are proven, as it
+    // does with the light client on, until restore: the local-first checks
+    // and the replicated reads go to the chain contract alone. The reads
+    // still reach the session's node, unproven.
+    public stubProvenChainReads(): void {
+        const provider = this.chainProvider;
+        if (!(provider instanceof MultiRpcProvider))
+            throw new Error("Expected the runtime RPC node provider");
+        Reflect.set(provider, "answersFromProvenState", async () => true);
+        this.restoreProvenReads = () =>
+            Reflect.deleteProperty(provider, "answersFromProvenState");
+    }
+
+    public restoreProvenChainReads(): void {
+        this.restoreProvenReads?.();
+        this.restoreProvenReads = undefined;
     }
 
     public getChainReadObservation(): { failed: number; passed: number } {

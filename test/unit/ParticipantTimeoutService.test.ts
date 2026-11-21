@@ -15,6 +15,7 @@ import {
     assertUnsignedPredecessorPostDelaysCheck,
     checkTimeoutAfterDeadline,
     skipHeightOnObserver,
+    stageChainOnlyWindowBeforeTimeoutDeadline,
     stageWindowBeforeTimeoutDeadline
 } from "@test/fixtures/EarlyTimeoutRetryStaging";
 import { assertTimeoutCheckWaitsForSyncInstall } from "@test/fixtures/PinnedSyncStaging";
@@ -965,6 +966,105 @@ describe("Unit: ParticipantTimeoutService", function () {
         });
     });
 
+    describe("chain reads proven", function () {
+        it("a dispute window on the chain that the local diamond has not applied, opened before the deadline → no plain timeout", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageChainOnlyWindowBeforeTimeoutDeadline(h);
+            try {
+                expect(await staged.localWindowOpenedAt()).to.equal(0);
+                await checkTimeoutAfterDeadline(h, staged.observer.index, {
+                    forkId: staged.forkId,
+                    height: staged.height,
+                    writer: staged.writer.address,
+                    isForced: false
+                });
+                expect(await staged.recorder.submissions()).to.deep.equal([]);
+            } finally {
+                await staged.restore();
+            }
+        });
+
+        it("a failed chain read of the dispute window's creation time re-arms the check and the timeout still commits", async function () {
+            await assertProvenChainReadFailureRearms(
+                TestSession.getHarness(),
+                "getDisputeWindowCreationTimestamp"
+            );
+        });
+
+        it("a failed chain read of the block's calldata commitment re-arms the check and the timeout still commits", async function () {
+            await assertProvenChainReadFailureRearms(
+                TestSession.getHarness(),
+                "getBlockCallDataCommitment"
+            );
+        });
+
+        it("a commitment the chain shows before its calldata-posted event is applied → the check recovers the calldata and re-arms, and the block is stored once the event arrives", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            await h.control(observer).stub.stubProvenChainReads().request();
+            // the observer handles no contract log, as if behind on events,
+            // and the gossiped block waits in its confirmation
+            const releaseHeldLogs = await h.rpcStub.holdContractLogs(
+                observer.index
+            );
+            let areLogsHeld = true;
+            const releaseLogs = async () => {
+                if (!areLogsHeld) return;
+                areLogsHeld = false;
+                await releaseHeldLogs();
+            };
+            const hold = await h.rpcStub.holdBlockWork(
+                observer.index,
+                "confirmation"
+            );
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index
+            );
+            try {
+                const { leader, startHeight, forkId } =
+                    await h.transition.postNextBlockOnlyOnChainWait({
+                        observerIndex: observer.index
+                    });
+                await checkTimeoutAfterDeadline(h, observer.index, {
+                    forkId,
+                    height: startHeight,
+                    writer: leader.address,
+                    isForced: false
+                });
+                expect(
+                    (await tasks.tasks()).some(({ taskName }) =>
+                        taskName.includes("currentOnChainBlockValidation")
+                    )
+                ).to.equal(true);
+                // the plain check found the commitment on the chain only:
+                // it recovered the calldata and re-armed instead of returning
+                expect(await recorder.submissions()).to.deep.equal([]);
+                await hold.release();
+                await releaseLogs();
+                await waitFor(
+                    async () =>
+                        (await h
+                            .control(observer)
+                            .query.getBlockByHeight(forkId, startHeight)
+                            .request()) !== null,
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(await recorder.submissions()).to.deep.equal([]);
+            } finally {
+                await hold.release();
+                await releaseLogs();
+                await h
+                    .control(observer)
+                    .stub.restoreProvenChainReads()
+                    .request();
+                await recorder.restore();
+                await tasks.restore();
+            }
+        });
+    });
+
     describe("predecessor post not yet applied", function () {
         it("a writer that signed the predecessor gains no time from its post → the timeout is submitted at the block's own deadline", async function () {
             await assertSignedPredecessorPostGrantsNoTime(
@@ -1026,3 +1126,59 @@ describe("Unit: ParticipantTimeoutService", function () {
         });
     });
 });
+
+/**
+ * With the observer's chain reads proven, its chain reads of `method` fail
+ * until restored: the timeout check re-arms on the failure, and the timeout
+ * commits once reads pass again. A commitment read fails at height 0, whose
+ * predecessor is the genesis snapshot, so the check's own read of the
+ * height's commitment is its first chain read of it.
+ */
+async function assertProvenChainReadFailureRearms(
+    h: ReturnType<typeof TestSession.getHarness>,
+    method: "getBlockCallDataCommitment" | "getDisputeWindowCreationTimestamp"
+): Promise<void> {
+    await h.lifecycle.timeoutSetup(3);
+    const observer = h.getPeer(2);
+    if (method === "getBlockCallDataCommitment") {
+        // the writer of height 0 stays silent; only the observer disputes
+        await h.dispute.suppressDisputeInitiation([
+            h.getPeer(0).index,
+            h.getPeer(1).index
+        ]);
+    } else {
+        // peer 0 authors height 0; observer 2 will time out writer 1
+        await h.transition.advanceState();
+        await h.dispute.suppressDisputeInitiation([h.getPeer(0).index]);
+    }
+    const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+    const uploads = await h.rpcStub.recordDisputeSubmissions(observer.index, {
+        forward: true
+    });
+    await h.control(observer).stub.stubProvenChainReads().request();
+    await h
+        .control(observer)
+        .stub.stubFailChainReads(method, Number.MAX_SAFE_INTEGER)
+        .request();
+    try {
+        await waitFor(
+            async () =>
+                (await tasks.tasks()).some((task) =>
+                    task.taskName.startsWith(CHAIN_READ_FAILED_RECHECK_REASON)
+                ),
+            h.event.hostExecTimeoutMs()
+        );
+        expect(await uploads.submissions()).to.deep.equal([]);
+        await h.control(observer).stub.restoreChainReadFailures().request();
+        await h.assert.dispute.committedWait({
+            peersIndices: [observer.index],
+            expectedCount: 1,
+            mode: "atLeast"
+        });
+    } finally {
+        await h.control(observer).stub.restoreChainReadFailures().request();
+        await h.control(observer).stub.restoreProvenChainReads().request();
+        await uploads.restore();
+        await tasks.restore();
+    }
+}

@@ -4,7 +4,7 @@ import AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 
 import Clock from "@/Clock";
-import { replicatedStateSource } from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
+import { isChainProven } from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import { Block, StateSnapshot } from "@/models";
 import type StateManager from "@/stateManager";
 import Storage from "@/storage";
@@ -23,6 +23,7 @@ import {
     Signature
 } from "@/types/types";
 import { Codec, hash, Logger, Type } from "@/utils";
+import { preferLocal } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
 import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -215,18 +216,48 @@ export default class ValidationService {
         return forkId !== ZeroHash;
     }
 
+    /**
+     * The per-block ingest gate: this peer disputed the fork, or the local
+     * diamond holds its dispute. It reads the local diamond even while chain
+     * reads are proven: it runs for every block under the state mutex, where
+     * a chain read could wait a block time or fail and lose the block
+     * (engineer decision, 2026-11-21).
+     */
     public async isDisputedFork(
         forkId: ForkId,
         channelId: ChannelId
     ): Promise<boolean> {
         return (
             this.storage.disputes.didIDispute(forkId) ||
-            (await (
-                await replicatedStateSource(
-                    this.diamondStateMachine.localDiamondContract,
-                    this.stateChannelManagerContract
-                )
-            ).isForkDisputed(channelId, forkId))
+            (await this.diamondStateMachine.localDiamondContract.isForkDisputed(
+                channelId,
+                forkId
+            ))
+        );
+    }
+
+    /**
+     * Whether the chain holds a dispute of `forkId`. The local diamond's
+     * "disputed" stands; its "not disputed" may lag, so the chain confirms
+     * it, and while chain reads are proven the chain answers alone.
+     */
+    public async isForkDisputedOnChain(
+        channelId: ChannelId,
+        forkId: ForkId
+    ): Promise<boolean> {
+        return await preferLocal(
+            () =>
+                this.diamondStateMachine.localDiamondContract.isForkDisputed(
+                    channelId,
+                    forkId
+                ),
+            () =>
+                this.stateChannelManagerContract.isForkDisputed(
+                    channelId,
+                    forkId
+                ),
+            (isDisputed) => isDisputed,
+            () => isChainProven(this.stateChannelManagerContract)
         );
     }
 

@@ -64,8 +64,9 @@ export default class DisputeValidationService {
     /**
      * Audits `dispute`. True when no counter applies; false when a dispute
      * fraud proof is stored. The proof is verified and its tail replayed from
-     * the latest locally finalized state, then the local diamond's anchor,
-     * then the chain's anchor; only the chain tier establishes a fault. A
+     * the latest locally finalized state, then the local diamond's anchor
+     * (skipped while chain reads are proven), then the chain's anchor; only
+     * the chain tier establishes a fault. A
      * dispute that ends below the trusted final point is not replayed
      * backward. Missing required local data and read errors throw.
      */
@@ -1147,6 +1148,7 @@ export default class DisputeValidationService {
     // ── Local-first checks ────────────────────────────────────────────────
     // Each check runs on the local diamond; only the answer that would make this
     // node act against the disputer is confirmed on-chain (see preferLocal).
+    // While chain reads are proven, the chain answers each check alone.
 
     private localFirst<T>(
         read: (contract: StateChannelManagerInterface) => Promise<T>,

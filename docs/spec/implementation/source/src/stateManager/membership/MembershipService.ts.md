@@ -51,3 +51,5 @@ Source eligibility and membership facts
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P77` — the direct-chain expiry/drop check finds the signer in neither chain set and permits the existing expiry/drop decision
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P78` — `isSignerInThresholdSet` answers `true` from a mirror that lists the signer, with that runtime's chain calls and block reads held
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P79` — `isSignerInThresholdSet` with a mirror that misses the signer's own landed join reads the chain's threshold set and answers `true`
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P80` — chain reads proven: `isSignerPendingOnChain` reads the chain's pending set even while the local diamond lists the signer
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P81` — chain reads proven: `isSignerInThresholdSet` still answers from a mirror that lists the signer, with that runtime's chain calls and block reads held

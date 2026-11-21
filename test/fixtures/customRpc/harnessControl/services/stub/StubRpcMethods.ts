@@ -4091,6 +4091,16 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.getChainReadObservation();
     }
 
+    public stubProvenChainReads(): boolean {
+        this.service.stubProvenChainReads();
+        return true;
+    }
+
+    public restoreProvenChainReads(): boolean {
+        this.service.restoreProvenChainReads();
+        return true;
+    }
+
     public restoreChainReadFailures(): boolean {
         this.service.restoreChainReadFailures();
         return true;

@@ -127,19 +127,23 @@ accepted push), and another block of the held height is taken
 ([`REQ-STPROOF-3-NVJGR0.T1.P31`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t1.p31), failed with a same-height block refused). The light client suites then
 passed 70 of 70.
 
-S4 on 2026-11-21, on the engineer's four decisions of that day and the choice that the ten plain
+S4 on 2026-11-21, on the engineer's four decisions of that day and the choice that the replicated
 mirror reads go to the chain as well. With the reads compared
 ([`REQ-LC-11-MTCBF9` (With the reads compared, each answer is checked against the endpoint's at its…)](../specification/runtime/light-client.md#req-lc-11-mtcbf9)), each local answer is asked of the endpoint by Ethereum block hash, which the peer3
 node answers; six reads, a revert among them, matched, a call the proxy answered otherwise was
 counted and logged, and a failed one was counted as not compared. The declarations failed with the
 block named by its Substrate hash and with every answer taken as alike. With the chain's reads proven,
-the local-first reads, the mirror's state-proof tier and the ten plain mirror reads go to the chain
-alone ([`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)); `preferLocal`'s unit suite passed 9 of 9 and the two live declarations
+the local-first reads, the mirror's state-proof tier and the eight plain mirror read sites (window
+time three times, commitment twice, slashed participants once, the proof anchor once, the spectator's
+snapshot once) go to the chain alone ([`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)); `preferLocal`'s unit suite passed 9 of 9 and the two live declarations
 passed. A first full run found a circular import (`@/utils` re-exports the local diamond module,
 which had imported the chain provider) that failed `InternalTransport.test.ts` 11 of 11; the helpers
 moved to `provenChainReads.ts` and the file passed 11 of 11. Not run: participants on a peer3 node
 with the light client on and the reads compared
-([`REQ-MIRROR-5-N5SZC9.T3.P1`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t3.p1), a gap), because the test harness runs participants on hardhat nodes only.
+([`REQ-MIRROR-5-N5SZC9.T3.P1`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t3.p1), a gap), because the test harness runs participants on Hardhat nodes only; running them on a peer3 node with
+the channel contracts deployed is planned with the farm workers step. The engineer's two exceptions
+stay local while proven, the join countersigner's membership check and the ingest gate's disputed
+flag, and neither goes to the chain while proven.
 
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 

@@ -19,3 +19,4 @@ Verifies proofs from local final state, the local diamond and the canonical chai
 - `U30: the chain walk fails on the node RPC connection → verification throws instead of returning an invalid verdict`: REQ-SP-9-RNXP56.T3.P9, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P45
 - `RR1: a chain anchor advance during verification returns the checked start and skips malformed old history in persistence`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P60
 - `RR1: a mirror anchor advance during verification returns the checked start and skips malformed old history in persistence`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P61
+- `U27: chain reads proven and no local finalized state above the anchor → the mirror's walk is skipped, the chain's walk accepts the proof`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P68, REQ-SP-9-RNXP56.T3.P21, REQ-MIRROR-5-N5SZC9.T4.P8

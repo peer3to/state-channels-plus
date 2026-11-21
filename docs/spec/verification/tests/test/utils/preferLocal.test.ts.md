@@ -31,3 +31,5 @@ calling components' suites).
 - `propagates a real local signer failure that is not a revert without asking the chain`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P8
 - `propagates an acceptance-callback failure without asking the chain`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P10
 - `asks only the chain while its answers are proven`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P13, REQ-MIRROR-5-N5SZC9.T1.P1
+- `propagates the chain's rejection while its answers are proven, without a local read`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P14, REQ-MIRROR-5-N5SZC9.T1.P3
+- `propagates a failure to tell whether the chain is proven, without a local or chain read`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P15, REQ-MIRROR-5-N5SZC9.T1.P4

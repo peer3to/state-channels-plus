@@ -117,3 +117,4 @@ dispute it constructs declares no self-removal.
 - `U77: after the agreementTime grace, fires exactly at the first counted block + participants + 1`: INV-TJOIN-2-H7JSQM.T2.P7, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P41
 - `a clean leave everyone signed → snapshot path, force-exit flag kept`: none
 - `a leaver whose membership ended joins again on the same runtime → the new membership clears the force-exit flag and its dispute carries no self-removal`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P52, REQ-RMSTORE-2-Y2T1PG.T1.P5, REQ-LIF-10-QR8NQ9.T1.P36
+- `a pending joiner with chain reads proven reads the pending set from the chain even while its local diamond holds its JOIN`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P80, REQ-MIRROR-5-N5SZC9.T4.P6

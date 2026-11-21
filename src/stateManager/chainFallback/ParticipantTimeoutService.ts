@@ -2,7 +2,7 @@ import type { BlockCalldataRecoveryResult } from "../eventSync/EventSyncService"
 import type StateManager from "../StateManager";
 import Clock from "@/Clock";
 
-import { replicatedStateSource } from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
+import { isChainProven } from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import { timeoutWaitTime as timeoutWaitTimeSeconds } from "@/types";
 import { Address, BlockHeight, Bytes, ForkId, Timestamp } from "@/types/types";
 import { Logger } from "@/utils";
@@ -142,16 +142,20 @@ export default class ParticipantTimeoutService {
         // window's original creation time, not the new transaction timestamp.
         // Do not submit if that window opened before this timeout became valid;
         // the on-chain race-condition guard repeats this check authoritatively.
-        if (
-            await this.doesWindowPredateTimeout(
-                await replicatedStateSource(
-                    sm.diamondStateMachine.localDiamondContract,
-                    sm.stateChannelManagerContract
+        const doesWindowPredate = await this.readReplicated(
+            (contract) =>
+                this.doesWindowPredateTimeout(
+                    contract,
+                    forkId,
+                    timeoutMinTimestamp
                 ),
-                forkId,
-                timeoutMinTimestamp
-            )
-        ) {
+            forkId,
+            blockHeight,
+            participantAddress,
+            isForced
+        );
+        if (doesWindowPredate === undefined) return;
+        if (doesWindowPredate) {
             this.logger.info(
                 "tryTimeoutParticipant - existing dispute window predates timeout deadline; not submitting",
                 { forkId, blockHeight, participantAddress, timeoutMinTimestamp }
@@ -239,17 +243,24 @@ export default class ParticipantTimeoutService {
         }
         // No race condition on previous block on-chain calldata
 
-        // (local) check if current block calldata slot is occupied on-chain
-        const replicated = await replicatedStateSource(
-            sm.diamondStateMachine.localDiamondContract,
-            sm.stateChannelManagerContract
-        );
-        let commitment = await replicated.getBlockCallDataCommitment(
-            sm.channelId,
-            forkId,
-            blockHeight,
-            participantAddress
-        );
+        // check if the current block's calldata slot is occupied on-chain:
+        // the local diamond's copy, or the chain while its reads are proven
+        const readCommitment = () =>
+            this.readReplicated(
+                (contract) =>
+                    contract.getBlockCallDataCommitment(
+                        sm.channelId,
+                        forkId,
+                        blockHeight,
+                        participantAddress
+                    ),
+                forkId,
+                blockHeight,
+                participantAddress,
+                isForced
+            );
+        let commitment = await readCommitment();
+        if (!commitment) return;
         if (commitment.found) {
             // Commitment found, but block not accepted by BlockConfirmation pipeline
             return await this.onPostedCommitment(
@@ -296,13 +307,10 @@ export default class ParticipantTimeoutService {
         if (updatedBlock?.onChainTimestamp) {
             return; // block found and accepted
         }
-        // Check locally again - if scheduled on-chain validation found a block -> local evm is synced
-        commitment = await replicated.getBlockCallDataCommitment(
-            sm.channelId,
-            forkId,
-            blockHeight,
-            participantAddress
-        );
+        // Check again - if scheduled on-chain validation found a block, the
+        // local evm is synced (or the chain answers, while its reads are proven)
+        commitment = await readCommitment();
+        if (!commitment) return;
         if (commitment.found) {
             // commitment exists on-chain, but block confirmation pipeline didn't accept it
             return await this.onPostedCommitment(
@@ -381,16 +389,37 @@ export default class ParticipantTimeoutService {
     ): Promise<void> {
         const sm = this.stateManager;
         if (!isForced) {
-            this.logger.info(
-                "tryTimeoutParticipant - posted block handed to the pipeline",
-                { forkId, blockHeight, participantAddress }
-            );
             const posted = sm.storage.blockCalldata.getBlockCalldata(
                 forkId,
                 blockHeight,
                 participantAddress
             );
-            if (posted) await sm.blockQueueManager.ingestPostedBlock(posted);
+            if (posted) {
+                this.logger.info(
+                    "tryTimeoutParticipant - posted block handed to the pipeline",
+                    { forkId, blockHeight, participantAddress }
+                );
+                await sm.blockQueueManager.ingestPostedBlock(posted);
+                return;
+            }
+            // the chain shows the commitment before its event stored the
+            // calldata (chain reads proven): recover it and check again,
+            // never time out a participant who did post
+            const recovery = await this.tryRecoverCalldata(
+                forkId,
+                blockHeight,
+                participantAddress,
+                isForced,
+                { forkId, height: blockHeight, author: participantAddress }
+            );
+            if (!recovery) return;
+            this.scheduleTimeoutParticipantRetry(
+                forkId,
+                blockHeight,
+                participantAddress,
+                "currentOnChainBlockValidation",
+                isForced
+            );
             return;
         }
         const isWritersTurn = await sm.withMutex(
@@ -555,6 +584,37 @@ export default class ParticipantTimeoutService {
                 target.height,
                 target.author
             );
+        } catch (error) {
+            this.recheckAfterFailedChainRead(
+                error,
+                forkId,
+                blockHeight,
+                participantAddress,
+                isForced
+            );
+            return undefined;
+        }
+    }
+
+    /**
+     * `read` of chain state the local diamond replicates, from the chain
+     * while its reads are proven. A failed chain read re-arms the check and
+     * gives `undefined`, so a due timeout survives an RPC outage; a local
+     * diamond read fails as before.
+     */
+    private async readReplicated<T>(
+        read: (contract: StateChannelManagerInterface) => Promise<T>,
+        forkId: ForkId,
+        blockHeight: BlockHeight,
+        participantAddress: Address,
+        isForced: boolean
+    ): Promise<T | undefined> {
+        const sm = this.stateManager;
+        const chain = sm.stateChannelManagerContract;
+        if (!(await isChainProven(chain)))
+            return await read(sm.diamondStateMachine.localDiamondContract);
+        try {
+            return await read(chain);
         } catch (error) {
             this.recheckAfterFailedChainRead(
                 error,

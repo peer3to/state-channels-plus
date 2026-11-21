@@ -105,6 +105,28 @@ the endpoints, the question is kept once answered or refused as not served (-326
 counts are logged once at destroy. The sidecar, `proveFrontierStorageBlock.ts`, the re-proof interval and
 the `LIGHT_CLIENT` and `LIGHT_CLIENT_REPROOF_BLOCKS` keys are removed.
 
+S4 on 2026-11-21, for [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9) and [`REQ-LC-11-MTCBF9` (With the reads compared, each answer is checked against the endpoint's at its…)](../specification/runtime/light-client.md#req-lc-11-mtcbf9). `isChainProven` and `replicatedStateSource` in
+[provenChainReads.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/provenChainReads.ts.md)
+are the one owner of the switch: the first asks the chain access's `answersFromProvenState` at each
+read (an endpoint that has not answered whether it serves the light client counts as not proven), the
+second returns the chain contract while proven and the local one otherwise.
+`MultiRpcProvider.answersFromProvenState` is false by default and its
+[LightClientRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/LightClientRpcProvider.ts.md)
+override is true only when the endpoint lists the light client methods. The same provider has the
+compare mode: each local answer is asked of the endpoint by Ethereum block hash and a difference is
+counted and logged. `LocalReadParser.paramsAtBlock` reads the block a request names, and
+[LightClient.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/LightClient.ts.md)
+returns each answer with its block. `preferLocal` takes a fourth argument that says whether reads are
+proven, and the local-first sites pass it, so the chain answers alone while proven.
+[AgreementManager.ts](../implementation/source/src/agreementManager/AgreementManager.ts.md) skips the
+mirror's state-proof tier while proven and decides at construction how a proof starts. The replicated
+reads moved to the chain are in `ParticipantTimeoutService` (window time, commitment, and the
+participant-timeout re-arm after a failed chain read), `ChannelJoinService` and `MembershipService`
+(`isSignerPendingOnChain`), `DisputeValidationService.checkTimeout`, `DisputeBuilder` (window time,
+commitment, slashed participants, anchor) and `SpectateService` (the snapshot a sync starts from).
+Local while proven, by the engineer's two exceptions: the join countersigner's membership check and
+the ingest gate `ValidationService.isDisputedFork`.
+
 ## Discovery joins after the dispose cut — 2026-11-02
 
 What changed (Luke: refuse a late join where it registers):

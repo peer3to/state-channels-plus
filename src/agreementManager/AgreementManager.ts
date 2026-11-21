@@ -158,7 +158,8 @@ class AgreementManager {
 
     /**
      * The proof of `forkId` through `blockHeight` from the local diamond's
-     * anchor (the fork genesis when it has none on this fork): one milestone
+     * anchor, or the chain's while chain reads are proven (the fork genesis
+     * when there is none on this fork): one milestone
      * per finalized participant change, the last milestone found backward
      * from `blockHeight`, then the unfinalized tail. Without a later final
      * point the tail extends the previous milestone, or starts at the anchor
@@ -806,8 +807,8 @@ class AgreementManager {
     /**
      * The latest locally finalized state: the snapshot of the first block of
      * the last threshold milestone this peer can build from its local diamond
-     * anchor over its stored blocks. None when nothing above the anchor is
-     * provably final.
+     * anchor (the chain's while chain reads are proven) over its stored
+     * blocks. None when nothing above the anchor is provably final.
      */
     public getLocalFinalizedSnapshot(
         forkId: ForkId

@@ -698,6 +698,76 @@ export async function stageWindowBeforeTimeoutDeadline(h: MathPeerTestHarness) {
 }
 
 /**
+ * As {@link stageWindowBeforeTimeoutDeadline}, but the observer's local
+ * diamond does not apply the dispute: the window is on the chain only, and
+ * the observer's chain reads count as proven, as with the light client on.
+ */
+export async function stageChainOnlyWindowBeforeTimeoutDeadline(
+    h: MathPeerTestHarness
+) {
+    await h.lifecycle.start(3, 2);
+    const observer = h.getPeer(0);
+    const forkId = h.activeForkId!;
+    const writerAddress = await h
+        .control(observer)
+        .query.getNextToWrite()
+        .request();
+    const writer = h.peers.find((peer) => peer.address === writerAddress)!;
+    const race = await h.rpcStub.holdReductionRace(observer.index);
+    const recorder = await h.rpcStub.recordDisputeSubmissions(observer.index);
+    const mirror = await h.mirror.holdUpdates(
+        observer.index,
+        "onDisputeCommitted"
+    );
+    await h.control(observer).stub.stubProvenChainReads().request();
+    await h
+        .control(h.getPeer(1))
+        .dispute.startSelfRemovalDispute(forkId)
+        .request();
+    await waitFor(
+        async () =>
+            await h.execOnHost(
+                observer,
+                async (sm, args) =>
+                    Number(
+                        await sm.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
+                            sm.channelId,
+                            args.forkId
+                        )
+                    ) !== 0,
+                { forkId }
+            ),
+        h.event.hostExecTimeoutMs()
+    );
+    return {
+        observer,
+        writer,
+        forkId,
+        height: 2,
+        recorder,
+        /** The window creation time the observer's local diamond holds. */
+        localWindowOpenedAt: async () =>
+            await h.execOnHost(
+                observer,
+                async (sm, args) =>
+                    Number(
+                        await sm.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
+                            sm.channelId,
+                            args.forkId
+                        )
+                    ),
+                { forkId }
+            ),
+        restore: async () => {
+            await h.control(observer).stub.restoreProvenChainReads().request();
+            await mirror.release();
+            await recorder.restore();
+            await race.release({ replayEvents: false, keepTasksHeld: true });
+        }
+    };
+}
+
+/**
  * The participants author two blocks from `height`. The observer then holds
  * the later one but not `height`, as after a sync that installed
  * `height + 1` while it missed `height`. Returns the skipped block's author.

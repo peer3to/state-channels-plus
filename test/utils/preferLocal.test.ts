@@ -244,4 +244,51 @@ describe("Unit: preferLocal", () => {
         expect(localReads).to.equal(0);
         expect(chainReads).to.equal(1);
     });
+
+    it("propagates the chain's rejection while its answers are proven, without a local read", async () => {
+        const failure = new Error("chain read failed");
+        let localReads = 0;
+        const read = preferLocal(
+            async () => {
+                localReads++;
+                return true;
+            },
+            async () => {
+                throw failure;
+            },
+            (isValid) => isValid,
+            async () => true
+        );
+
+        await read.then(
+            () => expect.fail("the chain's rejection must propagate"),
+            (error: unknown) => expect(error).to.equal(failure)
+        );
+        expect(localReads).to.equal(0);
+    });
+
+    it("propagates a failure to tell whether the chain is proven, without a local or chain read", async () => {
+        const failure = new Error("the endpoint's methods could not be read");
+        let reads = 0;
+        const read = preferLocal(
+            async () => {
+                reads++;
+                return true;
+            },
+            async () => {
+                reads++;
+                return true;
+            },
+            (isValid) => isValid,
+            async () => {
+                throw failure;
+            }
+        );
+
+        await read.then(
+            () => expect.fail("the failure must propagate"),
+            (error: unknown) => expect(error).to.equal(failure)
+        );
+        expect(reads).to.equal(0);
+    });
 });

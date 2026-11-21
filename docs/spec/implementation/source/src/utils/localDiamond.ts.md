@@ -41,3 +41,5 @@ Local-first read with chain fallback
 - [x] `UNIT-TEST-PREFER-LOCAL-1-XC95T6.P11` — a local EVM revert propagates as the same error with zero chain reads
 - [x] `UNIT-TEST-PREFER-LOCAL-1-XC95T6.P12` — a real contract call reverting in the local executor propagates as the same error with zero chain reads
 - [x] `UNIT-TEST-PREFER-LOCAL-1-XC95T6.P13` — the chain's reads proven: the chain answers alone with one chain read and no local read
+- [x] `UNIT-TEST-PREFER-LOCAL-1-XC95T6.P14` — the chain's reads proven and the chain read rejects: the same rejection, no local read
+- [x] `UNIT-TEST-PREFER-LOCAL-1-XC95T6.P15` — the check whether the chain's reads are proven rejects: that rejection, no local or chain read

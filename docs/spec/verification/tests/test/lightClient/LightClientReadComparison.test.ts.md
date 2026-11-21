@@ -17,3 +17,9 @@ read, to make the endpoint disagree or give no answer.
 - `asks the node each read it answers at the block that proved it, and finds them alike, a revert included`: REQ-LC-11-MTCBF9.T1.P1
 - `logs an error and counts a read the node answers otherwise at the same block, and keeps the proven answer`: REQ-LC-11-MTCBF9.T1.P2
 - `counts a read the node gives no answer to at that block as not compared, with a warning`: REQ-LC-11-MTCBF9.T1.P3
+- `names the block that proved the answer when it asks the node, after the chain has moved past it`: REQ-LC-11-MTCBF9.T1.P8
+- `counts a call it answers with a value that the node answers with a revert as differed`: REQ-LC-11-MTCBF9.T1.P9
+- `counts a call it answers with a revert that the node answers with a value as differed`: REQ-LC-11-MTCBF9.T1.P10
+- `counts a revert the node answers with other revert data as differed`: REQ-LC-11-MTCBF9.T1.P11
+- `counts a call the node fails without revert data as differed`: REQ-LC-11-MTCBF9.T1.P12
+- `counts a read whose node connection ends before the node answers as not compared, with a warning`: REQ-LC-11-MTCBF9.T1.P13

@@ -307,6 +307,7 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         block: ProvenBlock
     ): Promise<void> {
         let nodeAnswer: ComparedAnswer | undefined;
+        let failure: unknown;
         try {
             const sent = await node.trySendOnCurrentSocket(
                 request.method,
@@ -315,15 +316,16 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
             nodeAnswer = sent && { result: sent.result };
         } catch (error) {
             nodeAnswer = comparedAnswerOf(error);
-            if (!nodeAnswer)
-                this.logger.warn("RPC node did not answer a compared read", {
-                    ...LoggerUtils.getChainReadMetadata(request),
-                    block: block.number,
-                    error
-                });
+            failure = error;
         }
         if (!nodeAnswer) {
+            // no answer, or the node's socket ended before it answered
             this.readComparisons.notCompared++;
+            this.logger.warn("RPC node did not answer a compared read", {
+                ...LoggerUtils.getChainReadMetadata(request),
+                block: block.number,
+                ...(failure !== undefined && { error: failure })
+            });
             return;
         }
         const localAnswer: ComparedAnswer =

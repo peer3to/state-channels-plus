@@ -821,7 +821,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             }
 
             // 2.9) verify stateProof from the latest trusted start: the local
-            // finalized state, the local diamond's anchor, then the chain's
+            // finalized state, the local diamond's anchor (skipped while chain
+            // reads are proven), then the chain's
             const forkId = genesisSnapshot.forkID;
             const agreementManager = stateManager.agreementManager;
             const evidence = {
@@ -994,7 +995,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         }
 
         // -------- Collect what is needed to prove the latestForkGenesisSnapshot starting from the onChainSnapshot --------
-        // We'll do all the computation on our local state.
+        // We'll do all the computation on our local state, starting from the
+        // local diamond's snapshot, or the chain's while its reads are proven.
         // If our local state is not synced we shouldn't even be syncing the spectator and we probably have bigger problems
 
         // the chain's snapshot while its answers are proven, as the
@@ -1213,7 +1215,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             );
         }
 
-        // the run above the local diamond's anchor when it is on this fork:
+        // the run above the local diamond's anchor (the chain's while its
+        // reads are proven) when it is on this fork:
         // the requester judges only once its chain head reaches `chainBlock`,
         // so its chain anchor is not behind this one, and nothing below it
         // is kept. An anchor at or above the final point leaves nothing.

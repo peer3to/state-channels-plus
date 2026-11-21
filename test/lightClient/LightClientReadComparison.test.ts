@@ -1,12 +1,20 @@
 // @distributed-requires: lightClient
+import { REVERT_ERROR_CODE } from "@/evm/p2pRuntime/rpcNodes/lightClient/LocalReadParser";
+import type LightClientRpcProvider from "@/evm/p2pRuntime/rpcNodes/LightClientRpcProvider";
 import { LightClientProviderFixture } from "@test/fixtures/lightClient/LightClientProviderFixture";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { Contract, toBeHex } from "ethers";
+import { Contract, Interface, toBeHex } from "ethers";
 import { ethers } from "hardhat";
 
 const DIFFERENT_ANSWER =
     "Light client answered a read otherwise than the RPC node at the same block";
 const NOT_ANSWERED = "RPC node did not answer a compared read";
+/** Revert data of a plain `revert("other")`. */
+const REVERT_DATA = new Interface(["error Error(string)"]).encodeErrorResult(
+    "Error",
+    ["other"]
+);
 
 describe("Light client read comparison", function () {
     let fixture: LightClientProviderFixture | undefined;
@@ -108,4 +116,164 @@ describe("Light client read comparison", function () {
         expect(fixture.loggedWarningMessages()).to.include(NOT_ANSWERED);
         expect(fixture.loggedErrors()).to.deep.equal([]);
     });
+
+    it("names the block that proved the answer when it asks the node, after the chain has moved past it", async function () {
+        fixture = await LightClientProviderFixture.start({
+            comparesReads: true
+        });
+        const { node, provider, proxy } = fixture;
+        const abi = await numberStorageInterface();
+        const address = await fixture.deployNumberStorage();
+        await node.transact(address, abi.encodeFunctionData("setValue", [42n]));
+        const releaseCompared = proxy.holdRequests("eth_call", 1);
+
+        const read = new Contract(address, abi, provider).getValue();
+        await waitFor(() => proxy.forwardedCount("eth_call") === 1);
+        // the Substrate block the light client proved the call at
+        const proofRequest = proxy.forwardedRequests
+            .filter(({ method }) => method === "state_getReadProof")
+            .at(-1)!;
+        const provedAt = (proofRequest.params as string[])[1];
+        const header = (await node.provider.send("chain_getHeader", [
+            provedAt
+        ])) as { number: string };
+        const provedNumber = Number(header.number);
+        await waitFor(
+            async () => (await node.provider.getBlockNumber()) > provedNumber
+        );
+        releaseCompared();
+
+        expect(await read).to.equal(42n);
+        const compared = proxy.forwardedRequests
+            .filter(({ method }) => method === "eth_call")
+            .at(-1)!;
+        expect((compared.params as unknown[])[1]).to.deep.equal({
+            blockHash: (await node.provider.getBlock(provedNumber))!.hash
+        });
+        expect(provider.readComparisons).to.deep.equal({
+            matched: 1,
+            differed: 0,
+            notCompared: 0
+        });
+    });
+
+    it("counts a call it answers with a value that the node answers with a revert as differed", async function () {
+        fixture = await LightClientProviderFixture.start({
+            comparesReads: true
+        });
+        const { node, provider, proxy } = fixture;
+        const abi = await numberStorageInterface();
+        const address = await fixture.deployNumberStorage();
+        await node.transact(address, abi.encodeFunctionData("setValue", [42n]));
+        proxy.rejectRequests("eth_call", {
+            code: REVERT_ERROR_CODE,
+            message: "execution reverted",
+            data: REVERT_DATA
+        });
+
+        expect(await new Contract(address, abi, provider).getValue()).to.equal(
+            42n
+        );
+
+        expect(provider.readComparisons.differed).to.equal(1);
+        expect(fixture.loggedErrorMessages()).to.deep.equal([DIFFERENT_ANSWER]);
+    });
+
+    it("counts a call it answers with a revert that the node answers with a value as differed", async function () {
+        fixture = await LightClientProviderFixture.start({
+            comparesReads: true
+        });
+        const { provider, proxy } = fixture;
+        const abi = await numberStorageInterface();
+        const address = await fixture.deployNumberStorage();
+        proxy.answerRequests("eth_call", toBeHex(7, 32));
+
+        const revert = await revertOf(provider, address, abi);
+
+        expect(revert).to.have.property("reason", "not today");
+        expect(provider.readComparisons.differed).to.equal(1);
+        expect(fixture.loggedErrorMessages()).to.deep.equal([DIFFERENT_ANSWER]);
+    });
+
+    it("counts a revert the node answers with other revert data as differed", async function () {
+        fixture = await LightClientProviderFixture.start({
+            comparesReads: true
+        });
+        const { provider, proxy } = fixture;
+        const abi = await numberStorageInterface();
+        const address = await fixture.deployNumberStorage();
+        proxy.rejectRequests("eth_call", {
+            code: REVERT_ERROR_CODE,
+            message: "execution reverted",
+            data: REVERT_DATA
+        });
+
+        const revert = await revertOf(provider, address, abi);
+
+        expect(revert).to.have.property("reason", "not today");
+        expect(provider.readComparisons.differed).to.equal(1);
+        expect(fixture.loggedErrorMessages()).to.deep.equal([DIFFERENT_ANSWER]);
+    });
+
+    it("counts a call the node fails without revert data as differed", async function () {
+        fixture = await LightClientProviderFixture.start({
+            comparesReads: true
+        });
+        const { node, provider, proxy } = fixture;
+        const abi = await numberStorageInterface();
+        const address = await fixture.deployNumberStorage();
+        await node.transact(address, abi.encodeFunctionData("setValue", [42n]));
+        proxy.rejectRequests("eth_call", {
+            code: -32000,
+            message: "out of gas"
+        });
+
+        expect(await new Contract(address, abi, provider).getValue()).to.equal(
+            42n
+        );
+
+        expect(provider.readComparisons.differed).to.equal(1);
+        expect(fixture.loggedErrorMessages()).to.deep.equal([DIFFERENT_ANSWER]);
+    });
+
+    it("counts a read whose node connection ends before the node answers as not compared, with a warning", async function () {
+        fixture = await LightClientProviderFixture.start({
+            comparesReads: true
+        });
+        const { node, provider, proxy } = fixture;
+        const abi = await numberStorageInterface();
+        const address = await fixture.deployNumberStorage();
+        await node.transact(address, abi.encodeFunctionData("setValue", [42n]));
+        proxy.holdRequests("eth_call", 1);
+
+        const read = new Contract(address, abi, provider).getValue();
+        await waitFor(() => proxy.forwardedCount("eth_call") === 1);
+        proxy.cut();
+
+        expect(await read).to.equal(42n);
+        proxy.restore();
+        expect(provider.readComparisons).to.deep.equal({
+            matched: 0,
+            differed: 0,
+            notCompared: 1
+        });
+        expect(fixture.loggedWarningMessages()).to.include(NOT_ANSWERED);
+    });
 });
+
+/** The revert of `revertWithMessage("not today")` read through `provider`. */
+async function revertOf(
+    provider: LightClientRpcProvider,
+    address: string,
+    abi: Interface
+): Promise<unknown> {
+    return await provider
+        .call({
+            to: address,
+            data: abi.encodeFunctionData("revertWithMessage", ["not today"])
+        })
+        .then(
+            () => expect.fail("the call must revert"),
+            (error: unknown) => error
+        );
+}
