@@ -1,6 +1,7 @@
 // @distributed-requires: lightClient
 import LightClientRpcProvider from "@/evm/p2pRuntime/rpcNodes/LightClientRpcProvider";
 import {
+    BLOB_BASE_FEE_CONTRACT,
     BLOCK_VALUES_CONTRACT,
     CALLER_AND_ORIGIN_CONTRACT,
     INVALID_OPCODE_CONTRACT,
@@ -545,6 +546,23 @@ describe("Light client provider", function () {
             unsupported: 0
         });
         expect(fixture.forwardedCount("eth_call")).to.equal(2);
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("leaves to the node a call that reads the blob base fee, and answers with the node's answer", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider } = fixture;
+        const blobBaseFee = { to: await node.deploy(BLOB_BASE_FEE_CONTRACT) };
+
+        expect(await outcomeOf(provider.call(blobBaseFee))).to.deep.equal(
+            await outcomeOf(node.provider.call(blobBaseFee))
+        );
+
+        expect(provider.lightClientCounters).to.deep.include({
+            leftToNodes: 1,
+            failed: 0
+        });
+        expect(fixture.forwardedCount("eth_call")).to.equal(1);
         expect(fixture.loggedErrors()).to.deep.equal([]);
     });
 

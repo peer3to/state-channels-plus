@@ -1,4 +1,5 @@
 // @distributed-requires: lightClient
+import { SUBSCRIPTION_RETRY_DELAY_MS } from "@/evm/p2pRuntime/rpcNodes/lightClient/LightClientSubscriptions";
 import { tryHandleEvmError } from "@/utils/evmErrorHandler";
 import { PARTITION_CONTRACT } from "@test/fixtures/lightClient/LightClientNodeFixture";
 import { LightClientProviderFixture } from "@test/fixtures/lightClient/LightClientProviderFixture";
@@ -512,6 +513,75 @@ describe("Light client followed channel", function () {
             resubscriptions: 1
         });
         expect(fixture.loggedErrors()).to.deep.equal([]);
+        expect(fixture.loggedWarningMessages()).to.include(
+            "RPC node ended a light client subscription; subscribing again"
+        );
+    });
+
+    it("opens a subscription whose pushes keep being refused again at most once per block time", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        // every push from now on, sync included, carries an Ethereum header the digest does not name
+        proxy.changeNotifications(PUSHED_BLOCK, (params) => {
+            const pushed = params as { result: { ethereumHeader: string } };
+            pushed.result.ethereumHeader = "0x00";
+            return pushed;
+        });
+        await waitFor(() => proxy.forwardedCount(SUBSCRIBE) === 2);
+        const reopenedAt = Date.now();
+
+        await waitFor(() => proxy.forwardedCount(SUBSCRIBE) === 4);
+
+        expect(Date.now() - reopenedAt).to.be.at.least(
+            2 * SUBSCRIPTION_RETRY_DELAY_MS
+        );
+        expect(provider.pushedStateCounters.resubscriptions).to.be.at.least(3);
+    });
+
+    it("leaves an endpoint without the light client endpoints unsubscribed, and its reads to it once it serves the requests", async function () {
+        fixture = await LightClientProviderFixture.start({ endpoints: 2 });
+        const { node, provider, proxies } = fixture;
+        const [first, second] = proxies;
+        const { methods } = (await node.provider.send("rpc_methods", [])) as {
+            methods: string[];
+        };
+        // the second endpoint is a node without the light client endpoints
+        second.answerRequests("rpc_methods", {
+            methods: methods.filter(
+                (method) => !method.startsWith("lightClient_")
+            )
+        });
+        second.rejectRequests(SUBSCRIBE, {
+            code: -32601,
+            message: "Method not found"
+        });
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        await waitFor(() => second.forwardedCount(SUBSCRIBE) === 1);
+        const followedAt = await node.provider.getBlockNumber();
+        await waitFor(
+            async () => (await node.provider.getBlockNumber()) >= followedAt + 3
+        );
+        expect(second.forwardedCount(SUBSCRIBE)).to.equal(1);
+
+        first.cut();
+        await waitFor(() => !provider.nodes[0].isConnected);
+
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(0, 32)
+        );
+        expect(second.forwardedCount("rpc_methods")).to.equal(1);
+        expect(provider.lightClientCounters).to.deep.include({
+            unsupported: 1,
+            failed: 0
+        });
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+        expect(fixture.loggedInfoMessages()).to.include.members([
+            "RPC node doesn't support LC endpoints; its socket is not subscribed",
+            "RPC node doesn't support LC endpoints; it answers the chain reads itself"
+        ]);
     });
 
     it("answers a partition read while another read waits for its proof, and the waiting read keeps its block", async function () {

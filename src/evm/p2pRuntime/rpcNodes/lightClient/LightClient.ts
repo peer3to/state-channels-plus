@@ -18,6 +18,7 @@ import type {
 } from "./proof/AProvenStateReader";
 import type APushedPartition from "./proof/APushedPartition";
 import { createEvm } from "@/evm/EvmFactory";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 import { Mutex } from "@/utils/Mutex";
 import type { EVM, EVMOpts } from "@ethereumjs/evm";
@@ -189,6 +190,7 @@ export class LightClient {
             this.options.pushedState.refusedBlocks++;
             this.options.logger.error("Light client refused a pushed block", {
                 contract: subscription.contract,
+                ...LoggerUtils.getRpcNodeMetadata(subscription.node.url),
                 error
             });
             return false;
@@ -445,7 +447,12 @@ export class LightClient {
                 prevRandao: getBytes(environment.prevRandao),
                 gasLimit: environment.gasLimit,
                 baseFeePerGas: environment.baseFeePerGas,
-                getBlobGasPrice: () => undefined
+                // the chain has no blobs, and its blob base fee is not in the state a read proves
+                getBlobGasPrice: () => {
+                    throw new NotLocalError(
+                        "The blob base fee is not proven here"
+                    );
+                }
             }
         };
     }

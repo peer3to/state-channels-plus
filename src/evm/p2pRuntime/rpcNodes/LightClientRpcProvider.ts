@@ -17,6 +17,7 @@ import MultiRpcProvider from "./MultiRpcProvider";
 import { isMethodNotServed } from "./RpcNodeProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
 import type { ChannelId } from "@/types/types";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 import {
     hexlify,
@@ -76,8 +77,11 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
     private lightClient?: Promise<LightClient>;
     /** The light client once started, for the pushes that arrive meanwhile. */
     private startedLightClient?: LightClient;
-    /** Whether the nodes list the light client endpoints, once they answered. */
-    private endpointsListed?: Promise<boolean>;
+    /** Whether each node lists the light client endpoints, once it answered. */
+    private readonly endpointsListed = new Map<
+        RpcNodeProvider,
+        Promise<boolean>
+    >();
     /** The start of the subscriptions, once a channel is followed; unset again after it failed. */
     private subscriptionsStart?: Promise<void>;
     /** The pending retry of a failed start of the subscriptions. */
@@ -103,22 +107,37 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
     }
 
     // Overrides MultiRpcProvider.followChannel: the nodes push the channel's
-    // partition of the contract's state from now on.
+    // partition of the contract's state from now on. A failure is logged and
+    // never reaches the runtime, which works without the light client.
     override followChannel(contract: string, channelId: ChannelId): void {
-        this.subscriptions.follow(
-            contract.toLowerCase(),
-            channelTopic(channelId)
-        );
-        this.startSubscriptions();
+        try {
+            this.subscriptions.follow(
+                contract.toLowerCase(),
+                channelTopic(channelId)
+            );
+            this.startSubscriptions();
+        } catch (error) {
+            this.logger.error("Light client could not follow the channel", {
+                contract,
+                error
+            });
+        }
     }
 
     // Overrides MultiRpcProvider.unfollowChannel: ends what followChannel
-    // began.
+    // began, and like it never throws.
     override unfollowChannel(contract: string, channelId: ChannelId): void {
-        this.subscriptions.unfollow(
-            contract.toLowerCase(),
-            channelTopic(channelId)
-        );
+        try {
+            this.subscriptions.unfollow(
+                contract.toLowerCase(),
+                channelTopic(channelId)
+            );
+        } catch (error) {
+            this.logger.error("Light client could not unfollow the channel", {
+                contract,
+                error
+            });
+        }
     }
 
     // Overrides MultiRpcProvider.destroy: also ends the subscriptions, and
@@ -150,10 +169,13 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         read: LocalRead
     ): Promise<JsonRpcResult | JsonRpcError | undefined> {
         try {
-            if (!(await this.hasEndpoints())) {
+            const node = this.servingNode();
+            if (!node || !(await this.hasEndpoints(node))) {
                 this.lightClientCounters.unsupported++;
                 return undefined;
             }
+            // a node that serves the endpoints now pushes what is followed
+            this.startSubscriptions();
             return {
                 id: request.id,
                 ...(await read(await this.getLightClient()))
@@ -168,7 +190,7 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
                 this.logger.error(
                     "Light client failed a read; asking the nodes",
                     {
-                        method: request.method,
+                        ...LoggerUtils.getChainReadMetadata(request),
                         reason:
                             error instanceof StorageProofError
                                 ? "proof rejected"
@@ -213,13 +235,20 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
     }
 
     /**
-     * Starts the subscriptions once the nodes list the light client endpoints
-     * and the light client runs, so that it takes the first push. Without the
-     * endpoints they stay off. A failed start is logged and tried again.
+     * Starts the subscriptions once the serving node lists the light client
+     * endpoints and the light client runs, so that it takes the first push.
+     * Without the endpoints they stay off until the next channel is followed.
+     * A failed start is logged and tried again.
      */
     private startSubscriptions(): void {
         this.subscriptionsStart ??= (async () => {
-            if (!(await this.hasEndpoints())) return;
+            const node = this.servingNode();
+            // awaited even without a node, so that the reset follows the assignment
+            const isServed = await (node ? this.hasEndpoints(node) : false);
+            if (!isServed) {
+                this.subscriptionsStart = undefined;
+                return;
+            }
             await this.getLightClient();
             this.subscriptions.start();
         })().catch((error: unknown) => {
@@ -235,24 +264,33 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         });
     }
 
-    private hasEndpoints(): Promise<boolean> {
-        // an unanswered question is not kept: the next read asks again
-        this.endpointsListed ??= this.askForEndpoints().catch((error) => {
-            this.endpointsListed = undefined;
-            throw error;
-        });
-        return this.endpointsListed;
+    /** Whether `node` lists the light client endpoints; it is asked once. */
+    private hasEndpoints(node: RpcNodeProvider): Promise<boolean> {
+        let listed = this.endpointsListed.get(node);
+        if (!listed) {
+            // an unanswered question is not kept: the next read asks again
+            listed = this.askForEndpoints(node).catch((error) => {
+                this.endpointsListed.delete(node);
+                throw error;
+            });
+            this.endpointsListed.set(node, listed);
+        }
+        return listed;
     }
 
-    private async askForEndpoints(): Promise<boolean> {
-        const listed = await this.requestNode("rpc_methods", []).then(
-            (answer) => (answer as { methods?: unknown } | null)?.methods,
-            (error) => {
+    private async askForEndpoints(node: RpcNodeProvider): Promise<boolean> {
+        const sent = await node
+            .trySendOnCurrentSocket("rpc_methods", [])
+            .catch((error: unknown) => {
                 // a node without the Substrate RPC does not serve rpc_methods
-                if (isMethodNotServed(error)) return undefined;
+                if (isMethodNotServed(error)) return { result: undefined };
                 throw error;
-            }
-        );
+            });
+        if (!sent)
+            throw new Error(
+                "The RPC node's socket ended before it listed its methods"
+            );
+        const listed = (sent.result as { methods?: unknown } | null)?.methods;
         const methods: unknown[] = Array.isArray(listed) ? listed : [];
         const hasEndpoints =
             methods.includes(LIGHT_CLIENT_METHODS.subscribe) &&
@@ -260,7 +298,8 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         // the light client is optional: without the endpoints it is off
         if (!hasEndpoints)
             this.logger.info(
-                "RPC node doesn't support LC endpoints; it answers the chain reads itself"
+                "RPC node doesn't support LC endpoints; it answers the chain reads itself",
+                LoggerUtils.getRpcNodeMetadata(node.url)
             );
         return hasEndpoints;
     }

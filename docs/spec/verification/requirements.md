@@ -600,19 +600,19 @@ Specification cases tested: 7/7.
 Specification cases tested: 15/16. Untested: T1.P16.
 
 [`REQ-LC-2-PMY1VG` (What cannot be answered from proven state goes to the endpoint)](../specification/runtime/light-client.md#req-lc-2-pmy1vg)
-Specification cases tested: 6/6.
+Specification cases tested: 7/7.
 
 [`REQ-LC-3-W7RRHM` (A failed read falls back to the endpoint and is made known)](../specification/runtime/light-client.md#req-lc-3-w7rrhm)
 Specification cases tested: 4/4.
 
 [`REQ-LC-4-E29Y46` (The light client is on when the endpoint serves it)](../specification/runtime/light-client.md#req-lc-4-e29y46)
-Specification cases tested: 5/5.
+Specification cases tested: 6/6.
 
 [`REQ-LC-5-MM0BM9` (A followed channel is subscribed on every connection)](../specification/runtime/light-client.md#req-lc-5-mm0bm9)
 Specification cases tested: 9/9.
 
 [`REQ-LC-7-W8WDN3` (A refused or ended subscription syncs again and is made known)](../specification/runtime/light-client.md#req-lc-7-w8wdn3)
-Specification cases tested: 2/2.
+Specification cases tested: 3/3.
 
 [`REQ-LC-8-BBYC51` (A participant follows the channel it has selected)](../specification/runtime/light-client.md#req-lc-8-bbyc51)
 Specification cases tested: 6/10. Untested: T1.P1, T1.P2, T1.P3, T1.P4.

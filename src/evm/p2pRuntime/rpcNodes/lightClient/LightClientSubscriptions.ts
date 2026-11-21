@@ -1,6 +1,6 @@
 import { LIGHT_CLIENT_METHODS } from "./lightClientWire";
 import type RpcNodeProvider from "../RpcNodeProvider";
-import type { NodeSocket } from "../RpcNodeProvider";
+import { isMethodNotServed, type NodeSocket } from "../RpcNodeProvider";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 
@@ -63,7 +63,9 @@ type SubscribedSocket = {
      */
     early: Map<SubscriptionId, { params: unknown; receivedAt: number }[]>;
     /** Whether a subscribe on this socket waits for its id. */
-    subscribing: boolean;
+    isSubscribing: boolean;
+    /** False once the node answered that it does not serve the light client endpoints. */
+    isServed: boolean;
     /** This socket's subscription changes, one after another. */
     changes: Promise<void>;
     /** The pending retry of a failed change, if one is pending. */
@@ -87,7 +89,7 @@ export class LightClientSubscriptions {
     private readonly unwatchNodes: (() => void)[] = [];
     private nextKey = 0;
     /** Whether the sockets subscribe: what is followed before it is only kept. */
-    private started = false;
+    private hasStarted = false;
 
     constructor(
         nodes: readonly RpcNodeProvider[],
@@ -122,8 +124,8 @@ export class LightClientSubscriptions {
 
     /** Subscribes what is followed, from now on: the listener takes what the nodes push. */
     start(): void {
-        if (this.started) return;
-        this.started = true;
+        if (this.hasStarted) return;
+        this.hasStarted = true;
         this.subscribeSockets();
     }
 
@@ -142,7 +144,8 @@ export class LightClientSubscriptions {
             held: new Map(),
             byId: new Map(),
             early: new Map(),
-            subscribing: false,
+            isSubscribing: false,
+            isServed: true,
             changes: Promise.resolve(),
             unwatchNotifications: socket.watchNotifications(
                 LIGHT_CLIENT_METHODS.notification,
@@ -169,7 +172,7 @@ export class LightClientSubscriptions {
         const held = subscribed.byId.get(subscription);
         if (!held) {
             // only the id a subscribe still waits for can be one of ours
-            if (!subscribed.subscribing) return;
+            if (!subscribed.isSubscribing) return;
             let early = subscribed.early.get(subscription);
             if (!early) {
                 if (subscribed.early.size >= MAX_EARLY_SUBSCRIPTIONS) return;
@@ -181,13 +184,26 @@ export class LightClientSubscriptions {
             return;
         }
         // the node ends a subscription that fell behind with an error
+        if (error !== undefined)
+            this.logger.warn(
+                "RPC node ended a light client subscription; subscribing again",
+                {
+                    ...LoggerUtils.getRpcNodeMetadata(subscribed.node.url),
+                    error
+                }
+            );
         const accepted =
             error === undefined &&
             this.listener.pushed(held.key, result, receivedAt);
         if (!accepted) this.reopen(socket, subscribed, held);
     }
 
-    /** Opens `held` again: the node syncs the new subscription from the whole partition. */
+    /**
+     * Opens `held` again after a block time: the node syncs the new
+     * subscription from the whole partition. The wait keeps a node whose
+     * pushes keep failing from being asked for a whole partition every round
+     * trip.
+     */
     private reopen(
         socket: NodeSocket,
         subscribed: SubscribedSocket,
@@ -201,36 +217,61 @@ export class LightClientSubscriptions {
         subscribed.changes = subscribed.changes.then(() =>
             this.unsubscribe(socket, subscribed, held)
         );
-        this.subscribeSockets();
+        this.subscribeLater(socket, subscribed);
     }
 
     /** Brings every socket's subscriptions to what is followed now, once started. */
     private subscribeSockets(): void {
-        if (!this.started) return;
+        if (!this.hasStarted) return;
         for (const [socket, subscribed] of this.sockets)
             this.subscribeSocket(socket, subscribed);
     }
 
-    /** Brings `socket`'s subscriptions to what is followed now; a failure is tried again later. */
+    /**
+     * Brings `socket`'s subscriptions to what is followed now; a failure is
+     * tried again later. A socket whose node does not serve the light client
+     * endpoints is left alone.
+     */
     private subscribeSocket(
         socket: NodeSocket,
         subscribed: SubscribedSocket
     ): void {
+        if (!subscribed.isServed) return;
         subscribed.changes = subscribed.changes
             .then(() => this.subscribe(socket, subscribed))
             .catch((error: unknown) => {
                 // a socket that ended took its subscriptions with it
                 if (socket.destroyed || !this.sockets.has(socket)) return;
+                const metadata = LoggerUtils.getRpcNodeMetadata(
+                    subscribed.node.url
+                );
+                // the light client is optional: this node's socket stays without it
+                if (isMethodNotServed(error)) {
+                    subscribed.isServed = false;
+                    this.logger.info(
+                        "RPC node doesn't support LC endpoints; its socket is not subscribed",
+                        metadata
+                    );
+                    return;
+                }
                 this.logger.error("Light client subscription failed", {
-                    ...LoggerUtils.getRpcNodeMetadata(subscribed.node.url),
+                    ...metadata,
                     error
                 });
-                subscribed.retry ??= setTimeout(() => {
-                    subscribed.retry = undefined;
-                    if (this.sockets.get(socket) === subscribed)
-                        this.subscribeSocket(socket, subscribed);
-                }, SUBSCRIPTION_RETRY_DELAY_MS);
+                this.subscribeLater(socket, subscribed);
             });
+    }
+
+    /** Brings `socket`'s subscriptions to what is followed after a block time. */
+    private subscribeLater(
+        socket: NodeSocket,
+        subscribed: SubscribedSocket
+    ): void {
+        subscribed.retry ??= setTimeout(() => {
+            subscribed.retry = undefined;
+            if (this.sockets.get(socket) === subscribed)
+                this.subscribeSocket(socket, subscribed);
+        }, SUBSCRIPTION_RETRY_DELAY_MS);
     }
 
     private async subscribe(
@@ -249,18 +290,18 @@ export class LightClientSubscriptions {
             const key = String(this.nextKey++);
             this.listener.subscribed(key, address, subscribed.node);
             let id: SubscriptionId;
-            subscribed.subscribing = true;
+            subscribed.isSubscribing = true;
             try {
                 id = (await socket.send(LIGHT_CLIENT_METHODS.subscribe, [
                     { address, topics }
                 ])) as SubscriptionId;
             } catch (error) {
-                subscribed.subscribing = false;
+                subscribed.isSubscribing = false;
                 subscribed.early.clear();
                 this.listener.unsubscribed(key);
                 throw error;
             }
-            subscribed.subscribing = false;
+            subscribed.isSubscribing = false;
             const subscription = { id, key, topics };
             subscribed.held.set(address, subscription);
             subscribed.byId.set(id, subscription);

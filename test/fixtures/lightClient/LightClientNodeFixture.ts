@@ -109,6 +109,10 @@ export const TRANSIENT_STORAGE_CONTRACT =
     "5c" +
     "60005260206000f3";
 
+/** Creation code of a contract that returns BLOBBASEFEE as one word. */
+export const BLOB_BASE_FEE_CONTRACT =
+    "0x600780600b6000396000f3" + "4a5f5260205ff3";
+
 /** Creation code of a contract that returns CALLER and ORIGIN, one word each. */
 export const CALLER_AND_ORIGIN_CONTRACT =
     "0x600d80600b6000396000f3" + "336000523260205260406000f3";

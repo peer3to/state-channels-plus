@@ -34,6 +34,7 @@ that lies about its best block, more than one endpoint, or a distributed worker.
 - `asks the node for every read and says once that the node lists no light client endpoints`: REQ-LC-4-E29Y46.T1.P1
 - `asks the node once which methods it serves, at the first read the light client may answer`: REQ-LC-4-E29Y46.T1.P6
 - `leaves to the node a call that runs out of gas or hits an invalid opcode locally`: REQ-LC-2-PMY1VG.T1.P3
+- `leaves to the node a call that reads the blob base fee, and answers with the node's answer`: REQ-LC-2-PMY1VG.T1.P7
 - `asks the node for every read when the node answers that it does not know rpc_methods`: REQ-LC-4-E29Y46.T1.P3
 - `asks the node for every read when the node answers, as Hardhat does, that it does not support rpc_methods`: REQ-LC-4-E29Y46.T1.P4
 - `asks the node again which methods it serves when the question failed`: REQ-LC-4-E29Y46.T1.P5
