@@ -34,3 +34,4 @@ Reading one key from a Substrate read proof
 - [x] `UNIT-TEST-STPROOF-1-K1CTJZ.P18` — an odd partial key whose padding nibble is not zero
 - [x] `UNIT-TEST-STPROOF-1-K1CTJZ.P19` — a branch with an empty child bitmap
 - [x] `UNIT-TEST-STPROOF-1-K1CTJZ.P20` — a value length in the big-integer compact form
+- [x] `UNIT-TEST-STPROOF-1-K1CTJZ.P24` — a value of 100 bytes a state version 0 leaf holds inline, its length in the two-byte form

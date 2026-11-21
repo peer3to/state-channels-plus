@@ -38,3 +38,4 @@ reach the participant.
 - `throws for code the proof was not built for`: REQ-STPROOF-4-XK5S64.T3.P4, UNIT-TEST-STPROOF-6-QX77PX.P16
 - `throws when the proof node that carries hashed code is left out`: REQ-STPROOF-4-XK5S64.T3.P5, UNIT-TEST-STPROOF-6-QX77PX.P17
 - `throws when the proven code is not as long as it announces`: REQ-STPROOF-4-XK5S64.T3.P6, UNIT-TEST-STPROOF-6-QX77PX.P18
+- `throws when one byte of any node on the path of an account or its code was changed`: REQ-STPROOF-4-XK5S64.T3.P7, UNIT-TEST-STPROOF-6-QX77PX.P19

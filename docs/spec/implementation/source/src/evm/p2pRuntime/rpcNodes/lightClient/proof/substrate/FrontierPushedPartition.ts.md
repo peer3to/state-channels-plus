@@ -26,3 +26,5 @@ Holding the partition a Frontier node pushes to one subscription
 - [x] `UNIT-TEST-STPROOF-8-F5SF0T.P10` — the nodes no held key uses under the new root are dropped
 - [x] `UNIT-TEST-STPROOF-8-F5SF0T.P11` — a message without the node's stages, or with one of another type; the stages of an accepted message handed on
 - [x] `UNIT-TEST-STPROOF-8-F5SF0T.P12` — a change of the block held is ignored, and a change of an earlier block is refused
+- [x] `UNIT-TEST-STPROOF-8-F5SF0T.P13` — a header whose digest names another Ethereum block; nothing held after; the next sync accepted
+- [x] `UNIT-TEST-STPROOF-8-F5SF0T.P14` — a header whose state root is not the one the proof leads to; nothing held after; the next sync accepted

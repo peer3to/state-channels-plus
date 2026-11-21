@@ -26,3 +26,5 @@ recorded message. The suite needs no node, so it runs in the normal CI tier.
 - `refuses a message without the node's stages and holds nothing until the next sync, and hands on the stages of one it accepts`: REQ-STPROOF-3-NVJGR0.T1.P27, UNIT-TEST-STPROOF-8-F5SF0T.P11
 - `keeps only the proof nodes the held keys use under the new root`: REQ-STPROOF-3-NVJGR0.T1.P26, UNIT-TEST-STPROOF-8-F5SF0T.P10
 - `ignores a change of the block it holds, and refuses one of an earlier block and holds nothing until the next sync`: REQ-STPROOF-3-NVJGR0.T1.P28, UNIT-TEST-STPROOF-8-F5SF0T.P12
+- `refuses a header whose digest names another Ethereum block, and holds nothing until the next sync`: REQ-STPROOF-3-NVJGR0.T1.P29, UNIT-TEST-STPROOF-8-F5SF0T.P13
+- `refuses a header whose state root is not the one its proof leads to, and holds nothing until the next sync`: REQ-STPROOF-3-NVJGR0.T1.P30, UNIT-TEST-STPROOF-8-F5SF0T.P14

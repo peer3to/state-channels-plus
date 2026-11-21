@@ -978,16 +978,16 @@ Specification cases tested: 0/6.
 Specification cases tested: 1/6. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6.
 
 [`REQ-STPROOF-1-J20P5Y` (A slot value is accepted only when the proof decides it)](../specification/runtime/storage-proofs.md#req-stproof-1-j20p5y)
-Specification cases tested: 11/11.
+Specification cases tested: 15/15.
 
 [`REQ-STPROOF-2-ABCQR7` (One verifier per proof representation)](../specification/runtime/storage-proofs.md#req-stproof-2-abcqr7)
-Specification cases tested: 4/4.
+Specification cases tested: 5/5.
 
 [`REQ-STPROOF-3-NVJGR0` (A pushed partition is accepted only as its proof decides it under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0)
-Specification cases tested: 22/22.
+Specification cases tested: 24/24.
 
 [`REQ-STPROOF-4-XK5S64` (An account's nonce, balance and code are accepted only when the proof decides…)](../specification/runtime/storage-proofs.md#req-stproof-4-xk5s64)
-Specification cases tested: 18/18.
+Specification cases tested: 19/19.
 
 [`REQ-STPROOF-5-HRDXEG` (A read from a node yields only what its proof decides, at one block)](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg)
 Specification cases tested: 6/6.

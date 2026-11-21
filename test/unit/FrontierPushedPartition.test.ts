@@ -2,6 +2,7 @@ import type { AcceptedBlock } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/
 import StorageProofError from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/StorageProofError";
 import { PEER3_CHAIN_CONSTANTS } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierChainConstants";
 import FrontierPushedPartition from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierPushedPartition";
+import SubstrateHeader from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateHeader";
 import { peer3PartitionPushes } from "@test/fixtures/lightClient/peer3PartitionPushes";
 import { expect } from "chai";
 import { toBeHex } from "ethers";
@@ -190,6 +191,60 @@ describe("FrontierPushedPartition", function () {
             /not the header's block/
         );
         expect(partition.block).to.equal(undefined);
+    });
+
+    it("refuses a header whose digest names another Ethereum block, and holds nothing until the next sync", function () {
+        const partition = new FrontierPushedPartition(PEER3_CHAIN_CONSTANTS);
+        partition.accept(messages[0]);
+        const { header } = messages[1];
+        const namedHash = new SubstrateHeader(header).ethereumBlockHash();
+        const otherHash =
+            namedHash.slice(0, -2) + (namedHash.endsWith("00") ? "01" : "00");
+        const tampered = structuredClone(messages[1]);
+        tampered.header.digest.logs = header.digest.logs.map((log) =>
+            log.replace(namedHash.slice(2), otherHash.slice(2))
+        );
+        expect(tampered.header.digest.logs).to.not.deep.equal(
+            header.digest.logs
+        );
+        expect(
+            new SubstrateHeader(tampered.header).ethereumBlockHash()
+        ).to.equal(otherHash);
+
+        expect(() => partition.accept(tampered)).to.throw(
+            StorageProofError,
+            /not the header's block/
+        );
+        expect(partition.block).to.equal(undefined);
+        expect(partition.environment).to.equal(undefined);
+        expect(() => partition.accept(messages[2])).to.throw(
+            StorageProofError,
+            /never synced/
+        );
+        partition.accept(messages[0]);
+        expect(partition.block?.number).to.equal(blocks[0].number);
+    });
+
+    it("refuses a header whose state root is not the one its proof leads to, and holds nothing until the next sync", function () {
+        const partition = new FrontierPushedPartition(PEER3_CHAIN_CONSTANTS);
+        partition.accept(messages[0]);
+        const { stateRoot } = messages[1].header;
+        const tampered = structuredClone(messages[1]);
+        tampered.header.stateRoot =
+            stateRoot.slice(0, -2) + (stateRoot.endsWith("00") ? "01" : "00");
+
+        expect(() => partition.accept(tampered)).to.throw(
+            StorageProofError,
+            /holds no node with hash/
+        );
+        expect(partition.block).to.equal(undefined);
+        expect(partition.environment).to.equal(undefined);
+        expect(() => partition.accept(messages[2])).to.throw(
+            StorageProofError,
+            /never synced/
+        );
+        partition.accept(messages[0]);
+        expect(partition.block?.number).to.equal(blocks[0].number);
     });
 
     it("refuses a message that is no pushed storage block", function () {
