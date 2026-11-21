@@ -45,7 +45,14 @@ pool for the run, with their CPU, memory and network stated next to each result.
 No pass or fail targets are set. Capacity is reported as the whole ramp: for each subscriber count,
 latency by stage (median and p95), backlog, drops, node CPU, memory and outbound bytes, the first
 resource to saturate, and the run's duration. A load level counts as sustained when the backlog does
-not grow and no update is dropped. Measured numbers and extrapolated estimates are kept apart.
+not grow and no update is dropped. Measured numbers and extrapolated estimates are kept apart. The capacity driver is
+`scripts/bench/lightClientCapacity.ts` (`yarn bench:light-client:capacity`). A writer writes a
+random share of the channels each block and leaves the rest idle. Each simulated peer has a socket
+of its own and takes every push through the SDK's `FrontierPushedPartition`, the code the light
+client itself runs, and a set share of the peers also proves one key outside its partition at each
+block. Peers run in worker threads, whose busy share is reported so that a saturated harness is not
+mistaken for a saturated node. With `BENCH_NODE_URL` the driver attaches to a node on another host,
+whose CPU and memory are then measured there.
 
 ## Fallback strategies
 
