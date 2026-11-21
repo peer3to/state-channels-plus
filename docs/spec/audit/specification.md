@@ -57,6 +57,20 @@ the failure of a proof, because a node that could not answer has not been shown 
 obtained earlier holds only while the node still keeps that block's state. Not specified yet: when a
 participant reads, what it keeps, and which node it turns to after a failed read.
 
+New subject [light-client.md](../specification/runtime/light-client.md), added on 2026-11-19: chain reads at
+the latest block answered from proven state. [`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../specification/runtime/light-client.md#req-lc-1-jt5pkt) states the answer a caller gets, equal to the
+endpoint's own for the block, with a call run in a local EVM. [`REQ-LC-2-PMY1VG` (What cannot be answered from proven state goes to the endpoint)](../specification/runtime/light-client.md#req-lc-2-pmy1vg) lists what stays with the
+endpoint by design. [`REQ-LC-3-W7RRHM` (A failed read falls back to the endpoint and is made known)](../specification/runtime/light-client.md#req-lc-3-w7rrhm) and [`REQ-LC-4-E29Y46` (The light client is off unless switched on and served)](../specification/runtime/light-client.md#req-lc-4-e29y46) follow Luka's rule of 2026-11-18: the light client is an optional
+black box, the SDK keeps working over plain RPC when the endpoint lacks the light client endpoints or the
+light client fails, and a failure must be known. The document turns "known" into an error log per failed
+read and a counter. Choices of the implementing agent that the engineer has not confirmed: the light client
+is switched on by a configuration key and then checked against the endpoint's method list, instead of
+being on wherever an endpoint lists the methods; proven state is kept for one block only until pushed
+blocks are used; calls with a gas limit, fee fields, an earlier block's hash or a chain precompile go to
+the endpoint. [`REQ-STPROOF-6-CASBQP` (The block values a call reads are accepted only as the block commits to them)](../specification/runtime/storage-proofs.md#req-stproof-6-casbqp) in [storage-proofs.md](../specification/runtime/storage-proofs.md) adds the block
+values a call reads, taken from the Ethereum block header in the chain's state. The base fee is not in that
+header and is a supplied constant, like the existential deposit.
+
 ## 2026-10-26 — Application chain access, local join-signature answers, closed-transport frames
 
 Luka decided these in the shared poker client manager plan (poker-contracts

@@ -2,16 +2,15 @@
 import type { SubstrateHeaderJson } from "@/evm/p2pRuntime/rpcNodes/lightClient/lightClientWire";
 import type { ProvenBlock } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/AProvenStateReader";
 import StorageProofError from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/StorageProofError";
+import { PEER3_CHAIN_CONSTANTS } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierChainConstants";
 import FrontierProvenStateReader from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierProvenStateReader";
 import {
     contractStorageKey,
     systemAccountKey
 } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/frontierStateKeys";
 import type { JsonRpcSocket } from "@test/fixtures/lightClient/JsonRpcSocket";
-import {
-    LightClientNodeFixture,
-    PEER3_EXISTENTIAL_DEPOSIT
-} from "@test/fixtures/lightClient/LightClientNodeFixture";
+import { LightClientNodeFixture } from "@test/fixtures/lightClient/LightClientNodeFixture";
+import { rejectionOf } from "@test/utils/rejectionOf";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { toBeHex, ZeroHash } from "ethers";
@@ -24,17 +23,8 @@ const FRONTIER_LOG = "0x0466726f6e";
 function readerOver(socket: JsonRpcSocket): FrontierProvenStateReader {
     return new FrontierProvenStateReader(
         (method, params) => socket.request(method, params),
-        PEER3_EXISTENTIAL_DEPOSIT
+        PEER3_CHAIN_CONSTANTS
     );
-}
-
-async function rejectionOf(read: Promise<unknown>): Promise<unknown> {
-    try {
-        await read;
-    } catch (error) {
-        return error;
-    }
-    return undefined;
 }
 
 describe("Light client proven reads", function () {

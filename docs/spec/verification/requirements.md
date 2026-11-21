@@ -596,6 +596,18 @@ Specification cases tested: 6/6.
 [`REQ-JOINSIG-4-3NBKHK` (Full-channel join)](../specification/peer-communication/join-authorization.md#req-joinsig-4-3nbkhk)
 Specification cases tested: 7/7.
 
+[`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../specification/runtime/light-client.md#req-lc-1-jt5pkt)
+Specification cases tested: 9/9.
+
+[`REQ-LC-2-PMY1VG` (What cannot be answered from proven state goes to the endpoint)](../specification/runtime/light-client.md#req-lc-2-pmy1vg)
+Specification cases tested: 2/2.
+
+[`REQ-LC-3-W7RRHM` (A failed read falls back to the endpoint and is made known)](../specification/runtime/light-client.md#req-lc-3-w7rrhm)
+Specification cases tested: 2/2.
+
+[`REQ-LC-4-E29Y46` (The light client is off unless switched on and served)](../specification/runtime/light-client.md#req-lc-4-e29y46)
+Specification cases tested: 2/2.
+
 [`REQ-LIF-1-A5BN02` (The best-case complete lifecycle needs at least two base-layer transactions)](../specification/settlement/lifecycle.md#req-lif-1-a5bn02)
 Specification cases tested: 2/13. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13.
 
@@ -964,6 +976,9 @@ Specification cases tested: 18/18.
 
 [`REQ-STPROOF-5-HRDXEG` (A read from a node yields only what its proof decides, at one block)](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg)
 Specification cases tested: 12/12.
+
+[`REQ-STPROOF-6-CASBQP` (The block values a call reads are accepted only as the block commits to them)](../specification/runtime/storage-proofs.md#req-stproof-6-casbqp)
+Specification cases tested: 9/9.
 
 [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../specification/peer-communication/synchronization.md#req-sync-1-t2589h)
 Specification cases tested: 17/20. Untested: T1.P2, T1.P4, T1.P7.

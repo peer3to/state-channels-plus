@@ -20,9 +20,6 @@ import {
 /** What a light client test fails with on a node without the endpoints. */
 export const LIGHT_CLIENT_UNSUPPORTED = "RPC node doesn't support LC endpoints";
 
-/** The existential deposit of the peer3 runtime, a constant of it. */
-export const PEER3_EXISTENTIAL_DEPOSIT = 1_000_000_000n;
-
 /** The first account the peer3 test chain funds: the Hardhat mnemonic's. */
 const FUNDED_MNEMONIC =
     "test test test test test test test test test test test junk";
@@ -35,6 +32,29 @@ const TRANSACTION_FEES = { type: 0, gasPrice: 10_000_000_000n };
  */
 const STORE_AND_LOG_CONTRACT =
     "0x601080600b6000396000f36020356000355560003560006000a100";
+
+/**
+ * Creation code of a contract that returns the block values a call reads, one
+ * word each: NUMBER, TIMESTAMP, COINBASE, GASLIMIT, PREVRANDAO, BASEFEE and
+ * CHAINID.
+ */
+export const BLOCK_VALUES_CONTRACT =
+    "0x602180600b6000396000f3" +
+    "4360005242602052416040524560605244608052" +
+    "4860a0524660c05260e06000f3";
+/**
+ * Creation code of a contract that makes a static call to the address in its
+ * first calldata word with the rest of its calldata, and returns or reverts
+ * with what that call returned.
+ */
+export const STATIC_FORWARDER_CONTRACT =
+    "0x602680600b6000396000f3" +
+    "60006000366020900380602060003760006000355a" +
+    "fa3d600060003e3d600082602457fd5bf3";
+
+/** Creation code of a contract that returns the hash of the block before the call's. */
+export const PREVIOUS_BLOCK_HASH_CONTRACT =
+    "0x600d80600b6000396000f3" + "60014303406000526020" + "6000f3";
 
 /** A subscription id a light client endpoint gave. */
 type SubscriptionId = string;
@@ -167,6 +187,23 @@ export class LightClientNodeFixture {
         return new LightClientConnection(socket);
     }
 
+    /**
+     * A proxy in front of the light client endpoints, which the test makes
+     * answer in their place. The fixture closes it on stop.
+     */
+    async proxyToEndpoints(): Promise<RpcNodeProxy> {
+        const proxy = await RpcNodeProxy.start(this.sidecar.url);
+        this.proxies.push(proxy);
+        return proxy;
+    }
+
+    /** A proxy in front of the node itself, past the light client endpoints. */
+    async proxyToNode(): Promise<RpcNodeProxy> {
+        const proxy = await RpcNodeProxy.start(this.node.url);
+        this.proxies.push(proxy);
+        return proxy;
+    }
+
     /** A socket to the node itself, which the fixture closes on stop. */
     connectToNode(): Promise<JsonRpcSocket> {
         return this.open(this.node.url);
@@ -180,8 +217,7 @@ export class LightClientNodeFixture {
         proxy: RpcNodeProxy;
         socket: JsonRpcSocket;
     }> {
-        const proxy = await RpcNodeProxy.start(this.node.url);
-        this.proxies.push(proxy);
+        const proxy = await this.proxyToNode();
         return { proxy, socket: await this.open(proxy.url) };
     }
 
@@ -199,11 +235,21 @@ export class LightClientNodeFixture {
     }
 
     /** Deploys a contract that stores what it is called with and logs the slot as its topic. */
-    async deployStoreAndLogContract(): Promise<string> {
-        const receipt = await this.mined({ data: STORE_AND_LOG_CONTRACT });
+    deployStoreAndLogContract(): Promise<string> {
+        return this.deploy(STORE_AND_LOG_CONTRACT);
+    }
+
+    /** Deploys the contract `creationCode` creates; its lowercase address. */
+    async deploy(creationCode: string): Promise<string> {
+        const receipt = await this.mined({ data: creationCode });
         if (!receipt.contractAddress)
             throw new Error("The deployment created no contract");
         return receipt.contractAddress.toLowerCase();
+    }
+
+    /** Calls `contract` with `data` in a transaction; the receipt of the included transaction. */
+    transact(contract: string, data: string): Promise<TransactionReceipt> {
+        return this.mined({ to: contract, data });
     }
 
     /** Stores `value` at `slot` of `contract`; the receipt of the included transaction. */
@@ -252,7 +298,7 @@ export class LightClientNodeFixture {
         const sent = await this.wallet.sendTransaction({
             ...transaction,
             ...TRANSACTION_FEES,
-            gasLimit: 200_000n,
+            gasLimit: 1_000_000n,
             nonce: this.nextNonce++
         });
         const receipt = await sent.wait();

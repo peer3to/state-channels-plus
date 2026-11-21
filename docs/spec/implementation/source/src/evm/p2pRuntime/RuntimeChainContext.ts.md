@@ -7,6 +7,7 @@
 - [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz)
 - [`REQ-CHAINOBS-1-5JTHY8` (Ordered endpoint set)](../../../../../specification/runtime/chain-observation.md#req-chainobs-1-5jthy8)
 - [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../../../../../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)
+- [`REQ-LC-4-E29Y46` (The light client is off unless switched on and served)](../../../../../specification/runtime/light-client.md#req-lc-4-e29y46)
 
 ## UNIT-TEST-RUNTIME-CHAIN-CLEANUP-1-3H7PT8
 
