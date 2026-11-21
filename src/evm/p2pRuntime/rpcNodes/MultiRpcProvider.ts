@@ -245,6 +245,15 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
         // nothing to do
     }
 
+    /**
+     * Whether a contract read sent now is answered from state the serving
+     * node proved: the node's answer is then not trusted, and a second copy of
+     * the chain's state adds nothing. Plain chain access trusts the node.
+     */
+    async answersFromProvenState(): Promise<boolean> {
+        return false;
+    }
+
     /** Tells the provider that the runtime no longer follows the channel. */
     unfollowChannel(_contract: string, _channelId: ChannelId): void {
         // nothing to do

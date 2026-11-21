@@ -1,3 +1,7 @@
+import {
+    isChainProven,
+    replicatedStateSource
+} from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import { Block, StateSnapshot, StateProof } from "@/models";
 import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import Storage, { SortOrder } from "@/storage";
@@ -332,8 +336,10 @@ class AgreementManager {
     /**
      * Walks `stateProof` from each trusted start in order: the latest locally
      * finalized state, the local diamond's anchor, the chain's anchor. A tier
-     * without a start is skipped. The caller stops at the first tier it
-     * accepts. Any read error throws: it is no verdict.
+     * without a start is skipped, and so is the local diamond's while the
+     * chain's answers are proven: it would repeat the chain's walk. The
+     * caller stops at the first tier it accepts. Any read error throws: it is
+     * no verdict.
      */
     public async *walkStateProofTiers(
         forkId: ForkId,
@@ -353,12 +359,14 @@ class AgreementManager {
                 ),
                 localFinalized
             };
-        const local = this.localDiamondContract;
-        const result = await local.verifyMilestones.staticCall(input);
-        yield {
-            ...this.toTierWalk(ProofTier.LocalDiamond, result),
-            localFinalized
-        };
+        if (!(await isChainProven(this.stateChannelManagerContract))) {
+            const local = this.localDiamondContract;
+            const result = await local.verifyMilestones.staticCall(input);
+            yield {
+                ...this.toTierWalk(ProofTier.LocalDiamond, result),
+                localFinalized
+            };
+        }
         yield {
             ...(await this.walkFromChainAnchor(forkId, stateProof, evidence)),
             localFinalized
@@ -753,9 +761,18 @@ class AgreementManager {
         };
     }
 
-    /** The local diamond's anchor of `forkId`, else the fork genesis; one read per operation. */
+    /**
+     * The anchor of `forkId` the local diamond holds, or the chain's while
+     * its answers are proven, else the fork genesis; one read per operation.
+     */
     private async getConstructionStart(forkId: ForkId): Promise<ProofStart> {
-        const anchor = await this.readAnchor(this.localDiamondContract, forkId);
+        const anchor = await this.readAnchor(
+            await replicatedStateSource(
+                this.localDiamondContract,
+                this.stateChannelManagerContract
+            ),
+            forkId
+        );
         return {
             canUseOnChainSnapshot: !!anchor,
             snapshot: anchor ?? this.getGenesisSnapshot(forkId)

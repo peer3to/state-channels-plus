@@ -12,6 +12,7 @@
 - [`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor, which may lag the chain but…)](../../../../specification/disputes/state-proofs.md#req-sp-8-9zccej)
 - [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
 - [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../../../../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
+- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9) (With proven chain reads, the chain answers alone)
   Contradicts: `persistVerifiedProof` can retain unexecuted proof support that contaminates installed history ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds)).
 - [`REQ-IX-4-BB35GC`](../../../../specification/disputes/README.md#req-ix-4-bb35gc)
 - [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)

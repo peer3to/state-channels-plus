@@ -11,6 +11,7 @@
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
 - [`REQ-SM-6-BJZVQ5` (Turn authorization enforced generically at the protocol layer)](../../../../../specification/protocol-model/state-machines.md#req-sm-6-bjzvq5)
+- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9) (With proven chain reads, the chain answers alone)
   Partial: On-chain invalid-state-transition replay does not perform the generic leader check, so wrong-turn slashing still depends on an in-contract guard ([`OQ-26-XH59SP` (On-chain wrong-turn enforceability)](../../../../../specification/open-questions.md#oq-26-xh59sp)).
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
 

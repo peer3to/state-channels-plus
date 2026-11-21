@@ -1,8 +1,10 @@
 import IsForkDisputedService from "./IsForkDisputedService";
 import { DisconnectPolicy } from "@/DisconnectPolicy";
+import { isChainProven } from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import { NetworkTransport } from "@/transport";
 import { ChannelId, ForkId } from "@/types/types";
+import { preferLocal } from "@/utils/localDiamond";
 
 class IsForkDisputedRpcMethods extends ANetworkRpcMethods<IsForkDisputedService> {
     constructor(transport: NetworkTransport, service: IsForkDisputedService) {
@@ -46,24 +48,22 @@ class IsForkDisputedRpcMethods extends ANetworkRpcMethods<IsForkDisputedService>
             throw new Error("duplicate dispute acknowledgment request");
         }
 
-        // Check if fork is disputed locally
-        let isDisputed =
-            await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.isForkDisputed(
-                channelId,
-                forkId
-            );
-
-        if (!isDisputed) {
-            this.service.logger.verbose(
-                `Fork ${forkId} is NOT disputed on local diamond, checking on-chain`
-            );
-            // check on-chain
-            isDisputed =
-                await this.p2pManager.stateManager.stateChannelManagerContract.isForkDisputed(
+        // the local diamond's "disputed" stands; its "not disputed" may lag
+        const { stateManager } = this.p2pManager;
+        const isDisputed = await preferLocal(
+            () =>
+                stateManager.diamondStateMachine.localDiamondContract.isForkDisputed(
                     channelId,
                     forkId
-                );
-        }
+                ),
+            () =>
+                stateManager.stateChannelManagerContract.isForkDisputed(
+                    channelId,
+                    forkId
+                ),
+            (isDisputedLocally) => isDisputedLocally,
+            () => isChainProven(stateManager.stateChannelManagerContract)
+        );
 
         if (!isDisputed) {
             // our chain view may lag the requester's -> spend its retry bound

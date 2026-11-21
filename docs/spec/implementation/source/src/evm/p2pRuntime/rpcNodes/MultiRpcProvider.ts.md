@@ -5,6 +5,8 @@
 ## Requirements
 
 - [`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../../../../../../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)
+- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9) (With proven chain reads, the chain answers alone)
+- [`REQ-LC-11-MTCBF9` (With the reads compared, each answer is checked against the endpoint's at its…)](../../../../../../specification/runtime/light-client.md#req-lc-11-mtcbf9) (With the reads compared, each answer is checked against the endpoint's at its block)
   Partial: `forward` fails over only on a dropped socket, on a read's internal error without revert data and on the latest block read answered with no block (one more pass after `MISSING_LATEST_BLOCK_RETRY_MS` when every node answers it so); a node's rate-limit answer or an answer from a node behind the requested block is final, and fatal for the runtime ([`FIND-RPC-8-59FKS6`](../../../../../../audit/open-findings.md#find-rpc-8-59fks6)).
 - [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../../../../../../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)
 - [`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../../../../../../specification/runtime/light-client.md#req-lc-1-jt5pkt)

@@ -37,13 +37,16 @@ export function connectLocalDiamond(
  * allows it; otherwise the chain answers. The local diamond mirrors the chain
  * through the event pipeline and can lag it, so a caller accepts locally only
  * the answer that is safe to act on without confirmation. A thrown error is
- * no answer: it propagates and no later tier runs.
+ * no answer: it propagates and no later tier runs. While `isChainProven`
+ * says the chain's answers are proven, the chain answers alone.
  */
 export async function preferLocal<T>(
     local: () => Promise<T>,
     onChain: () => Promise<T>,
-    acceptLocal: (answer: T) => boolean
+    acceptLocal: (answer: T) => boolean,
+    isChainProven: () => Promise<boolean>
 ): Promise<T> {
+    if (await isChainProven()) return onChain();
     const answer = await local();
     return acceptLocal(answer) ? answer : onChain();
 }

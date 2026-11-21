@@ -69,6 +69,9 @@ export type LocalCall = {
     value?: bigint;
 };
 
+/** A read's answer and the block whose state root proved it. */
+export type ProvenAnswer<T> = { value: T; block: ProvenBlock };
+
 /** How a call ended, as an RPC node would report it. */
 export type LocalCallOutcome =
     | { kind: "return"; data: string }
@@ -217,7 +220,7 @@ export class LightClient {
         }
     }
 
-    async call(request: LocalCall): Promise<LocalCallOutcome> {
+    async call(request: LocalCall): Promise<ProvenAnswer<LocalCallOutcome>> {
         // the chain keeps its existential deposit back from the balance it
         // reports for an account the value makes; the local EVM does not
         if (request.value)
@@ -251,7 +254,10 @@ export class LightClient {
     }
 
     /** The 32-byte word of `slot`. */
-    async getStorageAt(address: string, slot: string): Promise<string> {
+    async getStorageAt(
+        address: string,
+        slot: string
+    ): Promise<ProvenAnswer<string>> {
         const key = getBytes(zeroPadValue(toBeHex(BigInt(slot)), 32));
         return await this.run(false, isAnswer, async () =>
             hexlify(
@@ -263,7 +269,7 @@ export class LightClient {
         );
     }
 
-    async getBalance(address: string): Promise<bigint> {
+    async getBalance(address: string): Promise<ProvenAnswer<bigint>> {
         return await this.run(
             false,
             isAnswer,
@@ -272,7 +278,7 @@ export class LightClient {
         );
     }
 
-    async getTransactionCount(address: string): Promise<bigint> {
+    async getTransactionCount(address: string): Promise<ProvenAnswer<bigint>> {
         return await this.run(
             false,
             isAnswer,
@@ -281,7 +287,7 @@ export class LightClient {
         );
     }
 
-    async getCode(address: string): Promise<string> {
+    async getCode(address: string): Promise<ProvenAnswer<string>> {
         return await this.run(false, isAnswer, async () =>
             hexlify(this.state.readCodeOf(Address.fromString(address)))
         );
@@ -298,7 +304,7 @@ export class LightClient {
         needsEnvironment: boolean,
         isAnswer: (value: T) => boolean,
         read: (environment: BlockEnvironment) => Promise<T>
-    ): Promise<T> {
+    ): Promise<ProvenAnswer<T>> {
         const pushed = await this.pushedBlockAtFloor();
         let askedNode = pushed === undefined;
         const block = pushed?.block ?? (await this.options.reader.head());
@@ -327,7 +333,7 @@ export class LightClient {
                         if (askedNode) this.options.counters.withFallbackRead++;
                         else this.options.counters.fromPushedState++;
                     }
-                    return outcome.value;
+                    return { value: outcome.value, block };
                 }
                 // the pass ran on placeholders: its outcome is discarded
                 undecided = this.fillFromPartitions(block, misses);

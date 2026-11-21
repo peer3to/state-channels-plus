@@ -4,6 +4,7 @@ import AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 
 import Clock from "@/Clock";
+import { replicatedStateSource } from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import { Block, StateSnapshot } from "@/models";
 import type StateManager from "@/stateManager";
 import Storage from "@/storage";
@@ -220,10 +221,12 @@ export default class ValidationService {
     ): Promise<boolean> {
         return (
             this.storage.disputes.didIDispute(forkId) ||
-            (await this.diamondStateMachine.localDiamondContract.isForkDisputed(
-                channelId,
-                forkId
-            ))
+            (await (
+                await replicatedStateSource(
+                    this.diamondStateMachine.localDiamondContract,
+                    this.stateChannelManagerContract
+                )
+            ).isForkDisputed(channelId, forkId))
         );
     }
 

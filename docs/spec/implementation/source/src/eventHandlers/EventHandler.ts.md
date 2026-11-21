@@ -15,6 +15,7 @@
 - [`REQ-DISPUTE-PIPE-3-PHE3SQ` (Deterministic reduction)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq)
 - [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
 - [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)
+- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9) (With proven chain reads, the chain answers alone)
 
 ## UNIT-TEST-EVENT-HANDLER-1-RZ2C7W
 

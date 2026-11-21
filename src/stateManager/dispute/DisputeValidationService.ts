@@ -8,6 +8,10 @@ import {
     type ProofTierWalk,
     type StateProofEvidence
 } from "@/agreementManager/AgreementManager";
+import {
+    isChainProven,
+    replicatedStateSource
+} from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import { Block, StateSnapshot } from "@/models";
 import Storage from "@/storage";
 import type { BlockPredecessor } from "@/storage/QueueStorage";
@@ -938,10 +942,12 @@ export default class DisputeValidationService {
 
         // [check] isTimedoutTooEarly
         const timeoutTimestamp = Number(
-            await this.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
-                dispute.input.channelId,
-                forkId
-            )
+            await (
+                await replicatedStateSource(
+                    this.diamondStateMachine.localDiamondContract,
+                    this.stateChannelManagerContract
+                )
+            ).getDisputeWindowCreationTimestamp(dispute.input.channelId, forkId)
         );
         if (!timeoutTimestamp)
             throw new Error(
@@ -1149,7 +1155,8 @@ export default class DisputeValidationService {
         return preferLocal(
             () => read(this.diamondStateMachine.localDiamondContract),
             () => read(this.stateChannelManagerContract),
-            acceptLocal
+            acceptLocal,
+            () => isChainProven(this.stateChannelManagerContract)
         );
     }
 

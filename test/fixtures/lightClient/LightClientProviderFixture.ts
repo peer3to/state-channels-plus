@@ -52,7 +52,12 @@ export class LightClientProviderFixture {
      * would.
      */
     static async start(
-        options: { withoutEndpoints?: boolean; endpoints?: number } = {}
+        options: {
+            withoutEndpoints?: boolean;
+            endpoints?: number;
+            /** Ask the node every read the light client answers too, and count how they match. */
+            comparesReads?: boolean;
+        } = {}
     ): Promise<LightClientProviderFixture> {
         const node = await LightClientNodeFixture.start();
         try {
@@ -76,7 +81,8 @@ export class LightClientProviderFixture {
             const provider = await createRpcNodesProvider(
                 {
                     PROVIDER_URL: proxy.url,
-                    PROVIDER_URLS: proxies.map(({ url }) => url)
+                    PROVIDER_URLS: proxies.map(({ url }) => url),
+                    LIGHT_CLIENT_COMPARE_READS: options.comparesReads ?? false
                 },
                 logger
             );

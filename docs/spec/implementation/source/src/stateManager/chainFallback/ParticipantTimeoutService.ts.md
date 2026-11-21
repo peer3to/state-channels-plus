@@ -7,6 +7,7 @@
 - [`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar)
 - [`REQ-DISPUTE-PIPE-12-F85KF2` (Force a timeout only over a rejected posted block)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2)
 - [`REQ-DISPUTE-PIPE-13-R2QJZN` (Time out only the next height)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-13-r2qjzn)
+- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9) (With proven chain reads, the chain answers alone)
 
 ## UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5
 

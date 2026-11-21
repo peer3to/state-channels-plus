@@ -1,4 +1,5 @@
 import ADiamondStateMachine from "@/ADiamondStateMachine";
+import { isChainProven } from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import { Block, StateSnapshot } from "@/models";
 import P2pEventHooks from "@/P2pEventHooks";
 import type StateManager from "@/stateManager";
@@ -17,6 +18,7 @@ import {
 import { Codec, DetachedPromises, hash, Logger, Type } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import { tryHandleEvmError } from "@/utils/evmErrorHandler";
+import { preferLocal } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import {
@@ -225,17 +227,18 @@ export class EventHandler {
             participant
         );
         const latestFork = this.stateManager.forkId;
-        let isDisputed =
-            await this.diamondStateMachine.localDiamondContract.isForkDisputed(
-                channelId,
-                latestFork
-            );
-        if (!isDisputed)
-            isDisputed =
-                await this.stateManager.stateChannelManagerContract.isForkDisputed(
+        const chain = this.stateManager.stateChannelManagerContract;
+        // the local diamond's "disputed" stands; its "not disputed" may lag
+        const isDisputed = await preferLocal(
+            () =>
+                this.diamondStateMachine.localDiamondContract.isForkDisputed(
                     channelId,
                     latestFork
-                );
+                ),
+            () => chain.isForkDisputed(channelId, latestFork),
+            (isDisputedLocally) => isDisputedLocally,
+            () => isChainProven(chain)
+        );
         const participants = await this.diamondStateMachine.getParticipants();
         if (!isDisputed && participants.includes(participant.toString())) {
             await this.stateManager.disputeManager.dispute(latestFork);

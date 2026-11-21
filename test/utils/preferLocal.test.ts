@@ -22,6 +22,9 @@ const localRevert = () =>
 // default the executor grants.
 const BUDGET_ABOVE_DEFAULT_CALL_GAS = 17_000_000n;
 
+/** The chain's answers are not proven: the local diamond is asked first. */
+const isNotProven = async () => false;
+
 describe("Unit: preferLocal", () => {
     it("keeps an acceptable local answer without asking the chain", async () => {
         let chainReads = 0;
@@ -31,7 +34,8 @@ describe("Unit: preferLocal", () => {
                 chainReads++;
                 return false;
             },
-            (isValid) => isValid
+            (isValid) => isValid,
+            isNotProven
         );
 
         expect(answer).to.equal(true);
@@ -46,7 +50,8 @@ describe("Unit: preferLocal", () => {
                 chainReads++;
                 return true;
             },
-            (isValid) => isValid
+            (isValid) => isValid,
+            isNotProven
         );
 
         expect(answer).to.equal(true);
@@ -64,7 +69,8 @@ describe("Unit: preferLocal", () => {
                 chainReads++;
                 return true;
             },
-            (isValid) => isValid
+            (isValid) => isValid,
+            isNotProven
         );
 
         expect(isLocalEvmExecutionFailure(failure)).to.equal(true);
@@ -86,7 +92,8 @@ describe("Unit: preferLocal", () => {
                 chainReads++;
                 return true;
             },
-            (isValid) => isValid
+            (isValid) => isValid,
+            isNotProven
         );
 
         expect(isLocalEvmExecutionFailure(failure)).to.equal(false);
@@ -104,7 +111,8 @@ describe("Unit: preferLocal", () => {
             async () => {
                 throw rejection;
             },
-            (isValid) => isValid
+            (isValid) => isValid,
+            isNotProven
         );
 
         await read.then(
@@ -147,7 +155,8 @@ describe("Unit: preferLocal", () => {
                     chainReads++;
                     return false;
                 },
-                (isValid) => isValid
+                (isValid) => isValid,
+                isNotProven
             );
 
             await read.then(
@@ -176,7 +185,8 @@ describe("Unit: preferLocal", () => {
                     chainReads++;
                     return "0x";
                 },
-                () => true
+                () => true,
+                isNotProven
             );
 
             await read.then(
@@ -203,7 +213,8 @@ describe("Unit: preferLocal", () => {
             },
             () => {
                 throw failure;
-            }
+            },
+            isNotProven
         );
 
         await read.then(
@@ -211,5 +222,26 @@ describe("Unit: preferLocal", () => {
             (error: unknown) => expect(error).to.equal(failure)
         );
         expect(chainReads).to.equal(0);
+    });
+
+    it("asks only the chain while its answers are proven", async () => {
+        let localReads = 0;
+        let chainReads = 0;
+        const answer = await preferLocal(
+            async () => {
+                localReads++;
+                return true;
+            },
+            async () => {
+                chainReads++;
+                return false;
+            },
+            (isValid) => isValid,
+            async () => true
+        );
+
+        expect(answer).to.equal(false);
+        expect(localReads).to.equal(0);
+        expect(chainReads).to.equal(1);
     });
 });

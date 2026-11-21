@@ -1,4 +1,5 @@
 import type StateManager from "../StateManager";
+import { isChainProven } from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import { Block } from "@/models";
 import { Status } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
@@ -243,7 +244,8 @@ export default class MembershipService {
                 ),
             async () =>
                 this.includesSigner(await this.getOnChainThresholdSet()),
-            (isListed) => isListed
+            (isListed) => isListed,
+            () => isChainProven(sm.stateChannelManagerContract)
         );
     }
 

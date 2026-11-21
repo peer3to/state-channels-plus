@@ -623,6 +623,9 @@ Specification cases tested: 6/6.
 [`REQ-LC-10-YCP80W` (The stages of each accepted pushed block are kept)](../specification/runtime/light-client.md#req-lc-10-ycp80w)
 Specification cases tested: 1/1.
 
+[`REQ-LC-11-MTCBF9` (With the reads compared, each answer is checked against the endpoint's at its…)](../specification/runtime/light-client.md#req-lc-11-mtcbf9)
+Specification cases tested: 5/5.
+
 [`REQ-LIF-1-A5BN02` (The best-case complete lifecycle needs at least two base-layer transactions)](../specification/settlement/lifecycle.md#req-lif-1-a5bn02)
 Specification cases tested: 2/13. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13.
 
@@ -718,6 +721,9 @@ Specification cases tested: 0/4.
 
 [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 Specification cases tested: 10/14. Untested: T1.P1, T1.P2, T1.P8, T1.P12.
+
+[`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
+Specification cases tested: 4/5. Untested: T3.P1.
 
 [`REQ-MSG-1-AY3A77` (Snapshots MUST commit both stream tips + totals)](../specification/settlement/cross-layer-messages.md#req-msg-1-ay3a77)
 Specification cases tested: 0/12.

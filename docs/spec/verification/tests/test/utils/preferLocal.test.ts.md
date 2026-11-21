@@ -5,7 +5,8 @@ Exercises: [localDiamond.ts.md](../../../../implementation/source/src/utils/loca
 
 ## Overview
 
-Calls `preferLocal(local, onChain, acceptLocal)` directly. Most cases use async stand-ins for the
+Calls `preferLocal(local, onChain, acceptLocal, isChainProven)` directly; every case but one says
+the chain's reads are not proven. Most cases use async stand-ins for the
 local and chain reads and a boolean acceptance rule; the chain read counts its calls. The oracles
 are the returned answer, the chain-read count, and, for a failing read, the exact rejection. The
 synthetic revert uses the message the local signer surfaces for an executor revert
@@ -21,7 +22,7 @@ calling components' suites).
 
 ## Tests
 
-- `keeps an acceptable local answer without asking the chain`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P1
+- `keeps an acceptable local answer without asking the chain`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P1, REQ-MIRROR-5-N5SZC9.T1.P2
 - `asks the chain when the local answer would make the node act`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P2
 - `propagates a local EVM revert without asking the chain`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P11
 - `propagates a local failure that is not a revert without asking the chain`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P4, UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P32
@@ -29,3 +30,4 @@ calling components' suites).
 - `propagates a real local contract call revert in the executor without asking the chain`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P12
 - `propagates a real local signer failure that is not a revert without asking the chain`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P8
 - `propagates an acceptance-callback failure without asking the chain`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P10
+- `asks only the chain while its answers are proven`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P13, REQ-MIRROR-5-N5SZC9.T1.P1

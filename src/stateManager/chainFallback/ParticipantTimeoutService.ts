@@ -2,6 +2,7 @@ import type { BlockCalldataRecoveryResult } from "../eventSync/EventSyncService"
 import type StateManager from "../StateManager";
 import Clock from "@/Clock";
 
+import { replicatedStateSource } from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import { timeoutWaitTime as timeoutWaitTimeSeconds } from "@/types";
 import { Address, BlockHeight, Bytes, ForkId, Timestamp } from "@/types/types";
 import { Logger } from "@/utils";
@@ -143,7 +144,10 @@ export default class ParticipantTimeoutService {
         // the on-chain race-condition guard repeats this check authoritatively.
         if (
             await this.doesWindowPredateTimeout(
-                sm.diamondStateMachine.localDiamondContract,
+                await replicatedStateSource(
+                    sm.diamondStateMachine.localDiamondContract,
+                    sm.stateChannelManagerContract
+                ),
                 forkId,
                 timeoutMinTimestamp
             )
@@ -236,13 +240,16 @@ export default class ParticipantTimeoutService {
         // No race condition on previous block on-chain calldata
 
         // (local) check if current block calldata slot is occupied on-chain
-        let commitment =
-            await sm.diamondStateMachine.localDiamondContract.getBlockCallDataCommitment(
-                sm.channelId,
-                forkId,
-                blockHeight,
-                participantAddress
-            );
+        const replicated = await replicatedStateSource(
+            sm.diamondStateMachine.localDiamondContract,
+            sm.stateChannelManagerContract
+        );
+        let commitment = await replicated.getBlockCallDataCommitment(
+            sm.channelId,
+            forkId,
+            blockHeight,
+            participantAddress
+        );
         if (commitment.found) {
             // Commitment found, but block not accepted by BlockConfirmation pipeline
             return await this.onPostedCommitment(
@@ -290,13 +297,12 @@ export default class ParticipantTimeoutService {
             return; // block found and accepted
         }
         // Check locally again - if scheduled on-chain validation found a block -> local evm is synced
-        commitment =
-            await sm.diamondStateMachine.localDiamondContract.getBlockCallDataCommitment(
-                sm.channelId,
-                forkId,
-                blockHeight,
-                participantAddress
-            );
+        commitment = await replicated.getBlockCallDataCommitment(
+            sm.channelId,
+            forkId,
+            blockHeight,
+            participantAddress
+        );
         if (commitment.found) {
             // commitment exists on-chain, but block confirmation pipeline didn't accept it
             return await this.onPostedCommitment(

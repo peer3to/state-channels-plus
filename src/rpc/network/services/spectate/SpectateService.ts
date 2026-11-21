@@ -5,6 +5,7 @@ import type {
 } from "@/agreementManager/AgreementManager";
 import { DisconnectPolicy } from "@/DisconnectPolicy";
 import { END_OF_BLOCK_LOG_INDEX } from "@/eventHandlers/EventHandler";
+import { replicatedStateSource } from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import { Block, StateSnapshot } from "@/models";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
@@ -996,10 +997,15 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         // We'll do all the computation on our local state.
         // If our local state is not synced we shouldn't even be syncing the spectator and we probably have bigger problems
 
+        // the chain's snapshot while its answers are proven, as the
+        // disputed flag below always is
         const currentOnChainSnapshot = StateSnapshot.from(
-            await diamondStateMachine.localDiamondContract.getStateSnapshot(
-                channelId
-            )
+            await (
+                await replicatedStateSource(
+                    diamondStateMachine.localDiamondContract,
+                    stateManager.stateChannelManagerContract
+                )
+            ).getStateSnapshot(channelId)
         );
 
         const disputeWindows: DisputeWindowVerification[] = [];
