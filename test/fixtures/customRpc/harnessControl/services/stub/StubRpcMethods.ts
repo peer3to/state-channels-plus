@@ -75,7 +75,7 @@ import {
 import { errorMessage } from "@/utils/errorMessage";
 import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
-import type { ContractTransactionResponse } from "ethers";
+import { ethers, type ContractTransactionResponse } from "ethers";
 
 /** Marks a snapshot service whose posts `stubPostStateSnapshot` suppressed, the harness's included. */
 export const HARNESS_POST_SUPPRESSED = "isHarnessPostSuppressed";
@@ -666,7 +666,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
      * `UNEXPECTED_SNAPSHOT_POST_FAILURE`, an error that is no chain refusal.
      */
     public failStateSnapshotPost(
-        failure: "refusal" | "error" = "refusal"
+        failure: "refusal" | "error" | "reasonless-estimate" = "refusal"
     ): boolean {
         const snapshotUpdateService = this.service.sm.snapshotUpdateService;
         if (!this.service.stubOriginals.has("postStateSnapshotWait")) {
@@ -682,6 +682,21 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             if (options?.forkAdoptionOnly) return undefined;
             if (failure === "error")
                 throw new Error(UNEXPECTED_SNAPSHOT_POST_FAILURE);
+            // the node's answer to an estimate that reverted without data,
+            // as ethers reports it: nothing is sent
+            if (failure === "reasonless-estimate")
+                throw ethers.makeError(
+                    "missing revert data",
+                    "CALL_EXCEPTION",
+                    {
+                        action: "estimateGas",
+                        data: null,
+                        reason: null,
+                        transaction: { to: null, data: "0x" },
+                        invocation: null,
+                        revert: null
+                    }
+                );
             // a chain refusal the exit post expects: it lands nothing
             throw {
                 data: encodedCustomErrorRevert(

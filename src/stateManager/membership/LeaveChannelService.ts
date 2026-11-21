@@ -8,6 +8,7 @@ import { addressesEqual, DetachedPromises, Logger } from "@/utils";
 import { config } from "@/utils/config";
 import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import type { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { ethers } from "ethers";
 
 /**
  * Chain refusals of an exit post: the snapshot has not consumed the inbound
@@ -300,7 +301,8 @@ export default class LeaveChannelService {
     /**
      * One exit post. A chain refusal (e.g. an inbound message the snapshot
      * has not consumed) lands nothing and is logged: the next finalized
-     * block, or the one queued during this post, posts again. Any other
+     * block, or the one queued during this post, posts again. So does a gas
+     * estimate that failed without a reason: nothing was sent. Any other
      * failure rejects.
      */
     private async postExitSnapshot(): Promise<void> {
@@ -312,10 +314,17 @@ export default class LeaveChannelService {
             );
         } catch (error) {
             const refusal = tryDecodeCustomError(error)?.name;
-            if (!EXIT_POST_REFUSALS.some((name) => name === refusal))
+            const isUnsent =
+                refusal === undefined &&
+                ethers.isError(error, "CALL_EXCEPTION") &&
+                error.action === "estimateGas";
+            if (
+                !isUnsent &&
+                !EXIT_POST_REFUSALS.some((name) => name === refusal)
+            )
                 throw error;
             this.logger.info("The chain refused the exit snapshot post", {
-                refusal
+                refusal: refusal ?? "estimate failed without a reason"
             });
         } finally {
             this.isPosting = false;
