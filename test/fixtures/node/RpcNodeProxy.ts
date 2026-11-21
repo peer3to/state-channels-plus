@@ -114,6 +114,8 @@ export class RpcNodeProxy {
     readonly forwardedMethods: JsonRpcMethod[] = [];
     /** The requests behind {@link forwardedMethods}, with their params. */
     readonly forwardedRequests: ForwardedRequest[] = [];
+    /** The notifications of the node this proxy sent on to a client, in order. */
+    readonly sentNotifications: ForwardedRequest[] = [];
     private readonly server: WebSocketServer;
     private readonly upstreamUrl: string;
     /** Each client socket and its upstream socket to the node. */
@@ -140,6 +142,11 @@ export class RpcNodeProxy {
         JsonRpcMethod,
         JsonRpcErrorObject
     >();
+    /** Method -> the error this proxy answers every request of it with, unforwarded. */
+    private readonly rejectedMethods = new Map<
+        JsonRpcMethod,
+        JsonRpcErrorObject
+    >();
     /** Requests this proxy answered with an error, in order. */
     private readonly failedRequests: ForwardedRequest[] = [];
     /** Method -> the result this proxy answers its requests with, unforwarded. */
@@ -161,6 +168,19 @@ export class RpcNodeProxy {
      * transaction hash of the log each carries; undefined while they pass.
      */
     private withheldNotifications?: WithheldNotification[];
+    /**
+     * Method -> what this proxy sends in place of the `params` of each of
+     * its notifications; `undefined` drops the notification.
+     */
+    /** Method -> the sends of its notifications waiting here until released. */
+    private readonly heldNotifications = new Map<
+        JsonRpcMethod,
+        (() => void)[]
+    >();
+    private readonly notificationChanges = new Map<
+        JsonRpcMethod,
+        (params: unknown) => unknown
+    >();
     private isCut = false;
     private isBlackholed = false;
 
@@ -242,6 +262,11 @@ export class RpcNodeProxy {
     /** The [fromBlock, toBlock] of every eth_getLogs this proxy failed, in order. */
     failedLogWindows(): [number, number][] {
         return toLogWindows(this.failedRequests);
+    }
+
+    /** Answer every `method` request with `error`, unforwarded, as a node that does not serve it. */
+    rejectRequests(method: JsonRpcMethod, error: JsonRpcErrorObject): void {
+        this.rejectedMethods.set(method, error);
     }
 
     /** Answer every `method` request with an error until {@link stopFailingRequests}. */
@@ -356,6 +381,39 @@ export class RpcNodeProxy {
         };
     }
 
+    /**
+     * Send `change(params)` in place of the `params` of every `method`
+     * notification of the node; a notification `change` answers `undefined`
+     * for is dropped.
+     */
+    changeNotifications(
+        method: JsonRpcMethod,
+        change: (params: unknown) => unknown
+    ): void {
+        this.notificationChanges.set(method, change);
+    }
+
+    /**
+     * Keep the node's `method` notifications at the proxy until `release`
+     * sends them on in order; later ones pass again.
+     */
+    holdNotifications(method: JsonRpcMethod): { release: () => void } {
+        const held: (() => void)[] = [];
+        this.heldNotifications.set(method, held);
+        return {
+            release: () => {
+                if (this.heldNotifications.get(method) === held)
+                    this.heldNotifications.delete(method);
+                for (const send of held.splice(0)) send();
+            }
+        };
+    }
+
+    /** Send `method`'s notifications on as the node sent them, after {@link changeNotifications}. */
+    stopChangingNotifications(method: JsonRpcMethod): void {
+        this.notificationChanges.delete(method);
+    }
+
     /** Keep every socket open but forward nothing in either direction. */
     blackhole(): void {
         this.isBlackholed = true;
@@ -420,6 +478,14 @@ export class RpcNodeProxy {
                 this.internallyFailingMethods.delete(method);
                 this.failedRequests.push({ method, params });
                 reply({ error: internalError });
+                return;
+            }
+            const rejection = method
+                ? this.rejectedMethods.get(method)
+                : undefined;
+            if (method && id !== undefined && rejection) {
+                this.failedRequests.push({ method, params });
+                reply({ error: rejection });
                 return;
             }
             const failures = method
@@ -488,6 +554,27 @@ export class RpcNodeProxy {
                     transactionHash: notifiedTransactionHash(params),
                     send
                 });
+                return;
+            }
+            if (method && id === undefined) {
+                const change = this.notificationChanges.get(method);
+                const sentParams = change ? change(params) : params;
+                if (sentParams === undefined) return;
+                const deliver = () => {
+                    this.sentNotifications.push({ method, params: sentParams });
+                    if (change && client.readyState === WebSocket.OPEN)
+                        client.send(
+                            JSON.stringify({
+                                jsonrpc: "2.0",
+                                method,
+                                params: sentParams
+                            })
+                        );
+                    else send();
+                };
+                const held = this.heldNotifications.get(method);
+                if (held) held.push(deliver);
+                else deliver();
                 return;
             }
             const heldReplies =

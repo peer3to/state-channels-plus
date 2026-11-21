@@ -11,10 +11,14 @@ export const LIGHT_CLIENT_METHODS = {
     notification: "lightClient_storage"
 } as const;
 
-/** What a peer follows: one contract and the log topics that concern it. */
+/**
+ * What a peer follows: the partitions of `topics` in the logs of the contract
+ * at `address`. A partition is every storage key the transactions that logged
+ * its topic from the contract touched, reads included, of any contract. The
+ * event signature, a log's first topic, forms no partition. 1 to 16 topics.
+ */
 export type LightClientSubscription = {
     address: string;
-    /** A block is pushed when a log of the contract carries one of these. */
     topics: string[];
 };
 
@@ -27,28 +31,34 @@ export type SubstrateHeaderJson = {
     digest: { logs: string[] };
 };
 
-/** A log as the Ethereum JSON-RPC returns it. */
-export type LightClientLog = {
-    address: string;
-    topics: string[];
-    data: string;
-    blockHash: string;
-    blockNumber: string;
-    transactionHash: string;
-    transactionIndex: string;
-    logIndex: string;
+/** One storage key of a partition and what it holds: SCALE bytes, or `null` for nothing. */
+export type LightClientEntry = { key: string; value: string | null };
+
+/** Unix milliseconds of the stages a pushed block passed on the node. */
+export type LightClientStages = {
+    /** The node finished executing the block; `null` when it has no record of it. */
+    executedAt: number | null;
+    /** The message's values and proof were complete. */
+    builtAt: number;
+    /** The message was handed to the socket. */
+    sentAt: number;
 };
 
 /**
- * What the node pushes for one block in which a log of the contract carried a
- * subscribed topic.
+ * What a subscription receives, once for each best block, in block order. The
+ * first message (`sync`) holds every key of the partitions with its value and
+ * the whole proof of them under `header.stateRoot`. A later one holds the keys
+ * whose value changed and the keys the partitions took in, and only the trie
+ * nodes no earlier message of the subscription carried: with the nodes the
+ * peer already holds, they prove every key of the partitions. A subscription
+ * that falls too far behind ends with an error, and the peer subscribes again.
  */
 export type LightClientStorageBlock = {
     header: SubstrateHeaderJson;
-    /** Every slot of the contract written in the block; `null` for a cleared slot. */
-    writes: { slot: string; value: string | null }[];
-    /** A read proof of the written slots under the header's state root. */
+    /** The block's Ethereum header, SCALE-encoded, as the header digest names it by hash. */
+    ethereumHeader: string;
+    sync: boolean;
+    values: LightClientEntry[];
     proofNodes: string[];
-    /** The contract's logs of the block that carry a subscribed topic. */
-    logs: LightClientLog[];
+    stages: LightClientStages;
 };

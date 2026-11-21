@@ -51,6 +51,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-SPEC-JOIN-REJOIN-1-D506RT`](open-questions.md#oq-spec-join-rejoin-1-d506rt)           | Rejoin after eviction collects against the disputed snapshot                                                                                                | Shared poker client manager plan (2026-10-26) | [peer-communication/join-authorization.md](./peer-communication/join-authorization.md)                                                                                                                                     | Open (later)                      |
 | [`OQ-SPEC-REDUCE-SPECTATOR-1-1YWDC5`](open-questions.md#oq-spec-reduce-spectator-1-1ywdc5) | Spectator reduction without the reduced latest state snapshot                                                                                               | Shared poker client manager plan (2026-10-26) | [disputes/dispute-processing.md](./disputes/dispute-processing.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md)                                                                       | Resolved                          |
 | [`OQ-SPEC-RELAY-1-SW2BKP`](open-questions.md#oq-spec-relay-1-sw2bkp)                       | Confirmation re-broadcast volume delays counter-signatures past the agreement window                                                                        | Six-player browser game (2026-10-27)          | [peer-communication/block-gossip.md](./peer-communication/block-gossip.md)                                                                                                                                                 | Open (later)                      |
+| [`OQ-SPEC-LC-1-VKHDPN`](open-questions.md#oq-spec-lc-1-vkhdpn)                             | Light client choices the engineer has not confirmed                                                                                                         | Light client card 399 (2026-11-20)            | [runtime/light-client.md](./runtime/light-client.md)                                                                                                                                                                       | Open                              |
 
 ## Register assumptions and constraints
 
@@ -846,3 +847,32 @@ implementation
 ([BlockValidationStrategy](../implementation/source/src/stateManager/validationStrategy/BlockValidationStrategy.ts.md),
 [BlockQueueManager](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md),
 [CalldataPostingService](../implementation/source/src/stateManager/chainFallback/CalldataPostingService.ts.md)).
+
+<a id="oq-spec-lc-1-vkhdpn"></a>
+
+## OQ-SPEC-LC-1-VKHDPN — Light client choices the engineer has not confirmed
+
+Open (2026-11-20). The engineer decided on that day that the light client is on when the endpoint serves
+it, that calls with a gas limit, fee fields, an earlier block's hash or a chain precompile go to the
+endpoint, and that peer3's constants stay in the source. The same day the engineer decided that with
+several endpoints a read uses only what the endpoint serving the participant's requests pushed. The
+implementing agent made these further
+choices while building the card's design, and the engineer has not confirmed them:
+
+1. A partition holds raw state trie keys: contract slots, code and code metadata, and the account
+   (nonce and balance) of each sender and of each contract a transaction reached, so that a local call
+   needs no request.
+2. A pushed message carries only the trie nodes no earlier message of the subscription carried, and no
+   logs.
+3. The endpoint forms partitions from every contract's logs unless told which contracts to follow.
+4. The endpoint ends a subscription that falls 64 blocks behind; the participant subscribes again and
+   syncs.
+5. The local EVM runs Prague's rules, the newest its package knows, while the chain runs Osaka; an
+   opcode only Osaka has fails locally and the call goes to the endpoint.
+6. A call that carries value goes to the endpoint. A transfer inside a call to an account below the
+   existential deposit is reported locally without the deposit kept back.
+7. The participant's counts reach the logs once, when its chain access is destroyed; there is no
+   periodic report.
+8. The endpoint keeps the partitions in memory and learns them again after a restart.
+
+Owner: [`REQ-LC-9-KWXV43`](runtime/light-client.md#req-lc-9-kwxv43).

@@ -1,8 +1,8 @@
-// @spec-test-coverage-ignore: recorded chain data used by the mapped SubstrateHeader and proveFrontierStorageBlock declarations
+// @spec-test-coverage-ignore: recorded chain data used by the mapped SubstrateHeader declarations
 
 /**
  * Blocks a peer3 dev node (`zero-fee-node` at d845dbfb) pushed through the
- * light client sidecar to a subscriber of topic 1 of a contract that stores
+ * light client sidecar (removed on 2026-11-20) to a subscriber of topic 1 of a contract that stores
  * what it is called with and logs the slot as its topic. With each block: the
  * block hash the node reports for the header's number (`chain_getBlockHash`)
  * and the hash of its Ethereum block (`eth_getBlockByNumber`).

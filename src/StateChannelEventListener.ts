@@ -27,6 +27,8 @@ class StateChannelEventListener {
      * subscription must not keep the watermark held.
      */
     private readonly catchUpAborts = new Set<() => void>();
+    /** Tells the provider that the subscribed channel is no longer followed. */
+    private unfollowChannel?: () => void;
     private generation = 0;
 
     constructor(
@@ -67,6 +69,10 @@ class StateChannelEventListener {
         // where a catch-up starts while no event has completed a block yet
         const subscribedAtBlock = await provider.getBlockNumber();
         if (generation !== this.generation) return;
+        const contract = String(this.stateChannelManagerContract.target);
+        provider.followChannel(contract, channelId);
+        this.unfollowChannel = () =>
+            provider.unfollowChannel(contract, channelId);
         const subscriptions: Promise<unknown>[] = [];
         this.unwatchNodes = provider.nodes.map((node) =>
             node.watchSockets((socket, reopened) => {
@@ -273,6 +279,8 @@ class StateChannelEventListener {
         for (const unwatch of this.unwatchNodes.splice(0)) unwatch();
         for (const abortCatchUp of [...this.catchUpAborts]) abortCatchUp();
         this.listener = undefined;
+        this.unfollowChannel?.();
+        this.unfollowChannel = undefined;
         await this.subscribedSockets.clear();
     }
 

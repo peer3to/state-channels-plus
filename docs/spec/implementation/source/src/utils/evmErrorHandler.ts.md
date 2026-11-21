@@ -4,6 +4,7 @@
 
 ## Requirements
 
+- [`REQ-LC-2-PMY1VG` (What cannot be answered from proven state goes to the endpoint)](../../../../specification/runtime/light-client.md#req-lc-2-pmy1vg)
 - [`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)
 - [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
@@ -55,6 +56,8 @@ Classification
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P39` — `isProvenSubmissionFailure` is true for a mined submission whose receipt failed, with no decoded reason
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P40` — `isProvenSubmissionFailure` is false for a failure with no receipt and no decoded revert
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P41` — `isProvenSubmissionFailure` is false for a reverted call with no receipt and no revert data
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P42` — `replayMinedCall` runs the call again at the block the failed receipt names
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P43` — `replayMinedCall` runs the call again at the latest block when the error names no receipt
 
 ## UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W
 

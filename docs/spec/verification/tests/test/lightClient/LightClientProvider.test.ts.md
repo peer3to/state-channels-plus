@@ -5,16 +5,18 @@ Exercises: [LightClientRpcProvider.ts](../../../../implementation/source/src/evm
 
 ## Overview
 
-Every declaration starts a peer3 dev node of its own from the binary `PEER3_NODE_BIN` names, with the
-test-owned light client sidecar in front of it and a test-owned proxy in front of the sidecar. The
-runner discovers the file only with `--lc-tests`. The provider under test is the one the SDK builds
-with `createRpcNodesProvider` and `LIGHT_CLIENT` on, given the proxy's address. The contracts are the
-repository's `SimpleNumberStorage` and three hand-assembled ones: one returns the block values a call
-reads, one forwards a static call, one returns the previous block's hash. Transactions go to the node
-directly, so the provider only reads. The oracles are the node's own answers to the same reads, the
-provider's counters, the requests the proxy saw, and the entries the provider logged at error level.
-For the failures the proxy answers one request in the node's place. The suite does not cover a node
-that lies about its best block, more than one endpoint, or a distributed worker.
+Every declaration starts a peer3 dev node of its own, with the light client endpoints, from the binary
+`PEER3_NODE_BIN` names, and a test-owned proxy in front of it. The runner discovers the file only with
+`--lc-tests`. The provider under test is the one the SDK builds with `createRpcNodesProvider`, given the
+proxy's address; it is on because the node lists the endpoints. The contracts are the repository's
+`SimpleNumberStorage` and hand-assembled ones that return the block values a call reads, forward a
+static call, return the previous block's hash, return CALLER and ORIGIN, return the blob base fee, run
+out of gas, and hit an invalid opcode. Transactions go to the node directly, so the provider only reads.
+The oracles are the node's own answers to the same reads, the provider's counters, the requests the
+proxy saw, and the entries the provider logged. For the failures the proxy answers one request in the
+node's place. Two endpoints and pushed partitions are the subject of
+[LightClientFollowedChannel.test.ts](LightClientFollowedChannel.test.ts.md). The suite does not cover a node that lies about its
+best block, or a distributed worker.
 
 ## Tests
 
@@ -31,5 +33,13 @@ that lies about its best block, more than one endpoint, or a distributed worker.
 - `leaves to the node a call that reaches the chain's own precompile or reads an earlier block's hash`: REQ-LC-2-PMY1VG.T1.P2
 - `asks the node, logs an error and counts the failure when a proof is refused`: REQ-LC-3-W7RRHM.T1.P1
 - `asks the node, logs an error and counts the failure when the node gives no block header`: REQ-LC-3-W7RRHM.T1.P2
-- `asks the node for every read and logs one error when the node lists no light client endpoints`: REQ-LC-4-E29Y46.T1.P1
-- `is the plain provider unless the light client is switched on`: REQ-LC-4-E29Y46.T1.P2
+- `asks the node for every read and says once that the node lists no light client endpoints`: REQ-LC-4-E29Y46.T1.P1
+- `asks the node once which methods it serves, at the first read the light client may answer`: REQ-LC-4-E29Y46.T1.P6
+- `leaves to the node a call that runs out of gas or hits an invalid opcode locally`: REQ-LC-2-PMY1VG.T1.P3
+- `leaves to the node a call that reads the blob base fee, and answers with the node's answer`: REQ-LC-2-PMY1VG.T1.P7
+- `asks the node for every read when the node answers that it does not know rpc_methods`: REQ-LC-4-E29Y46.T1.P3
+- `asks the node for every read when the node answers, as Hardhat does, that it does not support rpc_methods`: REQ-LC-4-E29Y46.T1.P4
+- `asks the node again which methods it serves when the question failed`: REQ-LC-4-E29Y46.T1.P5
+- `fails reads still running at destroy as a plain provider would, without counting or logging them`: REQ-LC-3-W7RRHM.T1.P3
+- `sends the node a pending read and a call with a gas price`: REQ-LC-2-PMY1VG.T1.P4
+- `answers a call with the caller and origin the node gives it`: REQ-LC-1-JT5PKT.T1.P10

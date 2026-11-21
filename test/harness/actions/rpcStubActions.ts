@@ -17,6 +17,7 @@ import type {
     BlockWorkHoldPoint,
     DisputeSubmissionFailureSpec,
     RecordedBestEffortEstimate,
+    RecordedChainFollow,
     RecordedDisputeSubmission,
     RecordedFraudProofApply,
     RecordedGasEstimate,
@@ -26,6 +27,7 @@ import type {
     ReplayGasEstimateMethod,
     HeldLobbyReplyKind,
     HeldMembershipReceiptKind,
+    MembershipReceiptFailure,
     HeldNegotiationReplyKind,
     HeldOpenedStatusRead,
     ReductionApplicationControl,
@@ -478,16 +480,12 @@ export class RpcStubActions<
     async failMembershipReceipt(
         peerIndex: number,
         kind: HeldMembershipReceiptKind,
-        options: { once?: boolean; isReplayPassing?: boolean } = {}
+        failure: MembershipReceiptFailure = {}
     ): Promise<() => Promise<number>> {
         const peer = this.harness.getPeer(peerIndex);
         await this.harness
             .control(peer)
-            .stub.failMembershipReceipt(
-                kind,
-                options.once ?? false,
-                options.isReplayPassing ?? false
-            )
+            .stub.failMembershipReceipt(kind, failure)
             .request();
         return async () =>
             await this.harness
@@ -958,6 +956,25 @@ export class RpcStubActions<
             calls: async () => await ctl().getRecordedChainCalls().request(),
             restore: async () => {
                 await ctl().restoreChainCalls().request();
+            }
+        };
+    }
+
+    /**
+     * Record each follow and unfollow call a peer's runtime makes of its
+     * chain access, in order; each call still runs.
+     */
+    async recordChainFollows(peerIndex: number): Promise<{
+        follows: () => Promise<RecordedChainFollow[]>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().recordChainFollows().request();
+        return {
+            follows: async () =>
+                await ctl().getRecordedChainFollows().request(),
+            restore: async () => {
+                await ctl().restoreChainFollows().request();
             }
         };
     }

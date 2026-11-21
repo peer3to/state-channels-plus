@@ -16,9 +16,11 @@ import type {
     PausedConstructDisputeStatus,
     PausedReductionStatus,
     RecordedBestEffortEstimate,
+    RecordedChainFollow,
     RecordedDisputeSubmission,
     RecordedFraudProofApply,
     RecordedGasEstimate,
+    RecordedMembershipReplay,
     RecordedReplayGasRead,
     ReductionSimulationErrorName,
     RefusedUploadKind,
@@ -26,6 +28,7 @@ import type {
     HeldLobbyReplyKind,
     HeldNegotiationReplyKind,
     HeldMembershipReceiptKind,
+    MembershipReceiptFailure,
     HeldOpenedStatusRead,
     ParticipantCheckAnswer,
     ReductionApplicationControl,
@@ -1691,6 +1694,20 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public restoreChainCalls(): boolean {
         this.service.restoreChainCalls();
+        return true;
+    }
+
+    public recordChainFollows(): boolean {
+        this.service.recordChainFollows();
+        return true;
+    }
+
+    public getRecordedChainFollows(): RecordedChainFollow[] {
+        return this.service.getRecordedChainFollows();
+    }
+
+    public restoreChainFollows(): boolean {
+        this.service.restoreChainFollows();
         return true;
     }
 
@@ -4234,11 +4251,14 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     /** Fail `kind` submissions with a failed receipt (only the first with `once`; a passing replay with `isReplayPassing`); counted, never held. */
     public failMembershipReceipt(
         kind: HeldMembershipReceiptKind,
-        once?: boolean,
-        isReplayPassing?: boolean
+        failure?: MembershipReceiptFailure
     ): boolean {
-        this.service.failMembershipReceipt(kind, once, isReplayPassing);
+        this.service.failMembershipReceipt(kind, failure);
         return true;
+    }
+
+    public getMembershipReplays(): RecordedMembershipReplay[] {
+        return this.service.getMembershipReplays();
     }
 
     public landMembershipSubmissionThenFail(

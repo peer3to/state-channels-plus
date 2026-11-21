@@ -6,6 +6,7 @@
 
 ## Requirements
 
+- [`REQ-LC-2-PMY1VG` (What cannot be answered from proven state goes to the endpoint)](../../../../../specification/runtime/light-client.md#req-lc-2-pmy1vg)
 - [`REQ-SDK-ARCH-1-7H14H6` (Explicit ownership)](../../../../../specification/runtime/sdk.md#req-sdk-arch-1-7h14h6)
 - [`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally pending before acknowledgement)](../../../../../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75)
 - [`INV-TJOIN-2-H7JSQM` (Local pending protection for submitted joins)](../../../../../specification/peer-communication/targeted-channel-join.md#inv-tjoin-2-h7jsqm)
@@ -102,3 +103,4 @@ Own join, top-up and force join
 - [x] `UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P114` — a top-up whose replay passes is submitted again, and that submission, mined after a spectator's join widened the threshold set, reverts with no revert data; its replay decodes the threshold refusal, so it is collected again (the new pending participant countersigns once) and lands on its third submission: `true`, the amount credited once, `PARTICIPATING` kept, no abort
 - [x] `UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P115` — a first join mined with no revert data at every submission while each replay passes stops at the channel's maximum participant count of retries: `false` after that many retries plus the first submission, one collection, no JOIN on chain, `SYNCED` and no abort
 - [x] `UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P116` — a top-up mined with no revert data at every submission while each replay passes stops at the channel's maximum participant count of retries: `false` after that many retries plus the first submission, one collection, no JOIN on chain, `PARTICIPATING` kept and no abort
+- [x] `UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P117` — a first join mined with no revert data in a block its receipt names is replayed at that block, and submitted again when the replay passes

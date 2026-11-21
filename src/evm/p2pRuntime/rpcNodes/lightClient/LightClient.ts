@@ -1,11 +1,28 @@
+import type {
+    LightClientCounters,
+    PushedBlockTiming,
+    PushedStateCounters
+} from "./LightClientCounters";
 import { LightClientState } from "./LightClientState";
+import type {
+    ContractAddress,
+    SubscriptionKey
+} from "./LightClientSubscriptions";
 import {
     LightClientUnavailableError,
     NotLocalError
 } from "./LightClientUnavailableError";
+import type RpcNodeProvider from "../RpcNodeProvider";
 import type AProvenStateReader from "./proof/AProvenStateReader";
-import type { BlockEnvironment, ProvenBlock } from "./proof/AProvenStateReader";
+import type {
+    AccountStateRead,
+    BlockEnvironment,
+    ProvenAccountState,
+    ProvenBlock
+} from "./proof/AProvenStateReader";
+import type APushedPartition from "./proof/APushedPartition";
 import { createEvm } from "@/evm/EvmFactory";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 import { Mutex } from "@/utils/Mutex";
 import type { EVM, EVMOpts } from "@ethereumjs/evm";
@@ -17,6 +34,32 @@ import { getBytes, hexlify, toBeHex, zeroPadValue } from "ethers";
  * names the state it still lacks.
  */
 const MAX_DISCOVERY_PASSES = 256;
+
+/** Most accepted pushed blocks whose timings are kept; past it the oldest goes. */
+const MAX_PUSHED_BLOCK_TIMINGS = 1024;
+
+/** Whether a call's outcome answers it: a call that failed locally goes to the node. */
+function isCallAnswer(outcome: LocalCallOutcome): boolean {
+    return outcome.kind !== "failure";
+}
+
+/** A storage, balance, nonce or code read is answered by any value. */
+function isAnswer(): boolean {
+    return true;
+}
+
+/** The state one subscription on a socket of `node` pushed, for the contract it follows. */
+type Subscription = {
+    contract: ContractAddress;
+    node: RpcNodeProvider;
+    partition: APushedPartition;
+};
+
+/** A block a subscription pushed, with the block values a call reads at it. */
+type PushedBlock = { block: ProvenBlock; environment: BlockEnvironment };
+
+/** What a node proved for one read, kept so that each pass can fill it again. */
+type Fetched = { read: AccountStateRead; proven: ProvenAccountState };
 
 /** An `eth_call` the light client can run: a call, not a creation. */
 export type LocalCall = {
@@ -35,20 +78,52 @@ export type LocalCallOutcome =
 export type LightClientOptions = {
     /** Proves the state this light client reads. */
     reader: AProvenStateReader;
+    /** A partition of the chain's proof representation, for one subscription. */
+    createPartition: () => APushedPartition;
+    /**
+     * The node the chain access sends its requests to now. Only what its
+     * subscriptions pushed is read: another endpoint's pushes cannot move
+     * the block a read is made at.
+     */
+    servingNode: () => RpcNodeProvider | undefined;
     /**
      * Addresses the chain answers with a precompile of its own that the
      * local EVM does not reproduce, lowercase.
      */
     chainPrecompiles: readonly string[];
+    /** The Ethereum hardfork whose rules the chain's EVM runs. */
+    hardfork: string;
+    /** The addresses of Ethereum's precompiles the chain serves, lowercase; the local EVM runs no other. */
+    ethereumPrecompiles: readonly string[];
     getChainId: () => Promise<bigint>;
+    /**
+     * The highest block the serving node has shown the chain access, in its
+     * new heads and the receipts and block numbers it answered: no read is
+     * made at an earlier block. Other nodes' blocks do not count.
+     */
+    blockFloor: () => number | undefined;
+    /** The longest a read waits for the serving node to push the block at {@link blockFloor}. */
+    pushWaitMs: number;
+    /** Counted on: the reads this light client answers. */
+    counters: LightClientCounters;
+    /** Counted on: the pushed blocks it takes. */
+    pushedState: PushedStateCounters;
+    /** Appended to: the stages of each accepted pushed block, at most the last 1024. */
+    pushedBlockTimings: PushedBlockTiming[];
     logger: Logger;
 };
 
 /**
  * Answers chain reads from state a node proved: every value a read uses was
- * checked against the state root of the node's best block. A call runs in a
- * local EVM over that state. A read the light client cannot answer throws,
- * and the caller asks the RPC node instead.
+ * checked against the state root of one block. A call runs in a local EVM over
+ * that state. A read the light client cannot answer throws, and the caller
+ * asks the RPC node instead.
+ *
+ * The block is the newest one a subscription on the serving node pushed and
+ * the light client verified, and a read takes from that node's pushed
+ * partitions everything they prove at that block, without a request. What they do not reach, it has the node
+ * prove at that block. With nothing pushed yet it reads at the node's best
+ * block and has the node prove everything.
  */
 export class LightClient {
     private readonly options: LightClientOptions;
@@ -57,12 +132,18 @@ export class LightClient {
     private readonly precompileAddresses = new Set<string>();
     /** Lowercase addresses the chain serves with a precompile of its own. */
     private readonly chainPrecompiles: ReadonlySet<string>;
-    /** One read at a time: the state and the EVM are one read's while it runs. */
+    /**
+     * One pass at a time: the state and the EVM are one pass's while it runs.
+     * A read waiting for a node's proof does not hold it.
+     */
     private readonly lock = new Mutex();
+    private readonly subscriptions = new Map<SubscriptionKey, Subscription>();
+    /** Reads waiting for a push of the block floor; each is called after every accepted push. */
+    private readonly pushWaiters = new Set<() => void>();
+    /** Whether a wait for a push timed out and no push was accepted since: reads then do not wait. */
+    private isPushStalled = false;
     /** The block the held state was proven at. */
     private block?: ProvenBlock;
-    /** The environment of {@link block}, once a call needed it. */
-    private environment?: BlockEnvironment;
     private evm?: Promise<EVM>;
 
     constructor(options: LightClientOptions) {
@@ -74,10 +155,77 @@ export class LightClient {
         });
     }
 
+    /** Subscription `key` on a socket of `node` follows the contract at `contract`: its pushes go to a partition of its own. */
+    subscribed(
+        key: SubscriptionKey,
+        contract: ContractAddress,
+        node: RpcNodeProvider
+    ): void {
+        this.subscriptions.set(key, {
+            contract,
+            node,
+            partition: this.options.createPartition()
+        });
+    }
+
+    /** Subscription `key` ended: what it pushed is not used any more. */
+    unsubscribed(key: SubscriptionKey): void {
+        this.subscriptions.delete(key);
+    }
+
+    /**
+     * Takes a message pushed to subscription `key`, received at `receivedAt`.
+     * False when it is refused: the subscription holds nothing, and it must
+     * sync again.
+     */
+    pushed(
+        key: SubscriptionKey,
+        message: unknown,
+        receivedAt: number
+    ): boolean {
+        const subscription = this.subscriptions.get(key);
+        if (!subscription) return true;
+        try {
+            const accepted = subscription.partition.accept(message);
+            // the block it already holds, pushed again
+            if (!accepted) return true;
+            this.options.pushedState.acceptedBlocks++;
+            const { stages } = accepted;
+            const timings = this.options.pushedBlockTimings;
+            timings.push({
+                number: accepted.block.number,
+                executedAt: stages.executedAt,
+                builtAt: stages.builtAt,
+                sentAt: stages.sentAt,
+                receivedAt,
+                verifiedAt: Date.now(),
+                newNodes: accepted.newNodes,
+                heldNodes: accepted.heldNodes
+            });
+            if (timings.length > MAX_PUSHED_BLOCK_TIMINGS) timings.shift();
+            this.isPushStalled = false;
+            for (const waiter of [...this.pushWaiters]) waiter();
+            return true;
+        } catch (error) {
+            this.options.pushedState.refusedBlocks++;
+            this.options.logger.error("Light client refused a pushed block", {
+                contract: subscription.contract,
+                ...LoggerUtils.getRpcNodeMetadata(subscription.node.url),
+                error
+            });
+            return false;
+        }
+    }
+
     async call(request: LocalCall): Promise<LocalCallOutcome> {
+        // the chain keeps its existential deposit back from the balance it
+        // reports for an account the value makes; the local EVM does not
+        if (request.value)
+            throw new NotLocalError(
+                "A call that carries value runs on the node"
+            );
         const evm = await this.getEvm();
-        return await this.run(async (block) => {
-            const environment = await this.environmentOf(block);
+        return await this.run(true, isCallAnswer, async (environment) => {
             try {
                 const result = await evm.runCall({
                     caller: request.from
@@ -105,7 +253,7 @@ export class LightClient {
     /** The 32-byte word of `slot`. */
     async getStorageAt(address: string, slot: string): Promise<string> {
         const key = getBytes(zeroPadValue(toBeHex(BigInt(slot)), 32));
-        return await this.run(async () =>
+        return await this.run(false, isAnswer, async () =>
             hexlify(
                 await this.state.getContractStorage(
                     Address.fromString(address),
@@ -117,6 +265,8 @@ export class LightClient {
 
     async getBalance(address: string): Promise<bigint> {
         return await this.run(
+            false,
+            isAnswer,
             async () =>
                 this.state.readAccountOf(Address.fromString(address)).balance
         );
@@ -124,61 +274,169 @@ export class LightClient {
 
     async getTransactionCount(address: string): Promise<bigint> {
         return await this.run(
+            false,
+            isAnswer,
             async () =>
                 this.state.readAccountOf(Address.fromString(address)).nonce
         );
     }
 
     async getCode(address: string): Promise<string> {
-        return await this.run(async () =>
+        return await this.run(false, isAnswer, async () =>
             hexlify(this.state.readCodeOf(Address.fromString(address)))
         );
     }
 
     /**
-     * Runs `read` with the state proven at the node's best block. State the
-     * read finds missing is proven in one request at that block and the read
-     * runs again from the start, so one read sees one block.
+     * Runs `read` on state proven at one block, and with that block's
+     * environment when `needsEnvironment`. State a pass finds missing is
+     * taken from the partitions pushed at that block, or proven by the node
+     * at that block, and the read runs again from the start, so one read sees
+     * one block.
      */
-    private async run<T>(read: (block: ProvenBlock) => Promise<T>): Promise<T> {
-        await this.lock.lock();
-        try {
-            const block = await this.options.reader.head();
-            if (block.hash !== this.block?.hash) {
-                // what is held was proven at another block
-                this.state.forgetProvenState();
-                this.environment = undefined;
-                this.block = block;
-            }
-            for (let pass = 0; pass < MAX_DISCOVERY_PASSES; pass++) {
+    private async run<T>(
+        needsEnvironment: boolean,
+        isAnswer: (value: T) => boolean,
+        read: (environment: BlockEnvironment) => Promise<T>
+    ): Promise<T> {
+        const pushed = await this.pushedBlockAtFloor();
+        let askedNode = pushed === undefined;
+        const block = pushed?.block ?? (await this.options.reader.head());
+        let environment = pushed?.environment;
+        if (needsEnvironment && !environment) {
+            askedNode = true;
+            environment = await this.options.reader.environment(block);
+        }
+        const fetched: Fetched[] = [];
+        for (let pass = 0; pass < MAX_DISCOVERY_PASSES; pass++) {
+            let undecided: AccountStateRead[];
+            await this.lock.lock();
+            try {
+                this.moveTo(block, fetched);
                 let outcome: { value: T } | { error: unknown };
                 try {
-                    outcome = { value: await read(block) };
+                    // a read that needs no environment never reads it
+                    outcome = { value: await read(environment!) };
                 } catch (error) {
                     outcome = { error };
                 }
                 const misses = this.state.takeMisses();
                 if (misses.length === 0) {
                     if ("error" in outcome) throw outcome.error;
+                    if (isAnswer(outcome.value)) {
+                        if (askedNode) this.options.counters.withFallbackRead++;
+                        else this.options.counters.fromPushedState++;
+                    }
                     return outcome.value;
                 }
                 // the pass ran on placeholders: its outcome is discarded
-                this.state.fill(
-                    misses,
-                    await this.options.reader.read(block, misses)
-                );
+                undecided = this.fillFromPartitions(block, misses);
+            } finally {
+                this.lock.unlock();
             }
-            throw new LightClientUnavailableError(
-                "The read keeps finding state missing"
+            if (undecided.length === 0) continue;
+            askedNode = true;
+            const proven = await this.options.reader.read(block, undecided);
+            undecided.forEach((missing, index) =>
+                fetched.push({ read: missing, proven: proven[index] })
             );
-        } finally {
-            this.lock.unlock();
         }
+        throw new LightClientUnavailableError(
+            "The read keeps finding state missing"
+        );
     }
 
-    private async environmentOf(block: ProvenBlock): Promise<BlockEnvironment> {
-        this.environment ??= await this.options.reader.environment(block);
-        return this.environment;
+    /**
+     * The newest block the serving node pushed, once it is not below the
+     * block floor: a push that has not reached the floor yet is waited for,
+     * at most {@link LightClientOptions.pushWaitMs}, and not again until a
+     * push is accepted. Undefined when none reaches it, and the read is then
+     * made at the node's best block.
+     */
+    private async pushedBlockAtFloor(): Promise<PushedBlock | undefined> {
+        const floor = this.options.blockFloor();
+        const isAtFloor = (pushed: PushedBlock | undefined) =>
+            pushed !== undefined &&
+            (floor === undefined || pushed.block.number >= floor);
+        const pushed = this.newestPushedBlock();
+        if (pushed === undefined || isAtFloor(pushed)) return pushed;
+        // the pushes stopped: waiting again only delays the read
+        if (this.isPushStalled) return undefined;
+        return await new Promise<PushedBlock | undefined>((resolve) => {
+            const finish = (value: PushedBlock | undefined) => {
+                clearTimeout(timer);
+                this.pushWaiters.delete(check);
+                resolve(value);
+            };
+            const check = () => {
+                const newest = this.newestPushedBlock();
+                if (isAtFloor(newest)) finish(newest);
+            };
+            const timer = setTimeout(() => {
+                this.isPushStalled = true;
+                finish(undefined);
+            }, this.options.pushWaitMs);
+            this.pushWaiters.add(check);
+        });
+    }
+
+    /** The newest block a subscription on the serving node pushed and the light client holds, with its environment. */
+    private newestPushedBlock(): PushedBlock | undefined {
+        let newest: PushedBlock | undefined;
+        for (const partition of this.servingPartitions()) {
+            const { block, environment } = partition;
+            if (
+                block &&
+                environment &&
+                block.number > (newest?.block.number ?? -1)
+            )
+                newest = { block, environment };
+        }
+        return newest;
+    }
+
+    /**
+     * Holds the state proven at `block`: what is held of another block is
+     * forgotten. What the node proved for this read is filled again, since
+     * another read may have moved the state in between.
+     */
+    private moveTo(block: ProvenBlock, fetched: Fetched[]): void {
+        if (block.hash !== this.block?.hash) {
+            this.state.forgetProvenState();
+            this.block = block;
+        }
+        if (fetched.length > 0)
+            this.state.fill(
+                fetched.map(({ read }) => read),
+                fetched.map(({ proven }) => proven)
+            );
+    }
+
+    /** Fills what the serving node's partitions pushed at `block` decide of `misses`; the rest, for the node. */
+    private fillFromPartitions(
+        block: ProvenBlock,
+        misses: AccountStateRead[]
+    ): AccountStateRead[] {
+        let undecided = misses;
+        for (const partition of this.servingPartitions()) {
+            if (undecided.length === 0) break;
+            if (partition.block?.hash !== block.hash) continue;
+            const decision = partition.decide(undecided);
+            this.state.fill(
+                decision.decided.map(({ read }) => read),
+                decision.decided.map(({ proven }) => proven)
+            );
+            undecided = decision.undecided;
+        }
+        return undecided;
+    }
+
+    /** The partitions of the subscriptions on the node the chain access sends its requests to now. */
+    private servingPartitions(): APushedPartition[] {
+        const serving = this.options.servingNode();
+        return [...this.subscriptions.values()]
+            .filter(({ node }) => node === serving)
+            .map(({ partition }) => partition);
     }
 
     private getEvm(): Promise<EVM> {
@@ -192,19 +450,22 @@ export class LightClient {
 
     private async createLocalEvm(): Promise<EVM> {
         const evm = await createEvm(
-            {
-                allowUnlimitedContractSize: true,
-                stateManager: this.state,
-                blockchain: this.blockHashes()
-            },
+            { stateManager: this.state, blockchain: this.blockHashes() },
             this.options.logger
         );
         const chainId = await this.options.getChainId();
         // the EVM's own Common is a nested package this module cannot
         // construct a copy of; its chain id is the one CHAINID reads
         evm.common.chainId = () => chainId;
-        for (const address of evm.precompiles.keys())
-            this.precompileAddresses.add(`0x${address}`);
+        // the chain's rules; the change makes the EVM list its precompiles again
+        evm.common.setHardfork(this.options.hardfork);
+        const served = new Set(this.options.ethereumPrecompiles);
+        for (const address of [...evm.precompiles.keys()]) {
+            // the hardfork's later precompiles and the console's are plain accounts on the chain
+            if (served.has(`0x${address}`))
+                this.precompileAddresses.add(`0x${address}`);
+            else evm.precompiles.delete(address);
+        }
         return evm;
     }
 
@@ -236,7 +497,12 @@ export class LightClient {
                 prevRandao: getBytes(environment.prevRandao),
                 gasLimit: environment.gasLimit,
                 baseFeePerGas: environment.baseFeePerGas,
-                getBlobGasPrice: () => undefined
+                // the chain has no blobs, and its blob base fee is not in the state a read proves
+                getBlobGasPrice: () => {
+                    throw new NotLocalError(
+                        "The blob base fee is not proven here"
+                    );
+                }
             }
         };
     }

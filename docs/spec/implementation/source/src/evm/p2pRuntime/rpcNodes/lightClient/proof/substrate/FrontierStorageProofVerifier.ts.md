@@ -24,3 +24,4 @@ Proving contract slots of a Frontier chain
 - [x] `UNIT-TEST-STPROOF-2-QT42T0.P8` — a slot of 31 bytes
 - [x] `UNIT-TEST-STPROOF-2-QT42T0.P9` — two written slots and one never written, proven from a peer3 dev node's proof and equal to that node's own reads
 - [x] `UNIT-TEST-STPROOF-2-QT42T0.P10` — a slot set back to zero on a peer3 dev node proves as zero at that block, and the earlier block's proof is refused for that block's state root
+- [x] `UNIT-TEST-STPROOF-2-QT42T0.P11` — one byte in the middle of each node on the path of a slot changed

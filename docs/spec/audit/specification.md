@@ -35,7 +35,7 @@ after a failed check are named as separate subjects and are not specified yet. R
 the document: a root taken from the same endpoint as the proof catches that endpoint's faults and
 omissions, not a consistent lie.
 
-[`REQ-STPROOF-3-NVJGR0` (A pushed block is accepted only under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0) was added the same day for a block an endpoint pushes: the writes are accepted
+[`REQ-STPROOF-3-NVJGR0` (A pushed partition is accepted only as its proof decides it under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0) was added the same day for a block an endpoint pushes: the writes are accepted
 only under the state root of the header pushed with them, the block is identified by the header hash and
 by the Ethereum block hash the chain wrote into the header, and a rejected block yields no write. The
 shape of the pushed block (header, written slots, proof, matching logs) follows the user's decisions of
@@ -57,7 +57,7 @@ keeps, and what it does after a failed read.
 New subject [light-client.md](../specification/runtime/light-client.md), added on 2026-11-19: chain reads at
 the latest block answered from proven state. [`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../specification/runtime/light-client.md#req-lc-1-jt5pkt) states the answer a caller gets, equal to the
 endpoint's own for the block, with a call run in a local EVM. [`REQ-LC-2-PMY1VG` (What cannot be answered from proven state goes to the endpoint)](../specification/runtime/light-client.md#req-lc-2-pmy1vg) lists what stays with the
-endpoint by design. [`REQ-LC-3-W7RRHM` (A failed read falls back to the endpoint and is made known)](../specification/runtime/light-client.md#req-lc-3-w7rrhm) and [`REQ-LC-4-E29Y46` (The light client is off unless switched on and served)](../specification/runtime/light-client.md#req-lc-4-e29y46) follow Luka's rule of 2026-11-18: the light client is an optional
+endpoint by design. [`REQ-LC-3-W7RRHM` (A failed read falls back to the endpoint and is made known)](../specification/runtime/light-client.md#req-lc-3-w7rrhm) and [`REQ-LC-4-E29Y46` (The light client is on when the endpoint serves it)](../specification/runtime/light-client.md#req-lc-4-e29y46) follow Luka's rule of 2026-11-18: the light client is an optional
 black box, the SDK keeps working over plain RPC when the endpoint lacks the light client endpoints or the
 light client fails, and a failure must be known. The document turns "known" into an error log per failed
 read and a counter. Choices of the implementing agent that the engineer has not confirmed: the light client
@@ -67,6 +67,19 @@ blocks are used; calls with a gas limit, fee fields, an earlier block's hash or 
 the endpoint. [`REQ-STPROOF-6-CASBQP` (The block values a call reads are accepted only as the block commits to them)](../specification/runtime/storage-proofs.md#req-stproof-6-casbqp) in [storage-proofs.md](../specification/runtime/storage-proofs.md) adds the block
 values a call reads, taken from the Ethereum block header in the chain's state. The base fee is not in that
 header and is a supplied constant, like the existential deposit.
+
+Reworked on 2026-11-20 to the card's design (Trello 399) and Luka's chat of that day, after the
+engineer's decisions on the review of #603: the light client is on when the endpoint lists the light
+client endpoints, with no configuration key; reads of a followed channel come from the partition the
+endpoint pushes at every block, every state key the channel's transactions touched, reads included, and
+what the partition does not hold is proven at the same block. [`REQ-LC-4-E29Y46` (The light client is on when the endpoint serves it)](../specification/runtime/light-client.md#req-lc-4-e29y46), [`REQ-LC-5-MM0BM9` (A followed channel is subscribed on every connection)](../specification/runtime/light-client.md#req-lc-5-mm0bm9) and
+[`REQ-LC-7-W8WDN3` (A refused or ended subscription syncs again and is made known)](../specification/runtime/light-client.md#req-lc-7-w8wdn3) were rewritten, the re-proof interval's requirement was deleted, and
+[`REQ-LC-9-KWXV43` (A read takes from the pushed partitions what they prove at its block)](../specification/runtime/light-client.md#req-lc-9-kwxv43) (reads take what the partitions prove) and [`REQ-LC-10-YCP80W` (The stages of each accepted pushed block are kept)](../specification/runtime/light-client.md#req-lc-10-ycp80w) (the stages of each
+pushed block) were added. [`REQ-STPROOF-3-NVJGR0` (A pushed partition is accepted only as its proof decides it under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0) now checks a pushed partition: the held keys under the
+header's state root with the held and new trie nodes, and the Ethereum header against the hash in the
+header's digest; its permutations of the earlier pushed block were deleted and the header permutations
+stay. The decisions of 2026-11-20 are in the requirements. The agent's own choices the engineer has not
+confirmed are [`OQ-SPEC-LC-1-VKHDPN` (Light client choices the engineer has not confirmed)](../specification/open-questions.md#oq-spec-lc-1-vkhdpn).
 
 ## 2026-10-26 — Application chain access, local join-signature answers, closed-transport frames
 

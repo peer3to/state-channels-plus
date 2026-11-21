@@ -12,6 +12,7 @@ import { errorMessage } from "@/utils/errorMessage";
 import {
     type CustomEvmError,
     isProvenSubmissionFailure,
+    replayMinedCall,
     tryDecodeCustomError
 } from "@/utils/evmErrorHandler";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -24,7 +25,7 @@ import type { ContractTransactionResponse } from "ethers";
 /**
  * A join or top-up submission the chain proved failed (see
  * `isProvenSubmissionFailure`). `hasReplayPassed`: it was mined and reverted
- * with no data, and its replay at the latest block passes, so the reason is
+ * with no data, and its replay at the block that mined it passes, so the reason is
  * unknown (another submission raced it) and the same submission can go again.
  */
 type SubmissionRefusal = {
@@ -349,7 +350,7 @@ export default class ChannelJoinService {
 
     /**
      * A failed join or top-up. One mined after another join landed reverts with
-     * no revert data: a replay at the latest block names the refusal, or
+     * no revert data: a replay at the block that mined it names the refusal, or
      * passes. Nothing is sent here; the caller's retry loop decides.
      */
     private async readOutcome(
@@ -362,12 +363,7 @@ export default class ChannelJoinService {
         if (decoded || !tx)
             return { error, custom: decoded, hasReplayPassed: false };
         try {
-            await tx.provider.call({
-                to: tx.to,
-                from: tx.from,
-                data: tx.data,
-                value: tx.value
-            });
+            await replayMinedCall(tx, error);
         } catch (replayError) {
             return {
                 error,

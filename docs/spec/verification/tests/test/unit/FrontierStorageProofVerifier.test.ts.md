@@ -28,3 +28,4 @@ zero. The suite does not cover how the state root or the proof reach the partici
 - `refuses a slot that is not 32 bytes`: REQ-STPROOF-2-ABCQR7.T1.P4, UNIT-TEST-STPROOF-2-QT42T0.P8
 - `proves slots written on a peer3 dev node to the node's own reads`: UNIT-TEST-STPROOF-2-QT42T0.P9
 - `proves a slot cleared on a peer3 dev node as zero, and not with the proof of the block before`: UNIT-TEST-STPROOF-2-QT42T0.P10
+- `throws when one byte of any node on the slot's path was changed`: REQ-STPROOF-1-J20P5Y.T2.P9, UNIT-TEST-STPROOF-2-QT42T0.P11

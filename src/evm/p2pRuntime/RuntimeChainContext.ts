@@ -76,12 +76,12 @@ function anyNodeConnected(nodes: readonly RpcNodeProvider[]): Promise<boolean> {
 /**
  * Build the multi-endpoint provider over the configured RPC nodes. Returns
  * once one node connected; the others keep connecting in the background.
- * Throws once every node's first attempt failed. With `LIGHT_CLIENT` the
- * provider answers chain reads from state the nodes prove.
+ * Throws once every node's first attempt failed. When the nodes list the
+ * light client endpoints, the provider answers chain reads from state the
+ * nodes prove.
  */
 export async function createRpcNodesProvider(
-    config: Pick<Config, "PROVIDER_URL" | "PROVIDER_URLS"> &
-        Partial<Pick<Config, "LIGHT_CLIENT">>,
+    config: Pick<Config, "PROVIDER_URL" | "PROVIDER_URLS">,
     logger: Logger
 ): Promise<MultiRpcProvider> {
     const expectedChain: ExpectedChain = {};
@@ -102,9 +102,7 @@ export async function createRpcNodesProvider(
             `Chain access requires a reachable WebSocket provider at ${reasons.join("; ")}`
         );
     }
-    return config.LIGHT_CLIENT
-        ? new LightClientRpcProvider(nodes, logger, PEER3_LIGHT_CLIENT_CHAIN)
-        : new MultiRpcProvider(nodes, logger);
+    return new LightClientRpcProvider(nodes, logger, PEER3_LIGHT_CLIENT_CHAIN);
 }
 
 /**

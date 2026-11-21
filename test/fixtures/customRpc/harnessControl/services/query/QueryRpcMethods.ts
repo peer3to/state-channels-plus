@@ -101,6 +101,10 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         return this.service.sm.channelId as string;
     }
 
+    public getStateChannelManagerAddress(): string {
+        return String(this.service.sm.stateChannelManagerContract.target);
+    }
+
     public getSignerAddress(): string {
         return this.service.sm.signerAddress as string;
     }

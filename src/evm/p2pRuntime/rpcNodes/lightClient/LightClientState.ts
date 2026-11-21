@@ -68,6 +68,11 @@ export class LightClientState extends RPCStateManager {
     private readonly accounts = new Map<AccountAddress, HeldAccount>();
     /** What the running pass found missing, by address. */
     private readonly misses = new Map<AccountAddress, AccountStateRead>();
+    /**
+     * The code the call had created at each open checkpoint, by the address
+     * string the base keys it with: a revert goes back to it.
+     */
+    private createdCodeCheckpoints: Map<string, Uint8Array>[] = [];
 
     constructor(options: LightClientStateOptions) {
         super({ provider: UNUSED_PROVIDER_URL, blockTag: 0n });
@@ -160,6 +165,27 @@ export class LightClientState extends RPCStateManager {
         return this.readCode(accountAddress) ?? new Uint8Array();
     }
 
+    // Overrides RPCStateManager.checkpoint: also keeps the code the call has
+    // created so far, which the base's checkpoints do not cover.
+    override async checkpoint(): Promise<void> {
+        this.createdCodeCheckpoints.push(new Map(this._contractCache));
+        await super.checkpoint();
+    }
+
+    // Overrides RPCStateManager.commit: the created code stays.
+    override async commit(): Promise<void> {
+        this.createdCodeCheckpoints.pop();
+        await super.commit();
+    }
+
+    // Overrides RPCStateManager.revert: the base forgets all created code,
+    // also what an outer frame created; this goes back to the checkpoint's.
+    override async revert(): Promise<void> {
+        const created = this.createdCodeCheckpoints.pop();
+        await super.revert();
+        this._contractCache = created ?? new Map();
+    }
+
     // Overrides RPCStateManager.getProof: the base would ask eth_getProof.
     override async getProof(): Promise<never> {
         throw new Error("The light client state serves no Ethereum proof");
@@ -225,6 +251,7 @@ export class LightClientState extends RPCStateManager {
             type: CacheType.ORDERED_MAP
         });
         this._contractCache = new Map();
+        this.createdCodeCheckpoints = [];
         this.originalStorageCache.clear();
     }
 
