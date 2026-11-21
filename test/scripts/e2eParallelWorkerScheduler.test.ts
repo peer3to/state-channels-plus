@@ -4,6 +4,7 @@ import { waitFor } from "../utils/waitFor";
 import { expect } from "chai";
 import { fork } from "child_process";
 import fs from "fs";
+import http from "http";
 import os from "os";
 import path from "path";
 
@@ -58,7 +59,9 @@ const {
     holdReason
 } = require("../../scripts/e2e-parallel/shared/scheduling.js");
 const {
-    TaskResourcePool
+    TaskResourcePool,
+    addressesOf,
+    isPartitionSettled
 } = require("../../scripts/e2e-parallel/shared/taskResources.js");
 const {
     WorkerScheduler
@@ -2453,6 +2456,7 @@ describe("distributed worker scheduler", function () {
                 infraPids: () => [],
                 tickMs: 1,
                 accountPartitions: new AccountPartitionPool(1),
+                settlePartition: async () => true,
                 resourceGate,
                 projectRoot: logDir,
                 costCachePath: path.join(logDir, "test-costs.json"),
@@ -2575,14 +2579,15 @@ describe("distributed worker scheduler", function () {
         }
     });
 
-    it("releases distributed task resources after either failure or cancellation", function () {
+    it("releases distributed task resources after either failure or cancellation", async function () {
         const pool = new TaskResourcePool({
             baseEnv: { BASE_ONLY: "yes" },
             slots: [
                 { id: 1, nodeUrl: "node-1", discoveryUrl: "d-1" },
                 { id: 2, nodeUrl: "node-2", discoveryUrl: "d-2" }
             ],
-            accountPartitions: new AccountPartitionPool(1)
+            accountPartitions: new AccountPartitionPool(1),
+            settle: async () => true
         });
         const forge = pool.acquire({ runner: "forge" });
         expect(forge).to.include({
@@ -2591,7 +2596,7 @@ describe("distributed worker scheduler", function () {
             slot: null
         });
         expect(forge.env).to.deep.equal({ BASE_ONLY: "yes" });
-        forge.release();
+        await forge.release();
 
         expect(pool.canAcquire({ runner: "hardhat" })).to.equal(true);
         const failed = pool.acquire({ runner: "hardhat" });
@@ -2607,13 +2612,101 @@ describe("distributed worker scheduler", function () {
             LOCAL_DISCOVERY_REGISTRY_URL: "d-1",
             E2E_SLOT_INDEX: "0"
         });
-        failed.release();
+        await failed.release();
         expect(pool.canAcquire({ runner: "hardhat" })).to.equal(true);
 
         const cancelled = pool.acquire({ runner: "hardhat" });
         expect(cancelled.slot.id).to.equal(2);
         expect(cancelled.accountPartition).to.equal(0);
-        cancelled.release();
+        await cancelled.release();
+    });
+
+    it("returns a finished task's account partition only after its transactions left the slot node's pool", async function () {
+        let settle!: (settled: boolean) => void;
+        const pool = new TaskResourcePool({
+            baseEnv: {},
+            slots: [{ id: 1, nodeUrl: "node-1", discoveryUrl: "d-1" }],
+            accountPartitions: new AccountPartitionPool(1),
+            settle: () =>
+                new Promise<boolean>((resolve) => {
+                    settle = resolve;
+                })
+        });
+        const lease = pool.acquire({ runner: "hardhat" });
+        const released = lease.release();
+        expect(
+            pool.canAcquire({ runner: "hardhat" }),
+            "a partition with pending transactions is not handed on"
+        ).to.equal(false);
+        settle(true);
+        await released;
+        expect(pool.canAcquire({ runner: "hardhat" })).to.equal(true);
+    });
+
+    it("settles a partition by its accounts' latest and pending nonces on the slot node", async function () {
+        // hardhat accounts 0 and 10: the first account of partitions 0 and 1
+        expect(addressesOf(0)[0]).to.equal(
+            "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+        );
+        expect(addressesOf(1)[0]).to.equal(
+            "0xBcd4042DE499D14e55001CcbB24a551F3b954096"
+        );
+        // a JSON-RPC node whose one account of partition 0 has a pending send
+        let pendingAhead = true;
+        const busy = addressesOf(0)[3];
+        const server = http.createServer((request, response) => {
+            let body = "";
+            request.on("data", (chunk) => (body += chunk));
+            request.on("end", () => {
+                const calls = JSON.parse(body) as Array<{
+                    id: string;
+                    params: [string, string];
+                }>;
+                const answers = calls.map(({ id, params: [address, tag] }) => ({
+                    jsonrpc: "2.0",
+                    id,
+                    result:
+                        pendingAhead && address === busy && tag === "pending"
+                            ? "0x5"
+                            : "0x4"
+                }));
+                response.setHeader("content-type", "application/json");
+                response.end(JSON.stringify(answers));
+            });
+        });
+        await new Promise<void>((resolve) =>
+            server.listen(0, "127.0.0.1", resolve)
+        );
+        const { port } = server.address() as { port: number };
+        try {
+            const nodeUrl = `http://127.0.0.1:${port}`;
+            expect(await isPartitionSettled(nodeUrl, 0)).to.equal(false);
+            pendingAhead = false;
+            expect(await isPartitionSettled(nodeUrl, 0)).to.equal(true);
+        } finally {
+            server.close();
+        }
+    });
+
+    it("keeps an account partition whose transactions never settle out of the pool", async function () {
+        const pool = new TaskResourcePool({
+            baseEnv: {},
+            slots: [{ id: 1, nodeUrl: "node-1", discoveryUrl: "d-1" }],
+            accountPartitions: new AccountPartitionPool(1),
+            settle: async () => false
+        });
+        const originalWarn = console.warn;
+        const warnings: string[] = [];
+        console.warn = (message: string) => warnings.push(message);
+        try {
+            await pool.acquire({ runner: "hardhat" }).release();
+        } finally {
+            console.warn = originalWarn;
+        }
+        expect(pool.canAcquire({ runner: "hardhat" })).to.equal(false);
+        expect(warnings).to.deep.equal([
+            "Account partition 0 still has pending transactions on node-1; keeping it out of the pool"
+        ]);
     });
 
     it("keeps capacity alive after no work and accepts a nudge", async function () {

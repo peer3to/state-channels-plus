@@ -51,6 +51,7 @@ async function runScheduler({
     tickMs = SCHEDULER_TICK_MS,
     runTaskImpl = runTask,
     accountPartitions = new AccountPartitionPool(),
+    settlePartition,
     resourceGate,
     projectRoot = process.cwd(),
     schedule = "fifo",
@@ -68,7 +69,8 @@ async function runScheduler({
     const taskResources = new TaskResourcePool({
         baseEnv,
         slots,
-        accountPartitions
+        accountPartitions,
+        settle: settlePartition
     });
     const resources =
         resourceGate ||
@@ -124,6 +126,13 @@ async function runScheduler({
         retryMs: tickMs,
         canRun: async (running, assignment, activeAssignments) => {
             if (!assignment && coordinator.queue.length === 0) return false;
+            // a finished task's partition returns once its transactions settle
+            if (
+                !taskResources.canAcquire(
+                    assignment?.task ?? coordinator.queue[0]?.task
+                )
+            )
+                return false;
             const allowed = await resources.allows(
                 running,
                 concurrencyCap,
@@ -196,7 +205,13 @@ async function runScheduler({
                     logging.getLogPath(logDir, assignment.task.logName)
                 );
             } finally {
-                execution.release();
+                execution
+                    .release()
+                    .catch((error) =>
+                        console.warn(
+                            `Releasing ${assignment.task.label}'s resources failed: ${error}`
+                        )
+                    );
             }
             const result = coordinator.completeAttempt("local", {
                 ...attempt,

@@ -282,7 +282,13 @@ async function start(config) {
                     { captureOutput: false }
                 );
             } finally {
-                execution.release();
+                execution
+                    .release()
+                    .catch((error) =>
+                        console.warn(
+                            `Releasing ${task.label}'s resources failed: ${error}`
+                        )
+                    );
             }
             const { stdout: _stdout, stderr: _stderr, ...wireResult } = result;
             const output = spool.readOutput();
