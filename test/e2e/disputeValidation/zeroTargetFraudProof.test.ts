@@ -15,7 +15,8 @@ describe("E2E: dispute validation / zero-target dispute fraud proof", function (
                 await (
                     await h.getPeer(3).p2pInstance.chainSigner.sendTransaction({
                         to: outsider.address,
-                        value: ethers.parseEther("1")
+                        // one proof can cost more than 1 ETH at the parachain's load quote
+                        value: ethers.parseEther("1000")
                     })
                 ).wait();
                 return outsider.connect(h.channelManager.runner!.provider!);

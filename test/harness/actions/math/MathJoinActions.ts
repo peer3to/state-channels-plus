@@ -201,10 +201,12 @@ export class MathJoinActions extends JoinActions {
                 );
         } else {
             if (randomWallet) {
+                // the parachain quotes 256 times a paid floor that rises
+                // under load: one join can cost more than 1 ETH
                 await (
                     await submitter.p2pInstance.chainSigner.sendTransaction({
                         to: participant,
-                        value: ethers.parseEther("1")
+                        value: ethers.parseEther("1000")
                     })
                 ).wait();
             }
