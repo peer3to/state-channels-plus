@@ -452,10 +452,19 @@ export async function assertManagedNonceEstimateFallsBackToLatest(): Promise<voi
             // the sender's own transfer stays unsealed, so its managed nonce
             // runs one past the latest block's
             const sender = await testAccount(node, 0);
+            // a raw read: ethers would answer getTransactionCount from the
+            // pre-seal read the deploy made within its 250 ms cache
+            const senderNonce = Number(
+                await node.send("eth_getTransactionCount", [
+                    sender.address,
+                    "pending"
+                ])
+            );
             await sender.sendTransaction({
                 to: Wallet.createRandom().address,
                 value: NEW_ACCOUNT_VALUE,
-                gasLimit: 21_000
+                gasLimit: 21_000,
+                nonce: senderNonce
             });
             const nonce = await provider.getTransactionCount(
                 call.from,
