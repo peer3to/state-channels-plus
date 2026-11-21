@@ -1192,4 +1192,54 @@ describe("Light client followed channel", function () {
         expect(provider.pushedStateCounters.refusedBlocks).to.equal(1);
         expect(fixture.loggedErrorMessages()).to.deep.equal([REFUSED_BLOCK]);
     });
+
+    it("reads the followed contract's slots from the push and proves another contract's account, then its slots, in two requests", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const probe = await ethers.getContractFactory("LightClientProbe");
+        const followed = await node.deploy(probe.bytecode, PROBE_DEPLOY_GAS);
+        // as an ERC-20 the channel's contract reads: no channel transaction touches it
+        const token = await node.deploy(probe.bytecode, PROBE_DEPLOY_GAS);
+        await node.transact(
+            token,
+            probe.interface.encodeFunctionData("link", [8n])
+        );
+        await fixture.follow(followed, CHANNEL_A);
+        await node.transact(
+            followed,
+            probe.interface.encodeFunctionData("touch", [CHANNEL_A, 1n, 5n])
+        );
+        const last = await node.transact(
+            followed,
+            probe.interface.encodeFunctionData("touch", [CHANNEL_A, 2n, 6n])
+        );
+        await fixture.pushedThrough(last.blockNumber);
+        const call = {
+            from: node.senderAddress,
+            to: followed,
+            data: probe.interface.encodeFunctionData("sumWith", [
+                token,
+                [1n, 2n],
+                [0n, 1n, 2n, 3n]
+            ])
+        };
+        const sent = proxy.forwardedRequests.length;
+
+        const answer = await provider.call(call);
+
+        expect(answer).to.equal(await node.provider.call(call));
+        // 5 + 6 from the push, 1 + 2 + 3 + 4 proven on request
+        expect(BigInt(answer)).to.equal(21n);
+        const proofKeyCounts = proxy.forwardedRequests
+            .slice(sent)
+            .filter(({ method }) => method === "state_getReadProof")
+            .map(({ params }) => (params as [string[]])[0].length);
+        // the token's account and code first; its four slots only once its code ran
+        expect(proofKeyCounts).to.deep.equal([2, 4]);
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 0,
+            withFallbackRead: 1,
+            failed: 0
+        });
+    });
 });

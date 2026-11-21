@@ -14,8 +14,9 @@ contract LightClientProbeChild {
  * Calls whose answer depends on how the EVM runs them, for the light client's
  * tests to compare its local run with the node's: writes in a frame that
  * reverts, value transfers, created contracts, the code
- * size limit, precompile addresses, reads that each name the next slot and
- * reads of several slots that do not depend on each other;
+ * size limit, precompile addresses, reads that each name the next slot,
+ * reads of several slots that do not depend on each other, and a read of
+ * this contract's slots together with another contract's;
  * and a revert with no data that depends on the state.
  */
 contract LightClientProbe {
@@ -24,6 +25,12 @@ contract LightClientProbe {
      * A list of slots: `next[i]` names the slot after `i`; 0 ends it.
      */
     mapping(uint256 => uint256) public next;
+
+    /**
+     * Logged by `touch` with the channel as its indexed topic, as the state
+     * channel manager logs a channel id.
+     */
+    event Touched(bytes32 indexed channel);
 
     function setValue(uint256 newValue) external {
         value = newValue;
@@ -136,6 +143,29 @@ contract LightClientProbe {
         for (uint256 i = 0; i < slots.length; i++) {
             total += next[slots[i]];
         }
+    }
+
+    /**
+     * Stores `newValue` at `slot` of the list and logs `channel`.
+     */
+    function touch(bytes32 channel, uint256 slot, uint256 newValue) external {
+        next[slot] = newValue;
+        emit Touched(channel);
+    }
+
+    /**
+     * The sum of what this contract's slots `slots` name and what `other`
+     * answers for its slots `otherSlots`.
+     */
+    function sumWith(address other, uint256[] calldata slots, uint256[] calldata otherSlots)
+        external
+        view
+        returns (uint256 total)
+    {
+        for (uint256 i = 0; i < slots.length; i++) {
+            total += next[slots[i]];
+        }
+        total += LightClientProbe(other).sumOf(otherSlots);
     }
 
     /**
