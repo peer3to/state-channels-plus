@@ -252,7 +252,7 @@ export default class MembershipService {
             (isListed) => isListed,
             // REQ-JOINSIG-1: a countersigner answers from its local view
             // even while chain reads are proven, so it still countersigns
-            // while its chain reads are held (engineer decision, 2026-11-21)
+            // while its chain reads are held
             async () => false
         );
     }

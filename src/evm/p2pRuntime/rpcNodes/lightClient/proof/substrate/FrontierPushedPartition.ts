@@ -11,7 +11,6 @@ import SubstrateTrieProof, {
 import type {
     AccountStateRead,
     BlockEnvironment,
-    ProvenAccountState,
     ProvenBlock
 } from "../AProvenStateReader";
 import APushedPartition, {

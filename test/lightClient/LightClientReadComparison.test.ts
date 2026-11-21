@@ -258,4 +258,32 @@ describe("Light client read comparison", function () {
         });
         expect(fixture.loggedWarningMessages()).to.include(NOT_ANSWERED);
     });
+
+    it("counts a call at a block the node no longer has as not compared, with a warning", async function () {
+        fixture = await LightClientProviderFixture.start({
+            comparesReads: true
+        });
+        const { node, provider, proxy } = fixture;
+        const abi = await numberStorageInterface();
+        const address = await fixture.deployNumberStorage();
+        await node.transact(address, abi.encodeFunctionData("setValue", [42n]));
+        // the proving block left the node's chain, as after a reorg
+        proxy.rejectRequests("eth_call", {
+            code: -32000,
+            message: "unknown block"
+        });
+        proxy.answerRequests("eth_getBlockByHash", null);
+
+        expect(await new Contract(address, abi, provider).getValue()).to.equal(
+            42n
+        );
+
+        expect(provider.readComparisons).to.deep.equal({
+            matched: 0,
+            differed: 0,
+            notCompared: 1
+        });
+        expect(fixture.loggedWarningMessages()).to.include(NOT_ANSWERED);
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
 });

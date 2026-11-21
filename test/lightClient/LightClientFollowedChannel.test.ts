@@ -1,6 +1,5 @@
 // @distributed-requires: lightClient
 import { PEER3_LIGHT_CLIENT_CHAIN } from "@/evm/p2pRuntime/rpcNodes/lightClient/LightClientChain";
-import { SUBSCRIPTION_RETRY_DELAY_MS } from "@/evm/p2pRuntime/rpcNodes/lightClient/LightClientSubscriptions";
 import { sleep } from "@/utils";
 import { tryHandleEvmError } from "@/utils/evmErrorHandler";
 import { PARTITION_CONTRACT } from "@test/fixtures/lightClient/LightClientNodeFixture";
@@ -17,12 +16,17 @@ const SUBSCRIBE = "lightClient_subscribeStorage";
 const UNSUBSCRIBE = "lightClient_unsubscribeStorage";
 const PUSHED_BLOCK = "lightClient_storage";
 const REFUSED_BLOCK = "Light client refused a pushed block";
+const FAILED_READ = "Light client failed a read; asking the nodes";
+const UNSUBSCRIBE_FAILED =
+    "Light client unsubscribe failed; the node may push to it until the socket closes";
 /** Enough for the light client probe's deployment. */
 const PROBE_DEPLOY_GAS = 9_000_000n;
 /** The requests a proven read makes of the node when the pushed state does not answer it. */
 const PROOF_REQUESTS = ["chain_getHeader", "state_getReadProof"];
 /** The longest a read waits for a push of the block it must not read below. */
 const PUSH_WAIT_MS = PEER3_LIGHT_CLIENT_CHAIN.blockTimeMs;
+/** How long a failed subscription change waits before it is tried again: a block time. */
+const SUBSCRIPTION_RETRY_DELAY_MS = PEER3_LIGHT_CLIENT_CHAIN.blockTimeMs;
 
 /** A pushed block as the proxy hands it to a test to change. */
 type PushedParams = {
@@ -31,6 +35,26 @@ type PushedParams = {
 };
 /** A pushed block's header as the proxy hands it to a test to change. */
 type PushedHeaderParams = { result: { header: { number: string } } };
+/** A pushed block's Ethereum header as the proxy hands it to a test to change. */
+type PushedEthereumHeaderParams = {
+    subscription: string;
+    result: { ethereumHeader: string };
+};
+
+/** Drops the endpoint's new heads, so that only what the test names raises the block floor. */
+function withoutNewHeads(params: unknown): unknown {
+    const notified = params as { result?: { parentHash?: string } };
+    return notified.result?.parentHash === undefined ? params : undefined;
+}
+
+/** How many blocks `proxy` pushed to its subscriptions. */
+function pushedCount(proxy: {
+    sentNotifications: { method: string }[];
+}): number {
+    return proxy.sentNotifications.filter(
+        ({ method }) => method === PUSHED_BLOCK
+    ).length;
+}
 
 describe("Light client followed channel", function () {
     let fixture: LightClientProviderFixture | undefined;
@@ -827,5 +851,244 @@ describe("Light client followed channel", function () {
         const methods = requests.map(({ method }) => method);
         expect(methods).to.not.include("eth_estimateGas");
         expect(methods).to.not.include("eth_sendRawTransaction");
+    });
+
+    it("counts a read of state the endpoint proved for an earlier read at the same block as a fallback read, and asks for no proof again", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        // the read block stays the newest pushed one: no new head raises the floor
+        proxy.changeNotifications("eth_subscription", withoutNewHeads);
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        // slot 11 is only channel B's
+        await node.readWriteLog(contract, CHANNEL_B, 11, 11, 3);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(receipt.blockNumber);
+        const held = proxy.holdNotifications(PUSHED_BLOCK);
+
+        expect(await provider.getStorage(contract, 11)).to.equal(
+            toBeHex(3, 32)
+        );
+        const proofsBefore = proxy.forwardedCount("state_getReadProof");
+        expect(await provider.getStorage(contract, 11)).to.equal(
+            toBeHex(3, 32)
+        );
+
+        expect(proxy.forwardedCount("state_getReadProof")).to.equal(
+            proofsBefore
+        );
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 0,
+            withFallbackRead: 2,
+            failed: 0
+        });
+        held.release();
+    });
+
+    it("reads at the block of a log the serving endpoint delivered, waiting for its push", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        // only the delivered log raises the block floor
+        proxy.changeNotifications("eth_subscription", withoutNewHeads);
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        const logBlocks: number[] = [];
+        await provider.on(
+            { address: contract, topics: [null, CHANNEL_A] },
+            (log: { blockNumber: number }) => logBlocks.push(log.blockNumber)
+        );
+        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        // the log subscription is live once it delivered the first log
+        await waitFor(() => logBlocks.includes(first.blockNumber));
+        await fixture.pushedThrough(first.blockNumber);
+        const late = proxy.holdNotifications(PUSHED_BLOCK);
+        const write = await node.readWriteLog(contract, CHANNEL_A, 10, 10, 1);
+        await waitFor(() => logBlocks.includes(write.blockNumber));
+
+        const read = provider.getStorage(contract, 10);
+        // released well within the wait, which the read is in
+        await sleep(PUSH_WAIT_MS / 4);
+        late.release();
+
+        expect(await read).to.equal(toBeHex(8, 32));
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 1,
+            failed: 0
+        });
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("leaves a read to the endpoint as a failed one when the endpoint's best block is below the block it has shown", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        const stale = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(stale.blockNumber);
+        // the socket stays open, but the endpoint pushes nothing more
+        proxy.changeNotifications(PUSHED_BLOCK, () => undefined);
+        const write = await node.readWriteLog(contract, CHANNEL_A, 10, 10, 1);
+        await provider.getTransactionReceipt(write.hash);
+        // the endpoint names an earlier best block, as a lagging replica behind it would
+        const earlier = await node.provider.send("chain_getBlockHash", [
+            write.blockNumber - 1
+        ]);
+        proxy.answerRequests(
+            "chain_getHeader",
+            await node.provider.send("chain_getHeader", [earlier])
+        );
+
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(8, 32)
+        );
+
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 0,
+            withFallbackRead: 0,
+            failed: 1
+        });
+        expect(fixture.loggedErrorMessages()).to.deep.equal([FAILED_READ]);
+        expect(String(fixture.loggedErrors()[0].meta[0].error)).to.include(
+            "below the block floor"
+        );
+    });
+
+    it("waits only once for a serving endpoint whose pushes stopped while another endpoint keeps pushing", async function () {
+        fixture = await LightClientProviderFixture.start({ endpoints: 2 });
+        const { node, provider, proxies } = fixture;
+        const [first, second] = proxies;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        const stale = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(stale.blockNumber);
+        // the serving endpoint's socket stays open, but it pushes nothing more
+        first.changeNotifications(PUSHED_BLOCK, () => undefined);
+        const write = await node.readWriteLog(contract, CHANNEL_A, 10, 10, 1);
+        await provider.getTransactionReceipt(write.hash);
+
+        const waitedFrom = Date.now();
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(8, 32)
+        );
+        const firstReadMs = Date.now() - waitedFrom;
+        const secondPushes = pushedCount(second);
+        await waitFor(() => pushedCount(second) > secondPushes);
+        const againFrom = Date.now();
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(8, 32)
+        );
+        const secondReadMs = Date.now() - againFrom;
+
+        expect(firstReadMs).to.be.at.least(PUSH_WAIT_MS);
+        expect(secondReadMs).to.be.below(PUSH_WAIT_MS);
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("asks an endpoint whose connection reopened again whether it serves the light client, and answers from proven state once it does", async function () {
+        fixture = await LightClientProviderFixture.start({
+            withoutEndpoints: true
+        });
+        const { node, provider, proxy } = fixture;
+        const [endpoint] = provider.nodes;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(7, 32)
+        );
+        expect(provider.lightClientCounters.unsupported).to.equal(1);
+
+        // the endpoint behind the same URL now serves the light client
+        proxy.stopAnsweringRequests("rpc_methods");
+        proxy.cut();
+        await waitFor(() => !endpoint.isConnected);
+        proxy.restore();
+        await waitFor(() => endpoint.isConnected);
+
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(7, 32)
+        );
+        // asked of the node itself now, no longer answered by the proxy
+        expect(proxy.forwardedCount("rpc_methods")).to.be.at.least(1);
+        expect(provider.lightClientCounters).to.deep.include({
+            unsupported: 1,
+            withFallbackRead: 1,
+            failed: 0
+        });
+    });
+
+    it("opens a refused subscription again when the endpoint fails its unsubscribe, with a warning and no error", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await waitFor(() => provider.pushedStateCounters.acceptedBlocks > 1);
+        proxy.rejectRequests(UNSUBSCRIBE, {
+            code: -32000,
+            message: "unsubscribe failed"
+        });
+        let changed = false;
+        proxy.changeNotifications(PUSHED_BLOCK, (params) => {
+            const pushed = params as PushedEthereumHeaderParams;
+            if (changed) return params;
+            changed = true;
+            pushed.result.ethereumHeader = "0x00";
+            return pushed;
+        });
+
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 10, 10, 1);
+        await waitFor(() => proxy.forwardedCount(SUBSCRIBE) === 2);
+        proxy.stopChangingNotifications(PUSHED_BLOCK);
+        await fixture.pushedThrough(receipt.blockNumber + 1);
+
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(8, 32)
+        );
+        expect(provider.pushedStateCounters).to.deep.include({
+            refusedBlocks: 1,
+            resubscriptions: 1
+        });
+        expect(fixture.loggedErrorMessages()).to.deep.equal([REFUSED_BLOCK]);
+        expect(fixture.loggedWarningMessages()).to.include(UNSUBSCRIBE_FAILED);
+    });
+
+    it("hands on no push of a refused subscription that arrives before the endpoint ends it, and counts the refusal once", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        const other = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await waitFor(() => provider.pushedStateCounters.acceptedBlocks > 1);
+        const [{ params }] = proxy.sentNotifications
+            .filter(({ method }) => method === PUSHED_BLOCK)
+            .slice(-1);
+        const { subscription } = params as PushedEthereumHeaderParams;
+        // the next subscription change waits for its answer, and the end of a refused subscription waits behind it
+        const subscribing = proxy.holdReplies(SUBSCRIBE);
+        provider.followChannel(other, CHANNEL_B);
+        await waitFor(() => subscribing.heldReplies() === 1);
+        let refused = 0;
+        proxy.changeNotifications(PUSHED_BLOCK, (notified) => {
+            const pushed = notified as PushedEthereumHeaderParams;
+            if (pushed.subscription !== subscription) return notified;
+            refused++;
+            pushed.result.ethereumHeader = "0x00";
+            return pushed;
+        });
+
+        await waitFor(() => refused >= 3);
+        expect(provider.pushedStateCounters.refusedBlocks).to.equal(1);
+        proxy.stopChangingNotifications(PUSHED_BLOCK);
+        subscribing.release();
+        await waitFor(() => proxy.forwardedCount(SUBSCRIBE) === 3);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 10, 10, 1);
+        await fixture.pushedThrough(receipt.blockNumber + 1);
+
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(8, 32)
+        );
+        expect(provider.pushedStateCounters.refusedBlocks).to.equal(1);
+        expect(fixture.loggedErrorMessages()).to.deep.equal([REFUSED_BLOCK]);
     });
 });

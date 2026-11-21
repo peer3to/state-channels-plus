@@ -220,8 +220,7 @@ export default class ValidationService {
      * The per-block ingest gate: this peer disputed the fork, or the local
      * diamond holds its dispute. It reads the local diamond even while chain
      * reads are proven: it runs for every block under the state mutex, where
-     * a chain read could wait a block time or fail and lose the block
-     * (engineer decision, 2026-11-21).
+     * a chain read could wait a block time or fail and lose the block.
      */
     public async isDisputedFork(
         forkId: ForkId,

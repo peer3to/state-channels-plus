@@ -747,6 +747,9 @@ describe("Light client provider", function () {
         proxy.failNextRequest("rpc_methods");
 
         expect(await isChainProven(contract)).to.equal(false);
+        expect(fixture.loggedWarningMessages()).to.include(
+            "RPC node did not say whether it serves the light client; chain reads keep their local checks"
+        );
         // the failed question is asked again
         expect(await isChainProven(contract)).to.equal(true);
         expect(await provider.answersFromProvenState()).to.equal(true);
