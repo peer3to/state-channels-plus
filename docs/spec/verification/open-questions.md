@@ -44,16 +44,20 @@ manager contract, so no existing fixture can drive either through a live partici
 
 ## OQ-47-8W9VT0 — Live light client evidence outside CI
 
-The three tests of [`REQ-STPROOF-3-NVJGR0.T2`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2)
-([`P1`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2.p1) to
-[`P3`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2.p3)) start a peer3 dev
-node from `PEER3_NODE_BIN` and run only on the local runner with `--lc-tests`. CI runs the
-distributed gate, which leaves Mocha files marked `@distributed-requires: lightClient` out, and no
-worker protocol can run them. The register still counts T2 as tested, so a break on the live path
-(the node's proof format, the Frontier digest layout, the test sidecar) shows only when someone runs
-the suite by hand. [`REQ-STPROOF-3-NVJGR0.T1`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t1)
+Every Mocha file under `test/lightClient/` starts a peer3 dev node from `PEER3_NODE_BIN` and runs
+only on the local runner with `--lc-tests`. Each carries `@distributed-requires: lightClient`, which no
+worker protocol provides, so the distributed gate in CI leaves all of them out. The requirements whose
+evidence is one of these suites, among them the live push check
+[`REQ-STPROOF-3-NVJGR0.T2`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2), count as
+tested on that local evidence alone. A break on the live path (the node's push and proof format, the
+Frontier digest layout, the provider's reads of pushed state) shows only when someone runs the suites by
+hand. [`REQ-STPROOF-3-NVJGR0.T1`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t1)
 keeps checking the proof logic in CI on recorded blocks.
 
-Engineer decision of 2026-11-20: accepted for now. The question closes when CI runs these tests,
+Engineer decision of 2026-11-20: accepted for now. The question closes when CI runs these suites,
 either through a CI job that fetches a pinned `zero-fee-node` and runs them on the local runner, or
 through a runner image that carries the binary (the farm rollout of the Light Clients card).
+
+Engineer decision of 2026-11-21: running these suites on the local runner is a named exception to
+the repository rule that keeps the local runner to about ten tests. The exception ends with the farm
+rollout, when the workers carry the node binary and the distributed runner runs the suites.
