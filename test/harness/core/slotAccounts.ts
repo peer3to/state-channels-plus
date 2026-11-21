@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: per-slot account and deployer-signer support; executable evidence belongs to its calling test declarations
 // Account partitioning by concurrency slot.
 //
 // Each slot gets SLOT_STRIDE disjoint accounts so concurrent test processes on
@@ -12,7 +13,9 @@ import {
     AbstractProvider,
     HDNodeWallet,
     NonceManager,
-    type Provider
+    type Provider,
+    type TransactionRequest,
+    type TransactionResponse
 } from "ethers";
 
 export const SLOT_STRIDE = 10;
@@ -39,11 +42,31 @@ export function slotDeployerIndex(): number {
 
 /**
  * One nonce counter per deployer account in this process, which talks to one
- * slot node. The harness, its block production and the runtime fixtures all
- * send from the slot deployer; separate counters hand out the same nonce, so
- * one send replaces or collides with another's.
+ * slot node (isolated-node tests send from their own accounts). The harness,
+ * its block production and the runtime fixtures all send from the slot
+ * deployer; separate counters hand out the same nonce, so one send replaces or
+ * collides with another's.
  */
 const deployerSigners = new Map<Address, NonceManager>();
+
+/**
+ * A NonceManager whose counter rereads the node after a failed send. Overrides
+ * NonceManager.sendTransaction: the base advances its counter before the
+ * broadcast, so a rejected send would leave its nonce unsent and every later
+ * send queued behind the gap for the rest of the process.
+ */
+class SlotDeployerSigner extends NonceManager {
+    override async sendTransaction(
+        tx: TransactionRequest
+    ): Promise<TransactionResponse> {
+        try {
+            return await super.sendTransaction(tx);
+        } catch (error) {
+            this.reset();
+            throw error;
+        }
+    }
+}
 
 /**
  * The process-wide nonce manager of `wallet`, the slot deployer. A fixture that
@@ -54,7 +77,7 @@ export function slotDeployerSigner(wallet: HDNodeWallet): NonceManager {
     const address = wallet.address as Address;
     const cached = deployerSigners.get(address);
     if (cached && !isDestroyed(cached.provider)) return cached;
-    const signer = new NonceManager(wallet);
+    const signer = new SlotDeployerSigner(wallet);
     deployerSigners.set(address, signer);
     return signer;
 }

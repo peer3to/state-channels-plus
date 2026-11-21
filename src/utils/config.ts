@@ -97,7 +97,9 @@ const DEFAULT_CONFIG: Config = {
     SIGNER_RECOVERY_CACHE_MAX: 100_000,
     LEAVE_CHANNEL_WATCHDOG_MS: 15_000,
     JOIN_CHANNEL_DEADLINE_SECONDS: DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS,
-    GAS_USAGE_SETTLE_MS: 2_000,
+    // three 2 s parachain blocks: a receipt outstanding at a gas-usage read
+    // still lands in it
+    GAS_USAGE_SETTLE_MS: 6_000,
     // Crash log collection is enabled when upload endpoint is configured.
     CRASH_LOG_UPLOAD_ENDPOINT: "",
     CRASH_LOG_API_TOKEN: "",

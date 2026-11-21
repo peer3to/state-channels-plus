@@ -1,4 +1,4 @@
-import { ContractFactory, NonceManager, Signer, ethers } from "ethers";
+import { ContractFactory, Signer, ethers } from "ethers";
 
 import StateChannelManagerProxyArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol/StateChannelManagerProxy.json";
 import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol/LocalDiamond.json";
@@ -19,8 +19,6 @@ const DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
 // deployer picks the value, the chain stores it, and clients read it back.
 export const DEFAULT_MAX_CHANNEL_PARTICIPANTS = 32;
 const FACET_DEPLOY_GAS_LIMIT = 12_000_000;
-const NONCE_GAP_RETRY_DELAY_MS = 10;
-const NONCE_GAP_MAX_RETRIES = 500;
 
 export type DeploymentResult = {
     address: Address;
@@ -57,6 +55,22 @@ export async function deployArtifact<T>(
         txOverrides?: ethers.TransactionRequest;
     }
 ): Promise<{ address: string; contract: T }> {
+    const sentTx = await broadcastArtifact(artifact, signer, options);
+    const address = await deployedAddress(artifact, sentTx);
+    const contract = new ethers.Contract(address, artifact.abi, signer as any);
+    return { address, contract: contract as unknown as T };
+}
+
+/** Sends `artifact`'s deployment; resolves once the node accepted it. */
+async function broadcastArtifact(
+    artifact: Artifact,
+    signer: Signer,
+    options?: {
+        libs?: Record<string, string>;
+        args?: any[];
+        txOverrides?: ethers.TransactionRequest;
+    }
+): Promise<ethers.TransactionResponse> {
     assertArtifactRuntimeSize(artifact);
     const linkedArtifact = linkLibraries(artifact, options?.libs || {});
 
@@ -82,6 +96,14 @@ export async function deployArtifact<T>(
         gasLimit,
         ...options?.txOverrides
     });
+    return sentTx;
+}
+
+/** The address `sentTx` deployed `artifact` at, once it is mined. */
+async function deployedAddress(
+    artifact: Artifact,
+    sentTx: ethers.TransactionResponse
+): Promise<string> {
     const receipt = await sentTx.wait();
 
     const address = receipt?.contractAddress;
@@ -94,8 +116,7 @@ export async function deployArtifact<T>(
         contractName: artifact.contractName,
         gasUsed: receipt.gasUsed
     });
-    const contract = new ethers.Contract(address, artifact.abi, signer as any);
-    return { address, contract: contract as unknown as T };
+    return address;
 }
 
 async function deployArtifactLocal(
@@ -129,46 +150,21 @@ export async function deployFacets(
     signer: Signer,
     libs: Record<string, string> = {}
 ): Promise<string[]> {
-    const nextNonce = await signer.getNonce("pending");
-    // A NonceManager replaces a transaction's nonce with its next one on every
-    // send, so a retried facet would leave its own nonce unsent and queue every
-    // later facet behind that gap. Send through the wrapped signer with the
-    // explicit nonces, and reserve them on the manager for its later sends.
-    const sender = signer instanceof NonceManager ? signer.signer : signer;
-    if (signer instanceof NonceManager)
-        for (const _ of routedFacetArtifacts) signer.increment();
+    // Broadcast one at a time in nonce order, then wait for every receipt
+    // together: a concurrent broadcast that stalls or is lost leaves a nonce
+    // gap, and every later facet queues behind it forever.
+    const sent: ethers.TransactionResponse[] = [];
+    for (const artifact of routedFacetArtifacts)
+        sent.push(
+            await broadcastArtifact(artifact, signer, {
+                libs,
+                txOverrides: { gasLimit: FACET_DEPLOY_GAS_LIMIT }
+            })
+        );
     return Promise.all(
-        routedFacetArtifacts.map(async (artifact, index) => {
-            for (let attempt = 0; ; attempt++) {
-                try {
-                    return (
-                        await deployArtifact(artifact, sender, {
-                            libs,
-                            txOverrides: {
-                                nonce: nextNonce + index,
-                                gasLimit: FACET_DEPLOY_GAS_LIMIT
-                            }
-                        })
-                    ).address;
-                } catch (error) {
-                    const message =
-                        error instanceof Error ? error.message : String(error);
-                    if (
-                        !message.includes("Nonce too high") ||
-                        attempt >= NONCE_GAP_MAX_RETRIES
-                    ) {
-                        throw error;
-                    }
-
-                    // Automining providers reject future nonces instead of
-                    // queueing them. Retry only that provider limitation while
-                    // keeping all facet deployments concurrent elsewhere.
-                    await new Promise((resolve) =>
-                        setTimeout(resolve, NONCE_GAP_RETRY_DELAY_MS)
-                    );
-                }
-            }
-        })
+        routedFacetArtifacts.map((artifact, index) =>
+            deployedAddress(artifact, sent[index])
+        )
     );
 }
 
@@ -269,16 +265,22 @@ export async function deployFullStack(
         facetAddresses
     } = params;
 
-    const stateMachinePromise = deployArtifact(stateMachineArtifact, signer, {
-        args: stateMachineArgs
-    });
-
-    const consumerFacetPromise = deployArtifact(consumerFacetArtifact, signer, {
-        args: consumerFacetArgs
-    });
-
-    const { address: stateMachineAddress } = await stateMachinePromise;
-    const { address: consumerFacetAddress } = await consumerFacetPromise;
+    // in nonce order, as deployFacets: a concurrent send can reach the node
+    // before the one below its nonce
+    const stateMachineSent = await broadcastArtifact(
+        stateMachineArtifact,
+        signer,
+        { args: stateMachineArgs }
+    );
+    const consumerFacetSent = await broadcastArtifact(
+        consumerFacetArtifact,
+        signer,
+        { args: consumerFacetArgs }
+    );
+    const [stateMachineAddress, consumerFacetAddress] = await Promise.all([
+        deployedAddress(stateMachineArtifact, stateMachineSent),
+        deployedAddress(consumerFacetArtifact, consumerFacetSent)
+    ]);
 
     return deploy(
         stateMachineAddress,
