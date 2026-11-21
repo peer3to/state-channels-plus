@@ -1088,6 +1088,11 @@ describe("Unit: ParticipantTimeoutService", function () {
                     });
                 // the post's log is beyond every search the check makes
                 proxy.answerRequests("eth_getLogs", []);
+                await h
+                    .control(observer)
+                    .stub.observeParticipantTimeoutWarnings()
+                    .request();
+                const tasksBefore = (await tasks.tasks()).length;
                 await checkTimeoutAfterDeadline(h, observer.index, {
                     forkId,
                     height: startHeight,
@@ -1095,13 +1100,45 @@ describe("Unit: ParticipantTimeoutService", function () {
                     isForced: false
                 });
 
+                // the check reached the guard; the runtime's own check at the
+                // deadline may reach it too, and every warning is this one
+                const warnings = await h
+                    .control(observer)
+                    .stub.getParticipantTimeoutWarnings()
+                    .request();
+                expect(warnings).to.not.deep.equal([]);
+                for (const warning of warnings)
+                    expect(warning).to.deep.equal({
+                        message:
+                            "tryTimeoutParticipant - posted commitment's calldata not found; no timeout",
+                        forkId,
+                        blockHeight: startHeight,
+                        participantAddress: leader.address
+                    });
+                // nothing re-arms the check of this post: no retry after its
+                // validation and no recheck after a failed chain read (the
+                // runtime's own check at its deadline may still reschedule)
+                const label = `block ${startHeight} - participant ${leader.address}`;
                 expect(
-                    (await tasks.tasks()).some(({ taskName }) =>
-                        taskName.includes("currentOnChainBlockValidation")
-                    )
-                ).to.equal(false);
+                    (await tasks.tasks())
+                        .slice(tasksBefore)
+                        .filter(
+                            ({ taskName }) =>
+                                taskName.includes(label) &&
+                                (taskName.startsWith(
+                                    "timeoutParticipantAfterOnChainValidation"
+                                ) ||
+                                    taskName.startsWith(
+                                        CHAIN_READ_FAILED_RECHECK_REASON
+                                    ))
+                        )
+                ).to.deep.equal([]);
                 expect(await recorder.submissions()).to.deep.equal([]);
             } finally {
+                await h
+                    .control(observer)
+                    .stub.restoreParticipantTimeoutWarnings()
+                    .request();
                 proxy.stopAnsweringRequests("eth_getLogs");
                 await hold.release();
                 await releaseLogs();

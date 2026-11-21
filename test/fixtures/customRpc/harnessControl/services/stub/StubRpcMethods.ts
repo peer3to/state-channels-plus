@@ -117,6 +117,20 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public observeParticipantTimeoutWarnings(): boolean {
+        this.service.observeParticipantTimeoutWarnings();
+        return true;
+    }
+
+    public getParticipantTimeoutWarnings() {
+        return this.service.getParticipantTimeoutWarnings();
+    }
+
+    public restoreParticipantTimeoutWarnings(): boolean {
+        this.service.restoreParticipantTimeoutWarnings();
+        return true;
+    }
+
     public observeDisputeParticipation(): boolean {
         this.service.observeDisputeParticipation();
         return true;

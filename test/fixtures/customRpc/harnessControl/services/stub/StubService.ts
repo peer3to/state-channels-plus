@@ -83,6 +83,14 @@ import WebSocket, { WebSocketServer } from "ws";
 
 // `NetworkTransport` is used both for `createRPCMethods` and the captured transport.
 
+/** One warning of the participant-timeout service, with the check it names. */
+export type ParticipantTimeoutWarning = {
+    message: string;
+    forkId?: string;
+    blockHeight?: number;
+    participantAddress?: string;
+};
+
 export type BlockWorkHoldPoint =
     | "queueDequeue"
     | "authoring"
@@ -680,6 +688,12 @@ export class StubService extends ANetworkRpcService<
         warnings: number;
         restore: () => void;
     };
+    // the participant-timeout service's warnings since observation began,
+    // each forwarded to its logger
+    private participantTimeoutWarnings?: {
+        entries: ParticipantTimeoutWarning[];
+        restore: () => void;
+    };
     private admissionObservation?: {
         completedIntakes: number;
         completedSyncs: number;
@@ -1213,6 +1227,49 @@ export class StubService extends ANetworkRpcService<
     public restoreDisputeParticipationObservation(): void {
         this.disputeParticipationObservation?.restore();
         this.disputeParticipationObservation = undefined;
+    }
+
+    /** Record the participant-timeout service's warnings, forwarding each. */
+    public observeParticipantTimeoutWarnings(): void {
+        this.restoreParticipantTimeoutWarnings();
+        // the service's logger is private
+        const logger = this.sm.participantTimeoutService["logger"];
+        const warn = logger.warn.bind(logger);
+        const entries: ParticipantTimeoutWarning[] = [];
+        logger.warn = (message, ...meta) => {
+            const fields = (meta[0] ?? {}) as Record<string, unknown>;
+            entries.push({
+                message: String(message),
+                forkId:
+                    fields.forkId === undefined
+                        ? undefined
+                        : String(fields.forkId),
+                blockHeight:
+                    fields.blockHeight === undefined
+                        ? undefined
+                        : Number(fields.blockHeight),
+                participantAddress:
+                    fields.participantAddress === undefined
+                        ? undefined
+                        : String(fields.participantAddress)
+            });
+            return warn(message, ...meta);
+        };
+        this.participantTimeoutWarnings = {
+            entries,
+            restore: () => {
+                logger.warn = warn;
+            }
+        };
+    }
+
+    public getParticipantTimeoutWarnings(): ParticipantTimeoutWarning[] {
+        return [...(this.participantTimeoutWarnings?.entries ?? [])];
+    }
+
+    public restoreParticipantTimeoutWarnings(): void {
+        this.participantTimeoutWarnings?.restore();
+        this.participantTimeoutWarnings = undefined;
     }
 
     public observeAdmission(
