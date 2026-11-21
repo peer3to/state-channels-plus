@@ -25,6 +25,8 @@ export type LightClientChain = {
      * at is a plain account on the chain.
      */
     ethereumPrecompiles: readonly string[];
+    /** How long the chain takes to make a block: the longest a read waits for a push. */
+    blockTimeMs: number;
 };
 
 /**
@@ -44,5 +46,6 @@ export const PEER3_LIGHT_CLIENT_CHAIN: LightClientChain = {
     hardfork: "prague",
     ethereumPrecompiles: [1, 2, 3, 4, 5, 6, 7, 8, 9].map(
         (index) => `0x${index.toString(16).padStart(40, "0")}`
-    )
+    ),
+    blockTimeMs: 2_000
 };

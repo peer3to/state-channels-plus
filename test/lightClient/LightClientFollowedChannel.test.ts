@@ -1,4 +1,5 @@
 // @distributed-requires: lightClient
+import { PEER3_LIGHT_CLIENT_CHAIN } from "@/evm/p2pRuntime/rpcNodes/lightClient/LightClientChain";
 import { SUBSCRIPTION_RETRY_DELAY_MS } from "@/evm/p2pRuntime/rpcNodes/lightClient/LightClientSubscriptions";
 import { tryHandleEvmError } from "@/utils/evmErrorHandler";
 import { PARTITION_CONTRACT } from "@test/fixtures/lightClient/LightClientNodeFixture";
@@ -19,6 +20,8 @@ const REFUSED_BLOCK = "Light client refused a pushed block";
 const PROBE_DEPLOY_GAS = 9_000_000n;
 /** The requests a proven read makes of the node when the pushed state does not answer it. */
 const PROOF_REQUESTS = ["chain_getHeader", "state_getReadProof"];
+/** The longest a read waits for a push of the block it must not read below. */
+const PUSH_WAIT_MS = PEER3_LIGHT_CLIENT_CHAIN.blockTimeMs;
 
 /** A pushed block as the proxy hands it to a test to change. */
 type PushedParams = {
@@ -516,6 +519,63 @@ describe("Light client followed channel", function () {
         expect(fixture.loggedWarningMessages()).to.include(
             "RPC node ended a light client subscription; subscribing again"
         );
+    });
+
+    it("reads a write right after its receipt from the push of the receipt's block", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        const write = await node.readWriteLog(contract, CHANNEL_A, 10, 10, 1);
+        const requestsBefore = fixture.forwardedCount(...PROOF_REQUESTS);
+
+        await provider.getTransactionReceipt(write.hash);
+
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(8, 32)
+        );
+        expect(fixture.forwardedCount(...PROOF_REQUESTS)).to.equal(
+            requestsBefore
+        );
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 1,
+            withFallbackRead: 0,
+            failed: 0
+        });
+    });
+
+    it("reads at the endpoint's best block once the pushes stop, not at the last pushed block, and waits for them only once", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        const stale = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(stale.blockNumber);
+        // the socket stays open, but the endpoint pushes nothing more
+        proxy.changeNotifications(PUSHED_BLOCK, () => undefined);
+        const write = await node.readWriteLog(contract, CHANNEL_A, 10, 10, 1);
+
+        await provider.getTransactionReceipt(write.hash);
+        const waitedFrom = Date.now();
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(8, 32)
+        );
+        const firstReadMs = Date.now() - waitedFrom;
+        const againFrom = Date.now();
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(8, 32)
+        );
+        const secondReadMs = Date.now() - againFrom;
+
+        expect(firstReadMs).to.be.at.least(PUSH_WAIT_MS);
+        expect(secondReadMs).to.be.below(PUSH_WAIT_MS);
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 0,
+            withFallbackRead: 2,
+            failed: 0
+        });
+        expect(fixture.loggedErrors()).to.deep.equal([]);
     });
 
     it("opens a subscription whose pushes keep being refused again at most once per block time", async function () {

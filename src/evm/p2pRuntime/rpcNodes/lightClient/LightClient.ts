@@ -54,6 +54,9 @@ type Subscription = {
     partition: APushedPartition;
 };
 
+/** A block a subscription pushed, with the block values a call reads at it. */
+type PushedBlock = { block: ProvenBlock; environment: BlockEnvironment };
+
 /** What a node proved for one read, kept so that each pass can fill it again. */
 type Fetched = { read: AccountStateRead; proven: ProvenAccountState };
 
@@ -92,6 +95,13 @@ export type LightClientOptions = {
     /** The addresses of Ethereum's precompiles the chain serves, lowercase; the local EVM runs no other. */
     ethereumPrecompiles: readonly string[];
     getChainId: () => Promise<bigint>;
+    /**
+     * The highest block the chain access has seen, from the nodes' new heads
+     * and the receipts it returned: no read is made at an earlier block.
+     */
+    blockFloor: () => number | undefined;
+    /** The longest a read waits for the serving node to push the block at {@link blockFloor}. */
+    pushWaitMs: number;
     /** Counted on: the reads this light client answers. */
     counters: LightClientCounters;
     /** Counted on: the pushed blocks it takes. */
@@ -126,6 +136,10 @@ export class LightClient {
      */
     private readonly lock = new Mutex();
     private readonly subscriptions = new Map<SubscriptionKey, Subscription>();
+    /** Reads waiting for a push of the block floor; each is called after every accepted push. */
+    private readonly pushWaiters = new Set<() => void>();
+    /** Whether a wait for a push timed out and no push was accepted since: reads then do not wait. */
+    private isPushStalled = false;
     /** The block the held state was proven at. */
     private block?: ProvenBlock;
     private evm?: Promise<EVM>;
@@ -171,6 +185,8 @@ export class LightClient {
         if (!subscription) return true;
         try {
             const accepted = subscription.partition.accept(message);
+            // the block it already holds, pushed again
+            if (!accepted) return true;
             this.options.pushedState.acceptedBlocks++;
             const { stages } = accepted;
             const timings = this.options.pushedBlockTimings;
@@ -185,6 +201,8 @@ export class LightClient {
                 heldNodes: accepted.heldNodes
             });
             if (timings.length > MAX_PUSHED_BLOCK_TIMINGS) timings.shift();
+            this.isPushStalled = false;
+            for (const waiter of [...this.pushWaiters]) waiter();
             return true;
         } catch (error) {
             this.options.pushedState.refusedBlocks++;
@@ -279,7 +297,7 @@ export class LightClient {
         isAnswer: (value: T) => boolean,
         read: (environment: BlockEnvironment) => Promise<T>
     ): Promise<T> {
-        const pushed = this.newestPushedBlock();
+        const pushed = await this.pushedBlockAtFloor();
         let askedNode = pushed === undefined;
         const block = pushed?.block ?? (await this.options.reader.head());
         let environment = pushed?.environment;
@@ -326,13 +344,43 @@ export class LightClient {
         );
     }
 
+    /**
+     * The newest block the serving node pushed, once it is not below the
+     * block floor: a push that has not reached the floor yet is waited for,
+     * at most {@link LightClientOptions.pushWaitMs}, and not again until a
+     * push is accepted. Undefined when none reaches it, and the read is then
+     * made at the node's best block.
+     */
+    private async pushedBlockAtFloor(): Promise<PushedBlock | undefined> {
+        const floor = this.options.blockFloor();
+        const isAtFloor = (pushed: PushedBlock | undefined) =>
+            pushed !== undefined &&
+            (floor === undefined || pushed.block.number >= floor);
+        const pushed = this.newestPushedBlock();
+        if (pushed === undefined || isAtFloor(pushed)) return pushed;
+        // the pushes stopped: waiting again only delays the read
+        if (this.isPushStalled) return undefined;
+        return await new Promise<PushedBlock | undefined>((resolve) => {
+            const finish = (value: PushedBlock | undefined) => {
+                clearTimeout(timer);
+                this.pushWaiters.delete(check);
+                resolve(value);
+            };
+            const check = () => {
+                const newest = this.newestPushedBlock();
+                if (isAtFloor(newest)) finish(newest);
+            };
+            const timer = setTimeout(() => {
+                this.isPushStalled = true;
+                finish(undefined);
+            }, this.options.pushWaitMs);
+            this.pushWaiters.add(check);
+        });
+    }
+
     /** The newest block a subscription on the serving node pushed and the light client holds, with its environment. */
-    private newestPushedBlock():
-        | { block: ProvenBlock; environment: BlockEnvironment }
-        | undefined {
-        let newest:
-            | { block: ProvenBlock; environment: BlockEnvironment }
-            | undefined;
+    private newestPushedBlock(): PushedBlock | undefined {
+        let newest: PushedBlock | undefined;
         for (const partition of this.servingPartitions()) {
             const { block, environment } = partition;
             if (

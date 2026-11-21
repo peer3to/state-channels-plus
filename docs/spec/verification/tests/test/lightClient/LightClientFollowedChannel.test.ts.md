@@ -29,6 +29,8 @@ the proxy saw: a read the pushed partition answers asks the endpoint nothing. It
 - `reads at the block the endpoint serving its requests pushed, not at a higher one another endpoint pushes`: REQ-LC-9-KWXV43.T1.P5
 - `uses nothing a connection pushed once it ended: a read before the new sync is proven at the endpoint's best block`: REQ-LC-5-MM0BM9.T1.P16
 - `opens a subscription the endpoint ended again, counts it and answers from its new sync`: REQ-LC-7-W8WDN3.T1.P4
+- `reads a write right after its receipt from the push of the receipt's block`: REQ-LC-1-JT5PKT.T1.P17
+- `reads at the endpoint's best block once the pushes stop, not at the last pushed block, and waits for them only once`: REQ-LC-1-JT5PKT.T1.P18
 - `opens a subscription whose pushes keep being refused again at most once per block time`: REQ-LC-7-W8WDN3.T1.P5
 - `leaves an endpoint without the light client endpoints unsubscribed, and its reads to it once it serves the requests`: REQ-LC-4-E29Y46.T1.P7
 - `answers a partition read while another read waits for its proof, and the waiting read keeps its block`: REQ-LC-9-KWXV43.T1.P6

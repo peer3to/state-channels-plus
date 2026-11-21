@@ -21,6 +21,7 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 import {
     hexlify,
+    isHexString,
     type JsonRpcError,
     type JsonRpcPayload,
     type JsonRpcResult,
@@ -86,6 +87,12 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
     private subscriptionsStart?: Promise<void>;
     /** The pending retry of a failed start of the subscriptions. */
     private subscriptionsStartRetry?: ReturnType<typeof setTimeout>;
+    /**
+     * The highest block number seen in the nodes' new heads and in the
+     * receipts and block numbers the nodes answered: no read is answered at
+     * an earlier block.
+     */
+    private highestSeenBlock?: number;
 
     constructor(
         nodes: readonly RpcNodeProvider[],
@@ -160,7 +167,27 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
     ): Promise<JsonRpcResult | JsonRpcError> {
         const read = parseLocalRead(request);
         const answer = read && (await this.answerLocally(request, read));
-        return answer ?? this.forward(request);
+        if (answer) return answer;
+        const forwarded = await this.forward(request);
+        this.noteSeenBlock(request.method, forwarded.result);
+        return forwarded;
+    }
+
+    /** Raises {@link highestSeenBlock} by a receipt or a block number a node answered. */
+    private noteSeenBlock(method: string, result: unknown): void {
+        const blockNumber =
+            method === "eth_getTransactionReceipt"
+                ? (result as { blockNumber?: unknown } | null)?.blockNumber
+                : method === "eth_blockNumber"
+                  ? result
+                  : undefined;
+        if (typeof blockNumber === "string" && isHexString(blockNumber))
+            this.raiseSeenBlock(Number(blockNumber));
+    }
+
+    private raiseSeenBlock(blockNumber: number): void {
+        if (blockNumber > (this.highestSeenBlock ?? -1))
+            this.highestSeenBlock = blockNumber;
     }
 
     /** The light client's answer to `request`, or undefined when the nodes answer it. */
@@ -226,11 +253,17 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
             hardfork: this.chain.hardfork,
             ethereumPrecompiles: this.chain.ethereumPrecompiles,
             getChainId: async () => (await this.getNetwork()).chainId,
+            blockFloor: () => this.highestSeenBlock,
+            pushWaitMs: this.chain.blockTimeMs,
             counters: this.lightClientCounters,
             pushedState: this.pushedStateCounters,
             pushedBlockTimings: this.pushedBlockTimings,
             logger: this.logger
         });
+        // the nodes' new heads come over their sockets, without polling
+        void this.on("block", (blockNumber: number) =>
+            this.raiseSeenBlock(blockNumber)
+        );
         return this.startedLightClient;
     }
 

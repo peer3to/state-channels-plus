@@ -63,7 +63,7 @@ export default class FrontierPushedPartition extends APushedPartition {
         return this.held?.environment;
     }
 
-    accept(message: unknown): AcceptedBlock {
+    accept(message: unknown): AcceptedBlock | undefined {
         try {
             return this.take(message);
         } catch (error) {
@@ -136,7 +136,7 @@ export default class FrontierPushedPartition extends APushedPartition {
         return decision;
     }
 
-    private take(message: unknown): AcceptedBlock {
+    private take(message: unknown): AcceptedBlock | undefined {
         if (!isStorageBlock(message))
             throw new StorageProofError("The node pushed no storage block");
         if (!message.sync && !this.held)
@@ -150,6 +150,16 @@ export default class FrontierPushedPartition extends APushedPartition {
             ethereumBlockHash: header.ethereumBlockHash(),
             stateRoot: header.stateRoot
         };
+        if (!message.sync && this.held) {
+            const held = this.held.block;
+            // the same block again changes nothing
+            if (block.hash === held.hash) return undefined;
+            // a reorg may push another block of the same height, never an earlier one
+            if (block.number < held.number)
+                throw new StorageProofError(
+                    `The node pushed block ${block.number} after block ${held.number}`
+                );
+        }
         const ethereumHeader = new FrontierEthereumHeader(
             getBytes(message.ethereumHeader)
         );

@@ -42,13 +42,16 @@ export default abstract class APushedPartition {
     abstract get environment(): BlockEnvironment | undefined;
 
     /**
-     * Takes the next message the node pushed to the subscription. Throws
+     * Takes the next message the node pushed to the subscription; undefined
+     * when it changes the block already held, which is ignored. Throws
      * {@link StorageProofError} when it is no such message, when it changes a
-     * partition that was never synced, or when the proof the partition then
-     * holds does not decide every held key as pushed; the partition then holds
-     * nothing until the next sync.
+     * partition that was never synced, when it is of an earlier block than the
+     * one held, or when the proof the partition then holds does not decide
+     * every held key as pushed; the partition then holds nothing until the
+     * next sync. A block of the same height as the held one, as a reorg
+     * pushes, is taken.
      */
-    abstract accept(message: unknown): AcceptedBlock;
+    abstract accept(message: unknown): AcceptedBlock | undefined;
 
     /** What the held proof decides of `reads` at {@link block}. */
     abstract decide(reads: AccountStateRead[]): PartitionDecision;

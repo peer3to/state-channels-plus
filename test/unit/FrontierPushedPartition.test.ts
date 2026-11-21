@@ -1,3 +1,4 @@
+import type { AcceptedBlock } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/APushedPartition";
 import StorageProofError from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/StorageProofError";
 import { PEER3_CHAIN_CONSTANTS } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierChainConstants";
 import FrontierPushedPartition from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierPushedPartition";
@@ -9,6 +10,16 @@ const { contract, sender, messages, blocks } = peer3PartitionPushes;
 /** The account that deployed the contract, which no transaction of the followed topic touched. */
 const DEPLOYER = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 const SLOTS = [5, 10, 20];
+
+/** What `partition` took of `message`; fails the test when it ignored the message. */
+function taken(
+    partition: FrontierPushedPartition,
+    message: unknown
+): AcceptedBlock {
+    const accepted = partition.accept(message);
+    if (!accepted) throw new Error("The partition ignored the message");
+    return accepted;
+}
 
 describe("FrontierPushedPartition", function () {
     it("holds the node's own slot values, account and code at every pushed block", function () {
@@ -223,7 +234,7 @@ describe("FrontierPushedPartition", function () {
         }
 
         partition.accept(messages[0]);
-        expect(partition.accept(messages[1]).stages).to.deep.equal(
+        expect(taken(partition, messages[1]).stages).to.deep.equal(
             messages[1].stages
         );
     });
@@ -231,11 +242,29 @@ describe("FrontierPushedPartition", function () {
     it("keeps only the proof nodes the held keys use under the new root", function () {
         const partition = new FrontierPushedPartition(PEER3_CHAIN_CONSTANTS);
         partition.accept(messages[0]);
-        const first = partition.accept(messages[1]);
+        const first = taken(partition, messages[1]);
         expect(first.heldNodes).to.equal(first.newNodes);
-        const second = partition.accept(messages[2]);
+        const second = taken(partition, messages[2]);
         // the root and every node on a changed path were replaced
         expect(second.heldNodes).to.be.below(first.heldNodes + second.newNodes);
         expect(second.heldNodes).to.be.at.least(second.newNodes);
+    });
+
+    it("ignores a change of the block it holds, and refuses one of an earlier block and holds nothing until the next sync", function () {
+        const partition = new FrontierPushedPartition(PEER3_CHAIN_CONSTANTS);
+        partition.accept(messages[0]);
+        partition.accept(messages[1]);
+        partition.accept(messages[2]);
+        const held = partition.block;
+
+        expect(partition.accept(messages[2])).to.equal(undefined);
+        expect(partition.block).to.deep.equal(held);
+
+        expect(() => partition.accept(messages[1])).to.throw(
+            StorageProofError,
+            /after block/
+        );
+        expect(partition.block).to.equal(undefined);
+        expect(taken(partition, messages[0]).sync).to.equal(true);
     });
 });
