@@ -382,6 +382,11 @@ function estimateBlocks(proxy: RpcNodeProxy): unknown[] {
         .map((request) => (request.params as unknown[])[1]);
 }
 
+/** The node's latest block number, read past ethers' request cache. */
+async function latestBlockNumber(node: JsonRpcProvider): Promise<number> {
+    return Number(await node.send("eth_blockNumber", []));
+}
+
 async function rejectionOf(work: Promise<unknown>): Promise<unknown> {
     try {
         await work;
@@ -909,8 +914,12 @@ export async function assertStartupWithOneUnreachableNode(): Promise<void> {
                 expect(
                     context.provider.nodes.map((rpcNode) => rpcNode.isConnected)
                 ).to.deep.equal([false, true]);
-                expect(await context.provider.getBlockNumber()).to.equal(
-                    await node.getBlockNumber()
+                // the node seals on an interval: a block can land between reads
+                const before = await latestBlockNumber(node);
+                const answered = await context.provider.getBlockNumber();
+                expect(answered).to.be.within(
+                    before,
+                    await latestBlockNumber(node)
                 );
             } finally {
                 await context.provider.destroy();
@@ -1031,8 +1040,12 @@ export async function assertStartupDoesNotWaitForASilentNode(): Promise<void> {
                     ]);
 
                     expect(silentAttempt).to.equal("pending");
-                    expect(await context.provider.getBlockNumber()).to.equal(
-                        await node.getBlockNumber()
+                    // the node seals on an interval: a block can land between reads
+                    const before = await latestBlockNumber(node);
+                    const answered = await context.provider.getBlockNumber();
+                    expect(answered).to.be.within(
+                        before,
+                        await latestBlockNumber(node)
                     );
                 } finally {
                     context.provider.destroy();

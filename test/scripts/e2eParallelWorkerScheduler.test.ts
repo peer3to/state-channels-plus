@@ -1,5 +1,10 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { runAgainstProtocolWorkers } from "../fixtures/distributed/protocolWorker";
+import {
+    mineBlocks,
+    testAccount,
+    withIsolatedHardhatNode
+} from "../fixtures/node/IsolatedHardhatNode";
 import { waitFor } from "../utils/waitFor";
 import { expect } from "chai";
 import { fork } from "child_process";
@@ -76,6 +81,17 @@ const MEASURED_TASK = {
     args: [],
     runner: "hardhat"
 };
+
+/**
+ * The account partition `address` belongs to. An isolated Hardhat node holds
+ * only the accounts of the slot its process runs in, and lists only their
+ * pending transactions.
+ */
+function partitionOf(address: string): number {
+    for (let partition = 0; partition < 40; partition++)
+        if (addressesOf(partition).includes(address)) return partition;
+    throw new Error(`${address} is in no account partition`);
+}
 
 // A clock a second further on at every CPU reading, so each one is taken.
 function steadyClock() {
@@ -2746,7 +2762,7 @@ describe("distributed worker scheduler", function () {
         expect(pool.canAcquire({ runner: "hardhat" })).to.equal(true);
     });
 
-    it("settles a partition by its accounts' latest and pending nonces on the slot node", async function () {
+    it("settles a partition once no transaction of its accounts is in the slot node's pool, ready or queued", async function () {
         // hardhat accounts 0 and 10: the first account of partitions 0 and 1
         expect(addressesOf(0)[0]).to.equal(
             "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
@@ -2754,27 +2770,20 @@ describe("distributed worker scheduler", function () {
         expect(addressesOf(1)[0]).to.equal(
             "0xBcd4042DE499D14e55001CcbB24a551F3b954096"
         );
-        // a JSON-RPC node whose one account of partition 0 has a pending send
-        let pendingAhead = true;
-        const busy = addressesOf(0)[3];
+        // the pool holds another partition's transaction and, until cleared,
+        // one of partition 0's (in any letter case)
+        let pooled = [addressesOf(1)[0], addressesOf(0)[3].toLowerCase()];
         const server = http.createServer((request, response) => {
-            let body = "";
-            request.on("data", (chunk) => (body += chunk));
+            request.resume();
             request.on("end", () => {
-                const calls = JSON.parse(body) as Array<{
-                    id: string;
-                    params: [string, string];
-                }>;
-                const answers = calls.map(({ id, params: [address, tag] }) => ({
-                    jsonrpc: "2.0",
-                    id,
-                    result:
-                        pendingAhead && address === busy && tag === "pending"
-                            ? "0x5"
-                            : "0x4"
-                }));
                 response.setHeader("content-type", "application/json");
-                response.end(JSON.stringify(answers));
+                response.end(
+                    JSON.stringify({
+                        jsonrpc: "2.0",
+                        id: 1,
+                        result: pooled.map((from) => ({ from }))
+                    })
+                );
             });
         });
         await new Promise<void>((resolve) =>
@@ -2784,44 +2793,97 @@ describe("distributed worker scheduler", function () {
         try {
             const nodeUrl = `http://127.0.0.1:${port}`;
             expect(await isPartitionSettled(nodeUrl, 0)).to.equal(false);
-            pendingAhead = false;
+            pooled = [addressesOf(1)[0]];
             expect(await isPartitionSettled(nodeUrl, 0)).to.equal(true);
         } finally {
             server.close();
         }
     });
 
-    it("settles a partition after a failed read and a pending send clear, and gives up with the last read's failure after its deadline", async function () {
-        // answers: a refused read, then one account ahead, then settled
+    it("reads a real node's pool: a partition account's send queued behind a nonce gap keeps the partition unsettled", async function () {
+        await withIsolatedHardhatNode(
+            async (node) => {
+                const nodeUrl = node._getConnection().url;
+                const sender = await testAccount(node, 0);
+                const partition = partitionOf(await sender.getAddress());
+                const nonce = Number(
+                    await node.send("eth_getTransactionCount", [
+                        await sender.getAddress(),
+                        "latest"
+                    ])
+                );
+                // one past the next nonce: queued, never ready, so the
+                // account's pending nonce still equals its latest one
+                await sender.sendTransaction({
+                    to: await sender.getAddress(),
+                    value: 0n,
+                    gasLimit: 21_000,
+                    nonce: nonce + 1
+                });
+                expect(await isPartitionSettled(nodeUrl, partition)).to.equal(
+                    false
+                );
+                expect(
+                    await isPartitionSettled(nodeUrl, partition + 1)
+                ).to.equal(true);
+            },
+            { seal: "manual" }
+        );
+    });
+
+    it("reads a real node's pool: a partition account's unmined send keeps the partition unsettled until it is mined", async function () {
+        await withIsolatedHardhatNode(
+            async (node) => {
+                const nodeUrl = node._getConnection().url;
+                const sender = await testAccount(node, 0);
+                const partition = partitionOf(await sender.getAddress());
+                expect(await isPartitionSettled(nodeUrl, partition)).to.equal(
+                    true
+                );
+                await sender.sendTransaction({
+                    to: await sender.getAddress(),
+                    value: 0n,
+                    gasLimit: 21_000
+                });
+                expect(await isPartitionSettled(nodeUrl, partition)).to.equal(
+                    false
+                );
+                // another partition's accounts are not its concern
+                expect(
+                    await isPartitionSettled(nodeUrl, partition + 1)
+                ).to.equal(true);
+                await mineBlocks(node, 1);
+                await waitFor(() => isPartitionSettled(nodeUrl, partition));
+            },
+            { seal: "manual" }
+        );
+    });
+
+    it("settles a partition after a failed read and a pooled send clear, and gives up with the last read's failure after its deadline", async function () {
+        // answers: a refused read, then one of the partition's sends pooled, then none
         let reads = 0;
         const busy = addressesOf(0)[0];
         const server = http.createServer((request, response) => {
-            let body = "";
-            request.on("data", (chunk) => (body += chunk));
+            request.resume();
             request.on("end", () => {
                 reads++;
                 response.setHeader("content-type", "application/json");
                 if (reads === 1) {
-                    response.end(JSON.stringify({ error: "batch refused" }));
+                    response.end(
+                        JSON.stringify({
+                            jsonrpc: "2.0",
+                            id: 1,
+                            error: { code: -32601, message: "refused" }
+                        })
+                    );
                     return;
                 }
-                const calls = JSON.parse(body) as Array<{
-                    id: string;
-                    params: [string, string];
-                }>;
                 response.end(
-                    JSON.stringify(
-                        calls.map(({ id, params: [address, tag] }) => ({
-                            jsonrpc: "2.0",
-                            id,
-                            result:
-                                reads === 2 &&
-                                address === busy &&
-                                tag === "pending"
-                                    ? "0x2"
-                                    : "0x1"
-                        }))
-                    )
+                    JSON.stringify({
+                        jsonrpc: "2.0",
+                        id: 1,
+                        result: reads === 2 ? [{ from: busy }] : []
+                    })
                 );
             });
         });

@@ -29,6 +29,7 @@ import { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot"
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { CustomRpcManifest } from "@/rpc/network/registry";
 import type InternalTransport from "@/transport/InternalTransport";
+import type { Config } from "@/utils/config";
 import type { Logger } from "@/utils/logging/Logger";
 import type { LogUploadOutcome } from "@/utils/logging/LogUploader";
 import { setupObservedP2pRuntime as setupP2pRuntime } from "@test/fixtures/node/ObservedP2pSetup";
@@ -70,6 +71,7 @@ export async function createLoggerSdkFixture(
         identityContext?: boolean;
         signerSecret?: string;
         customRpcManifest?: CustomRpcManifest;
+        config?: Partial<Config>;
     } = {}
 ): Promise<LoggerSdkFixture> {
     await startRuntimeTransportModesFixture();
@@ -118,7 +120,10 @@ export async function createLoggerSdkFixture(
             peerLogger: logger,
             config: {
                 ...setup.setupOptions.config,
-                ...crashLogUploadOverrides(options.disabled ? "" : receiver.url)
+                ...crashLogUploadOverrides(
+                    options.disabled ? "" : receiver.url
+                ),
+                ...options.config
             }
         },
         {
