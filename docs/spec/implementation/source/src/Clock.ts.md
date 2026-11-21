@@ -38,8 +38,10 @@ Released provider lifecycle
 Average block time measurement
 
 - Setup: Init on a private chain whose genesis has timestamp 0, with 1 and 4 blocks mined 2 s apart, and 15 blocks whose first four intervals are 10 s and last ten 2 s
-- Oracle: The average covers at most the last ten blocks and never the genesis interval; a chain one block past genesis measures 0
+- Oracle: The average covers at most the last ten blocks and never the genesis interval; a chain one block past genesis measures 0. `getBlockSpanMs` is the block count times that average, one second per block while it is 0
 
 - [x] `UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0.P1` — a chain younger than eleven blocks measures its real block time
 - [x] `UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0.P2` — a chain one block past genesis measures 0
 - [x] `UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0.P3` — an older chain measures over its last ten blocks
+- [x] `UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0.P4` — a block span lasts its blocks at the measured block time
+- [x] `UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0.P5` — before a block time is measured, a block in a span lasts one second

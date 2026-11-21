@@ -3,6 +3,7 @@ import QueryRpcMethods, {
     type BlockBundle,
     type StateProofVerification
 } from "./QueryRpcMethods";
+import Clock from "@/Clock";
 import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
@@ -161,7 +162,7 @@ export class QueryService extends ANetworkRpcService<QueryRpcMethods> {
     async settledGasUsage(): Promise<{ gasUsage: GasUsageRow[] }> {
         return {
             gasUsage: await this.sm.signer.gasUsage.settledSnapshot(
-                config.GAS_USAGE_SETTLE_MS
+                Clock.getBlockSpanMs(config.GAS_USAGE_SETTLE_BLOCKS)
             )
         };
     }

@@ -1,4 +1,5 @@
 import { ChainSignerRpcMethods } from "./ChainSignerRpcMethods";
+import Clock from "@/Clock";
 import type HostNonceManager from "@/evm/signer/HostNonceManager";
 import { AInternalRpcService } from "@/rpc/internal/AInternalRpcService";
 import type { InternalRpcRouter } from "@/rpc/router/InternalRpcRouter";
@@ -19,7 +20,7 @@ export class ChainSignerService extends AInternalRpcService<ChainSignerRpcMethod
     public async gasUsageTable() {
         return {
             gasUsage: await this.chainSigner.gasUsage.settledSnapshot(
-                config.GAS_USAGE_SETTLE_MS
+                Clock.getBlockSpanMs(config.GAS_USAGE_SETTLE_BLOCKS)
             )
         };
     }

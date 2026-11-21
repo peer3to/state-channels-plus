@@ -48,11 +48,12 @@ export type Config = {
     // Chain seconds a join authorization stays valid after it is prepared;
     // no block after its deadline admits the join.
     JOIN_CHANNEL_DEADLINE_SECONDS: number;
-    // How long a gas-usage read (the public table read and the disposal
-    // report) waits for outstanding receipts before it answers with the rows
-    // already recorded. A receipt still pending then shows up on a later
-    // read. No read may hang on the chain.
-    GAS_USAGE_SETTLE_MS: number;
+    // How many blocks, at the Clock's measured block time, a gas-usage read
+    // (the public table read and the disposal report) waits for outstanding
+    // receipts before it answers with the rows already recorded. A receipt
+    // still pending then shows up on a later read. No read may hang on the
+    // chain.
+    GAS_USAGE_SETTLE_BLOCKS: number;
     // Crash log collection
     CRASH_LOG_UPLOAD_ENDPOINT: string;
     CRASH_LOG_API_TOKEN: string;
@@ -97,9 +98,7 @@ const DEFAULT_CONFIG: Config = {
     SIGNER_RECOVERY_CACHE_MAX: 100_000,
     LEAVE_CHANNEL_WATCHDOG_MS: 15_000,
     JOIN_CHANNEL_DEADLINE_SECONDS: DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS,
-    // three 2 s parachain blocks: a receipt outstanding at a gas-usage read
-    // still lands in it
-    GAS_USAGE_SETTLE_MS: 6_000,
+    GAS_USAGE_SETTLE_BLOCKS: 3,
     // Crash log collection is enabled when upload endpoint is configured.
     CRASH_LOG_UPLOAD_ENDPOINT: "",
     CRASH_LOG_API_TOKEN: "",

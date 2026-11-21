@@ -309,7 +309,9 @@ export class P2pRuntimeHostRoot<
                             "gas usage",
                             LoggerUtils.getGasUsageMetadata(
                                 await this.managedSigner.gasUsage.settledSnapshot(
-                                    config.GAS_USAGE_SETTLE_MS
+                                    Clock.getBlockSpanMs(
+                                        config.GAS_USAGE_SETTLE_BLOCKS
+                                    )
                                 )
                             )
                         );
