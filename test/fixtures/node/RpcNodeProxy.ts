@@ -33,6 +33,13 @@ const HARDHAT_REVERT_ERROR: JsonRpcErrorObject = {
 /** One request a client sent through the proxy. */
 export type ForwardedRequest = { method: JsonRpcMethod; params: unknown };
 
+/** The bytes of one WebSocket frame. */
+function frameBytes(data: RawData): number {
+    if (Array.isArray(data))
+        return data.reduce((total, chunk) => total + chunk.length, 0);
+    return data instanceof ArrayBuffer ? data.byteLength : data.length;
+}
+
 /** The method, id and params of a JSON-RPC request, or the id of a response. */
 function readJsonRpcFrame(data: RawData): {
     method?: JsonRpcMethod;
@@ -116,6 +123,10 @@ export class RpcNodeProxy {
     readonly forwardedRequests: ForwardedRequest[] = [];
     /** The notifications of the node this proxy sent on to a client, in order. */
     readonly sentNotifications: ForwardedRequest[] = [];
+    /** Bytes of every request frame clients sent to this proxy. */
+    requestBytes = 0;
+    /** Bytes of every reply frame the node sent back, notifications not included. */
+    replyBytes = 0;
     private readonly server: WebSocketServer;
     private readonly upstreamUrl: string;
     /** Each client socket and its upstream socket to the node. */
@@ -453,6 +464,7 @@ export class RpcNodeProxy {
         };
         client.on("message", (data, isBinary) => {
             const { method, id, params } = readJsonRpcFrame(data);
+            this.requestBytes += frameBytes(data);
             if (method) {
                 this.forwardedMethods.push(method);
                 this.forwardedRequests.push({ method, params });
@@ -577,6 +589,7 @@ export class RpcNodeProxy {
                 else deliver();
                 return;
             }
+            this.replyBytes += frameBytes(data);
             const heldReplies =
                 !method && id !== undefined
                     ? this.heldReplyIds.get(id)
