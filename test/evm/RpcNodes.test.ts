@@ -8,6 +8,7 @@ import {
     assertGasEstimateSeesPendingBlock,
     assertManagedNonceEstimateFallsBackToLatest,
     assertPendingOnlyRevertFallsBackToLatest,
+    assertPendingNodeFaultReportsLatestRevert,
     assertRevertAtBothBlocksRejects,
     assertHeartbeatErrorAnswerKeepsNode,
     assertInvalidLogWindowRejectsStartup,
@@ -134,6 +135,10 @@ describe("MultiRpcProvider", () => {
 
     it("rejects an estimate the latest block also reverts, with the pending block's revert", async () => {
         await assertRevertAtBothBlocksRejects();
+    });
+
+    it("rejects with the latest block's revert when the node cannot build its pending block for the estimate", async () => {
+        await assertPendingNodeFaultReportsLatestRevert();
     });
 
     it("fails a read over to the next node when the first drops mid-request", async () => {

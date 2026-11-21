@@ -243,7 +243,8 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     // confirmed against the latest block before it stands, and the pending
     // block's revert is the one reported. The pending block holds other
     // senders' unmined transactions -> a competitor's pending reduce makes
-    // ours revert there, but it may never land.
+    // ours revert there, but it may never land. A node that could not build
+    // its pending block gives no verdict: the latest block's revert stands.
     override async estimateGas(tx: TransactionRequest): Promise<bigint> {
         try {
             return await super.estimateGas(tx);
@@ -252,8 +253,8 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
                 throw error;
             try {
                 return await super.estimateGas({ ...tx, blockTag: "latest" });
-            } catch {
-                throw error;
+            } catch (latestError) {
+                throw isNodeInternalError(error) ? latestError : error;
             }
         }
     }

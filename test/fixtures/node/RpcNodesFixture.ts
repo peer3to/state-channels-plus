@@ -503,6 +503,36 @@ export async function assertRevertAtBothBlocksRejects(): Promise<void> {
     );
 }
 
+export async function assertPendingNodeFaultReportsLatestRevert(): Promise<void> {
+    await withProxiedNodes(
+        1,
+        async ({ node, proxies, nodes, logger }) => {
+            const provider = new MultiRpcProvider(nodes, logger);
+            const call = await deploySealed(
+                node,
+                REVERTS_WITH_LATENESS_INIT_CODE
+            );
+            // the node cannot build its pending block for the next estimate
+            proxies[0].failNextRequestInternally("eth_estimateGas");
+
+            const rejection = await rejectionOf(provider.estimateGas(call));
+
+            expect(isError(rejection, "CALL_EXCEPTION")).to.equal(true);
+            // the latest block's revert (0: not later than its own block),
+            // with its data: the pending fault named none
+            expect(
+                isError(rejection, "CALL_EXCEPTION") && BigInt(rejection.data!)
+            ).to.equal(0n);
+            expect(proxies[0].failedCount("eth_estimateGas")).to.equal(1);
+            expect(estimateBlocks(proxies[0])).to.deep.equal([
+                "pending",
+                "latest"
+            ]);
+        },
+        { seal: "manual" }
+    );
+}
+
 export async function assertReadFailsOverWhenNodeDropsMidRequest(): Promise<void> {
     await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
         const provider = new MultiRpcProvider(nodes, logger);
