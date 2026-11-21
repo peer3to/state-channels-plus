@@ -269,6 +269,13 @@ export class LightClientNodeFixture {
         await waitFor(async () => (await this.provider.getBlockNumber()) > 0);
     }
 
+    /** The node's process id, for reading its CPU and memory use. */
+    get pid(): number {
+        const { pid } = this.node.proc;
+        if (pid === undefined) throw new Error("The node process has no pid");
+        return pid;
+    }
+
     /** The account that sends this fixture's transactions. */
     get senderAddress(): string {
         return this.wallet.address;
