@@ -293,6 +293,11 @@ work; it does not cancel or dispose the feature operation.
   load can idle the table past `p2pTime + agreementTime`. The per-test widenings
   he approved are listed in `docs/spec/audit/verification.md` ("Test timing
   inputs"); any new one needs his explicit approval and an entry there.
+- Standing exception (Luke, 2026-11-21): a parachain test whose `evidenceTime`
+  is shorter than the harness minimum `MIN_TEST_TIME_CONFIG.evidenceTime` (10)
+  may be raised to 10 without asking, only after its log shows the chain refused
+  in-window work with `RaceConditionDisputeEvidencePeriodExpired`. Each raise
+  still gets an entry in that log.
 - Do not hardcode timeout values for protocol, event, status, sync, dispute, or
   snapshot waits. Omit the timeout when the action has a derived default, or use
   `h.event.protocolEventTimeoutMs(...)` when a lower-level API requires one.

@@ -175,9 +175,10 @@ full gate).
 
 ## Test timing inputs — 2026-11-21
 
-Engineer decision (Luke, 2026-11-21, PR #606), standing: a test whose `evidenceTime` is too short
-for 2 s parachain blocks may be raised to the harness minimum `MIN_TEST_TIME_CONFIG.evidenceTime`
-(10); each raise still gets an entry here. First use: the three U72 cases in
+Engineer decision (Luke, 2026-11-21, PR #606), standing: a parachain test whose `evidenceTime` is
+below the harness minimum `MIN_TEST_TIME_CONFIG.evidenceTime` (10) may be raised to 10 once its log
+shows `RaceConditionDisputeEvidencePeriodExpired` refusing in-window work; each raise still gets an
+entry here. The rule is mirrored in `test/AGENTS.md` ("Protocol wait budgets"). First use: the three U72 cases in
 `BotConnectionFixes.test.ts` whose leaver submits its self-removal for an observed dispute go from
 the staging's 4 to 10. On the parachain, observing the dispute, building the self-removal and
 landing it spans two or three 2 s blocks, so 4 s let the chain refuse it with
