@@ -26,9 +26,7 @@
  * channel unwritten; BENCH_COMPARE (0): 1 also asks the node every read the
  * light clients answer (REQ-LC-11).
  */
-import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import {
     LIGHT_CLIENT_METHODS,
@@ -46,6 +44,7 @@ import { recordingLogger } from "@test/fixtures/node/RpcNodesFixture";
 import { waitFor } from "@test/utils/waitFor";
 import { toBeHex } from "ethers";
 import { ethers } from "hardhat";
+import { hostDescription, percentile, processUsage, sum } from "./benchUtils";
 
 /** A JSON-RPC method name. */
 type RpcMethod = string;
@@ -128,18 +127,6 @@ function slotOf(channel: number, offset: number): number {
     return channel * SLOT_SPAN + offset;
 }
 
-function percentile(values: number[], fraction: number): number | null {
-    if (values.length === 0) return null;
-    const sorted = [...values].sort((a, b) => a - b);
-    return sorted[
-        Math.min(sorted.length - 1, Math.floor(fraction * sorted.length))
-    ];
-}
-
-function sum(values: number[]): number {
-    return values.reduce((total, value) => total + value, 0);
-}
-
 function countMethods(requests: { method: RpcMethod }[]): MethodCounts {
     const counts: MethodCounts = {};
     for (const { method } of requests)
@@ -155,22 +142,6 @@ function counterDelta(
     for (const key of Object.keys(after) as (keyof LightClientCounters)[])
         if (after[key] !== before[key]) delta[key] = after[key] - before[key];
     return delta;
-}
-
-/** CPU seconds and resident memory of process `pid`, from `ps`. */
-function processUsage(pid: number): { cpuSeconds: number; rssKb: number } {
-    const [rss, time] = execFileSync("ps", [
-        "-o",
-        "rss=,time=",
-        "-p",
-        String(pid)
-    ])
-        .toString()
-        .trim()
-        .split(/\s+/);
-    const parts = time.split(/[:-]/).map(Number);
-    const cpuSeconds = parts.reduce((total, part) => total * 60 + part, 0);
-    return { cpuSeconds, rssKb: Number(rss) };
 }
 
 function pushedBlocks(proxy: RpcNodeProxy): LightClientStorageBlock[] {
@@ -585,12 +556,7 @@ async function main(): Promise<void> {
                 {
                     run: {
                         date: new Date().toISOString(),
-                        host: {
-                            platform: `${os.platform()} ${os.release()}`,
-                            cpus: `${os.cpus().length} x ${os.cpus()[0]?.model}`,
-                            memoryGb: Math.round(os.totalmem() / 2 ** 30),
-                            loadAverage: os.loadavg()
-                        },
+                        host: hostDescription(),
                         nodeBinary: process.env.PEER3_NODE_BIN,
                         parameters: {
                             ROUNDS,

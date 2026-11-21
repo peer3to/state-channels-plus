@@ -189,16 +189,20 @@ export class LightClientConnection {
 export class LightClientNodeFixture {
     /** Reads straight from the node. */
     readonly provider: JsonRpcProvider;
-    private readonly node: NodeHandle;
+    /** The node this fixture started; undefined when it attached to one already running. */
+    private readonly node: NodeHandle | undefined;
+    /** Where the node serves its RPC. */
+    readonly url: string;
     private readonly wallet: HDNodeWallet;
     private readonly sockets: JsonRpcSocket[] = [];
     private readonly proxies: RpcNodeProxy[] = [];
     /** The funded account's next nonce; several transactions can share a block. */
     private nextNonce = 0;
 
-    private constructor(node: NodeHandle) {
+    private constructor(node: NodeHandle | undefined, url: string) {
         this.node = node;
-        this.provider = new JsonRpcProvider(node.url, undefined, {
+        this.url = url;
+        this.provider = new JsonRpcProvider(url, undefined, {
             staticNetwork: true,
             // a receipt is asked for well inside the node's block time
             pollingInterval: 250
@@ -219,34 +223,51 @@ export class LightClientNodeFixture {
             throw new Error(
                 `${LIGHT_CLIENT_UNSUPPORTED}: PEER3_NODE_BIN names no peer3 node binary`
             );
-        return new LightClientNodeFixture(await startPeer3Node());
+        const node = await startPeer3Node();
+        return new LightClientNodeFixture(node, node.url);
+    }
+
+    /**
+     * Uses a peer3 dev node already running at `url`, which serves the light
+     * client endpoints and funds the test chain's account; stop leaves it
+     * running. For a benchmark whose node runs on another host.
+     */
+    static async attach(url: string): Promise<LightClientNodeFixture> {
+        const fixture = new LightClientNodeFixture(undefined, url);
+        // earlier runs sent from the same account
+        fixture.nextNonce = await fixture.provider.getTransactionCount(
+            fixture.senderAddress,
+            "pending"
+        );
+        return fixture;
     }
 
     async stop(): Promise<void> {
         for (const socket of this.sockets) socket.close();
         for (const proxy of this.proxies) await proxy.close();
         this.provider.destroy();
+        if (!this.node) return;
         this.node.stop();
         await this.node.exited;
     }
 
     /** A connection to the light client endpoints, after checking the node lists them. */
     async connect(): Promise<LightClientConnection> {
-        const socket = await this.open(this.node.url);
+        const socket = await this.open(this.url);
         await assertLightClientEndpoints(socket);
         return new LightClientConnection(socket);
     }
 
     /** A proxy in front of the node, which the test makes answer in the node's place. */
     async proxyToNode(): Promise<RpcNodeProxy> {
-        const proxy = await RpcNodeProxy.start(this.node.url);
+        const proxy = await RpcNodeProxy.start(this.url);
         this.proxies.push(proxy);
         return proxy;
     }
 
     /** A socket to the node itself, which the fixture closes on stop. */
     connectToNode(): Promise<JsonRpcSocket> {
-        return this.open(this.node.url);
+        return this.open(this.url);
     }
 
     /**
@@ -271,8 +292,9 @@ export class LightClientNodeFixture {
 
     /** The node's process id, for reading its CPU and memory use. */
     get pid(): number {
-        const { pid } = this.node.proc;
-        if (pid === undefined) throw new Error("The node process has no pid");
+        const pid = this.node?.proc.pid;
+        if (pid === undefined)
+            throw new Error("The node runs in no process of this fixture");
         return pid;
     }
 
