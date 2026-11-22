@@ -26,12 +26,16 @@
  * more subscribers than channels share partitions; BENCH_BUSY_FRACTION (0.5):
  * channels written each block, the rest idle; BENCH_FALLBACK_FRACTION (0.1):
  * peers that also prove one key outside their partition each block;
- * BENCH_WORKERS (half the CPUs).
+ * BENCH_WORKERS (half the CPUs): peer threads, per host with BENCH_PEER_HOSTS.
+ *
+ * BENCH_PEER_HOSTS: ssh hosts that run the peers instead of this machine, each
+ * through capacityPeerHost.ts in its checkout BENCH_PEER_HOST_DIR, with
+ * BENCH_PEER_HOST_NODE (node) as node.js, reaching the node at
+ * BENCH_PEER_NODE_URL. Peers are spread over every host's threads.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Worker } from "node:worker_threads";
 import { PEER3_LIGHT_CLIENT_CHAIN } from "@/evm/p2pRuntime/rpcNodes/lightClient/LightClientChain";
 import { contractStorageKey } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/frontierStateKeys";
 import {
@@ -40,6 +44,7 @@ import {
 } from "@test/fixtures/lightClient/LightClientNodeFixture";
 import { getAddress, toBeHex } from "ethers";
 import type { PeerReport, PeerSpec, PushSample } from "./capacityPeers";
+import { PeerHost, type PeerThread, PeerWorker } from "./peerThreads";
 import {
     hostDescription,
     percentile,
@@ -60,38 +65,11 @@ const WORKERS = Number(
     process.env.BENCH_WORKERS ?? Math.max(1, Math.floor(os.cpus().length / 2))
 );
 const BLOCK_TIME_MS = PEER3_LIGHT_CLIENT_CHAIN.blockTimeMs;
+const PEER_HOSTS =
+    process.env.BENCH_PEER_HOSTS?.split(",").filter(Boolean) ?? [];
 
 function channelId(index: number): string {
     return toBeHex(0xc0000 + index, 32);
-}
-
-/** A worker thread hosting peers, and a way to wait for its next answer. */
-class PeerWorker {
-    readonly worker: Worker;
-    private readonly waiting: ((message: { type: string }) => void)[] = [];
-
-    constructor(nodeUrl: string) {
-        this.worker = new Worker(require.resolve("./capacityPeers.ts"), {
-            workerData: { nodeUrl },
-            execArgv: [
-                "-r",
-                "ts-node/register/transpile-only",
-                "-r",
-                "tsconfig-paths/register"
-            ],
-            env: { ...process.env, TS_NODE_PROJECT: "tsconfig.json" }
-        });
-        this.worker.on("message", (message: { type: string }) =>
-            this.waiting.shift()?.(message)
-        );
-    }
-
-    ask<T>(message: unknown): Promise<T> {
-        return new Promise((resolve) => {
-            this.waiting.push((answer) => resolve(answer as T));
-            this.worker.postMessage(message);
-        });
-    }
 }
 
 function stepResult(
@@ -222,12 +200,19 @@ function stepResult(
     };
 }
 
+function requiredEnv(name: string): string {
+    const value = process.env[name];
+    if (!value) throw new Error(`${name} is needed with BENCH_PEER_HOSTS`);
+    return value;
+}
+
 async function main(): Promise<void> {
     const external = process.env.BENCH_NODE_URL;
     const node = external
         ? await LightClientNodeFixture.attach(external)
         : await LightClientNodeFixture.start();
-    const workers: PeerWorker[] = [];
+    const workers: PeerThread[] = [];
+    const peerHosts: PeerHost[] = [];
     let writing = true;
     let writer: Promise<void> = Promise.resolve();
     try {
@@ -279,8 +264,19 @@ async function main(): Promise<void> {
             }
         })();
 
-        for (let index = 0; index < WORKERS; index++)
-            workers.push(new PeerWorker(node.url));
+        if (PEER_HOSTS.length === 0)
+            for (let index = 0; index < WORKERS; index++)
+                workers.push(new PeerWorker(node.url));
+        for (const host of PEER_HOSTS) {
+            const peerHost = PeerHost.start(host, {
+                dir: requiredEnv("BENCH_PEER_HOST_DIR"),
+                node: process.env.BENCH_PEER_HOST_NODE ?? "node",
+                nodeUrl: requiredEnv("BENCH_PEER_NODE_URL"),
+                threads: WORKERS
+            });
+            peerHosts.push(peerHost);
+            workers.push(...peerHost.threads);
+        }
         const fallbackEvery =
             FALLBACK_FRACTION > 0 ? Math.round(1 / FALLBACK_FRACTION) : 0;
         const steps = [];
@@ -290,7 +286,7 @@ async function main(): Promise<void> {
         for (const subscribers of STEPS) {
             const added: PeerSpec[][] = workers.map(() => []);
             for (; opened < subscribers; opened++)
-                added[opened % WORKERS].push({
+                added[opened % workers.length].push({
                     id: opened,
                     contract,
                     channel: channelId(opened % CHANNELS),
@@ -391,6 +387,7 @@ async function main(): Promise<void> {
                             BUSY_FRACTION,
                             FALLBACK_FRACTION,
                             WORKERS,
+                            PEER_HOSTS,
                             BLOCK_TIME_MS
                         },
                         blocksWritten: writtenBlocks.size
@@ -406,12 +403,8 @@ async function main(): Promise<void> {
         writing = false;
         // a write in flight finishes before the node stops
         await writer.catch(() => undefined);
-        await Promise.all(
-            workers.map(async (worker) => {
-                await worker.ask({ type: "stop" });
-                await worker.worker.terminate();
-            })
-        );
+        await Promise.all(workers.map((worker) => worker.close()));
+        await Promise.all(peerHosts.map((peerHost) => peerHost.close()));
         await node.stop();
     }
 }
