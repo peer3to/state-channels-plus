@@ -66,6 +66,8 @@ const WORKERS = Number(
     process.env.BENCH_WORKERS ?? Math.max(1, Math.floor(os.cpus().length / 2))
 );
 const BLOCK_TIME_MS = PEER3_LIGHT_CLIENT_CHAIN.blockTimeMs;
+/** Channel writes sent at once while the partitions are set up. */
+const SETUP_BATCH = 200;
 const PEER_HOSTS =
     process.env.BENCH_PEER_HOSTS?.split(",").filter(Boolean) ?? [];
 
@@ -225,18 +227,22 @@ async function main(): Promise<void> {
         // a contract outside every partition, which fallback reads prove
         const other = await node.deploy(PARTITION_CONTRACT);
         await node.readWriteLog(other, channelId(CHANNELS), 0, 1, 1);
-        // every channel's partition exists before peers subscribe
-        await Promise.all(
-            Array.from({ length: CHANNELS }, (_, channel) =>
-                node.readWriteLog(
-                    contract,
-                    channelId(channel),
-                    0,
-                    channel + 1,
-                    1
+        // every channel's partition exists before peers subscribe; in batches,
+        // since the node's pool drops what one sender queues past its limits
+        for (let first = 0; first < CHANNELS; first += SETUP_BATCH)
+            await Promise.all(
+                Array.from(
+                    { length: Math.min(SETUP_BATCH, CHANNELS - first) },
+                    (_, offset) =>
+                        node.readWriteLog(
+                            contract,
+                            channelId(first + offset),
+                            0,
+                            first + offset + 1,
+                            1
+                        )
                 )
-            )
-        );
+            );
         const fallbackKey = contractStorageKey(
             getAddress(other),
             toBeHex(1, 32)
