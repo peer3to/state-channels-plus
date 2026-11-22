@@ -18,6 +18,7 @@ import { LIGHT_CLIENT_METHODS } from "@/evm/p2pRuntime/rpcNodes/lightClient/ligh
 import { PEER3_CHAIN_CONSTANTS } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierChainConstants";
 import FrontierPushedPartition from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierPushedPartition";
 import { JsonRpcSocket } from "@test/fixtures/lightClient/JsonRpcSocket";
+import { contractStoragePrefix, contractValueCount } from "./benchUtils";
 
 export type PeerSpec = {
     id: number;
@@ -38,6 +39,14 @@ export type PushSample = {
     receivedAt: number;
     verifiedAt: number;
     bytes: number;
+    /** Keys whose value the push carried. */
+    values: number;
+    /**
+     * Of those, slots of the followed contract's storage: the rest are
+     * accounts and code, such as the writer's account, whose nonce changes
+     * with every transaction it sends.
+     */
+    contractValues: number;
     newNodes: number;
     /** Milliseconds the peer's thread spent verifying and applying the push, synchronously. */
     acceptMs: number;
@@ -68,6 +77,8 @@ type Peer = {
     spec: PeerSpec;
     socket: JsonRpcSocket;
     partition: FrontierPushedPartition;
+    /** Hex prefix of every storage key of the followed contract. */
+    storagePrefix: string;
     subscribedAt: number;
     lastNumber?: number;
     synced: boolean;
@@ -147,6 +158,11 @@ function onPush(peer: Peer, params: unknown): void {
             receivedAt,
             verifiedAt,
             bytes: Buffer.byteLength(JSON.stringify(params)),
+            values: accepted.values,
+            contractValues: contractValueCount(
+                (result as { values: { key: string }[] }).values,
+                peer.storagePrefix
+            ),
             newNodes: accepted.newNodes,
             acceptMs
         });
@@ -184,6 +200,9 @@ async function openPeer(spec: PeerSpec): Promise<void> {
         spec,
         socket,
         partition: new FrontierPushedPartition(PEER3_CHAIN_CONSTANTS),
+        // the storage map's 32-byte prefix and the contract's 36-byte hashed
+        // address, ahead of the hashed slot
+        storagePrefix: contractStoragePrefix(spec.contract),
         subscribedAt: Date.now(),
         synced: false
     };

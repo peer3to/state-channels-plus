@@ -125,6 +125,12 @@ function stepResult(
             ? { peer, lag }
             : worst;
     }, undefined);
+    const pushCost = (part: PushSample[]) => ({
+        pushes: part.length,
+        bytesPerPush: spread(part.map((p) => p.bytes)),
+        newProofNodesPerPush: spread(part.map((p) => p.newNodes)),
+        acceptMs: spread(part.map((p) => p.acceptMs))
+    });
     const hostedPeers = reports.reduce((n, r) => n + r.peers, 0);
     const firstThirdLag = percentile(lags(byTime.slice(0, third)), 0.5);
     const lastThirdLag = percentile(lags(byTime.slice(-third)), 0.5);
@@ -178,6 +184,13 @@ function stepResult(
             perPush: spread(pushes.map((p) => p.bytes)),
             newProofNodesPerPush: spread(pushes.map((p) => p.newNodes))
         },
+        // a partition whose contract slots kept their values while its proof
+        // path moved with other partitions' writes, against pushes that
+        // changed a slot of it
+        unchangedValuesWithNewProofNodes: pushCost(
+            pushes.filter((p) => p.contractValues === 0 && p.newNodes > 0)
+        ),
+        changedValues: pushCost(pushes.filter((p) => p.contractValues > 0)),
         initialSyncMs: spread(reports.flatMap((r) => r.syncMs)),
         fallbackReadMs: spread(reports.flatMap((r) => r.fallbackReadMs)),
         failedFallbackReads: reports.reduce(

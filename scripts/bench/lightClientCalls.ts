@@ -61,6 +61,8 @@ import { waitFor } from "@test/utils/waitFor";
 import { toBeHex } from "ethers";
 import { ethers } from "hardhat";
 import {
+    contractStoragePrefix,
+    contractValueCount,
     hostDescription,
     percentile,
     processUsage,
@@ -118,6 +120,8 @@ type PushRecord = {
     sync: boolean;
     bytes: number;
     values: number;
+    /** Of the values, slots of the followed contract: see `contractValueCount`. */
+    contractValues: number;
     proofNodes: number;
     stages?: {
         buildMs: number | null;
@@ -224,7 +228,8 @@ function pushedBlocks(
     });
 }
 
-function pushRecords(path: BenchPath): PushRecord[] {
+function pushRecords(path: BenchPath, contract: string): PushRecord[] {
+    const prefix = contractStoragePrefix(contract);
     // pushed block number -> the stage times of that push
     const timings = new Map(
         path.provider.pushedBlockTimings.map((timing) => [
@@ -241,6 +246,7 @@ function pushRecords(path: BenchPath): PushRecord[] {
             sync: block.sync,
             bytes,
             values: block.values.length,
+            contractValues: contractValueCount(block.values, prefix),
             proofNodes: block.proofNodes.length,
             stages: timing && {
                 buildMs:
@@ -513,9 +519,10 @@ function summarize(
                     push.stages ? [push.stages.newNodes] : []
                 )
             ),
+            // the followed contract's slots kept their values, its proof path moved
             unchangedValuesWithNewProofNodes: deltaPushes.filter(
                 (push) =>
-                    push.values === 0 &&
+                    push.contractValues === 0 &&
                     (push.stages?.newNodes ?? push.proofNodes) > 0
             ).length,
             stagesMedianMs: Object.fromEntries(
@@ -797,7 +804,9 @@ async function main(): Promise<void> {
         }
         const nodeAfter = processUsage(node.pid);
 
-        const pushes = followingPaths.flatMap(pushRecords);
+        const pushes = followingPaths.flatMap((path) =>
+            pushRecords(path, contract)
+        );
         const summary = {
             ...summarize(records, pushes, reconnects, paths),
             resultMismatchesBetweenPaths: mismatches,

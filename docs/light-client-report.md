@@ -329,8 +329,13 @@ also holds the proxy forwarding the call's requests and any push that arrived me
 
 From the comparison run (one followed channel, 4 channels written per round):
 
-- A push carried 2 values and 15 new proof nodes at the median (25 at p95), 8.3 KB. No block arrived
-  with unchanged values but new proof nodes.
+- A push carried 2 values and 15 new proof nodes at the median (25 at p95), 8.3 KB. Blocks whose
+  partition values stayed unchanged while their proof path moved are not isolated in these runs: the
+  drivers counted a push as unchanged only when it carried no value at all, and every push also
+  carries the account of whoever sent the block's transactions, whose nonce changes with each one. The
+  drivers now count the followed contract's slots instead (`contractValueCount` in
+  `scripts/bench/benchUtils.ts`, reported as `unchangedValuesWithNewProofNodes` against
+  `changedValues`); the measurement comes with the next farm runs.
 - Stages, median: the node built a push in 2 ms, dispatched it in under 1 ms, transit took 1 ms, the
   peer verified and applied it in 2 ms; 5 ms from the end of the block's execution to verified.
 - Reconnect, from dropping the socket until the light client held the node's new sync: 302 ms median,

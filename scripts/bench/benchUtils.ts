@@ -2,6 +2,32 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import os from "node:os";
+import { contractStorageKey } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/frontierStateKeys";
+import { ZeroHash } from "ethers";
+
+/** The hex prefix of every storage key of `contract`, for {@link contractValueCount}. */
+export function contractStoragePrefix(contract: string): string {
+    // the storage map's 32-byte prefix and the contract's 36-byte hashed
+    // address, ahead of the hashed slot
+    return contractStorageKey(contract, ZeroHash)
+        .toLowerCase()
+        .slice(0, 2 + 2 * (32 + 36));
+}
+
+/**
+ * How many of a pushed message's `values` are slots of the contract whose
+ * {@link contractStoragePrefix} is `prefix`. The rest are accounts and code,
+ * such as the account of whoever sent the block's transactions, whose nonce
+ * changes with each one: a partition whose slots kept their values still
+ * carries those.
+ */
+export function contractValueCount(
+    values: readonly { key: string }[],
+    prefix: string
+): number {
+    return values.filter(({ key }) => key.toLowerCase().startsWith(prefix))
+        .length;
+}
 
 /** The value below which `fraction` of `values` lie; null for no values. */
 export function percentile(values: number[], fraction: number): number | null {
