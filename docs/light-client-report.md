@@ -212,6 +212,9 @@ measures.
 
 ## Not covered
 
+Where the build departs from the card is listed in
+[`OQ-SPEC-LC-2-XQ3PR7`](spec/specification/open-questions.md#oq-spec-lc-2-xq3pr7).
+
 - Collator and full-node import costs: capacity runs against one dev node with interval sealing, not
   a relay-chain network.
 - Participants running whole channel flows on a peer3 node: that needs the parachain test mode of PR

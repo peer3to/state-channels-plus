@@ -52,6 +52,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-SPEC-REDUCE-SPECTATOR-1-1YWDC5`](open-questions.md#oq-spec-reduce-spectator-1-1ywdc5) | Spectator reduction without the reduced latest state snapshot                                                                                               | Shared poker client manager plan (2026-10-26) | [disputes/dispute-processing.md](./disputes/dispute-processing.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md)                                                                       | Resolved                          |
 | [`OQ-SPEC-RELAY-1-SW2BKP`](open-questions.md#oq-spec-relay-1-sw2bkp)                       | Confirmation re-broadcast volume delays counter-signatures past the agreement window                                                                        | Six-player browser game (2026-10-27)          | [peer-communication/block-gossip.md](./peer-communication/block-gossip.md)                                                                                                                                                 | Open (later)                      |
 | [`OQ-SPEC-LC-1-VKHDPN`](open-questions.md#oq-spec-lc-1-vkhdpn)                             | Light client choices the engineer has not confirmed                                                                                                         | Light client card 399 (2026-11-20)            | [runtime/light-client.md](./runtime/light-client.md)                                                                                                                                                                       | Open                              |
+| [`OQ-SPEC-LC-2-XQ3PR7`](open-questions.md#oq-spec-lc-2-xq3pr7)                             | Where the light client departs from card 399                                                                                                                | Light client card 399 (2026-11-22)            | [runtime/light-client.md](./runtime/light-client.md)                                                                                                                                                                       | Open                              |
 
 ## Register assumptions and constraints
 
@@ -874,5 +875,63 @@ choices while building the card's design, and the engineer has not confirmed the
 7. The participant's counts reach the logs once, when its chain access is destroyed; there is no
    periodic report.
 8. The endpoint keeps the partitions in memory and learns them again after a restart.
+9. The endpoint reads one proof per block for every key of the subscribed partitions and cuts each
+   partition's nodes from it, so peers share the upper nodes. It keeps no branch from one block to the
+   next: an idle partition's keys are proven again at every block, and only the nodes a subscription
+   lacks are sent.
 
 Owner: [`REQ-LC-9-KWXV43`](runtime/light-client.md#req-lc-9-kwxv43).
+
+<a id="oq-spec-lc-2-xq3pr7"></a>
+
+## OQ-SPEC-LC-2-XQ3PR7 — Where the light client departs from card 399
+
+Open (2026-11-22). The Light Clients card (Trello 399) is the design the light client was built to.
+Where the build departs from it, the card's owner has not accepted the departure. Items 1 to 5 were
+decided by the engineer on the date given; items 6 to 8 are still open.
+
+1. **The event-built mirror stays.** The card says to replace the mirror and the duplicate remote
+   `eth_call` checks once verified. While reads are proven the mirror answers nothing and the chain
+   answers alone ([`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](enforcement/local-mirror.md#req-mirror-5-n5szc9), exceptions
+   removed 2026-11-22), but the mirror keeps replicating, so that a participant whose endpoint does
+   not serve the light client works as before: the light client is optional (2026-11-20). Removing
+   the mirror is a later card, after the farm validation.
+2. **Gas stays on the endpoint.** A call with a gas limit or fee fields, and every gas estimate, goes
+   to the endpoint, because the local EVM does not charge gas as the chain does
+   ([`REQ-LC-2-PMY1VG`](runtime/light-client.md#req-lc-2-pmy1vg), 2026-11-20). Each transaction's
+   estimate stays a remote simulation.
+3. **Capacity has no latency target.** The card asks for the largest subscriber count that meets a
+   stated block-to-verified-peer target. The report gives the whole ramp instead; a load level is
+   sustained when the backlog does not grow and no update is dropped (2026-11-21).
+4. **Capacity runs on one dev node.** It runs with interval sealing, not on a relay-chain network
+   (2026-11-21). Collator and full-node import costs, and fast finality, are not measured.
+5. **Several endpoints give failover, not parallel answers.** A read uses only what the endpoint
+   serving the participant's requests pushed (2026-11-20). Another endpoint's pushes answer reads
+   once it serves the requests, after the serving one is lost
+   ([`REQ-LC-5-MM0BM9.T1.P13`](runtime/light-client.md#req-lc-5-mm0bm9.t1.p13)).
+6. **Strategy 3 runs on the same node.** The card's third fallback strategy simulates on another RPC
+   node. The benchmark driver sends it to the node that pushes the partitions. Alternatives: keep it
+   and state it in the report, or run a second node so that the remote simulation's CPU is measured
+   apart from the serving node's.
+7. **A fallback strategy is in place before the benchmark.** The card asks to benchmark the
+   strategies before choosing one. The light client batches the misses of each pass and runs the call
+   again (strategy 2); proving each miss and continuing (strategy 1) is a benchmark configuration
+   ([`REQ-LC-9-KWXV43`](runtime/light-client.md#req-lc-9-kwxv43)). The choice stays provisional until
+   the farm numbers, and the losing strategies are removed then.
+8. **The benchmark's calls are not channel flows.** The card asks to replay the same blocks and calls
+   through both paths. The drivers run a synthetic workload (a writer contract and a probe contract).
+   Participants running channel flows on a peer3 node need the parachain test mode of PR #606, and the
+   plan items [`REQ-MIRROR-5-N5SZC9.T3`](enforcement/local-mirror.md#req-mirror-5-n5szc9.t3) and [`REQ-LC-8-BBYC51.T1`](runtime/light-client.md#req-lc-8-bbyc51.t1) stay gaps until then.
+
+Two earlier departures no longer apply. The node first recorded only writes (2026-11-18), and the plan
+of 2026-11-20 re-executed each block to find its reads. The node now records the keys each transaction
+touches, reads included, while it executes the block, as the card asks, and executes no block twice.
+One message per peer per block is met.
+
+Blocking effect: none for safety. Items 1 and 2 bound how much RPC work the light client removes;
+items 3, 4, 6 and 8 bound what the report can claim. Requested decisions: the card's owner accepts or
+rejects items 1 to 5; the engineer decides item 6; items 7 and 8 close with the farm runs and the
+channel-flow runs. Affected layers: [light-client.md](runtime/light-client.md),
+[local-mirror.md](enforcement/local-mirror.md), and the report (`docs/light-client-report.md`).
+
+Owner: [`REQ-LC-1-JT5PKT`](runtime/light-client.md#req-lc-1-jt5pkt).

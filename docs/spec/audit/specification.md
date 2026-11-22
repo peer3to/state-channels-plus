@@ -22,6 +22,14 @@ explicit black-box plan and permutation set; the newly added clock-boundary, sep
 and opened-non-participant permutations are planned but not yet covered by executable evidence;
 engineer disposition remains pending.
 
+## 2026-11-22 — Departures from the light client card
+
+[`OQ-SPEC-LC-2-XQ3PR7` (Where the light client departs from card 399)](../specification/open-questions.md#oq-spec-lc-2-xq3pr7) lists where the light client departs from the card it was built to: five departures
+the engineer decided, which the card's owner has not accepted, and three that stay open until the
+benchmark and channel-flow runs. It also records that the earlier slot-collection departures no longer
+apply. [`OQ-SPEC-LC-1-VKHDPN` (Light client choices the engineer has not confirmed)](../specification/open-questions.md#oq-spec-lc-1-vkhdpn) gains one choice: the node proves every subscribed key at each
+block and keeps no branch between blocks. No requirement changed.
+
 ## 2026-11-18 — Contract storage proven against a state root
 
 New subject [storage-proofs.md](../specification/runtime/storage-proofs.md), the first part of the light

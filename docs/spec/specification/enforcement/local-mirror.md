@@ -6,8 +6,8 @@
 > **Scope:** The design decision that the enforcement contracts execute in two places — on-chain as
 > the authority, and in each participant's local VM as a synced mirror — and the rules that make
 > that safe: single implementation, equivalence constraints, unconditional sync, and
-> cache-never-authority with RPC fallback, and local-first evaluation that confirms adverse answers
-> on-chain.
+> cache-never-authority with RPC fallback, local-first evaluation that confirms adverse answers
+> on-chain, and the chain answering alone while its reads are proven.
 
 ## Contents
 
@@ -195,9 +195,12 @@ removed both exceptions.
 - While reads are proven, the replicated reads of [`REQ-MIRROR-5-N5SZC9`](local-mirror.md#req-mirror-5-n5szc9) need a reachable
   endpoint: the mirror no longer answers them, and a failed read propagates.
 - "Proven" is the serving endpoint's own claim, made by listing the light client methods
-  ([`REQ-LC-3-W7RRHM` (A failed read falls back to the endpoint and is made known)](../runtime/light-client.md#req-lc-3-w7rrhm) governs a light-client failure).
+  ([`REQ-LC-4-E29Y46` (The light client is on when the endpoint serves it)](../runtime/light-client.md#req-lc-4-e29y46); the chain access reports it as
+  [`REQ-LC-11-MTCBF9`](../runtime/light-client.md#req-lc-11-mtcbf9) states, and
+  [`REQ-LC-3-W7RRHM` (A failed read falls back to the endpoint and is made known)](../runtime/light-client.md#req-lc-3-w7rrhm) governs a light-client failure).
   A failure falls back to the endpoint's unproven word while the mirror is still skipped, so the
-  honest-RPC assumption (A6) still applies on that path.
+  honest-RPC assumption (A6) still applies on that path. A proven answer still takes the endpoint's
+  block header on its word ([light-client.md](../runtime/light-client.md), assumptions).
 - Mirror state is storage-system data ([`REQ-IX-9-AV56NR` (Storage fidelity)](../interactions.md#req-ix-9-av56nr)): rebuilt from
   chain observation after loss, per [durability.md](../storage/durability.md) [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../storage/durability.md#req-stor-3-4rjger).
 
@@ -226,7 +229,8 @@ failed chain read. The block ingest gate and a join countersigner's membership c
 endpoint too: a slow endpoint delays block ingest and countersignatures, and a failed read of the
 ingest gate drops a gossiped copy it was checking (gossip delivers it again), while queued blocks go
 back to the queue and their timeout checks again after a short delay. While proven, the honest-RPC residual narrows to the endpoint's own claim that
-it proves its answers and to the unproven fallback after a light-client failure.
+it proves its answers, to a header and state under it that the endpoint makes up consistently, and
+to the unproven fallback after a light-client failure.
 Every answer that would stake the node (a fraud proof, omitted auditing data) is decided by the
 chain, and reductions and reduced-result challenges are computed by the chain directly. Treating an
 executor failure as a verdict would turn infrastructure faults into protocol decisions, so thrown errors propagate; only a completed result selected by the predicate policy falls back. Local evaluation is bounded by a per-call gas budget
@@ -283,5 +287,6 @@ is the accepted trade for eliminating divergence bugs.
 _Non-normative._ A verified light-client RPC can expose a complete verified manager state and let
 the same normal manager operations execute locally. That direction replaces the temporary event-fed
 mirror rather than expanding it into global-state synchronization; [`REQ-MIRROR-5-N5SZC9`](local-mirror.md#req-mirror-5-n5szc9) takes the first step,
-reading replicated state from the chain while its reads are proven. Mirror snapshot/restore may also
+reading replicated state from the chain while its reads are proven. Removing the mirror waits for the
+farm validation ([`OQ-SPEC-LC-2-XQ3PR7` (Where the light client departs from card 399)](../open-questions.md#oq-spec-lc-2-xq3pr7), item 1). Mirror snapshot/restore may also
 avoid full re-replication after restart once disk persistence lands.
