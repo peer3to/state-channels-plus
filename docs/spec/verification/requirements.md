@@ -465,7 +465,7 @@ Specification cases tested: 0/5.
 Specification cases tested: 19/22. Untested: T1.P1, T1.P2, T1.P3.
 
 [`REQ-ENFSM-2-G4HBKG` (Adapter confinement)](../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg)
-Specification cases tested: 0/4.
+Specification cases tested: 1/4. Untested: T1.P2, T1.P3, T1.P4.
 
 [`REQ-ENFSM-3-JZK0FB` (Genesis derivation)](../specification/enforcement/execution-and-consumer.md#req-enfsm-3-jzk0fb)
 Specification cases tested: 0/2.

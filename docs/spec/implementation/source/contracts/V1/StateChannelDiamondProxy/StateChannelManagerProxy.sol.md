@@ -10,14 +10,13 @@
 - [`REQ-CONTRACT-ARCH-4-FZ3CJE` (Upgrade and deployment integrity)](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje)
   Partial: the constructor rejects only a codeless route target in `_registerRoute`; an incompatible code-bearing module is accepted ([`FIND-DEPLOY-1-T2XFRK`](../../../../../audit/open-findings.md#find-deploy-1-t2xfrk)).
 - [`REQ-CONTRACT-ARCH-5-QT17P1` (Complete operation ownership)](../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1)
-  Partial: `_facetForSelector` sends every unregistered selector to the consumer facet by delegatecall, so keeping unowned operations off channel state is integrator-owned and not enforced ([`OQ-17-6Z5Q0J` (Consumer-facet functions are externally reachable)](../../../../open-questions.md#oq-17-6z5q0j)).
+  Partial: `_facetForSelector` sends every unregistered selector to the consumer facet by delegatecall; `fallback` refuses only the consumer's `deposit` and `withdraw`, so keeping the integrator's other operations off channel state is integrator-owned and not enforced ([`OQ-17-6Z5Q0J` (Consumer-facet functions are externally reachable)](../../../../open-questions.md#oq-17-6z5q0j)).
 - [`REQ-ENFADM-1-V926CA` (Self-submission with pinned state)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca)
 - [`REQ-ENFADM-3-6A3BEB` (Custody through the adapter only)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb)
 - [`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)
 - [`REQ-LIF-8-2HDG3A` (Enumerable open-channel lifecycle)](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`REQ-ENFSM-2-G4HBKG` (Adapter confinement)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg)
-  Contradicts: `fallback` delegatecalls every unregistered selector to the consumer facet, so its `deposit`/`withdraw` are externally callable ([`OQ-17-6Z5Q0J` (Consumer-facet functions are externally reachable)](../../../../open-questions.md#oq-17-6z5q0j)).
 - [`INV-HIST-4-DSMGGT` (forkId = keccak256)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-4-dsmggt)
 - [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
 - [`REQ-SM-4-Z32M0W` (Ordering/encoding/round-trip defined explicitly)](../../../../../specification/protocol-model/state-machines.md#req-sm-4-z32m0w)
@@ -62,8 +61,8 @@ Opening and calldata posting
 
 Selector routing, interface agreement and confinement
 
-- Setup: Resolve every function of each facet's compiled ABI through `facetAddressForSelector` on a deployed diamond; reconcile the proxy ABI, the routed facet ABIs and the `StateChannelManagerInterface` ABI against each other; call routed operations, each `onlySelf` op directly and via composition, and multicall compositions with a failing leg
-- Oracle: Each facet's routed selectors resolve to that facet's deployed address and nowhere else; deliberately excluded facet functions and unknown selectors resolve to the consumer facet; no routed selector is shadowed by a proxy-implemented function; the interface declares exactly the callable surface, with the implementor's mutability and signature; routed calls execute against one state; direct internal calls revert; multicall is all-or-nothing
+- Setup: Resolve every function of each facet's compiled ABI through `facetAddressForSelector` on a deployed diamond; reconcile the proxy ABI, the routed facet ABIs and the `StateChannelManagerInterface` ABI against each other; call routed operations, each `onlySelf` op directly and via composition, the consumer's `deposit` and `withdraw` through the fallback from an outside caller, inside `multicall` and from the manager, and multicall compositions with a failing leg
+- Oracle: Each facet's routed selectors resolve to that facet's deployed address and nowhere else; deliberately excluded facet functions and unknown selectors resolve to the consumer facet; no routed selector is shadowed by a proxy-implemented function; the interface declares exactly the callable surface, with the implementor's mutability and signature; routed calls execute against one state; direct internal calls revert; the consumer's `deposit` and `withdraw` reach the consumer facet through the fallback only when the manager itself calls, and otherwise revert naming the selector and the caller; multicall is all-or-nothing
 
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P1` — every routed dispute-manager selector resolves to that facet
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P2` — depositAssetsComposable direct revert
@@ -74,7 +73,7 @@ Selector routing, interface agreement and confinement
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P7` — every routed state-snapshot selector resolves to that facet
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P8` — every routed join-channel selector resolves to that facet
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P9` — every routed state-proof selector resolves to that facet
-- [ ] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P10` — a consumer-facet call reaches the consumer facet through the fallback
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P10` — a consumer-facet call reaches the consumer facet through the fallback
 - [ ] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P11` — withdrawAssetsComposable direct revert
 - [ ] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P12` — executeStateTransition direct revert
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P13` — atomic deposit failure rolls back prior adapter effects
@@ -99,6 +98,7 @@ Selector routing, interface agreement and confinement
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P33` — a registered selector executes on a deployed facet
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P34` — routed open-channel count and page selectors resolve through the utility facet
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P35` — an atomic deposit failure reached through `joinChannel` names the failing batch index and that join’s participant
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P36` — the consumer's `deposit` and `withdraw` called through the fallback by an outside caller, directly or inside `multicall`, revert naming the selector and the caller, and no deposit is made
 
 ## UNIT-TEST-MANAGER-PROXY-3-C3NY4X
 

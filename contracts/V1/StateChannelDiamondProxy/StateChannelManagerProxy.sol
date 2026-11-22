@@ -135,6 +135,15 @@ contract StateChannelManagerProxy is StateChannelCommon {
     }
 
     fallback() external {
+        // The consumer's custody hooks run only inside the manager's own deposit and
+        // withdraw compositions, which delegatecall the consumer facet directly. Through
+        // the fallback they would move assets without the composition's checks and events.
+        if (
+            (msg.sig == AConsumerFacet.deposit.selector || msg.sig == AConsumerFacet.withdraw.selector)
+                && msg.sender != address(this)
+        ) {
+            revert ErrorConsumerHookCalledDirectly(msg.sig, msg.sender);
+        }
         bytes memory result = _delegatecall(_facetForSelector(msg.sig), msg.data);
         assembly ("memory-safe") {
             return(add(result, 0x20), mload(result))

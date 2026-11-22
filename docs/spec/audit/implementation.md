@@ -3,6 +3,21 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## Consumer custody hooks refused at the proxy fallback — 2026-11-22
+
+[`OQ-17-6Z5Q0J` (Consumer-facet functions are externally reachable)](../implementation/open-questions.md#oq-17-6z5q0j) is resolved by the engineer's decision of 2026-11-22:
+a framework-level guard at the proxy. The
+[`StateChannelManagerProxy`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)
+`fallback` reverts with `ErrorConsumerHookCalledDirectly(selector, caller)` when the consumer facet's
+`deposit` or `withdraw` reaches it from any caller but the manager. Before, any account could call
+both hooks through the manager: a throwaway Foundry test with a deposit-counting consumer showed
+`deposit` writing the manager's storage with no event, and `withdraw` returning `true`. The manager's
+own compositions, `depositAssetsComposable` and `withdrawAssetsComposable`, delegatecall the consumer
+facet directly and never reach the fallback, so they are unchanged. The proxy's runtime size stays
+far below the EIP-170 limit. The contradiction notes on the proxy and
+[`AConsumerFacet`](../implementation/source/contracts/V1/StateChannelDiamondProxy/AConsumerFacet.sol.md)
+pages are removed; other functions an integrator adds to the consumer facet stay integrator-owned.
+
 ## Discovery joins after the dispose cut — 2026-11-02
 
 What changed (Luke: refuse a late join where it registers):

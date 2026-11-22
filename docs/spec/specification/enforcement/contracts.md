@@ -105,9 +105,11 @@ trusted caller set.
 Rejections distinguish an invalid argument from a lost ordering race against a competing on-chain action
 (an expired deadline, a moved snapshot, an already-reduced window), so a submitter can tell a retryable race
 from a defect. A composition that forwards operations it does not own to the consumer adapter exposes the
-adapter's asset-moving entry points to direct external calls; adapter confinement
-([`REQ-ENFSM-2-G4HBKG` (Adapter confinement)](execution-and-consumer.md#req-enfsm-2-g4hbkg)) then rests on those entry points
-authorizing their own caller.
+adapter's asset-moving entry points to direct external calls. The manager therefore refuses the
+adapter's `deposit` and `withdraw` at that forwarding unless the manager itself calls them, so adapter
+confinement ([`REQ-ENFSM-2-G4HBKG` (Adapter confinement)](execution-and-consumer.md#req-enfsm-2-g4hbkg)) does not rest on each adapter (engineer decision,
+2026-11-22). Other operations an integrator adds to the adapter stay integrator-owned and must authorize
+their own caller.
 
 ## Verification and test plan
 

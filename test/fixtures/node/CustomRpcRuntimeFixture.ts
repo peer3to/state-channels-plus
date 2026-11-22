@@ -190,20 +190,22 @@ export async function assertCustomRpcRuntimeFlow(
 
         const clientManagerInterface: ethers.Interface =
             peer0.stateChannelManagerContract.interface;
-        expect(clientManagerInterface.getFunction("deposit")).to.not.equal(
-            null
-        );
+        expect(
+            clientManagerInterface.getFunction("openChannelGenesis")
+        ).to.not.equal(null);
         const consumerJoin = createJoinChannelTestObject(
             peer0Address,
             "custom-rpc-consumer-abi"
         );
+        // the consumer's deposit and withdraw are refused from outside the
+        // manager, so the probe calls the consumer's genesis
         expect(
             await peer0.hostRpc.pingService
-                .callConsumerDeposit(
+                .callConsumerGenesis(
                     ethers.hexlify(Codec.encode(consumerJoin, Type.JoinChannel))
                 )
                 .request({ timeoutMs: TEST_PROTOCOL_TIMEOUT_MS })
-        ).to.equal(true);
+        ).to.deep.equal([peer0Address]);
 
         // Open a channel with both participants, driven entirely from the
         // client side (connectToChannel forwards over the port; the host wires

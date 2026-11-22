@@ -116,15 +116,17 @@ class PingRpcMethods extends ANetworkRpcMethods<PingService> {
         throw new Error(reason);
     }
 
-    public async callConsumerDeposit(
+    /** The participants the consumer's genesis takes from one join, called through the manager. */
+    public async callConsumerGenesis(
         encodedJoinChannel: string
-    ): Promise<boolean> {
+    ): Promise<string[]> {
         const joinChannel = Codec.decode(encodedJoinChannel, Type.JoinChannel);
         const contract: ethers.BaseContract =
             this.service.p2pManager.stateManager.stateChannelManagerContract;
-        return Boolean(
-            await contract.getFunction("deposit").staticCall(joinChannel)
-        );
+        const [, participants] = await contract
+            .getFunction("openChannelGenesis")
+            .staticCall([joinChannel], "0x");
+        return [...(participants as string[])];
     }
 
     public never(): Promise<string> {

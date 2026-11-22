@@ -3,7 +3,9 @@ pragma solidity ^0.8.8;
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import {SelectiveDepositConsumerFacet} from "../harness/SelectiveDepositConsumerFacet.sol";
+import {AConsumerFacet} from "../../../contracts/V1/StateChannelDiamondProxy/AConsumerFacet.sol";
 import {
+    ErrorConsumerHookCalledDirectly,
     ErrorJoinChannelAtomicFailure,
     ErrorNoJoinChannelProvided,
     ErrorNoSuccessfulJoinChannel
@@ -95,6 +97,55 @@ contract StateChannelManagerProxyDepositTest is DiamondHarness {
         diamond.depositAssetsComposable(joins, false);
 
         assertEq(_depositCount(), 0);
+    }
+
+    function test_fallback_directDepositHookRejected() public {
+        JoinChannel memory join = _joins(100, 100)[0];
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorConsumerHookCalledDirectly.selector, AConsumerFacet.deposit.selector, address(this)
+            )
+        );
+        AConsumerFacet(address(diamond)).deposit(join);
+
+        assertEq(_depositCount(), 0);
+    }
+
+    function test_fallback_directWithdrawHookRejected() public {
+        ExitChannel memory exit =
+            ExitChannel({participant: vm.addr(ALICE_PK), balance: Balance({amount: 100, data: ""})});
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorConsumerHookCalledDirectly.selector, AConsumerFacet.withdraw.selector, address(this)
+            )
+        );
+        AConsumerFacet(address(diamond)).withdraw(exit);
+    }
+
+    /// `multicall` delegatecalls the manager itself, which keeps the outside
+    /// caller as the sender, so a hook wrapped in it is refused the same way.
+    function test_fallback_depositHookInsideMulticallRejected() public {
+        bytes[] memory calls = new bytes[](1);
+        calls[0] = abi.encodeCall(AConsumerFacet.deposit, (_joins(100, 100)[0]));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorConsumerHookCalledDirectly.selector, AConsumerFacet.deposit.selector, address(this)
+            )
+        );
+        diamond.multicall(calls);
+
+        assertEq(_depositCount(), 0);
+    }
+
+    function test_fallback_depositHookFromTheManagerReachesConsumer() public {
+        vm.prank(address(diamond));
+        bool accepted = AConsumerFacet(address(diamond)).deposit(_joins(100, 100)[0]);
+
+        assertTrue(accepted);
+        assertEq(_depositCount(), 1);
     }
 
     /// The join reaches the real deposit loop through the deployed diamond, so

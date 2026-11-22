@@ -11,6 +11,16 @@ scores are what they are** and which lever moves each one.
 
 The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
 
+## Consumer custody hooks refused at the proxy fallback — 2026-11-22
+
+Four Foundry tests in
+[StateChannelManagerProxyDeposit.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyDeposit.t.sol.md)
+give [`REQ-ENFSM-2-G4HBKG.T1.P1`](../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg.t1.p1) its first evidence and cover the proxy's new
+[`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P36`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8) and its open `P10`: the consumer's `deposit` and `withdraw` from
+an outside caller, directly and inside `multicall`, revert naming the selector and the caller with no
+deposit made, and a `deposit` from the manager itself reaches the consumer. Three mutants were each
+caught: no check, the check refusing the manager too, and the check covering `deposit` only.
+
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 
 PR #579 review cards TO4, TO5, TY2 and TY3.

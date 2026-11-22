@@ -22,8 +22,9 @@ The test quiesces both runtime hosts before returning and requires the detached 
 to have settled without errors. Teardown remains leak detection rather than feature cleanup.
 
 Both manager-address connections use `connectStateChannelManager` with the consumer facet ABI. The
-client can resolve `deposit`, and a host-side custom RPC calls that consumer function through
-`StateManager.stateChannelManagerContract`. The same worker/runtime boundary therefore proves both
+client can resolve `openChannelGenesis`, and a host-side custom RPC calls that consumer function
+through `StateManager.stateChannelManagerContract` and gets the join's participant back. The
+consumer's `deposit` and `withdraw` are not used: the manager refuses them from outside callers. The same worker/runtime boundary therefore proves both
 runtime sides keep SDK and consumer ABI fragments during a complete two-peer setup.
 
 ## Tests

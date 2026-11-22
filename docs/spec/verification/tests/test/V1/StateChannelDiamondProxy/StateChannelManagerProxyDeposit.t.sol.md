@@ -5,11 +5,13 @@ Exercises: [StateChannelManagerProxy.sol](../../../../../implementation/source/c
 
 ## Overview
 
-Six direct Foundry tests deploy the full manager and replace the configured consumer address code
+Ten direct Foundry tests deploy the full manager and replace the configured consumer address code
 with a deterministic test adapter. A zero amount returns failure; a nonzero amount succeeds and
 increments a storage counter in the manager's delegatecall context. The tests prove atomic rollback,
 non-atomic filtering and exact inbound totals, all-failed and empty-batch rejection, and `onlySelf`
-confinement. A sixth test opens a channel with the real consumer, then drives `joinChannel`
+confinement. Four tests call the adapter's `deposit` and `withdraw` through the manager's fallback:
+from an outside caller, directly and inside `multicall`, they revert naming the selector and the
+caller with no deposit made; from the manager itself, `deposit` reaches the adapter. A sixth test opens a channel with the real consumer, then drives `joinChannel`
 through the deployed diamond so the manager's own atomic deposit loop builds the failure payload
 from a genuinely failing iteration. Revert cases also assert that no adapter effect or inbound
 balance remains.
@@ -22,3 +24,7 @@ balance remains.
 - `test_depositAssetsComposable_emptyBatchRejected`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P16
 - `test_depositAssetsComposable_directCallerRejected`: REQ-ENFADM-3-6A3BEB.T1.P4, UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P2
 - `test_joinChannel_atomicDepositFailure_revertsNamingTheFailingJoin`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P35
+- `test_fallback_directDepositHookRejected`: REQ-ENFSM-2-G4HBKG.T1.P1, UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P36
+- `test_fallback_directWithdrawHookRejected`: REQ-ENFSM-2-G4HBKG.T1.P1, UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P36
+- `test_fallback_depositHookInsideMulticallRejected`: REQ-ENFSM-2-G4HBKG.T1.P1, UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P36
+- `test_fallback_depositHookFromTheManagerReachesConsumer`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P10
