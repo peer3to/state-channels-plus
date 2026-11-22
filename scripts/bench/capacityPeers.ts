@@ -73,6 +73,8 @@ type Peer = {
     synced: boolean;
 };
 
+/** How long a peer may take to open its socket and subscribe before it counts as unopened. */
+const OPEN_TIMEOUT_MS = 30_000;
 const { nodeUrl } = workerData as { nodeUrl: string };
 const peers: Peer[] = [];
 let report: PeerReport = emptyReport();
@@ -154,8 +156,30 @@ function onPush(peer: Peer, params: unknown): void {
     }
 }
 
+/** `promise`, or a rejection once `ms` passed without it settling. */
+function withinTime<T>(promise: Promise<T>, ms: number): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+            () => reject(new Error(`no answer within ${ms} ms`)),
+            ms
+        );
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 async function openPeer(spec: PeerSpec): Promise<void> {
-    const socket = await JsonRpcSocket.open(nodeUrl);
+    const opening = JsonRpcSocket.open(nodeUrl);
+    const socket = await withinTime(opening, OPEN_TIMEOUT_MS).catch(
+        (error: unknown) => {
+            // a socket that opens after the timeout is closed, not left connected
+            void opening.then(
+                (late) => late.close(),
+                () => undefined
+            );
+            throw error;
+        }
+    );
     const peer: Peer = {
         spec,
         socket,
@@ -166,10 +190,18 @@ async function openPeer(spec: PeerSpec): Promise<void> {
     socket.onNotification((method, params) => {
         if (method === LIGHT_CLIENT_METHODS.notification) onPush(peer, params);
     });
+    try {
+        await withinTime(
+            socket.request(LIGHT_CLIENT_METHODS.subscribe, [
+                { address: spec.contract, topics: [spec.channel] }
+            ]),
+            OPEN_TIMEOUT_MS
+        );
+    } catch (error) {
+        socket.close();
+        throw error;
+    }
     peers.push(peer);
-    await socket.request(LIGHT_CLIENT_METHODS.subscribe, [
-        { address: spec.contract, topics: [spec.channel] }
-    ]);
 }
 
 parentPort?.on(
