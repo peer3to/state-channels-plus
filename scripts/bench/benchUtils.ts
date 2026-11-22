@@ -5,19 +5,28 @@ import os from "node:os";
 
 /** The value below which `fraction` of `values` lie; null for no values. */
 export function percentile(values: number[], fraction: number): number | null {
-    if (values.length === 0) return null;
-    const sorted = [...values].sort((a, b) => a - b);
+    return sortedPercentile(sortedCopy(values), fraction);
+}
+
+/** Median, p95 and max of `values`, sorted once; a step can hold hundreds of thousands. */
+export function spread(values: number[]) {
+    const sorted = sortedCopy(values);
+    return {
+        median: sortedPercentile(sorted, 0.5),
+        p95: sortedPercentile(sorted, 0.95),
+        max: sorted.length === 0 ? null : sorted[sorted.length - 1]
+    };
+}
+
+function sortedCopy(values: number[]): number[] {
+    return [...values].sort((a, b) => a - b);
+}
+
+function sortedPercentile(sorted: number[], fraction: number): number | null {
+    if (sorted.length === 0) return null;
     return sorted[
         Math.min(sorted.length - 1, Math.floor(fraction * sorted.length))
     ];
-}
-
-export function spread(values: number[]) {
-    return {
-        median: percentile(values, 0.5),
-        p95: percentile(values, 0.95),
-        max: values.length === 0 ? null : Math.max(...values)
-    };
 }
 
 export function sum(values: number[]): number {
