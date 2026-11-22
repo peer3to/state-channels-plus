@@ -37,7 +37,9 @@
  * without `--light-client`, for the current path only, the node's baseline;
  * BENCH_CHANNELS_PER_TX (1): channels one transaction writes, as one
  * multicall over several channels does; BENCH_RECONNECT_EVERY (10): rounds
- * between dropped sockets, 0 for none.
+ * between dropped sockets, 0 for none; BENCH_CALL_SETS (1): times each path
+ * runs the call set per round, so that the node's work per call shows above
+ * its block production.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -92,6 +94,8 @@ type BenchPath = {
 
 type CallRecord = {
     round: number;
+    /** Which of the round's call sets, from 0. */
+    set: number;
     block: number;
     path: PathName;
     kind: CallKind;
@@ -154,6 +158,7 @@ const RUN_PATHS = runPaths(process.env.BENCH_PATHS);
 const NODE_LIGHT_CLIENT = process.env.BENCH_NODE_LIGHT_CLIENT !== "0";
 const CHANNELS_PER_TX = Number(process.env.BENCH_CHANNELS_PER_TX ?? 1);
 const RECONNECT_EVERY = Number(process.env.BENCH_RECONNECT_EVERY ?? 10);
+const CALL_SETS = Number(process.env.BENCH_CALL_SETS ?? 1);
 /** Above the gas one write of the partition contract takes, called from the probe. */
 const GAS_PER_FORWARDED_WRITE = 100_000n;
 /** Slots per channel; channel `c` writes slots c * SLOT_SPAN + 1... */
@@ -736,45 +741,52 @@ async function main(): Promise<void> {
             const results = new Map<CallKind, string>();
             for (const path of order) {
                 const { provider, proxy } = path;
-                for (const kind of Object.keys(calls) as CallKind[]) {
-                    const requestsBefore = proxy.forwardedRequests.length;
-                    const bytesBefore = proxy.requestBytes + proxy.replyBytes;
-                    const countersBefore = {
-                        ...provider.lightClientCounters
-                    };
-                    const cpuBefore = process.cpuUsage();
-                    const started = performance.now();
-                    const result = await calls[kind](provider);
-                    const ms = performance.now() - started;
-                    const cpu = process.cpuUsage(cpuBefore);
-                    const sent = proxy.forwardedRequests.slice(requestsBefore);
-                    records.push({
-                        round,
-                        block,
-                        path: path.name,
-                        kind,
-                        ms,
-                        cpuUs: cpu.user + cpu.system,
-                        requests: countMethods(sent),
-                        proofRequests: sent
-                            .filter(
-                                ({ method }) => method === "state_getReadProof"
-                            )
-                            .map(({ params }) => (params as [string[]])[0]),
-                        bytes:
-                            proxy.requestBytes + proxy.replyBytes - bytesBefore,
-                        counted: path.isLightClient
-                            ? counterDelta(
-                                  countersBefore,
-                                  provider.lightClientCounters
-                              )
-                            : {},
-                        result
-                    });
-                    const first = results.get(kind);
-                    if (first === undefined) results.set(kind, result);
-                    else if (first !== result) mismatches++;
-                }
+                for (let set = 0; set < CALL_SETS; set++)
+                    for (const kind of Object.keys(calls) as CallKind[]) {
+                        const requestsBefore = proxy.forwardedRequests.length;
+                        const bytesBefore =
+                            proxy.requestBytes + proxy.replyBytes;
+                        const countersBefore = {
+                            ...provider.lightClientCounters
+                        };
+                        const cpuBefore = process.cpuUsage();
+                        const started = performance.now();
+                        const result = await calls[kind](provider);
+                        const ms = performance.now() - started;
+                        const cpu = process.cpuUsage(cpuBefore);
+                        const sent =
+                            proxy.forwardedRequests.slice(requestsBefore);
+                        records.push({
+                            round,
+                            set,
+                            block,
+                            path: path.name,
+                            kind,
+                            ms,
+                            cpuUs: cpu.user + cpu.system,
+                            requests: countMethods(sent),
+                            proofRequests: sent
+                                .filter(
+                                    ({ method }) =>
+                                        method === "state_getReadProof"
+                                )
+                                .map(({ params }) => (params as [string[]])[0]),
+                            bytes:
+                                proxy.requestBytes +
+                                proxy.replyBytes -
+                                bytesBefore,
+                            counted: path.isLightClient
+                                ? counterDelta(
+                                      countersBefore,
+                                      provider.lightClientCounters
+                                  )
+                                : {},
+                            result
+                        });
+                        const first = results.get(kind);
+                        if (first === undefined) results.set(kind, result);
+                        else if (first !== result) mismatches++;
+                    }
             }
             if (
                 RECONNECT_EVERY > 0 &&
@@ -820,7 +832,8 @@ async function main(): Promise<void> {
                             RUN_PATHS,
                             NODE_LIGHT_CLIENT,
                             CHANNELS_PER_TX,
-                            RECONNECT_EVERY
+                            RECONNECT_EVERY,
+                            CALL_SETS
                         }
                     },
                     summary,

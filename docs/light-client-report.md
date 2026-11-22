@@ -46,7 +46,9 @@ The node's own cost is measured per path, each in a run of its own on a fresh no
 `--light-client` (`BENCH_NODE_LIGHT_CLIENT=0`), which is today's node; the current path against a
 node with it, which shows what recording the touched keys costs the node when nobody subscribes; and
 each light client path. The calls of all paths on the same blocks are compared in one run of all
-paths on one node.
+paths on one node. One call set per round leaves the node mostly producing blocks, so the runs that
+measure its cost per path raise the calls with `BENCH_CALL_SETS`, the times each path runs the call
+set per round.
 
 Development runs use a local dev node. Reported numbers come from farm hosts taken out of the test
 pool for the run, with their CPU, memory and network stated next to each result.
