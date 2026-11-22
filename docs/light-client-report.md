@@ -91,6 +91,10 @@ comparison the losing strategies are removed.
 
 The driver also measures:
 
+- **Call outcomes.** For each light client path: the share of calls answered entirely from pushed
+  state, the share that needed a fallback, and, for those, the spread and histogram of the keys and
+  round trips each call proved itself. A call that used a proof an earlier call fetched at the same
+  block needed a fallback but proved nothing, so it counts at 0.
 - **Hit rate.** A fourth path, `cold`, is a light client that follows nothing, so it proves every key
   a call reads. For each call kind, the hit rate of a following path is 1 minus the keys it proved
   divided by the keys the cold path proved. A key one call proved is held for the later calls at the

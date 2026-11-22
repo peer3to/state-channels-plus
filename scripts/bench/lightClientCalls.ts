@@ -323,6 +323,50 @@ function hitRate(
     return cold === 0 ? null : 1 - provedBy(path) / cold;
 }
 
+/**
+ * How `path`'s calls were answered, as shares of its calls, and for the calls
+ * that needed a fallback the spread and histogram of the keys and round trips
+ * each one proved itself. A call can need a fallback and prove nothing: it
+ * used a proof an earlier call fetched at the same block.
+ */
+function callOutcomes(records: CallRecord[], path: PathName) {
+    const own = records.filter((record) => record.path === path);
+    const counted = (key: keyof LightClientCounters) =>
+        own.filter((record) => (record.counted[key] ?? 0) > 0).length;
+    const share = (count: number) =>
+        own.length === 0 ? null : count / own.length;
+    const affected = own.filter(
+        (record) => (record.counted.withFallbackRead ?? 0) > 0
+    );
+    const keysPerCall = affected.map((record) => proofKeys([record]));
+    const roundTripsPerCall = affected.map(
+        (record) => record.proofRequests.length
+    );
+    return {
+        calls: own.length,
+        fromPushedState: share(counted("fromPushedState")),
+        withFallbackRead: share(affected.length),
+        leftToNodes: share(counted("leftToNodes")),
+        failed: share(counted("failed")),
+        missingKeysPerAffectedCall: {
+            ...spread(keysPerCall),
+            histogram: histogram(keysPerCall)
+        },
+        roundTripsPerAffectedCall: {
+            ...spread(roundTripsPerCall),
+            histogram: histogram(roundTripsPerCall)
+        }
+    };
+}
+
+/** How often each value occurs. */
+function histogram(values: number[]): Record<number, number> {
+    // value -> the number of times it occurs
+    const counts: Record<number, number> = {};
+    for (const value of values) counts[value] = (counts[value] ?? 0) + 1;
+    return counts;
+}
+
 function summarize(
     records: CallRecord[],
     pushes: PushRecord[],
@@ -379,6 +423,11 @@ function summarize(
                     })
                 )
             ])
+        ),
+        callOutcomes: Object.fromEntries(
+            paths
+                .filter((path) => path.isLightClient)
+                .map(({ name }) => [name, callOutcomes(records, name)])
         ),
         hitRate: paths.some((path) => path.name === "cold")
             ? Object.fromEntries(
