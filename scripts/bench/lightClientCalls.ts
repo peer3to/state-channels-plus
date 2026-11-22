@@ -7,7 +7,9 @@
  * that records what the provider asked the node:
  * - current: the proxy hides the light client methods, so every read goes to
  *   the node. For a call the pushed state does not answer, this is also the
- *   card's strategy 3, a remote simulation;
+ *   card's strategy 3, a remote simulation. The card runs it on another node;
+ *   the dev node takes no peers, so BENCH_PATHS=current gives it a node of its
+ *   own instead;
  * - batchPerPass: the light client as it is, which collects what a pass
  *   finds missing, proves it in one request and runs the call again
  *   (strategy 2);

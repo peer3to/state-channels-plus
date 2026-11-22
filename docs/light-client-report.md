@@ -78,9 +78,12 @@ The other two:
   benchmarks (`REQ-LC-9-KWXV43`).
 - **Strategy 3:** send the call to an RPC node for a remote simulation. The current path does exactly
   this for every call, so its cost per call is measured there. A remote result carries no proof: it
-  is a trusted answer, not a verified one. In the driver the remote simulation runs on the same node
-  that pushes the partitions; a deployment could send it to another node, whose CPU is then not the
-  serving node's.
+  is a trusted answer, not a verified one. The card sends it to another RPC node. The peer3 dev node
+  takes no peers, so a second node cannot follow the first and serve the same blocks. The two costs
+  are measured apart in the per-path runs instead: the current path alone on a node of its own gives
+  the remote simulation's cost on a node that pushes nothing, and a light client path alone gives the
+  serving node's push and proof cost (engineer decision, 2026-11-22). In the run of all paths on one
+  node, a remote simulation shares the node with the pushes, so its latency there includes that load.
 
 The driver, `scripts/bench/lightClientCalls.ts` (`yarn bench:light-client`), runs the current path
 and both light client strategies over one node, on the same blocks and calls, each behind its own

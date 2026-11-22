@@ -887,8 +887,8 @@ Owner: [`REQ-LC-9-KWXV43`](runtime/light-client.md#req-lc-9-kwxv43).
 ## OQ-SPEC-LC-2-XQ3PR7 — Where the light client departs from card 399
 
 Open (2026-11-22). The Light Clients card (Trello 399) is the design the light client was built to.
-Where the build departs from it, the card's owner has not accepted the departure. Items 1 to 5 were
-decided by the engineer on the date given; items 6 to 8 are still open.
+Where the build departs from it, the card's owner has not accepted the departure. Items 1 to 6 were
+decided by the engineer on the date given; items 7 and 8 are still open.
 
 1. **The event-built mirror stays.** The card says to replace the mirror and the duplicate remote
    `eth_call` checks once verified. While reads are proven the mirror answers nothing and the chain
@@ -909,10 +909,12 @@ decided by the engineer on the date given; items 6 to 8 are still open.
    serving the participant's requests pushed (2026-11-20). Another endpoint's pushes answer reads
    once it serves the requests, after the serving one is lost
    ([`REQ-LC-5-MM0BM9.T1.P13`](runtime/light-client.md#req-lc-5-mm0bm9.t1.p13)).
-6. **Strategy 3 runs on the same node.** The card's third fallback strategy simulates on another RPC
-   node. The benchmark driver sends it to the node that pushes the partitions. Alternatives: keep it
-   and state it in the report, or run a second node so that the remote simulation's CPU is measured
-   apart from the serving node's.
+6. **Strategy 3 does not run on a second node.** The card's third fallback strategy simulates on
+   another RPC node. The peer3 dev node takes no peers, so a second node cannot follow the first. The
+   per-path runs measure the two costs apart instead: the current path alone on a node of its own
+   gives the remote simulation's cost, and a light client path alone the serving node's push and
+   proof cost (2026-11-22). Not measured: a remote simulation's latency on a node that does not also
+   push.
 7. **A fallback strategy is in place before the benchmark.** The card asks to benchmark the
    strategies before choosing one. The light client batches the misses of each pass and runs the call
    again (strategy 2); proving each miss and continuing (strategy 1) is a benchmark configuration
@@ -930,7 +932,7 @@ One message per peer per block is met.
 
 Blocking effect: none for safety. Items 1 and 2 bound how much RPC work the light client removes;
 items 3, 4, 6 and 8 bound what the report can claim. Requested decisions: the card's owner accepts or
-rejects items 1 to 5; the engineer decides item 6; items 7 and 8 close with the farm runs and the
+rejects items 1 to 6; items 7 and 8 close with the farm runs and the
 channel-flow runs. Affected layers: [light-client.md](runtime/light-client.md),
 [local-mirror.md](enforcement/local-mirror.md), and the report (`docs/light-client-report.md`).
 

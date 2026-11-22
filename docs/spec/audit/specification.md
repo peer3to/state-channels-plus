@@ -24,9 +24,10 @@ engineer disposition remains pending.
 
 ## 2026-11-22 — Departures from the light client card
 
-[`OQ-SPEC-LC-2-XQ3PR7` (Where the light client departs from card 399)](../specification/open-questions.md#oq-spec-lc-2-xq3pr7) lists where the light client departs from the card it was built to: five departures
-the engineer decided, which the card's owner has not accepted, and three that stay open until the
-benchmark and channel-flow runs. It also records that the earlier slot-collection departures no longer
+[`OQ-SPEC-LC-2-XQ3PR7` (Where the light client departs from card 399)](../specification/open-questions.md#oq-spec-lc-2-xq3pr7) lists where the light client departs from the card it was built to: six departures
+the engineer decided, which the card's owner has not accepted, and two that stay open until the
+benchmark and channel-flow runs. Item 6, strategy 3 without a second node, was decided later the same
+day: the dev node takes no peers, and the per-path runs measure the remote simulation apart. It also records that the earlier slot-collection departures no longer
 apply. [`OQ-SPEC-LC-1-VKHDPN` (Light client choices the engineer has not confirmed)](../specification/open-questions.md#oq-spec-lc-1-vkhdpn) gains one choice: the node proves every subscribed key at each
 block and keeps no branch between blocks. No requirement changed.
 
