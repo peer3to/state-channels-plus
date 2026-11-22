@@ -2968,7 +2968,7 @@ them, and add the test of
 abstract adapter, or each adapter) is the engineer's decision.
 
 **Fix in review (2026-11-22):** the engineer chose the proxy fallback. PR #614, against `dev`, refuses
-both hooks there unless the manager itself calls, adds the test, and resolves `OQ-17-6Z5Q0J` on `dev`,
+both hooks there unless the manager itself calls, adds the test, and resolves [`OQ-17-6Z5Q0J` (Consumer-facet functions are externally reachable)](../implementation/open-questions.md#oq-17-6z5q0j) on `dev`,
 which tracked the same defect. This finding closes when #614 merges and the stack takes it in.
 
 <a id="find-deploy-1-t2xfrk"></a>
