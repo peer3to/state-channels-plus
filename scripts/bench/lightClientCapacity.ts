@@ -97,13 +97,20 @@ class PeerWorker {
 function stepResult(
     subscribers: number,
     durationMs: number,
-    blocks: number,
+    /** The step's blocks: after the first, up to and including the last. */
+    { firstBlock, lastBlock }: { firstBlock: number; lastBlock: number },
     reports: PeerReport[],
     nodeSamples: { cpuSeconds: number; rssKb: number; at: number }[]
 ) {
+    const blocks = lastBlock - firstBlock;
     const pushes = reports
         .flatMap((report) => report.pushes)
-        .filter((push) => !push.sync);
+        .filter(
+            (push) =>
+                !push.sync &&
+                push.number > firstBlock &&
+                push.number <= lastBlock
+        );
     const endToEnd = (push: PushSample) =>
         push.executedAt === null ? null : push.verifiedAt - push.executedAt;
     const byTime = [...pushes].sort((a, b) => a.receivedAt - b.receivedAt);
@@ -318,6 +325,8 @@ async function main(): Promise<void> {
                 await sleep(1000);
             }
             const lastBlock = await node.provider.getBlockNumber();
+            // the last block's pushes may still be on their way
+            await sleep(BLOCK_TIME_MS);
             const reports = (
                 await Promise.all(
                     workers.map((worker) =>
@@ -331,7 +340,7 @@ async function main(): Promise<void> {
             const result = stepResult(
                 subscribers,
                 Date.now() - started,
-                lastBlock - firstBlock,
+                { firstBlock, lastBlock },
                 reports,
                 nodeSamples
             );
