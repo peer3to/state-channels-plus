@@ -296,6 +296,35 @@ What this says about the strategies, with the node on the same host, where a rem
 - Over the whole mix, strategies 1 and 2 cost the same node CPU (1.07 s); they differ only in requests
   (524 against 434) and in which call kinds they make slower.
 
+Peer work and bytes per call, from the same calls: the peer's CPU (median / p95) and the bytes the
+call's requests and replies carried. The peer's CPU is the driver process's during the call, so it
+also holds the proxy forwarding the call's requests and any push that arrived meanwhile.
+
+| Call                                           | Current             | Strategy 2              | Strategy 1              |
+| ---------------------------------------------- | ------------------- | ----------------------- | ----------------------- |
+| Slot of the followed channel                   | 0.8 / 3.5 ms, 231 B | 1.0 / 4.0 ms, 0 B       | 0.9 / 3.6 ms, 0 B       |
+| Call reading the followed channel              | 0.7 / 4.5 ms, 352 B | 3.5 / 7.6 ms, 0 B       | 3.3 / 7.4 ms, 0 B       |
+| Simulated write to the followed channel        | 1.5 / 4.7 ms, 480 B | 1.6 / 8.7 ms, 0 B       | 1.3 / 5.8 ms, 0 B       |
+| Another contract, 1 slot                       | 1.4 / 4.2 ms, 360 B | 9.9 / 19.1 ms, 14.1 KB  | 9.1 / 16.9 ms, 14.1 KB  |
+| Another contract, 4 slots known together       | 0.9 / 2.3 ms, 680 B | 5.9 / 12.5 ms, 4.2 KB   | 8.9 / 18.3 ms, 11.4 KB  |
+| Another contract, 8 slots each naming the next | 0.8 / 2.6 ms, 296 B | 38.0 / 56.1 ms, 36.9 KB | 26.3 / 39.7 ms, 36.9 KB |
+| The same 8-slot call again at the block        | 0.7 / 2.2 ms, 296 B | 1.2 / 4.2 ms, 0 B       | 1.3 / 2.1 ms, 0 B       |
+| Call without a sender                          | 0.6 / 1.7 ms, 300 B | 3.6 / 8.0 ms, 4.1 KB    | 2.8 / 7.5 ms, 4.1 KB    |
+| Balance of the sender                          | 0.5 / 1.2 ms, 178 B | 0.3 / 0.5 ms, 0 B       | 0.2 / 0.5 ms, 0 B       |
+
+- The light client moves work from the node to the peer. Over a whole run (2,700 calls, 29 blocks)
+  the node saved 1.20 s of CPU (2.27 against 1.07 s: about 41 ms per block, 0.44 ms per call), and the
+  peer spent 4.71 s (strategy 2) or 4.23 s (strategy 1) against 2.25 s on the current path.
+- Running the call again is strategy 2's cost: on the 8-slot chain it took 38 ms of peer CPU against
+  26 ms for strategy 1. Fetching keys known together one by one is strategy 1's: 8.9 against 5.9 ms,
+  and 11.4 against 4.2 KB.
+- Missing keys per call that needed a fallback, 5 runs (7,500 such calls of 13,500 on each light
+  client path): 6,900 proved nothing themselves, because an earlier call at the same block had
+  fetched what they read; 150 each proved 1, 3, 4 and 11 keys. Round trips per such call: strategy 2
+  0 (6,900), 1 (300), 2 (150), 10 (150); strategy 1 0 (6,900), 1, 2, 4 and 10 (150 each). So 600 of
+  13,500 calls (4.4%) fetched a proof of their own; the rest of the 56% needing a fallback read
+  proofs fetched earlier at the block.
+
 ### Pushes and reconnects
 
 From the comparison run (one followed channel, 4 channels written per round):
@@ -349,6 +378,45 @@ subscription ended, every peer opened, and the lag of a step's last third was wi
 first third. The largest measured counts are 32,000 subscribers on shared partitions and 20,000 on
 distinct ones. At 20,000 distinct partitions the p95 is above the 2 s block time: the slowest 5% of
 peers hold a block more than one block late, without falling further behind.
+
+Stages per step, median / p95 in ms. Proofs delivered is pushes per second, one push per peer per
+block, each carrying its proof. Verify and apply is the time a peer's thread spent on one push, so it
+is the peer's CPU per block for keeping its partition. The slowest peer is the one with the highest
+median end to end in the step. Initial sync is from opening the subscription to the first verified
+sync, with all of a step's peers opening at once. Fallback is one proof of a key outside the
+partition, read by 10% of peers at each block.
+
+Shared partitions:
+
+| Subscribers | Proofs delivered | Build | Dispatch  | Transit   | Verify and apply | Slowest peer end to end | Initial sync  | Fallback  |
+| ----------- | ---------------- | ----- | --------- | --------- | ---------------- | ----------------------- | ------------- | --------- |
+| 3,200       | 1,600/s          | 3 / 6 | 31 / 62   | 84 / 189  | 1.2 / 2.8        | 243 / 282               | 208 / 374     | 49 / 145  |
+| 6,400       | 3,200/s          | 3 / 5 | 67 / 134  | 148 / 309 | 1.2 / 2.5        | 460 / 539               | 269 / 807     | 77 / 232  |
+| 12,800      | 6,400/s          | 3 / 7 | 135 / 281 | 294 / 587 | 1.2 / 2.6        | 927 / 1,041             | 364 / 1,223   | 142 / 439 |
+| 19,200      | 9,600/s          | 3 / 7 | 178 / 412 | 466 / 904 | 1.2 / 2.6        | 1,357 / 1,515           | 645 / 2,024   | 213 / 686 |
+| 25,600      | 12,800/s         | 3 / 7 | 235 / 553 | 370 / 769 | 1.2 / 2.5        | 1,316 / 1,486           | 2,220 / 3,755 | 173 / 572 |
+| 32,000      | 16,000/s         | 3 / 5 | 305 / 685 | 451 / 888 | 1.1 / 2.5        | 1,598 / 1,970           | 391 / 1,561   | 206 / 659 |
+
+Distinct partitions:
+
+| Subscribers | Proofs delivered | Build         | Dispatch  | Transit   | Verify and apply | Slowest peer end to end | Initial sync  | Fallback  |
+| ----------- | ---------------- | ------------- | --------- | --------- | ---------------- | ----------------------- | ------------- | --------- |
+| 1,000       | 500/s            | 59 / 68       | 10 / 20   | 24 / 59   | 1.6 / 3.5        | 133 / 164               | 91 / 223      | 12 / 43   |
+| 2,000       | 1,000/s          | 112 / 127     | 16 / 33   | 50 / 118  | 1.6 / 3.5        | 254 / 323               | 118 / 193     | 28 / 89   |
+| 4,000       | 2,000/s          | 213 / 240     | 33 / 67   | 97 / 210  | 1.6 / 3.2        | 499 / 569               | 173 / 335     | 55 / 164  |
+| 8,000       | 4,000/s          | 418 / 473     | 73 / 161  | 174 / 352 | 1.6 / 3.0        | 966 / 1,048             | 344 / 644     | 87 / 272  |
+| 12,000      | 6,000/s          | 654 / 726     | 110 / 229 | 264 / 520 | 1.5 / 3.0        | 1,455 / 1,615           | 1,211 / 2,344 | 124 / 400 |
+| 16,000      | 8,000/s          | 880 / 1,004   | 154 / 327 | 337 / 653 | 1.5 / 3.0        | 1,917 / 2,091           | 498 / 2,163   | 157 / 496 |
+| 20,000      | 10,000/s         | 1,133 / 1,253 | 204 / 434 | 415 / 793 | 1.6 / 3.0        | 2,501 / 2,659           | 2,008 / 3,907 | 189 / 601 |
+
+- A peer's cost per block does not grow with the subscribers: 1.1 to 1.6 ms to verify and apply a
+  push of about 9 KB (shared) or 11 KB (distinct) carrying 13 to 14 new proof nodes at the median.
+  No fallback read failed.
+- The slowest peer is late by dispatch and transit, not by its own work: its dispatch and transit
+  are about twice the median peer's, its verify and apply time the same.
+- A peer's heap, after a full collection, was 26 to 31 KB per subscriber at 8,000 subscribers and
+  more. Below that the figure scatters (3 to 74 KB) and is not used.
+- Initial sync varies between steps without a trend; all of a step's peers open at once.
 
 Where the time goes: the node's CPU stayed under 2 of 8 cores and its outbound traffic reached 1 Gbit/s
 without either saturating. End-to-end time grows in proportion to the subscribers, in two places:
