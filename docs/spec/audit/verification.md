@@ -11,6 +11,32 @@ scores are what they are** and which lever moves each one.
 
 The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
 
+## Gas estimates at the pending block, genesis-free block time, parachain test runs — 2026-11-20
+
+Engineer decisions (Luke, 2026-11-20, PR #605):
+
+- The runtime's provider estimates gas at the `pending` block, the one a transaction lands in. ethers
+  sends no block, and geth and Frontier then estimate at the latest block's timestamp, so a timeout
+  claim sent at its `minTimeStamp` failed its first estimate. Frontier runs even a `pending` estimate
+  on the head's state and timestamp, so the peer3 node answers a `pending` estimate of a call on a
+  pending block of its own, stamped with the next block's slot time (peer3-parachain #1).
+  [RpcNodes.test.ts](../verification/tests/test/evm/RpcNodes.test.ts.md) checks that a call valid
+  only after the latest block's second estimates
+  ([`UNIT-TEST-MULTI-RPC-1-SVGGZ5`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5) `.P29`).
+  A revert at the pending block is confirmed at the latest block before it stands, and the pending
+  block's revert is the one reported: a pending block can hold other senders' unmined transactions
+  (geth's does), and a competitor's pending reduce that never lands must not end ours (`.P30`, `.P31`;
+  each fails without its rule).
+- The clock leaves genesis out of the measured block time: a fresh parachain's genesis has timestamp 0
+  ([`UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0`](../implementation/source/src/Clock.ts.md#unit-test-clock-average-1-6pdvr0)).
+- `--parachain` runs the slot nodes, the isolated test nodes and the tests on the parachain dev node,
+  locally or on the workers, whose runner image copies the node image peer3-parachain publishes
+  (`docker/zero-fee-node.Dockerfile` there). In E2E-Timeouts, "should handle timeout when next peer to write does not
+  author a block", "should demonstrate timeout creates disputes", "should handle timeout when non-author
+  peer disconnects (calldata posting)" and "should handle timeout when author peer disconnects", with
+  all of RpcNodes.test.ts, passed on the farm with `--parachain` on the pinned node, peer3-parachain
+  `4e60b71` (run-1198, 57 passing).
+
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 
 PR #579 review cards TO4, TO5, TY2 and TY3.
@@ -146,6 +172,25 @@ The retry tests wait for two held submissions; they do not prove that no third o
 submits a top-up with a made-up snapshot pin. No runtime stores that pin, so the retry condition, which needs
 both the pinned and the new snapshot stored, is not met, and the test still returns `false` (passed in the
 full gate).
+
+## Test timing inputs — 2026-11-21
+
+Engineer decision (Luke, 2026-11-21, PR #606), standing: a parachain test whose `evidenceTime` is
+below the harness minimum `MIN_TEST_TIME_CONFIG.evidenceTime` (10) may be raised to 10 once its log
+shows `RaceConditionDisputeEvidencePeriodExpired` refusing in-window work; each raise still gets an
+entry here. The rule is mirrored in `test/AGENTS.md` ("Protocol wait budgets"). First use: the three U72 cases in
+`BotConnectionFixes.test.ts` whose leaver submits its self-removal for an observed dispute go from
+the staging's 4 to 10. On the parachain, observing the dispute, building the self-removal and
+landing it spans two or three 2 s blocks, so 4 s let the chain refuse it with
+`RaceConditionDisputeEvidencePeriodExpired`. No oracle changed.
+
+## Test timing inputs — 2026-11-20
+
+Engineer decision (Luke, 2026-11-20, PR #606): `disputerThrottle.test.ts` widens its active-window
+`evidenceTime` from 5 to 10 for the two "within evidenceTime" cases. On the parachain the second
+dispute's estimate is judged at the block it lands in, a 2 s slot after the build, so construction under
+farm load plus one or two blocks can outlast 5 s and the throttle has run out; 10 s leaves room. No
+oracle changed.
 
 ## Test timing inputs — 2026-10-15
 

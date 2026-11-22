@@ -6,8 +6,9 @@ import { ethers } from "ethers";
 
 describe("E2E: dispute validation / uploadRevert / disputerThrottle", function () {
     const expiryEvidenceTime = 2;
-    // Leave enough chain time for dispute construction under parallel load.
-    const activeEvidenceTime = 5;
+    // Leave enough chain time for dispute construction under parallel load
+    // and for the second upload's block, two seconds on the parachain.
+    const activeEvidenceTime = 10;
 
     describe("disputer already throttled; opens NEW window", function () {
         it("second postDispute from same disputer within evidenceTime → dispute upload fails → ErrorDisputeThrottled", async function () {

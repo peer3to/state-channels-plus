@@ -250,6 +250,12 @@ function buildBaseEnv(threadModes) {
 
 async function main(options = {}) {
     const cli = { ...parseCliArgs(process.argv), ...options };
+    // local slot nodes and test processes inherit the chain choice; the fee
+    // quote preload adds itself to NODE_OPTIONS, which local children inherit
+    if (cli.parachain) {
+        process.env.PARACHAIN = "1";
+        require("../test/utils/peer3FeeData");
+    }
     if (cli.help) {
         console.log(getHelpText());
         return;
@@ -545,7 +551,10 @@ async function main(options = {}) {
                         cli.forwardEnv,
                         {
                             LOG_LEVEL: process.env.LOG_LEVEL || "verbose",
+                            // --parachain: the slot nodes and tests run on the parachain dev node
+                            PARACHAIN: cli.parachain ? "1" : undefined,
                             CRASH_LOG_UPLOAD_ENDPOINT: "",
+                            // on the parachain the worker adds the fee quote preload by its absolute path
                             NODE_OPTIONS:
                                 "--enable-source-maps --stack-trace-limit=1000",
                             STREAM_PARALLEL_CHILD_OUTPUT: "0",

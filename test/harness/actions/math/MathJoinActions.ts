@@ -2,8 +2,9 @@
 
 import Clock from "@/Clock";
 import type { PreparedJoinChannelConfirmation } from "@/rpc/network/services";
-import type { Hash } from "@/types/types";
+import type { Address, Hash } from "@/types/types";
 import { addressesEqual, DetachedPromises } from "@/utils";
+import { fundForGas } from "@test/factory";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import {
     JoinActions,
@@ -201,12 +202,10 @@ export class MathJoinActions extends JoinActions {
                 );
         } else {
             if (randomWallet) {
-                await (
-                    await submitter.p2pInstance.chainSigner.sendTransaction({
-                        to: participant,
-                        value: ethers.parseEther("1")
-                    })
-                ).wait();
+                await fundForGas(
+                    submitter.p2pInstance.chainSigner,
+                    participant as Address
+                );
             }
             // A harness peer's transaction goes through its runtime's chain
             // signer: the host owns that account's nonce, and a raw-wallet

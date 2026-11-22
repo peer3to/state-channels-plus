@@ -11,7 +11,7 @@ import type InternalTransport from "@/transport/InternalTransport";
 export class InternalRpcRouter extends ARpcRouter<InternalTransport> {
     constructor(
         public readonly rpcRoot: AInternalRpcRoot,
-        protected readonly defaultRequestTimeoutMs: number | null,
+        public readonly defaultRequestTimeoutMs: number | null,
         private readonly handlerExecutionContext?: HostHandlerExecutionContext
     ) {
         super();
