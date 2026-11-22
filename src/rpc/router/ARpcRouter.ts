@@ -69,7 +69,7 @@ export abstract class ARpcRouter<TTransport extends ATransport = ATransport> {
         return this.pendingRpcRequests.size;
     }
 
-    protected abstract get defaultRequestTimeoutMs(): number | null;
+    public abstract get defaultRequestTimeoutMs(): number | null;
     protected abstract admitRpcResponse(
         sender: TTransport,
         expected: TTransport

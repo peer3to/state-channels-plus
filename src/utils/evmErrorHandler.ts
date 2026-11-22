@@ -192,11 +192,13 @@ export function isProvenSubmissionFailure(
  * Runs the call of `tx` again, at the block its failed receipt in `error`
  * names: the state after that block, which holds whatever made it fail. With
  * no such block, at the latest block. A light client may read the latest
- * block before the receipt's.
+ * block before the receipt's. `gasLimit`, when given, caps the call as it
+ * capped the transaction.
  */
 export async function replayMinedCall(
     tx: TransactionResponse,
-    error: unknown
+    error: unknown,
+    gasLimit?: bigint
 ): Promise<string> {
     const blockTag = ethers.isError(error, "CALL_EXCEPTION")
         ? (error.receipt?.blockNumber ?? undefined)
@@ -206,7 +208,8 @@ export async function replayMinedCall(
         from: tx.from,
         data: tx.data,
         value: tx.value,
-        blockTag
+        blockTag,
+        gasLimit
     });
 }
 
@@ -220,6 +223,10 @@ export type HandleEvmErrorOptions = {
     handlers?: EvmErrorHandlers;
     signer?: Signer;
     forkId?: ForkId;
+    // the capped limit a fraud-proof replay `tx` was sent with: the preflight
+    // and the resend keep it; without it the preflight is unlimited and the
+    // resend takes a fresh estimate
+    gasLimit?: bigint;
 };
 
 export async function tryHandleEvmError(
@@ -234,7 +241,7 @@ async function _tryHandleEvmError(
     options: HandleEvmErrorOptions,
     recursionDepth: number = 0
 ): Promise<boolean> {
-    const { tx, logger, handlers, signer, forkId } = options;
+    const { tx, logger, handlers, signer, forkId, gasLimit } = options;
     if (!error) return false;
     logger?.info(
         `tryHandleEvmError recursionDepth: ${recursionDepth} - fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`,
@@ -273,7 +280,7 @@ async function _tryHandleEvmError(
             logger?.info(
                 `tryHandleEvmError - preflight and retrying transaction for fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`
             );
-            await replayMinedCall(tx, error);
+            await replayMinedCall(tx, error, gasLimit);
             logger?.info(
                 `tryHandleEvmError - call succeeded for fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`
             );
@@ -282,7 +289,8 @@ async function _tryHandleEvmError(
                 to: tx.to!,
                 from: tx.from,
                 data: tx.data!,
-                value: tx.value
+                value: tx.value,
+                gasLimit
             });
             logger?.info(
                 `tryHandleEvmError - sendTransaction succeeded for fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`

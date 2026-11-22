@@ -117,7 +117,7 @@ refused or ended subscription opened again after one block time
 ([`REQ-LC-7-W8WDN3.T1.P5`](../specification/runtime/light-client.md#req-lc-7-w8wdn3.t1.p5)), an endpoint without the light client endpoints among two ([`REQ-LC-4-E29Y46.T1.P7`](../specification/runtime/light-client.md#req-lc-4-e29y46.t1.p7)), a call
 reading the blob base fee ([`REQ-LC-2-PMY1VG.T1.P7`](../specification/runtime/light-client.md#req-lc-2-pmy1vg.t1.p7)), the block floor after a receipt and with the pushes stopped
 ([`REQ-LC-1-JT5PKT.T1.P17`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p17), [`P18`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p18)), an earlier pushed block refused ([`REQ-STPROOF-3-NVJGR0.T1.P28`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t1.p28)), and the replay at
-the receipt's block in the default tier ([`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P42`](../implementation/source/src/utils/evmErrorHandler.ts.md#unit-test-evm-error-handler-1-dp1mjf), `P43`). The light client
+the receipt's block in the default tier ([`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P45`](../implementation/source/src/utils/evmErrorHandler.ts.md#unit-test-evm-error-handler-1-dp1mjf), `P46`; renumbered from P42 and P43 when dev was merged in, whose own P42 to P44 came first). The light client
 suites passed 68 of 68 locally against the node built from peer3-parachain PR #3 with that day's fixes.
 The bot review that followed added three declarations, and each failed with its fix removed: new heads
 a million blocks ahead from the endpoint that does not serve the requests keep no read off the pushed
@@ -186,6 +186,32 @@ log-search answer and a block answered by number raise the floor
 caught. The peer3 node numbers its pending block at its best block, so P26 has the endpoint number it
 one above, as geth and Hardhat do. On 8a9a0178f the light client suites passed 94 of 94 against the
 node built from 42e5e80.
+
+## Gas estimates at the pending block, genesis-free block time, parachain test runs — 2026-11-20
+
+Engineer decisions (Luke, 2026-11-20, PR #605):
+
+- The runtime's provider estimates gas at the `pending` block, the one a transaction lands in. ethers
+  sends no block, and geth and Frontier then estimate at the latest block's timestamp, so a timeout
+  claim sent at its `minTimeStamp` failed its first estimate. Frontier runs even a `pending` estimate
+  on the head's state and timestamp, so the peer3 node answers a `pending` estimate of a call on a
+  pending block of its own, stamped with the next block's slot time (peer3-parachain #1).
+  [RpcNodes.test.ts](../verification/tests/test/evm/RpcNodes.test.ts.md) checks that a call valid
+  only after the latest block's second estimates
+  ([`UNIT-TEST-MULTI-RPC-1-SVGGZ5`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5) `.P29`).
+  A revert at the pending block is confirmed at the latest block before it stands, and the pending
+  block's revert is the one reported: a pending block can hold other senders' unmined transactions
+  (geth's does), and a competitor's pending reduce that never lands must not end ours (`.P30`, `.P31`;
+  each fails without its rule).
+- The clock leaves genesis out of the measured block time: a fresh parachain's genesis has timestamp 0
+  ([`UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0`](../implementation/source/src/Clock.ts.md#unit-test-clock-average-1-6pdvr0)).
+- `--parachain` runs the slot nodes, the isolated test nodes and the tests on the parachain dev node,
+  locally or on the workers, whose runner image copies the node image peer3-parachain publishes
+  (`docker/zero-fee-node.Dockerfile` there). In E2E-Timeouts, "should handle timeout when next peer to write does not
+  author a block", "should demonstrate timeout creates disputes", "should handle timeout when non-author
+  peer disconnects (calldata posting)" and "should handle timeout when author peer disconnects", with
+  all of RpcNodes.test.ts, passed on the farm with `--parachain` on the pinned node, peer3-parachain
+  `4e60b71` (run-1198, 57 passing).
 
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 
@@ -322,6 +348,25 @@ The retry tests wait for two held submissions; they do not prove that no third o
 submits a top-up with a made-up snapshot pin. No runtime stores that pin, so the retry condition, which needs
 both the pinned and the new snapshot stored, is not met, and the test still returns `false` (passed in the
 full gate).
+
+## Test timing inputs — 2026-11-21
+
+Engineer decision (Luke, 2026-11-21, PR #606), standing: a parachain test whose `evidenceTime` is
+below the harness minimum `MIN_TEST_TIME_CONFIG.evidenceTime` (10) may be raised to 10 once its log
+shows `RaceConditionDisputeEvidencePeriodExpired` refusing in-window work; each raise still gets an
+entry here. The rule is mirrored in `test/AGENTS.md` ("Protocol wait budgets"). First use: the three U72 cases in
+`BotConnectionFixes.test.ts` whose leaver submits its self-removal for an observed dispute go from
+the staging's 4 to 10. On the parachain, observing the dispute, building the self-removal and
+landing it spans two or three 2 s blocks, so 4 s let the chain refuse it with
+`RaceConditionDisputeEvidencePeriodExpired`. No oracle changed.
+
+## Test timing inputs — 2026-11-20
+
+Engineer decision (Luke, 2026-11-20, PR #606): `disputerThrottle.test.ts` widens its active-window
+`evidenceTime` from 5 to 10 for the two "within evidenceTime" cases. On the parachain the second
+dispute's estimate is judged at the block it lands in, a 2 s slot after the build, so construction under
+farm load plus one or two blocks can outlast 5 s and the throttle has run out; 10 s leaves room. No
+oracle changed.
 
 ## Test timing inputs — 2026-10-15
 

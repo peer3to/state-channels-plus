@@ -57,6 +57,7 @@ The SDK abstracts away most of the complexities of the system and is designed to
 
 ### Upgrade notes
 
+- `GAS_USAGE_SETTLE_MS` is replaced by `GAS_USAGE_SETTLE_BLOCKS` (default 3): a gas-usage read waits that many blocks at the measured block time, at most half its request timeout. An old `GAS_USAGE_SETTLE_MS` override is ignored.
 - State-machine diamonds MUST route `getNextToWriteOf(bytes)` from `AStateMachine` to the state-machine facet. It sets the given state, so call it only as a simulated call (`eth_call`). The SDK uses it to read the next writer of a given state. An unrouted selector makes every timeout audit throw.
 - The `requestJoinSignature` peer RPC no longer carries the joiner's snapshot and fork pins, and countersigners no longer check them. Mixed SDK versions cannot sign joins: an old countersigner refuses a new collector's request.
 - `ContractExecutorInitialization` no longer has a `config` field. A worker root gets its creator's config from the worker bootstrap; a consumer that builds executor roots directly must drop the field.
@@ -165,6 +166,11 @@ already parallelizes across tasks. Use `--forge-threads` to override the
 default. `--e2e-only` selects the Mocha end-to-end tier and drops the forge and
 browser tiers with it. Use `--mocha-test-pattern`, `--forge-test-pattern` or
 `--browser-test-pattern` when only one tier needs a filename filter.
+
+`--parachain` runs the slot nodes and tests on the parachain dev node
+(`PEER3_NODE_BIN`, default `zero-fee-node` on `PATH`) instead of Hardhat. The
+runner image copies the node from the image peer3-parachain publishes
+(`docker/zero-fee-node.Dockerfile` there), pinned by digest.
 
 Forge tasks need no Hardhat node, so they take neither a warm slot nor a funded
 account partition. Local and distributed runs build the contracts and the
@@ -416,13 +422,17 @@ SCP_TEST_POOL_SECRET=<the-same-random-secret-on-every-device>
 ```
 
 Both runner entry points load `.env` automatically. On a manually provisioned
-worker, install dependencies and build the runner image from
+worker, log docker in to GHCR with a token that has `read:packages` (the runner
+image copies the parachain dev node from the private
+`ghcr.io/peer3to/zero-fee-node` package, on every host, also for runs without
+`--parachain`), install dependencies and build the runner image from
 `scripts/e2e-parallel/distributed/runner-image.Dockerfile` with
 `yarn test:parallel:image`, which labels the image with the Dockerfile's
 revision and prints its immutable local image ID. Configure that ID or a
 published repository digest of such an image:
 
 ```shell
+docker login ghcr.io
 yarn
 yarn test:parallel:image
 export SCP_TEST_RUNNER_IMAGE='sha256:<local-image-id>'
@@ -767,6 +777,6 @@ yarn test:parallel:distributed --test-parallel-script --test-browser
 PEER3_NODE_BIN=/path/to/zero-fee-node yarn test:parallel --lc-tests
 ```
 
-CI passes the first two flags for the full test gate; see
+CI passes the first two flags, and `--parachain`, for the full test gate; see
 [Light client tests](#light-client-tests) for `--lc-tests`. `--browser-only` still selects only
 browser gates. `--e2e-only` retains its existing tier restrictions.

@@ -14,8 +14,8 @@
 
 Classification
 
-- Setup: Decode each named error; unknown errors; non-revert failures
-- Oracle: Named handlers fire exactly; unknowns report unhandled; decode robust
+- Setup: Decode each named error; unknown errors; non-revert failures; a mined revert without revert data retried with and without a caller `gasLimit`
+- Oracle: Named handlers fire exactly; unknowns report unhandled; decode robust; a retry with a caller `gasLimit` preflights and resends at that limit, one without preflights unlimited and resends at a fresh estimate
 
 - [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P1` — RaceConditionChannelAlreadyOpen
 - [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P2` — unknown error
@@ -56,8 +56,11 @@ Classification
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P39` — `isProvenSubmissionFailure` is true for a mined submission whose receipt failed, with no decoded reason
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P40` — `isProvenSubmissionFailure` is false for a failure with no receipt and no decoded revert
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P41` — `isProvenSubmissionFailure` is false for a reverted call with no receipt and no revert data
-- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P42` — `replayMinedCall` runs the call again at the block the failed receipt names
-- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P43` — `replayMinedCall` runs the call again at the latest block when the error names no receipt
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P42` — a mined revert retried with the caller's `gasLimit` preflights at that limit; a preflight that reverts at that limit sends no second transaction and reports unhandled
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P43` — a mined revert retried with the caller's `gasLimit` whose preflight passes is resent at that `gasLimit`
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P44` — a mined revert retried without a caller `gasLimit` preflights without a limit and is resent at a fresh estimate
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P45` — `replayMinedCall` runs the call again at the block the failed receipt names
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P46` — `replayMinedCall` runs the call again at the latest block when the error names no receipt
 
 ## UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W
 
