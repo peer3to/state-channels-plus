@@ -2967,6 +2967,10 @@ them, and add the test of
 [`REQ-ENFSM-2-G4HBKG.T1.P1`](../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg.t1.p1). Where the check lives (the proxy fallback, the
 abstract adapter, or each adapter) is the engineer's decision.
 
+**Fix in review (2026-11-22):** the engineer chose the proxy fallback. PR #614, against `dev`, refuses
+both hooks there unless the manager itself calls, adds the test, and resolves `OQ-17-6Z5Q0J` on `dev`,
+which tracked the same defect. This finding closes when #614 merges and the stack takes it in.
+
 <a id="find-deploy-1-t2xfrk"></a>
 
 ### FIND-DEPLOY-1-T2XFRK
