@@ -57,7 +57,10 @@ export class PeerHost {
     readonly threads: PeerThread[];
     private readonly child: ChildProcessWithoutNullStreams;
     // request id -> what waits for its answer
-    private readonly waiting = new Map<number, (answer: unknown) => void>();
+    private readonly waiting = new Map<
+        number,
+        { resolve: (answer: unknown) => void; reject: (error: Error) => void }
+    >();
     private nextId = 0;
     private readonly exited: Promise<void>;
 
@@ -75,16 +78,22 @@ export class PeerHost {
         ]);
         this.child.stderr.pipe(process.stderr);
         this.exited = new Promise((resolve) =>
-            this.child.once("exit", () => resolve())
+            this.child.once("exit", (code) => {
+                // a host that died answers nothing more: fail what waits
+                for (const { reject } of this.waiting.values())
+                    reject(new Error(`peer host ${host} exited with ${code}`));
+                this.waiting.clear();
+                resolve();
+            })
         );
         createInterface({ input: this.child.stdout }).on("line", (line) => {
             if (!line.startsWith(PEER_HOST_LINE)) return;
             const { id, answer } = JSON.parse(
                 line.slice(PEER_HOST_LINE.length)
             ) as { id: number; answer: unknown };
-            const resolve = this.waiting.get(id);
+            const waiter = this.waiting.get(id);
             this.waiting.delete(id);
-            resolve?.(answer);
+            waiter?.resolve(answer);
         });
         this.threads = Array.from({ length: threads }, (_, thread) => ({
             ask: <T>(message: unknown) => this.ask<T>(thread, message),
@@ -106,8 +115,11 @@ export class PeerHost {
 
     private ask<T>(thread: number, message: unknown): Promise<T> {
         const id = this.nextId++;
-        return new Promise((resolve) => {
-            this.waiting.set(id, (answer) => resolve(answer as T));
+        return new Promise((resolve, reject) => {
+            this.waiting.set(id, {
+                resolve: (answer) => resolve(answer as T),
+                reject
+            });
             this.child.stdin.write(
                 JSON.stringify({ id, thread, message }) + "\n"
             );

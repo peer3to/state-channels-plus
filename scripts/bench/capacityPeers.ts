@@ -52,6 +52,8 @@ export type PeerReport = {
     refused: number;
     /** Subscriptions the node ended. */
     ended: number;
+    /** Peers whose socket or subscription the node refused, as past its connection limit. */
+    unopened: number;
     fallbackReadMs: number[];
     failedFallbackReads: number;
     /** Share of the worker's time its event loop was busy since the last take. */
@@ -89,6 +91,7 @@ function emptyReport(): PeerReport {
         skippedBlocks: 0,
         refused: 0,
         ended: 0,
+        unopened: 0,
         fallbackReadMs: [],
         failedFallbackReads: 0,
         eventLoopUtilization: 0,
@@ -178,7 +181,12 @@ parentPort?.on(
             | { type: "stop" }
     ) => {
         if (message.type === "add") {
-            await Promise.all(message.peers.map(openPeer));
+            const opened = await Promise.allSettled(
+                message.peers.map(openPeer)
+            );
+            report.unopened += opened.filter(
+                ({ status }) => status === "rejected"
+            ).length;
             parentPort?.postMessage({ type: "added" });
         } else if (message.type === "take") {
             const now = performance.eventLoopUtilization();

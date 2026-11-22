@@ -7,10 +7,11 @@
  *
  * Per step it reports the stage times (median, p95, max), pushes delivered
  * against expected, skipped blocks, refusals, ended subscriptions, whether
- * the end-to-end lag grew over the step, bytes sent, fallback read times, the
+ * the end-to-end lag grew over the step, peers the node refused to open,
+ * bytes sent, fallback read times, the
  * node's CPU and memory (when the node runs here), and how busy the peer
  * threads were. A step counts as sustained when no push was missing, skipped
- * or refused, no subscription ended, and the median end-to-end lag of the
+ * or refused, no subscription ended, every peer opened, and the median end-to-end lag of the
  * step's last third is not above its first third's by a block time or more.
  * It also reports the time each peer's thread spent verifying and applying a
  * push, the stage times of the peer whose median end-to-end lag was highest,
@@ -133,6 +134,7 @@ function stepResult(
     const skippedBlocks = reports.reduce((n, r) => n + r.skippedBlocks, 0);
     const refused = reports.reduce((n, r) => n + r.refused, 0);
     const ended = reports.reduce((n, r) => n + r.ended, 0);
+    const unopened = reports.reduce((n, r) => n + r.unopened, 0);
     const cpuPercent =
         nodeSamples.length < 2
             ? null
@@ -152,7 +154,8 @@ function stepResult(
             expected: expectedPushes,
             skippedBlocks,
             refused,
-            ended
+            ended,
+            unopened
         },
         stagesMs: stages(pushes),
         // the peer with the highest median end-to-end lag, by stage: where it waited
@@ -196,6 +199,7 @@ function stepResult(
             skippedBlocks === 0 &&
             refused === 0 &&
             ended === 0 &&
+            unopened === 0 &&
             !lagGrew
     };
 }
@@ -330,9 +334,11 @@ async function main(): Promise<void> {
                     )
                 )
             ).map(({ report }) => report);
-            reports.forEach((report, index) =>
-                report.syncMs.push(...warmup[index].report.syncMs)
-            );
+            // the initial syncs and the refused opens happened in the warm-up
+            reports.forEach((report, index) => {
+                report.syncMs.push(...warmup[index].report.syncMs);
+                report.unopened += warmup[index].report.unopened;
+            });
             const result = stepResult(
                 subscribers,
                 Date.now() - started,
