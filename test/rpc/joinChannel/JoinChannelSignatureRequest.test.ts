@@ -268,23 +268,21 @@ describe("JoinChannel signature requests", function () {
         }
     });
 
-    it("collects every countersignature while a threshold member's chain RPC holds every read and its chain reads count as proven: the member still answers from its local clock and mirror", async function () {
+    it("collects every countersignature while a threshold member's chain reads count as proven: the member reads its threshold membership from the chain, not its mirror", async function () {
         const h = TestSession.getHarness();
-        const heldIndex = 1;
-        await h.lifecycle.start(2, 0, {
-            rpcNodeProxiesByPeer: { [heldIndex]: 1 }
-        });
+        const provenIndex = 1;
+        await h.lifecycle.start(2, 0);
         const joiner = await h.join.addSpectatorWait();
         await h.assert.sync.peersInSyncWait();
         const thresholdSet = await h
             .control(h.getPeer(0))
             .query.getOnChainThresholdSet()
             .request();
-        const held = h.control(h.getPeer(heldIndex));
-        await held.stub.stubProvenChainReads().request();
-        const [proxy] = h.getRpcNodeProxies(heldIndex);
-        const releases = ["eth_call", "eth_getBlockByNumber"].map((method) =>
-            proxy.holdRequests(method)
+        const proven = h.control(h.getPeer(provenIndex));
+        await proven.stub.stubProvenChainReads().request();
+        const reads = await h.mirror.observe(
+            h.getPeer(provenIndex).index,
+            "getOnChainThresholdSet"
         );
         try {
             const chainTime = await Clock.getBlockchainTime();
@@ -308,9 +306,12 @@ describe("JoinChannel signature requests", function () {
                     )
                 )
             ).to.have.deep.members(thresholdSet);
+            const { local, chain } = await reads.observation();
+            expect(local.reads).to.equal(0);
+            expect(chain.reads).to.be.greaterThan(0);
         } finally {
-            for (const release of releases) release();
-            await held.stub.restoreProvenChainReads().request();
+            await reads.restore();
+            await proven.stub.restoreProvenChainReads().request();
         }
     });
 

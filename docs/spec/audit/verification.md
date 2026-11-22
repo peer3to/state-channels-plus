@@ -152,7 +152,12 @@ with the light client on and the reads compared
 ([`REQ-MIRROR-5-N5SZC9.T3.P1`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t3.p1), a gap), because the test harness runs participants on Hardhat nodes only; running them on a peer3 node with
 the channel contracts deployed is planned with the farm workers step. The engineer's two exceptions
 stay local while proven, the join countersigner's membership check and the ingest gate's disputed
-flag, and neither goes to the chain while proven.
+flag, and neither goes to the chain while proven. Revised 2026-11-22, when the engineer removed both
+exceptions: the countersigner declaration now shows the threshold read on the chain and none on the
+mirror ([`REQ-MIRROR-5-N5SZC9.T4.P5`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t4.p5)), and a new unit declaration shows the ingest gate asking the
+chain ([`REQ-MIRROR-5-N5SZC9.T4.P18`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t4.p18)), and two unit declarations show a failed gate read
+putting queued blocks back ([`UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P62`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md#unit-test-block-queue-manager-1-yws2d2) and [`UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P63`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md#unit-test-block-queue-manager-1-yws2d2)); each failed with its source change
+reverted.
 
 A second review of the merged stack on 2026-11-21 led to fixes in the light client and in each mirror
 read site. Each new declaration failed with its fix removed: a log the serving endpoint delivered raises

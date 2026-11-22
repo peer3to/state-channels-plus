@@ -77,6 +77,8 @@ the still-absent spectator is blacklisted.
 - `an absent sender's gossip whose sync meets a window the chain has not reduced stays pending through the kill period, then the sender is asked again after the reduction and blacklisted`: REQ-SYNC-4-AWHFPA.T1.P19
 - `sync succeeds but the sender is still absent: blacklisted with no queue entry`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P36
 - `an intake-gate sync whose payload fails validation blacklists the sender through the sync with no queue entry`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P59, REQ-GOSSIP-4-J5Z4DF.T1.P48
+- `a disputed-fork check that fails in the queue executor puts the dequeued blocks back, each under its queue timeout`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P62
+- `a disputed-fork check that fails in a queue timeout puts the block back and runs the timeout again after the recheck delay`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P63
 - `a drain that dequeues a stored copy still drains the queued next block`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P47
 - `an oversized verified eligibility cache does not expand the N-source allowance`: REQ-QSTORE-2-VYWJAQ.T1.P39, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P14
 - `an explicit validation strategy stays outside the queued storage clone boundary`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P16

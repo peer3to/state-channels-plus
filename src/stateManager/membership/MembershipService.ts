@@ -236,7 +236,8 @@ export default class MembershipService {
     /**
      * Whether the chain's threshold set lists this signer. A mirror that
      * lists the signer answers without a chain read; otherwise the chain
-     * answers, since the mirror can lag it.
+     * answers, since the mirror can lag it. While chain reads are proven the
+     * chain answers alone.
      */
     public async isSignerInThresholdSet(): Promise<boolean> {
         const sm = this.stateManager;
@@ -250,10 +251,7 @@ export default class MembershipService {
             async () =>
                 this.includesSigner(await this.getOnChainThresholdSet()),
             (isListed) => isListed,
-            // REQ-JOINSIG-1: a countersigner answers from its local view
-            // even while chain reads are proven, so it still countersigns
-            // while its chain reads are held
-            async () => false
+            () => isChainProven(sm.stateChannelManagerContract)
         );
     }
 

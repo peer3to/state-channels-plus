@@ -98,7 +98,9 @@ countersigner's threshold-membership check keeps the local-view-first rule of
 (liveness while chain reads are held, and the bound on what a peer's probe costs), and the per-block
 ingest gate "is this fork disputed" keeps reading the node's own dispute record or the mirror (it runs
 for every block inside the state mutex, and a chain read there could wait a block time or fail and
-lose the block). [`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor, which may lag the chain but…)](../specification/disputes/state-proofs.md#req-sp-8-9zccej) and
+lose the block). Revised 2026-11-22: the engineer removed both exceptions, so while proven the
+threshold-membership check and the ingest gate (after the node's own dispute record) read the chain
+alone, at the availability cost [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9) now states. [`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor, which may lag the chain but…)](../specification/disputes/state-proofs.md#req-sp-8-9zccej) and
 [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../specification/disputes/state-proofs.md#req-sp-9-rnxp56) now state the chain
 anchor and the skipped mirror tier for proven reads. After the second review of the same day,
 [`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../specification/runtime/light-client.md#req-lc-1-jt5pkt) raises the serving endpoint's block floor from the logs it delivers

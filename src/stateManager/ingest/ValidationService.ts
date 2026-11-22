@@ -4,7 +4,10 @@ import AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 
 import Clock from "@/Clock";
-import { isChainProven } from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
+import {
+    isChainProven,
+    replicatedStateSource
+} from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import { Block, StateSnapshot } from "@/models";
 import type StateManager from "@/stateManager";
 import Storage from "@/storage";
@@ -218,21 +221,20 @@ export default class ValidationService {
 
     /**
      * The per-block ingest gate: this peer disputed the fork, or the local
-     * diamond holds its dispute. It reads the local diamond even while chain
-     * reads are proven: it runs for every block under the state mutex, where
-     * a chain read could wait a block time or fail and lose the block.
+     * diamond holds its dispute; while chain reads are proven, the chain
+     * holds it. That chain read runs under the state mutex, so it can wait for
+     * the light client's block, and its failure propagates to the caller.
      */
     public async isDisputedFork(
         forkId: ForkId,
         channelId: ChannelId
     ): Promise<boolean> {
-        return (
-            this.storage.disputes.didIDispute(forkId) ||
-            (await this.diamondStateMachine.localDiamondContract.isForkDisputed(
-                channelId,
-                forkId
-            ))
+        if (this.storage.disputes.didIDispute(forkId)) return true;
+        const source = await replicatedStateSource(
+            this.diamondStateMachine.localDiamondContract,
+            this.stateChannelManagerContract
         );
+        return await source.isForkDisputed(channelId, forkId);
     }
 
     /**

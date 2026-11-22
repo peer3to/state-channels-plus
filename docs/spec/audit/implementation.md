@@ -171,7 +171,12 @@ reads, re-arming the check after a failed chain read), `DisputeValidationService
 starts from) and `MembershipService.isSignerPendingOnChain` (pending set, a local-first check).
 `ValidationService.isForkDisputedOnChain` is the one owner of the disputed flag outside ingest.
 Local while proven, by the engineer's two exceptions: the join countersigner's membership check and
-the ingest gate `ValidationService.isDisputedFork`.
+the ingest gate `ValidationService.isDisputedFork`. Revised 2026-11-22, when the engineer removed
+the exceptions: `MembershipService.isSignerInThresholdSet` asks the chain alone while proven, and
+`ValidationService.isDisputedFork` reads the chain through `replicatedStateSource` once the node's
+own dispute record does not answer. A failed read of that gate no longer loses queued blocks:
+`BlockQueueManager.tryExecuteFromQueue` puts the dequeued entries back through `restoreQueuedEntry`,
+and `queueTimeout` puts its entry back and runs again after `TIMEOUT_RECHECK_DELAY_MS`.
 
 ## Discovery joins after the dispose cut — 2026-11-02
 

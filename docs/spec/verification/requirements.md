@@ -723,7 +723,7 @@ Specification cases tested: 0/4.
 Specification cases tested: 10/14. Untested: T1.P1, T1.P2, T1.P8, T1.P12.
 
 [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
-Specification cases tested: 23/24. Untested: T3.P1.
+Specification cases tested: 24/25. Untested: T3.P1.
 
 [`REQ-MSG-1-AY3A77` (Snapshots MUST commit both stream tips + totals)](../specification/settlement/cross-layer-messages.md#req-msg-1-ay3a77)
 Specification cases tested: 0/12.

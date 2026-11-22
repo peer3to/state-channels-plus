@@ -102,6 +102,7 @@ once the chain is past genesis, does not abort and stores no proof.
 - `a block on the current fork while it is disputed → blockForkIsDisputed → NOT_READY, discarded`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P27
 - `local dispute marker set while the contract still reports false → true, no on-chain query`: none
 - `no local marker but the contract reports disputed → true from the contract branch`: none
+- `chain reads proven, no local marker, the chain holds the fork's dispute → true from the chain, not the local diamond`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P38, REQ-MIRROR-5-N5SZC9.T4.P18
 - `a disputed-fork block supplied by a peer that acknowledged the dispute → supplier disconnected, DISCONNECT`: none
 - `a disputed-fork block from a supplier with no acknowledgment on record → discarded, NOT_READY`: REQ-DACK-3-J4Z33Y.T1.P1
 - `deviation hooks build dispute evidence (see disputeValidation/*)`: none

@@ -53,7 +53,8 @@ export const REPLICATED_READS = [
     "isForkDisputed",
     "getOnChainSlashedParticipants",
     "getStateSnapshot",
-    "getDisputeWindowCreationTimestamp"
+    "getDisputeWindowCreationTimestamp",
+    "getOnChainThresholdSet"
 ] as const satisfies readonly (keyof LocalDiamondContract &
     keyof StateChannelManagerInterface)[];
 export type ReplicatedRead = (typeof REPLICATED_READS)[number];

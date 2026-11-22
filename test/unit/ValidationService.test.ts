@@ -1661,6 +1661,55 @@ describe("Unit: ValidationService", function () {
             expect(r.onChainQueries).to.equal(1);
         });
 
+        it("chain reads proven, no local marker, the chain holds the fork's dispute → true from the chain, not the local diamond", async function () {
+            const h = TestSession.getHarness();
+            const observerIndex = 0;
+            const byzantineIndex = 1;
+
+            await h.lifecycle.start(3, 2);
+            await h.dispute.suppressDisputeInitiation([
+                h.getPeer(observerIndex).index
+            ]);
+            await h.byzantine.submitDoubleSignBlock(byzantineIndex);
+            await h.assert.dispute.committedWait({
+                expectedCount: 1,
+                mode: "atLeast"
+            });
+
+            const forkId = h.activeForkId!;
+            const observer = h.getPeer(observerIndex);
+            const proven = h.control(observer);
+            await proven.stub.stubProvenChainReads().request();
+            const reads = await h.mirror.observe(
+                observer.index,
+                "isForkDisputed"
+            );
+            try {
+                const r = await h.execOnHost(
+                    observer,
+                    async (sm, args) => ({
+                        markedLocally: sm.storage.disputes.didIDispute(
+                            args.forkId
+                        ),
+                        disputed: await sm.validationService.isDisputedFork(
+                            args.forkId,
+                            sm.channelId
+                        )
+                    }),
+                    { forkId }
+                );
+                const { local, chain } = await reads.observation();
+
+                expect(r.markedLocally).to.equal(false);
+                expect(r.disputed).to.equal(true);
+                expect(local.reads).to.equal(0);
+                expect(chain.answers).to.include(true);
+            } finally {
+                await reads.restore();
+                await proven.stub.restoreProvenChainReads().request();
+            }
+        });
+
         it("a disputed-fork block supplied by a peer that acknowledged the dispute → supplier disconnected, DISCONNECT", async function () {
             const h = TestSession.getHarness();
             const observerIndex = 0;

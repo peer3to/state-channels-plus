@@ -543,7 +543,9 @@ that applied before the local-first change.
 While chain reads are proven ([`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)) the chain's proven answer is used alone, so none of this local
 work runs for those predicates; the cost moves to endpoint availability, and the ingest gate and the
 join countersigner's membership check stay local so a slow endpoint cannot lose a block or stall a
-countersignature.
+countersignature. Revised 2026-11-22: the engineer removed both exceptions, so while proven a slow
+endpoint delays block ingest and countersignatures; a failed ingest-gate read drops a gossiped copy,
+which gossip delivers again, and puts queued blocks back under their queue timeouts.
 
 ## Client-side authenticity parity — 2026-09-26, decoding scope revised 2026-09-27
 

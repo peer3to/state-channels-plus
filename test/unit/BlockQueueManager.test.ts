@@ -105,6 +105,197 @@ describe("Unit: BlockQueueManager", () => {
         }
     });
 
+    it("a disputed-fork check that fails in the queue executor puts the dequeued blocks back, each under its queue timeout", async () => {
+        const f = new QueueIntakeFixture();
+        await f.start();
+        const observer = f.h.getPeer(0);
+        const nextHeight = await f.h
+            .control(observer)
+            .query.getNextBlockHeight(f.h.activeForkId!)
+            .request();
+        const { encoded, hash } = await f.encodeFutureBlock(nextHeight);
+        const r = await f.h.execOnHost(
+            observer,
+            async (sm, args, { ethers }) => {
+                const queue = sm.blockQueueManager;
+                const validation = sm.validationService;
+                const isDisputedFork = validation.isDisputedFork;
+                const schedule = sm.timeoutManager.scheduleTask.bind(
+                    sm.timeoutManager
+                );
+                const scheduled: string[] = [];
+                // the executor runs once, by hand, below
+                sm.timeoutManager.scheduleTask = (task, delay, name) => {
+                    scheduled.push(name ?? "");
+                    return name?.startsWith(
+                        "BlockQueueManager.tryExecuteFromQueue"
+                    )
+                        ? schedule(() => undefined, delay, name)
+                        : schedule(task, delay, name);
+                };
+                try {
+                    const block = ethers.AbiCoder.defaultAbiCoder().decode(
+                        [args.blockType],
+                        args.encoded
+                    )[0];
+                    await queue.ingestBlockConfirmation(block, {
+                        origin: args.origin,
+                        senderAddress: args.source
+                    });
+                    const queuedBefore = !!sm.storage.queues.getQueuedEntry(
+                        args.hash
+                    );
+                    validation.isDisputedFork = async () => {
+                        throw new Error("chain read failed");
+                    };
+                    const scheduledBefore = scheduled.length;
+                    let threw = false;
+                    try {
+                        await queue.tryExecuteFromQueue();
+                    } catch {
+                        threw = true;
+                    }
+                    return {
+                        queuedBefore,
+                        threw,
+                        queuedAfter: !!sm.storage.queues.getQueuedEntry(
+                            args.hash
+                        ),
+                        scheduledAfter: scheduled.slice(scheduledBefore)
+                    };
+                } finally {
+                    validation.isDisputedFork = isDisputedFork;
+                    sm.timeoutManager.scheduleTask = schedule;
+                }
+            },
+            {
+                blockType: BlockConfirmationEthersType,
+                encoded,
+                hash,
+                origin: BlockOrigin.NETWORK as const,
+                source: f.h.getPeer(1).address
+            }
+        );
+        // premise: the block waited in the queue for the executor
+        expect(r.queuedBefore).to.equal(true);
+        expect(r.threw).to.equal(false);
+        expect(r.queuedAfter).to.equal(true);
+        expect(
+            r.scheduledAfter.filter((name) =>
+                name.startsWith("BlockQueueManager.queueTimeout -")
+            )
+        ).to.have.length(1);
+    });
+
+    it("a disputed-fork check that fails in a queue timeout puts the block back and runs the timeout again after the recheck delay", async () => {
+        const f = new QueueIntakeFixture();
+        await f.start();
+        const observer = f.h.getPeer(0);
+        const nextHeight = await f.h
+            .control(observer)
+            .query.getNextBlockHeight(f.h.activeForkId!)
+            .request();
+        const { encoded, hash } = await f.encodeFutureBlock(nextHeight);
+        const r = await f.h.execOnHost(
+            observer,
+            async (sm, args, { ethers }) => {
+                const queue = sm.blockQueueManager;
+                const validation = sm.validationService;
+                const isDisputedFork =
+                    validation.isDisputedFork.bind(validation);
+                const schedule = sm.timeoutManager.scheduleTask.bind(
+                    sm.timeoutManager
+                );
+                const scheduled: { name: string; delay: number }[] = [];
+                let queueTimeout: (() => void | Promise<void>) | undefined;
+                let recheckRan!: () => void;
+                const recheck = new Promise<void>((resolve) => {
+                    recheckRan = resolve;
+                });
+                // the block's timeout is kept back and run by hand below;
+                // the executor stays off so the block waits in the queue
+                sm.timeoutManager.scheduleTask = (task, delay, name) => {
+                    scheduled.push({ name: name ?? "", delay });
+                    if (name?.startsWith("BlockQueueManager.queueTimeout -")) {
+                        queueTimeout ??= task;
+                        return schedule(() => undefined, delay, name);
+                    }
+                    if (
+                        name?.startsWith(
+                            "BlockQueueManager.tryExecuteFromQueue"
+                        )
+                    )
+                        return schedule(() => undefined, delay, name);
+                    if (
+                        name?.startsWith(
+                            "BlockQueueManager.queueTimeout (recheck"
+                        )
+                    )
+                        return schedule(
+                            async () => {
+                                await task();
+                                recheckRan();
+                            },
+                            delay,
+                            name
+                        );
+                    return schedule(task, delay, name);
+                };
+                let checks = 0;
+                try {
+                    const block = ethers.AbiCoder.defaultAbiCoder().decode(
+                        [args.blockType],
+                        args.encoded
+                    )[0];
+                    await queue.ingestBlockConfirmation(block, {
+                        origin: args.origin,
+                        senderAddress: args.source
+                    });
+                    validation.isDisputedFork = async (...parameters) => {
+                        checks += 1;
+                        if (checks === 1) throw new Error("chain read failed");
+                        return await isDisputedFork(...parameters);
+                    };
+                    if (!queueTimeout)
+                        throw new Error("the block armed no queue timeout");
+                    const scheduledBefore = scheduled.length;
+                    let threw = false;
+                    try {
+                        await queueTimeout();
+                    } catch {
+                        threw = true;
+                    }
+                    const queuedAfterFailure =
+                        !!sm.storage.queues.getQueuedEntry(args.hash);
+                    const rechecks = scheduled
+                        .slice(scheduledBefore)
+                        .filter(({ name }) =>
+                            name.startsWith(
+                                "BlockQueueManager.queueTimeout (recheck"
+                            )
+                        );
+                    if (rechecks.length > 0) await recheck;
+                    return { threw, queuedAfterFailure, rechecks, checks };
+                } finally {
+                    validation.isDisputedFork = isDisputedFork;
+                    sm.timeoutManager.scheduleTask = schedule;
+                }
+            },
+            {
+                blockType: BlockConfirmationEthersType,
+                encoded,
+                hash,
+                origin: BlockOrigin.NETWORK as const,
+                source: f.h.getPeer(1).address
+            }
+        );
+        expect(r.threw).to.equal(false);
+        expect(r.queuedAfterFailure).to.equal(true);
+        expect(r.rechecks.map(({ delay }) => delay)).to.deep.equal([1000]);
+        // the recheck asked again, and the check passed this time
+        expect(r.checks).to.equal(2);
+    });
+
     it("a drain that dequeues a stored copy still drains the queued next block", async () => {
         await assertStoredTipCopyDrainsNextBlock(
             MathTestSession.getHarness(),
