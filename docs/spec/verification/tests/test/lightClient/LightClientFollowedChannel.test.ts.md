@@ -49,3 +49,4 @@ the proxy saw: a read the pushed partition answers asks the endpoint nothing. It
 - `opens a refused subscription again when the endpoint fails its unsubscribe, with a warning and no error`: REQ-LC-7-W8WDN3.T1.P7
 - `hands on no push of a refused subscription that arrives before the endpoint ends it, and counts the refusal once`: REQ-LC-7-W8WDN3.T1.P6
 - `reads the followed contract's slots from the push and proves another contract's account, then its slots, in two requests`: REQ-LC-9-KWXV43.T1.P11
+- `reads an ERC-20 balance of a holder the push names, proving the token's account and code, then its balance and supply together, and proves them again at a later block`: REQ-LC-9-KWXV43.T1.P12

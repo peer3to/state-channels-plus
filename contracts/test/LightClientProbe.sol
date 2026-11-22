@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.8;
 
+import {LightClientToken} from "./LightClientToken.sol";
+
 /**
  *  What `LightClientProbe` creates: a contract with one answer.
  */
@@ -16,7 +18,8 @@ contract LightClientProbeChild {
  * reverts, value transfers, created contracts, the code
  * size limit, precompile addresses, reads that each name the next slot,
  * reads of several slots that do not depend on each other, and a read of
- * this contract's slots together with another contract's;
+ * this contract's slots together with another contract's, an ERC-20
+ * balance of a holder this contract names;
  * and a revert with no data that depends on the state. Also one transaction
  * of several calls, for the benchmark's transactions that touch several
  * channels.
@@ -168,6 +171,20 @@ contract LightClientProbe {
             total += next[slots[i]];
         }
         total += LightClientProbe(other).sumOf(otherSlots);
+    }
+
+    /**
+     * What the address in this contract's slot `holderSlot` holds of the
+     * ERC-20 `token`, and the token's supply. The balance's storage key is
+     * known only once the holder is read and the token's code runs.
+     */
+    function tokenHolding(LightClientToken token, uint256 holderSlot)
+        external
+        view
+        returns (uint256 balance, uint256 supply)
+    {
+        balance = token.balanceOf(address(uint160(next[holderSlot])));
+        supply = token.totalSupply();
     }
 
     /**

@@ -1,12 +1,17 @@
 // @distributed-requires: lightClient
 import { PEER3_LIGHT_CLIENT_CHAIN } from "@/evm/p2pRuntime/rpcNodes/lightClient/LightClientChain";
+import {
+    accountCodeKey,
+    contractStorageKey,
+    systemAccountKey
+} from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/frontierStateKeys";
 import { sleep } from "@/utils";
 import { tryHandleEvmError } from "@/utils/evmErrorHandler";
 import { PARTITION_CONTRACT } from "@test/fixtures/lightClient/LightClientNodeFixture";
 import { LightClientProviderFixture } from "@test/fixtures/lightClient/LightClientProviderFixture";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { isError, toBeHex, toQuantity } from "ethers";
+import { isError, solidityPackedKeccak256, toBeHex, toQuantity } from "ethers";
 import { ethers } from "hardhat";
 
 /** Channel ids, which the partition contract logs as its second topic. */
@@ -21,6 +26,11 @@ const UNSUBSCRIBE_FAILED =
     "Light client unsubscribe failed; the node may push to it until the socket closes";
 /** Enough for the light client probe's deployment. */
 const PROBE_DEPLOY_GAS = 9_000_000n;
+/** The followed probe's slot that names the token holder. */
+const HOLDER_SLOT = 7n;
+/** `LightClientToken`'s storage: its supply, then its balances by holder. */
+const TOKEN_SUPPLY_SLOT = 0n;
+const TOKEN_BALANCES_SLOT = 1n;
 /** The requests a proven read makes of the node when the pushed state does not answer it. */
 const PROOF_REQUESTS = ["chain_getHeader", "state_getReadProof"];
 /** The longest a read waits for a push of the block it must not read below. */
@@ -1243,6 +1253,103 @@ describe("Light client followed channel", function () {
         expect(provider.lightClientCounters).to.deep.include({
             fromPushedState: 0,
             withFallbackRead: 1,
+            failed: 0
+        });
+    });
+
+    it("reads an ERC-20 balance of a holder the push names, proving the token's account and code, then its balance and supply together, and proves them again at a later block", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const probe = await ethers.getContractFactory("LightClientProbe");
+        const tokenFactory =
+            await ethers.getContractFactory("LightClientToken");
+        const followed = await node.deploy(probe.bytecode, PROBE_DEPLOY_GAS);
+        // the deployer holds the whole supply: no channel transaction touches it
+        const token = await node.deploy(
+            tokenFactory.bytecode,
+            PROBE_DEPLOY_GAS
+        );
+        await fixture.follow(followed, CHANNEL_A);
+        const named = await node.transact(
+            followed,
+            probe.interface.encodeFunctionData("touch", [
+                CHANNEL_A,
+                HOLDER_SLOT,
+                BigInt(node.senderAddress)
+            ])
+        );
+        await fixture.pushedThrough(named.blockNumber);
+        const call = {
+            from: node.senderAddress,
+            to: followed,
+            data: probe.interface.encodeFunctionData("tokenHolding", [
+                token,
+                HOLDER_SLOT
+            ])
+        };
+        const proofRequests = (from: number) =>
+            proxy.forwardedRequests
+                .slice(from)
+                .filter(({ method }) => method === "state_getReadProof")
+                .map(({ params }) => params as [string[], string]);
+        const sent = proxy.forwardedRequests.length;
+
+        const answer = await provider.call(call);
+
+        expect(answer).to.equal(await node.provider.call(call));
+        expect(
+            probe.interface.decodeFunctionResult("tokenHolding", answer)
+        ).to.deep.equal([1000n, 1000n]);
+        const first = proofRequests(sent);
+        // the holder from the push; the token's account and code first, its
+        // balance and supply only once its code ran, known together
+        const tokenKeys = [
+            [systemAccountKey(token), accountCodeKey(token)],
+            [
+                contractStorageKey(
+                    token,
+                    solidityPackedKeccak256(
+                        ["uint256", "uint256"],
+                        [node.senderAddress, TOKEN_BALANCES_SLOT]
+                    )
+                ),
+                contractStorageKey(token, toBeHex(TOKEN_SUPPLY_SLOT, 32))
+            ]
+        ].map((keys) => keys.map((key) => key.toLowerCase()).sort());
+        const sortedKeys = (requests: [string[], string][]) =>
+            requests.map(([keys]) =>
+                keys.map((key) => key.toLowerCase()).sort()
+            );
+        expect(sortedKeys(first)).to.deep.equal(tokenKeys);
+
+        // a transfer no push carries, then a block the push moves the read to
+        await node.transact(
+            token,
+            tokenFactory.interface.encodeFunctionData("transfer", [
+                CHANNEL_B.slice(0, 42),
+                300n
+            ])
+        );
+        const later = await node.transact(
+            followed,
+            probe.interface.encodeFunctionData("touch", [CHANNEL_A, 1n, 5n])
+        );
+        await fixture.pushedThrough(later.blockNumber);
+        const sentLater = proxy.forwardedRequests.length;
+
+        const laterAnswer = await provider.call(call);
+
+        expect(laterAnswer).to.equal(await node.provider.call(call));
+        expect(
+            probe.interface.decodeFunctionResult("tokenHolding", laterAnswer)
+        ).to.deep.equal([700n, 1000n]);
+        // what the earlier block proved is stale: proven again at the new block
+        const second = proofRequests(sentLater);
+        expect(sortedKeys(second)).to.deep.equal(tokenKeys);
+        expect(second.map(([, hash]) => hash)).to.not.include(first[0][1]);
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 0,
+            withFallbackRead: 2,
             failed: 0
         });
     });

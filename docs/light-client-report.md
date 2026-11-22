@@ -184,29 +184,43 @@ start. A pass that finds nothing missing gives the answer. The read counts as se
 only if nothing it used came from a fallback proof, including one fetched for an earlier read at the
 same block.
 
-**Example.** One call reads two slots of the followed contract and four slots of another contract
-it calls, as a channel contract reads an ERC-20 balance. The test is
-`reads the followed contract's slots from the push and proves another contract's account, then its slots, in two requests`
-(`test/lightClient/LightClientFollowedChannel.test.ts`, `REQ-LC-9-KWXV43.T1.P11`).
+**Example.** A followed channel's contract reads an ERC-20 balance it holds: `tokenHolding` of the
+test contract `LightClientProbe` reads the holder's address from one of its own slots, then asks an
+ERC-20 (`LightClientToken`) for that holder's balance and for its supply. The test is
+`reads an ERC-20 balance of a holder the push names, proving the token's account and code, then its balance and supply together, and proves them again at a later block`
+(`test/lightClient/LightClientFollowedChannel.test.ts`, `REQ-LC-9-KWXV43.T1.P12`).
 
-- Pass 1: the caller's account, the followed contract's code and its two slots are held: the
-  channel's transactions touched them, so the push carried them. The call reaches the other contract
-  and finds its account and code missing. With no code for the other contract in this pass, the call
-  stops there. The partition does not decide them, so one request proves the account and the code
-  together: 2 keys.
-- Pass 2: the other contract's code now runs and reads its four slots. All four are missing, and all
-  four are known in this pass, because none depends on another: one request proves them together, 4
-  keys.
-- Pass 3: nothing is missing. The answer (21) equals the node's own `eth_call`, and the read counts
-  as one that needed a fallback.
+At the first block:
 
-The account and code are known only after the call reaches the other contract, and the slots only
-after its code has run. That is two dependent steps, so two requests. Reads that each name the next key cost one request per step, as the benchmark's chain walk shows. Stale
-inputs do not arise inside one read: the partition's held values are re-proven at every accepted
-block, and a fallback proof is asked for the read's own block. Altered and missing inputs are refused
-by the tests of `test/unit/FrontierPushedPartition.test.ts`, for example
+- Pass 1: the caller's account, the followed contract's code and the slot naming the holder are held:
+  the channel's transaction wrote that slot, so the push carried it. These reads are verified. The
+  call reaches the token and finds its account and code missing; with no code in this pass, the call
+  stops there. The partition does not decide them, so one request at the read's block proves the
+  account and the code together: 2 keys.
+- Pass 2: the token's code runs. The balance's key, `keccak256(holder, slot)`, is known only now, from
+  the holder read in pass 1 and the code fetched for pass 2. The supply's key is known in the same
+  pass, and neither depends on the other: one request proves both together, 2 keys.
+- Pass 3: nothing is missing. The answer (1,000 of 1,000) equals the node's own `eth_call`, and the
+  read counts as one that needed a fallback.
+
+At a later block, after a transfer of 300 that no channel transaction logged, so no push carried it:
+
+- What the first read proved belongs to the earlier block, so it is stale. When the newer push moves
+  the light client to the new block, everything held for the earlier one is forgotten (`moveTo`). The
+  same two requests run again, both for the new block's hash, and the answer is the new balance (700),
+  equal to the node's. With the forgetting removed, the test fails.
+
+So keys known in the same pass (the balance and the supply) are proven together, and keys that only
+an earlier read reveals (the token's code, then the balance's key) cost one request per step. The same
+holds for reads that each name the next key, as the benchmark's chain walk shows. Stale inputs do not
+arise inside one read: the partition's held values are re-proven at every accepted block, and a
+fallback proof is asked for the read's own block. Altered and missing inputs are refused by the tests
+of `test/unit/FrontierPushedPartition.test.ts`, for example
 `refuses a pushed value the proof decides otherwise, and holds nothing until the next sync` and
-`leaves to the node what the held proof does not reach`.
+`leaves to the node what the held proof does not reach`. The four-slot version of this example, with
+a contract that is not a token, is
+`reads the followed contract's slots from the push and proves another contract's account, then its slots, in two requests`
+(`REQ-LC-9-KWXV43.T1.P11`).
 
 ## Event coverage
 

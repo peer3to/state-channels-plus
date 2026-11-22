@@ -618,7 +618,7 @@ Specification cases tested: 5/5.
 Specification cases tested: 6/10. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
 
 [`REQ-LC-9-KWXV43` (A read takes from the pushed partitions what they prove at its block)](../specification/runtime/light-client.md#req-lc-9-kwxv43)
-Specification cases tested: 11/11.
+Specification cases tested: 12/12.
 
 [`REQ-LC-10-YCP80W` (The stages of each accepted pushed block are kept)](../specification/runtime/light-client.md#req-lc-10-ycp80w)
 Specification cases tested: 2/2.
