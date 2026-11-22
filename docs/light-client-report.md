@@ -92,8 +92,10 @@ The driver, `scripts/bench/lightClientCalls.ts` (`yarn bench:light-client`), run
 and both light client strategies over one node, on the same blocks and calls, each behind its own
 proxy. The calls cover a slot the followed channel holds, a simulated write, a read of another
 contract (one slot, four slots known together, eight slots that each name the next), the same
-dependent read repeated at the same block, a call without a sender, and a balance. After the
-comparison the losing strategies are removed.
+dependent read repeated at the same block, a call without a sender, a call that writes and reverts
+with an error message (added after the 22 Nov runs: a revert is compared as `revert:<data>`, and in
+compare mode against the node's), and a balance. After the comparison the losing strategies are
+removed.
 
 The driver also measures:
 

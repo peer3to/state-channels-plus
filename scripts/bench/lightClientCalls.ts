@@ -19,6 +19,7 @@
  *   proves every key a call reads. The share of those keys the followed paths
  *   did not have to prove is their hit rate.
  * Both strategy paths follow the same channel of the partition contract.
+ * A call that reverts answers `revert:<data>`, so reverts compare across paths.
  *
  * Each round writes to the channels, waits until the following light clients
  * hold the block, then runs one call set on each path, in rotating order.
@@ -58,7 +59,7 @@ import {
 import type { RpcNodeProxy } from "@test/fixtures/node/RpcNodeProxy";
 import { recordingLogger } from "@test/fixtures/node/RpcNodesFixture";
 import { waitFor } from "@test/utils/waitFor";
-import { toBeHex } from "ethers";
+import { isCallException, toBeHex } from "ethers";
 import { ethers } from "hardhat";
 import {
     contractStoragePrefix,
@@ -84,6 +85,7 @@ type CallKind =
     | "callReadChainOutsidePartition"
     | "callReadChainOutsidePartitionAgain"
     | "callReadWithoutSender"
+    | "callRevertOutsidePartition"
     | "balanceOfSender";
 type BenchPath = {
     name: PathName;
@@ -195,6 +197,19 @@ function runPaths(names: string | undefined): PathName[] {
             `BENCH_PATHS names unknown paths ${unknown.join(", ")}; known: ${PATHS.join(", ")}`
         );
     return PATHS.filter((name) => named.includes(name));
+}
+
+/**
+ * What `answer` resolves to, or `revert:<data>` when the call reverts, so that
+ * the paths' reverts compare like their answers.
+ */
+async function answerOrRevert(answer: Promise<string>): Promise<string> {
+    try {
+        return await answer;
+    } catch (error) {
+        if (!isCallException(error)) throw error;
+        return `revert:${error.data}`;
+    }
 }
 
 function countMethods(requests: { method: RpcMethod }[]): MethodCounts {
@@ -688,6 +703,18 @@ async function main(): Promise<void> {
                     to: contract,
                     data: toBeHex(slotOf(0, 1), 32)
                 }),
+            // writes, then reverts with an error message: the reverts must agree
+            callRevertOutsidePartition: (provider) =>
+                answerOrRevert(
+                    provider.call({
+                        from: node.senderAddress,
+                        to: sumProbe,
+                        data: probe.interface.encodeFunctionData(
+                            "writeAndRevert",
+                            [1]
+                        )
+                    })
+                ),
             balanceOfSender: async (provider) =>
                 (await provider.getBalance(node.senderAddress)).toString()
         };
