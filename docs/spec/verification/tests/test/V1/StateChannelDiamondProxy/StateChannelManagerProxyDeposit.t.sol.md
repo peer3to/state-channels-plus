@@ -11,7 +11,7 @@ increments a storage counter in the manager's delegatecall context. The tests pr
 non-atomic filtering and exact inbound totals, all-failed and empty-batch rejection, and `onlySelf`
 confinement. Four tests call the adapter's `deposit` and `withdraw` through the manager's fallback:
 from an outside caller, directly and inside `multicall`, they revert naming the selector and the
-caller with no deposit made; from the manager itself, `deposit` reaches the adapter. A sixth test opens a channel with the real consumer, then drives `joinChannel`
+caller with no deposit made; from the manager itself, `deposit` reaches the adapter. The last test opens a channel with the real consumer, then drives `joinChannel`
 through the deployed diamond so the manager's own atomic deposit loop builds the failure payload
 from a genuinely failing iteration. Revert cases also assert that no adapter effect or inbound
 balance remains.
