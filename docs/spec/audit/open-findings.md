@@ -2665,7 +2665,7 @@ estimation and inclusion latency under the expected load.
 
 ### FIND-DISPUTE-6-E2YJ9X
 
-**Defect:** _Open (2026-10-20)._ A competing history can bypass a later joiner, and no kill removes it.
+**Defect:** _Resolved (2026-11-23)._ A competing history could bypass a later joiner, and no kill removed it.
 The chain anchor is 50 with participants A to E. A later joiner L posts a JOIN on chain. The honest
 history X consumes that JOIN in the join hop at 60, signed by A to E and L, and reaches the
 threshold-final point F = 100, where L has won 30 from A. A to E build a side chain Y from the
@@ -2678,33 +2678,73 @@ holds no block at F's height, so `DisputeConflictsWithFinalState` cannot be buil
 longest chain and rolls back L's final outcomes on X. L's deposit is carried, because the reduction
 consumes the pending JOIN.
 
-**Proposed direction:** A `DisputeFinalPointRegression` kill, proposed in the review of
-[PR #560](https://github.com/peer3to/state-channels-plus/pull/560). F = 100 is final with inbound
-height 2, while Y's final point G = 1000' is above F with inbound height 1, so Y's final point
-regresses the inbound height of a proved final point. The kill does not exist in the contracts yet.
-Its proof carries three fields, and it kills dispute D when all of these hold:
+**Fix:** a `DisputeFinalPointRegression` kill, first proposed in the review of
+[PR #560](https://github.com/peer3to/state-channels-plus/pull/560), in the shape the engineer
+approved (2026-11-23). F = 100 is final with inbound height 2, while Y's latest finalized point
+G = 1000' is above F with inbound height 1, so Y regresses the inbound height of a proved final
+point. Its proof carries `finalProof`, which walks F from the chain's start and proves it
+threshold-final as `DisputeConflictsWithFinalState` does, and `latestFinalizedSnapshot`, the
+preimage of G's `stateSnapshotHash`. G is the first block of D's last milestone, or the chain
+anchor when that milestone holds it; the proof names no milestone. The kill holds when F is final,
+G is strictly above F and not the anchor, the snapshot hashes to G's commitment, and the inbound
+height of F is greater than that of G, with a new participant's JOIN in between.
 
-- `finalProof` walks F from the chain's start and proves it threshold-final, as
-  `DisputeConflictsWithFinalState` does. F may be the on-chain anchor.
-- `milestoneIndex` selects one of D's milestones whose first block G lies strictly above the
-  on-chain anchor, so G is final in a valid walk. A milestone that holds the anchor, a block below
-  the anchor and a tail block are never accepted.
-- `gSnapshot` is the preimage of G's `stateSnapshotHash`, checked by `keccak256`.
-- `F.blockHeight < G.transactionCnt`, and the stored inbound height of F is greater than that of G.
-  Each height is read from `inboundMessageBlockMap` for the snapshot's
-  `latestInboundMessageBlockHash`, never from the snapshot's own height field: a colluding side can
-  sign a real hash next to a false, larger height.
+Each height is the chain's, never a snapshot's own height field: a stored inbound block reads its
+stored height, the anchor's inbound head reads the anchor's inbound height, and any other hash
+reverts the check, so it neither kills nor slashes. `DisputeConflictsWithFinalState` gains the
+same snapshot field and now also requires the inbound height of F to be at least that of D's
+latest finalized point whenever the extra inbound blocks hold a new participant's JOIN: a
+side-chain final point below the JOIN can no longer kill the honest history through a conflict. Slashing is unchanged. An honest auditor builds the kill next to the
+conflict kill, from its own final point and the dispute's last-milestone snapshot, and stores it
+only when the chain's check agrees
+([`REQ-FP-7-4DD0D7.T10`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t10)).
 
-On one history the inbound height never goes down, so the kill never fires there.
+An auditor whose latest final point is not below G uses the highest final point it can prove below G
+instead. Under a genesis start whose block zero is not final, G is the fork's start state, so an
+unfinalized block zero never raises the conflict's inbound check.
 
-**Evidence:** `test_K1_sideChainBypassingALaterJoinerLosesTheReductionToTheJoinersFinalHistory` in
+**Residual:** when the dispute omits its auditing data, the auditor reads G's snapshot from its
+own store, and a node that does not hold it builds no regression kill. Y's upload names the chain's
+inbound head, so L is in Y's historic threshold set. A Y whose `onChainSlashes` is a subset of the
+chain's slashes therefore gains nothing by omitting its data: its hop is not final over that set,
+and omission is killed by `DisputeLastMilestoneNotFinalAndNoAuditingData`. Y can drop L from that
+set only by listing L in `onChainSlashes` although the chain never slashed L. The auditor checks
+that list against the chain before any walk or snapshot lookup, so such a Y is killed by
+`DisputeOnChainSlashesNotSubset` whether or not the auditor holds G's snapshot
+([`REQ-FP-7-4DD0D7.T10`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t10)).
+
+A top-up is also a JOIN message, so both checks count only the JOIN of an address outside the
+lower point's participants (G's for the regression, F's for the conflict), in the stored inbound
+run above the lower head up to the higher one; a run the chain does not hold reverts with
+`ErrorInboundMessageBlockNotStored` (engineer's decision, 2026-11-23). A colluder can post its own
+JOIN from a fresh address and consume it in a divergent history above F: the conflict counter
+against that history is then refused. This residual is accepted and documented, not fixed
+([`REQ-FP-7-4DD0D7.T9`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t9)).
+
+The same rule lets a colluder C whose JOIN comes before a pending joiner L's build a side final
+point F' that consumes C's JOIN but not L's. C is outside the participants of G of L's honest
+forced-inclusion dispute, so `DisputeFinalPointRegression` kills it. No fresh address is needed (a
+top-up by a participant that has left G's set also counts), and there is no minimum deposit. A
+JOIN consumed in a final block still needs its joiner's signature, so a finalized joiner stays
+protected. The harm to L is the submitter's slash (`_killDispute` adds it with
+`addOnChainSlashedParticipant`), not the kill: `_generateDisputeOutputState` applies pending inbound
+before slashes, so the winning dispute still admits L. Decided (Ljuba, 2026-11-23): a later change
+spares the submitter and slashes only the addresses that signed both conflicting final points;
+until it lands, this residual stands
+([`REQ-FP-7-4DD0D7.T10`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t10)).
+
+Open limits: a missing inbound block inside the sender's own final proof makes the walk return
+false, so the sender is slashed; and the inbound walk has no step bound (about 8,983 gas per
+skipped inbound block).
+
+**Evidence:**
 [DisputeFinalPointRegression.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeFinalPointRegression.t.sol.md)
-builds the case with a proposed proof struct and fails on its last assertion today. It is skipped
-(`vm.skip(true)`) until the kill lands.
-
-**Exit:** Implement the `DisputeFinalPointRegression` kill, replace the test's proposed struct and
-proof-type slot with the real ones, remove the skip, and the test passes. Then add its requirement
-and test mapping in the specification and verification layers.
+kills the finding's side chain and keeps L's final history in the reduction, with kill, control,
+lookup and cost cases;
+[DisputeValidationService.test.ts](../verification/tests/test/unit/DisputeValidationService.test.ts.md)
+and
+[E2E-DisputeFinalPointRegression.test.ts](../verification/tests/test/e2e/disputeValidation/E2E-DisputeFinalPointRegression.test.ts.md)
+cover the auditor and the on-chain kill by the seated joiner's node.
 
 <a id="find-events-1-3jf8fm"></a>
 

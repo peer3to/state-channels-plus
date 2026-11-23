@@ -16,12 +16,18 @@ import {
     stageBlindPendingAuditor
 } from "@test/fixtures/DisputeAuditStaging";
 import {
+    constructJoinerBypassDispute,
+    readLocalFinalSnapshot,
+    readPreJoinHeightAboveAnchor,
+    stageSeatedJoinerHistory
+} from "@test/fixtures/OmittedInboundJoinerStaging";
+import {
     MathTestSession as TestSession,
     resolveTestTimeConfig
 } from "@test/harness";
 import { DisputeTampering } from "@test/harness/actions/DisputeTamperingActions";
 import { expect } from "chai";
-import { ZeroHash } from "ethers";
+import { hexlify, ZeroHash } from "ethers";
 
 // the auditor's contract: verdict + the exact stored fraud proof. the
 // kill/counter-dispute/slash cascades stay owned by test/e2e/disputeValidation.
@@ -1059,6 +1065,558 @@ describe("Unit: DisputeValidationService", function () {
                 DisputeFraudProofType.DisputeNotLatestState
             );
             expect(second.disputeFraudProofCount).to.equal(1);
+        });
+    });
+
+    describe("final point regression", function () {
+        it("only milestone = hop from the chain anchor above seated Charlie's final point, signed without him, inbound head below his JOIN -> false + DisputeFinalPointRegression over Charlie's final point, which the chain accepts", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            const { dispute, auditingData, hopSnapshot } =
+                await constructJoinerBypassDispute(h, history);
+
+            const run = await h.dispute.auditDispute(
+                history.charlieIndex,
+                dispute,
+                auditingData
+            );
+
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.disputeFraudProofCount).to.equal(1);
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.DisputeFinalPointRegression
+            );
+            const proof = Codec.decode(
+                run.storedProof!.encodedProof,
+                DisputeFraudProofType.DisputeFinalPointRegression
+            );
+            expect(
+                StateSnapshot.from(proof.latestFinalizedSnapshot).hash,
+                "G is the hop's snapshot"
+            ).to.equal(hopSnapshot.hash);
+            const final = await h.channelManager.verifyMilestones.staticCall(
+                proof.finalProof
+            );
+            expect(
+                StateSnapshot.from(final.finalizedSnapshot).hash,
+                "F is Charlie's own final point"
+            ).to.equal(history.charlieFinal.hash);
+            expect(
+                await h.channelManager.isDisputeFinalPointRegression.staticCall(
+                    dispute,
+                    proof
+                )
+            ).to.equal(true);
+        });
+
+        it("the same hop committing Charlie's seated head state (inbound head = his JOIN), signed by all three -> no regression, no DisputeFinalPointRegression", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            const { dispute, auditingData, hopBlock, hopSnapshot } =
+                await constructJoinerBypassDispute(h, history, {
+                    inbound: "join"
+                });
+            expect(hopBlock.height).to.be.greaterThan(
+                history.charlieFinal.blockHeight
+            );
+            expect(hopSnapshot.latestInboundMessageBlockHash).to.equal(
+                history.charlieFinal.latestInboundMessageBlockHash
+            );
+
+            const run = await h.dispute.auditDispute(
+                history.charlieIndex,
+                dispute,
+                auditingData
+            );
+
+            expect(run).to.include({ outcome: "returned", isValid: true });
+            expect(run.storedProof).to.equal(undefined);
+            expect(run.disputeFraudProofCount).to.equal(0);
+        });
+
+        it("the hop names an inbound head the chain never held -> the chain's regression check has no inbound height for it and the audit continues: the walk's DisputeInvalidStateProof is stored instead", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            const { dispute, auditingData } =
+                await constructJoinerBypassDispute(h, history, {
+                    inbound: "unknown"
+                });
+
+            const run = await h.dispute.auditDispute(
+                history.charlieIndex,
+                dispute,
+                auditingData
+            );
+
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.disputeFraudProofCount).to.equal(1);
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.DisputeInvalidStateProof
+            );
+        });
+
+        it("the hop sits at Charlie's final height, commits another snapshot and names an inbound head the chain never held -> the chain's conflict check has no inbound height for it, the audit goes on to the walk: false + DisputeInvalidStateProof, no conflict proof", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            const charlie = h.getPeer(history.charlieIndex);
+            const { dispute, auditingData, hopSnapshot } =
+                await constructJoinerBypassDispute(h, history, {
+                    inbound: "unknown",
+                    height: history.charlieFinal.blockHeight
+                });
+            expect(hopSnapshot.hash).to.not.equal(history.charlieFinal.hash);
+            const conflicts = await h.mirror.observe(
+                charlie.index,
+                "isDisputeConflictingWithFinalState"
+            );
+
+            const run = await h.dispute.auditDispute(
+                charlie.index,
+                dispute,
+                auditingData
+            );
+
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.disputeFraudProofCount).to.equal(1);
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.DisputeInvalidStateProof
+            );
+            const { chain } = await conflicts.observation();
+            expect(chain.reads, "the conflict is offered").to.be.greaterThan(0);
+            expect(
+                chain.failures,
+                "every offer reverts on the unknown inbound head"
+            ).to.have.length(chain.reads);
+        });
+
+        it("untampered dispute over seated Charlie's history -> true, no proof, and his stored inbound blocks rule the regression out without a chain read", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            await h
+                .control(h.getPeer(history.aliceIndex))
+                .dispute.setForceExit(true)
+                .request();
+            const { dispute } = await h.dispute.fetchConstructedDispute(
+                history.aliceIndex
+            );
+            const regressions = await h.mirror.observe(
+                history.charlieIndex,
+                "isDisputeFinalPointRegression"
+            );
+
+            const run = await h.dispute.auditDispute(
+                history.charlieIndex,
+                dispute
+            );
+
+            expect(run).to.include({ outcome: "returned", isValid: true });
+            expect(run.storedProof).to.equal(undefined);
+            expect(run.disputeFraudProofCount).to.equal(0);
+            expect(
+                (await regressions.observation()).chain.reads,
+                "no regression read reaches the chain"
+            ).to.equal(0);
+        });
+
+        it("auditing data omitted and onChainSlashes = [Charlie], which drops him from the threshold set that allows the omission, Charlie lacking G's snapshot -> false + DisputeOnChainSlashesNotSubset before any walk", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            const charlie = h.getPeer(history.charlieIndex);
+            const { dispute, hopSnapshot } = await constructJoinerBypassDispute(
+                h,
+                history
+            );
+            dispute.postedAuditingData = false;
+            dispute.input.onChainSlashes = [charlie.address];
+            expect(
+                await h.channelManager.isAuditingDataOmissionAllowed.staticCall(
+                    dispute
+                ),
+                "without Charlie, Alice and Bob alone make the hop final"
+            ).to.equal(true);
+            expect(
+                await h
+                    .control(charlie)
+                    .query.getStateSnapshotStructByHash(hopSnapshot.hash)
+                    .request(),
+                "Charlie never held G's snapshot"
+            ).to.equal(null);
+            const walks = await h.mirror.observe(
+                charlie.index,
+                "verifyMilestones"
+            );
+
+            const run = await h.dispute.auditDispute(charlie.index, dispute);
+
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.disputeFraudProofCount).to.equal(1);
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.DisputeOnChainSlashesNotSubset
+            );
+            const { local, chain } = await walks.observation();
+            expect(local.reads + chain.reads, "no walk ran").to.equal(0);
+        });
+
+        it("auditing data omitted, the hop also signed by Charlie so the omission is allowed, and Charlie holds G's snapshot -> false + DisputeFinalPointRegression over his stored G snapshot", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            const charlie = h.getPeer(history.charlieIndex);
+            const { dispute, hopSnapshot } = await constructJoinerBypassDispute(
+                h,
+                history,
+                { signedByCharlie: true }
+            );
+            dispute.postedAuditingData = false;
+            expect(
+                await h.channelManager.isAuditingDataOmissionAllowed.staticCall(
+                    dispute
+                )
+            ).to.equal(true);
+            await h
+                .control(charlie)
+                .validation.storeStateSnapshotFixture(
+                    hexlify(
+                        Codec.encode(hopSnapshot.toStruct(), Type.StateSnapshot)
+                    )
+                )
+                .request();
+
+            const run = await h.dispute.auditDispute(charlie.index, dispute);
+
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.disputeFraudProofCount).to.equal(1);
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.DisputeFinalPointRegression
+            );
+            const proof = Codec.decode(
+                run.storedProof!.encodedProof,
+                DisputeFraudProofType.DisputeFinalPointRegression
+            );
+            expect(
+                StateSnapshot.from(proof.latestFinalizedSnapshot).hash
+            ).to.equal(hopSnapshot.hash);
+            expect(
+                await h.channelManager.isDisputeFinalPointRegression.staticCall(
+                    dispute,
+                    proof
+                )
+            ).to.equal(true);
+        });
+
+        it("G at Charlie's latest final height, where he cannot prove the conflict -> false + DisputeFinalPointRegression over his highest final point below G", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            const charlie = h.getPeer(history.charlieIndex);
+            await h.transition.advanceState({
+                count: 3,
+                waitForFinalization: true
+            });
+            const latestFinal = await readLocalFinalSnapshot(
+                h,
+                charlie.index,
+                history.forkId
+            );
+            expect(
+                latestFinal.blockHeight,
+                "a final point past the JOIN lies below the latest one"
+            ).to.be.greaterThan(history.charlieFinal.blockHeight);
+            const { dispute, auditingData, hopSnapshot } =
+                await constructJoinerBypassDispute(h, history, {
+                    height: latestFinal.blockHeight
+                });
+            await h.rpcStub.makeFinalPointUnprovable(
+                charlie.index,
+                latestFinal.blockHeight
+            );
+
+            const run = await h.dispute.auditDispute(
+                charlie.index,
+                dispute,
+                auditingData
+            );
+
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.DisputeFinalPointRegression
+            );
+            const proof = Codec.decode(
+                run.storedProof!.encodedProof,
+                DisputeFraudProofType.DisputeFinalPointRegression
+            );
+            const walk = await h.channelManager.verifyMilestones.staticCall(
+                proof.finalProof
+            );
+            const final = StateSnapshot.from(walk.finalizedSnapshot);
+            expect(final.blockHeight, "F is below G")
+                .to.be.lessThan(hopSnapshot.blockHeight)
+                .and.to.be.at.least(history.charlieFinal.blockHeight);
+            expect(
+                final.latestInboundMessageBlockHash,
+                "F is past Charlie's JOIN"
+            ).to.equal(history.charlieFinal.latestInboundMessageBlockHash);
+            expect(
+                await h.channelManager.isDisputeFinalPointRegression.staticCall(
+                    dispute,
+                    proof
+                )
+            ).to.equal(true);
+        });
+
+        it("the hop commits Charlie's seated state at a height where his final block is still before his JOIN -> the chain refuses the conflict on its inbound, no final-history proof", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            const charlie = h.getPeer(history.charlieIndex);
+            const height = await readPreJoinHeightAboveAnchor(h, history);
+            const { dispute, auditingData, hopSnapshot } =
+                await constructJoinerBypassDispute(h, history, {
+                    inbound: "join",
+                    height
+                });
+            expect(hopSnapshot.latestInboundMessageBlockHash).to.equal(
+                history.charlieFinal.latestInboundMessageBlockHash
+            );
+            const conflicts = await h.mirror.observe(
+                charlie.index,
+                "isDisputeConflictingWithFinalState"
+            );
+
+            const run = await h.dispute.auditDispute(
+                charlie.index,
+                dispute,
+                auditingData
+            );
+
+            expect(run.outcome).to.equal("returned");
+            expect([
+                DisputeFraudProofType.DisputeConflictsWithFinalState,
+                DisputeFraudProofType.DisputeFinalPointRegression
+            ]).to.not.include(run.storedProof?.disputeFraudProofType);
+            const { chain } = await conflicts.observation();
+            expect(chain.reads, "the conflict is offered").to.be.greaterThan(0);
+            expect(
+                chain.answers.filter((answer) => answer !== false),
+                "the chain refuses every offer"
+            ).to.deep.equal([]);
+        });
+
+        it("the chain's regression read reverts for another reason than an unknown inbound height -> the audit throws, no proof", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            const charlie = h.getPeer(history.charlieIndex);
+            const { dispute, auditingData } =
+                await constructJoinerBypassDispute(h, history);
+            const regressions = await h.mirror.observe(
+                charlie.index,
+                "isDisputeFinalPointRegression"
+            );
+            await h.mirror.failNextChainRead(
+                charlie.index,
+                "isDisputeFinalPointRegression",
+                "revert"
+            );
+
+            const run = await h.dispute.auditDispute(
+                charlie.index,
+                dispute,
+                auditingData
+            );
+
+            expect(run.outcome).to.equal("threw");
+            expect(run.storedProof).to.equal(undefined);
+            expect(run.disputeFraudProofCount).to.equal(0);
+            const { chain } = await regressions.observation();
+            expect(chain.failures).to.have.length(1);
+        });
+
+        it("G right above the chain anchor, where Charlie cannot prove the conflict -> no final point of his lies between the anchor and G: no regression read, no DisputeFinalPointRegression", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            const charlie = h.getPeer(history.charlieIndex);
+            const height = history.anchor.blockHeight + 1;
+            const { dispute, auditingData } =
+                await constructJoinerBypassDispute(h, history, { height });
+            await h.rpcStub.makeFinalPointUnprovable(charlie.index, height);
+            const regressions = await h.mirror.observe(
+                charlie.index,
+                "isDisputeFinalPointRegression"
+            );
+
+            const run = await h.dispute.auditDispute(
+                charlie.index,
+                dispute,
+                auditingData
+            );
+
+            expect(run.outcome).to.equal("returned");
+            expect(run.storedProof?.disputeFraudProofType).to.not.equal(
+                DisputeFraudProofType.DisputeFinalPointRegression
+            );
+            expect((await regressions.observation()).chain.reads).to.equal(0);
+        });
+
+        it("G above Charlie's latest final point, which he cannot prove -> no regression read, no DisputeFinalPointRegression", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            const charlie = h.getPeer(history.charlieIndex);
+            const { dispute, auditingData, hopSnapshot } =
+                await constructJoinerBypassDispute(h, history);
+            const latestFinal = await readLocalFinalSnapshot(
+                h,
+                charlie.index,
+                history.forkId
+            );
+            expect(hopSnapshot.blockHeight).to.be.greaterThan(
+                latestFinal.blockHeight
+            );
+            await h.rpcStub.makeFinalPointUnprovable(
+                charlie.index,
+                latestFinal.blockHeight
+            );
+            const regressions = await h.mirror.observe(
+                charlie.index,
+                "isDisputeFinalPointRegression"
+            );
+
+            const run = await h.dispute.auditDispute(
+                charlie.index,
+                dispute,
+                auditingData
+            );
+
+            expect(run.outcome).to.equal("returned");
+            expect(run.storedProof?.disputeFraudProofType).to.not.equal(
+                DisputeFraudProofType.DisputeFinalPointRegression
+            );
+            expect((await regressions.observation()).chain.reads).to.equal(0);
+        });
+
+        it("the hop commits Charlie's seated state far above his final point, and a new joiner's JOIN is consumed and final while the audit's walk is parked -> before the walk G's inbound head is his final point's, so no regression read; the read after the walk is true: false + DisputeFinalPointRegression", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            const charlie = h.getPeer(history.charlieIndex);
+            const seated = [
+                history.aliceIndex,
+                history.bobIndex,
+                charlie.index
+            ];
+            const { dispute, auditingData, hopBlock } =
+                await constructJoinerBypassDispute(h, history, {
+                    inbound: "join",
+                    height: history.charlieFinal.blockHeight + 64
+                });
+            const regressions = await h.mirror.observe(
+                charlie.index,
+                "isDisputeFinalPointRegression"
+            );
+            const walks = await h.rpcStub.holdProofWalks(charlie.index);
+            const audit = h.dispute.auditDispute(
+                charlie.index,
+                dispute,
+                auditingData
+            );
+            audit.catch(() => undefined);
+            try {
+                await walks.waitUntilHeld([String(hopBlock.hash)]);
+                expect(
+                    (await regressions.observation()).chain.reads,
+                    "before the walk, Charlie's final point has G's inbound head: no chain read"
+                ).to.equal(0);
+                const { peer: dave } = await h.join.addSpectatorAuthoring({
+                    authoringPeerIndices: seated,
+                    minimumBlocks: 1,
+                    maximumBlocks: 20,
+                    waitForFinalization: true
+                });
+                await h.scenario.joinUntilPromotedWait({
+                    joiner: dave,
+                    authoringPeerIndices: seated
+                });
+                await h.transition.advanceState({
+                    count: 4,
+                    waitForFinalization: true
+                });
+                const final = await readLocalFinalSnapshot(
+                    h,
+                    charlie.index,
+                    history.forkId
+                );
+                expect(
+                    final.snapshotData.participants,
+                    "Charlie's final point consumed Dave's JOIN"
+                ).to.include(dave.address);
+                expect(final.blockHeight).to.be.lessThan(hopBlock.height);
+                await walks.release(String(hopBlock.hash));
+            } finally {
+                await walks.restore();
+            }
+
+            const run = await audit;
+
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.DisputeFinalPointRegression
+            );
+            expect(
+                (await regressions.observation()).chain.answers
+            ).to.deep.equal([true]);
+        });
+
+        it("the hop commits Charlie's seated state far above his final point, and only Alice's top-up is consumed and final while the audit's walk is parked -> the skipped inbound holds no new joiner: no regression read before or after the walk, no DisputeFinalPointRegression", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            const charlie = h.getPeer(history.charlieIndex);
+            const { dispute, auditingData, hopBlock } =
+                await constructJoinerBypassDispute(h, history, {
+                    inbound: "join",
+                    height: history.charlieFinal.blockHeight + 16
+                });
+            const regressions = await h.mirror.observe(
+                charlie.index,
+                "isDisputeFinalPointRegression"
+            );
+            const walks = await h.rpcStub.holdProofWalks(charlie.index);
+            const audit = h.dispute.auditDispute(
+                charlie.index,
+                dispute,
+                auditingData
+            );
+            audit.catch(() => undefined);
+            try {
+                await walks.waitUntilHeld([String(hopBlock.hash)]);
+                await h.join.forceInboundJoinWait({
+                    participant: h.getPeer(history.aliceIndex).address
+                });
+                await h.transition.advanceState({
+                    count: 3,
+                    waitForFinalization: true
+                });
+                const final = await readLocalFinalSnapshot(
+                    h,
+                    charlie.index,
+                    history.forkId
+                );
+                expect(
+                    final.latestInboundMessageBlockHash,
+                    "Charlie's final point consumed the top-up"
+                ).to.not.equal(
+                    history.charlieFinal.latestInboundMessageBlockHash
+                );
+                expect(final.snapshotData.participants).to.deep.equal(
+                    history.charlieFinal.snapshotData.participants
+                );
+                expect(final.blockHeight).to.be.lessThan(hopBlock.height);
+                await walks.release(String(hopBlock.hash));
+            } finally {
+                await walks.restore();
+            }
+
+            const run = await audit;
+
+            expect(run.outcome).to.equal("returned");
+            expect(run.storedProof?.disputeFraudProofType).to.not.equal(
+                DisputeFraudProofType.DisputeFinalPointRegression
+            );
+            expect((await regressions.observation()).chain.reads).to.equal(0);
         });
     });
 

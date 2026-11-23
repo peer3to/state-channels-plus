@@ -15,6 +15,7 @@
 - [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)
 - [`REQ-FIN-4-ZFDDS6` (Consequently, in a channel with N participants, N consecutive blocks authored…)](../../../../../specification/protocol-model/finality.md#req-fin-4-zfdds6)
 - [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r)
+- [`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)
 
 ## UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR
 
@@ -54,3 +55,13 @@ Proof predicates
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P30` — Standalone milestone finality accepts the authentic block-zero control when its author is the entire supplied threshold set, returning the latest snapshot hash
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P84` — `isDisputeOutboundRunInvalid` judges a committed run whose block keeps its predecessor and height but carries a `MaxUint256` message balance invalid without reverting, so the counter kills the dispute.
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P85` — `isDisputeOutboundRunInvalid` judges a committed run invalid without reverting when the latest state (signed only by its author) has its outbound head at an overflowing block right above the anchor, so the counter kills the dispute.
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P86` — `isDisputeFinalPointRegression` rejects a supplied snapshot whose hash is not the latest finalized block's commitment
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P87` — `isDisputeConflictingWithFinalState` reads the anchor's inbound head, not the supplied snapshot, when the last milestone holds the chain anchor
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P88` — `isDisputeConflictingWithFinalState` takes the fork's start state, not an unfinalized block zero, as the latest finalized point under a genesis start
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P89` — `isDisputeConflictingWithFinalState` compares a final block zero's inbound under a genesis start and rejects a final point that consumed fewer inbound blocks
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P90` — `isDisputeConflictingWithFinalState` rejects a supplied snapshot whose hash is not the latest finalized block's commitment, also when it consumed fewer inbound blocks than the final point
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P91` — `isDisputeConflictingWithFinalState` reverts with `ErrorInboundMessageBlockNotStored` when the latest finalized point names an inbound hash that is neither stored nor the anchor's head
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P92` — `isDisputeFinalPointRegression` rejects a final point whose extra inbound blocks hold only a top-up of a participant of the latest finalized point
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P93` — `isDisputeConflictingWithFinalState` is not refused by a latest finalized point whose extra inbound blocks hold only a top-up of a participant of the final point
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P94` — `isDisputeFinalPointRegression` reverts with `ErrorInboundMessageBlockNotStored` for the upper inbound head when the run down to the lower head is not stored: the upper head is the anchor's unstored head, or the run reaches a block pruned below the anchor
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P95` — `isDisputeFinalPointRegression` finds a new participant's JOIN above a run of top-ups, from a lower head below the run and from one at its top

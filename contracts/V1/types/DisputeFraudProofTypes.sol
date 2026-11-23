@@ -25,7 +25,8 @@ contract DisputeFraudProofTypes {
         DisputeStateProofBelowOnChainAnchor memory v,
         TimeoutSupersededByFinalState memory w,
         DisputeConflictsWithFinalState memory x,
-        DisputeInvalidOutboundRun memory y
+        DisputeInvalidOutboundRun memory y,
+        DisputeFinalPointRegression memory z
     ) {}
 }
 
@@ -111,11 +112,23 @@ struct TimeoutSupersededByFinalState {
 
 // A threshold-final state F of the dispute's fork (`finalProof`, walked from the chain's start; F is not the fork
 // genesis) and the dispute's block at `blockIndex` of milestone `milestoneIndex`, one the dispute's walk checks, at F's
-// height that commits another snapshot: the dispute's history conflicts with the final history.
+// height that commits another snapshot: the dispute's history conflicts with the final history. F's inbound height is
+// also at least that of the dispute's latest finalized point: `latestFinalizedSnapshot` is the snapshot the first block
+// of the dispute's last milestone commits, not read when the same-fork anchor is that point.
 struct DisputeConflictsWithFinalState {
     ProofWalkInput finalProof;
     uint256 milestoneIndex;
     uint256 blockIndex;
+    StateSnapshot latestFinalizedSnapshot;
+}
+
+// A threshold-final state F of the dispute's fork (`finalProof`, walked from the chain's start) and the dispute's
+// latest finalized point G, the first block of its last milestone, whose snapshot is `latestFinalizedSnapshot`: G is
+// above F, but its snapshot consumed fewer inbound blocks than F's. On one history the inbound height never goes down,
+// so the dispute's history skipped inbound that the final history consumed.
+struct DisputeFinalPointRegression {
+    ProofWalkInput finalProof;
+    StateSnapshot latestFinalizedSnapshot;
 }
 
 // The block-specific wrappers locate the challenged block at `blockIndex` counted from the start of the last

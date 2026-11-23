@@ -12,8 +12,18 @@ import { Block, StateSnapshot } from "@/models";
 import Storage from "@/storage";
 import type { BlockPredecessor } from "@/storage/QueueStorage";
 import { timeoutWaitTime } from "@/types";
-import { Address, Bytes, ChannelId, Hash, Signature } from "@/types/types";
-import { hash, isSubset, Logger } from "@/utils";
+import {
+    Address,
+    BlockHeight,
+    Bytes,
+    ChannelId,
+    ChecksumAddress,
+    ForkId,
+    Hash,
+    Signature
+} from "@/types/types";
+import { getChecksumAddress, hash, isSubset, Logger } from "@/utils";
+import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import { preferLocal } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
@@ -96,6 +106,10 @@ export default class DisputeValidationService {
         if (await this.tryCreateHeaderMismatchProof(dispute)) return false;
         if (await this.tryCreateInvalidBlockStructureProof(dispute))
             return false;
+        // before any walk: a false slash list also shrinks the threshold set
+        // that allowed the omission, and the walk may then lack evidence
+        if (await this.tryCreateOnChainSlashesNotSubsetProof(dispute))
+            return false;
 
         const evidence: StateProofEvidence = data
             ? {
@@ -110,16 +124,42 @@ export default class DisputeValidationService {
             return this.rejectStateProof(dispute, evidence, data);
 
         // a conflict with this peer's final history needs no replay state
-        if (await this.tryCreateConflictsWithFinalStateProof(dispute))
+        if (await this.tryCreateFinalHistoryProof(dispute, evidence))
             return false;
 
         const walk = await this.verifyAndReplay(dispute, evidence, data);
         if (!walk) return false;
 
-        if (await this.tryCreateOnChainSlashesNotSubsetProof(dispute))
-            return false;
-
         return await this.continueOtherChecks(dispute, walk, data);
+    }
+
+    /** The chain's eligibility of the last milestone's block at `blockIndex` for a block-specific challenge. */
+    public isBlockChallengeEligible(
+        dispute: DisputeStruct,
+        blockIndex: number
+    ): Promise<boolean> {
+        return this.stateChannelManagerContract.isBlockChallengeEligible.staticCall(
+            dispute,
+            blockIndex
+        );
+    }
+
+    /**
+     * A counter against this peer's final history: a block of the dispute
+     * that conflicts with a final block, else a latest finalized point that
+     * regresses this peer's final point's inbound.
+     */
+    private async tryCreateFinalHistoryProof(
+        dispute: DisputeStruct,
+        evidence: StateProofEvidence
+    ): Promise<boolean> {
+        return (
+            (await this.tryCreateConflictsWithFinalStateProof(
+                dispute,
+                evidence
+            )) ||
+            (await this.tryCreateFinalPointRegressionProof(dispute, evidence))
+        );
     }
 
     /**
@@ -131,12 +171,18 @@ export default class DisputeValidationService {
      * verified while auditing another dispute (stored without moving the
      * view). Each conflict is offered to the chain with this peer's proof of
      * the final block's height; the first the chain accepts is stored. A
-     * block the dispute's walk does not check is no conflict.
+     * block the dispute's walk does not check is no conflict. The chain also
+     * compares the final point's inbound height with that of the dispute's
+     * latest finalized point, whose snapshot comes from `evidence`.
      */
     private async tryCreateConflictsWithFinalStateProof(
-        dispute: DisputeStruct
+        dispute: DisputeStruct,
+        evidence: StateProofEvidence
     ): Promise<boolean> {
         const { forkId, stateProof } = dispute.input;
+        // the snapshot the first block of the last milestone commits
+        const latestFinalizedSnapshot = evidence.milestoneSnapshots.at(-1);
+        if (!latestFinalizedSnapshot) return false;
         const [finalized, anchor] = await Promise.all([
             this.agreementManager.getLocalFinalizedSnapshot(forkId),
             this.agreementManager.getChainAnchor(forkId)
@@ -185,11 +231,13 @@ export default class DisputeValidationService {
             const finalizedSnapshot = StateSnapshot.from(
                 finalProof.milestoneSnapshots.at(-1)!
             );
-            const proof = { finalProof, ...conflict };
+            const proof = { finalProof, ...conflict, latestFinalizedSnapshot };
             if (
-                !(await this.stateChannelManagerContract.isDisputeConflictingWithFinalState.staticCall(
-                    dispute,
-                    proof
+                !(await this.isAcceptedByChain(
+                    this.stateChannelManagerContract.isDisputeConflictingWithFinalState.staticCall(
+                        dispute,
+                        proof
+                    )
                 ))
             )
                 continue;
@@ -211,15 +259,138 @@ export default class DisputeValidationService {
         return false;
     }
 
-    /** The chain's eligibility of the last milestone's block at `blockIndex` for a block-specific challenge. */
-    public isBlockChallengeEligible(
+    /**
+     * The dispute's latest finalized point G, the first block of its last
+     * milestone, is above a final point F of this peer, G's snapshot consumed
+     * fewer inbound blocks than F's, and those extra blocks hold a JOIN of an
+     * address outside G's participants: on one history the inbound height
+     * never goes down, so the dispute's history skipped a JOIN the final
+     * history consumed. F is this peer's latest final point when G is
+     * above it, else the highest final point it can prove below G. G's
+     * snapshot comes from `evidence` (the posted auditing data, else this
+     * peer's stored snapshots). The chain is not asked when this peer's own
+     * inbound blocks rule the regression out
+     * (`isInboundRegressionRuledOutLocally`). Otherwise the chain reads both
+     * inbound heights itself; the proof is stored only when it agrees.
+     */
+    private async tryCreateFinalPointRegressionProof(
         dispute: DisputeStruct,
-        blockIndex: number
+        evidence: StateProofEvidence
     ): Promise<boolean> {
-        return this.stateChannelManagerContract.isBlockChallengeEligible.staticCall(
-            dispute,
-            blockIndex
+        const { forkId, stateProof } = dispute.input;
+        // the snapshot the first block of the last milestone commits
+        const latestFinalizedSnapshot = evidence.milestoneSnapshots.at(-1);
+        const first = stateProof.milestones.at(-1)?.blockConfirmations[0];
+        const latestFinalized = first && Block.tryFromBlockConfirmation(first);
+        if (!latestFinalizedSnapshot || !latestFinalized) return false;
+        const final = await this.tryBuildFinalProofBelow(
+            forkId,
+            latestFinalized.height
         );
+        if (!final) return false;
+        const { finalProof, finalized } = final;
+        if (
+            this.isInboundRegressionRuledOutLocally(
+                latestFinalizedSnapshot.snapshotData,
+                finalized.latestInboundMessageBlockHash
+            )
+        )
+            return false;
+        const proof = { finalProof, latestFinalizedSnapshot };
+        if (
+            !(await this.isAcceptedByChain(
+                this.stateChannelManagerContract.isDisputeFinalPointRegression.staticCall(
+                    dispute,
+                    proof
+                )
+            ))
+        )
+            return false;
+        this.logger.warn(
+            "Dispute proof finalizes a point above this peer's final state with fewer inbound blocks",
+            {
+                dispute: LoggerUtils.getDisputeMetadata(dispute),
+                finalized: LoggerUtils.getSnapshotMetadata(finalized),
+                latestFinalizedHeight: latestFinalized.height
+            }
+        );
+        this.disputeFraudProofService.createDisputeFinalPointRegression(
+            dispute,
+            proof
+        );
+        return true;
+    }
+
+    /**
+     * Skip-only filter before the chain read of the regression: true when
+     * this peer's own stored inbound blocks put G's inbound head at or above
+     * F's, or when the stored run above G's head up to F's holds no JOIN of
+     * an address outside G's participants (only top-ups). Heads are looked
+     * up by hash, never by a snapshot's height field. A hash or a run the
+     * store does not hold rules nothing out, so the chain is asked; a counter
+     * is stored only on the chain's verdict.
+     */
+    private isInboundRegressionRuledOutLocally(
+        latestFinalized: SnapshotDataStruct,
+        finalInboundHash: Hash
+    ): boolean {
+        const latestFinalizedInboundHash =
+            latestFinalized.latestInboundMessageBlockHash as Hash;
+        if (latestFinalizedInboundHash === finalInboundHash) return true;
+        const { inboundMessages } = this.storage;
+        const latestFinalizedInbound = inboundMessages.getMessageBlock(
+            latestFinalizedInboundHash
+        );
+        const finalInbound = inboundMessages.getMessageBlock(finalInboundHash);
+        if (!latestFinalizedInbound || !finalInbound) return false;
+        if (
+            BigInt(latestFinalizedInbound.blockHeight) >=
+            BigInt(finalInbound.blockHeight)
+        )
+            return true;
+        const skipped = inboundMessages.tryGetMessageBlocksInRange({
+            upperBlockHash: finalInboundHash,
+            lowerBlockHash: latestFinalizedInboundHash
+        });
+        if (skipped.missingBlockHash) return false;
+        const participants = new Set<ChecksumAddress>(
+            latestFinalized.participants.map((participant) =>
+                getChecksumAddress(String(participant))
+            )
+        );
+        return this.agreementManager
+            .getJoiners(skipped.blocks)
+            .every((joiner) => participants.has(getChecksumAddress(joiner)));
+    }
+
+    /**
+     * This peer's proof of a final point below `height`: its latest final
+     * point when that is below, else the highest final point it can prove
+     * below `height` (the latest one may lie at or above it). Undefined when
+     * it proves none above its start: the dispute's walk passed the start.
+     */
+    private async tryBuildFinalProofBelow(forkId: ForkId, height: BlockHeight) {
+        const finalized =
+            await this.agreementManager.getLocalFinalizedSnapshot(forkId);
+        if (!finalized) return undefined;
+        if (height > finalized.blockHeight) {
+            const finalProof = await this.agreementManager.tryBuildFinalProofAt(
+                forkId,
+                finalized.blockHeight
+            );
+            return finalProof && { finalProof, finalized };
+        }
+        if (height === 0) return undefined;
+        const built = await this.agreementManager.tryBuildFinalProof(
+            forkId,
+            height - 1
+        );
+        if (!built || built.finalProof.stateProof.milestones.length === 0)
+            return undefined;
+        return {
+            finalProof: built.finalProof,
+            finalized: built.finalizedSnapshot
+        };
     }
 
     /**
@@ -248,7 +419,7 @@ export default class DisputeValidationService {
                 continue;
             }
             // Another audit may have finalized conflicting history while this walk awaited its verifier.
-            if (await this.tryCreateConflictsWithFinalStateProof(dispute))
+            if (await this.tryCreateFinalHistoryProof(dispute, evidence))
                 return false;
             const outcome = await this.replayLastMilestoneTail(
                 dispute,
@@ -274,7 +445,7 @@ export default class DisputeValidationService {
                         outboundRun,
                         data
                     ) &&
-                    (await this.tryCreateConflictsWithFinalStateProof(dispute))
+                    (await this.tryCreateFinalHistoryProof(dispute, evidence))
                 )
                     return false;
                 return walk;
@@ -1229,5 +1400,25 @@ export default class DisputeValidationService {
         return !!this.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
             dispute
         );
+    }
+
+    /**
+     * The chain's verdict on a final-history counter. The chain has no
+     * verdict when it knows no inbound height for a compared snapshot: no
+     * counter then. Any other error is rethrown.
+     */
+    private async isAcceptedByChain(verdict: Promise<boolean>) {
+        try {
+            return await verdict;
+        } catch (error) {
+            const custom = tryDecodeCustomError(error);
+            if (custom?.name !== "ErrorInboundMessageBlockNotStored")
+                throw error;
+            this.logger.info(
+                "Chain knows no inbound height for a compared snapshot: no final-history counter",
+                { customError: LoggerUtils.getCustomEvmErrorMetadata(custom) }
+            );
+            return false;
+        }
     }
 }

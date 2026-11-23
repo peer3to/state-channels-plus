@@ -21,7 +21,8 @@ import {
     DisputeStateProofBelowOnChainAnchor,
     DisputeStateProofHeaderMismatch,
     TimeoutSupersededByFinalState,
-    DisputeConflictsWithFinalState
+    DisputeConflictsWithFinalState,
+    DisputeFinalPointRegression
 } from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
 import {InvalidTimestampProof} from "../../../contracts/V1/types/FraudProofTypes.sol";
 import {MESSAGE_TYPE_JOIN} from "../../../contracts/V1/types/MessageTypeHashes.sol";
@@ -505,16 +506,26 @@ abstract contract StateProofStaging is DiamondHarness {
 
     /// the allegation held: the dispute is killed and its disputer slashed, the challenger B keeps its seat
     function _assertKilled(Dispute memory dispute) internal view {
+        _assertKilledBy(dispute, bob);
+    }
+
+    /// `challenger`'s allegation held: `dispute` is killed and its disputer slashed, the challenger keeps its seat
+    function _assertKilledBy(Dispute memory dispute, address challenger) internal view {
         assertEq(harness.commitmentCount(CHANNEL, dispute.input.forkId), 0, "dispute killed");
         assertTrue(harness.isSlashed(CHANNEL, dispute.input.disputer), "disputer slashed");
-        assertFalse(harness.isSlashed(CHANNEL, bob), "challenger keeps its seat");
+        assertFalse(harness.isSlashed(CHANNEL, challenger), "challenger keeps its seat");
     }
 
     /// the allegation failed: the dispute stays, its submitter is not punished, the challenger B pays
     function _assertRejected(Dispute memory dispute) internal view {
+        _assertRejectedBy(dispute, bob);
+    }
+
+    /// `challenger`'s allegation failed: `dispute` stays, its disputer is not punished, the challenger pays
+    function _assertRejectedBy(Dispute memory dispute, address challenger) internal view {
         assertEq(harness.commitmentCount(CHANNEL, dispute.input.forkId), 1, "dispute stays committed");
         assertFalse(harness.isSlashed(CHANNEL, dispute.input.disputer), "dispute submitter not punished");
-        assertTrue(harness.isSlashed(CHANNEL, bob), "the unsupported allegation costs the challenger");
+        assertTrue(harness.isSlashed(CHANNEL, challenger), "the unsupported allegation costs the challenger");
     }
 
     // ---- allegations ----
@@ -587,14 +598,27 @@ abstract contract StateProofStaging is DiamondHarness {
         return abi.encode(TimeoutSupersededByFinalState(_finalProof(proofForkId, milestones, snapshots)));
     }
 
-    /// the conflict allegation: the challenger's final proof and the dispute's block at `blockIndex` of milestone
-    /// `milestoneIndex`
-    function _conflictProof(ProofWalkInput memory finalProof, uint256 milestoneIndex, uint256 blockIndex)
+    /// the conflict allegation: the challenger's final proof, the dispute's block at `blockIndex` of milestone
+    /// `milestoneIndex` and the snapshot of the dispute's latest finalized point `latestFinalizedSnapshot`
+    function _conflictProof(
+        ProofWalkInput memory finalProof,
+        uint256 milestoneIndex,
+        uint256 blockIndex,
+        StateSnapshot memory latestFinalizedSnapshot
+    ) internal pure returns (bytes memory) {
+        return abi.encode(
+            DisputeConflictsWithFinalState(finalProof, milestoneIndex, blockIndex, latestFinalizedSnapshot)
+        );
+    }
+
+    /// the final-point regression allegation: the challenger's final proof and the snapshot of the dispute's latest
+    /// finalized point `latestFinalizedSnapshot`
+    function _regressionProof(ProofWalkInput memory finalProof, StateSnapshot memory latestFinalizedSnapshot)
         internal
         pure
         returns (bytes memory)
     {
-        return abi.encode(DisputeConflictsWithFinalState(finalProof, milestoneIndex, blockIndex));
+        return abi.encode(DisputeFinalPointRegression(finalProof, latestFinalizedSnapshot));
     }
 
     /// the omitted-data invalid-state-proof allegation at milestone `milestoneIndex`: the challenger's genesis data

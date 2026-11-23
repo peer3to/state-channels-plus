@@ -33,6 +33,7 @@ import {_delegatecall} from "../../../contracts/V1/StateChannelDiamondProxy/util
 import {
     DisputeBlockAuthorNotParticipant,
     DisputeConflictsWithFinalState,
+    DisputeFinalPointRegression,
     DisputeInboundAnchorBehindLatestState,
     DisputeInvalidBalanceInvariant,
     DisputeInvalidBlockInStateProofApplyFraudProof,
@@ -1334,6 +1335,10 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         }
         if (proofType == DisputeFraudProofType.DisputeConflictsWithFinalState) {
             DisputeConflictsWithFinalState memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeFinalPointRegression) {
+            DisputeFinalPointRegression memory payload;
             return abi.encode(payload);
         }
         // the remaining families carry a single unused bool

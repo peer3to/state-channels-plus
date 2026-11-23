@@ -631,21 +631,32 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             );
             // the lagging peer is not under test: it misses the dispute log
             await h.rpcStub.holdDisputeCommittedEvents(1, { passFirst: false });
-            const block0 = Block.fromBlockConfirmation(
-                await blockConfirmationAt(h, 0, 0)
-            );
-            const block1 = Block.fromBlockConfirmation(
-                await blockConfirmationAt(h, 0, 1)
-            );
-            // a hop at height 1 committing a snapshot nobody holds
-            const forgedHop = await craftInvalidLinkedBlock(h, {
-                height: 1,
-                previousBlockHash: block0.hash,
-                notAuthor: block1.author
-            });
             const { dispute } = await h.tamper.postTamperedDispute(
                 disputer.index,
-                (posted) => {
+                async (posted) => {
+                    // the hop sits at the height of the dispute's latest
+                    // finalized point, so the auditor's final block there has
+                    // consumed as many inbound blocks as that point
+                    const latestFinalizedHeight = Block.fromBlockConfirmation(
+                        posted.input.stateProof.milestones.at(-1)!
+                            .blockConfirmations[0]!
+                    ).height;
+                    const previous = Block.fromBlockConfirmation(
+                        await blockConfirmationAt(
+                            h,
+                            0,
+                            latestFinalizedHeight - 1
+                        )
+                    );
+                    const real = Block.fromBlockConfirmation(
+                        await blockConfirmationAt(h, 0, latestFinalizedHeight)
+                    );
+                    // a hop committing a snapshot nobody holds
+                    const forgedHop = await craftInvalidLinkedBlock(h, {
+                        height: latestFinalizedHeight,
+                        previousBlockHash: previous.hash,
+                        notAuthor: real.author
+                    });
                     posted.input.stateProof.milestones = [
                         { blockConfirmations: [forgedHop] },
                         ...posted.input.stateProof.milestones

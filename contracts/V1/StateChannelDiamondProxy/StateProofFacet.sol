@@ -156,7 +156,10 @@ contract StateProofFacet is StateChannelCommon {
      * The dispute's block at `blockIndex` of milestone `milestoneIndex`, one its walk checks, is at the height of a
      * threshold-final state F of the same fork (`proof.finalProof`) and commits another snapshot: the dispute's
      * history conflicts with the final history. Only F's own height is compared: the final proof proves the snapshot
-     * at that height, not which blocks lie below it.
+     * at that height, not which blocks lie below it. When the dispute's latest finalized point
+     * (`_latestFinalizedInbound`) consumed more inbound blocks than F, and those extra blocks hold a JOIN of an address
+     * outside F's participants, F is no evidence against it: F's history never counted that joiner. Extra blocks that
+     * only top up F's participants do not refuse the kill. When that point is the walk's start, F walked from it passes.
      */
     function isDisputeConflictingWithFinalState(Dispute memory dispute, DisputeConflictsWithFinalState memory proof)
         public
@@ -176,10 +179,77 @@ contract StateProofFacet is StateChannelCommon {
         if (!isKept || !hasHeight || proof.blockIndex < fromIndex) return false;
         (bool decoded, Block memory conflicting) = UtilityFacet(utilityFacetAddress)
             .tryDecodeBlock(milestone.blockConfirmations[proof.blockIndex].signedBlock.encodedBlock);
-        return decoded && conflicting.transaction.header.channelId == dispute.input.channelId
-            && conflicting.transaction.header.forkId == dispute.input.forkId
-            && conflicting.transaction.header.transactionCnt == finalPoint.blockHeight
-            && conflicting.stateSnapshotHash != keccak256(abi.encode(finalPoint));
+        if (
+            !decoded || conflicting.transaction.header.channelId != dispute.input.channelId
+                || conflicting.transaction.header.forkId != dispute.input.forkId
+                || conflicting.transaction.header.transactionCnt != finalPoint.blockHeight
+                || conflicting.stateSnapshotHash == keccak256(abi.encode(finalPoint))
+        ) return false;
+        (bool isKnown, bool isStart,, bytes32 finalizedInboundHash) =
+            _latestFinalizedInbound(dispute, proof.latestFinalizedSnapshot, proof.finalProof.genesisStateSnapshotData);
+        if (!isKnown) return false;
+        // F is walked from the same start, and a walk never lowers the inbound height
+        if (isStart) return true;
+        bytes32 finalInboundHash = finalPoint.snapshotData.latestInboundMessageBlockHash;
+        if (
+            _inboundHeightOf(dispute.input.channelId, finalInboundHash)
+                >= _inboundHeightOf(dispute.input.channelId, finalizedInboundHash)
+        ) return true;
+        return !_hasJoinOutside(
+            dispute.input.channelId, finalizedInboundHash, finalInboundHash, finalPoint.snapshotData.participants
+        );
+    }
+
+    /**
+     * The dispute's latest finalized point G (`_latestFinalizedInbound`) is above a threshold-final state F of the same
+     * fork (`proof.finalProof`), G's snapshot consumed fewer inbound blocks than F's, and the inbound blocks F consumed
+     * above G's head hold a JOIN of an address outside G's participants: on one history the inbound height never goes
+     * down, so G's history skipped that JOIN and never needed the signature of the joiner F counted. Skipped blocks
+     * that only top up G's participants are no kill. Only the latest finalized point is compared, never an earlier
+     * milestone. The walk's start (the anchor or the fork genesis) as that point is never above F, which is walked
+     * from it.
+     */
+    function isDisputeFinalPointRegression(Dispute memory dispute, DisputeFinalPointRegression memory proof)
+        public
+        view
+        returns (bool)
+    {
+        (bool isKnown, bool isStart, uint256 finalizedHeight, bytes32 finalizedInboundHash) = _latestFinalizedInbound(
+            dispute, proof.latestFinalizedSnapshot, proof.finalProof.genesisStateSnapshotData
+        );
+        // the height check below also refuses the start; this skips the walk of F
+        if (!isKnown || isStart) return false;
+        (bool isFinal, StateSnapshot memory finalPoint) = _finalPointOf(dispute, proof.finalProof);
+        if (!isFinal || finalizedHeight <= finalPoint.blockHeight) return false;
+        bytes32 finalInboundHash = finalPoint.snapshotData.latestInboundMessageBlockHash;
+        if (
+            _inboundHeightOf(dispute.input.channelId, finalizedInboundHash)
+                >= _inboundHeightOf(dispute.input.channelId, finalInboundHash)
+        ) return false;
+        return _hasJoinOutside(
+            dispute.input.channelId,
+            finalInboundHash,
+            finalizedInboundHash,
+            proof.latestFinalizedSnapshot.snapshotData.participants
+        );
+    }
+
+    /// The stored inbound run above `lowerInboundHash` up to `upperInboundHash` holds a JOIN of an address outside
+    /// `participants` (a top-up of a participant is no such JOIN). The run must be stored down to the lower head: a
+    /// run the chain does not hold, also an upper head that is only the anchor's unstored inbound head, reverts with
+    /// `ErrorInboundMessageBlockNotStored` for the upper head and never reads as a run without JOINs.
+    function _hasJoinOutside(
+        bytes32 channelId,
+        bytes32 upperInboundHash,
+        bytes32 lowerInboundHash,
+        address[] memory participants
+    ) internal view returns (bool) {
+        if (!_isInboundRunStored(channelId, upperInboundHash, lowerInboundHash)) {
+            revert ErrorInboundMessageBlockNotStored(channelId, upperInboundHash);
+        }
+        address[] memory joiners =
+            _derivePendingParticipantsFromInboundHash(channelId, upperInboundHash, lowerInboundHash);
+        return UtilityFacet(utilityFacetAddress).subtractAddressArrays(joiners, participants).length != 0;
     }
 
     /// The final point of `finalProof` walked from the chain's start, when the proof is on the dispute's channel and
@@ -211,23 +281,114 @@ contract StateProofFacet is StateChannelCommon {
         if (milestones.length == 0) return false;
         BlockConfirmation[] memory lastRun = milestones[milestones.length - 1].blockConfirmations;
         if (blockIndex >= lastRun.length) return false;
-        (bool firstDecoded, Block memory firstBlock) =
-            UtilityFacet(utilityFacetAddress).tryDecodeBlock(lastRun[0].signedBlock.encodedBlock);
+        (
+            bool firstDecoded,
+            bool isAnchor,
+            Block memory firstBlock,
+            bool canUseOnChainSnapshot,
+            StateSnapshot memory anchor
+        ) = _latestFinalizedPoint(dispute);
         (bool decoded, Block memory challengedBlock) =
             UtilityFacet(utilityFacetAddress).tryDecodeBlock(lastRun[blockIndex].signedBlock.encodedBlock);
         if (!firstDecoded || !decoded) return false;
 
-        (bool canUseOnChainSnapshot, StateSnapshot memory anchor) =
-            _getAnchorSnapshot(dispute.input.channelId, dispute.input.forkId);
         uint256 firstHeight = firstBlock.transaction.header.transactionCnt;
         uint256 boundaryEnd = 1;
-        if (canUseOnChainSnapshot && firstHeight <= anchor.blockHeight) {
+        if (isAnchor) {
             boundaryEnd = anchor.blockHeight - firstHeight + 1;
         } else if (!canUseOnChainSnapshot && firstHeight == 0) {
             boundaryEnd = 0;
         }
         if (blockIndex < boundaryEnd) return false;
         return !canUseOnChainSnapshot || challengedBlock.transaction.header.transactionCnt > anchor.blockHeight;
+    }
+
+    /// The first block of the dispute's last milestone, or the same-fork anchor when that is at or above it
+    /// (`isAnchor`): the protected boundary of `isBlockChallengeEligible`. It is also the dispute's latest finalized
+    /// point, except under a genesis start with block zero first: there `isBlockChallengeEligible` protects nothing,
+    /// and `_latestFinalizedInbound` decides whether block zero is final. False `firstDecoded` when the proof has no
+    /// last-milestone block or that block does not decode.
+    function _latestFinalizedPoint(Dispute memory dispute)
+        internal
+        view
+        returns (
+            bool firstDecoded,
+            bool isAnchor,
+            Block memory firstBlock,
+            bool canUseOnChainSnapshot,
+            StateSnapshot memory anchor
+        )
+    {
+        (canUseOnChainSnapshot, anchor) = _getAnchorSnapshot(dispute.input.channelId, dispute.input.forkId);
+        MilestoneProof[] memory milestones = dispute.input.stateProof.milestones;
+        if (milestones.length == 0) return (false, false, firstBlock, canUseOnChainSnapshot, anchor);
+        BlockConfirmation[] memory lastRun = milestones[milestones.length - 1].blockConfirmations;
+        if (lastRun.length == 0) return (false, false, firstBlock, canUseOnChainSnapshot, anchor);
+        (firstDecoded, firstBlock) =
+            UtilityFacet(utilityFacetAddress).tryDecodeBlock(lastRun[0].signedBlock.encodedBlock);
+        isAnchor =
+            firstDecoded && canUseOnChainSnapshot && firstBlock.transaction.header.transactionCnt <= anchor.blockHeight;
+    }
+
+    /// The height and inbound head of the dispute's latest finalized point G (`_latestFinalizedPoint`). The anchor as
+    /// G is read from the chain; a block as G must be on the dispute's channel and fork and commit `finalizedSnapshot`.
+    /// Under a genesis start, block zero is G only when the dispute's last milestone finalizes it (walked with
+    /// `genesisStateSnapshotData`); an unfinalized block zero finalizes nothing, so G is the fork genesis. `isStart` when
+    /// G is the walk's start (the anchor or the fork genesis). False `isKnown` when G cannot be read, the snapshot is not
+    /// the one its block commits, or the last milestone does not walk from the genesis.
+    function _latestFinalizedInbound(
+        Dispute memory dispute,
+        StateSnapshot memory finalizedSnapshot,
+        SnapshotData memory genesisStateSnapshotData
+    ) internal view returns (bool isKnown, bool isStart, uint256 height, bytes32 inboundHash) {
+        (
+            bool firstDecoded,
+            bool atAnchor,
+            Block memory firstBlock,
+            bool canUseOnChainSnapshot,
+            StateSnapshot memory anchor
+        ) = _latestFinalizedPoint(dispute);
+        if (!firstDecoded) return (false, false, 0, bytes32(0));
+        if (atAnchor) return (true, true, anchor.blockHeight, anchor.snapshotData.latestInboundMessageBlockHash);
+        if (
+            firstBlock.transaction.header.channelId != dispute.input.channelId
+                || firstBlock.transaction.header.forkId != dispute.input.forkId
+                || firstBlock.stateSnapshotHash != keccak256(abi.encode(finalizedSnapshot))
+        ) return (false, false, 0, bytes32(0));
+        if (!canUseOnChainSnapshot && firstBlock.transaction.header.transactionCnt == 0) {
+            (bool isWalked, StateSnapshot memory finalized) =
+                _genesisZeroFinalizedSnapshot(dispute, finalizedSnapshot, genesisStateSnapshotData);
+            if (!isWalked) return (false, false, 0, bytes32(0));
+            if (keccak256(abi.encode(finalized)) != firstBlock.stateSnapshotHash) {
+                return (true, true, 0, finalized.snapshotData.latestInboundMessageBlockHash);
+            }
+        }
+        return (
+            true,
+            false,
+            firstBlock.transaction.header.transactionCnt,
+            finalizedSnapshot.snapshotData.latestInboundMessageBlockHash
+        );
+    }
+
+    /// The walk of the dispute's last milestone alone from the fork genesis, with `finalizedSnapshot` as its hop
+    /// evidence: its finalized snapshot is block zero's when the run reaches the threshold, else the genesis.
+    function _genesisZeroFinalizedSnapshot(
+        Dispute memory dispute,
+        StateSnapshot memory finalizedSnapshot,
+        SnapshotData memory genesisStateSnapshotData
+    ) internal view returns (bool isWalked, StateSnapshot memory finalized) {
+        MilestoneProof[] memory milestones = dispute.input.stateProof.milestones;
+        ProofWalkInput memory input;
+        input.channelId = dispute.input.channelId;
+        input.forkId = dispute.input.forkId;
+        input.stateProof.milestones = new MilestoneProof[](1);
+        input.stateProof.milestones[0] = milestones[milestones.length - 1];
+        input.genesisStateSnapshotData = genesisStateSnapshotData;
+        input.milestoneSnapshots = new StateSnapshot[](1);
+        input.milestoneSnapshots[0] = finalizedSnapshot;
+        ProofWalkResult memory walk = _walkStateProof(input, stateSnapshots[input.channelId]);
+        return (walk.valid, walk.finalizedSnapshot);
     }
 
     /**

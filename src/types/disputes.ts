@@ -251,7 +251,13 @@ export const TimeoutSupersededByFinalStateProofEthersType = `tuple(
 export const DisputeConflictsWithFinalStateProofEthersType = `tuple(
     ${ProofWalkInputEthersType} finalProof,
     uint256 milestoneIndex,
-    uint256 blockIndex
+    uint256 blockIndex,
+    ${StateSnapshotEthersType} latestFinalizedSnapshot
+)`;
+
+export const DisputeFinalPointRegressionProofEthersType = `tuple(
+    ${ProofWalkInputEthersType} finalProof,
+    ${StateSnapshotEthersType} latestFinalizedSnapshot
 )`;
 
 export const DisputeInvalidOutboundRunProofEthersType = `tuple(

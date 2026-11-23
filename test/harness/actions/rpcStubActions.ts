@@ -962,6 +962,20 @@ export class RpcStubActions<
         };
     }
 
+    /** Peer `peerIndex` cannot prove its final point at `blockHeight`. */
+    async makeFinalPointUnprovable(
+        peerIndex: number,
+        blockHeight: number
+    ): Promise<{ restore: () => Promise<void> }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubUnprovableFinalPointAt(blockHeight).request();
+        return {
+            restore: async () => {
+                await ctl().restoreUnprovableFinalPoint().request();
+            }
+        };
+    }
+
     /** A peer's getLogs answer no logs, as a node that has not indexed them. */
     async hideChainLogs(peerIndex: number): Promise<{
         restore: () => Promise<void>;

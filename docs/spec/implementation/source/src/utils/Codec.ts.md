@@ -80,6 +80,7 @@ Complete codec public surface
 - [x] `UNIT-TEST-CODEC-1-HFAA3B.P59` — TimeoutSupersededByFinalState proof round trip
 - [x] `UNIT-TEST-CODEC-1-HFAA3B.P60` — DisputeConflictsWithFinalState proof round trip
 - [x] `UNIT-TEST-CODEC-1-HFAA3B.P61` — DisputeInvalidOutboundRun proof round trip
+- [x] `UNIT-TEST-CODEC-1-HFAA3B.P62` — DisputeFinalPointRegression proof round trip
 
 ## UNIT-TEST-CODEC-2-8VTG2N
 

@@ -1694,6 +1694,15 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public stubUnprovableFinalPointAt(blockHeight: number): boolean {
+        this.service.stubUnprovableFinalPointAt(blockHeight);
+        return true;
+    }
+
+    public restoreUnprovableFinalPoint(): boolean {
+        return this.service.restoreUnprovableFinalPoint();
+    }
+
     public recordChainMembershipReads(hold = false): boolean {
         this.service.recordChainMembershipReads(hold);
         return true;

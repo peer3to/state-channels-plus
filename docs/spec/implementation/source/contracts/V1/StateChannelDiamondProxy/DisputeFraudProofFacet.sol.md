@@ -14,7 +14,6 @@
 - [`REQ-FP-5-ZXW0J5` (A dispute may list any subset of recorded slashes)](../../../../../specification/disputes/fraud-proofs.md#req-fp-5-zxw0j5)
 - [`REQ-FP-6-TS1QAV` (An invalid fraud-proof submission slashes its submitter when the submitter is…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-6-ts1qav)
 - [`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)
-  Missing: `applyDisputeFraudProofs` has no proof type that kills a dispute whose final point regresses the inbound height of a proved final point ([`FIND-DISPUTE-6-E2YJ9X`](../../../../../audit/open-findings.md#find-dispute-6-e2yj9x)).
 - [`REQ-DA-2-KYZ70M` (The specification of any timing-sensitive rule MUST state which of these…)](../../../../../specification/security/data-availability.md#req-da-2-kyz70m)
 - [`INV-TRUST-1-6TYWDH` (Every safety-relevant disagreement MUST be resolvable by the chain from…)](../../../../../specification/security/trust-model.md#inv-trust-1-6tywdh)
 - [`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable…)](../../../../../specification/security/trust-model.md#req-trust-1-k5ps99)
@@ -244,3 +243,7 @@ Kill application
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P215` — the same nested route embedding a fabricated inbound block above the snapshot's inbound head kills the dispute and slashes the disputer; the killer is not slashed
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P216` — after an open-channel storage clearing, `isDisputeInboundHashValid` accepts a dispute anchored at the kept snapshot head with its real height and refuses height zero
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P217` — after an open-channel storage clearing, the historic threshold set of a dispute anchored at the kept snapshot head counts no JOIN of that head (a joiner who left since is not pending); a JOIN above the head is pending
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P218` — A true `DisputeFinalPointRegression` verdict kills the dispute and slashes its disputer, not the submitter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P219` — A false `DisputeFinalPointRegression` verdict keeps the dispute and slashes the submitter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P220` — A `DisputeFinalPointRegression` check that reverts reverts the whole application, slashing nobody
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P221` — A `DisputeConflictsWithFinalState` check that reverts reverts the whole application, slashing nobody
