@@ -7,6 +7,10 @@ import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Address, ForkId, Hash } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
 import { localDiamondAbi } from "@/utils/localDiamond";
+import {
+    postAuditingData,
+    uploadSelfRemovalDispute
+} from "@test/fixtures/ChallengeBoundaryStaging";
 import { readLocalFinalizedHeight } from "@test/fixtures/OlderDisputeStaging";
 import type {
     BlockStruct,
@@ -456,15 +460,11 @@ export async function postJoinerBypassDispute(
     history: SeatedJoinerHistory
 ): Promise<JoinerBypassDispute> {
     h.contextApi.markMaliciousPeer({ maliciousPeerIndex: history.bobIndex });
-    await h
-        .control(h.getPeer(history.aliceIndex))
-        .dispute.setForceExit(true)
-        .request();
     let forged: Omit<JoinerBypassDispute, "dispute"> | undefined;
-    const { dispute } = await h.tamper.postTamperedDispute(
+    const dispute = await uploadSelfRemovalDispute(
+        h,
         history.aliceIndex,
-        async (dispute, _disputeConfirmation, auditingData) => {
-            if (!auditingData) throw new Error("expected auditing data");
+        async (dispute, auditingData) => {
             const hop = await forgeJoinerBypassHop(
                 h,
                 history,
@@ -472,7 +472,8 @@ export async function postJoinerBypassDispute(
                 "anchor"
             );
             forged = { auditingData, ...hop };
-        }
+        },
+        { markMalicious: true }
     );
     if (!forged) throw new Error("The forged dispute was not built");
     return { dispute, ...forged };
@@ -598,10 +599,7 @@ async function commitPostedLatestState(
     auditingData.latestStateSnapshot = posted.latest.toStruct();
     auditingData.latestFinalizedStateStateMachineState = posted.encodedState;
     auditingData.inboundMessageBlocks = posted.inboundMessageBlocks;
-    dispute.postedAuditingData = true;
-    dispute.input.disputeAuditingDataHash = hash(
-        Codec.encode(auditingData, Type.DisputeAuditingData)
-    );
+    postAuditingData(dispute, auditingData);
     const output = await computeDisputeOutputSnapshotData(
         h,
         disputerIndex,

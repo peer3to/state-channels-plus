@@ -385,20 +385,6 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         assertEq(_diamond().verifyMilestones(finalProof).finalizedSnapshot.blockHeight, 60, "premise: F' = 60 is final");
     }
 
-    /// `challenger`'s allegation held: `dispute` is killed and its disputer slashed, the challenger keeps its seat
-    function _assertKilledBy(Dispute memory dispute, address challenger) internal view {
-        assertEq(harness.commitmentCount(CHANNEL, dispute.input.forkId), 0, "dispute killed");
-        assertTrue(harness.isSlashed(CHANNEL, dispute.input.disputer), "disputer slashed");
-        assertFalse(harness.isSlashed(CHANNEL, challenger), "challenger keeps its seat");
-    }
-
-    /// `challenger`'s allegation failed: `dispute` stays, its disputer is not punished, the challenger pays
-    function _assertRejectedBy(Dispute memory dispute, address challenger) internal view {
-        assertEq(harness.commitmentCount(CHANNEL, dispute.input.forkId), 1, "dispute stays committed");
-        assertFalse(harness.isSlashed(CHANNEL, dispute.input.disputer), "dispute submitter not punished");
-        assertTrue(harness.isSlashed(CHANNEL, challenger), "the unsupported allegation costs the challenger");
-    }
-
     // ---- staging ----
 
     /// a Math snapshot at `height` with `participants` holding `balances`, consuming the inbound head `inboundHash`
