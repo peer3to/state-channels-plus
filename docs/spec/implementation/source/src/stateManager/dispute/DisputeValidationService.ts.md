@@ -164,9 +164,10 @@ Audit order and evidence
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P143` — A chain regression check that fails with another error than `ErrorInboundMessageBlockNotStored` makes the audit throw and store no proof
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P144` — A latest finalized point right above the anchor, with no provable final point below it, sends no regression check to the chain
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P145` — A latest finalized point above an unprovable latest final point sends no regression check to the chain
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P146` — A final point that advances while the walk runs makes the regression check after the walk agree, where before the walk the stored inbound blocks ruled the regression out
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P146` — A final point that consumes a new joiner's JOIN while the walk runs makes the regression check after the walk agree, where before the walk the stored inbound blocks ruled the regression out
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P147` — A conflict candidate whose chain check reverts with `ErrorInboundMessageBlockNotStored` is skipped without a conflict proof, and the audit continues to the walk's counter
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P148` — A latest finalized point whose inbound head the auditor's stored inbound blocks put at or above its final point's sends no regression check to the chain
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P149` — A final point whose stored inbound run above the latest finalized point's head holds only a top-up of a participant sends no regression check to the chain
 
 ## UNIT-TEST-DISPUTE-VALIDATION-SERVICE-2-7H4K2D
 
