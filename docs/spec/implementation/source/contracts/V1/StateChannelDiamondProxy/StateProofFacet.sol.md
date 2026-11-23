@@ -57,3 +57,5 @@ Proof predicates
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P85` — `isDisputeOutboundRunInvalid` judges a committed run invalid without reverting when the latest state (signed only by its author) has its outbound head at an overflowing block right above the anchor, so the counter kills the dispute.
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P86` — `isDisputeFinalPointRegression` rejects a supplied snapshot whose hash is not the latest finalized block's commitment
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P87` — `isDisputeConflictingWithFinalState` reads the anchor's inbound head, not the supplied snapshot, when the last milestone holds the chain anchor
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P88` — `isDisputeConflictingWithFinalState` takes the fork's start state, not an unfinalized block zero, as the latest finalized point under a genesis start
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P89` — `isDisputeConflictingWithFinalState` compares a final block zero's inbound under a genesis start and rejects a final point that consumed fewer inbound blocks

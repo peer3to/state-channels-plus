@@ -156,6 +156,14 @@ Audit order and evidence
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P136` — A dispute whose latest finalized point consumed the auditor's final inbound head gets no regression proof
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P137` — A latest finalized point naming an inbound hash the chain does not know makes the chain check revert with `ErrorInboundMessageBlockNotStored`; the auditor stores no regression proof and continues the audit
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P138` — An honest dispute over the auditor's own history gets no regression proof
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P139` — An omitted-data dispute whose `onChainSlashes` lists a participant the chain never slashed gets `DisputeOnChainSlashesNotSubset` before any state-proof walk or snapshot lookup
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P140` — An omitted-data dispute whose latest finalized snapshot the auditor holds gets `DisputeFinalPointRegression` over that stored snapshot
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P141` — A latest finalized point at or below the auditor's latest final point gets the regression proof from the highest final point the auditor proves below it
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P142` — A conflicting final block the chain refuses on its inbound check yields no conflict proof and no regression proof
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P143` — A chain regression check that fails with another error than `ErrorInboundMessageBlockNotStored` makes the audit throw and store no proof
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P144` — A latest finalized point right above the anchor, with no provable final point below it, sends no regression check to the chain
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P145` — A latest finalized point above an unprovable latest final point sends no regression check to the chain
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P146` — A final point that advances while the walk runs makes the regression check after the walk agree although the one before it did not
 
 ## UNIT-TEST-DISPUTE-VALIDATION-SERVICE-2-7H4K2D
 
