@@ -286,6 +286,19 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         _assertRejected(dispute);
     }
 
+    function test_conflict_snapshotTheLatestFinalizedBlockDoesNotCommitDoesNotKill() public {
+        (bytes32 topUpHash, bytes32 lateJoinHash) = _seedTopUpThenLateJoin();
+        (Dispute memory honest,) = _honestDisputeOverTheLateJoin(lateJoinHash);
+        // X's hop at 60 (inbound 1) conflicts with F' = 60 (inbound 2); X's real G = 100 consumed L's JOIN
+        // (inbound 3), the challenger claims a snapshot of 100 at inbound 1 instead
+        ProofWalkInput memory sideProof = _sideFinalAtSixty(topUpHash);
+        (StateSnapshot memory claimed,) = _mathSnapshot(100, _anchorSet(), _balances(70, 100, 0), openingInboundHash, 1);
+
+        _apply(honest, DisputeFraudProofType.DisputeConflictsWithFinalState, _conflictProof(sideProof, 0, 0, claimed));
+
+        _assertRejected(honest);
+    }
+
     // ==================== the inbound lookup ====================
 
     function test_lookup_anchorInboundHeadOutsideStorageReadsTheAnchorsHeight() public {
@@ -319,6 +332,25 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
             DisputeFraudProofType.DisputeFinalPointRegression,
             _regressionProof(_honestFinalProof(), sideFinal)
         );
+    }
+
+    function test_lookup_conflictWithAnInboundHashNeitherStoredNorTheAnchorHeadReverts() public {
+        bytes32 neverPosted = keccak256("an inbound block the chain never held");
+        // Y's block at F's height 100 commits another snapshot than F, and names an inbound head the chain never held
+        (StateSnapshot memory sideHundred,) = _mathSnapshot(100, _anchorSet(), _balances(100, 100, 0), neverPosted, 3);
+        Dispute memory side = _sideDispute(sideHundred);
+
+        vm.expectRevert(abi.encodeWithSelector(ErrorInboundMessageBlockNotStored.selector, CHANNEL, neverPosted));
+        _applyBy(
+            joiner,
+            side,
+            DisputeFraudProofType.DisputeConflictsWithFinalState,
+            _conflictProof(_honestFinalProof(), 0, 0, sideHundred)
+        );
+
+        assertEq(harness.commitmentCount(CHANNEL, forkId), 1, "Y stays committed");
+        assertFalse(harness.isSlashed(CHANNEL, alice), "Y's disputer is not slashed");
+        assertFalse(harness.isSlashed(CHANNEL, joiner), "the challenger is not slashed");
     }
 
     // ==================== cost ====================
