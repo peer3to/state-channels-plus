@@ -31,6 +31,9 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
     uint256 internal constant MAX_TRANSACTION_GAS = 17_916_000;
     /// the parachain's per-transaction calldata limit
     uint256 internal constant MAX_CALLDATA_BYTES = 64 * 1024;
+    /// the cost case: the staged machine's participant cap, and the final proof's hop count the calldata limit admits
+    uint256 internal constant LARGE_PARTICIPANTS = 32;
+    uint256 internal constant LARGE_FINAL_HOPS = 7;
 
     address internal erin = vm.addr(ERIN_KEY);
     address internal joiner = vm.addr(JOINER_KEY);
@@ -254,6 +257,35 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         _assertKilled(dispute);
     }
 
+    function test_conflict_unfinalizedGenesisBlockZeroDoesNotRaiseTheInboundCheck() public {
+        (ProofWalkInput memory finalProof, StateSnapshot memory carolJoined) = _genesisStartWithCarolsJoin();
+        // A's block 0 consumed C's JOIN (inbound 1) but only A signed it: it finalizes nothing, so the dispute's latest
+        // finalized point is the fork genesis, not block 0
+        Dispute memory dispute = _disputeBy(alice, _one(_genesisRunTo(carolJoined, 1, _signers(ALICE_KEY))));
+        _commit(dispute);
+
+        _apply(
+            dispute, DisputeFraudProofType.DisputeConflictsWithFinalState, _conflictProof(finalProof, 0, 0, carolJoined)
+        );
+
+        _assertKilled(dispute);
+    }
+
+    function test_conflict_finalGenesisBlockZeroAboveTheFinalPointsInboundDoesNotKill() public {
+        (ProofWalkInput memory finalProof, StateSnapshot memory carolJoined) = _genesisStartWithCarolsJoin();
+        // C's block 0 consumed its own JOIN (inbound 1) and A, B and C signed it: block 0 is final and consumed more
+        // inbound than F
+        Dispute memory dispute =
+            _disputeBy(carol, _one(_genesisRunTo(carolJoined, 1, _signers(ALICE_KEY, BOB_KEY, CAROL_KEY))));
+        _commit(dispute);
+
+        _apply(
+            dispute, DisputeFraudProofType.DisputeConflictsWithFinalState, _conflictProof(finalProof, 0, 0, carolJoined)
+        );
+
+        _assertRejected(dispute);
+    }
+
     // ==================== the inbound lookup ====================
 
     function test_lookup_anchorInboundHeadOutsideStorageReadsTheAnchorsHeight() public {
@@ -291,16 +323,37 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
 
     // ==================== cost ====================
 
-    function test_regression_killFitsTheParachainTransactionLimits() public {
-        (StateSnapshot memory sideFinal,) =
-            _mathSnapshot(1000, _anchorSet(), _balances(100, 100, 0), openingInboundHash, 1);
-        Dispute memory side = _sideDispute(sideFinal);
+    /// The size this guards: N = 32 participants (the staged machine's participant cap), every hop signed by all of
+    /// them, and the largest final proof the parachain's calldata limit admits next to a one-hop side dispute
+    /// (LARGE_FINAL_HOPS hops). Calldata binds first, so the gas check shows that any regression kill that fits the
+    /// calldata limit also fits the gas limit.
+    function test_regression_largestKillWithinTheCalldataLimitFitsTheGasLimit() public {
+        (address[] memory set, uint256[] memory keys, bytes32 openingHash, bytes32 topUpHash) = _seedLargeChannel();
+        uint256[] memory balances = new uint256[](LARGE_PARTICIPANTS);
+        // F: LARGE_FINAL_HOPS threshold hops from the anchor, all past A's top-up (inbound 2)
+        MilestoneProof[] memory milestones = new MilestoneProof[](LARGE_FINAL_HOPS);
+        StateSnapshot[] memory snapshots = new StateSnapshot[](LARGE_FINAL_HOPS);
+        for (uint256 i = 0; i < LARGE_FINAL_HOPS; i++) {
+            (snapshots[i],) = _mathSnapshot(60 + 10 * i, set, balances, topUpHash, 2);
+            milestones[i] = _hopRun(snapshots[i], 1, keys);
+        }
+        ProofWalkInput memory finalProof = _finalProof(forkId, milestones, snapshots);
+        assertEq(
+            _diamond().verifyMilestones(finalProof).finalizedSnapshot.blockHeight,
+            60 + 10 * (LARGE_FINAL_HOPS - 1),
+            "premise: the last hop of F is final"
+        );
+        // Y: one hop to 1000' below A's top-up (inbound 1)
+        (StateSnapshot memory sideFinal,) = _mathSnapshot(1000, set, balances, openingHash, 1);
+        (Dispute memory side,) =
+            _postedDisputeBy(alice, _one(_hopRun(sideFinal, 1, keys)), _entries(sideFinal), sideFinal);
+        _commit(side);
         DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
         proofs[0] = DisputeFraudProof({
             proofType: DisputeFraudProofType.DisputeFinalPointRegression,
             participant: side.input.disputer,
             dispute: side,
-            encodedProof: _regressionProof(_honestFinalProof(), sideFinal)
+            encodedProof: _regressionProof(finalProof, sideFinal)
         });
         uint256 calldataBytes = abi.encodeCall(harness.applyDisputeFraudProofs, (proofs)).length;
 
@@ -312,8 +365,12 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         _assertKilledBy(side, joiner);
         console.log("DisputeFinalPointRegression kill gas", gasUsed);
         console.log("DisputeFinalPointRegression kill calldata bytes", calldataBytes);
-        assertLt(gasUsed, MAX_TRANSACTION_GAS, "the kill fits one parachain transaction's gas");
         assertLt(calldataBytes, MAX_CALLDATA_BYTES, "the kill fits one parachain transaction's calldata");
+        // without one more hop it would not (its signed block and its snapshot, without their array offsets): this
+        // is the largest final proof the calldata limit admits
+        uint256 hopBytes = abi.encode(milestones[0]).length + abi.encode(snapshots[0]).length;
+        assertGt(calldataBytes + hopBytes, MAX_CALLDATA_BYTES, "premise: the largest final proof that fits");
+        assertLt(gasUsed, MAX_TRANSACTION_GAS, "the kill fits one parachain transaction's gas");
     }
 
     // ---- histories ----
@@ -385,6 +442,51 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         assertEq(_diamond().verifyMilestones(finalProof).finalizedSnapshot.blockHeight, 60, "premise: F' = 60 is final");
     }
 
+    /// The chain snapshot back at the fork genesis {A, B} (inbound head zero), C's JOIN stored after it at inbound
+    /// height 1, and A and B's final proof of block 0 that consumed nothing. Returns that proof and the snapshot of a
+    /// block 0 {A, B, C} that consumed C's JOIN.
+    function _genesisStartWithCarolsJoin()
+        internal
+        returns (ProofWalkInput memory finalProof, StateSnapshot memory carolJoined)
+    {
+        harness.seedSnapshot(CHANNEL, genesis);
+        (, bytes32 carolJoinHash) = _seedJoin(bytes32(0), 1, carol);
+        address[] memory withCarol = new address[](3);
+        withCarol[0] = alice;
+        withCarol[1] = bob;
+        withCarol[2] = carol;
+        carolJoined = _snapshotAt(0, withCarol, carolJoinHash, 1);
+        StateSnapshot memory zero = _snapshot(0, genesisData.participants);
+        finalProof = _finalProof(forkId, _one(_genesisRunTo(zero, 1, _signers(ALICE_KEY, BOB_KEY))), _entries(zero));
+        ProofWalkResult memory walk = _diamond().verifyMilestones(finalProof);
+        assertTrue(walk.valid, "premise: F walks from the genesis");
+        assertEq(walk.finalizedSnapshot.blockHeight, 0, "premise: F is the final block 0");
+        assertEq(keccak256(abi.encode(walk.finalizedSnapshot)), keccak256(abi.encode(zero)), "premise: F is block 0");
+    }
+
+    /// The cost case's channel: the anchor 50 with LARGE_PARTICIPANTS participants (A first, the others staged keys)
+    /// whose opening JOINs are inbound height 1, then A's top-up at inbound height 2. Returns the set, its keys (A
+    /// first) and both inbound hashes.
+    function _seedLargeChannel()
+        internal
+        returns (address[] memory set, uint256[] memory keys, bytes32 openingHash, bytes32 topUpHash)
+    {
+        set = new address[](LARGE_PARTICIPANTS);
+        keys = new uint256[](LARGE_PARTICIPANTS);
+        set[0] = alice;
+        keys[0] = ALICE_KEY;
+        for (uint256 i = 1; i < LARGE_PARTICIPANTS; i++) {
+            keys[i] = 0x5EA7_0000 + i;
+            set[i] = vm.addr(keys[i]);
+        }
+        openingHash = harness.seedInboundBlock(CHANNEL, _openingInboundOf(set));
+        MessageBlock memory topUp = _joinBlock(openingHash, 2, alice, 10);
+        topUp.totalBalance.amount = 100 * LARGE_PARTICIPANTS + 10;
+        topUpHash = harness.seedInboundBlock(CHANNEL, topUp);
+        (StateSnapshot memory anchor,) = _mathSnapshot(50, set, new uint256[](LARGE_PARTICIPANTS), openingHash, 1);
+        harness.seedSnapshot(CHANNEL, anchor);
+    }
+
     // ---- staging ----
 
     /// a Math snapshot at `height` with `participants` holding `balances`, consuming the inbound head `inboundHash`
@@ -413,10 +515,14 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
 
     /// A to E's opening JOINs of 100 each at inbound height 1
     function _openingInbound() internal view returns (MessageBlock memory inbound) {
-        address[] memory openers = _anchorSet();
+        return _openingInboundOf(_anchorSet());
+    }
+
+    /// `openers`' opening JOINs of 100 each at inbound height 1
+    function _openingInboundOf(address[] memory openers) internal view returns (MessageBlock memory inbound) {
         inbound.blockHeight = 1;
         inbound.timestamp = block.timestamp;
-        inbound.totalBalance.amount = 500;
+        inbound.totalBalance.amount = 100 * openers.length;
         inbound.messages = new Message[](openers.length);
         for (uint256 i = 0; i < openers.length; i++) {
             JoinChannel memory join;

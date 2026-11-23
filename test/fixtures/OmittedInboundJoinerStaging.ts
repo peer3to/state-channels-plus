@@ -15,8 +15,10 @@ import { readLocalFinalizedHeight } from "@test/fixtures/OlderDisputeStaging";
 import type {
     BlockStruct,
     MessageBlockStruct,
+    SnapshotDataStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import type { ProofWalkInputStruct } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 import type {
     DisputeAuditingDataStruct,
     DisputeInputStruct,
@@ -367,6 +369,15 @@ export type JoinerBypassDispute = {
     hopSnapshot: StateSnapshot;
 };
 
+/** Where the bypass hop sits and who signs it. */
+export type JoinerBypassHopOptions = {
+    inbound?: JoinerBypassInbound;
+    /** the hop's height (default: the block above Alice's head); it links to Alice's block below it */
+    height?: number;
+    /** Charlie signs the hop too (default: only for `"join"`) */
+    signedByCharlie?: boolean;
+};
+
 /** Which inbound head the bypass hop's snapshot names. */
 export type JoinerBypassInbound =
     /** the anchor's, below Charlie's JOIN: the hop's walk never needs him */
@@ -395,29 +406,68 @@ export async function stageSeatedJoinerHistory(
     const anchor = StateSnapshot.from(
         await h.channelManager.getStateSnapshot(h.channelId)
     );
-    const charlieQuery = h.control(charlie).query;
-    const finalHeight = await readLocalFinalizedHeight(
-        h,
-        charlie.index,
-        forkId
-    );
-    const final =
-        finalHeight === null
-            ? null
-            : await charlieQuery
-                  .getStateSnapshotStructAt(forkId, finalHeight)
-                  .request();
-    if (!final) throw new Error("Charlie holds no final point");
     return {
         forkId,
         aliceIndex: ALICE_INDEX,
         bobIndex: BOB_INDEX,
         charlieIndex: charlie.index,
         anchor,
-        charlieFinal: StateSnapshot.from(
-            Codec.decode(final.encodedSnapshot, Type.StateSnapshot)
-        )
+        charlieFinal: await readLocalFinalSnapshot(h, charlie.index, forkId)
     };
+}
+
+/** `peerIndex`'s latest local final point on `forkId`. */
+export async function readLocalFinalSnapshot(
+    h: MathPeerTestHarness,
+    peerIndex: number,
+    forkId: ForkId
+): Promise<StateSnapshot> {
+    const finalHeight = await readLocalFinalizedHeight(h, peerIndex, forkId);
+    const final =
+        finalHeight === null
+            ? null
+            : await h
+                  .control(h.getPeer(peerIndex))
+                  .query.getStateSnapshotStructAt(forkId, finalHeight)
+                  .request();
+    if (!final) throw new Error(`Peer ${peerIndex} holds no final point`);
+    return StateSnapshot.from(
+        Codec.decode(final.encodedSnapshot, Type.StateSnapshot)
+    );
+}
+
+/**
+ * The lowest height above the chain anchor whose state Charlie holds with
+ * the anchor's inbound head: a block of the honest history before it
+ * consumed his JOIN.
+ */
+export async function readPreJoinHeightAboveAnchor(
+    h: MathPeerTestHarness,
+    history: SeatedJoinerHistory
+): Promise<number> {
+    const query = h.control(h.getPeer(history.charlieIndex)).query;
+    for (
+        let height = history.anchor.blockHeight + 1;
+        height < history.charlieFinal.blockHeight;
+        height++
+    ) {
+        const stored = await query
+            .getStateSnapshotStructAt(history.forkId, height)
+            .request();
+        if (!stored) continue;
+        const snapshot = Codec.decode(
+            stored.encodedSnapshot,
+            Type.StateSnapshot
+        );
+        if (
+            snapshot.snapshotData.latestInboundMessageBlockHash ===
+            history.anchor.latestInboundMessageBlockHash
+        )
+            return height;
+    }
+    throw new Error(
+        "The honest history consumed the JOIN right above the anchor"
+    );
 }
 
 /**
@@ -435,7 +485,7 @@ export async function stageSeatedJoinerHistory(
 export async function constructJoinerBypassDispute(
     h: MathPeerTestHarness,
     history: SeatedJoinerHistory,
-    options: { inbound?: JoinerBypassInbound } = {}
+    options: JoinerBypassHopOptions = {}
 ): Promise<JoinerBypassDispute> {
     await h
         .control(h.getPeer(history.aliceIndex))
@@ -449,15 +499,19 @@ export async function constructJoinerBypassDispute(
         h,
         history,
         { dispute, auditingData },
-        options.inbound ?? "anchor"
+        options
     );
     return { dispute, auditingData, ...hop };
 }
 
-/** {@link constructJoinerBypassDispute}'s default hop, uploaded by Alice. */
+/**
+ * {@link constructJoinerBypassDispute}'s default hop, uploaded by Alice;
+ * `edit` changes the dispute after the hop is forged.
+ */
 export async function postJoinerBypassDispute(
     h: MathPeerTestHarness,
-    history: SeatedJoinerHistory
+    history: SeatedJoinerHistory,
+    edit: (dispute: DisputeStruct) => void = () => {}
 ): Promise<JoinerBypassDispute> {
     h.contextApi.markMaliciousPeer({ maliciousPeerIndex: history.bobIndex });
     let forged: Omit<JoinerBypassDispute, "dispute"> | undefined;
@@ -469,14 +523,48 @@ export async function postJoinerBypassDispute(
                 h,
                 history,
                 { dispute, auditingData },
-                "anchor"
+                {}
             );
+            edit(dispute);
             forged = { auditingData, ...hop };
         },
         { markMalicious: true }
     );
     if (!forged) throw new Error("The forged dispute was not built");
     return { dispute, ...forged };
+}
+
+/**
+ * Alice and Bob's side-chain final point at `height`: one threshold hop from
+ * the chain anchor committing the anchor state at that height, signed by
+ * them only, so its inbound head stays below Charlie's JOIN. Returned as the
+ * walk input a final-history counter carries.
+ */
+export async function forgeSideChainFinalProof(
+    h: MathPeerTestHarness,
+    history: SeatedJoinerHistory,
+    options: {
+        height: number;
+        genesisStateSnapshotData: SnapshotDataStruct;
+    }
+): Promise<{ finalProof: ProofWalkInputStruct; finalSnapshot: StateSnapshot }> {
+    const { hopBlock, hopSnapshot } = await forgeAnchorHop(h, history, {
+        height: options.height
+    });
+    return {
+        finalProof: {
+            channelId: h.channelId,
+            forkId: history.forkId,
+            stateProof: {
+                milestones: [
+                    { blockConfirmations: [hopBlock.blockConfirmationStruct] }
+                ]
+            },
+            genesisStateSnapshotData: options.genesisStateSnapshotData,
+            milestoneSnapshots: [hopSnapshot.toStruct()]
+        },
+        finalSnapshot: hopSnapshot
+    };
 }
 
 async function forgeJoinerBypassHop(
@@ -486,8 +574,53 @@ async function forgeJoinerBypassHop(
         dispute: DisputeStruct;
         auditingData: DisputeAuditingDataStruct;
     },
-    inbound: JoinerBypassInbound
+    options: JoinerBypassHopOptions
 ): Promise<{ hopBlock: Block; hopSnapshot: StateSnapshot }> {
+    const inbound = options.inbound ?? "anchor";
+    const { hopBlock, hopSnapshot, encodedState } = await forgeAnchorHop(
+        h,
+        history,
+        options
+    );
+    const query = h.control(h.getPeer(history.aliceIndex)).query;
+    const join = await query
+        .getInboundMessageBlock(
+            history.charlieFinal.latestInboundMessageBlockHash
+        )
+        .request();
+    if (!join) throw new Error("Alice lacks Charlie's JOIN");
+    const { dispute, auditingData } = constructed;
+    dispute.input.stateProof = {
+        milestones: [{ blockConfirmations: [hopBlock.blockConfirmationStruct] }]
+    };
+    auditingData.milestoneSnapshots = [hopSnapshot.toStruct()];
+    await commitPostedLatestState(h, history.aliceIndex, constructed, {
+        latest: hopSnapshot,
+        encodedState,
+        // the anchor-headed hop still owes the JOIN; no run is known above an unknown head
+        inboundMessageBlocks:
+            inbound === "anchor"
+                ? [Codec.decode(join.encodedMessageBlock, Type.MessageBlock)]
+                : []
+    });
+    return { hopBlock, hopSnapshot };
+}
+
+/**
+ * The hop block of {@link JoinerBypassHopOptions}, authored by Alice above
+ * her block below `height`, with the snapshot it commits and that
+ * snapshot's application state.
+ */
+async function forgeAnchorHop(
+    h: MathPeerTestHarness,
+    history: SeatedJoinerHistory,
+    options: JoinerBypassHopOptions
+): Promise<{
+    hopBlock: Block;
+    hopSnapshot: StateSnapshot;
+    encodedState: string;
+}> {
+    const inbound = options.inbound ?? "anchor";
     const [alice, bob, charlie] = [
         history.aliceIndex,
         history.bobIndex,
@@ -512,7 +645,14 @@ async function forgeJoinerBypassHop(
         .request();
     if (!encodedState) throw new Error("Alice lacks the hop's state");
 
-    const height = Number(headBlock.transaction.header.transactionCnt) + 1;
+    const headHeight = Number(headBlock.transaction.header.transactionCnt);
+    const height = options.height ?? headHeight + 1;
+    const previousBlockHash =
+        height > headHeight + 1
+            ? head.hash
+            : await query.getBlockHashAt(history.forkId, height - 1).request();
+    if (!previousBlockHash)
+        throw new Error(`Alice holds no block at ${height - 1}`);
     const timestamp = headBlock.transaction.header.timestamp;
     const sourceStruct = source.toStruct();
     const hopSnapshot = StateSnapshot.from({
@@ -540,40 +680,20 @@ async function forgeJoinerBypassHop(
                     transactionCnt: height
                 }
             },
-            previousBlockHash: head.hash,
+            previousBlockHash,
             stateSnapshotHash: hopSnapshot.hash
         },
         alice.signer
     );
+    const signedByCharlie = options.signedByCharlie ?? inbound === "join";
     hopBlock.expandSignatures(
         await Promise.all(
-            (inbound === "join" ? [bob, charlie] : [bob]).map((peer) =>
+            (signedByCharlie ? [bob, charlie] : [bob]).map((peer) =>
                 hopBlock.sign(peer.signer)
             )
         )
     );
-
-    const join = await query
-        .getInboundMessageBlock(
-            history.charlieFinal.latestInboundMessageBlockHash
-        )
-        .request();
-    if (!join) throw new Error("Alice lacks Charlie's JOIN");
-    const { dispute, auditingData } = constructed;
-    dispute.input.stateProof = {
-        milestones: [{ blockConfirmations: [hopBlock.blockConfirmationStruct] }]
-    };
-    auditingData.milestoneSnapshots = [hopSnapshot.toStruct()];
-    await commitPostedLatestState(h, alice.index, constructed, {
-        latest: hopSnapshot,
-        encodedState,
-        // the anchor-headed hop still owes the JOIN; no run is known above an unknown head
-        inboundMessageBlocks:
-            inbound === "anchor"
-                ? [Codec.decode(join.encodedMessageBlock, Type.MessageBlock)]
-                : []
-    });
-    return { hopBlock, hopSnapshot };
+    return { hopBlock, hopSnapshot, encodedState };
 }
 
 /**

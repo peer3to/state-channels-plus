@@ -198,6 +198,7 @@ export type StubKey =
     | "disputeCommittedHandler"
     | "disputeCommittedHandling"
     | "disputeLogQueries"
+    | "unprovableFinalPoint"
     | "lobbyCreateRpcMethods"
     | "negotiationCreateRpcMethods"
     | "matchedNegotiation"
@@ -2417,6 +2418,36 @@ export class StubService extends ANetworkRpcService<
 
     public getRecordedChainCalls(): string[] {
         return [...this.chainCallNames];
+    }
+
+    /**
+     * Fault: this peer cannot prove the final point at `blockHeight`
+     * (`tryBuildFinalProofAt` answers undefined there), as when the
+     * material for that height is missing. Other heights build as usual.
+     */
+    public stubUnprovableFinalPointAt(blockHeight: number): void {
+        const agreementManager = this.sm.agreementManager;
+        if (!this.stubOriginals.has("unprovableFinalPoint"))
+            this.stubOriginals.set(
+                "unprovableFinalPoint",
+                agreementManager.tryBuildFinalProofAt.bind(agreementManager)
+            );
+        const build = this.stubOriginals.get(
+            "unprovableFinalPoint"
+        ) as typeof agreementManager.tryBuildFinalProofAt;
+        agreementManager.tryBuildFinalProofAt = async (forkId, finalHeight) =>
+            finalHeight === blockHeight
+                ? undefined
+                : build(forkId, finalHeight);
+    }
+
+    public restoreUnprovableFinalPoint(): boolean {
+        const original = this.stubOriginals.get("unprovableFinalPoint");
+        if (original === undefined) return false;
+        this.sm.agreementManager.tryBuildFinalProofAt =
+            original as typeof this.sm.agreementManager.tryBuildFinalProofAt;
+        this.stubOriginals.delete("unprovableFinalPoint");
+        return true;
     }
 
     public restoreChainCalls(): void {
