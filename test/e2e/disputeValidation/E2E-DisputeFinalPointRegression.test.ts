@@ -4,13 +4,18 @@ import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
 } from "@/types/sol-enums";
+import type { Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
 import { uploadSelfRemovalDispute } from "@test/fixtures/ChallengeBoundaryStaging";
+import { committedDisputeLogs } from "@test/fixtures/DisputeWindowWorkflowStaging";
 import {
     forgeSideChainFinalProof,
     postJoinerBypassDispute,
+    readChainReductionWait,
     readDisputeKill,
+    readMathState,
+    readStoredSnapshot,
     stageSeatedJoinerHistory
 } from "@test/fixtures/OmittedInboundJoinerStaging";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -109,6 +114,120 @@ describe("E2E: dispute validation / dispute final point regression", function ()
             final.finalizedSnapshot.snapshotData.latestInboundMessageBlockHash,
             "F is a final point of Charlie's history, past his JOIN"
         ).to.equal(joinHash);
+        await h.assert.dispute.slashedOnChainExactly([alice.address]);
+    });
+
+    it("the colluders' bypass dispute and Charlie's honest dispute share one window: Charlie kills the bypass, and after the window expires the reduction continues Charlie's history on the successor fork, with only Alice slashed", async function () {
+        const h = TestSession.getHarness();
+        const history = await stageSeatedJoinerHistory(h);
+        const alice = h.getPeer(history.aliceIndex);
+        const charlie = h.getPeer(history.charlieIndex);
+        const posted = await postJoinerBypassDispute(h, history);
+        const bypassState = await readMathState(
+            h,
+            alice.index,
+            posted.hopSnapshot
+        );
+
+        await h.event.waitForPeers("onDisputeKilled", [charlie.index], 1, {
+            mode: "atLeast"
+        });
+        const kill = await readDisputeKill(h, alice.address);
+        expect(kill.killer).to.equal(charlie.address);
+        expect(kill.appliedProofTypes).to.deep.equal([
+            DisputeFraudProofType.DisputeFinalPointRegression
+        ]);
+        // Charlie's kill lands with his own dispute in the same window
+        await h.assert.dispute.committedWait({
+            peersIndices: [charlie.index],
+            expectedCount: 2
+        });
+        const windowDisputes = (await committedDisputeLogs(h)).filter(
+            (log) => log.forkId === history.forkId
+        );
+        expect(
+            windowDisputes.map((log) => log.disputer),
+            "both disputes were committed in the window"
+        ).to.have.members([alice.address, charlie.address]);
+        const charliesCommitment = windowDisputes.find(
+            (log) => log.disputer === charlie.address
+        )!.commitment;
+        expect(
+            await h.channelManager.getWindowCommitments(
+                h.channelId,
+                history.forkId
+            ),
+            "only Charlie's dispute is left to reduce"
+        ).to.deep.equal([charliesCommitment]);
+        const charliesDispute = await h
+            .control(charlie)
+            .query.getDispute(charliesCommitment)
+            .request();
+        if (!charliesDispute) throw new Error("Charlie lacks his dispute");
+        const charliesLatest = await readStoredSnapshot(
+            h,
+            charlie.index,
+            Codec.decode(charliesDispute.encodedDispute, Type.Dispute).input
+                .latestStateSnapshotHash as Hash
+        );
+        const charliesState = await readMathState(
+            h,
+            charlie.index,
+            charliesLatest
+        );
+        expect(
+            charliesState.number,
+            "premise: Charlie's history moved past the bypass hop's anchor state"
+        ).to.not.equal(bypassState.number);
+
+        await h.assert.dispute.reductionCompletedWait({
+            sourceForkId: history.forkId,
+            peerIndices: [charlie.index]
+        });
+
+        const successorForkId = await h
+            .control(charlie)
+            .query.getCompletedReductionForkId(history.forkId)
+            .request();
+        expect(successorForkId).to.not.equal(null);
+        expect(
+            await readChainReductionWait(h, history.forkId),
+            "the chain reduced to Charlie's successor fork"
+        ).to.equal(successorForkId);
+        const genesisHash = await h
+            .control(charlie)
+            .query.getGenesisSnapshotHash(successorForkId!)
+            .request();
+        if (!genesisHash)
+            throw new Error("Charlie lacks the successor genesis");
+        const successorState = await readMathState(
+            h,
+            charlie.index,
+            await readStoredSnapshot(h, charlie.index, genesisHash)
+        );
+        expect(
+            successorState.number,
+            "the successor fork continues Charlie's latest state"
+        ).to.equal(charliesState.number);
+        const charlieSeat = successorState.participants.indexOf(
+            charlie.address
+        );
+        expect(
+            charlieSeat,
+            "Charlie is seated on the successor fork"
+        ).to.be.at.least(0);
+        expect(
+            successorState.balances[charlieSeat],
+            "Charlie keeps his balance from his history"
+        ).to.equal(
+            charliesState.balances[
+                charliesState.participants.indexOf(charlie.address)
+            ]
+        );
+        expect(
+            successorState.participants,
+            "the slashed Alice leaves the channel"
+        ).to.not.include(alice.address);
         await h.assert.dispute.slashedOnChainExactly([alice.address]);
     });
 

@@ -12,6 +12,10 @@ import {
     uploadSelfRemovalDispute
 } from "@test/fixtures/ChallengeBoundaryStaging";
 import { readLocalFinalizedHeight } from "@test/fixtures/OlderDisputeStaging";
+import {
+    decodeMathState,
+    type MathStateDecoded
+} from "@test/utils/mathHarnessAbi";
 import type {
     BlockStruct,
     MessageBlockStruct,
@@ -24,7 +28,7 @@ import type {
     DisputeInputStruct,
     DisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { id, Interface } from "ethers";
+import { id, Interface, ZeroHash } from "ethers";
 
 const ALICE_INDEX = 0;
 const BOB_INDEX = 1;
@@ -414,6 +418,62 @@ export async function stageSeatedJoinerHistory(
         anchor,
         charlieFinal: await readLocalFinalSnapshot(h, charlie.index, forkId)
     };
+}
+
+/**
+ * Wait until the chain records the reduction of `sourceForkId`, and return
+ * the fork it reduced to. A peer's completed reduction is local; the chain's
+ * reduce can land after it.
+ */
+export async function readChainReductionWait(
+    h: MathPeerTestHarness,
+    sourceForkId: ForkId
+): Promise<ForkId> {
+    const timeoutMs = h.event.protocolEventTimeoutMs({
+        withFirstBlockGrace: true
+    });
+    await h.eventCountsBarrier.waitFor(
+        async () =>
+            (await h.query.reducedForkOnChain(sourceForkId)) !== ZeroHash,
+        {
+            timeoutMs,
+            timeoutMessage: `the chain did not reduce ${sourceForkId} within ${timeoutMs}ms`
+        }
+    );
+    return h.query.reducedForkOnChain(sourceForkId);
+}
+
+/** The snapshot `peerIndex` stores under `snapshotHash`. */
+export async function readStoredSnapshot(
+    h: MathPeerTestHarness,
+    peerIndex: number,
+    snapshotHash: Hash
+): Promise<StateSnapshot> {
+    const stored = await h
+        .control(h.getPeer(peerIndex))
+        .query.getStateSnapshotStructByHash(snapshotHash)
+        .request();
+    if (!stored) throw new Error(`Peer ${peerIndex} lacks ${snapshotHash}`);
+    return StateSnapshot.from(
+        Codec.decode(stored.encodedSnapshot, Type.StateSnapshot)
+    );
+}
+
+/** The Math state `snapshot` commits, as `peerIndex` stores it. */
+export async function readMathState(
+    h: MathPeerTestHarness,
+    peerIndex: number,
+    snapshot: StateSnapshot
+): Promise<MathStateDecoded> {
+    const encodedState = await h
+        .control(h.getPeer(peerIndex))
+        .query.getStateMachineState(snapshot.stateMachineStateHash)
+        .request();
+    if (!encodedState)
+        throw new Error(
+            `Peer ${peerIndex} lacks the state of ${snapshot.hash}`
+        );
+    return decodeMathState(encodedState);
 }
 
 /** `peerIndex`'s latest local final point on `forkId`. */
