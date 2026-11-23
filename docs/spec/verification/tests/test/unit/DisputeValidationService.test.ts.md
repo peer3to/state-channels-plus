@@ -17,6 +17,8 @@ One audit case stubs the auditor's local diamond so the unfinalized part of an h
 
 Blind pending-auditor staging persistently disconnects the auditor before the participants finalize the withheld head. This excludes both gossip and sync delivery; the chain join and real audit still run, and tests retain the assertion that the auditor never finalized that head. The returned restoration handle explicitly reconnects it.
 
+The final-point regression cases stage a seated joiner: the chain anchor is posted before Charlie's JOIN, the honest history consumes it and is final past it, and Alice's constructed dispute hops from the anchor above Charlie's final point. With the hop's inbound head below the JOIN, Charlie's audit stores one `DisputeFinalPointRegression` whose snapshot is the hop's and whose final proof walks to Charlie's own final point, and the chain's check accepts it. A hop that consumed the JOIN and an untampered dispute get no proof. A hop naming an inbound hash the chain never held makes the chain check revert; the audit stores no regression proof and ends with the walk's `DisputeInvalidStateProof`.
+
 ## Tests
 
 - `dispute.input.latestInboundMessageBlockHash = random -> false + DisputeInboundHashNotInChain`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P1
@@ -69,3 +71,7 @@ Blind pending-auditor staging persistently disconnects the auditor before the pa
 - `fork advances while the audit is parked at getOnChainSlashedParticipants -> false + DisputeNotLatestState`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P54
 
 The previous-block signature test captures block 2’s next writer before opening the dispute window. It must not read the mutable VM’s current writer concurrently with a subscribed audit’s temporary replay state. The empty, timed-out-signer and wrong-signer signature variants retain their exact TimeoutTooEarly oracles and the unchanged authored/calldata timing bounds.
+- `only milestone = hop from the chain anchor above seated Charlie's final point, signed without him, inbound head below his JOIN -> false + DisputeFinalPointRegression over Charlie's final point, which the chain accepts`: REQ-FP-7-4DD0D7.T10.P10, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P135, UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P19
+- `the same hop committing Charlie's seated head state (inbound head = his JOIN), signed by all three -> the chain finds no regression, no DisputeFinalPointRegression`: REQ-FP-7-4DD0D7.T10.P11, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P136
+- `the hop names an inbound head the chain never held -> the chain's regression check has no inbound height for it and the audit continues: the walk's DisputeInvalidStateProof is stored instead`: REQ-FP-7-4DD0D7.T10.P12, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P137
+- `untampered dispute over seated Charlie's history -> true, no proof`: REQ-FP-7-4DD0D7.T10.P13, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P138

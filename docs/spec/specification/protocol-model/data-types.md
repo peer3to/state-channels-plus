@@ -190,6 +190,7 @@ for removal in favor of requiring transitions to actually change state).
 | `DisputeInvalidBlockStructure`                                                                                               | contained a structurally invalid block.                                                                                |
 | `DisputeBlockAuthorNotParticipant`                                                                                           | contained a block authored by a non-participant.                                                                       |
 | `DisputeInvalidOutboundRun`                                                                                                  | posted an outbound run that does not link the current chain anchor's outbound head to its latest state's.              |
+| `DisputeFinalPointRegression`                                                                                                | holds a latest finalized point above a proved final point that consumed fewer inbound blocks.                          |
 
 ## Assumptions and constraints
 

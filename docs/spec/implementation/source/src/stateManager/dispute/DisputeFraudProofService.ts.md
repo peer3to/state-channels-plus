@@ -31,3 +31,4 @@ Family packaging
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P16` — timeout-participant-not-next family
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P17` — timeout-too-early family
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P18` — timeout-calldata-posted family
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P19` — final-point-regression family
