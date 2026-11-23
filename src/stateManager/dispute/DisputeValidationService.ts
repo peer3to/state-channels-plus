@@ -111,13 +111,7 @@ export default class DisputeValidationService {
             return this.rejectStateProof(dispute, evidence, data);
 
         // a conflict with this peer's final history needs no replay state
-        if (
-            (await this.tryCreateConflictsWithFinalStateProof(
-                dispute,
-                evidence
-            )) ||
-            (await this.tryCreateFinalPointRegressionProof(dispute, evidence))
-        )
+        if (await this.tryCreateFinalHistoryProof(dispute, evidence))
             return false;
 
         const walk = await this.verifyAndReplay(dispute, evidence, data);
@@ -127,6 +121,24 @@ export default class DisputeValidationService {
             return false;
 
         return await this.continueOtherChecks(dispute, walk, data);
+    }
+
+    /**
+     * A counter against this peer's final history: a block of the dispute
+     * that conflicts with a final block, else a latest finalized point that
+     * regresses this peer's final point's inbound.
+     */
+    private async tryCreateFinalHistoryProof(
+        dispute: DisputeStruct,
+        evidence: StateProofEvidence
+    ): Promise<boolean> {
+        return (
+            (await this.tryCreateConflictsWithFinalStateProof(
+                dispute,
+                evidence
+            )) ||
+            (await this.tryCreateFinalPointRegressionProof(dispute, evidence))
+        );
     }
 
     /**
@@ -240,17 +252,14 @@ export default class DisputeValidationService {
         evidence: StateProofEvidence
     ): Promise<boolean> {
         const { forkId, stateProof } = dispute.input;
+        // the snapshot the first block of the last milestone commits
         const latestFinalizedSnapshot = evidence.milestoneSnapshots.at(-1);
         const first = stateProof.milestones.at(-1)?.blockConfirmations[0];
         const latestFinalized = first && Block.tryFromBlockConfirmation(first);
+        if (!latestFinalizedSnapshot || !latestFinalized) return false;
         const finalized =
             await this.agreementManager.getLocalFinalizedSnapshot(forkId);
-        if (
-            !latestFinalizedSnapshot ||
-            !latestFinalized ||
-            !finalized ||
-            latestFinalized.height <= finalized.blockHeight
-        )
+        if (!finalized || latestFinalized.height <= finalized.blockHeight)
             return false;
         const finalProof = await this.agreementManager.tryBuildFinalProofAt(
             forkId,
@@ -319,16 +328,7 @@ export default class DisputeValidationService {
                 continue;
             }
             // Another audit may have finalized conflicting history while this walk awaited its verifier.
-            if (
-                (await this.tryCreateConflictsWithFinalStateProof(
-                    dispute,
-                    evidence
-                )) ||
-                (await this.tryCreateFinalPointRegressionProof(
-                    dispute,
-                    evidence
-                ))
-            )
+            if (await this.tryCreateFinalHistoryProof(dispute, evidence))
                 return false;
             const outcome = await this.replayLastMilestoneTail(
                 dispute,
@@ -354,14 +354,7 @@ export default class DisputeValidationService {
                         outboundRun,
                         data
                     ) &&
-                    ((await this.tryCreateConflictsWithFinalStateProof(
-                        dispute,
-                        evidence
-                    )) ||
-                        (await this.tryCreateFinalPointRegressionProof(
-                            dispute,
-                            evidence
-                        )))
+                    (await this.tryCreateFinalHistoryProof(dispute, evidence))
                 )
                     return false;
                 return walk;
@@ -1332,7 +1325,7 @@ export default class DisputeValidationService {
                 throw error;
             this.logger.info(
                 "Chain knows no inbound height for a compared snapshot: no final-history counter",
-                { custom: custom.message }
+                { customError: LoggerUtils.getCustomEvmErrorMetadata(custom) }
             );
             return false;
         }
