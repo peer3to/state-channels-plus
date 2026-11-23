@@ -222,7 +222,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
 
         // Check signature
         (address retrievedAddress, bool isValid) =
-            UtilityFacet(utilityFacetAddress).retrieveSignerAddress(proof.encodedBlock, proof.signature);
+            _recoverSigner(_eip191SignedHash(proof.encodedBlock), proof.signature);
         if (retrievedAddress != dispute.input.disputer || !isValid) return _invalid();
 
         return _valid(dispute.input.disputer);
@@ -409,11 +409,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (!_isSnapshotLinkedToBlock(thresholdBlock, proof.thresholdStateSnapshot)) return _invalid();
 
         //check threshold
-        address[] memory thresholdParticipants = UtilityFacet(utilityFacetAddress)
-            .concatAddressArraysNoDuplicates(
-                proof.latestStateSnapshot.snapshotData.participants,
-                proof.thresholdStateSnapshot.snapshotData.participants
-            );
+        address[] memory thresholdParticipants = _concatAddressArraysNoDuplicates(
+            proof.latestStateSnapshot.snapshotData.participants, proof.thresholdStateSnapshot.snapshotData.participants
+        );
         bytes[] memory signatures = UtilityFacet(utilityFacetAddress)
             .insertBytesInByteArray(signedBlock.signature, proof.thresholdBlock.signatures);
         (bool isValid,) =
@@ -493,10 +491,10 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             // ****** check has forfeit right to extra time
             bool hasForfeitedRightToExtraTime = false;
             if (dispute.input.timeout.participantSignatureOnPreviousBlock.length > 0) {
-                (address signerAddress, bool isValid) = UtilityFacet(utilityFacetAddress)
-                    .retrieveSignerAddress(
-                        latestSignedBlock.encodedBlock, dispute.input.timeout.participantSignatureOnPreviousBlock
-                    );
+                (address signerAddress, bool isValid) = _recoverSigner(
+                    _eip191SignedHash(latestSignedBlock.encodedBlock),
+                    dispute.input.timeout.participantSignatureOnPreviousBlock
+                );
                 if (signerAddress == dispute.input.timeout.participant && isValid) hasForfeitedRightToExtraTime = true;
             }
             if (!hasForfeitedRightToExtraTime) {
@@ -561,7 +559,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
 
         // Check the posted block is signed by its author
         (address signer, bool signatureValid) =
-            UtilityFacet(utilityFacetAddress).retrieveSignerAddress(postedBlock.encodedBlock, postedBlock.signature);
+            _recoverSigner(_eip191SignedHash(postedBlock.encodedBlock), postedBlock.signature);
         if (!signatureValid || signer != _getBlockAuthor(_block)) return false;
 
         // Check block calldata posted
@@ -781,15 +779,14 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         bytes32 channelId = dispute.input.channelId;
         // the chain set cannot move while a proof can land: adoption targets only the latest undisputed fork, a
         // disputed fork advances only by reduction, and joins and top-ups are refused on a disputed fork
-        address[] memory participants = UtilityFacet(utilityFacetAddress)
-            .concatAddressArraysNoDuplicates(
-                _getSnapshotParticipants(channelId),
-                _derivePendingParticipantsFromInboundHash(
-                    channelId,
-                    dispute.input.latestInboundMessageBlockHash,
-                    stateSnapshots[channelId].snapshotData.latestInboundMessageBlockHash
-                )
-            );
+        address[] memory participants = _concatAddressArraysNoDuplicates(
+            _getSnapshotParticipants(channelId),
+            _derivePendingParticipantsFromInboundHash(
+                channelId,
+                dispute.input.latestInboundMessageBlockHash,
+                stateSnapshots[channelId].snapshotData.latestInboundMessageBlockHash
+            )
+        );
         // the disputer picks the slashes; over-listing is provable by DisputeOnChainSlashesNotSubset
         return UtilityFacet(utilityFacetAddress).subtractAddressArrays(participants, dispute.input.onChainSlashes);
     }

@@ -464,6 +464,7 @@ describe("parallel forge task discovery", function () {
         expect(tasks.map((task) => task.fullTitle)).to.have.members([
             "AStateMachineStipendTest",
             "DepartedTimeoutCalldataPostedTest",
+            "DecodeOutOfGasVerdictTest",
             "DisputeConflictsWithFinalStateTest",
             "DisputeFinalPointRegressionTest",
             "DisputeFraudProofFacetPayloadsTest",
@@ -494,7 +495,7 @@ describe("parallel forge task discovery", function () {
             "TimeoutSupersededByFinalStateTest",
             "UtilityFacetTest"
         ]);
-        expect(tasks).to.have.lengthOf(31);
+        expect(tasks).to.have.lengthOf(32);
     });
 
     it("includes a test contract declared in a .test.sol file", function () {

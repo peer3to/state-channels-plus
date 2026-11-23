@@ -117,7 +117,9 @@ The trusted start determines the checked region; peers starting at different fin
 not inspect or reject the same old history. Finality evidence is distinct from application-state
 validity. No admission cap on milestone length or walk gas is selected here. Decodability within
 the per-length budget holds only while that budget bounds the decode cost of every canonical
-encoding on the target compiler and EVM.
+encoding on the target compiler and EVM. The budget is calibrated on forge's gas schedule and
+assumes the parachain meters the in-frame decode the same; its proof-size charge is per
+transaction, not per call frame.
 
 ## Security considerations
 
@@ -1339,11 +1341,11 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-7-70emat.t5.p13"></a>`REQ-SP-7-70EMAT.T5.P13` — A malformed block whose length field runs past its bytes is judged undecodable without a revert at bounded gas.
 
-<a id="req-sp-7-70emat.t5.p14"></a>`REQ-SP-7-70EMAT.T5.P14` — An alias-offset block in the anchor run is judged undecodable within its budget, and a pointer challenge at it kills the dispute at bounded gas.
+<a id="req-sp-7-70emat.t5.p14"></a>`REQ-SP-7-70EMAT.T5.P14` — A pointer challenge at an alias-offset block in the anchor run kills the dispute at bounded gas.
 
 <a id="req-sp-7-70emat.t5.p15"></a>`REQ-SP-7-70EMAT.T5.P15` — A canonical block of every calibrated worst-case shape decodes within its budget.
 
-<a id="req-sp-7-70emat.t5.p16"></a>`REQ-SP-7-70EMAT.T5.P16` — End to end, an auditor's under-funded kill is mined and reverts in the decode guard with no verdict, an auditor's kill lands, the submitter is slashed and no auditor is.
+<a id="req-sp-7-70emat.t5.p16"></a>`REQ-SP-7-70EMAT.T5.P16` — End to end, an auditor's under-funded kill is mined and reverts with no verdict (in the decode guard on Hardhat; on the parachain it may instead run out of gas under the transaction's proof-size floor), an auditor's kill lands, the submitter is slashed and no auditor is.
 
 <a id="req-sp-7-70emat.t5.p17"></a>`REQ-SP-7-70EMAT.T5.P17` — A pointer challenge at a malformed block whose length field runs past its bytes kills the dispute at bounded gas.
 
@@ -1354,6 +1356,12 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 <a id="req-sp-7-70emat.t5.p20"></a>`REQ-SP-7-70EMAT.T5.P20` — An under-funded applied invalid-timestamp proof whose predecessor authenticity check decodes a heavy block reverts or kills, never slashes the challenger.
 
 <a id="req-sp-7-70emat.t5.p21"></a>`REQ-SP-7-70EMAT.T5.P21` — An under-funded true pointer challenge whose run's heavy first block gives the checked run start reverts with no verdict, never slashes the challenger.
+
+<a id="req-sp-7-70emat.t5.p22"></a>`REQ-SP-7-70EMAT.T5.P22` — An under-funded false pointer challenge whose latest-state check decodes a heavy latest block reverts in the decode guard or keeps the dispute and slashes the challenger, never kills the dispute.
+
+<a id="req-sp-7-70emat.t5.p23"></a>`REQ-SP-7-70EMAT.T5.P23` — An under-funded false block-structure challenge at a heavy honest block reverts in the decode guard or keeps the dispute and slashes the challenger, never kills the dispute.
+
+<a id="req-sp-7-70emat.t5.p24"></a>`REQ-SP-7-70EMAT.T5.P24` — An alias-offset block is judged undecodable within its decode budget plus a bounded allowance.
 
 #### <a id="req-sp-10-jmvhtb.t7"></a>`REQ-SP-10-JMVHTB.T7`
 

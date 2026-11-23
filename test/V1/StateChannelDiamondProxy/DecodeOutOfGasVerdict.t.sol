@@ -42,6 +42,21 @@ contract DecodeOutOfGasVerdictTest is StateProofStaging {
         _assertPointerGasDecidesNothing(run, anchor, 2, false);
     }
 
+    /// an honest dispute whose latest block 8 is heavy: every challenge first decodes it in the latest-state check, so
+    /// a false challenge at block 6 must never kill the dispute
+    function test_underfundedFalseChallengeAtAHeavyHonestLatestBlockIsNoVerdict() public {
+        (MilestoneProof memory run, StateSnapshot memory anchor) = _heavyRun(3);
+        _assertPointerGasDecidesNothing(run, anchor, 1, false);
+    }
+
+    /// an honest dispute whose block 7 is heavy: a false structure challenge at block 7 must never kill it
+    function test_underfundedFalseBlockStructureChallengeAtAHeavyHonestBlockIsNoVerdict() public {
+        (MilestoneProof memory run,) = _heavyRun(2);
+        _assertGasDecidesNothing(
+            _dispute(_one(run)), DisputeFraudProofType.DisputeInvalidBlockStructure, _structureProof(2), false
+        );
+    }
+
     /// a dishonest dispute: the last run's first block 5 is heavy, block 7 does not link to its predecessor. The
     /// structure challenge at block 7 is true; an out-of-gas decode of block 5 must not read as "not eligible", which
     /// would slash the honest challenger.
@@ -123,8 +138,8 @@ contract DecodeOutOfGasVerdictTest is StateProofStaging {
         );
     }
 
-    /// `proof` reaches the verdict `killed` with full gas; with any less it reverts or reaches the same verdict. A true
-    /// challenge's sweep must hit the decode guard at least once, so its reverts are not all the frame running dry.
+    /// `proof` reaches the verdict `killed` with full gas; with any less it reverts or reaches the same verdict. Every
+    /// sweep must hit the decode guard at least once, so its reverts are not all the frame running dry.
     function _assertGasDecidesNothing(
         Dispute memory dispute,
         DisputeFraudProofType proofType,
@@ -160,7 +175,7 @@ contract DecodeOutOfGasVerdictTest is StateProofStaging {
             }
             vm.revertToState(state);
         }
-        if (killed) assertGt(guardReverts, 0, "the sweep crosses the decode guard");
+        assertGt(guardReverts, 0, "the sweep crosses the decode guard");
     }
 
     /// B sends `data` with exactly `gasLimit`; only the revert selector is copied (into scratch space), so the probes

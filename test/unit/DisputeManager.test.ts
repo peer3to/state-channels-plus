@@ -3285,13 +3285,17 @@ describe("Unit: DisputeManager", function () {
             expect(passedPreflights).to.equal(1);
             expect(applies.length).to.equal(1);
             expect(applies[0].gasLimit).to.equal(String(replayGas));
-            // the resend keeps the replay gas: both sends revert short of the replay
+            // the resend keeps the replay gas: both sends revert short of the replay, refused by
+            // the stipend check, or on the parachain out of gas under its proof-size floor
             expect(sends.succeeded).to.equal(0);
             expect(sends.reverted).to.equal(2);
-            expect(revertErrors).to.deep.equal([
-                "ErrorInsufficientGasForStateTransition",
-                "ErrorInsufficientGasForStateTransition"
-            ]);
+            expect(revertErrors).to.have.length(2);
+            const allowedErrors =
+                process.env.PARACHAIN === "1"
+                    ? ["ErrorInsufficientGasForStateTransition", "outOfGas"]
+                    : ["ErrorInsufficientGasForStateTransition"];
+            for (const error of revertErrors)
+                expect(allowedErrors).to.include(error);
             expect(rejected).to.not.equal("");
             expect(committedAfterKill).to.equal(true);
             expect(slashed).to.not.include(disputer);

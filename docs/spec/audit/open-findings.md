@@ -3048,6 +3048,9 @@ every counter reverts at the per-transaction cap and the dishonest dispute stand
 | 389 KB |        10.79M |     18.91M | reverts; lands only at 60M |
 
 The calibrated canonical worst case uses 78% of its budget (solc 0.8.34, via-IR, 100 runs).
+Residual: the budget is calibrated on forge's gas schedule and assumes the parachain meters the
+in-frame decode the same (its proof-size charge is per transaction, not per call frame); no
+parachain measurement of the in-frame decode backs this yet.
 
 **Decision (implementer, under Luke's delegation, 2026-11-23; pending his review):** keep the
 per-length decode window and add no block-length cap in this change. A cap is the size-bound decision

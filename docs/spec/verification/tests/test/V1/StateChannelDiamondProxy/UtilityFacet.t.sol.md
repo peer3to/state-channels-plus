@@ -24,8 +24,9 @@ and `tryDecodeBlock` reports canonical bytes true with exact fields and every ot
 with the default block. The decode budget is covered too: a heavy canonical block sent with too
 little gas to fund its budget reverts `ErrorBlockDecodeOutOfGas` and decodes in full with enough
 gas; a block whose `messageBlocks` length runs past its bytes and a 37 KB block whose 1,000 head
-offsets alias one message block both answer false within bounded gas; and six canonical shapes at
-three sizes each decode with 25% to spare inside `_decodeGasBudget`. The obsolete trailing-word-acceptance permutation is deleted and its number
+offsets alias one message block both answer false within bounded gas; and six canonical shapes,
+each at every power of two and the 1.5x midpoints up to its largest size, decode with 25% to spare
+inside `_decodeGasBudget` (the highest measured use is 78% of the budget). The obsolete trailing-word-acceptance permutation is deleted and its number
 left gapped, so the gap at `P11` (between `P10` and `P12`) is intentional rather than a missing case. Of the planned
 permutations `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P1`–`P8`, the decode pair is now covered (`P4` valid,
 `P7` invalid); the threshold/predicate permutations stay unassigned.
@@ -47,5 +48,5 @@ permutations `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P1`–`P8`, the decode pair is no
 - `test_tryDecodeBlock_rejectsNonCanonical`: UNIT-TEST-UTILITY-FACET-1-ER4P0V.P4, UNIT-TEST-UTILITY-FACET-1-ER4P0V.P7, UNIT-TEST-UTILITY-FACET-1-ER4P0V.P16
 - `test_tryDecodeBlock_outOfGasRevertsInsteadOfUndecodable`: UNIT-TEST-UTILITY-FACET-1-ER4P0V.P17
 - `test_tryDecodeBlock_hugeLengthMalformedBlockIsUndecodable`: REQ-SP-7-70EMAT.T5.P13, UNIT-TEST-UTILITY-FACET-1-ER4P0V.P18
-- `test_tryDecodeBlock_aliasOffsetBlockIsUndecodableWithinItsBudget`: UNIT-TEST-UTILITY-FACET-1-ER4P0V.P19
+- `test_tryDecodeBlock_aliasOffsetBlockIsUndecodableWithinItsBudget`: REQ-SP-7-70EMAT.T5.P24, UNIT-TEST-UTILITY-FACET-1-ER4P0V.P19
 - `test_decodeGasBudget_coversEveryCanonicalWorstCaseShape`: REQ-SP-7-70EMAT.T5.P15, UNIT-TEST-UTILITY-FACET-1-ER4P0V.P20

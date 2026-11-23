@@ -296,27 +296,26 @@ contract UtilityFacetTest is Test {
         assertLt(used, _decodeGasBudget(aliased.length) + 100_000, "judged within the budget of its length");
     }
 
-    /// For each canonical shape with the highest decode cost per byte, at a small, a middle and the largest size
-    /// whose decode stays under the 17,916,000 per-transaction cap: the measured decode plus 25% fits its budget.
+    /// For each canonical shape with the highest decode cost per byte, at every power of two and the midpoint 1.5x
+    /// between them up to the largest size whose decode stays under the 17,916,000 per-transaction cap: the measured
+    /// decode plus 25% fits its budget.
     function test_decodeGasBudget_coversEveryCanonicalWorstCaseShape() public {
-        // shape, then small, middle and largest count
-        uint256[4][6] memory sizes = [
-            [uint256(0), 64, 2048, 16384], // one large body: words of payload
-            [uint256(1), 8, 128, 1900], // empty message blocks
-            [uint256(2), 4, 256, 2048], // empty messages in one message block
-            [uint256(3), 1, 16, 180], // message blocks of 10 empty messages (the repro's heavy block)
-            [uint256(4), 3, 192, 1536], // messages with a one-byte payload and balance data
-            [uint256(5), 2, 64, 1024] // message blocks of one empty message
+        // shape, then largest count
+        uint256[2][6] memory sizes = [
+            [uint256(0), 16384], // one large body: words of payload
+            [uint256(1), 1900], // empty message blocks
+            [uint256(2), 2048], // empty messages in one message block
+            [uint256(3), 180], // message blocks of 10 empty messages (the repro's heavy block)
+            [uint256(4), 1536], // messages with a one-byte payload and balance data
+            [uint256(5), 1024] // message blocks of one empty message
         ];
         for (uint256 i = 0; i < sizes.length; i++) {
-            for (uint256 j = 1; j < 4; j++) {
-                (uint256 used, uint256 length) = this.measureDecode(sizes[i][0], sizes[i][j]);
-                assertLe(
-                    used * 125 / 100,
-                    _decodeGasBudget(length),
-                    string.concat("shape ", vm.toString(sizes[i][0]), " count ", vm.toString(sizes[i][j]))
-                );
+            uint256 largest = sizes[i][1];
+            for (uint256 count = 1; count < largest; count *= 2) {
+                _assertBudgetCovers(sizes[i][0], count);
+                if (count > 1 && count * 3 / 2 < largest) _assertBudgetCovers(sizes[i][0], count * 3 / 2);
             }
+            _assertBudgetCovers(sizes[i][0], largest);
         }
     }
 
@@ -336,6 +335,15 @@ contract UtilityFacetTest is Test {
         }
         used = before - gasleft();
         assertTrue(ok, "a canonical block decodes");
+    }
+
+    function _assertBudgetCovers(uint256 shape, uint256 count) private view {
+        (uint256 used, uint256 length) = this.measureDecode(shape, count);
+        assertLe(
+            used * 125 / 100,
+            _decodeGasBudget(length),
+            string.concat("shape ", vm.toString(shape), " count ", vm.toString(count))
+        );
     }
 
     function _shape(uint256 shape, uint256 count) internal pure returns (Block memory b) {

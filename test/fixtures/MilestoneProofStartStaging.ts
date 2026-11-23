@@ -470,10 +470,12 @@ export function otherPeers(
 }
 
 /**
- * `source` rebuilt as a heavy block linked to `previous`: 25 message blocks of
- * 10 empty messages each, whose on-chain decode costs about 1M gas while its
- * off-chain decode stays near 120 ms. Re-signed by its author, without
- * confirmation signatures.
+ * `source` rebuilt as a heavy block linked to `previous`: 8 message blocks of
+ * 10 empty messages each (26 KB), whose on-chain decode leaves a 0.25M gas
+ * guard band on Hardhat (on the parachain an under-funded send runs out of gas
+ * under the proof-size floor first) while its off-chain decode stays near
+ * 25 ms. Re-signed by its
+ * author, without confirmation signatures.
  */
 export async function heavyConfirmation(
     h: MathPeerTestHarness,
@@ -495,7 +497,7 @@ export async function heavyConfirmation(
         {
             ...block,
             previousBlockHash: hash(previous.signedBlock.encodedBlock),
-            messageBlocks: Array.from({ length: 25 }, () => ({
+            messageBlocks: Array.from({ length: 8 }, () => ({
                 previousBlockHash: hash("0x"),
                 blockHeight: 0n,
                 messages: Array.from({ length: 10 }, () => emptyMessage),

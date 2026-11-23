@@ -7,6 +7,8 @@ import "../UtilityFacetInterface.sol";
 
 // measured for solc 0.8.34 via-IR, 100 runs; recalibrate with `test_decodeGasBudget_coversEveryCanonicalWorstCaseShape`
 // on any compiler or optimizer change
+// calibrated on forge's gas schedule: assumes the parachain meters the in-frame decode the same (its proof-size
+// charge is per transaction, not per call frame)
 // `_decodeGasBudget` terms, the measured worst canonical shape plus 25%: fixed cost of the frame and header
 uint256 constant DECODE_GAS_BASE = 15_000;
 // decode, re-encode and copy work per word

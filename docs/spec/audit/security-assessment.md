@@ -642,7 +642,8 @@ honest or dishonest block as "undecodable"; an out-of-gas decode read as "undeco
 pointer challenge sent with too little gas return "no fault" and slash the challenger. The budget also keeps a non-canonical block whose head offsets
 alias one element judged undecodable at bounded cost (a 37 KB alias block needs 177M gas to decode in
 full). Forge cases in `DecodeOutOfGasVerdict.t.sol`, `UtilityFacet.t.sol` and
-`InvalidStateProofStep.t.sol` and the E36 under-funded kill E2E cover it; the residual is
+`InvalidStateProofStep.t.sol` and the E36 under-funded kill E2E cover it (E36 covers the decode guard on Hardhat;
+on the parachain the under-funded send runs out of gas under the proof-size floor first); the residual is
 [`FIND-DECODE-2-CZ3FE5`](open-findings.md#find-decode-2-cz3fe5) (Byzantine-triggerable: a disputer's own block too large to judge at the per-transaction cap). The auditor also judges the run only after its
 replay proved the latest state, so a forged latest state is killed as an invalid state proof first.
 Forge cases in `DisputeInvalidOutboundRun.t.sol` (extra block above the latest head, overflowing
