@@ -1,15 +1,20 @@
+import Block from "@/models/Block";
+import StateSnapshot from "@/models/StateSnapshot";
 import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
 } from "@/types/sol-enums";
 import { Codec, hash, Type } from "@/utils";
 import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
+import { uploadSelfRemovalDispute } from "@test/fixtures/ChallengeBoundaryStaging";
 import {
+    forgeSideChainFinalProof,
     postJoinerBypassDispute,
     readDisputeKill,
     stageSeatedJoinerHistory
 } from "@test/fixtures/OmittedInboundJoinerStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import type { DisputeAuditingDataStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { expect } from "chai";
 
 // Alice and Bob post the chain anchor; Charlie joins,
@@ -104,6 +109,182 @@ describe("E2E: dispute validation / dispute final point regression", function ()
             final.finalizedSnapshot.snapshotData.latestInboundMessageBlockHash,
             "F is a final point of Charlie's history, past his JOIN"
         ).to.equal(joinHash);
+        await h.assert.dispute.slashedOnChainExactly([alice.address]);
+    });
+
+    it("the colluders' dispute omits its auditing data and lists seated Charlie in onChainSlashes, which drops him from the set that must sign its hop -> Charlie's DisputeOnChainSlashesNotSubset kills it on chain, and only its submitter is slashed", async function () {
+        const h = TestSession.getHarness();
+        const history = await stageSeatedJoinerHistory(h);
+        const alice = h.getPeer(history.aliceIndex);
+        const charlie = h.getPeer(history.charlieIndex);
+
+        const posted = await postJoinerBypassDispute(h, history, (dispute) => {
+            dispute.input.onChainSlashes = [charlie.address];
+            dispute.postedAuditingData = false;
+        });
+        expect(posted.dispute.postedAuditingData).to.equal(false);
+        expect(
+            await h.channelManager.isAuditingDataOmissionAllowed.staticCall(
+                posted.dispute
+            ),
+            "without Charlie, Alice and Bob alone make the hop final"
+        ).to.equal(true);
+        expect(
+            await h
+                .control(charlie)
+                .query.getStateSnapshotStructByHash(posted.hopSnapshot.hash)
+                .request(),
+            "Charlie never held the hop's snapshot"
+        ).to.equal(null);
+
+        await h.assert.storage.honestPeersStoredDisputeFraudProofWait({
+            disputeFraudProofType:
+                DisputeFraudProofType.DisputeOnChainSlashesNotSubset,
+            peerIndices: [charlie.index]
+        });
+        await h.event.waitForPeers("onDisputeKilled", [charlie.index], 1, {
+            mode: "atLeast"
+        });
+
+        const kill = await readDisputeKill(h, alice.address);
+        expect(kill.killer).to.equal(charlie.address);
+        expect(kill.appliedProofTypes).to.deep.equal([
+            DisputeFraudProofType.DisputeOnChainSlashesNotSubset
+        ]);
+        await h.assert.dispute.slashedOnChainExactly([alice.address]);
+    });
+
+    it("the colluders offer side-chain final points below seated Charlie's JOIN against his honest dispute -> the chain refuses both the regression and the conflict counter, the kill attempt slashes its sender, and Charlie's dispute stays committed", async function () {
+        const h = TestSession.getHarness();
+        const history = await stageSeatedJoinerHistory(h);
+        const alice = h.getPeer(history.aliceIndex);
+        const charlie = h.getPeer(history.charlieIndex);
+
+        let auditingData: DisputeAuditingDataStruct | undefined;
+        const dispute = await uploadSelfRemovalDispute(
+            h,
+            charlie.index,
+            async (_dispute, constructed) => {
+                auditingData = globalThis.structuredClone(constructed);
+            },
+            { markMalicious: false }
+        );
+        await h.assert.dispute.committedWait({
+            peersIndices: [charlie.index],
+            expectedCount: 1
+        });
+        if (!auditingData) throw new Error("Charlie's dispute was not built");
+        const lastMilestoneIndex =
+            dispute.input.stateProof.milestones.length - 1;
+        const latestFinalized = Block.fromBlockConfirmation(
+            dispute.input.stateProof.milestones[lastMilestoneIndex]!
+                .blockConfirmations[0]!
+        );
+        const latestFinalizedSnapshot = StateSnapshot.from(
+            auditingData.milestoneSnapshots.at(-1)!
+        );
+        expect(
+            latestFinalizedSnapshot.hash,
+            "G is the snapshot of the last milestone's first block"
+        ).to.equal(latestFinalized.stateSnapshotHash);
+        expect(
+            latestFinalizedSnapshot.latestInboundMessageBlockHash,
+            "G is past Charlie's JOIN"
+        ).to.equal(history.charlieFinal.latestInboundMessageBlockHash);
+        expect(
+            latestFinalized.height - 1,
+            "a side-chain height lies between the anchor and G"
+        ).to.be.greaterThan(history.anchor.blockHeight);
+
+        const below = await forgeSideChainFinalProof(h, history, {
+            height: latestFinalized.height - 1,
+            genesisStateSnapshotData: auditingData.genesisStateSnapshotData
+        });
+        const atG = await forgeSideChainFinalProof(h, history, {
+            height: latestFinalized.height,
+            genesisStateSnapshotData: auditingData.genesisStateSnapshotData
+        });
+        for (const side of [below, atG]) {
+            const walk = await h.channelManager.verifyMilestones.staticCall(
+                side.finalProof
+            );
+            expect(walk.valid, "the side-chain point is final").to.equal(true);
+            expect(StateSnapshot.from(walk.finalizedSnapshot).hash).to.equal(
+                side.finalSnapshot.hash
+            );
+            expect(
+                side.finalSnapshot.latestInboundMessageBlockHash,
+                "the side chain never consumed the JOIN"
+            ).to.equal(history.anchor.latestInboundMessageBlockHash);
+        }
+        const regression = {
+            finalProof: below.finalProof,
+            latestFinalizedSnapshot: latestFinalizedSnapshot.toStruct()
+        };
+        const conflict = {
+            finalProof: atG.finalProof,
+            milestoneIndex: lastMilestoneIndex,
+            blockIndex: 0,
+            latestFinalizedSnapshot: latestFinalizedSnapshot.toStruct()
+        };
+        expect(
+            await h.channelManager.isDisputeFinalPointRegression.staticCall(
+                dispute,
+                regression
+            ),
+            "the side-chain point's inbound is not above G's"
+        ).to.equal(false);
+        expect(
+            await h.channelManager.isDisputeConflictingWithFinalState.staticCall(
+                dispute,
+                conflict
+            ),
+            "the side-chain point's inbound is below G's"
+        ).to.equal(false);
+
+        h.contextApi.markMaliciousPeer({ maliciousPeerIndex: alice.index });
+        const tx =
+            await alice.p2pInstance.stateChannelManagerContract.applyDisputeFraudProofs(
+                [
+                    {
+                        proofType: toSolidityDisputeFraudProofType(
+                            DisputeFraudProofType.DisputeFinalPointRegression
+                        ),
+                        participant: charlie.address,
+                        dispute,
+                        encodedProof: Codec.encode(
+                            regression,
+                            DisputeFraudProofType.DisputeFinalPointRegression
+                        )
+                    },
+                    {
+                        proofType: toSolidityDisputeFraudProofType(
+                            DisputeFraudProofType.DisputeConflictsWithFinalState
+                        ),
+                        participant: charlie.address,
+                        dispute,
+                        encodedProof: Codec.encode(
+                            conflict,
+                            DisputeFraudProofType.DisputeConflictsWithFinalState
+                        )
+                    }
+                ]
+            );
+        await tx.wait();
+
+        const kills = await h.channelManager.queryFilter(
+            h.channelManager.filters.DisputeKilled(h.channelId)
+        );
+        expect(
+            kills.filter((log) => log.args.disputer === charlie.address),
+            "no kill of Charlie's dispute lands"
+        ).to.have.length(0);
+        expect(
+            await h.channelManager.getWindowCommitments(
+                h.channelId,
+                dispute.input.forkId
+            )
+        ).to.include(hash(Codec.encode(dispute, Type.Dispute)));
         await h.assert.dispute.slashedOnChainExactly([alice.address]);
     });
 });
