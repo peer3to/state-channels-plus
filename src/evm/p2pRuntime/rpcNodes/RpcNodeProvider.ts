@@ -9,6 +9,7 @@ import {
     type JsonRpcPayload,
     type JsonRpcResult,
     makeError,
+    type Network,
     WebSocketProvider
 } from "ethers";
 
@@ -99,6 +100,8 @@ export type NodeNotificationListener = (params: unknown) => void;
 /** One open socket and the end of its life. */
 type NodeConnection = {
     socket: NodeSocket;
+    /** The chain the socket's own network detection found it serving. */
+    network: Network;
     ended: Promise<typeof SOCKET_ENDED>;
     hasEnded: boolean;
     /** Ends the connection, e.g. after a failed heartbeat. */
@@ -348,6 +351,8 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
     private readonly connectionWaiters = new Set<() => void>();
     private readonly expectedChain: ExpectedChain;
     private connection?: NodeConnection;
+    /** The chain the first connection served; every later one serves it too. */
+    private network?: Network;
     private failedAttempts = 0;
     private lastReconnectWarningAt?: number;
     private reconnectTimer?: ReturnType<typeof setTimeout>;
@@ -437,6 +442,16 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
         // batchMaxCount is 1, so the request queue never batches
         const requests = Array.isArray(payload) ? payload : [payload];
         return Promise.all(requests.map((request) => this.forward(request)));
+    }
+
+    // Overrides JsonRpcApiProvider._detectNetwork: each connection attempt
+    // already asked the node for its chain id and checked it, so that network
+    // is taken instead of sending eth_chainId on the socket again. Before the
+    // first connection it waits for one, as a request would.
+    override async _detectNetwork(): Promise<Network> {
+        return (
+            this.network ?? (await this.awaitConnection("eth_chainId")).network
+        );
     }
 
     // Overrides JsonRpcApiProvider.destroy: also stops reconnecting, closes
@@ -544,7 +559,8 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
                 return undefined;
             }
             this.expectedChain.chainId = network.chainId;
-            this.attach(socket, socketEnd);
+            this.network ??= network;
+            this.attach(socket, socketEnd, network);
             return undefined;
         } catch (error) {
             await socket?.destroy();
@@ -580,7 +596,11 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
         }
     }
 
-    private attach(socket: NodeSocket, socketEnd: Promise<Error>) {
+    private attach(
+        socket: NodeSocket,
+        socketEnd: Promise<Error>,
+        network: Network
+    ) {
         let end!: (reason: Error) => void;
         const endReason = new Promise<Error>((resolve) => {
             end = resolve;
@@ -588,6 +608,7 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
         void socketEnd.then(end);
         const connection: NodeConnection = {
             socket,
+            network,
             ended: endReason.then(() => SOCKET_ENDED),
             hasEnded: false,
             end,

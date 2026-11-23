@@ -11,6 +11,28 @@ scores are what they are** and which lever moves each one.
 
 The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
 
+## Startup chain requests: chain id once per connection, one latest-block read per clock sync — 2026-11-23
+
+The node and multi-node providers take the network a node's socket detected instead of asking for
+the chain id again, and the startup clock log uses the block the clock synchronization read. Two
+declarations in [RpcNodes.test.ts](../verification/tests/test/evm/RpcNodes.test.ts.md) count
+`eth_chainId` at the proxies
+([`UNIT-TEST-RPC-NODE-1-VTXH1M.P14`](../implementation/source/src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md#unit-test-rpc-node-1-vtxh1m),
+[`UNIT-TEST-MULTI-RPC-1-SVGGZ5.P34`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5));
+one in [Clock.test.ts](../verification/tests/test/Clock.test.ts.md) checks the kept block
+([`UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0.P6`](../implementation/source/src/Clock.ts.md#unit-test-clock-average-1-6pdvr0));
+one in [E2E-MultiRpcNodes.test.ts](../verification/tests/test/e2e/E2E-MultiRpcNodes.test.ts.md)
+counts a proxied peer's startup requests
+([`UNIT-TEST-P2P-RUNTIME-HOST-36-Z741VG`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-36-z741vg)
+P1, P2). Six faults (each provider's override removed, the node's network not kept while it is
+down, the startup log reading the block again, the sync keeping another block) each failed a
+declaration. On the distributed runner RpcNodes passed 58 of 58, Clock 12 of 12, E2E-MultiRpcNodes
+28 of 28, StateManagerAbort 12 of 12 and DisputeManager 111 of 112; the one is "a capped kill whose
+preflight at its limit passes…", which fails the same way on `dev` under Hardhat. The light client
+suites passed 105 of 105 locally (run-141). The replay requirement stays read by the dispute manager
+on its first replaying send, as [`UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9`](../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-6-yrbgq9) P10-P13 specify (engineer's
+decision, 2026-11-23).
+
 ## Light client reads share proofs and best-block lookups — 2026-11-23
 
 Reads at one block now ask the endpoint once for each value, and reads made at once while nothing is

@@ -1,6 +1,8 @@
 import { getReconnectDelayMs } from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import {
     assertBlockEventsComeFromNodeSockets,
+    assertChainIdAskedOncePerConnection,
+    assertChainIdAskedOnlyByNodeSockets,
     assertDestroyAfterLogSubscriptionStaysQuiet,
     assertDestroyDuringPendingAttemptStaysQuiet,
     assertFailedLogPageAnsweredForRetry,
@@ -101,6 +103,10 @@ describe("RpcNodeProvider", () => {
 
     it("refuses a node that serves another chain than the first connected node", async () => {
         await assertNodeOnAnotherChainRefused();
+    });
+
+    it("asks its node for the chain id once per connection and knows it while the node is down", async () => {
+        await assertChainIdAskedOncePerConnection();
     });
 });
 
@@ -279,6 +285,10 @@ describe("MultiRpcProvider", () => {
 
     it("starts the runtime chain context without waiting for a silent node", async () => {
         await assertStartupDoesNotWaitForASilentNode();
+    });
+
+    it("asks no node for the chain id beyond each node socket's own detection", async () => {
+        await assertChainIdAskedOnlyByNodeSockets();
     });
 });
 

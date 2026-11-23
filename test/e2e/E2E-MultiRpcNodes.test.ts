@@ -21,6 +21,26 @@ const IDLE_CHANNEL_FALLBACK_TIME = 60;
  * second chain and without touching the node itself.
  */
 describe("E2E: Multiple RPC nodes", function () {
+    it("asks its RPC node at startup for the chain id once and for the latest block only to sync the clock", async function () {
+        const h = TestSession.getHarness();
+        const proxied = 2;
+        await h.lifecycle.start(3, 0, {
+            rpcNodeProxiesByPeer: { [proxied]: 1 }
+        });
+        const [proxy] = h.getRpcNodeProxies(proxied);
+        const blockTags = proxy.forwardedRequests
+            .filter(({ method }) => method === "eth_getBlockByNumber")
+            .map(({ params }) => (params as unknown[])[0]);
+        const latestReads = blockTags.filter((tag) => tag === "latest");
+
+        // each clock sync pass reads the latest block and one earlier block by number
+        expect(latestReads).to.have.length.greaterThan(0);
+        expect(latestReads.length).to.equal(
+            blockTags.length - latestReads.length
+        );
+        expect(proxy.forwardedCount("eth_chainId")).to.equal(1);
+    });
+
     it("delivers an event emitted while the peer's only RPC node was cut through the reconnect catch-up", async function () {
         const h = TestSession.getHarness();
         const proxied = 2;

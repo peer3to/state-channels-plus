@@ -25,6 +25,9 @@ apart, or 15 blocks whose first four intervals are 10 s and last ten 2 s; the or
 `getBlockSpanMs(3)` on the 4-block chain (6000 ms) and on the chain one block past genesis
 (3000 ms, one second per unmeasured block).
 
+One more case on the 4-block chain checks that the block the synchronization read is kept: its
+timestamp and number equal the chain's latest block.
+
 ## Tests
 
 - `initializes idempotently when real-provider calls overlap`: UNIT-TEST-CLOCK-1-6K546K.P1
@@ -34,6 +37,7 @@ apart, or 15 blocks whose first four intervals are 10 s and last ten 2 s; the or
 - `measures no block time on a chain one block past genesis`: UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0.P2
 - `measures an older chain's block time over its last ten blocks`: UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0.P3
 - `spans blocks at the measured block time`: UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0.P4
+- `keeps the latest block its synchronization read`: UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0.P6
 - `spans blocks at one second each before a block time is measured`: UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0.P5
 - `settles overlapping different-provider initializations on one live owner`: UNIT-TEST-CLOCK-1-6K546K.P5
 - `destroys a released provider once a replacement takes over`: UNIT-TEST-CLOCK-RELEASE-1-B836QF.P1

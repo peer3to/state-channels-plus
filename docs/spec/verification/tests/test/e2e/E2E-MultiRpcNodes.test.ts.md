@@ -65,9 +65,13 @@ finds nothing left to remove and resumes first. It keeps the listener's key and 
 both node sockets, the event sync service's channel is its channel, and the older select subscribes
 nothing.
 
+A startup case counts what the proxied peer asked its node while starting: one `eth_chainId`, and
+as many latest-block reads as earlier blocks read by number, one pair per clock synchronization pass.
+
 ## Tests
 
 - `delivers an event emitted while the peer's only RPC node was cut through the reconnect catch-up`: REQ-CHAINOBS-3-N137ZP.T1.P5, REQ-CHAINOBS-3-N137ZP.T1.P2
+- `asks its RPC node at startup for the chain id once and for the latest block only to sync the clock`: UNIT-TEST-P2P-RUNTIME-HOST-36-Z741VG.P1, UNIT-TEST-P2P-RUNTIME-HOST-36-Z741VG.P2
 - `delivers every event exactly once and keeps sending through the second RPC node when the first is cut`: INV-CHAINOBS-1-ASVKC1.T1.P7, REQ-CHAINOBS-2-2NCSQ3.T1.P6
 - `delivers the event missed while cut when a newer event arrives during the catch-up read`: REQ-CHAINOBS-3-N137ZP.T1.P7, UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P6, REQ-CHAINOBS-3-N137ZP.T1.P28, UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P16
 - `retries a failed catch-up read while the node stays connected`: REQ-CHAINOBS-3-N137ZP.T1.P8, UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P7

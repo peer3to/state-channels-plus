@@ -1382,6 +1382,48 @@ export async function assertHeartbeatErrorAnswerKeepsNode(): Promise<void> {
     );
 }
 
+export async function assertChainIdAskedOncePerConnection(): Promise<void> {
+    await withProxiedNodes(
+        1,
+        async ({ node, proxies: [proxy], nodes: [rpcNode] }) => {
+            const { chainId } = await node.getNetwork();
+            expect((await rpcNode.getNetwork()).chainId).to.equal(chainId);
+            expect(await rpcNode.getBlockNumber()).to.be.a("number");
+            expect(proxy.forwardedCount("eth_chainId")).to.equal(1);
+
+            await cutAndWaitForDrop(proxy, rpcNode);
+            // the network stays known while the node is down
+            const whileCut = await Promise.race([
+                rpcNode.getNetwork(),
+                sleep(ABSENCE_WINDOW_MS).then(() => undefined)
+            ]);
+            expect(whileCut?.chainId).to.equal(chainId);
+            proxy.restore();
+            await waitFor(() => rpcNode.isConnected);
+            expect(await rpcNode.getBlockNumber()).to.be.a("number");
+
+            expect(proxy.forwardedCount("eth_chainId")).to.equal(2);
+        }
+    );
+}
+
+export async function assertChainIdAskedOnlyByNodeSockets(): Promise<void> {
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        try {
+            const { chainId } = await node.getNetwork();
+            expect((await provider.getNetwork()).chainId).to.equal(chainId);
+            expect(await provider.getBlockNumber()).to.be.a("number");
+
+            expect(
+                proxies.map((proxy) => proxy.forwardedCount("eth_chainId"))
+            ).to.deep.equal([1, 1]);
+        } finally {
+            provider.destroy();
+        }
+    });
+}
+
 export async function assertFirstNodeErrorAnswerIsFinal(): Promise<void> {
     await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
         const provider = new MultiRpcProvider(nodes, logger);

@@ -6,7 +6,7 @@ import { localDiamondAbi } from "./localDiamond";
 import type { Logger, LogLevel } from "./logging/Logger";
 import { difference } from "./set";
 import type { DoubleSignatureReport } from "@/cache";
-import Clock from "@/Clock";
+import Clock, { type BlockchainTime } from "@/Clock";
 import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
 import { Block, StateSnapshot, StateProof } from "@/models";
 import type PeerProfile from "@/PeerProfile";
@@ -497,14 +497,17 @@ export class LoggerUtils {
         });
     }
 
+    /** Logs the clocks against `blockchainTime`, or against the latest block read now. */
     static async logTimestamp(
         logger: Logger,
         level: LogLevel = "info",
-        timeConfig?: TimeConfig
+        timeConfig?: TimeConfig,
+        blockchainTime?: BlockchainTime
     ): Promise<void> {
         const virtualClockBefore = Clock.getTimeInSeconds();
         const localClockBefore = Math.floor(new Date().getTime() / 1000);
-        const { timestamp, blockNumber } = await Clock.getBlockchainTime();
+        const { timestamp, blockNumber } =
+            blockchainTime ?? (await Clock.getBlockchainTime());
         const virtualClockAfter = Clock.getTimeInSeconds();
         const localClockAfter = Math.floor(new Date().getTime() / 1000);
         const network = await Clock.getBlockchainNetwork();

@@ -52,3 +52,4 @@ Request routing and failover
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P31` — a call both blocks revert rejects as `CALL_EXCEPTION` with the pending block's revert
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P33` — a node that answers the pending estimate with its internal error and no revert data gives no verdict: the estimate rejects with the latest block's revert and its data
 - [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P32` — an estimate carrying the sender's managed nonce while its own transaction is unsealed falls back to the latest block
+- [x] `UNIT-TEST-MULTI-RPC-1-SVGGZ5.P34` — the network is the serving node's: no node is asked for the chain id beyond its socket's own detection

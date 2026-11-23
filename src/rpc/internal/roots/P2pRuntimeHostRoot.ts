@@ -509,7 +509,13 @@ export class P2pRuntimeHostRoot<
             throw new Error(
                 `State transition replay requirement ${stateTransitionReplayGas} exceeds MAX_TRANSACTION_GAS ${payload.config.MAX_TRANSACTION_GAS}`
             );
-        await LoggerUtils.logTimestamp(logger, "info", timeConfig);
+        // against the block the clock sync just read, not a second read of it
+        await LoggerUtils.logTimestamp(
+            logger,
+            "info",
+            timeConfig,
+            Clock.getSyncedBlockchainTime()
+        );
         steps.mark("clockAndChannelManagerReads");
         return localEvmCallGasLimit(
             disputeExecutionGasLimit,

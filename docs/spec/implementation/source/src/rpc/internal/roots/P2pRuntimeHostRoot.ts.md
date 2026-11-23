@@ -95,6 +95,16 @@ Replay requirement within the per-transaction gas cap
 - [x] `UNIT-TEST-P2P-RUNTIME-HOST-35-YY8P9R.P1` — a replay requirement one gas above `MAX_TRANSACTION_GAS` fails host startup naming both figures and closes every runtime root it started
 - [x] `UNIT-TEST-P2P-RUNTIME-HOST-35-YY8P9R.P2` — a replay requirement equal to `MAX_TRANSACTION_GAS` starts the host
 
+## UNIT-TEST-P2P-RUNTIME-HOST-36-Z741VG
+
+Startup chain requests
+
+- Setup: Start a three-peer session with one peer behind a recording WebSocket proxy
+- Oracle: The proxy saw one `eth_chainId`, and one latest-block read per clock synchronization pass, each of which also reads one earlier block by number
+
+- [x] `UNIT-TEST-P2P-RUNTIME-HOST-36-Z741VG.P1` — the startup clock log uses the block the clock synchronization read and reads no latest block of its own
+- [x] `UNIT-TEST-P2P-RUNTIME-HOST-36-Z741VG.P2` — the chain id is asked once, by the node socket's own detection
+
 ## UNIT-TEST-P2P-RUNTIME-HOST-34-517JAX
 
 Exact local owner for the custom RPC
