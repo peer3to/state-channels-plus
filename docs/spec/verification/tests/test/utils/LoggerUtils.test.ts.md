@@ -23,6 +23,8 @@ the shapes peer-authored calldata can actually take — `"0x"`, a single byte, a
 four-byte selector — and requires each to come back as its own name with nothing thrown, since
 this helper runs on every block validation.
 
+Two tests cover dispute metadata: each state-proof block is reported by the hash and length of its bytes without a decode, undecodable bytes included, and `disputeHash` appears only when the caller passes it.
+
 One test calls `getBlockConfirmationStructMetadata` with block bytes that do not decode and asserts `undecodableBlock: true`, the original signature, and no block fields.
 
 ## Tests
@@ -37,6 +39,8 @@ One test calls `getBlockConfirmationStructMetadata` with block bytes that do not
 - `no decoded custom error yields no metadata`: none
 - `reports each message block's previousBlockHash`: none
 - `pairs the submitted snapshot head with the computed reduction target`: none
+- `names each state-proof block of a dispute by its bytes' hash and length, an undecodable one included`: UNIT-TEST-LOGGER-UTILS-35-JKBXPR.P1
+- `carries the dispute hash only when the caller passes it`: UNIT-TEST-LOGGER-UTILS-35-JKBXPR.P2
 - `formats known and unknown numeric enum members without changing strings`: UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P1
 - `logs objective time failure using captured time and previous timestamps`: UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P2
 - `omits previous timestamp fields for subjective time failures`: UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P3

@@ -326,12 +326,8 @@ export async function fraudProofSendOutcomes(
 }
 
 /**
- * The custom error each of a peer's reverted fraud-proof sends (a kill alone
- * or bundled with its own dispute) mined from `fromBlock` on reverts with: its calldata replayed by `eth_call`
- * at its mined gas limit against the state of the block before it (a read,
- * not a node mutation). A revert with no custom error is "outOfGas" when the
- * mined send used its whole gas limit and null otherwise; "replayPassed" when
- * the replay does not revert.
+ * custom error of each reverted fraud-proof send mined from `fromBlock`, by replay at its gas limit;
+ * no custom error -> "outOfGas" if it used its whole limit, else null; a passing replay -> "replayPassed"
  */
 export async function revertedFraudProofSendErrors(
     h: MathPeerTestHarness,

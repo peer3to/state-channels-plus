@@ -194,6 +194,7 @@ export class EventHandler {
         if (inFlight) return inFlight;
 
         const handling = this.handleDisputeCommitted(
+            disputeHash,
             channelId,
             disputeConfirmation,
             disputeCreationTimestamp,
@@ -491,6 +492,7 @@ export class EventHandler {
     }
 
     private async handleDisputeCommitted(
+        disputeHash: Hash,
         channelId: ChannelId,
         disputeConfirmation: DisputeConfirmationStruct,
         disputeCreationTimestamp: Timestamp,
@@ -505,8 +507,11 @@ export class EventHandler {
         );
         const forkId = dispute.input.forkId;
 
-        const disputeMeta = LoggerUtils.getDisputeMetadata(dispute);
-        const formattedHash = LoggerUtils.formatHash(disputeMeta.disputeHash);
+        const disputeMeta = LoggerUtils.getDisputeMetadata(
+            dispute,
+            disputeHash
+        );
+        const formattedHash = LoggerUtils.formatHash(disputeHash);
         this.logger.info(`✅ Dispute received: ${formattedHash}`, {
             dispute: disputeMeta,
             isFinal: isFinal,
@@ -738,7 +743,7 @@ export class EventHandler {
                     { channelId, forkId, dispute: disputeMeta }
                 );
                 throw new Error(
-                    `Dispute audit failed without fraud proof: ${disputeMeta.disputeHash}`
+                    `Dispute audit failed without fraud proof: ${disputeHash}`
                 );
             }
 

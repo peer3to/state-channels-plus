@@ -175,9 +175,9 @@ full gate).
 
 ## Test timing inputs — 2026-11-23
 
-Decided under Luke's delegation by the implementer, pending his review: the E36 case "omitted data,
+Approved by Luke 2026-11-23: the E36 case "omitted data,
 a heavy middle block followed by a block that does not link to it in an earlier milestone, every
-auditor's first kill sent with 3/8 of its estimate" in `E2E-MilestoneProofStart.test.ts` stages its
+auditor's first kill sent with 13/32 of its estimate" in `E2E-MilestoneProofStart.test.ts` stages its
 chain anchor with `evidenceTime` 30 instead of the default 12. Every auditor's first kill is mined
 and reverts by design, and the mined revert plus the resend took about 15 s on the farm, which
 overran 12 s. No oracle changed.

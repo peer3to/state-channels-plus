@@ -422,11 +422,7 @@ async function withRevertData(
     );
 }
 
-/**
- * The error `request` reverts with when replayed by `eth_call` against the
- * state of the block before `minedAt` (a read, not a node mutation), or null
- * when the replay passes.
- */
+/** error of `request` replayed by `eth_call` at the block before `minedAt` (a read), null when it passes */
 export async function replayMinedRevert(
     provider: Provider,
     request: TransactionRequest,

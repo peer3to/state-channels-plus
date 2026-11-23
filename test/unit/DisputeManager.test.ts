@@ -3285,8 +3285,8 @@ describe("Unit: DisputeManager", function () {
             expect(passedPreflights).to.equal(1);
             expect(applies.length).to.equal(1);
             expect(applies[0].gasLimit).to.equal(String(replayGas));
-            // the resend keeps the replay gas: both sends revert short of the replay, refused by
-            // the stipend check, or on the parachain out of gas under its proof-size floor
+            // the resend keeps the replay gas -> both sends revert in the stipend check
+            // (parachain: out of gas under its proof-size floor)
             expect(sends.succeeded).to.equal(0);
             expect(sends.reverted).to.equal(2);
             expect(revertErrors).to.have.length(2);

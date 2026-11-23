@@ -1,4 +1,4 @@
-import { Block, StateSnapshot, StateProof } from "@/models";
+import { Block, StateSnapshot } from "@/models";
 import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import Storage, { SortOrder } from "@/storage";
 import { ReduceData } from "@/types";
@@ -249,9 +249,7 @@ class AgreementManager {
             forkId,
             requestedBlockHeight: blockHeight,
             start: LoggerUtils.getSnapshotMetadata(start.snapshot),
-            stateProof: LoggerUtils.getStateProofMetadata(
-                StateProof.tryFrom(stateProof)!
-            )
+            stateProof: LoggerUtils.getStateProofMetadata(stateProof)
         });
         return {
             blockHeight,

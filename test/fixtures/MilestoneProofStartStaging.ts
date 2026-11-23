@@ -470,12 +470,8 @@ export function otherPeers(
 }
 
 /**
- * `source` rebuilt as a heavy block linked to `previous`: 8 message blocks of
- * 10 empty messages each (26 KB), whose on-chain decode leaves a 0.25M gas
- * guard band on Hardhat (on the parachain an under-funded send runs out of gas
- * under the proof-size floor first) while its off-chain decode stays near
- * 25 ms. Re-signed by its
- * author, without confirmation signatures.
+ * `source` rebuilt as a heavy block linked to `previous` and re-signed by its author, no confirmations;
+ * 25 message blocks of 10 empty messages -> a decode guard band above the parachain's proof-size floor
  */
 export async function heavyConfirmation(
     h: MathPeerTestHarness,
@@ -497,7 +493,7 @@ export async function heavyConfirmation(
         {
             ...block,
             previousBlockHash: hash(previous.signedBlock.encodedBlock),
-            messageBlocks: Array.from({ length: 8 }, () => ({
+            messageBlocks: Array.from({ length: 25 }, () => ({
                 previousBlockHash: hash("0x"),
                 blockHeight: 0n,
                 messages: Array.from({ length: 10 }, () => emptyMessage),

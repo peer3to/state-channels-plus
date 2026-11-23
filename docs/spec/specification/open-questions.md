@@ -373,7 +373,8 @@ still grows with proof size. These are separate limits: a short walk does not im
 cost challenge, and a transport frame cap does not establish safe chain gas. Bounds need
 measurements on the target chain and client. Block byte length (decode budget) is one of them: a
 block whose decode budget plus the rest of a check exceeds the per-transaction gas cap cannot be
-judged on chain ([`FIND-DECODE-2-CZ3FE5`](../audit/open-findings.md#find-decode-2-cz3fe5)). See
+judged on chain ([`FIND-DECODE-2-CZ3FE5`](../audit/open-findings.md#find-decode-2-cz3fe5)), accepted as a limitation pending this
+question (decided by Luke 2026-11-23). See
 [state proofs](./disputes/state-proofs.md) and [data availability](./security/data-availability.md).
 
 <a id="oq-33-1n5by1"></a>

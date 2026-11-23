@@ -543,7 +543,7 @@ describe("E2E: dispute validation / milestone proof start", function () {
             expect(Number(counter.blockIndex)).to.equal(1);
         });
 
-        it("E36: omitted data, a heavy middle block followed by a block that does not link to it in an earlier milestone, every auditor's first kill sent with 3/8 of its estimate → an under-funded kill is mined and reverts with no verdict (in the decode guard on Hardhat), an auditor's kill lands, the submitter is slashed and no auditor is", async function () {
+        it("E36: omitted data, a heavy middle block followed by a block that does not link to it in an earlier milestone, every auditor's first kill sent with 13/32 of its estimate → an under-funded kill is mined and reverts in the decode guard, an auditor's kill lands, the submitter is slashed and no auditor is", async function () {
             const h = TestSession.getHarness();
             // the kill period covers a mined under-funded kill and its resend
             const { forkId, anchorHeight } = await stageChainAnchor(h, 0, {
@@ -555,18 +555,14 @@ describe("E2E: dispute validation / milestone proof start", function () {
             expect(startHeight).to.equal(anchorHeight + 1);
             const submitter = leader.index;
             const auditors = otherPeers(h, submitter);
-            // every auditor's first kill gets 3/8 of the chain's estimate.
-            // Measured on Hardhat for a kill bundled with the auditor's own
-            // dispute: the guard fires when it is sent with 0.80M to 1.05M gas,
-            // its estimate is 1.64M, so 3/8 plus the signer's headroom sends
-            // about 0.92M
+            // every auditor's first kill gets 13/32 of its estimate -> mid guard band on both chains
             const scaled = [];
             for (const auditor of auditors)
                 scaled.push(
                     await h.rpcStub.scaleReplayGasEstimates(auditor, {
                         methods: ["applyDisputeFraudProofs", "multicall"],
-                        numerator: 3,
-                        denominator: 8,
+                        numerator: 13,
+                        denominator: 32,
                         times: 1
                     })
                 );
@@ -581,8 +577,7 @@ describe("E2E: dispute validation / milestone proof start", function () {
                     const [anchorBlock, tail] =
                         dispute.input.stateProof.milestones[0]
                             .blockConfirmations;
-                    // [anchor, heavy, tail]: the tail links to the anchor, not
-                    // to the heavy block, so only a pointer at block 2 counters
+                    // [anchor, heavy, tail]: tail links to the anchor -> only a pointer at block 2 counters
                     dispute.input.stateProof.milestones.unshift({
                         blockConfirmations: [
                             anchorBlock,
@@ -594,8 +589,7 @@ describe("E2E: dispute validation / milestone proof start", function () {
                 { malicious: true }
             );
 
-            // the kill alone is the oracle: resolving the channel after the
-            // longer kill period does not fit the test budget
+            // the kill is the oracle: resolving after the longer kill period does not fit the budget
             await h.assert.storage.honestPeersStoredDisputeFraudProofWait({
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof,
@@ -629,14 +623,7 @@ describe("E2E: dispute validation / milestone proof start", function () {
                     slashed,
                     `auditor ${auditor} keeps its seat`
                 ).to.not.include(h.getPeer(auditor).address);
-            // on Hardhat the under-funded kills reverted in the decode guard, not
-            // in some other out-of-gas. On the parachain a send this small stays
-            // under the transaction's proof-size gas floor (about 2.1M) and burns
-            // its whole limit before the decode
-            const allowedErrors =
-                process.env.PARACHAIN === "1"
-                    ? ["ErrorBlockDecodeOutOfGas", "outOfGas"]
-                    : ["ErrorBlockDecodeOutOfGas"];
+            // every under-funded kill reverted in the decode guard, not in another out-of-gas
             const revertErrors: (string | null)[] = [];
             for (const auditor of auditors) {
                 const sends = await fraudProofSendOutcomes(h, auditor);
@@ -663,9 +650,9 @@ describe("E2E: dispute validation / milestone proof start", function () {
             ).to.be.greaterThan(0);
             for (const error of revertErrors)
                 expect(
-                    allowedErrors,
+                    error,
                     `estimates ${JSON.stringify(estimates)}`
-                ).to.include(error);
+                ).to.equal("ErrorBlockDecodeOutOfGas");
         });
 
         it("E36: posted data, an unrecoverable confirmation signature in the last milestone → DisputeInvalidStateProof kills the dispute and slashes its submitter", async function () {

@@ -57,7 +57,7 @@ counter rejects that claim, including a genesis claim after block zero became fi
 
 **<a id="req-sp-7-70emat"></a>`REQ-SP-7-70EMAT`.** In the retained region, verification checks
 consecutive heights, hash links, channel and fork identity, authentic authors and confirmations,
-required threshold coverage, snapshot commitments and the latest-state commitment. Supporting snapshot entries must match the milestone count exactly; missing or excess entries and an empty retained milestone are invalid. Malformed checked bytes are invalid. Inner bytes in a skipped prefix are not checked, but bytes needed to determine that cutoff must decode; an undecodable endpoint cannot establish that the run is wholly below the anchor. A block is decodable when its canonical encoding decodes within a gas budget fixed by its byte length. A funded decode answers; a decode whose failure leaves the caller at most 1/64 of the gas it had reverts and gives no verdict. The gas a caller attaches therefore decides only whether there is a verdict, never which.
+required threshold coverage, snapshot commitments and the latest-state commitment. Supporting snapshot entries must match the milestone count exactly; missing or excess entries and an empty retained milestone are invalid. Malformed checked bytes are invalid. Inner bytes in a skipped prefix are not checked, but bytes needed to determine that cutoff must decode; an undecodable endpoint cannot establish that the run is wholly below the anchor. A block is decodable when its canonical encoding decodes within a gas budget fixed by its byte length: `15,000 + 400·words + words²/25`, with `words` its length in 32-byte words; there is no block-length cap (decided by Luke 2026-11-23). A funded decode answers; a decode whose failure leaves the caller at most 1/64 of the gas it had reverts and gives no verdict. The gas a caller attaches therefore decides only whether there is a verdict, never which.
 
 ## Membership and finality
 
@@ -1345,7 +1345,7 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-7-70emat.t5.p15"></a>`REQ-SP-7-70EMAT.T5.P15` — A canonical block of every calibrated worst-case shape decodes within its budget.
 
-<a id="req-sp-7-70emat.t5.p16"></a>`REQ-SP-7-70EMAT.T5.P16` — End to end, an auditor's under-funded kill is mined and reverts with no verdict (in the decode guard on Hardhat; on the parachain it may instead run out of gas under the transaction's proof-size floor), an auditor's kill lands, the submitter is slashed and no auditor is.
+<a id="req-sp-7-70emat.t5.p16"></a>`REQ-SP-7-70EMAT.T5.P16` — End to end on both chains, an auditor's under-funded kill is mined and reverts in the decode guard with no verdict, an auditor's kill lands, the submitter is slashed and no auditor is.
 
 <a id="req-sp-7-70emat.t5.p17"></a>`REQ-SP-7-70EMAT.T5.P17` — A pointer challenge at a malformed block whose length field runs past its bytes kills the dispute at bounded gas.
 

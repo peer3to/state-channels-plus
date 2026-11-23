@@ -38,6 +38,16 @@ Refused block confirmations log without decoding
 
 - [x] `UNIT-TEST-LOGGER-UTILS-34-HNBMFQ.P1` — undecodable block bytes are marked instead of throwing
 
+## UNIT-TEST-LOGGER-UTILS-35-JKBXPR
+
+Dispute log metadata without a decode
+
+- Setup: Call `getDisputeMetadata` and `getDisputeFraudProofMeta` with a factory dispute whose state proof holds a decodable block, undecodable bytes and an empty milestone, with and without a caller's dispute hash.
+- Oracle: Each state-proof block is reported by the keccak of its bytes, their byte length and its signature count, the undecodable one included, and nothing is decoded; `disputeHash` is the caller's hash, absent when none is passed.
+
+- [x] `UNIT-TEST-LOGGER-UTILS-35-JKBXPR.P1` — every state-proof block named by its bytes' hash and length, undecodable bytes included
+- [x] `UNIT-TEST-LOGGER-UTILS-35-JKBXPR.P2` — dispute hash only from the caller
+
 ## UNIT-TEST-RPC-NODE-METADATA-1-1WC176
 
 RPC endpoint redaction

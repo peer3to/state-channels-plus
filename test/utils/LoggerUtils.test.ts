@@ -55,6 +55,73 @@ describe("LoggerUtils", function () {
         expect(metadata).to.not.have.property("blockHeight");
     });
 
+    it("names each state-proof block of a dispute by its bytes' hash and length, an undecodable one included", function () {
+        const decodable = factory.blockConfirmation();
+        const undecodable = factory.blockConfirmation({
+            signedBlock: {
+                encodedBlock: "0xdeadbeef",
+                signature: factory.signature()
+            },
+            signatures: [factory.signature()]
+        });
+        const dispute = factory.dispute({
+            input: {
+                stateProof: {
+                    milestones: [
+                        { blockConfirmations: [decodable, undecodable] },
+                        { blockConfirmations: [] }
+                    ]
+                }
+            }
+        });
+
+        const { stateProof } = LoggerUtils.getDisputeMetadata(dispute).input;
+
+        expect(stateProof).to.deep.equal({
+            milestonesCount: 2,
+            milestones: [
+                {
+                    milestoneIndex: 0,
+                    confirmationsCount: 2,
+                    confirmations: [
+                        {
+                            blockHash: ethers.keccak256(
+                                decodable.signedBlock.encodedBlock
+                            ),
+                            encodedBlockByteLength: ethers.dataLength(
+                                decodable.signedBlock.encodedBlock
+                            ),
+                            signaturesCount: 2
+                        },
+                        {
+                            blockHash: ethers.keccak256("0xdeadbeef"),
+                            encodedBlockByteLength: 4,
+                            signaturesCount: 1
+                        }
+                    ]
+                },
+                { milestoneIndex: 1, confirmationsCount: 0, confirmations: [] }
+            ]
+        });
+    });
+
+    it("carries the dispute hash only when the caller passes it", function () {
+        const dispute = factory.dispute();
+        const disputeHash = factory.hash();
+
+        expect(LoggerUtils.getDisputeMetadata(dispute).disputeHash).to.equal(
+            undefined
+        );
+        expect(
+            LoggerUtils.getDisputeMetadata(dispute, disputeHash).disputeHash
+        ).to.equal(disputeHash);
+        expect(
+            LoggerUtils.getDisputeFraudProofMeta(
+                factory.disputeFraudProof(dispute)
+            ).dispute.disputeHash
+        ).to.equal(undefined);
+    });
+
     it("formats known and unknown numeric enum members without changing strings", function () {
         expect(LoggerUtils.enumToString(Status, Status.SYNCED)).to.equal(
             "SYNCED"

@@ -8,7 +8,7 @@ import { difference } from "./set";
 import type { DoubleSignatureReport } from "@/cache";
 import Clock from "@/Clock";
 import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
-import { Block, StateSnapshot, StateProof } from "@/models";
+import { Block, StateSnapshot } from "@/models";
 import type PeerProfile from "@/PeerProfile";
 import type Rpc from "@/rpc/Rpc";
 import type { NormalizedDisputeCommitment } from "@/stateManager/eventSync/EventSyncService";
@@ -43,7 +43,8 @@ import {
     DisputeAuditingDataStruct,
     ReduceOutputStruct,
     BlockStruct,
-    BlockConfirmationStruct
+    BlockConfirmationStruct,
+    StateProofStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import {
     DisputeFraudProofStruct,
@@ -360,14 +361,14 @@ export class LoggerUtils {
     static logDisputeInitiated(
         logger: Logger,
         dispute: DisputeStruct,
+        disputeHash: Hash,
         fraudProofs: FraudProofStruct[]
     ): void {
-        const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
         const formattedHash = this.formatHash(disputeHash);
         const fraudProofDetails = this.getFraudProofMetadata(fraudProofs);
 
         logger.warn(`🚨 Dispute: ${formattedHash}`, {
-            dispute: this.getDisputeMetadata(dispute),
+            dispute: this.getDisputeMetadata(dispute, disputeHash),
             fraudProofs: fraudProofDetails
         });
     }
@@ -821,28 +822,32 @@ export class LoggerUtils {
         };
     }
 
-    static getStateProofMetadata(stateProof: StateProof) {
-        const milestones = stateProof.milestones.map(
-            (milestone, milestoneIndex) => ({
-                milestoneIndex,
-                confirmationsCount: milestone.blocks.length,
-                confirmations: milestone.blocks.map((block) =>
-                    this.getBlockMetadata(block)
-                )
-            })
-        );
-        const milestonesCount = milestones.length;
-        const latestBlockHeight =
-            milestones.at(-1)?.confirmations.at(-1)?.blockHeight ?? 0;
+    // per block only its bytes' hash and length -> no block decode for a log
+    static getStateProofMetadata(stateProof: StateProofStruct) {
         return {
-            latestBlockHeight,
-            milestonesCount,
-            milestones
+            milestonesCount: stateProof.milestones.length,
+            milestones: stateProof.milestones.map(
+                (milestone, milestoneIndex) => ({
+                    milestoneIndex,
+                    confirmationsCount: milestone.blockConfirmations.length,
+                    confirmations: milestone.blockConfirmations.map(
+                        (blockConfirmation) => ({
+                            blockHash: hash(
+                                blockConfirmation.signedBlock.encodedBlock
+                            ),
+                            encodedBlockByteLength: ethers.dataLength(
+                                blockConfirmation.signedBlock.encodedBlock
+                            ),
+                            signaturesCount: blockConfirmation.signatures.length
+                        })
+                    )
+                })
+            )
         };
     }
 
-    static getDisputeMetadata(dispute: DisputeStruct) {
-        const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
+    // disputeHash only from a caller that has it -> no dispute re-encode for a log
+    static getDisputeMetadata(dispute: DisputeStruct, disputeHash?: Hash) {
         const postedAuditingData = dispute.postedAuditingData;
         return {
             disputeHash,
@@ -876,14 +881,7 @@ export class LoggerUtils {
             requireExistingDisputeWindow:
                 disputeInput.requireExistingDisputeWindow,
             timeout: this.getTimeoutStructMetadata(disputeInput.timeout),
-            stateProof: (() => {
-                const sp = StateProof.tryFrom(disputeInput.stateProof);
-                if (sp) return this.getStateProofMetadata(sp);
-                return {
-                    undecodable: true,
-                    milestonesCount: disputeInput.stateProof.milestones.length
-                };
-            })()
+            stateProof: this.getStateProofMetadata(disputeInput.stateProof)
         };
     }
 

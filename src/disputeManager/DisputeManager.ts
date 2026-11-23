@@ -22,9 +22,7 @@ import {
     DebugProxy,
     DetachedPromises,
     hash,
-    Codec,
     CustomEvmError,
-    Type,
     Mutex,
     isReasonlessRevert,
     Logger,
@@ -220,9 +218,13 @@ class DisputeManager {
 
             const shouldPostAuditingData = dispute.postedAuditingData;
 
+            const disputeHash = hash(
+                disputeConfirmation.signedDispute.encodedDispute
+            );
             LoggerUtils.logDisputeInitiated(
                 this.logger,
                 dispute,
+                disputeHash,
                 fraudProofsToApply
             );
 
@@ -296,10 +298,7 @@ class DisputeManager {
                     );
             }
 
-            this.p2pEventHooks.onInitiatingDispute?.(
-                hash(Codec.encode(dispute, Type.Dispute)),
-                dispute
-            );
+            this.p2pEventHooks.onInitiatingDispute?.(disputeHash, dispute);
             const receipt = await txResponse.wait();
             killLanded = !!killProof;
             const refusal = bestEffort
@@ -529,7 +528,8 @@ class DisputeManager {
 
     public async killDispute(dispute: DisputeStruct): Promise<void> {
         const disputeMeta = LoggerUtils.getDisputeMetadata(dispute);
-        const formattedHash = LoggerUtils.formatHash(disputeMeta.disputeHash);
+        // named by its fork -> no dispute re-encode for a hash
+        const fork = LoggerUtils.formatHash(String(dispute.input.forkId));
         let txResponse;
         // a replaying kill's capped limit, kept by a retry of its revert
         let replayGasLimit: bigint | undefined;
@@ -548,7 +548,7 @@ class DisputeManager {
                 );
                 return;
             }
-            this.logger.info(`killDispute: sending kill ${formattedHash}`, {
+            this.logger.info(`killDispute: sending kill on fork ${fork}`, {
                 disputeMeta,
                 ...LoggerUtils.getDisputeDeadlineMetadata({
                     killPeriodEnd: Number(killPeriodEnd)
@@ -574,7 +574,7 @@ class DisputeManager {
 
             await txResponse.wait();
             this.logger.info(
-                `✅ Dispute fraud-proof transaction accepted: ${formattedHash}`
+                `✅ Dispute fraud-proof transaction accepted on fork ${fork}`
             );
         } catch (error) {
             const success = await tryHandleEvmError(error, {
@@ -587,32 +587,32 @@ class DisputeManager {
                     // a late challenge is fatal: no recovery after the kill period
                     RaceConditionDisputeKillPeriodExpired: (customError) => {
                         this.logger.error(
-                            `killDispute: kill period expired before the challenge of dispute ${formattedHash} landed`,
+                            `killDispute: kill period expired before the challenge of the dispute on fork ${fork} landed`,
                             { disputeMeta }
                         );
                         throw customError;
                     },
                     RaceConditionOnChainSlashes: () => {
                         this.logger.info(
-                            `killDispute no-op: on-chain slashes already cover dispute ${formattedHash}`,
+                            `killDispute no-op: on-chain slashes already cover the dispute on fork ${fork}`,
                             { disputeMeta }
                         );
                     },
                     RaceConditionGenesisTimestampNotAvailable: () => {
                         this.logger.info(
-                            `killDispute no-op: genesis timestamp not available for dispute ${formattedHash}`,
+                            `killDispute no-op: genesis timestamp not available for the dispute on fork ${fork}`,
                             { disputeMeta }
                         );
                     },
                     RaceConditionUnexpectedBlockCalldataPosted: () => {
                         this.logger.info(
-                            `killDispute no-op: unexpected block calldata posted for dispute ${formattedHash}`,
+                            `killDispute no-op: unexpected block calldata posted for the dispute on fork ${fork}`,
                             { disputeMeta }
                         );
                     },
                     RaceConditionBlockHeightTooOld: () => {
                         this.logger.info(
-                            `killDispute no-op: a nested fraud proof the chain no longer judges for dispute ${formattedHash}`,
+                            `killDispute no-op: a nested fraud proof the chain no longer judges for the dispute on fork ${fork}`,
                             { disputeMeta }
                         );
                     }
@@ -620,11 +620,14 @@ class DisputeManager {
             });
             if (!success) {
                 const custom = tryDecodeCustomError(error);
-                this.logger.error(`❌ Error killing dispute ${formattedHash}`, {
-                    disputeMeta,
-                    custom,
-                    error: errorMessage(error)
-                });
+                this.logger.error(
+                    `❌ Error killing the dispute on fork ${fork}`,
+                    {
+                        disputeMeta,
+                        custom,
+                        error: errorMessage(error)
+                    }
+                );
                 // an unhandled failure, a contract verdict included, is fatal
                 throw error;
             }

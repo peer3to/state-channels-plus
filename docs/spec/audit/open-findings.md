@@ -3052,7 +3052,7 @@ Residual: the budget is calibrated on forge's gas schedule and assumes the parac
 in-frame decode the same (its proof-size charge is per transaction, not per call frame); no
 parachain measurement of the in-frame decode backs this yet.
 
-**Decision (implementer, under Luke's delegation, 2026-11-23; pending his review):** keep the
+**Decision (decided by Luke 2026-11-23):** keep the
 per-length decode window and add no block-length cap in this change. A cap is the size-bound decision
 of [`OQ-32-5NDD24` (Proof and audit size bounds)](../specification/open-questions.md#oq-32-5ndd24),
 and a cap below honest block sizes would let honest disputes be judged undecodable.
