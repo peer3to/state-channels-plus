@@ -22,6 +22,7 @@ describe("LoggerUtils proof-type names", function () {
         expect(killReason(1)).to.not.equal(FraudProofType[101]);
         expect(killReason(19)).to.equal("TimeoutSupersededByFinalState");
         expect(killReason(20)).to.equal("DisputeConflictsWithFinalState");
+        expect(killReason(22)).to.equal("DisputeFinalPointRegression");
         expect(
             killReason(
                 DisputeFraudProofType.DisputeConflictsWithFinalState - 200
