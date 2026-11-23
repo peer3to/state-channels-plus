@@ -546,6 +546,42 @@ type ProofOutcome = {
     keys: { key: TrieKey; keyClass: KeyClass; detail: string }[];
 };
 
+/**
+ * What a proof request asked against the peer's earlier proof requests: only
+ * keys asked before at the same block, only keys asked before (at another
+ * block for at least one), or a key never asked before.
+ */
+const REPEAT_CLASSES = ["sameBlock", "otherBlock", "newKey"] as const;
+type RepeatClass = (typeof REPEAT_CLASSES)[number];
+
+const REPEAT_CLASS_NAMES: Record<RepeatClass, string> = {
+    sameBlock: "every key asked before at the same block",
+    otherBlock: "every key asked before, one at another block only",
+    newKey: "a key never asked before"
+};
+
+/** The repeat class of each of one peer's proof requests, in order. */
+function repeatClasses(
+    proofs: readonly { block: string | null; keys: readonly TrieKey[] }[]
+): RepeatClass[] {
+    // key -> the blocks this peer asked it at so far
+    const askedAt = new Map<TrieKey, Set<string | null>>();
+    return proofs.map(({ block, keys }) => {
+        const repeatClass: RepeatClass =
+            keys.length === 0 || keys.some((key) => !askedAt.has(key))
+                ? "newKey"
+                : keys.every((key) => askedAt.get(key)?.has(block))
+                  ? "sameBlock"
+                  : "otherBlock";
+        for (const key of keys) {
+            const blocks = askedAt.get(key) ?? new Set();
+            blocks.add(block);
+            askedAt.set(key, blocks);
+        }
+        return repeatClass;
+    });
+}
+
 type PeerAnalysis = {
     proofs: ProofOutcome[];
     headers: number;
@@ -803,6 +839,7 @@ type RunMetrics = {
     contextForcedRequests: number;
     keyProofsProvenEarlierAtAnotherBlock: Record<KeyClass, number>;
     requestsAllProvenEarlier: number;
+    byRepeat: Record<RepeatClass, number>;
     details: Record<KeyClass, Record<string, number>>;
     unexpected: ProofOutcome[];
     pushReconstruction: {
@@ -878,6 +915,7 @@ function analyzeRun(
         contextForcedRequests: 0,
         keyProofsProvenEarlierAtAnotherBlock: zeroed(KEY_CLASSES),
         requestsAllProvenEarlier: 0,
+        byRepeat: zeroed(REPEAT_CLASSES),
         details: Object.fromEntries(
             KEY_CLASSES.map((keyClass) => [keyClass, {}])
         ) as Record<KeyClass, Record<string, number>>,
@@ -912,6 +950,8 @@ function analyzeRun(
             metrics.reads.fromPushedState += analysis.reads.fromPushedState;
             metrics.reads.withFallbackRead += analysis.reads.withFallbackRead;
         }
+        for (const repeatClass of repeatClasses(peer.trace.proofs))
+            metrics.byRepeat[repeatClass]++;
         // key -> the block hashes this peer had it proven at, so far
         const provenAt = new Map<TrieKey, Set<string | null>>();
         for (const proof of analysis.proofs) {
@@ -980,6 +1020,12 @@ type RequestMetrics = {
     countedNotLocal: number | null;
     /** Peers whose runtime was gone or whose provider was not the light client's at cleanup. */
     peersWithoutCounts: number;
+    /**
+     * Reads the light client may answer: with it off, the requests its
+     * parser takes; on, the reads it answered (from pushed state or with a
+     * fallback read), over the peers with counts.
+     */
+    lightClientReads: number;
 };
 
 /**
@@ -1126,7 +1172,8 @@ function analyzeRequests(
         localReadsTried: 0,
         checkedReadsTried: 0,
         countedNotLocal: lightClientOn ? 0 : null,
-        peersWithoutCounts: 0
+        peersWithoutCounts: 0,
+        lightClientReads: 0
     };
     for (const peer of file.peers) {
         const triedBefore = metrics.localReadsTried;
@@ -1143,10 +1190,14 @@ function analyzeRequests(
             );
             metrics.byShape[shape] = (metrics.byShape[shape] ?? 0) + 1;
             if (triedLocally) metrics.localReadsTried++;
+            if (!lightClientOn && shape.includes("[light client would try it]"))
+                metrics.lightClientReads++;
         }
         const counters = peer.counts?.lightClient;
         if (!counters) metrics.peersWithoutCounts++;
         else if (metrics.countedNotLocal !== null) {
+            metrics.lightClientReads +=
+                counters.fromPushedState + counters.withFallbackRead;
             metrics.checkedReadsTried += metrics.localReadsTried - triedBefore;
             metrics.countedNotLocal +=
                 counters.leftToNodes + counters.failed + counters.unsupported;
@@ -1243,6 +1294,8 @@ function requestLines(requests: FlowRequests | undefined): string[] {
         "",
         `Total: off ${column(off, total)}, on ${column(on, total)}.`,
         "",
+        `Reads the light client may answer: off ${column(off, (r) => r.lightClientReads)} (requests its parser takes), on ${column(on, (r) => r.lightClientReads)} (reads it answered, over the peers with counts).`,
+        "",
         ...table("method", (r) => r.byMethod),
         "",
         "<details><summary>By what they asked and how the node replied</summary>",
@@ -1307,6 +1360,13 @@ function report(
         lines.push(
             "",
             `Requests whose every key the peer had proven before at another block: ${values((r) => r.requestsAllProvenEarlier)}.`,
+            "",
+            "| proof requests by what the peer asked before | requests |",
+            "|---|---|",
+            ...REPEAT_CLASSES.map(
+                (repeatClass) =>
+                    `| ${REPEAT_CLASS_NAMES[repeatClass]} | ${values((r) => r.byRepeat[repeatClass])} |`
+            ),
             "",
             "| if the partition also held | proof requests left |",
             "|---|---|"
@@ -1530,8 +1590,8 @@ function selfTest(layout: Layout): void {
         ...peer,
         counts: {
             lightClient: {
-                fromPushedState: 0,
-                withFallbackRead: 0,
+                fromPushedState: 1,
+                withFallbackRead: 2,
                 leftToNodes: 1,
                 failed: 1,
                 unsupported: 0
@@ -1580,6 +1640,13 @@ function selfTest(layout: Layout): void {
                     method: "eth_blockNumber",
                     params: [],
                     reply: undefined
+                },
+                {
+                    sequence: 15,
+                    at: 15,
+                    method: "eth_getStorageAt",
+                    params: [manager, "0x0", "pending"],
+                    reply: "result"
                 }
             ]
         }
@@ -1592,7 +1659,8 @@ function selfTest(layout: Layout): void {
         'eth_call manager.f from no address [node only: tag "latest" fields data,gas,to] -> reverted',
         'eth_getTransactionCount own [node only: tag "pending"] -> result',
         "eth_getBalance own [tried locally] -> error -32000 boom",
-        "eth_blockNumber -> no reply"
+        "eth_blockNumber -> no reply",
+        'eth_getStorageAt manager slot 0x0 [node only: tag "pending"] -> result'
     ];
     for (const shape of expectedShapes)
         check(on.byShape[shape] === 1, `request shape: ${shape}`);
@@ -1630,6 +1698,22 @@ function selfTest(layout: Layout): void {
             "eth_getBalance own [light client would try it] -> error -32000 boom"
         ] === 1,
         "with the light client off a read it takes is marked"
+    );
+    const held2 = `0x${"22".repeat(32)}`;
+    const classes = repeatClasses([
+        { block, keys: [held] },
+        { block, keys: [held] },
+        { block: held2, keys: [held] },
+        { block: held2, keys: [held, outside] },
+        { block: held2, keys: [held, outside] }
+    ]);
+    check(
+        classes.join(",") === "newKey,sameBlock,otherBlock,newKey,sameBlock",
+        `proof requests are classed by what was asked before (got ${classes.join(",")})`
+    );
+    check(
+        on.lightClientReads === 3 && off.lightClientReads === 2,
+        `reads the light client may answer are counted (got on ${on.lightClientReads}, off ${off.lightClientReads})`
     );
     console.log("self-test passed");
 }
