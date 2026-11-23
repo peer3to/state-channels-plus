@@ -57,10 +57,15 @@ import {StateSnapshotFacet} from "../../../contracts/V1/StateChannelDiamondProxy
 import {JoinChannelFacet} from "../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol";
 import {ErrorDisputeExecutionOutOfGas} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import {MESSAGE_TYPE_EXIT, MESSAGE_TYPE_JOIN} from "../../../contracts/V1/types/MessageTypeHashes.sol";
-import {StoredInboundBlock} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol";
+import {InboundSeeding} from "../harness/InboundSeeding.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 
-contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificationFacet, DisputeWindowSeeding {
+contract DisputeExpiryGuardHarness is
+    DisputeFraudProofFacet,
+    DisputeVerificationFacet,
+    DisputeWindowSeeding,
+    InboundSeeding
+{
     constructor() {
         evidenceTime = 10;
         disputeVerificationFacetAddress = address(this);
@@ -149,12 +154,10 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
         address slashed,
         uint256 slashTimestamp
     ) external {
-        StoredInboundBlock storage inbound = inboundMessageBlockMap[channelId][inboundHead];
-        inbound.blockHeight = 1;
-        inbound.timestamp = uint128(slashTimestamp);
-        inbound.joiners.push(survivor);
-        inbound.joiners.push(slashed);
-        channelBalances[channelId].latestInboundMessageBlockHash = inboundHead;
+        address[] memory joiners = new address[](2);
+        joiners[0] = survivor;
+        joiners[1] = slashed;
+        seedInboundJoins(channelId, inboundHead, bytes32(0), 1, slashTimestamp, joiners);
         SnapshotData storage snapshot = stateSnapshots[channelId].snapshotData;
         snapshot.participants.push(survivor);
         snapshot.latestInboundMessageBlockHash = inboundHead;

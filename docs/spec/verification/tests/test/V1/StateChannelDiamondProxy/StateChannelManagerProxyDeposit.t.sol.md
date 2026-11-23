@@ -1,7 +1,7 @@
 # StateChannelManagerProxyDeposit.t.sol
 
 Test file: [test/V1/StateChannelDiamondProxy/StateChannelManagerProxyDeposit.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyDeposit.t.sol)
-Exercises: [StateChannelManagerProxy.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)
+Exercises: [StateChannelCommon.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md), [StateChannelManagerProxy.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)
 
 ## Overview
 
@@ -15,9 +15,10 @@ from a genuinely failing iteration. Revert cases also assert that no adapter eff
 balance remains. A seventh test runs a real nonzero join through `joinChannel`, decodes the emitted
 inbound block and asserts the chain finds it under the hash of that full block, the joiner is the
 only pending participant and a copy of the block with altered JOIN data reads as uncommitted. An
-eighth test records the state diff of that join and asserts it wrote exactly 7 fresh storage slots
-on the diamond (the five-slot inbound record, the consumer's deposit counter and the channel's
-first nonzero deposit total).
+eighth test runs one outsider join as setup, then records the state diff of a second outsider's
+join, co-signed by Alice, Bob and the first joiner, and asserts it wrote exactly 5 fresh
+(zero-to-nonzero) slots on the diamond: the inbound record's link, packed height and timestamp,
+deposit total, joiners length and joiner.
 
 ## Tests
 
@@ -27,5 +28,5 @@ first nonzero deposit total).
 - `test_depositAssetsComposable_emptyBatchRejected`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P16
 - `test_depositAssetsComposable_directCallerRejected`: REQ-ENFADM-3-6A3BEB.T1.P4, UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P2
 - `test_joinChannel_atomicDepositFailure_revertsNamingTheFailingJoin`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P35
-- `test_joinChannel_recordsJoinerAsPendingUnderTheFullBlockHash`: INV-MSG-1-36Y41Q.T1.P15, UNIT-TEST-MANAGER-PROXY-1-NTYR71.P26
-- `test_joinChannel_writesSevenFreshSlots`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P27
+- `test_joinChannel_recordsJoinerAsPendingUnderTheFullBlockHash`: INV-MSG-1-36Y41Q.T1.P15, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P79, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P80
+- `test_joinChannel_writesFiveFreshSlots`: UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P81

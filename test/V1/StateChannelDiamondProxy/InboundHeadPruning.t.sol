@@ -8,29 +8,21 @@ import {StateSnapshotFacet} from "../../../contracts/V1/StateChannelDiamondProxy
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
 import {StateChannelManagerEvents} from "../../../contracts/V1/StateChannelManagerEvents.sol";
 import {MathStateMachine} from "../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
-import {StoredInboundBlock} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol";
+import {InboundSeeding} from "../harness/InboundSeeding.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 
-contract InboundHeadPruningHarness is DisputeFraudProofFacet, DisputeVerificationFacet, StateSnapshotFacet {
+contract InboundHeadPruningHarness is
+    DisputeFraudProofFacet,
+    DisputeVerificationFacet,
+    StateSnapshotFacet,
+    InboundSeeding
+{
     constructor() {
         evidenceTime = 10;
         utilityFacetAddress = address(new UtilityFacet());
         stateProofFacetAddress = address(new StateProofFacet());
         disputeVerificationFacetAddress = address(this);
         stateMachineImplementation = new MathStateMachine(3_000_000, 32);
-    }
-
-    /// an inbound block as the chain persists it, with one JOIN of `joiner`; it becomes the channel's inbound head
-    function seedInboundJoin(bytes32 channelId, bytes32 hash, bytes32 previous, uint256 height, address joiner)
-        external
-    {
-        StoredInboundBlock storage inbound = inboundMessageBlockMap[channelId][hash];
-        inbound.timestamp = uint128(block.timestamp);
-        inbound.previousBlockHash = previous;
-        inbound.blockHeight = uint128(height);
-        inbound.joiners.push(joiner);
-        channelBalances[channelId].latestInboundMessageBlockHash = hash;
-        channelBalances[channelId].latestInboundMessageBlockHeight = height;
     }
 
     /// what a landed `_updateStateSnapshot` writes for the participant set and inbound head
@@ -90,12 +82,12 @@ contract InboundHeadPruningTest is Test, StateChannelManagerEvents {
     function setUp() public {
         vm.warp(1_000_000);
         harness = new InboundHeadPruningHarness();
-        harness.seedInboundJoin(CHANNEL_ID, H1, bytes32(0), 1, a);
-        harness.seedInboundJoin(CHANNEL_ID, H2, H1, 2, b);
+        harness.seedInboundJoins(CHANNEL_ID, H1, bytes32(0), 1, block.timestamp, _addresses(a));
+        harness.seedInboundJoins(CHANNEL_ID, H2, H1, 2, block.timestamp, _addresses(b));
     }
 
     function test_clearStorage_openChannel_keepsTheSnapshotInboundHeadAndPrunesTheBlocksBelow() public {
-        harness.seedInboundJoin(CHANNEL_ID, H3, H2, 3, c);
+        harness.seedInboundJoins(CHANNEL_ID, H3, H2, 3, block.timestamp, _addresses(c));
 
         vm.expectEmit(address(harness));
         emit ChannelStorageCleared(CHANNEL_ID, H1);
@@ -118,7 +110,7 @@ contract InboundHeadPruningTest is Test, StateChannelManagerEvents {
 
     function test_clearStorage_openChannel_nextPrunePrunesThePreviouslyKeptHead() public {
         harness.clearStorage(CHANNEL_ID, H2, false);
-        harness.seedInboundJoin(CHANNEL_ID, H3, H2, 3, c);
+        harness.seedInboundJoins(CHANNEL_ID, H3, H2, 3, block.timestamp, _addresses(c));
 
         harness.clearStorage(CHANNEL_ID, H3, false);
 
@@ -166,7 +158,7 @@ contract InboundHeadPruningTest is Test, StateChannelManagerEvents {
     function test_isDisputeInboundHashValid_afterOpenChannelPrune_acceptsTheSnapshotHeadAtItsHeight() public {
         harness.landSnapshot(CHANNEL_ID, _addresses(a, b), H2, 2);
         harness.clearStorage(CHANNEL_ID, H2, false);
-        harness.seedInboundJoin(CHANNEL_ID, H3, H2, 3, c);
+        harness.seedInboundJoins(CHANNEL_ID, H3, H2, 3, block.timestamp, _addresses(c));
 
         Dispute memory dispute = _disputeAt(H2, 2);
         assertTrue(harness.isDisputeInboundHashValid(dispute), "real height accepted");
@@ -182,7 +174,7 @@ contract InboundHeadPruningTest is Test, StateChannelManagerEvents {
         address[] memory atHead = harness.historicThresholdSet(_disputeAt(H2, 2));
         assertEq(abi.encode(atHead), abi.encode(_addresses(a)), "b left after its JOIN was consumed");
 
-        harness.seedInboundJoin(CHANNEL_ID, H3, H2, 3, c);
+        harness.seedInboundJoins(CHANNEL_ID, H3, H2, 3, block.timestamp, _addresses(c));
         address[] memory aboveHead = harness.historicThresholdSet(_disputeAt(H3, 3));
         assertEq(abi.encode(aboveHead), abi.encode(_addresses(a, c)), "a JOIN above the head is pending");
     }

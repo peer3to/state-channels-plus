@@ -13,7 +13,7 @@ import {
     DisputeInvalidStateProof,
     DisputeLastMilestoneNotFinalAndNoAuditingData
 } from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
-import {StoredInboundBlock} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol";
+import {InboundSeeding} from "../harness/InboundSeeding.sol";
 import "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 import "../../../contracts/V1/types/ProofTypes.sol";
@@ -60,7 +60,12 @@ function _addresses(address first, address second, address third) pure returns (
 
 /// StateProofFacet is reached through the fallback, so the predicate's `isMilestoneFinal` self-call and the walk's
 /// `verifyMilestones` delegatecall are routed like the proxy fallback does.
-contract MilestoneFinalityFreezeHarness is DisputeFraudProofFacet, DisputeVerificationFacet, StateSnapshotFacet {
+contract MilestoneFinalityFreezeHarness is
+    DisputeFraudProofFacet,
+    DisputeVerificationFacet,
+    StateSnapshotFacet,
+    InboundSeeding
+{
     constructor() {
         evidenceTime = 10;
         utilityFacetAddress = address(new UtilityFacet());
@@ -146,18 +151,6 @@ contract MilestoneFinalityFreezeHarness is DisputeFraudProofFacet, DisputeVerifi
         data.latestInboundMessageBlockHeight = inboundHeight;
     }
 
-    function seedInboundJoin(bytes32 channelId, bytes32 hash, bytes32 previous, uint256 height, address participant)
-        external
-    {
-        StoredInboundBlock storage inbound = inboundMessageBlockMap[channelId][hash];
-        inbound.timestamp = uint128(block.timestamp);
-        inbound.previousBlockHash = previous;
-        inbound.blockHeight = uint128(height);
-        inbound.joiners.push(participant);
-        channelBalances[channelId].latestInboundMessageBlockHash = hash;
-        channelBalances[channelId].latestInboundMessageBlockHeight = height;
-    }
-
     function seedSnapshot(bytes32 channelId, StateSnapshot memory snapshot) external {
         stateSnapshots[channelId] = snapshot;
     }
@@ -192,8 +185,7 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
         vm.warp(1_000_000);
         harness = new MilestoneFinalityFreezeHarness();
         // the open block holds both members' joins and is the snapshot's inbound head
-        harness.seedInboundJoin(CHANNEL_ID, H0, bytes32(0), 1, a);
-        harness.seedInboundJoin(CHANNEL_ID, H0, bytes32(0), 1, b);
+        harness.seedInboundJoins(CHANNEL_ID, H0, bytes32(0), 1, block.timestamp, _addresses(a, b));
         harness.landSnapshot(CHANNEL_ID, _addresses(a, b), H0, 1);
     }
 
@@ -201,7 +193,7 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
         Dispute memory dispute = _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A)));
         harness.clearOldInboundMessageBlocks(CHANNEL_ID, H0);
         // a top-up is recorded as a JOIN, above the dispute's anchor
-        harness.seedInboundJoin(CHANNEL_ID, H1, H0, 2, b);
+        harness.seedInboundJoins(CHANNEL_ID, H1, H0, 2, block.timestamp, _addresses(b));
         assertFalse(harness.isAuditingDataOmissionAllowed(dispute), "B unsigned -> not final");
 
         harness.landSnapshot(CHANNEL_ID, _addresses(a, b), H1, 2);
@@ -220,7 +212,9 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
         for (uint256 i = 1; i <= joinCount; i++) {
             heads[i] = keccak256(abi.encode("inbound", i));
             joiners[i - 1] = vm.addr(0x1000 + i);
-            harness.seedInboundJoin(CHANNEL_ID, heads[i], heads[i - 1], i + 1, joiners[i - 1]);
+            harness.seedInboundJoins(
+                CHANNEL_ID, heads[i], heads[i - 1], i + 1, block.timestamp, _addresses(joiners[i - 1])
+            );
         }
 
         uint256[] memory signerKeys = new uint256[](signerCount + 2);
@@ -248,7 +242,7 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
     }
 
     function test_isFinal_joinAtAnchor_expectedBeforeAndAfterConsumption() public {
-        harness.seedInboundJoin(CHANNEL_ID, H1, H0, 2, c);
+        harness.seedInboundJoins(CHANNEL_ID, H1, H0, 2, block.timestamp, _addresses(c));
         Dispute memory signedByAB =
             _dispute(H1, 2, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A, PK_B)));
         Dispute memory signedByABC =

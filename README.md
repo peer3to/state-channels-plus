@@ -57,7 +57,7 @@ The SDK abstracts away most of the complexities of the system and is designed to
 
 ### Upgrade notes
 
-- `inboundMessageBlockMap` now stores a `StoredInboundBlock` (link, height, timestamp, deposit total, JOIN participants) instead of the full `MessageBlock`. Read message data from `InboundMessagesProcessed`. The storage layout changes, so deploy a new manager.
+- `inboundMessageBlockMap` now stores a `StoredInboundBlock` (link, height, timestamp, deposit total, JOIN participants) instead of the full `MessageBlock`. Read message data from `InboundMessagesProcessed`. The storage layout changes: deploy a new proxy and redeploy every facet with it. Do not reuse facet addresses from an earlier deployment; the constructor does not detect a facet built for another layout (`FIND-DEPLOY-1-T2XFRK`).
 - `GAS_USAGE_SETTLE_MS` is replaced by `GAS_USAGE_SETTLE_BLOCKS` (default 3): a gas-usage read waits that many blocks at the measured block time, at most half its request timeout. An old `GAS_USAGE_SETTLE_MS` override is ignored.
 - State-machine diamonds MUST route `getNextToWriteOf(bytes)` from `AStateMachine` to the state-machine facet. It sets the given state, so call it only as a simulated call (`eth_call`). The SDK uses it to read the next writer of a given state. An unrouted selector makes every timeout audit throw.
 - The `requestJoinSignature` peer RPC no longer carries the joiner's snapshot and fork pins, and countersigners no longer check them. Mixed SDK versions cannot sign joins: an old countersigner refuses a new collector's request.

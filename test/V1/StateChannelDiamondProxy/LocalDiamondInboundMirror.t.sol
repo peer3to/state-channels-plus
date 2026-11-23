@@ -147,7 +147,7 @@ contract LocalDiamondInboundMirrorTest is DiamondHarness {
         vm.recordLogs();
         vm.prank(joiner);
         deployedDiamond.joinChannel(
-            _joinConfirmation(join, JOINER_PK, _openerPrivateKeys()),
+            _joinConfirmation(join, JOINER_PK, _twoPartyPrivateKeys()),
             keccak256(abi.encode(genesisSnapshot)),
             genesisSnapshot.forkId
         );
@@ -198,7 +198,7 @@ contract LocalDiamondInboundMirrorTest is DiamondHarness {
         amounts[0] = 300;
         amounts[1] = 200;
         vm.recordLogs();
-        deployedDiamond.open(_openChannelConfirmation(GENESIS_CHANNEL_ID, _openerPrivateKeys(), amounts, true));
+        deployedDiamond.open(_openChannelConfirmation(GENESIS_CHANNEL_ID, _twoPartyPrivateKeys(), amounts, true));
         Vm.Log[] memory logs = vm.getRecordedLogs();
         genesisBlock = abi.decode(
             _logData(logs, StateChannelManagerEvents.InboundMessagesProcessed.selector, GENESIS_CHANNEL_ID),
@@ -207,12 +207,6 @@ contract LocalDiamondInboundMirrorTest is DiamondHarness {
         (genesisSnapshot, genesisState) = abi.decode(
             _logData(logs, StateChannelManagerEvents.ChannelOpened.selector, GENESIS_CHANNEL_ID), (StateSnapshot, bytes)
         );
-    }
-
-    function _openerPrivateKeys() internal pure returns (uint256[] memory pks) {
-        pks = new uint256[](2);
-        pks[0] = 0xA11CE;
-        pks[1] = 0xB0B;
     }
 
     function _inboundBlock(bytes32 previousBlockHash, uint256 blockHeight, uint256 totalDeposits)

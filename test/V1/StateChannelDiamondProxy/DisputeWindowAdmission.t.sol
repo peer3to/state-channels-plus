@@ -3,10 +3,11 @@ pragma solidity ^0.8.8;
 import {Test} from "forge-std/Test.sol";
 import "../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol";
 import {DisputeWindowSeeding} from "../harness/DisputeWindowSeeding.sol";
+import {InboundSeeding} from "../harness/InboundSeeding.sol";
 import {CanonicalMutations} from "../harness/CanonicalMutations.sol";
 import {ErrorNonCanonicalEncoding} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 
-contract DisputeWindowAdmissionHarness is DisputeManagerFacet, DisputeWindowSeeding {
+contract DisputeWindowAdmissionHarness is DisputeManagerFacet, DisputeWindowSeeding, InboundSeeding {
     constructor() {
         evidenceTime = 10;
         utilityFacetAddress = address(new UtilityFacet());
@@ -21,15 +22,6 @@ contract DisputeWindowAdmissionHarness is DisputeManagerFacet, DisputeWindowSeed
         DisputeWindow storage window = _seedDisputeWindow(channelId, forkId, created, created);
         if (populated) window.evidence.disputeCommitments.push(keccak256("prior commitment"));
         if (finalized) window.reducedResult.forkId = keccak256("reduced fork");
-    }
-
-    function seedInboundJoin(bytes32 channelId, bytes32 hash, bytes32 previous, address participant) external {
-        StoredInboundBlock storage inbound = inboundMessageBlockMap[channelId][hash];
-        inbound.timestamp = uint128(block.timestamp);
-        inbound.previousBlockHash = previous;
-        inbound.blockHeight = uint128(++channelBalances[channelId].latestInboundMessageBlockHeight);
-        inbound.joiners.push(participant);
-        channelBalances[channelId].latestInboundMessageBlockHash = hash;
     }
 
     function setInboundBoundary(bytes32 channelId, bytes32 hash) external {
@@ -83,9 +75,10 @@ contract DisputeWindowAdmissionTest is Test {
     }
 
     function _seedJoin(bytes32 hash, bytes32 previous, address participant) internal {
-        target.seedInboundJoin(CHANNEL, hash, previous, participant);
+        address[] memory joiners = new address[](1);
+        joiners[0] = participant;
+        target.seedInboundJoins(CHANNEL, hash, previous, ++inboundHeight, block.timestamp, joiners);
         inboundHead = hash;
-        inboundHeight++;
     }
 
     function _confirmation(bool required, bool withCalldata, bytes32 anchorHash, uint256 anchorHeight)

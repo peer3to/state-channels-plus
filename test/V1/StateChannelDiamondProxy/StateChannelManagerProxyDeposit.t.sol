@@ -1,6 +1,5 @@
 pragma solidity ^0.8.8;
 
-import {Vm} from "forge-std/Vm.sol";
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
 import {StateChannelManagerEvents} from "../../../contracts/V1/StateChannelManagerEvents.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
@@ -22,12 +21,13 @@ contract StateChannelManagerProxyDepositTest is DiamondHarness {
     uint256 internal constant ALICE_PK = 0xA11CE;
     uint256 internal constant BOB_PK = 0xB0B;
     uint256 internal constant JOINER_PK = 0xCAFE;
+    uint256 internal constant SECOND_JOINER_PK = 0xD00D;
 
     function setUp() public {
         diamond = deployDiamond();
         // opened while the real consumer is still installed, so the join path
         // starts from an open channel with a two-address threshold set
-        _openChannel(JOIN_CHANNEL_ID, _participantPrivateKeys());
+        _openChannel(JOIN_CHANNEL_ID, _twoPartyPrivateKeys());
 
         SelectiveDepositConsumerFacet selectiveConsumer = new SelectiveDepositConsumerFacet();
         vm.etch(address(consumerFacet), address(selectiveConsumer).code);
@@ -110,7 +110,7 @@ contract StateChannelManagerProxyDepositTest is DiamondHarness {
             deadlineTimestamp: block.timestamp + 120,
             balance: Balance({amount: 0, data: ""})
         });
-        JoinChannelConfirmation memory confirmation = _joinConfirmation(join, JOINER_PK, _participantPrivateKeys());
+        JoinChannelConfirmation memory confirmation = _joinConfirmation(join, JOINER_PK, _twoPartyPrivateKeys());
 
         StateSnapshot memory snapshot = diamond.getStateSnapshot(JOIN_CHANNEL_ID);
         // the facet submits this single join as index 0 of the batch
@@ -124,7 +124,7 @@ contract StateChannelManagerProxyDepositTest is DiamondHarness {
     // the join's record carries the joiner as pending, keyed by the hash of the full emitted block
     function test_joinChannel_recordsJoinerAsPendingUnderTheFullBlockHash() public {
         vm.recordLogs();
-        JoinChannel memory join = _joinOutsider();
+        JoinChannel memory join = _joinOutsider(JOINER_PK, _twoPartyPrivateKeys());
         MessageBlock memory joinBlock = abi.decode(
             _logData(
                 vm.getRecordedLogs(), StateChannelManagerEvents.InboundMessagesProcessed.selector, JOIN_CHANNEL_ID
@@ -145,53 +145,33 @@ contract StateChannelManagerProxyDepositTest is DiamondHarness {
     }
 
     // a join stores only the small inbound record, not the full message block
-    function test_joinChannel_writesSevenFreshSlots() public {
+    function test_joinChannel_writesFiveFreshSlots() public {
+        // the first join makes the consumer's deposit counter and the channel's deposit total nonzero
+        _joinOutsider(JOINER_PK, _twoPartyPrivateKeys());
+        uint256[] memory thresholdKeys = new uint256[](3);
+        thresholdKeys[0] = ALICE_PK;
+        thresholdKeys[1] = BOB_PK;
+        thresholdKeys[2] = JOINER_PK;
+
         vm.startStateDiffRecording();
-        _joinOutsider();
-        // 5 for the inbound record (link, height+timestamp, deposit total, joiners length, joiner); the other 2
-        // are this suite's consumer deposit counter and the channel's first nonzero deposit total
-        assertEq(_freshSlotsOf(address(diamond), vm.stopAndReturnStateDiff()), 7, "fresh slots");
+        _joinOutsider(SECOND_JOINER_PK, thresholdKeys);
+        // link, height+timestamp, deposit total, joiners length, joiner
+        assertEq(_freshSlotsOf(address(diamond), vm.stopAndReturnStateDiff()), 5, "fresh slots");
     }
 
-    // a nonzero join by the outsider JOINER_PK against the current snapshot
-    function _joinOutsider() internal returns (JoinChannel memory join) {
+    // a nonzero join by the outsider `joinerPk` against the current snapshot, co-signed by `signerPks`
+    function _joinOutsider(uint256 joinerPk, uint256[] memory signerPks) internal returns (JoinChannel memory join) {
         join = JoinChannel({
             channelId: JOIN_CHANNEL_ID,
-            participant: vm.addr(JOINER_PK),
+            participant: vm.addr(joinerPk),
             deadlineTimestamp: block.timestamp + 120,
             balance: Balance({amount: 100, data: ""})
         });
         StateSnapshot memory snapshot = diamond.getStateSnapshot(JOIN_CHANNEL_ID);
         vm.prank(join.participant);
         diamond.joinChannel(
-            _joinConfirmation(join, JOINER_PK, _participantPrivateKeys()),
-            keccak256(abi.encode(snapshot)),
-            snapshot.forkId
+            _joinConfirmation(join, joinerPk, signerPks), keccak256(abi.encode(snapshot)), snapshot.forkId
         );
-    }
-
-    // distinct slots of `account` written from zero to nonzero
-    function _freshSlotsOf(address account, Vm.AccountAccess[] memory accesses) internal pure returns (uint256 count) {
-        bytes32[] memory seen = new bytes32[](256);
-        for (uint256 i = 0; i < accesses.length; i++) {
-            Vm.StorageAccess[] memory storageAccesses = accesses[i].storageAccesses;
-            for (uint256 j = 0; j < storageAccesses.length; j++) {
-                Vm.StorageAccess memory access = storageAccesses[j];
-                if (access.account != account || !access.isWrite || access.reverted) continue;
-                if (access.previousValue != 0 || access.newValue == 0) continue;
-                bool counted;
-                for (uint256 k = 0; k < count; k++) {
-                    if (seen[k] == access.slot) counted = true;
-                }
-                if (!counted) seen[count++] = access.slot;
-            }
-        }
-    }
-
-    function _participantPrivateKeys() internal pure returns (uint256[] memory pks) {
-        pks = new uint256[](2);
-        pks[0] = ALICE_PK;
-        pks[1] = BOB_PK;
     }
 
     function _joins(uint256 firstAmount, uint256 secondAmount) internal view returns (JoinChannel[] memory joins) {
