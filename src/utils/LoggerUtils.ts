@@ -850,7 +850,7 @@ export class LoggerUtils {
     static getDisputeMetadata(dispute: DisputeStruct, disputeHash?: Hash) {
         const postedAuditingData = dispute.postedAuditingData;
         return {
-            disputeHash,
+            ...(disputeHash ? { disputeHash } : {}),
             input: this.getDisputeInputMetadata(dispute.input),
             outputSnapshotDataHash: String(dispute.outputSnapshotDataHash),
             postedAuditingData

@@ -761,10 +761,14 @@ export class EventHandler {
             // concurrently with its own upload. Slashes its own dispute misses
             // are applied in the next fork.
             if (this.storage.disputes.didIDispute(forkId))
-                await this.stateManager.disputeManager.killDispute(dispute);
+                await this.stateManager.disputeManager.killDispute(
+                    dispute,
+                    disputeHash
+                );
             else
                 await this.stateManager.disputeManager.dispute(forkId, {
                     kill: dispute,
+                    killHash: disputeHash,
                     latestStateProof
                 });
             return;
