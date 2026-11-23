@@ -64,14 +64,7 @@ contract StateProofHarness is DisputeFraudProofFacet, DisputeVerificationFacet, 
     /// stores `inbound` under its hash, as the chain's new inbound head
     function seedInboundBlock(bytes32 channelId, MessageBlock memory inbound) external returns (bytes32 hash) {
         hash = keccak256(abi.encode(inbound));
-        MessageBlock storage stored = inboundMessageBlockMap[channelId][hash];
-        stored.previousBlockHash = inbound.previousBlockHash;
-        stored.blockHeight = inbound.blockHeight;
-        stored.totalBalance = inbound.totalBalance;
-        stored.timestamp = inbound.timestamp;
-        for (uint256 i = 0; i < inbound.messages.length; i++) {
-            stored.messages.push(inbound.messages[i]);
-        }
+        _persistInboundMessageBlock(channelId, hash, inbound);
         channelBalances[channelId].latestInboundMessageBlockHash = hash;
         channelBalances[channelId].latestInboundMessageBlockHeight = inbound.blockHeight;
     }

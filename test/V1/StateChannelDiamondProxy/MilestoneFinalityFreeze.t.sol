@@ -13,7 +13,7 @@ import {
     DisputeInvalidStateProof,
     DisputeLastMilestoneNotFinalAndNoAuditingData
 } from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
-import {MESSAGE_TYPE_JOIN} from "../../../contracts/V1/types/MessageTypeHashes.sol";
+import {StoredInboundBlock} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol";
 import "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 import "../../../contracts/V1/types/ProofTypes.sol";
@@ -149,24 +149,11 @@ contract MilestoneFinalityFreezeHarness is DisputeFraudProofFacet, DisputeVerifi
     function seedInboundJoin(bytes32 channelId, bytes32 hash, bytes32 previous, uint256 height, address participant)
         external
     {
-        MessageBlock storage inbound = inboundMessageBlockMap[channelId][hash];
-        inbound.timestamp = block.timestamp;
+        StoredInboundBlock storage inbound = inboundMessageBlockMap[channelId][hash];
+        inbound.timestamp = uint128(block.timestamp);
         inbound.previousBlockHash = previous;
-        inbound.blockHeight = height;
-        Balance memory balance = Balance({amount: 0, data: ""});
-        inbound.messages
-            .push(
-                Message({
-                    messageType: MESSAGE_TYPE_JOIN,
-                    participant: participant,
-                    balance: balance,
-                    data: abi.encode(
-                        JoinChannel({
-                            channelId: channelId, participant: participant, deadlineTimestamp: 0, balance: balance
-                        })
-                    )
-                })
-            );
+        inbound.blockHeight = uint128(height);
+        inbound.joiners.push(participant);
         channelBalances[channelId].latestInboundMessageBlockHash = hash;
         channelBalances[channelId].latestInboundMessageBlockHeight = height;
     }

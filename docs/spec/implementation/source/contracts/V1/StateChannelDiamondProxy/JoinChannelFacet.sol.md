@@ -9,6 +9,7 @@
 - [`REQ-ENFADM-3-6A3BEB` (Custody through the adapter only)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb)
 - [`INV-ENFADM-1-H53AQY` (Inbound append is the only membership/value entry)](../../../../../specification/enforcement/admission-and-funds.md#inv-enfadm-1-h53aqy)
 - [`REQ-MSG-10-7JS45Q` (Joining MUST carry the joiner's signature plus the full threshold set's…)](../../../../../specification/settlement/cross-layer-messages.md#req-msg-10-7js45q)
+  Missing: `_processJoinChannel` does not check that the channel is open; on an unopened channel, or one that closed with no pending join, the threshold set is empty, so this requirement is met only vacuously and a join lands with no co-signature ([`FIND-JOIN-UNOPENED-1-BN4QYM`](../../../../../audit/open-findings.md#find-join-unopened-1-bn4qym)).
 
 ## UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A
 

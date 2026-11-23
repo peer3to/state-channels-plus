@@ -1,6 +1,8 @@
 pragma solidity ^0.8.8;
 
+import {Vm} from "forge-std/Vm.sol";
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
+import {StateChannelManagerEvents} from "../../../contracts/V1/StateChannelManagerEvents.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import {SelectiveDepositConsumerFacet} from "../harness/SelectiveDepositConsumerFacet.sol";
 import {
@@ -108,14 +110,7 @@ contract StateChannelManagerProxyDepositTest is DiamondHarness {
             deadlineTimestamp: block.timestamp + 120,
             balance: Balance({amount: 0, data: ""})
         });
-        bytes memory encodedJoin = abi.encode(join);
-
-        JoinChannelConfirmation memory confirmation;
-        confirmation.signedJoinChannel =
-            SignedJoinChannel({encodedJoinChannel: encodedJoin, signature: _sign(JOINER_PK, encodedJoin)});
-        confirmation.signatures = new bytes[](2);
-        confirmation.signatures[0] = _sign(ALICE_PK, encodedJoin);
-        confirmation.signatures[1] = _sign(BOB_PK, encodedJoin);
+        JoinChannelConfirmation memory confirmation = _joinConfirmation(join, JOINER_PK, _participantPrivateKeys());
 
         StateSnapshot memory snapshot = diamond.getStateSnapshot(JOIN_CHANNEL_ID);
         // the facet submits this single join as index 0 of the batch
@@ -124,6 +119,73 @@ contract StateChannelManagerProxyDepositTest is DiamondHarness {
         diamond.joinChannel(confirmation, keccak256(abi.encode(snapshot)), snapshot.forkId);
 
         assertEq(_depositCount(), 0);
+    }
+
+    // the join's record carries the joiner as pending, keyed by the hash of the full emitted block
+    function test_joinChannel_recordsJoinerAsPendingUnderTheFullBlockHash() public {
+        vm.recordLogs();
+        JoinChannel memory join = _joinOutsider();
+        MessageBlock memory joinBlock = abi.decode(
+            _logData(
+                vm.getRecordedLogs(), StateChannelManagerEvents.InboundMessagesProcessed.selector, JOIN_CHANNEL_ID
+            ),
+            (MessageBlock)
+        );
+
+        assertTrue(
+            diamond.hasInboundMessageBlock(JOIN_CHANNEL_ID, keccak256(abi.encode(joinBlock))), "join record not stored"
+        );
+        address[] memory pending = diamond.getPendingParticipants(JOIN_CHANNEL_ID);
+        assertEq(pending.length, 1, "pending count");
+        assertEq(pending[0], join.participant, "joiner not pending");
+        assertFalse(diamond.isUncommittedInboundMessageBlock(JOIN_CHANNEL_ID, joinBlock), "genuine block uncommitted");
+        // the record keeps no message data, but its key still covers it
+        joinBlock.messages[0].data = abi.encode(keccak256("altered join data"));
+        assertTrue(diamond.isUncommittedInboundMessageBlock(JOIN_CHANNEL_ID, joinBlock), "altered block found");
+    }
+
+    // a join stores only the small inbound record, not the full message block
+    function test_joinChannel_writesSevenFreshSlots() public {
+        vm.startStateDiffRecording();
+        _joinOutsider();
+        // 5 for the inbound record (link, height+timestamp, deposit total, joiners length, joiner); the other 2
+        // are this suite's consumer deposit counter and the channel's first nonzero deposit total
+        assertEq(_freshSlotsOf(address(diamond), vm.stopAndReturnStateDiff()), 7, "fresh slots");
+    }
+
+    // a nonzero join by the outsider JOINER_PK against the current snapshot
+    function _joinOutsider() internal returns (JoinChannel memory join) {
+        join = JoinChannel({
+            channelId: JOIN_CHANNEL_ID,
+            participant: vm.addr(JOINER_PK),
+            deadlineTimestamp: block.timestamp + 120,
+            balance: Balance({amount: 100, data: ""})
+        });
+        StateSnapshot memory snapshot = diamond.getStateSnapshot(JOIN_CHANNEL_ID);
+        vm.prank(join.participant);
+        diamond.joinChannel(
+            _joinConfirmation(join, JOINER_PK, _participantPrivateKeys()),
+            keccak256(abi.encode(snapshot)),
+            snapshot.forkId
+        );
+    }
+
+    // distinct slots of `account` written from zero to nonzero
+    function _freshSlotsOf(address account, Vm.AccountAccess[] memory accesses) internal pure returns (uint256 count) {
+        bytes32[] memory seen = new bytes32[](256);
+        for (uint256 i = 0; i < accesses.length; i++) {
+            Vm.StorageAccess[] memory storageAccesses = accesses[i].storageAccesses;
+            for (uint256 j = 0; j < storageAccesses.length; j++) {
+                Vm.StorageAccess memory access = storageAccesses[j];
+                if (access.account != account || !access.isWrite || access.reverted) continue;
+                if (access.previousValue != 0 || access.newValue == 0) continue;
+                bool counted;
+                for (uint256 k = 0; k < count; k++) {
+                    if (seen[k] == access.slot) counted = true;
+                }
+                if (!counted) seen[count++] = access.slot;
+            }
+        }
     }
 
     function _participantPrivateKeys() internal pure returns (uint256[] memory pks) {

@@ -57,6 +57,7 @@ import {StateSnapshotFacet} from "../../../contracts/V1/StateChannelDiamondProxy
 import {JoinChannelFacet} from "../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol";
 import {ErrorDisputeExecutionOutOfGas} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import {MESSAGE_TYPE_EXIT, MESSAGE_TYPE_JOIN} from "../../../contracts/V1/types/MessageTypeHashes.sol";
+import {StoredInboundBlock} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 
 contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificationFacet, DisputeWindowSeeding {
@@ -148,11 +149,11 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
         address slashed,
         uint256 slashTimestamp
     ) external {
-        MessageBlock storage inbound = inboundMessageBlockMap[channelId][inboundHead];
+        StoredInboundBlock storage inbound = inboundMessageBlockMap[channelId][inboundHead];
         inbound.blockHeight = 1;
-        inbound.timestamp = slashTimestamp;
-        inbound.messages.push(_joinMessage(channelId, survivor));
-        inbound.messages.push(_joinMessage(channelId, slashed));
+        inbound.timestamp = uint128(slashTimestamp);
+        inbound.joiners.push(survivor);
+        inbound.joiners.push(slashed);
         channelBalances[channelId].latestInboundMessageBlockHash = inboundHead;
         SnapshotData storage snapshot = stateSnapshots[channelId].snapshotData;
         snapshot.participants.push(survivor);
@@ -188,18 +189,6 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
         returns (address)
     {
         return _handleInvalidDisputeReason(encodedProof, dispute);
-    }
-
-    function _joinMessage(bytes32 channelId, address participant) private pure returns (Message memory) {
-        Balance memory balance = Balance({amount: 0, data: ""});
-        return Message({
-            messageType: MESSAGE_TYPE_JOIN,
-            participant: participant,
-            balance: balance,
-            data: abi.encode(
-                JoinChannel({channelId: channelId, participant: participant, deadlineTimestamp: 0, balance: balance})
-            )
-        });
     }
 }
 

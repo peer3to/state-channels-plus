@@ -24,24 +24,11 @@ contract DisputeWindowAdmissionHarness is DisputeManagerFacet, DisputeWindowSeed
     }
 
     function seedInboundJoin(bytes32 channelId, bytes32 hash, bytes32 previous, address participant) external {
-        MessageBlock storage inbound = inboundMessageBlockMap[channelId][hash];
-        inbound.timestamp = block.timestamp;
+        StoredInboundBlock storage inbound = inboundMessageBlockMap[channelId][hash];
+        inbound.timestamp = uint128(block.timestamp);
         inbound.previousBlockHash = previous;
-        inbound.blockHeight = ++channelBalances[channelId].latestInboundMessageBlockHeight;
-        Balance memory balance = Balance({amount: 0, data: ""});
-        inbound.messages
-            .push(
-                Message({
-                    messageType: MESSAGE_TYPE_JOIN,
-                    participant: participant,
-                    balance: balance,
-                    data: abi.encode(
-                        JoinChannel({
-                            channelId: channelId, participant: participant, deadlineTimestamp: 0, balance: balance
-                        })
-                    )
-                })
-            );
+        inbound.blockHeight = uint128(++channelBalances[channelId].latestInboundMessageBlockHeight);
+        inbound.joiners.push(participant);
         channelBalances[channelId].latestInboundMessageBlockHash = hash;
     }
 

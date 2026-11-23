@@ -98,6 +98,21 @@ abstract contract DiamondHarness is Test {
         return abi.encodePacked(r, s, v);
     }
 
+    /// `join` signed by `joinerPk` and co-signed by each of `signerPks`
+    function _joinConfirmation(JoinChannel memory join, uint256 joinerPk, uint256[] memory signerPks)
+        internal
+        pure
+        returns (JoinChannelConfirmation memory confirmation)
+    {
+        bytes memory encodedJoin = abi.encode(join);
+        confirmation.signedJoinChannel =
+            SignedJoinChannel({encodedJoinChannel: encodedJoin, signature: _sign(joinerPk, encodedJoin)});
+        confirmation.signatures = new bytes[](signerPks.length);
+        for (uint256 i = 0; i < signerPks.length; i++) {
+            confirmation.signatures[i] = _sign(signerPks[i], encodedJoin);
+        }
+    }
+
     function _makeSignedBlock(
         uint256 pk,
         bytes32 channelId,
