@@ -4,6 +4,7 @@ import {
     isChainProven,
     replicatedStateSource
 } from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
+import { sleep } from "@/utils";
 import { connectLocalDiamond } from "@/utils/localDiamond";
 import {
     BLOB_BASE_FEE_CONTRACT,
@@ -32,6 +33,8 @@ import { ethers } from "hardhat";
 const NO_NODE_ANSWER = { leftToNodes: 0, failed: 0, unsupported: 0 };
 const XCM_PRECOMPILE = "0x0000000000000000000000000000000000000800";
 const FAILED_READ = "Light client failed a read; asking the nodes";
+/** Long enough for a request a read sends on to reach the endpoint's proxy. */
+const UNSENT_REQUEST_WAIT_MS = 200;
 
 /** How a call ended: what it returned, or the data it reverted with. */
 function outcomeOf(call: Promise<string>) {
@@ -325,6 +328,126 @@ describe("Light client provider", function () {
             ...NO_NODE_ANSWER
         });
         expect(fixture.forwardedReadCount()).to.equal(0);
+    });
+
+    it("proves the block values and the state two calls made at once at one block both need in one request each", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const abi = await numberStorageInterface();
+        const address = await fixture.deployNumberStorage();
+        await node.transact(address, abi.encodeFunctionData("setValue", [42n]));
+        // both calls read at this block, whatever the node seals meanwhile
+        proxy.answerRequests(
+            "chain_getHeader",
+            await node.provider.send("chain_getHeader", [])
+        );
+        const call = { to: address, data: abi.encodeFunctionData("getValue") };
+        const requestsBefore = proxy.forwardedRequests.length;
+        const proofsBefore = proxy.forwardedCount("state_getReadProof");
+        const headersBefore = proxy.forwardedCount("chain_getHeader");
+        const release = proxy.holdRequests("state_getReadProof", 1);
+
+        const first = provider.call(call);
+        await waitFor(
+            () =>
+                proxy.forwardedCount("state_getReadProof") === proofsBefore + 1
+        );
+        const second = provider.call(call);
+        await waitFor(
+            () => proxy.forwardedCount("chain_getHeader") === headersBefore + 2
+        );
+        // the second call has its block and waits for the block values the first asked for
+        await sleep(UNSENT_REQUEST_WAIT_MS);
+        expect(proxy.forwardedCount("state_getReadProof")).to.equal(
+            proofsBefore + 1
+        );
+        release();
+
+        expect(await first).to.equal(toBeHex(42n, 32));
+        expect(await second).to.equal(toBeHex(42n, 32));
+        const provenKeys = proxy.forwardedRequests
+            .slice(requestsBefore)
+            .filter(({ method }) => method === "state_getReadProof")
+            .flatMap(({ params }) => (params as [string[], string])[0]);
+        expect(provenKeys).to.have.length.greaterThan(1);
+        expect(new Set(provenKeys).size).to.equal(provenKeys.length);
+        expect(provider.lightClientCounters).to.deep.equal({
+            fromPushedState: 0,
+            withFallbackRead: 2,
+            ...NO_NODE_ANSWER
+        });
+        expect(fixture.forwardedReadCount()).to.equal(0);
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("asks the endpoint once for its best block for two reads made while its answer is awaited", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const abi = await numberStorageInterface();
+        const address = await fixture.deployNumberStorage();
+        await node.transact(address, abi.encodeFunctionData("setValue", [42n]));
+        const headersBefore = proxy.forwardedCount("chain_getHeader");
+        const release = proxy.holdRequests("chain_getHeader", 1);
+
+        const first = provider.getStorage(address, 0);
+        await waitFor(
+            () => proxy.forwardedCount("chain_getHeader") === headersBefore + 1
+        );
+        const second = provider.getStorage(address, 0);
+        // the second read waits for the best block the first asked for
+        await sleep(UNSENT_REQUEST_WAIT_MS);
+        expect(proxy.forwardedCount("chain_getHeader")).to.equal(
+            headersBefore + 1
+        );
+        release();
+
+        expect(await first).to.equal(toBeHex(42n, 32));
+        expect(await second).to.equal(toBeHex(42n, 32));
+        expect(proxy.forwardedCount("chain_getHeader")).to.equal(
+            headersBefore + 1
+        );
+        expect(provider.lightClientCounters).to.deep.equal({
+            fromPushedState: 0,
+            withFallbackRead: 2,
+            ...NO_NODE_ANSWER
+        });
+        expect(fixture.forwardedReadCount()).to.equal(0);
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("asks the endpoint for its best block again for a read made after the block floor rose above a lookup still awaited", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const abi = await numberStorageInterface();
+        const address = await fixture.deployNumberStorage();
+        await node.transact(address, abi.encodeFunctionData("setValue", [7n]));
+        const headersBefore = proxy.forwardedCount("chain_getHeader");
+        const replies = proxy.holdReplies("chain_getHeader");
+
+        const first = provider.getStorage(address, 0);
+        await waitFor(() => replies.heldReplies() === 1);
+        // a later block, which the endpoint then shows the participant
+        await node.transact(address, abi.encodeFunctionData("setValue", [8n]));
+        await provider.send("eth_blockNumber", []);
+        const second = provider.getStorage(address, 0);
+        await waitFor(() => replies.heldReplies() === 2);
+        replies.release();
+
+        // the first read's best block is below the floor: the node answers it
+        expect(await first).to.equal(toBeHex(8n, 32));
+        expect(await second).to.equal(toBeHex(8n, 32));
+        expect(proxy.forwardedCount("chain_getHeader")).to.equal(
+            headersBefore + 2
+        );
+        expect(provider.lightClientCounters).to.deep.equal({
+            fromPushedState: 0,
+            withFallbackRead: 1,
+            leftToNodes: 0,
+            failed: 1,
+            unsupported: 0
+        });
+        expect(fixture.forwardedReadCount()).to.equal(1);
+        expect(fixture.loggedErrorMessages()).to.deep.equal([FAILED_READ]);
     });
 
     it("sends the node a read at an earlier block, a pending nonce and a call with a gas limit", async function () {

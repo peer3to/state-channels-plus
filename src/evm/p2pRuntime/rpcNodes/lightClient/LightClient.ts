@@ -13,6 +13,7 @@ import {
     NotLocalError
 } from "./LightClientUnavailableError";
 import type RpcNodeProvider from "../RpcNodeProvider";
+import type { ProvenAccount } from "./proof/AAccountProofVerifier";
 import type AProvenStateReader from "./proof/AProvenStateReader";
 import type {
     AccountStateRead,
@@ -55,6 +56,62 @@ type PushedBlock = { block: ProvenBlock; environment: BlockEnvironment };
 
 /** What a node proved for one read, kept so that each pass can fill it again. */
 type Fetched = { read: AccountStateRead; proven: ProvenAccountState };
+
+/** The hash the node knows a block by ({@link ProvenBlock.hash}). */
+type BlockHash = string;
+/** A lowercase 0x-prefixed account address. */
+type AccountAddress = string;
+/** An account's address and one of its storage slots, as `address:slot` in lowercase hex. */
+type SlotId = string;
+
+/**
+ * What the node proved, or is proving, at one block on request: every read
+ * at that block takes it from here, so that reads running at once ask for
+ * nothing twice. A proof that failed is not kept.
+ */
+type BlockProofs = {
+    /** The reads running at the block. */
+    readers: number;
+    environment?: Promise<BlockEnvironment>;
+    accounts: Map<AccountAddress, Promise<ProvenAccount>>;
+    /** Each account's code as hex. */
+    codes: Map<AccountAddress, Promise<string>>;
+    /** Each slot's 32-byte word as hex. */
+    slots: Map<SlotId, Promise<string>>;
+};
+
+function slotId(
+    address: AccountAddress,
+    slot: AccountStateRead["slots"][0]
+): SlotId {
+    return `${address}:${hexlify(slot)}`;
+}
+
+/** Keeps `proof` under `key` for the reads that follow; one that fails is dropped again. */
+function share<K, V>(
+    proofs: Map<K, Promise<V>>,
+    key: K,
+    proof: Promise<V>
+): void {
+    proofs.set(key, proof);
+    proof.catch(() => {
+        if (proofs.get(key) === proof) proofs.delete(key);
+    });
+}
+
+/** The proof kept under `key`, which the caller has just made sure of. */
+function shared<K, V>(proofs: Map<K, Promise<V>>, key: K): Promise<V> {
+    const proof = proofs.get(key);
+    if (!proof) throw new Error("A proof asked for is not kept");
+    return proof;
+}
+
+/** `value`, which the node's proof decides whenever it was asked. */
+function decided<T>(value: T | undefined): T {
+    if (value === undefined)
+        throw new Error("The proof left out what was asked of it");
+    return value;
+}
 
 /** An `eth_call` the light client can run: a call, not a creation. */
 export type LocalCall = {
@@ -152,6 +209,21 @@ export class LightClient {
     private readonly stalledNodes = new Set<RpcNodeProvider>();
     /** The block the held state was proven at. */
     private block?: ProvenBlock;
+    /**
+     * What the node proved on request at each block a read runs at, and at
+     * the block the state is held at.
+     */
+    private readonly blockProofs = new Map<BlockHash, BlockProofs>();
+    /**
+     * The best-block lookup sent and not answered yet, with the node it went
+     * to and the block floor it was sent under: a read made meanwhile on that
+     * node under that floor takes its answer instead of asking again.
+     */
+    private headLookup?: {
+        node: RpcNodeProvider | undefined;
+        floor: number | undefined;
+        head: Promise<ProvenBlock>;
+    };
     private evm?: Promise<EVM>;
 
     constructor(options: LightClientOptions) {
@@ -315,12 +387,46 @@ export class LightClient {
         isAnswer: (value: T) => boolean = () => true
     ): Promise<ProvenAnswer<T>> {
         const pushed = await this.pushedBlockAtFloor();
-        let askedNode = pushed === undefined;
         const block = pushed?.block ?? (await this.headAtFloor());
+        const proofs = this.proofsAt(block);
+        proofs.readers++;
+        try {
+            return await this.runAt(
+                block,
+                proofs,
+                pushed,
+                needsEnvironment,
+                read,
+                isAnswer
+            );
+        } finally {
+            proofs.readers--;
+            this.dropUnusedProofs();
+        }
+    }
+
+    /** {@link run} at `block`, which `pushed` is of when a subscription pushed it. */
+    private async runAt<T>(
+        block: ProvenBlock,
+        proofs: BlockProofs,
+        pushed: PushedBlock | undefined,
+        needsEnvironment: boolean,
+        read: (environment: BlockEnvironment) => Promise<T>,
+        isAnswer: (value: T) => boolean
+    ): Promise<ProvenAnswer<T>> {
+        let askedNode = pushed === undefined;
         let environment = pushed?.environment;
         if (needsEnvironment && !environment) {
             askedNode = true;
-            environment = await this.options.reader.environment(block);
+            if (!proofs.environment) {
+                const proof = this.options.reader.environment(block);
+                proofs.environment = proof;
+                proof.catch(() => {
+                    if (proofs.environment === proof)
+                        proofs.environment = undefined;
+                });
+            }
+            environment = await proofs.environment;
         }
         const fetched: Fetched[] = [];
         for (let pass = 0; pass < MAX_DISCOVERY_PASSES; pass++) {
@@ -376,13 +482,104 @@ export class LightClient {
             }
             if (undecided.length === 0) continue;
             askedNode = true;
-            const proven = await this.options.reader.read(block, undecided);
+            const proven = await this.prove(block, proofs, undecided);
             undecided.forEach((missing, index) =>
                 fetched.push({ read: missing, proven: proven[index] })
             );
         }
         throw new LightClientUnavailableError(
             "The read keeps finding state missing"
+        );
+    }
+
+    /** The proofs kept for `block`, started when it has none. */
+    private proofsAt(block: ProvenBlock): BlockProofs {
+        let proofs = this.blockProofs.get(block.hash);
+        if (!proofs) {
+            proofs = {
+                readers: 0,
+                accounts: new Map(),
+                codes: new Map(),
+                slots: new Map()
+            };
+            this.blockProofs.set(block.hash, proofs);
+        }
+        return proofs;
+    }
+
+    /** Forgets the proofs of every block no read runs at and the state is not held at. */
+    private dropUnusedProofs(): void {
+        for (const [hash, proofs] of this.blockProofs)
+            if (proofs.readers === 0 && hash !== this.block?.hash)
+                this.blockProofs.delete(hash);
+    }
+
+    /**
+     * What `reads` ask, proven at `block`: the node is asked only for what
+     * no read at that block has asked it yet, in one request, and the rest
+     * is taken from the proofs those reads got or still wait for.
+     */
+    private async prove(
+        block: ProvenBlock,
+        proofs: BlockProofs,
+        reads: AccountStateRead[]
+    ): Promise<ProvenAccountState[]> {
+        const unasked: AccountStateRead[] = [];
+        for (const { address, slots, account, code } of reads) {
+            const held = address.toLowerCase();
+            const missing = {
+                address,
+                slots: slots.filter(
+                    (slot) => !proofs.slots.has(slotId(held, slot))
+                ),
+                account: account && !proofs.accounts.has(held),
+                code: code && !proofs.codes.has(held)
+            };
+            if (missing.slots.length > 0 || missing.account || missing.code)
+                unasked.push(missing);
+        }
+        if (unasked.length > 0) {
+            const request = this.options.reader.read(block, unasked);
+            unasked.forEach(({ address, slots, account, code }, index) => {
+                const held = address.toLowerCase();
+                const answer = request.then((proven) => proven[index]);
+                slots.forEach((slot, slotIndex) =>
+                    share(
+                        proofs.slots,
+                        slotId(held, slot),
+                        answer.then(({ storage }) => storage[slotIndex])
+                    )
+                );
+                if (account)
+                    share(
+                        proofs.accounts,
+                        held,
+                        answer.then((proven) => decided(proven.account))
+                    );
+                if (code)
+                    share(
+                        proofs.codes,
+                        held,
+                        answer.then((proven) => decided(proven.code))
+                    );
+            });
+        }
+        return await Promise.all(
+            reads.map(async ({ address, slots, account, code }) => {
+                const held = address.toLowerCase();
+                return {
+                    address,
+                    storage: await Promise.all(
+                        slots.map((slot) =>
+                            shared(proofs.slots, slotId(held, slot))
+                        )
+                    ),
+                    ...(account && {
+                        account: await shared(proofs.accounts, held)
+                    }),
+                    ...(code && { code: await shared(proofs.codes, held) })
+                };
+            })
         );
     }
 
@@ -427,13 +624,33 @@ export class LightClient {
      * older block than the node has shown, so the read is left to the node.
      */
     private async headAtFloor(): Promise<ProvenBlock> {
-        const head = await this.options.reader.head();
+        const head = await this.bestBlock();
         const floor = this.options.blockFloor();
         if (floor !== undefined && head.number < floor)
             throw new LightClientUnavailableError(
                 `The endpoint's best block ${head.number} is below the block floor ${floor}`
             );
         return head;
+    }
+
+    /**
+     * The serving node's best block: reads made while a lookup on that node
+     * is unanswered share it, unless the block floor rose since it was sent,
+     * since the node may then have shown a block its answer predates.
+     */
+    private bestBlock(): Promise<ProvenBlock> {
+        const node = this.options.servingNode();
+        const floor = this.options.blockFloor();
+        const pending = this.headLookup;
+        if (pending && pending.node === node && pending.floor === floor)
+            return pending.head;
+        const lookup = { node, floor, head: this.options.reader.head() };
+        this.headLookup = lookup;
+        const answered = () => {
+            if (this.headLookup === lookup) this.headLookup = undefined;
+        };
+        lookup.head.then(answered, answered);
+        return lookup.head;
     }
 
     /** The newest block a subscription on the serving node pushed and the light client holds, with its environment. */
@@ -460,6 +677,7 @@ export class LightClient {
         if (block.hash !== this.block?.hash) {
             this.state.forgetProvenState();
             this.block = block;
+            this.dropUnusedProofs();
         }
         if (fetched.length > 0)
             this.state.fill(

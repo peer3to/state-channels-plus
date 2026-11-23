@@ -11,6 +11,25 @@ scores are what they are** and which lever moves each one.
 
 The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
 
+## Light client reads share proofs and best-block lookups — 2026-11-23
+
+Reads at one block now ask the endpoint once for each value, and reads made at once while nothing is
+pushed ask once for the best block. Four declarations cover the shared proofs
+([`REQ-LC-9-KWXV43.T1.P13`](../specification/runtime/light-client.md#req-lc-9-kwxv43.t1.p13)-`P15` in
+[LightClientFollowedChannel.test.ts](../verification/tests/test/lightClient/LightClientFollowedChannel.test.ts.md), and
+[`REQ-LC-9-KWXV43.T2.P1`](../specification/runtime/light-client.md#req-lc-9-kwxv43.t2.p1) in
+[LightClientProvider.test.ts](../verification/tests/test/lightClient/LightClientProvider.test.ts.md)); the
+proxy holds the first read's proof request and counts what the endpoint is asked. Four faults (no
+sharing, block values not shared, slots of one account not told apart, a failed proof kept) each failed
+its declaration. Two declarations cover the shared best-block lookup
+([`REQ-LC-1-JT5PKT.T1.P27`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p27),
+[`P28`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p28)): the proxy holds the
+lookup's request, or its answer while the block floor rises. Three faults (no sharing, the floor
+ignored, a lookup kept after its answer) each failed a declaration; the last failed `T2.P1`, which
+needs a second lookup after the first was answered. The light client suites passed 105 of 105
+locally against the local build of peer3-parachain PR #3 (`--lc-tests`, run-129). Not run yet: the
+distributed gate and the farm flows for these changes.
+
 ## Storage proof verifier tests — 2026-11-18
 
 [SubstrateTrieProof.test.ts](../verification/tests/test/unit/SubstrateTrieProof.test.ts.md) (20 declarations) and

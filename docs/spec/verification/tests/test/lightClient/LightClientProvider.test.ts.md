@@ -29,6 +29,9 @@ best block, or a distributed worker.
 - `answers from the block a mined transaction is in`: REQ-LC-1-JT5PKT.T1.P6
 - `keeps nothing a call wrote`: REQ-LC-1-JT5PKT.T1.P7
 - `keeps the answers of reads made at once apart`: REQ-LC-1-JT5PKT.T1.P8
+- `proves the block values and the state two calls made at once at one block both need in one request each`: REQ-LC-9-KWXV43.T2.P1
+- `asks the endpoint once for its best block for two reads made while its answer is awaited`: REQ-LC-1-JT5PKT.T1.P27
+- `asks the endpoint for its best block again for a read made after the block floor rose above a lookup still awaited`: REQ-LC-1-JT5PKT.T1.P28
 - `sends the node a read at an earlier block, a pending nonce and a call with a gas limit`: REQ-LC-2-PMY1VG.T1.P1
 - `leaves to the node a call that reaches the chain's own precompile or reads an earlier block's hash`: REQ-LC-2-PMY1VG.T1.P2
 - `asks the node, logs an error and counts the failure when a proof is refused`: REQ-LC-3-W7RRHM.T1.P1

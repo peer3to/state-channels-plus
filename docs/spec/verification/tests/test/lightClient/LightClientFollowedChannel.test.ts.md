@@ -50,3 +50,6 @@ the proxy saw: a read the pushed partition answers asks the endpoint nothing. It
 - `hands on no push of a refused subscription that arrives before the endpoint ends it, and counts the refusal once`: REQ-LC-7-W8WDN3.T1.P6
 - `reads the followed contract's slots from the push and proves another contract's account, then its slots, in two requests`: REQ-LC-9-KWXV43.T1.P11
 - `reads an ERC-20 balance of a holder the push names, proving the token's account and code, then its balance and supply together, and proves them again at a later block`: REQ-LC-9-KWXV43.T1.P12
+- `proves a value two reads miss at once at the same block in one request`: REQ-LC-9-KWXV43.T1.P13
+- `proves a value no read at the block has asked for in a request of its own, while another read's proof is awaited`: REQ-LC-9-KWXV43.T1.P14
+- `asks for a proof again after the one a read at the same block asked for failed`: REQ-LC-9-KWXV43.T1.P15

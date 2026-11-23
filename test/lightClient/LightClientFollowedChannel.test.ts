@@ -35,6 +35,8 @@ const TOKEN_BALANCES_SLOT = 1n;
 const PROOF_REQUESTS = ["chain_getHeader", "state_getReadProof"];
 /** The longest a read waits for a push of the block it must not read below. */
 const PUSH_WAIT_MS = PEER3_LIGHT_CLIENT_CHAIN.blockTimeMs;
+/** Long enough for a request a read sends on to reach the endpoint's proxy. */
+const UNSENT_REQUEST_WAIT_MS = 200;
 /** How long a failed subscription change waits before it is tried again: a block time. */
 const SUBSCRIPTION_RETRY_DELAY_MS = PEER3_LIGHT_CLIENT_CHAIN.blockTimeMs;
 
@@ -896,6 +898,125 @@ describe("Light client followed channel", function () {
             withFallbackRead: 2,
             failed: 0
         });
+        held.release();
+    });
+
+    it("proves a value two reads miss at once at the same block in one request", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        // the read block stays the newest pushed one: no new head raises the floor
+        proxy.changeNotifications("eth_subscription", withoutNewHeads);
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        // slot 11 is only channel B's
+        await node.readWriteLog(contract, CHANNEL_B, 11, 11, 3);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(receipt.blockNumber);
+        const held = proxy.holdNotifications(PUSHED_BLOCK);
+        const proofsBefore = proxy.forwardedCount("state_getReadProof");
+        const release = proxy.holdRequests("state_getReadProof", 1);
+
+        const first = provider.getStorage(contract, 11);
+        await waitFor(
+            () =>
+                proxy.forwardedCount("state_getReadProof") === proofsBefore + 1
+        );
+        const second = provider.getStorage(contract, 11);
+        // a read made after the second one is answered: the second has found the slot missing
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(7, 32)
+        );
+        await sleep(UNSENT_REQUEST_WAIT_MS);
+        expect(proxy.forwardedCount("state_getReadProof")).to.equal(
+            proofsBefore + 1
+        );
+        release();
+
+        expect(await first).to.equal(toBeHex(3, 32));
+        expect(await second).to.equal(toBeHex(3, 32));
+        expect(proxy.forwardedCount("state_getReadProof")).to.equal(
+            proofsBefore + 1
+        );
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 1,
+            withFallbackRead: 2,
+            failed: 0
+        });
+        held.release();
+    });
+
+    it("proves a value no read at the block has asked for in a request of its own, while another read's proof is awaited", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        // the read block stays the newest pushed one: no new head raises the floor
+        proxy.changeNotifications("eth_subscription", withoutNewHeads);
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        // slot 11 is only channel B's, slot 12 nobody's
+        await node.readWriteLog(contract, CHANNEL_B, 11, 11, 3);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(receipt.blockNumber);
+        const held = proxy.holdNotifications(PUSHED_BLOCK);
+        const proofsBefore = proxy.forwardedCount("state_getReadProof");
+        const release = proxy.holdRequests("state_getReadProof", 1);
+
+        const waiting = provider.getStorage(contract, 11);
+        await waitFor(
+            () =>
+                proxy.forwardedCount("state_getReadProof") === proofsBefore + 1
+        );
+        expect(await provider.getStorage(contract, 12)).to.equal(
+            toBeHex(0, 32)
+        );
+        expect(proxy.forwardedCount("state_getReadProof")).to.equal(
+            proofsBefore + 2
+        );
+        release();
+
+        expect(await waiting).to.equal(toBeHex(3, 32));
+        expect(proxy.forwardedCount("state_getReadProof")).to.equal(
+            proofsBefore + 2
+        );
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 0,
+            withFallbackRead: 2,
+            failed: 0
+        });
+        held.release();
+    });
+
+    it("asks for a proof again after the one a read at the same block asked for failed", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        // the read block stays the newest pushed one: no new head raises the floor
+        proxy.changeNotifications("eth_subscription", withoutNewHeads);
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        // slot 11 is only channel B's
+        await node.readWriteLog(contract, CHANNEL_B, 11, 11, 3);
+        const receipt = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(receipt.blockNumber);
+        const held = proxy.holdNotifications(PUSHED_BLOCK);
+        const proofsBefore = proxy.forwardedCount("state_getReadProof");
+        proxy.failNextRequest("state_getReadProof");
+
+        // the node answers the first read itself: its proof failed
+        expect(await provider.getStorage(contract, 11)).to.equal(
+            toBeHex(3, 32)
+        );
+        expect(await provider.getStorage(contract, 11)).to.equal(
+            toBeHex(3, 32)
+        );
+
+        expect(proxy.forwardedCount("state_getReadProof")).to.equal(
+            proofsBefore + 2
+        );
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 0,
+            withFallbackRead: 1,
+            failed: 1
+        });
+        expect(fixture.loggedErrorMessages()).to.deep.equal([FAILED_READ]);
         held.release();
     });
 
