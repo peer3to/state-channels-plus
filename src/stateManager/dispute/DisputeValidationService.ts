@@ -17,11 +17,12 @@ import {
     BlockHeight,
     Bytes,
     ChannelId,
+    ChecksumAddress,
     ForkId,
     Hash,
     Signature
 } from "@/types/types";
-import { hash, isSubset, Logger } from "@/utils";
+import { getChecksumAddress, hash, isSubset, Logger } from "@/utils";
 import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import { preferLocal } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -260,10 +261,11 @@ export default class DisputeValidationService {
 
     /**
      * The dispute's latest finalized point G, the first block of its last
-     * milestone, is above a final point F of this peer, and G's snapshot
-     * consumed fewer inbound blocks than F's: on one history the inbound
-     * height never goes down, so the dispute's history skipped inbound the
-     * final history consumed. F is this peer's latest final point when G is
+     * milestone, is above a final point F of this peer, G's snapshot consumed
+     * fewer inbound blocks than F's, and those extra blocks hold a JOIN of an
+     * address outside G's participants: on one history the inbound height
+     * never goes down, so the dispute's history skipped a JOIN the final
+     * history consumed. F is this peer's latest final point when G is
      * above it, else the highest final point it can prove below G. G's
      * snapshot comes from `evidence` (the posted auditing data, else this
      * peer's stored snapshots). The chain is not asked when this peer's own
@@ -289,8 +291,7 @@ export default class DisputeValidationService {
         const { finalProof, finalized } = final;
         if (
             this.isInboundRegressionRuledOutLocally(
-                latestFinalizedSnapshot.snapshotData
-                    .latestInboundMessageBlockHash as Hash,
+                latestFinalizedSnapshot.snapshotData,
                 finalized.latestInboundMessageBlockHash
             )
         )
@@ -323,14 +324,18 @@ export default class DisputeValidationService {
     /**
      * Skip-only filter before the chain read of the regression: true when
      * this peer's own stored inbound blocks put G's inbound head at or above
-     * F's. Heads are looked up by hash, never by a snapshot's height field. A
-     * hash the store does not hold rules nothing out, so the chain is asked;
-     * a counter is stored only on the chain's verdict.
+     * F's, or when the stored run above G's head up to F's holds no JOIN of
+     * an address outside G's participants (only top-ups). Heads are looked
+     * up by hash, never by a snapshot's height field. A hash or a run the
+     * store does not hold rules nothing out, so the chain is asked; a counter
+     * is stored only on the chain's verdict.
      */
     private isInboundRegressionRuledOutLocally(
-        latestFinalizedInboundHash: Hash,
+        latestFinalized: SnapshotDataStruct,
         finalInboundHash: Hash
     ): boolean {
+        const latestFinalizedInboundHash =
+            latestFinalized.latestInboundMessageBlockHash as Hash;
         if (latestFinalizedInboundHash === finalInboundHash) return true;
         const { inboundMessages } = this.storage;
         const latestFinalizedInbound = inboundMessages.getMessageBlock(
@@ -338,10 +343,24 @@ export default class DisputeValidationService {
         );
         const finalInbound = inboundMessages.getMessageBlock(finalInboundHash);
         if (!latestFinalizedInbound || !finalInbound) return false;
-        return (
+        if (
             BigInt(latestFinalizedInbound.blockHeight) >=
             BigInt(finalInbound.blockHeight)
+        )
+            return true;
+        const skipped = inboundMessages.tryGetMessageBlocksInRange({
+            upperBlockHash: finalInboundHash,
+            lowerBlockHash: latestFinalizedInboundHash
+        });
+        if (skipped.missingBlockHash) return false;
+        const participants = new Set<ChecksumAddress>(
+            latestFinalized.participants.map((participant) =>
+                getChecksumAddress(String(participant))
+            )
         );
+        return this.agreementManager
+            .getJoiners(skipped.blocks)
+            .every((joiner) => participants.has(getChecksumAddress(joiner)));
     }
 
     /**
