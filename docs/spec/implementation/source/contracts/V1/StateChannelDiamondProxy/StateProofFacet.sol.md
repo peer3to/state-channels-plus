@@ -59,3 +59,5 @@ Proof predicates
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P87` — `isDisputeConflictingWithFinalState` reads the anchor's inbound head, not the supplied snapshot, when the last milestone holds the chain anchor
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P88` — `isDisputeConflictingWithFinalState` takes the fork's start state, not an unfinalized block zero, as the latest finalized point under a genesis start
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P89` — `isDisputeConflictingWithFinalState` compares a final block zero's inbound under a genesis start and rejects a final point that consumed fewer inbound blocks
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P90` — `isDisputeConflictingWithFinalState` rejects a supplied snapshot whose hash is not the latest finalized block's commitment, also when it consumed fewer inbound blocks than the final point
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P91` — `isDisputeConflictingWithFinalState` reverts with `ErrorInboundMessageBlockNotStored` when the latest finalized point names an inbound hash that is neither stored nor the anchor's head

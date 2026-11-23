@@ -246,3 +246,4 @@ Kill application
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P218` — A true `DisputeFinalPointRegression` verdict kills the dispute and slashes its disputer, not the submitter
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P219` — A false `DisputeFinalPointRegression` verdict keeps the dispute and slashes the submitter
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P220` — A `DisputeFinalPointRegression` check that reverts reverts the whole application, slashing nobody
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P221` — A `DisputeConflictsWithFinalState` check that reverts reverts the whole application, slashing nobody
