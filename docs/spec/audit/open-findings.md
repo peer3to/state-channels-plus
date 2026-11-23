@@ -2687,14 +2687,14 @@ threshold-final as `DisputeConflictsWithFinalState` does, and `latestFinalizedSn
 preimage of G's `stateSnapshotHash`. G is the first block of D's last milestone, or the chain
 anchor when that milestone holds it; the proof names no milestone. The kill holds when F is final,
 G is strictly above F and not the anchor, the snapshot hashes to G's commitment, and the inbound
-height of F is greater than that of G.
+height of F is greater than that of G, with a new participant's JOIN in between.
 
 Each height is the chain's, never a snapshot's own height field: a stored inbound block reads its
 stored height, the anchor's inbound head reads the anchor's inbound height, and any other hash
 reverts the check, so it neither kills nor slashes. `DisputeConflictsWithFinalState` gains the
 same snapshot field and now also requires the inbound height of F to be at least that of D's
-latest finalized point: a side-chain final point below the JOIN can no longer kill the honest
-history through a conflict. Slashing is unchanged. An honest auditor builds the kill next to the
+latest finalized point whenever the extra inbound blocks hold a new participant's JOIN: a
+side-chain final point below the JOIN can no longer kill the honest history through a conflict. Slashing is unchanged. An honest auditor builds the kill next to the
 conflict kill, from its own final point and the dispute's last-milestone snapshot, and stores it
 only when the chain's check agrees
 ([`REQ-FP-7-4DD0D7.T10`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t10)).
@@ -2712,6 +2712,14 @@ set only by listing L in `onChainSlashes` although the chain never slashed L. Th
 that list against the chain before any walk or snapshot lookup, so such a Y is killed by
 `DisputeOnChainSlashesNotSubset` whether or not the auditor holds G's snapshot
 ([`REQ-FP-7-4DD0D7.T10`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t10)).
+
+A top-up is also a JOIN message, so both checks count only the JOIN of an address outside the
+lower point's participants (G's for the regression, F's for the conflict), in the stored inbound
+run above the lower head up to the higher one; a run the chain does not hold reverts with
+`ErrorInboundMessageBlockNotStored` (engineer's decision, 2026-11-23). A colluder can post its own
+JOIN from a fresh address and consume it in a divergent history above F: the conflict counter
+against that history is then refused. This residual is accepted and documented, not fixed
+([`REQ-FP-7-4DD0D7.T9`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t9)).
 
 **Evidence:**
 [DisputeFinalPointRegression.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeFinalPointRegression.t.sol.md)
