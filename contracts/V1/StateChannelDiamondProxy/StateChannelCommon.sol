@@ -976,9 +976,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return false;
     }
 
-    /// Whether `milestone` lies wholly below the anchor of `cursor` (the milestone's last block decodes to a height
-    /// below the anchor height), else its first block, decoded once: a one-block milestone reuses the last block's
-    /// decode. `milestone` must not be empty.
+    /// below = milestone's last block is under the anchor height; else its first block (one decode each).
+    /// `milestone` must not be empty
     function _openMilestone(MilestoneProof memory milestone, WalkCursor memory cursor)
         internal
         view

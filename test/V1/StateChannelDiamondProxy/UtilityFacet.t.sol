@@ -263,8 +263,7 @@ contract UtilityFacetTest is Test {
         assertEq(decoded.messageBlocks.length, 50, "every message block decoded");
         assertEq(decoded.messageBlocks[49].messages.length, 10, "every message decoded");
 
-        // the budget caps the decode, it is not an entry fee: a 200 KB body (budget about 4.1M) decodes and answers
-        // in 7/8 of its budget, about 2.9M being enough
+        // budget caps the decode, not an entry fee -> 7/8 of it still answers
         Block memory large = _canonicalBlock();
         large.messageBlocks[0].messages[0].data = new bytes(200_000);
         bytes memory encodedLarge = abi.encode(large);
@@ -296,9 +295,7 @@ contract UtilityFacetTest is Test {
         assertLt(used, _decodeGasBudget(aliased.length) + 100_000, "judged within the budget of its length");
     }
 
-    /// For each canonical shape with the highest decode cost per byte, at every power of two and the midpoint 1.5x
-    /// between them up to the largest size whose decode stays under the 17,916,000 per-transaction cap: the measured
-    /// decode plus 25% fits its budget.
+    /// worst canonical shapes, powers of two and 1.5x midpoints up to the tx cap: decode + 25% fits the budget
     function test_decodeGasBudget_coversEveryCanonicalWorstCaseShape() public {
         // shape, then largest count
         uint256[2][6] memory sizes = [
@@ -319,8 +316,7 @@ contract UtilityFacetTest is Test {
         }
     }
 
-    /// the gas `decodeBlock` uses on a canonical block of `shape` with `count` elements, in a fresh frame so blocks
-    /// built for earlier sizes do not grow this one's memory
+    /// `decodeBlock` gas for `shape` x `count`, in a fresh frame (no memory carry-over)
     function measureDecode(uint256 shape, uint256 count) external view returns (uint256 used, uint256 length) {
         bytes memory data = abi.encodeCall(UtilityFacet.decodeBlock, (abi.encode(_shape(shape, count))));
         // the encoded block's length word sits after the selector and its offset

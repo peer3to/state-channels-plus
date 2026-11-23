@@ -38,8 +38,7 @@ library CanonicalMutations {
         revert("no dirty-padding word found");
     }
 
-    // An encoded `Block` whose `messageBlocks` length word claims `length` entries: the
-    // array is the encoding's last member, so the claim runs past the bytes.
+    // `messageBlocks` length word claims `length` entries -> runs past the bytes
     function withMessageBlocksLength(bytes memory encodedBlock, uint256 length)
         internal
         pure
@@ -52,9 +51,7 @@ library CanonicalMutations {
         }
     }
 
-    // An encoded `Block` with one message block rewritten so that `n` head offsets all
-    // point at that one element: the decoder copies it `n` times before the
-    // canonicality check can reject the bytes.
+    // `n` head offsets point at one message block -> decoder copies it `n` times before rejecting
     function withAliasedMessageBlock(bytes memory encodedBlock, uint256 n)
         internal
         pure
@@ -84,8 +81,7 @@ library CanonicalMutations {
         }
     }
 
-    // where the `messageBlocks` length word of an encoded `Block` starts: the head
-    // offset of the fourth member, after the top-level 0x20 offset word
+    // start of the `messageBlocks` length word (fourth member's head offset)
     function _messageBlocksAt(bytes memory encodedBlock) private pure returns (uint256 lengthAt) {
         uint256 offset;
         assembly ("memory-safe") {

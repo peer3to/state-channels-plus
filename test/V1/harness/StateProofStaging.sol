@@ -109,8 +109,7 @@ contract StateProofHarness is DisputeFraudProofFacet, DisputeVerificationFacet, 
     }
 }
 
-/// `count` message blocks of `messagesEach` empty messages: a canonical payload whose decode cost grows with the
-/// element count, not the byte count (50 of 10 decode at about 2.3M gas)
+/// `count` x `messagesEach` empty messages: decode cost grows with element count, not bytes
 function _emptyMessageBlocks(uint256 count, uint256 messagesEach) pure returns (MessageBlock[] memory blocks) {
     blocks = new MessageBlock[](count);
     for (uint256 i = 0; i < count; i++) {

@@ -7,9 +7,7 @@ import "../../../contracts/V1/types/DataTypes.sol";
 import "../../../contracts/V1/types/DisputeTypes.sol";
 import "../../../contracts/V1/types/ProofTypes.sol";
 
-/// The gas a challenger attaches never decides a dispute fraud proof: a block decode that runs out of gas reverts
-/// `ErrorBlockDecodeOutOfGas` instead of answering "undecodable". Each case sweeps the gas limit below what the full
-/// verdict needs: every call either reverts or reaches the full-gas verdict.
+/// sweep gas below the full verdict: every call reverts or reaches the full-gas verdict
 contract DecodeOutOfGasVerdictTest is StateProofStaging {
     /// gas limits probed below the full verdict's cost
     uint256 private constant PROBES = 150;
@@ -18,38 +16,33 @@ contract DecodeOutOfGasVerdictTest is StateProofStaging {
         _stageGenesisChannel();
     }
 
-    /// a dishonest dispute: block 6 is heavy, block 7 does not link to it. The challenge at block 7 is true; an
-    /// out-of-gas decode of block 6 must not read as "an undecodable predecessor is its own step's fault" (no fault),
-    /// which would keep the dishonest dispute and slash the honest challenger.
+    /// dishonest: heavy block 6, block 7 unlinked -> true challenge at 7
     function test_underfundedTrueChallengeAtABlockAfterAHeavyPredecessorIsNoVerdict() public {
         (MilestoneProof memory run, StateSnapshot memory anchor) = _heavyRun(1);
         _breakLinkAt(run, 2);
         _assertPointerGasDecidesNothing(run, anchor, 2, true);
     }
 
-    /// a dishonest dispute: the run's first block 5 is heavy, block 7 does not link to block 6. The challenge at block
-    /// 7 is true; an out-of-gas decode of block 5, which gives the run's start, must not read as "the first block does
-    /// not decode, so only it is judged" (no fault at block 7).
+    /// dishonest: heavy run start 5, block 7 unlinked -> true challenge at 7
     function test_underfundedTrueChallengeAtABlockAfterAHeavyFirstBlockIsNoVerdict() public {
         (MilestoneProof memory run, StateSnapshot memory anchor) = _heavyRun(0);
         _breakLinkAt(run, 2);
         _assertPointerGasDecidesNothing(run, anchor, 2, true);
     }
 
-    /// an honest dispute whose block 7 is heavy: a false challenge at block 7 must never kill it
+    /// honest: heavy block 7 -> false challenge never kills
     function test_underfundedFalseChallengeAtAHeavyHonestBlockIsNoVerdict() public {
         (MilestoneProof memory run, StateSnapshot memory anchor) = _heavyRun(2);
         _assertPointerGasDecidesNothing(run, anchor, 2, false);
     }
 
-    /// an honest dispute whose latest block 8 is heavy: every challenge first decodes it in the latest-state check, so
-    /// a false challenge at block 6 must never kill the dispute
+    /// honest: heavy latest block 8 (latest-state check) -> false challenge at 6 never kills
     function test_underfundedFalseChallengeAtAHeavyHonestLatestBlockIsNoVerdict() public {
         (MilestoneProof memory run, StateSnapshot memory anchor) = _heavyRun(3);
         _assertPointerGasDecidesNothing(run, anchor, 1, false);
     }
 
-    /// an honest dispute whose block 7 is heavy: a false structure challenge at block 7 must never kill it
+    /// honest: heavy block 7 -> false structure challenge never kills
     function test_underfundedFalseBlockStructureChallengeAtAHeavyHonestBlockIsNoVerdict() public {
         (MilestoneProof memory run,) = _heavyRun(2);
         _assertGasDecidesNothing(
@@ -57,9 +50,7 @@ contract DecodeOutOfGasVerdictTest is StateProofStaging {
         );
     }
 
-    /// a dishonest dispute: the last run's first block 5 is heavy, block 7 does not link to its predecessor. The
-    /// structure challenge at block 7 is true; an out-of-gas decode of block 5 must not read as "not eligible", which
-    /// would slash the honest challenger.
+    /// dishonest: heavy run start 5, block 7 unlinked -> true structure challenge at 7
     function test_underfundedTrueBlockStructureChallengeAfterAHeavyFirstBlockIsNoVerdict() public {
         (MilestoneProof memory run,) = _heavyRun(0);
         _breakLinkAt(run, 2);
@@ -68,9 +59,7 @@ contract DecodeOutOfGasVerdictTest is StateProofStaging {
         );
     }
 
-    /// a dishonest dispute: the last block 8 of the run 3..8 over the anchor 5 is heavy and names another fork. The
-    /// header challenge is true; an out-of-gas decode of block 8 must not read as "undecodable, skip it" and end the
-    /// scan without the mismatch.
+    /// dishonest: heavy last block 8 names another fork -> true header challenge
     function test_underfundedTrueHeaderChallengeAtAHeavyLastBlockIsNoVerdict() public {
         _seedAnchor(5);
         MilestoneProof memory run = _run(3, 6, keccak256("block 2"), _signers(ALICE_KEY));
@@ -81,8 +70,7 @@ contract DecodeOutOfGasVerdictTest is StateProofStaging {
         );
     }
 
-    /// a dishonest dispute: its heavy block 7 commits another snapshot than the final state F = 7. The conflict
-    /// challenge is true; an out-of-gas decode of block 7 must not read as "no conflicting block".
+    /// dishonest: heavy block 7 commits another snapshot than final state 7 -> true conflict challenge
     function test_underfundedTrueConflictChallengeAtAHeavyBlockIsNoVerdict() public {
         (MilestoneProof memory run,) = _heavyRun(2);
         _commitAt(run, 2, keccak256("a forked state at 7"), _signers(ALICE_KEY));
@@ -97,8 +85,7 @@ contract DecodeOutOfGasVerdictTest is StateProofStaging {
         );
     }
 
-    /// a dishonest dispute: block 7 is dated before its heavy predecessor 6. The applied invalid-timestamp proof is
-    /// true; an out-of-gas decode of block 6 in its authenticity check must not read as "not authentic".
+    /// dishonest: block 7 dated before heavy block 6 -> true invalid-timestamp proof
     function test_underfundedTrueTimestampProofAfterAHeavyPredecessorIsNoVerdict() public {
         (MilestoneProof memory run,) = _heavyRun(1);
         _backdateAt(run, 2, _signers(ALICE_KEY));
@@ -117,7 +104,7 @@ contract DecodeOutOfGasVerdictTest is StateProofStaging {
         _makeHeavy(run, heavyIndex);
     }
 
-    /// block `blockIndex` carries 50 message blocks of 10 empty messages (decode ~2.3M gas); later blocks are relinked
+    /// block `blockIndex` gets 50x10 empty messages; later blocks relinked
     function _makeHeavy(MilestoneProof memory run, uint256 blockIndex) private view {
         Block memory b = _decode(run, blockIndex);
         b.messageBlocks = _emptyMessageBlocks(50, 10);
@@ -138,8 +125,7 @@ contract DecodeOutOfGasVerdictTest is StateProofStaging {
         );
     }
 
-    /// `proof` reaches the verdict `killed` with full gas; with any less it reverts or reaches the same verdict. Every
-    /// sweep must hit the decode guard at least once, so its reverts are not all the frame running dry.
+    /// full gas -> `killed`; less -> revert or same verdict; guard hit at least once
     function _assertGasDecidesNothing(
         Dispute memory dispute,
         DisputeFraudProofType proofType,
@@ -178,8 +164,7 @@ contract DecodeOutOfGasVerdictTest is StateProofStaging {
         assertGt(guardReverts, 0, "the sweep crosses the decode guard");
     }
 
-    /// B sends `data` with exactly `gasLimit`; only the revert selector is copied (into scratch space), so the probes
-    /// do not grow this frame's memory
+    /// B sends `data` with `gasLimit`; copies only the revert selector (no memory growth)
     function _challenge(bytes memory data, uint256 gasLimit) private returns (bool ok, bytes4 selector) {
         address target = address(harness);
         vm.prank(bob);

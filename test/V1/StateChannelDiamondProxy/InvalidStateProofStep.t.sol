@@ -587,8 +587,7 @@ contract InvalidStateProofStepTest is StateProofStaging {
         Staged memory staged = _lieOverTheLastTwoMilestones(32);
         _commit(staged.dispute);
         bytes memory proof = _postedInvalidStep(staged.auditingData, staged.joinHop);
-        // the step resumes from its predecessor's first block; a step that walked the 31 hops before that would
-        // decode their blocks
+        // step resumes from its predecessor's first block -> no hop before it is decoded
         MilestoneProof[] memory milestones = staged.dispute.input.stateProof.milestones;
         for (uint256 i = 0; i + 1 < staged.joinHop; i++) {
             _expectNoDecode(milestones[i], 0, milestones[i].blockConfirmations.length);
@@ -617,8 +616,7 @@ contract InvalidStateProofStepTest is StateProofStaging {
         Dispute memory dispute = _dispute(_two(fault, finalRun));
         _commit(dispute);
         bytes memory proof = _invalidStep(entries, 0);
-        // the payload still grows with the final run; a step that leaked its signature and link checks would decode
-        // its interior blocks
+        // step must not decode the final run's interior blocks
         _expectNoDecode(finalRun, 1, finalRun.blockConfirmations.length - 1);
         uint256 before = gasleft();
         _apply(dispute, DisputeFraudProofType.DisputeInvalidStateProof, proof);

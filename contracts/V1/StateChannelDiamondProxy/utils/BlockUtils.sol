@@ -5,21 +5,13 @@ import "../Errors.sol";
 import "./GeneralUtils.sol";
 import "../UtilityFacetInterface.sol";
 
-// measured for solc 0.8.34 via-IR, 100 runs; recalibrate with `test_decodeGasBudget_coversEveryCanonicalWorstCaseShape`
-// on any compiler or optimizer change
-// calibrated on forge's gas schedule: assumes the parachain meters the in-frame decode the same (its proof-size
-// charge is per transaction, not per call frame)
-// `_decodeGasBudget` terms, the measured worst canonical shape plus 25%: fixed cost of the frame and header
+// decode gas budget = worst canonical shape + 25% (solc 0.8.34 via-IR); recheck on compiler change
 uint256 constant DECODE_GAS_BASE = 15_000;
-// decode, re-encode and copy work per word
 uint256 constant DECODE_GAS_PER_WORD = 400;
-// memory expansion of the fresh callee frame, which holds about four copies of the block
 uint256 constant DECODE_GAS_QUAD_DIVISOR = 25;
 
-/// `encodedBlock` decoded by `decoder.decodeBlock` within `_decodeGasBudget(encodedBlock.length)`, or false when it
-/// is not a canonical block that decodes within that budget. A decode the frame could not fund is not a verdict:
-/// EIP-150 then leaves the caller at most 1/64 of the gas it had, and that case reverts with
-/// `ErrorBlockDecodeOutOfGas`, so the gas a caller attaches decides only whether there is a verdict, never which.
+/// decode within the length budget; false = not a canonical block that fits it.
+/// an under-funded decode reverts `ErrorBlockDecodeOutOfGas` -> gas never picks the verdict
 function _tryDecodeBlock(UtilityFacetInterface decoder, bytes memory encodedBlock)
     view
     returns (bool decoded, Block memory blockData)
@@ -34,7 +26,6 @@ function _tryDecodeBlock(UtilityFacetInterface decoder, bytes memory encodedBloc
     }
 }
 
-/// The gas a canonical block of `length` bytes needs to decode, with margin: a function of its bytes alone.
 function _decodeGasBudget(uint256 length) pure returns (uint256) {
     uint256 words = (length + 31) / 32;
     return DECODE_GAS_BASE + words * DECODE_GAS_PER_WORD + words * words / DECODE_GAS_QUAD_DIVISOR;
