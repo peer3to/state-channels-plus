@@ -12,7 +12,15 @@ import { Block, StateSnapshot } from "@/models";
 import Storage from "@/storage";
 import type { BlockPredecessor } from "@/storage/QueueStorage";
 import { timeoutWaitTime } from "@/types";
-import { Address, Bytes, ChannelId, Hash, Signature } from "@/types/types";
+import {
+    Address,
+    BlockHeight,
+    Bytes,
+    ChannelId,
+    ForkId,
+    Hash,
+    Signature
+} from "@/types/types";
 import { hash, isSubset, Logger } from "@/utils";
 import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import { preferLocal } from "@/utils/localDiamond";
@@ -97,6 +105,10 @@ export default class DisputeValidationService {
         if (await this.tryCreateHeaderMismatchProof(dispute)) return false;
         if (await this.tryCreateInvalidBlockStructureProof(dispute))
             return false;
+        // before any walk: a false slash list also shrinks the threshold set
+        // that allowed the omission, and the walk may then lack evidence
+        if (await this.tryCreateOnChainSlashesNotSubsetProof(dispute))
+            return false;
 
         const evidence: StateProofEvidence = data
             ? {
@@ -116,9 +128,6 @@ export default class DisputeValidationService {
 
         const walk = await this.verifyAndReplay(dispute, evidence, data);
         if (!walk) return false;
-
-        if (await this.tryCreateOnChainSlashesNotSubsetProof(dispute))
-            return false;
 
         return await this.continueOtherChecks(dispute, walk, data);
     }
@@ -240,12 +249,14 @@ export default class DisputeValidationService {
 
     /**
      * The dispute's latest finalized point G, the first block of its last
-     * milestone, is above this peer's latest final point F, and G's snapshot
+     * milestone, is above a final point F of this peer, and G's snapshot
      * consumed fewer inbound blocks than F's: on one history the inbound
      * height never goes down, so the dispute's history skipped inbound the
-     * final history consumed. G's snapshot comes from `evidence` (the posted
-     * auditing data, else this peer's stored snapshots). The chain reads both
-     * inbound heights itself; the proof is stored only when it agrees.
+     * final history consumed. F is this peer's latest final point when G is
+     * above it, else the highest final point it can prove below G. G's
+     * snapshot comes from `evidence` (the posted auditing data, else this
+     * peer's stored snapshots). The chain reads both inbound heights itself;
+     * the proof is stored only when it agrees.
      */
     private async tryCreateFinalPointRegressionProof(
         dispute: DisputeStruct,
@@ -257,15 +268,12 @@ export default class DisputeValidationService {
         const first = stateProof.milestones.at(-1)?.blockConfirmations[0];
         const latestFinalized = first && Block.tryFromBlockConfirmation(first);
         if (!latestFinalizedSnapshot || !latestFinalized) return false;
-        const finalized =
-            await this.agreementManager.getLocalFinalizedSnapshot(forkId);
-        if (!finalized || latestFinalized.height <= finalized.blockHeight)
-            return false;
-        const finalProof = await this.agreementManager.tryBuildFinalProofAt(
+        const final = await this.tryBuildFinalProofBelow(
             forkId,
-            finalized.blockHeight
+            latestFinalized.height
         );
-        if (!finalProof) return false;
+        if (!final) return false;
+        const { finalProof, finalized } = final;
         const proof = { finalProof, latestFinalizedSnapshot };
         if (
             !(await this.isAcceptedByChain(
@@ -289,6 +297,36 @@ export default class DisputeValidationService {
             proof
         );
         return true;
+    }
+
+    /**
+     * This peer's proof of a final point below `height`: its latest final
+     * point when that is below, else the highest final point it can prove
+     * below `height` (the latest one may lie at or above it). Undefined when
+     * it proves none above its start: the dispute's walk passed the start.
+     */
+    private async tryBuildFinalProofBelow(forkId: ForkId, height: BlockHeight) {
+        const finalized =
+            await this.agreementManager.getLocalFinalizedSnapshot(forkId);
+        if (!finalized) return undefined;
+        if (height > finalized.blockHeight) {
+            const finalProof = await this.agreementManager.tryBuildFinalProofAt(
+                forkId,
+                finalized.blockHeight
+            );
+            return finalProof && { finalProof, finalized };
+        }
+        if (height === 0) return undefined;
+        const built = await this.agreementManager.tryBuildFinalProof(
+            forkId,
+            height - 1
+        );
+        if (!built || built.finalProof.stateProof.milestones.length === 0)
+            return undefined;
+        return {
+            finalProof: built.finalProof,
+            finalized: built.finalizedSnapshot
+        };
     }
 
     /** The chain's eligibility of the last milestone's block at `blockIndex` for a block-specific challenge. */
