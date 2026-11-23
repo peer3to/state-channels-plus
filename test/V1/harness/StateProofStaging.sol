@@ -8,7 +8,6 @@ import {DisputeFraudProofFacet} from "../../../contracts/V1/StateChannelDiamondP
 import {DisputeVerificationFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol";
 import {FraudProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol";
 import {StateProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol";
-import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
 import {_delegatecall} from "../../../contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol";
 import {MathState, MathStateMachine} from "../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
 import {
@@ -42,12 +41,9 @@ contract StateProofHarness is DisputeFraudProofFacet, DisputeVerificationFacet, 
         stateMachineImplementation = MathStateMachine(stateMachine);
     }
 
-    /// the routed StateProofFacet reads and the `isGenesisSnapshotWithoutTimeCheck` self-call, answered by the facet
-    /// the proxy routes them to
+    /// the routed StateProofFacet reads, answered by the facet the proxy routes them to
     fallback() external {
-        address facet = stateProofFacetAddress;
-        if (msg.sig == UtilityFacet.isGenesisSnapshotWithoutTimeCheck.selector) facet = utilityFacetAddress;
-        bytes memory result = _delegatecall(facet, msg.data);
+        bytes memory result = _delegatecall(stateProofFacetAddress, msg.data);
         assembly ("memory-safe") {
             return(add(result, 32), mload(result))
         }
@@ -113,6 +109,15 @@ contract StateProofHarness is DisputeFraudProofFacet, DisputeVerificationFacet, 
     }
 }
 
+/// `count` message blocks of `messagesEach` empty messages: a canonical payload whose decode cost grows with the
+/// element count, not the byte count (50 of 10 decode at about 2.3M gas)
+function _emptyMessageBlocks(uint256 count, uint256 messagesEach) pure returns (MessageBlock[] memory blocks) {
+    blocks = new MessageBlock[](count);
+    for (uint256 i = 0; i < count; i++) {
+        blocks[i].messages = new Message[](messagesEach);
+    }
+}
+
 /// Real histories for the state-proof walk and the dispute fraud proofs over it: a fork whose ID hashes its genesis
 /// data (participants A and B), linked runs whose blocks commit per-height snapshots, inbound JOIN blocks stored under
 /// their real hashes, committed disputes and allegations submitted by a challenger.
@@ -128,6 +133,8 @@ abstract contract StateProofStaging is DiamondHarness {
     bytes internal constant GENESIS_STATE = "genesis state";
 
     StateProofHarness internal harness;
+    /// the deployed UtilityFacet the pipeline decodes blocks through
+    address internal utility;
     SnapshotData internal genesisData;
     /// the fork ID hashes the genesis data, so a dispute's genesis reference links to it
     bytes32 internal forkId;
@@ -142,11 +149,12 @@ abstract contract StateProofStaging is DiamondHarness {
         vm.warp(1_000_000);
         // deployCode deploys the built artifacts instead of embedding them in every
         // test contract that extends this staging
+        utility = vm.deployCode("UtilityFacet.sol:UtilityFacet");
         harness = StateProofHarness(
             vm.deployCode(
                 "StateProofStaging.sol:StateProofHarness",
                 abi.encode(
-                    vm.deployCode("UtilityFacet.sol:UtilityFacet"),
+                    utility,
                     vm.deployCode("StateProofFacet.sol:StateProofFacet"),
                     vm.deployCode("FraudProofFacet.sol:FraudProofFacet"),
                     vm.deployCode("MathStateMachine.sol:MathStateMachine", abi.encode(uint256(3_000_000), uint256(32)))
@@ -488,6 +496,17 @@ abstract contract StateProofStaging is DiamondHarness {
         _applyBy(bob, dispute, proofType, encodedProof);
     }
 
+    /// `_apply` with exactly `gasLimit` for the challenge
+    function _applyWithGas(
+        Dispute memory dispute,
+        DisputeFraudProofType proofType,
+        bytes memory encodedProof,
+        uint256 gasLimit
+    ) internal {
+        vm.prank(bob);
+        harness.applyDisputeFraudProofs{gas: gasLimit}(_oneProof(dispute, proofType, encodedProof));
+    }
+
     /// `challenger` submits one dispute fraud proof against `dispute`
     function _applyBy(
         address challenger,
@@ -495,12 +514,20 @@ abstract contract StateProofStaging is DiamondHarness {
         DisputeFraudProofType proofType,
         bytes memory encodedProof
     ) internal {
-        DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
+        vm.prank(challenger);
+        harness.applyDisputeFraudProofs(_oneProof(dispute, proofType, encodedProof));
+    }
+
+    /// one dispute fraud proof against `dispute`, as `applyDisputeFraudProofs` takes it
+    function _oneProof(Dispute memory dispute, DisputeFraudProofType proofType, bytes memory encodedProof)
+        internal
+        pure
+        returns (DisputeFraudProof[] memory proofs)
+    {
+        proofs = new DisputeFraudProof[](1);
         proofs[0] = DisputeFraudProof({
             proofType: proofType, participant: dispute.input.disputer, dispute: dispute, encodedProof: encodedProof
         });
-        vm.prank(challenger);
-        harness.applyDisputeFraudProofs(proofs);
     }
 
     /// the allegation held: the dispute is killed and its disputer slashed, the challenger B keeps its seat

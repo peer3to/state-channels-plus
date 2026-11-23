@@ -22,6 +22,7 @@ import {
     expectFinalHeadProof,
     expectHeadAndTailProof,
     getBlockConfirmation,
+    heavyConfirmation,
     otherPeers,
     postSelfRemovalDispute,
     stageChainAnchor,
@@ -30,6 +31,10 @@ import {
     undecodableConfirmation
 } from "@test/fixtures/MilestoneProofStartStaging";
 import { readDisputeKill } from "@test/fixtures/OmittedInboundJoinerStaging";
+import {
+    fraudProofSendOutcomes,
+    revertedFraudProofSendErrors
+} from "@test/fixtures/ReplayGasLimitStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
@@ -536,6 +541,125 @@ describe("E2E: dispute validation / milestone proof start", function () {
             expect(Number(counter.milestoneIndex)).to.equal(0);
             expect(counter.hasBlockIndex).to.equal(true);
             expect(Number(counter.blockIndex)).to.equal(1);
+        });
+
+        it("E36: omitted data, a heavy middle block followed by a block that does not link to it in an earlier milestone, every auditor's first kill sent with 3/8 of its estimate → an under-funded kill is mined and reverts in the decode guard, an auditor's kill lands, the submitter is slashed and no auditor is", async function () {
+            const h = TestSession.getHarness();
+            // the kill period covers a mined under-funded kill and its resend
+            const { forkId, anchorHeight } = await stageChainAnchor(h, 0, {
+                evidenceTime: 30
+            });
+            // the next writer keeps its block above the anchor to itself
+            const { leader, startHeight } =
+                await h.transition.authorNextBlockOffWireWait();
+            expect(startHeight).to.equal(anchorHeight + 1);
+            const submitter = leader.index;
+            const auditors = otherPeers(h, submitter);
+            // every auditor's first kill, alone or bundled with its own
+            // dispute, gets 3/8 of the chain's estimate. Measured on Hardhat:
+            // the guard fires for a lone kill sent with 1.7M to 2.7M gas and
+            // a bundled one with 1.8M to 2.8M, the bundled estimate is 4.1M,
+            // so 3/8 plus the signer's headroom sends about 2.3M
+            const scaled = [];
+            for (const auditor of auditors)
+                scaled.push(
+                    await h.rpcStub.scaleReplayGasEstimates(auditor, {
+                        methods: ["applyDisputeFraudProofs", "multicall"],
+                        numerator: 3,
+                        denominator: 8,
+                        times: 1
+                    })
+                );
+            const fromBlock = await h.provider.getBlockNumber();
+
+            const { disputeHash } = await postSelfRemovalDispute(
+                h,
+                submitter,
+                async (dispute) => {
+                    expect(dispute.postedAuditingData).to.equal(false);
+                    expectAnchorRunProof(dispute, anchorHeight, 2);
+                    const [anchorBlock, tail] =
+                        dispute.input.stateProof.milestones[0]
+                            .blockConfirmations;
+                    // [anchor, heavy, tail]: the tail links to the anchor, not
+                    // to the heavy block, so only a pointer at block 2 counters
+                    dispute.input.stateProof.milestones.unshift({
+                        blockConfirmations: [
+                            anchorBlock,
+                            await heavyConfirmation(h, tail, anchorBlock),
+                            tail
+                        ]
+                    });
+                },
+                { malicious: true }
+            );
+
+            // the kill alone is the oracle: resolving the channel after the
+            // longer kill period does not fit the test budget
+            await h.assert.storage.honestPeersStoredDisputeFraudProofWait({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidStateProof,
+                peerIndices: auditors
+            });
+            await assertKilledOnChain(h, {
+                forkId,
+                submitter,
+                disputeHash,
+                observers: auditors
+            });
+            const kill = await readDisputeKill(h, h.getPeer(submitter).address);
+            expect(
+                auditors.map((index) => h.getPeer(index).address),
+                "an auditor sent the kill"
+            ).to.include(kill.killer);
+            expect(kill.appliedProofTypes).to.deep.equal([
+                DisputeFraudProofType.DisputeInvalidStateProof
+            ]);
+            const counter = Codec.decode(
+                kill.appliedEncodedProofs[0]!,
+                DisputeFraudProofType.DisputeInvalidStateProof
+            );
+            expect(Number(counter.milestoneIndex)).to.equal(0);
+            expect(counter.hasBlockIndex).to.equal(true);
+            expect(Number(counter.blockIndex)).to.equal(2);
+            const slashed = await h.query.onChainSlashedParticipants();
+            expect(slashed).to.include(h.getPeer(submitter).address);
+            for (const auditor of auditors)
+                expect(
+                    slashed,
+                    `auditor ${auditor} keeps its seat`
+                ).to.not.include(h.getPeer(auditor).address);
+            // the under-funded kills were mined and reverted in the decode guard,
+            // not in some other out-of-gas
+            const revertErrors: (string | null)[] = [];
+            for (const auditor of auditors) {
+                const sends = await fraudProofSendOutcomes(h, auditor);
+                if (
+                    sends.applyDisputeFraudProofs.reverted +
+                        sends.multicallBestEffortLast.reverted ===
+                    0
+                )
+                    continue;
+                revertErrors.push(
+                    ...(await revertedFraudProofSendErrors(
+                        h,
+                        auditor,
+                        fromBlock
+                    ))
+                );
+            }
+            const estimates = await Promise.all(
+                scaled.map((scale) => scale.estimates())
+            );
+            expect(
+                revertErrors.length,
+                `an under-funded kill was mined (estimates ${JSON.stringify(estimates)})`
+            ).to.be.greaterThan(0);
+            for (const error of revertErrors)
+                expect(
+                    error,
+                    `estimates ${JSON.stringify(estimates)}`
+                ).to.equal("ErrorBlockDecodeOutOfGas");
         });
 
         it("E36: posted data, an unrecoverable confirmation signature in the last milestone → DisputeInvalidStateProof kills the dispute and slashes its submitter", async function () {

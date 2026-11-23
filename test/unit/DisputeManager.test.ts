@@ -3275,6 +3275,7 @@ describe("Unit: DisputeManager", function () {
                 committedAfterKill,
                 rejected,
                 sends,
+                revertErrors,
                 passedPreflights
             } = await killTimeoutCalldataRefutationWithScaledEstimate(
                 TestSession.getHarness(),
@@ -3284,12 +3285,13 @@ describe("Unit: DisputeManager", function () {
             expect(passedPreflights).to.equal(1);
             expect(applies.length).to.equal(1);
             expect(applies[0].gasLimit).to.equal(String(replayGas));
-            // the resend keeps the replay gas: both sends run out of it
-            expect(sends).to.deep.equal({
-                succeeded: 0,
-                reverted: 2,
-                revertedGasUsed: 2n * replayGas
-            });
+            // the resend keeps the replay gas: both sends revert short of the replay
+            expect(sends.succeeded).to.equal(0);
+            expect(sends.reverted).to.equal(2);
+            expect(revertErrors).to.deep.equal([
+                "ErrorInsufficientGasForStateTransition",
+                "ErrorInsufficientGasForStateTransition"
+            ]);
             expect(rejected).to.not.equal("");
             expect(committedAfterKill).to.equal(true);
             expect(slashed).to.not.include(disputer);

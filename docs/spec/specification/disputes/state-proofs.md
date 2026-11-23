@@ -57,7 +57,7 @@ counter rejects that claim, including a genesis claim after block zero became fi
 
 **<a id="req-sp-7-70emat"></a>`REQ-SP-7-70EMAT`.** In the retained region, verification checks
 consecutive heights, hash links, channel and fork identity, authentic authors and confirmations,
-required threshold coverage, snapshot commitments and the latest-state commitment. Supporting snapshot entries must match the milestone count exactly; missing or excess entries and an empty retained milestone are invalid. Malformed checked bytes are invalid. Inner bytes in a skipped prefix are not checked, but bytes needed to determine that cutoff must decode; an undecodable endpoint cannot establish that the run is wholly below the anchor.
+required threshold coverage, snapshot commitments and the latest-state commitment. Supporting snapshot entries must match the milestone count exactly; missing or excess entries and an empty retained milestone are invalid. Malformed checked bytes are invalid. Inner bytes in a skipped prefix are not checked, but bytes needed to determine that cutoff must decode; an undecodable endpoint cannot establish that the run is wholly below the anchor. A block is decodable when its canonical encoding decodes within a gas budget fixed by its byte length. A funded decode answers; a decode whose failure leaves the caller at most 1/64 of the gas it had reverts and gives no verdict. The gas a caller attaches therefore decides only whether there is a verdict, never which.
 
 ## Membership and finality
 
@@ -115,7 +115,9 @@ The guarantees require collision-resistant commitments, authentic domain-separat
 available required snapshots/state/inbound evidence, and deterministic membership derivation.
 The trusted start determines the checked region; peers starting at different final points need
 not inspect or reject the same old history. Finality evidence is distinct from application-state
-validity. No admission cap on milestone length or walk gas is selected here.
+validity. No admission cap on milestone length or walk gas is selected here. Decodability within
+the per-length budget holds only while that budget bounds the decode cost of every canonical
+encoding on the target compiler and EVM.
 
 ## Security considerations
 
@@ -128,6 +130,14 @@ extra threshold evidence does not remove challenge eligibility above those bound
 The per-step invalidity counter avoids re-walking earlier milestones, but binding supplied data
 still costs more as the proof grows. Its total cost is not constant. The safety argument for
 unfinalized tails depends on round-robin leadership; other election policies need explicit rules.
+
+A decode that runs out of gas must never read as "undecodable": a dishonest disputer could shape a
+heavy block so that an under-funded true challenge returns "no fault" and slashes the honest
+challenger. The per-length budget keeps a non-canonical block whose offsets alias one element
+(decoding to far more than its bytes) judged undecodable at bounded cost. A block, canonical or
+not, whose decode budget plus the rest of the check exceeds the per-transaction gas cap cannot be
+judged on chain, and a dishonest disputer can place such a block in its own proof; no block-size
+cap is selected ([`OQ-32-5NDD24` (Proof and audit size bounds)](../open-questions.md#oq-32-5ndd24)).
 
 ## Verification and test plan
 
@@ -1320,6 +1330,30 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 <a id="req-sp-7-70emat.t5.p8"></a>`REQ-SP-7-70EMAT.T5.P8` — A milestone walk accepts the decodable genesis-linked block-zero control with snapshotMismatch false.
 
 <a id="req-sp-7-70emat.t5.p9"></a>`REQ-SP-7-70EMAT.T5.P9` — Standalone milestone finality accepts the authentic block-zero control when its author is the entire supplied threshold set, returning the latest snapshot hash.
+
+<a id="req-sp-7-70emat.t5.p10"></a>`REQ-SP-7-70EMAT.T5.P10` — An under-funded true pointer challenge whose predecessor decode runs out of gas reverts with no verdict: the dispute stays committed and the challenger is not slashed.
+
+<a id="req-sp-7-70emat.t5.p11"></a>`REQ-SP-7-70EMAT.T5.P11` — An under-funded false challenge at a heavy honest block never kills the dispute.
+
+<a id="req-sp-7-70emat.t5.p12"></a>`REQ-SP-7-70EMAT.T5.P12` — An under-funded block-structure challenge whose eligibility read runs out of gas reverts with no verdict.
+
+<a id="req-sp-7-70emat.t5.p13"></a>`REQ-SP-7-70EMAT.T5.P13` — A malformed block whose length field runs past its bytes is judged undecodable without a revert at bounded gas.
+
+<a id="req-sp-7-70emat.t5.p14"></a>`REQ-SP-7-70EMAT.T5.P14` — An alias-offset block in the anchor run is judged undecodable within its budget, and a pointer challenge at it kills the dispute at bounded gas.
+
+<a id="req-sp-7-70emat.t5.p15"></a>`REQ-SP-7-70EMAT.T5.P15` — A canonical block of every calibrated worst-case shape decodes within its budget.
+
+<a id="req-sp-7-70emat.t5.p16"></a>`REQ-SP-7-70EMAT.T5.P16` — End to end, an auditor's under-funded kill is mined and reverts in the decode guard with no verdict, an auditor's kill lands, the submitter is slashed and no auditor is.
+
+<a id="req-sp-7-70emat.t5.p17"></a>`REQ-SP-7-70EMAT.T5.P17` — A pointer challenge at a malformed block whose length field runs past its bytes kills the dispute at bounded gas.
+
+<a id="req-sp-7-70emat.t5.p18"></a>`REQ-SP-7-70EMAT.T5.P18` — An under-funded true header challenge whose last block is heavy and names another fork reverts or kills, never slashes the challenger.
+
+<a id="req-sp-7-70emat.t5.p19"></a>`REQ-SP-7-70EMAT.T5.P19` — An under-funded true conflict-with-final-state challenge at a heavy block reverts or kills, never slashes the challenger.
+
+<a id="req-sp-7-70emat.t5.p20"></a>`REQ-SP-7-70EMAT.T5.P20` — An under-funded applied invalid-timestamp proof whose predecessor authenticity check decodes a heavy block reverts or kills, never slashes the challenger.
+
+<a id="req-sp-7-70emat.t5.p21"></a>`REQ-SP-7-70EMAT.T5.P21` — An under-funded true pointer challenge whose run's heavy first block gives the checked run start reverts with no verdict, never slashes the challenger.
 
 #### <a id="req-sp-10-jmvhtb.t7"></a>`REQ-SP-10-JMVHTB.T7`
 

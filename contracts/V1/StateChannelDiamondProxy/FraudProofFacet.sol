@@ -305,7 +305,7 @@ contract FraudProofFacet is StateChannelCommon {
             // past genesis on its fork the chain no longer holds the genesis to judge block 0 against -> revert,
             // never slash the prover
             require(
-                UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(onChainSnapshot),
+                _isGenesisSnapshotWithoutTimeCheck(onChainSnapshot),
                 RaceConditionBlockHeightTooOld(onChainSnapshot.blockHeight, _block.transaction.header.transactionCnt)
             );
             if (_block.previousBlockHash != keccak256(abi.encode(onChainSnapshot))) return _valid(blockAuthor);
@@ -325,7 +325,7 @@ contract FraudProofFacet is StateChannelCommon {
         (bool isAvailable, uint256 timestamp) = _getGenesisTimestamp(channelId, originForkId, forkId);
         require(isAvailable, RaceConditionGenesisTimestampNotAvailable(channelId, originForkId, forkId));
         if (timestamp != correctGenesisSnapshot.timestamp) return _invalid();
-        if (!UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(correctGenesisSnapshot)) {
+        if (!_isGenesisSnapshotWithoutTimeCheck(correctGenesisSnapshot)) {
             return _invalid();
         }
         if (_block.previousBlockHash != keccak256(abi.encode(correctGenesisSnapshot))) return _valid(blockAuthor);

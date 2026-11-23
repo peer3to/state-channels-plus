@@ -1,7 +1,6 @@
 pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
-import "./UtilityFacet.sol";
 import "./Errors.sol";
 import "../types/DisputeFraudProofTypes.sol";
 
@@ -15,7 +14,7 @@ contract StateProofFacet is StateChannelCommon {
         (bool hasBlock, SignedBlock memory latestSignedBlock) = _getLatestSignedBlock(dispute.input.stateProof);
         if (hasBlock) {
             (bool decoded, Block memory latestBlock) =
-                UtilityFacet(utilityFacetAddress).tryDecodeBlock(latestSignedBlock.encodedBlock);
+                _tryDecodeBlock(UtilityFacetInterface(utilityFacetAddress), latestSignedBlock.encodedBlock);
             return decoded && latestBlock.stateSnapshotHash == dispute.input.latestStateSnapshotHash;
         }
 
@@ -132,7 +131,7 @@ contract StateProofFacet is StateChannelCommon {
         (bool hasBlock, SignedBlock memory latestSignedBlock) = _getLatestSignedBlock(dispute.input.stateProof);
         if (!hasBlock) return false;
         (bool decoded, Block memory latestBlock) =
-            UtilityFacet(utilityFacetAddress).tryDecodeBlock(latestSignedBlock.encodedBlock);
+            _tryDecodeBlock(UtilityFacetInterface(utilityFacetAddress), latestSignedBlock.encodedBlock);
         return decoded && latestBlock.transaction.header.transactionCnt < onChainSnapshot.blockHeight;
     }
 
@@ -172,10 +171,10 @@ contract StateProofFacet is StateChannelCommon {
         cursor.start = stateSnapshots[dispute.input.channelId];
         cursor.useOnChainSnapshot = _canStartFromOnChainSnapshot(cursor.start, dispute.input.forkId);
         // a block the dispute's walk does not check (history below the anchor) is no conflict
-        (bool isKept, bool hasHeight, uint256 fromIndex) = _checkedRunStart(milestone, cursor);
+        (bool isKept, bool hasHeight, uint256 fromIndex, Block memory conflicting) = _checkedRunStart(milestone, cursor);
         if (!isKept || !hasHeight || proof.blockIndex < fromIndex) return false;
-        (bool decoded, Block memory conflicting) = UtilityFacet(utilityFacetAddress)
-            .tryDecodeBlock(milestone.blockConfirmations[proof.blockIndex].signedBlock.encodedBlock);
+        bool decoded = true;
+        if (proof.blockIndex != 0) (decoded, conflicting) = _decodeMilestoneBlock(milestone, proof.blockIndex);
         return decoded && conflicting.transaction.header.channelId == dispute.input.channelId
             && conflicting.transaction.header.forkId == dispute.input.forkId
             && conflicting.transaction.header.transactionCnt == finalPoint.blockHeight
@@ -212,9 +211,9 @@ contract StateProofFacet is StateChannelCommon {
         BlockConfirmation[] memory lastRun = milestones[milestones.length - 1].blockConfirmations;
         if (blockIndex >= lastRun.length) return false;
         (bool firstDecoded, Block memory firstBlock) =
-            UtilityFacet(utilityFacetAddress).tryDecodeBlock(lastRun[0].signedBlock.encodedBlock);
+            _tryDecodeBlock(UtilityFacetInterface(utilityFacetAddress), lastRun[0].signedBlock.encodedBlock);
         (bool decoded, Block memory challengedBlock) =
-            UtilityFacet(utilityFacetAddress).tryDecodeBlock(lastRun[blockIndex].signedBlock.encodedBlock);
+            _tryDecodeBlock(UtilityFacetInterface(utilityFacetAddress), lastRun[blockIndex].signedBlock.encodedBlock);
         if (!firstDecoded || !decoded) return false;
 
         (bool canUseOnChainSnapshot, StateSnapshot memory anchor) =
@@ -257,13 +256,13 @@ contract StateProofFacet is StateChannelCommon {
         if (blockIndex == 0) return false;
 
         (bool currentDecoded, Block memory currentBlock) =
-            UtilityFacet(utilityFacetAddress).tryDecodeBlock(currentSignedBlock.encodedBlock);
+            _tryDecodeBlock(UtilityFacetInterface(utilityFacetAddress), currentSignedBlock.encodedBlock);
         if (!currentDecoded) return true;
 
         SignedBlock memory previousSignedBlock = milestone.blockConfirmations[blockIndex - 1].signedBlock;
 
         (bool previousDecoded, Block memory previousBlock) =
-            UtilityFacet(utilityFacetAddress).tryDecodeBlock(previousSignedBlock.encodedBlock);
+            _tryDecodeBlock(UtilityFacetInterface(utilityFacetAddress), previousSignedBlock.encodedBlock);
         if (!previousDecoded) return true;
 
         return currentBlock.previousBlockHash != keccak256(previousSignedBlock.encodedBlock)
@@ -275,8 +274,11 @@ contract StateProofFacet is StateChannelCommon {
         SnapshotData memory thresholdSnapshotData,
         MilestoneProof memory milestone
     ) public virtual returns (bool isFinal, bytes32 finalizedSnapshotHash) {
+        if (milestone.blockConfirmations.length == 0) return (false, bytes32(0));
+        (bool firstDecoded, Block memory firstBlock) = _decodeMilestoneBlock(milestone, 0);
+        if (!firstDecoded) return (false, bytes32(0));
         (bool isLinked, uint256 thresholdCount, bytes32 fromBlockSnapshotHash,) =
-            _walkMilestoneBlocks(bytes32(0), forkId, milestone, 0, thresholdSnapshotData.participants);
+            _walkMilestoneBlocks(bytes32(0), forkId, milestone, 0, firstBlock, thresholdSnapshotData.participants);
         if (!isLinked) return (false, bytes32(0));
         return (thresholdCount == thresholdSnapshotData.participants.length, fromBlockSnapshotHash);
     }

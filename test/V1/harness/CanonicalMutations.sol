@@ -37,4 +37,60 @@ library CanonicalMutations {
         }
         revert("no dirty-padding word found");
     }
+
+    // An encoded `Block` whose `messageBlocks` length word claims `length` entries: the
+    // array is the encoding's last member, so the claim runs past the bytes.
+    function withMessageBlocksLength(bytes memory encodedBlock, uint256 length)
+        internal
+        pure
+        returns (bytes memory malformed)
+    {
+        malformed = bytes.concat(encodedBlock);
+        uint256 lengthAt = _messageBlocksAt(encodedBlock);
+        assembly ("memory-safe") {
+            mstore(add(add(malformed, 0x20), lengthAt), length)
+        }
+    }
+
+    // An encoded `Block` with one message block rewritten so that `n` head offsets all
+    // point at that one element: the decoder copies it `n` times before the
+    // canonicality check can reject the bytes.
+    function withAliasedMessageBlock(bytes memory encodedBlock, uint256 n)
+        internal
+        pure
+        returns (bytes memory aliased)
+    {
+        uint256 lengthAt = _messageBlocksAt(encodedBlock);
+        // after the length word and the single offset
+        uint256 elementAt = lengthAt + 0x40;
+        uint256 elementLength = encodedBlock.length - elementAt;
+        aliased = new bytes(lengthAt + 0x20 + n * 0x20 + elementLength);
+        for (uint256 i = 0; i < lengthAt; i++) {
+            aliased[i] = encodedBlock[i];
+        }
+        assembly ("memory-safe") {
+            mstore(add(add(aliased, 0x20), lengthAt), n)
+        }
+        for (uint256 i = 0; i < n; i++) {
+            uint256 offset = n * 0x20;
+            uint256 at = lengthAt + 0x20 + i * 0x20;
+            assembly ("memory-safe") {
+                mstore(add(add(aliased, 0x20), at), offset)
+            }
+        }
+        uint256 to = lengthAt + 0x20 + n * 0x20;
+        for (uint256 i = 0; i < elementLength; i++) {
+            aliased[to + i] = encodedBlock[elementAt + i];
+        }
+    }
+
+    // where the `messageBlocks` length word of an encoded `Block` starts: the head
+    // offset of the fourth member, after the top-level 0x20 offset word
+    function _messageBlocksAt(bytes memory encodedBlock) private pure returns (uint256 lengthAt) {
+        uint256 offset;
+        assembly ("memory-safe") {
+            offset := mload(add(encodedBlock, 0xa0))
+        }
+        lengthAt = 0x20 + offset;
+    }
 }

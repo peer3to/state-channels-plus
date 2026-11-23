@@ -12,10 +12,12 @@ import type {
     RecordedGasEstimate,
     RecordedReplayGasRead
 } from "./customRpc/harnessControl/services/stub/StubService";
+import { replayMinedRevert } from "./customRpc/harnessControl/services/stub/StubService";
 import { killAndDisputeStoredDispute } from "./EvidenceComparisonStaging";
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import type { ForkId } from "@/types/types";
 import { Codec, Type, hash, sleep } from "@/utils";
+import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import { waitFor } from "@test/utils/waitFor";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { expect } from "chai";
@@ -299,7 +301,7 @@ export type SendOutcomes = {
  * Mined outcomes of the fraud-proof sends a peer's chain signer broadcast,
  * resends included, per manager function.
  */
-async function fraudProofSendOutcomes(
+export async function fraudProofSendOutcomes(
     h: MathPeerTestHarness,
     peerIndex: number
 ): Promise<
@@ -321,6 +323,53 @@ async function fraudProofSendOutcomes(
         applyDisputeFraudProofs: outcomes("applyDisputeFraudProofs"),
         multicallBestEffortLast: outcomes("multicallBestEffortLast")
     };
+}
+
+/**
+ * The custom error each of a peer's reverted fraud-proof sends (a kill alone
+ * or bundled with its own dispute) mined from `fromBlock` on reverts with: its calldata replayed by `eth_call`
+ * at its mined gas limit against the state of the block before it (a read,
+ * not a node mutation). Null for a revert that carries no custom error.
+ */
+export async function revertedFraudProofSendErrors(
+    h: MathPeerTestHarness,
+    peerIndex: number,
+    fromBlock: number
+): Promise<(string | null)[]> {
+    const sender = h.getPeer(peerIndex).address;
+    const manager = h.channelManager.interface;
+    const latest = await h.provider.getBlockNumber();
+    const errors: (string | null)[] = [];
+    for (let number = fromBlock; number <= latest; number++) {
+        const block = await h.provider.getBlock(number, true);
+        for (const tx of block?.prefetchedTransactions ?? []) {
+            if (tx.from !== sender) continue;
+            const name = manager.parseTransaction({ data: tx.data })?.name;
+            if (
+                name !== "applyDisputeFraudProofs" &&
+                name !== "multicallBestEffortLast"
+            )
+                continue;
+            const receipt = await h.provider.getTransactionReceipt(tx.hash);
+            if (Number(receipt?.status) !== 0) continue;
+            const replayError = await replayMinedRevert(
+                h.provider,
+                {
+                    from: tx.from,
+                    to: tx.to,
+                    data: tx.data,
+                    gasLimit: tx.gasLimit
+                },
+                number
+            );
+            errors.push(
+                replayError === null
+                    ? null
+                    : (tryDecodeCustomError(replayError)?.name ?? null)
+            );
+        }
+    }
+    return errors;
 }
 
 /** The sends mined between two reads of a peer's send outcomes. */
@@ -454,6 +503,7 @@ export async function killTimeoutCalldataRefutationWithScaledEstimate(
     stubbedBlockReads: number;
     rejected: string;
     sends: SendOutcomes;
+    revertErrors: (string | null)[];
     passedPreflights: number;
 }> {
     const { killerIndex, disputerIndex, dispute } =
@@ -484,6 +534,7 @@ export async function killTimeoutCalldataRefutationWithScaledEstimate(
             .request();
     if (options.passPreflight) await killer.stubPassReplayPreflight().request();
     const before = await fraudProofSendOutcomes(h, killerIndex);
+    const fromBlock = (await h.provider.getBlockNumber()) + 1;
     let rejected = "";
     try {
         await killStoredDisputeOnHost(h, killerIndex);
@@ -506,6 +557,11 @@ export async function killTimeoutCalldataRefutationWithScaledEstimate(
         sends: sendDelta(
             before.applyDisputeFraudProofs,
             after.applyDisputeFraudProofs
+        ),
+        revertErrors: await revertedFraudProofSendErrors(
+            h,
+            killerIndex,
+            fromBlock
         ),
         passedPreflights: await killer.getPassedReplayPreflights().request()
     };

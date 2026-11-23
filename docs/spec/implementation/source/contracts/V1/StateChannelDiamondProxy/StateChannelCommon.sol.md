@@ -18,14 +18,15 @@
 - [`INV-FP-8-BFNRSY` (Proof application is idempotent per offender)](../../../../../specification/disputes/fraud-proofs.md#inv-fp-8-bfnrsy)
 - [`INV-MSG-2-PQ0T1K` (No replay, no omission)](../../../../../specification/settlement/cross-layer-messages.md#inv-msg-2-pq0t1k)
 - [`REQ-SP-3-SP1JG4` (A membership hop requires signatures from the union of the previous…)](../../../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4)
+- [`REQ-SP-7-70EMAT` (In the retained region, verification checks consecutive heights, hash links,…)](../../../../../specification/disputes/state-proofs.md#req-sp-7-70emat)
 - [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r)
 
 ## UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK
 
 Shared predicates
 
-- Setup: Drive each shared predicate/derivation through two different facet paths
-- Oracle: Identical classification per path; pending derivation matches unconsumed JOINs; slash queries respect timestamps
+- Setup: Drive each shared predicate/derivation through two different facet paths; sweep the gas limit of walk decodes
+- Oracle: Identical classification per path; pending derivation matches unconsumed JOINs; slash queries respect timestamps; an under-funded walk decode reverts or reaches the full-gas verdict
 
 - [ ] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P1` — linkage predicates cross-path agreement
 - [ ] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P2` — pending-participant derivation
@@ -105,6 +106,13 @@ Shared predicates
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P76` — A hop consuming a JOIN while the joiner is absent from both endpoint sets verifies with that joiner signature and finalizes its snapshot
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P77` — `_verifyOutboundMessageBlocks` returns false, without a revert, for a linked run whose upper head points to a block whose balance `addBalance` cannot add
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P78` — `_verifyOutboundMessageBlocks` reverts `ErrorOutboundBalanceSumOutOfGas` when `addBalance` runs out of gas, so it returns no verdict
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P79` — an under-funded walk decode reverts or reaches the full-gas verdict, never another one
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P80` — a one-block milestone above the anchor finalizes
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P81` — a pointer challenge at block 1 kills the dispute
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P82` — an anchor-run first block on another channel is a block fault at index 0
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P83` — an undecodable one-block milestone above the anchor is a block fault at index 0
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P84` — an undecodable last block of a multi-block milestone does not place the run below the anchor; the walk fails at that block
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P85` — an empty milestone is not final and has no finalized snapshot hash
 
 ## UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7
 

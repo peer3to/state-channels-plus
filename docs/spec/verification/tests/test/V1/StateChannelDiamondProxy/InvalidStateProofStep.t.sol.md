@@ -21,6 +21,9 @@ Challenges individual milestone steps with optional block pointers. Cases distin
 - `test_U99_brokenLinkKillsThroughTheBlockPointer`: REQ-FP-7-4DD0D7.T2.P27, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P63
 - `test_U99_blockOnAnotherForkKillsThroughTheBlockPointer`: REQ-FP-7-4DD0D7.T2.P28, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P64
 - `test_U99_blockOnAnotherChannelKillsThroughTheBlockPointer`: REQ-FP-7-4DD0D7.T2.P29, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P65
+- `test_U99_hugeLengthBlockKillsThroughTheBlockPointerAtBoundedGas`: REQ-SP-7-70EMAT.T5.P17
+- `test_U99_aliasOffsetBlockKillsThroughTheBlockPointerAtBoundedGas`: REQ-SP-7-70EMAT.T5.P14
+- `test_U99_pointerAtBlockOneKillsTheDispute`: UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P81
 - `test_U99_wrongAuthorSignatureKillsThroughTheBlockPointer`: REQ-FP-7-4DD0D7.T2.P30, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P66
 - `test_U99_unrecoverableConfirmationSignatureKillsThroughTheBlockPointer`: REQ-FP-7-4DD0D7.T2.P31, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P67
 - `test_U99_validBlockOfARunWithABrokenLinkIsRejected`: REQ-FP-7-4DD0D7.T2.P32, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P68
@@ -45,5 +48,5 @@ Challenges individual milestone steps with optional block pointers. Cases distin
 - `test_U99_listedButUnsignedJoinerIsKilledAtTheJoinHop`: REQ-FP-7-4DD0D7.T3.P24, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P103
 - `test_U99_joinerBlockSplicedFromAnotherRunIsKilledThroughTheBlockPointer`: REQ-FP-7-4DD0D7.T3.P25, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P104
 - `test_U99_control_linkedJoinerBlockMakesTheJoinHopAValidStep`: REQ-FP-7-4DD0D7.T3.P26, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P105
-- `test_U99_pointedStepStaysBoundedAsHopsBeforeItGrow`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P106
+- `test_U99_pointedStepDecodesNoHopBeforeItsPredecessor`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P106
 - `test_PO1_omittedDataStepDoesNotWalkTheUnrelatedFinalRun`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P201

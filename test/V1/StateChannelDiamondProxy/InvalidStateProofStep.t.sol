@@ -2,6 +2,8 @@ pragma solidity ^0.8.8;
 
 import {console} from "../../../lib/forge-std/src/console.sol";
 import {StateProofStaging} from "../harness/StateProofStaging.sol";
+import {CanonicalMutations} from "../harness/CanonicalMutations.sol";
+import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
 import {DisputeInvalidStateProof} from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 import "../../../contracts/V1/types/DisputeTypes.sol";
@@ -37,6 +39,12 @@ contract InvalidStateProofStepTest is StateProofStaging {
     function _applyStep(Dispute memory dispute, bytes memory proof) private {
         _commit(dispute);
         _apply(dispute, DisputeFraudProofType.DisputeInvalidStateProof, proof);
+    }
+
+    /// `_applyStep` with exactly `gasLimit` for the challenge
+    function _applyStepWithGas(Dispute memory dispute, bytes memory proof, uint256 gasLimit) private {
+        _commit(dispute);
+        _applyWithGas(dispute, DisputeFraudProofType.DisputeInvalidStateProof, proof, gasLimit);
     }
 
     // ==================== step rules: each kills at the failing step ====================
@@ -160,6 +168,43 @@ contract InvalidStateProofStepTest is StateProofStaging {
         _replaceBlock(run, 2, b, _signers(ALICE_KEY));
         Dispute memory dispute = _dispute(_one(run));
         _applyStep(dispute, _invalidBlockStep(_entries(anchor), 0, 2));
+        _assertKilled(dispute);
+    }
+
+    function test_U99_hugeLengthBlockKillsThroughTheBlockPointerAtBoundedGas() public {
+        (MilestoneProof memory run, StateSnapshot memory anchor) = _anchorRun();
+        run.blockConfirmations[2].signedBlock.encodedBlock = CanonicalMutations.withMessageBlocksLength(
+            run.blockConfirmations[2].signedBlock.encodedBlock, type(uint64).max
+        );
+        Dispute memory dispute = _dispute(_one(run));
+        _applyStepWithGas(dispute, _invalidBlockStep(_entries(anchor), 0, 2), 2_000_000);
+        _assertKilled(dispute);
+    }
+
+    function test_U99_aliasOffsetBlockKillsThroughTheBlockPointerAtBoundedGas() public {
+        (MilestoneProof memory run, StateSnapshot memory anchor) = _anchorRun();
+        Block memory b = _decode(run, 2);
+        b.messageBlocks = new MessageBlock[](1);
+        b.messageBlocks[0].messages = new Message[](1);
+        b.messageBlocks[0].messages[0].data = new bytes(4096);
+        // 1,000 head offsets at one 4 KB message block: decoding it in full costs about 177M gas
+        bytes memory aliased = CanonicalMutations.withAliasedMessageBlock(abi.encode(b), 1000);
+        run.blockConfirmations[2].signedBlock =
+            SignedBlock({encodedBlock: aliased, signature: _sign(ALICE_KEY, aliased)});
+        Dispute memory dispute = _dispute(_one(run));
+        _applyStepWithGas(dispute, _invalidBlockStep(_entries(anchor), 0, 2), 5_000_000);
+        _assertKilled(dispute);
+    }
+
+    function test_U99_pointerAtBlockOneKillsTheDispute() public {
+        (MilestoneProof memory run, StateSnapshot memory anchor) = _anchorRun();
+        _breakLinkAt(run, 1);
+        Dispute memory dispute = _dispute(_one(run));
+        // block 0 is the run's first block and block 1's predecessor: decoded once
+        vm.expectCall(
+            utility, abi.encodeCall(UtilityFacet.decodeBlock, (run.blockConfirmations[0].signedBlock.encodedBlock)), 1
+        );
+        _applyStep(dispute, _invalidBlockStep(_entries(anchor), 0, 1));
         _assertKilled(dispute);
     }
 
@@ -538,68 +583,57 @@ contract InvalidStateProofStepTest is StateProofStaging {
 
     // ==================== the pointed step's cost ====================
 
-    function _measure(uint256 honestHops) private returns (uint256 gasUsed) {
-        Staged memory staged = _lieOverTheLastTwoMilestones(honestHops);
+    function test_U99_pointedStepDecodesNoHopBeforeItsPredecessor() public {
+        Staged memory staged = _lieOverTheLastTwoMilestones(32);
         _commit(staged.dispute);
         bytes memory proof = _postedInvalidStep(staged.auditingData, staged.joinHop);
+        // the step resumes from its predecessor's first block; a step that walked the 31 hops before that would
+        // decode their blocks
+        MilestoneProof[] memory milestones = staged.dispute.input.stateProof.milestones;
+        for (uint256 i = 0; i + 1 < staged.joinHop; i++) {
+            _expectNoDecode(milestones[i], 0, milestones[i].blockConfirmations.length);
+        }
+        MilestoneProof memory predecessor = milestones[staged.joinHop - 1];
+        _expectNoDecode(predecessor, 1, predecessor.blockConfirmations.length);
+        vm.expectCall(
+            utility,
+            abi.encodeCall(UtilityFacet.decodeBlock, (predecessor.blockConfirmations[0].signedBlock.encodedBlock)),
+            1
+        );
         uint256 before = gasleft();
         _apply(staged.dispute, DisputeFraudProofType.DisputeInvalidStateProof, proof);
-        gasUsed = before - gasleft();
+        console.log("  pointed DisputeInvalidStateProof gas, 32 hops before the join hop", before - gasleft());
         _assertKilled(staged.dispute);
-        console.log("hops before the join hop", honestHops);
-        console.log("  pointed DisputeInvalidStateProof gas", gasUsed);
     }
 
-    function test_U99_pointedStepStaysBoundedAsHopsBeforeItGrow() public {
-        // every measurement stages its JOIN and dispute on the fresh channel, so each kill check is its own
-        uint256 fresh = vm.snapshotState();
-        uint256 eightHops = _measure(8);
-        vm.revertToState(fresh);
-        uint256 thirtyTwoHops = _measure(32);
-        vm.revertToState(fresh);
-        // 24 more hops only add copying and hashing of the larger dispute, far less than walking them
-        uint256 fullWalkOfThirtyTwo = _fullWalkGas(32);
-        console.log("  full walk gas with 32 hops before", fullWalkOfThirtyTwo);
-        assertLt(thirtyTwoHops - eightHops, (fullWalkOfThirtyTwo - eightHops) / 2, "the step does not walk the hops");
-    }
-
-    function _measureOmittedFinalRun(uint256 length) private returns (uint256 applyGas, uint256 finalRunGas) {
+    function test_PO1_omittedDataStepDoesNotWalkTheUnrelatedFinalRun() public {
         _seedAnchor(5);
         StateSnapshot[] memory entries =
             _entries(_snapshot(7, genesisData.participants), _snapshot(20, genesisData.participants));
         MilestoneProof memory fault = _hopRun(entries[0], 1, _signers(ALICE_KEY));
-        MilestoneProof memory finalRun = _hopRun(entries[1], length, _signers(ALICE_KEY, BOB_KEY));
+        MilestoneProof memory finalRun = _hopRun(entries[1], 32, _signers(ALICE_KEY, BOB_KEY));
+        (bool isFinal,) = _diamond().isMilestoneFinal(forkId, genesisData, finalRun);
+        assertTrue(isFinal, "the unrelated final run really is final");
         Dispute memory dispute = _dispute(_two(fault, finalRun));
         _commit(dispute);
         bytes memory proof = _invalidStep(entries, 0);
+        // the payload still grows with the final run; a step that leaked its signature and link checks would decode
+        // its interior blocks
+        _expectNoDecode(finalRun, 1, finalRun.blockConfirmations.length - 1);
         uint256 before = gasleft();
         _apply(dispute, DisputeFraudProofType.DisputeInvalidStateProof, proof);
-        applyGas = before - gasleft();
+        console.log("  omitted-data DisputeInvalidStateProof gas, 32-block final run", before - gasleft());
         _assertKilled(dispute);
-        before = gasleft();
-        (bool isFinal,) = _diamond().isMilestoneFinal(forkId, genesisData, finalRun);
-        finalRunGas = before - gasleft();
-        assertTrue(isFinal, "the unrelated final run really is final");
     }
 
-    function test_PO1_omittedDataStepDoesNotWalkTheUnrelatedFinalRun() public {
-        uint256 fresh = vm.snapshotState();
-        (uint256 shortApply, uint256 shortWalk) = _measureOmittedFinalRun(8);
-        vm.revertToState(fresh);
-        (uint256 longApply, uint256 longWalk) = _measureOmittedFinalRun(32);
-        // The payload still grows; its copying/hash cost must exclude the unrelated semantic walk.
-        assertLt(
-            longApply - shortApply,
-            (longWalk - shortWalk) / 2,
-            "unrelated signature and link checks leaked into the step"
-        );
-    }
-
-    /// the gas of the full walk of the 32-hop proof (what a whole-proof counter pays)
-    function _fullWalkGas(uint256 honestHops) private returns (uint256 gasUsed) {
-        Staged memory staged = _lieOverTheLastTwoMilestones(honestHops);
-        uint256 before = gasleft();
-        assertFalse(_chainAcceptsPostedProof(staged.dispute, staged.auditingData), "the posted proof fails the walk");
-        gasUsed = before - gasleft();
+    /// expects no `decodeBlock` of `run`'s blocks `from` up to (excluding) `to`
+    function _expectNoDecode(MilestoneProof memory run, uint256 from, uint256 to) private {
+        for (uint256 j = from; j < to; j++) {
+            vm.expectCall(
+                utility,
+                abi.encodeCall(UtilityFacet.decodeBlock, (run.blockConfirmations[j].signedBlock.encodedBlock)),
+                0
+            );
+        }
     }
 }

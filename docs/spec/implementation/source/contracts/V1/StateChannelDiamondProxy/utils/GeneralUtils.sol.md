@@ -2,4 +2,6 @@
 
 > **Source:** [contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol](../../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol)
 
-No specified behavior: Delegatecall helper + array shrink free functions.
+## Requirements
+
+- [`REQ-ENFPROOF-2-YZDCXM` (Deduplicated threshold counting)](../../../../../../specification/enforcement/proof-verification.md#req-enfproof-2-yzdcxm)

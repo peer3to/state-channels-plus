@@ -69,6 +69,7 @@ import {
     type Interface,
     JsonRpcApiProvider,
     type Log,
+    type Provider,
     resolveAddress,
     toQuantity,
     type TransactionRequest,
@@ -412,18 +413,31 @@ async function withRevertData(
     const blockNumber = (error as { receipt?: { blockNumber?: number } })
         .receipt?.blockNumber;
     if (!blockNumber) return error;
+    return (
+        (await replayMinedRevert(
+            tx.provider,
+            { from: tx.from, to: tx.to, data: tx.data, value: tx.value },
+            blockNumber
+        )) ?? error
+    );
+}
+
+/**
+ * The error `request` reverts with when replayed by `eth_call` against the
+ * state of the block before `minedAt` (a read, not a node mutation), or null
+ * when the replay passes.
+ */
+export async function replayMinedRevert(
+    provider: Provider,
+    request: TransactionRequest,
+    minedAt: number
+): Promise<unknown> {
     try {
-        await tx.provider.call({
-            from: tx.from,
-            to: tx.to,
-            data: tx.data,
-            value: tx.value,
-            blockTag: blockNumber - 1
-        });
+        await provider.call({ ...request, blockTag: minedAt - 1 });
     } catch (replayError) {
         return replayError;
     }
-    return error;
+    return null;
 }
 
 export type DisputeSubmissionFailureSpec = {

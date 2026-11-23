@@ -3026,6 +3026,39 @@ period (measured pipeline latency in [`FIND-DISPUTE-5-MZPTTC`](open-findings.md#
 about `2 × evidenceTime` stays the protocol-side pause. [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm) now states the
 ceiling, so the code no longer departs from it.
 
+<a id="find-decode-2-cz3fe5"></a>
+
+### FIND-DECODE-2-CZ3FE5
+
+**Defect:** Open (2026-11-23), Byzantine-triggerable. A block, canonical or not, whose decode budget
+(`_decodeGasBudget` of its length in `_tryDecodeBlock`,
+[BlockUtils.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/utils/BlockUtils.sol.md))
+plus the rest of the check exceeds the per-transaction gas cap cannot be judged on chain: every check
+that must decode it reverts instead of answering. Trigger: a dishonest disputer puts a block of about
+350 KB or more whose head offsets alias one message block before its lie in its own state proof;
+every counter reverts at the per-transaction cap and the dishonest dispute stands, against
+[`INV-TRUST-1-6TYWDH` (Every safety-relevant disagreement MUST be resolvable by the chain from…)](../specification/security/trust-model.md#inv-trust-1-6tywdh). Measured at the
+17,916,000 cap, a pointer kill at an alias-offset block in the anchor run needs:
+
+|  Block | Decode budget | Kill needs | At the cap                 |
+| -----: | ------------: | ---------: | -------------------------- |
+| 101 KB |         1.68M |      2.63M | killed                     |
+| 197 KB |         4.00M |      6.49M | killed                     |
+| 293 KB |         7.04M |     11.92M | killed                     |
+| 389 KB |        10.79M |     18.91M | reverts; lands only at 60M |
+
+The calibrated canonical worst case uses 78% of its budget (solc 0.8.34, via-IR, 100 runs).
+
+**Decision (implementer, under Luke's delegation, 2026-11-23; pending his review):** keep the
+per-length decode window and add no block-length cap in this change. A cap is the size-bound decision
+of [`OQ-32-5NDD24` (Proof and audit size bounds)](../specification/open-questions.md#oq-32-5ndd24),
+and a cap below honest block sizes would let honest disputes be judged undecodable.
+
+**Class ([`REQ-SEC-4-VF81QD` (For every identified gap, the review MUST classify the required response as…)](security-assessment.md#req-sec-4-vf81qd)):** accepted limitation, pending
+[`OQ-32-5NDD24` (Proof and audit size bounds)](../specification/open-questions.md#oq-32-5ndd24).
+
+**Status:** Open under [`OQ-32-5NDD24` (Proof and audit size bounds)](../specification/open-questions.md#oq-32-5ndd24).
+
 ## Evidence backlog retained after traceability repair
 
 <a id="find-verify-1-gferdm"></a>

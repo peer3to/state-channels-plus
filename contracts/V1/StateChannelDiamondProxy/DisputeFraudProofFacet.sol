@@ -166,11 +166,11 @@ contract DisputeFraudProofFacet is StateChannelCommon {
 
         SignedBlock memory signedBlock = _getLastMilestoneBlock(dispute, proof.blockIndex);
         (bool decoded, Block memory invalidBlock) =
-            UtilityFacet(utilityFacetAddress).tryDecodeBlock(signedBlock.encodedBlock);
+            _tryDecodeBlock(UtilityFacetInterface(utilityFacetAddress), signedBlock.encodedBlock);
         if (!decoded || dispute.input.channelId != invalidBlock.transaction.header.channelId) return _invalid();
 
         (address signer, bool signatureValid) =
-            UtilityFacet(utilityFacetAddress).retrieveSignerAddress(signedBlock.encodedBlock, signedBlock.signature);
+            _recoverSigner(_eip191SignedHash(signedBlock.encodedBlock), signedBlock.signature);
         if (!signatureValid || signer != invalidBlock.transaction.header.participant) return _invalid();
         if (invalidBlock.stateSnapshotHash != keccak256(abi.encode(proof.resultingStateSnapshot))) return _invalid();
 
@@ -180,7 +180,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             }
         } else {
             (bool previousDecoded, Block memory previousBlock) =
-                UtilityFacet(utilityFacetAddress).tryDecodeBlock(proof.previousBlock.encodedBlock);
+                _tryDecodeBlock(UtilityFacetInterface(utilityFacetAddress), proof.previousBlock.encodedBlock);
             if (!previousDecoded) return _invalid();
             if (invalidBlock.previousBlockHash != keccak256(proof.previousBlock.encodedBlock)) return _invalid();
             if (previousBlock.stateSnapshotHash != keccak256(abi.encode(proof.previousStateSnapshot))) {
@@ -761,7 +761,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         BlockConfirmation[] memory lastRun = milestones[milestones.length - 1].blockConfirmations;
         for (uint256 i = 0; i < lastRun.length; i++) {
             (bool decoded, Block memory mb) =
-                UtilityFacet(utilityFacetAddress).tryDecodeBlock(lastRun[i].signedBlock.encodedBlock);
+                _tryDecodeBlock(UtilityFacetInterface(utilityFacetAddress), lastRun[i].signedBlock.encodedBlock);
             if (!decoded) continue;
             if (
                 mb.transaction.header.channelId == dispute.input.channelId
@@ -820,14 +820,16 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         (bool canUseOnChainSnapshot, StateSnapshot memory anchor) =
             _getAnchorSnapshot(dispute.input.channelId, dispute.input.forkId);
         if (!canUseOnChainSnapshot || milestone.blockConfirmations.length == 0) return false;
-        (bool decoded, Block memory firstBlock) =
-            UtilityFacet(utilityFacetAddress).tryDecodeBlock(milestone.blockConfirmations[0].signedBlock.encodedBlock);
+        (bool decoded, Block memory firstBlock) = _tryDecodeBlock(
+            UtilityFacetInterface(utilityFacetAddress), milestone.blockConfirmations[0].signedBlock.encodedBlock
+        );
         if (!decoded || firstBlock.transaction.header.transactionCnt > anchor.blockHeight) return false;
         uint256 offset = anchor.blockHeight - firstBlock.transaction.header.transactionCnt;
         if (offset >= milestone.blockConfirmations.length) return false;
         Block memory anchorBlock;
-        (decoded, anchorBlock) = UtilityFacet(utilityFacetAddress)
-            .tryDecodeBlock(milestone.blockConfirmations[offset].signedBlock.encodedBlock);
+        (decoded, anchorBlock) = _tryDecodeBlock(
+            UtilityFacetInterface(utilityFacetAddress), milestone.blockConfirmations[offset].signedBlock.encodedBlock
+        );
         return decoded && anchorBlock.transaction.header.forkId == dispute.input.forkId
             && anchorBlock.transaction.header.transactionCnt == anchor.blockHeight
             && anchorBlock.stateSnapshotHash == keccak256(abi.encode(anchor));

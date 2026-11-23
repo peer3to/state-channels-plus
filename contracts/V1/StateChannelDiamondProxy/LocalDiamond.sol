@@ -1,7 +1,6 @@
 pragma solidity ^0.8.8;
 
 import "./StateChannelManagerProxy.sol";
-import "./UtilityFacet.sol";
 import "../types/DataTypes.sol";
 import "../types/DisputeTypes.sol";
 import "../types/MessageTypeHashes.sol";
@@ -456,13 +455,12 @@ contract LocalDiamond is StateChannelManagerProxy {
 
     function _isBlockAuthentic(SignedBlock memory _block) internal view override returns (bool) {
         (bool decoded, Block memory decodedBlock) =
-            UtilityFacet(utilityFacetAddress).tryDecodeBlock(_block.encodedBlock);
+            _tryDecodeBlock(UtilityFacetInterface(utilityFacetAddress), _block.encodedBlock);
         if (!decoded) {
             console.log("isBlockAuthentic - false - 1");
             return false;
         }
-        (address signer, bool isValid) =
-            UtilityFacet(utilityFacetAddress).retrieveSignerAddress(_block.encodedBlock, _block.signature);
+        (address signer, bool isValid) = _recoverSigner(_eip191SignedHash(_block.encodedBlock), _block.signature);
         if (signer != decodedBlock.transaction.header.participant || !isValid) {
             console.log("isBlockAuthentic - false - 2");
             return false;

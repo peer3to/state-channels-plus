@@ -5,6 +5,7 @@ import {
     RaceConditionBlockHeightTooOld
 } from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
+import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 import "../../../contracts/V1/types/ProofTypes.sol";
@@ -168,6 +169,26 @@ contract StateSnapshotProofTargetTest is DiamondHarness {
         entries[1] = changed;
         _expectInvalidStateProof(uint256(2), uint256(2));
         diamond.updateStateSnapshotSameFork(CHANNEL, proofs, entries, new MessageBlock[](0));
+    }
+
+    // ---- one decode per block, no utility hops ----
+
+    function test_sameForkUpdate_oneBlockRemovalHopIsAccepted() public {
+        _advanceOnce();
+        (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots) =
+            _makeSameForkSnapshot(CHANNEL, _alice(), _keys(ALICE_PK, BOB_PK));
+        address utility = address(utilityFacet);
+        // the one block is decoded once; the newer check, signer recovery and set union run in the facet
+        vm.expectCall(
+            utility,
+            abi.encodeCall(UtilityFacet.decodeBlock, (proofs[0].blockConfirmations[0].signedBlock.encodedBlock)),
+            1
+        );
+        vm.expectCall(utility, abi.encodeWithSelector(UtilityFacet.isSnapshotNewer.selector), 0);
+        vm.expectCall(utility, abi.encodeWithSelector(UtilityFacet.retrieveSignerAddress.selector), 0);
+        vm.expectCall(utility, abi.encodeWithSelector(UtilityFacet.concatAddressArraysNoDuplicates.selector), 0);
+        diamond.updateStateSnapshotSameFork(CHANNEL, proofs, snapshots, new MessageBlock[](0));
+        assertEq(_onChainHash(), keccak256(abi.encode(snapshots[0])), "B's removal is the chain snapshot");
     }
 
     // ---- staging ----
