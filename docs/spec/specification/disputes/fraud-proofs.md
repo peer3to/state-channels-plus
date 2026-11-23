@@ -139,7 +139,7 @@ counters walk the stored inbound run above the lower head up to the higher one a
 JOIN of an address outside the lower point's participants. The run must be stored down to the lower
 head, so a higher head that is only the anchor's unstored inbound head, or a run with a pruned block,
 also reverts with `ErrorInboundMessageBlockNotStored`; a missing run never reads as a run without
-JOINs.
+JOINs. The residual risks of this rule are listed under the security considerations.
 The dispute counter slashes the submitter. A separate ordinary block fraud proof may also slash
 the issuer; one counter is not a two-party slash rule. Missing consumed-joiner signatures use the
 ordinary invalid-hop counter, not a dedicated omitted-joiner type.
@@ -265,9 +265,25 @@ and both-submission-path cases. A history that skips a later joiner's JOIN passe
 inbound interval; only the final-point regression counter removes it, so that joiner's protection
 depends on a holder of a final point above the JOIN auditing within the kill period. Both counters
 count only the JOIN of an address outside the lower point's participants; a top-up of an existing
-participant never decides them. Residual risk: a colluder can post its own JOIN from a fresh address
-and consume it in a divergent history above an honest final point, which refuses the conflict
-counter against that history. Completeness remains an explicit security review item; the invalid-submission
+participant never decides them. Residual risks, accepted for now:
+
+- A colluder can post its own JOIN from a fresh address and consume it in a divergent history above
+  an honest final point, which refuses the conflict counter against that history.
+- A colluder C whose JOIN comes before a pending joiner L's can build a side final point F' that
+  consumes C's JOIN but not L's. C is outside the participants of the latest finalized point G of
+  L's honest forced-inclusion dispute, so `DisputeFinalPointRegression` kills that dispute. C needs
+  no fresh address (a top-up by a participant that has left G's set also counts) and no minimum
+  deposit. A JOIN consumed in a final block still needs its joiner's signature, so a finalized
+  joiner stays protected. The harm to L is the submitter's slash (`_killDispute` adds it with
+  `addOnChainSlashedParticipant`), not the kill: `_generateDisputeOutputState` applies pending
+  inbound before slashes, so the winning dispute still admits L. Decided (Ljuba, 2026-11-23): a
+  later change spares the submitter and slashes only the addresses that signed both conflicting
+  final points; until it lands, this residual stands.
+- Open: a missing inbound block inside the sender's own final proof makes the walk return false,
+  so the sender is slashed; and the inbound walk has no step bound (about 8,983 gas per skipped
+  inbound block).
+
+Completeness remains an explicit security review item; the invalid-submission
 penalty is decided ([`REQ-FP-6-TS1QAV`](fraud-proofs.md#req-fp-6-ts1qav)), with honest-mistake and preflight-race slashing accepted as residual risk.
 
 ## Requirements and invariants

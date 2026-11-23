@@ -2721,6 +2721,22 @@ JOIN from a fresh address and consume it in a divergent history above F: the con
 against that history is then refused. This residual is accepted and documented, not fixed
 ([`REQ-FP-7-4DD0D7.T9`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t9)).
 
+The same rule lets a colluder C whose JOIN comes before a pending joiner L's build a side final
+point F' that consumes C's JOIN but not L's. C is outside the participants of G of L's honest
+forced-inclusion dispute, so `DisputeFinalPointRegression` kills it. No fresh address is needed (a
+top-up by a participant that has left G's set also counts), and there is no minimum deposit. A
+JOIN consumed in a final block still needs its joiner's signature, so a finalized joiner stays
+protected. The harm to L is the submitter's slash (`_killDispute` adds it with
+`addOnChainSlashedParticipant`), not the kill: `_generateDisputeOutputState` applies pending inbound
+before slashes, so the winning dispute still admits L. Decided (Ljuba, 2026-11-23): a later change
+spares the submitter and slashes only the addresses that signed both conflicting final points;
+until it lands, this residual stands
+([`REQ-FP-7-4DD0D7.T10`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t10)).
+
+Open limits: a missing inbound block inside the sender's own final proof makes the walk return
+false, so the sender is slashed; and the inbound walk has no step bound (about 8,983 gas per
+skipped inbound block).
+
 **Evidence:**
 [DisputeFinalPointRegression.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeFinalPointRegression.t.sol.md)
 kills the finding's side chain and keeps L's final history in the reduction, with kill, control,
