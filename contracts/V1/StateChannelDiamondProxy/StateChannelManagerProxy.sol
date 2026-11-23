@@ -84,6 +84,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
         _registerRoute(StateProofFacet.isTimeoutSupersededByFinalState.selector, _stateProofFacet);
         _registerRoute(StateProofFacet.isStateProofStepInvalid.selector, _stateProofFacet);
         _registerRoute(StateProofFacet.isDisputeConflictingWithFinalState.selector, _stateProofFacet);
+        _registerRoute(StateProofFacet.isDisputeFinalPointRegression.selector, _stateProofFacet);
         _registerRoute(StateProofFacet.isDisputeOutboundRunInvalid.selector, _stateProofFacet);
         _registerRoute(StateProofFacet.isInvalidBlockStructureInStateProof.selector, _stateProofFacet);
         _registerRoute(StateProofFacet.verifyMilestones.selector, _stateProofFacet);

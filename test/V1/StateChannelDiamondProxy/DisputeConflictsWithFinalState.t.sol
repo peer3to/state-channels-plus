@@ -41,7 +41,11 @@ contract DisputeConflictsWithFinalStateTest is StateProofStaging {
         ProofWalkInput memory finalProof = _finalAtSeven(forkId, _signers(ALICE_KEY, BOB_KEY));
         assertEq(_diamond().verifyMilestones(finalProof).finalizedSnapshot.blockHeight, 7, "F is block 7");
 
-        _apply(dispute, DisputeFraudProofType.DisputeConflictsWithFinalState, _conflictProof(finalProof, 0, 2));
+        _apply(
+            dispute,
+            DisputeFraudProofType.DisputeConflictsWithFinalState,
+            _conflictProof(finalProof, 0, 2, _snapshot(5, genesisData.participants))
+        );
 
         _assertKilled(dispute);
     }
@@ -52,7 +56,9 @@ contract DisputeConflictsWithFinalStateTest is StateProofStaging {
         _apply(
             dispute,
             DisputeFraudProofType.DisputeConflictsWithFinalState,
-            _conflictProof(_finalAtSeven(forkId, _signers(ALICE_KEY, BOB_KEY)), 0, 2)
+            _conflictProof(
+                _finalAtSeven(forkId, _signers(ALICE_KEY, BOB_KEY)), 0, 2, _snapshot(5, genesisData.participants)
+            )
         );
 
         _assertRejected(dispute);
@@ -64,7 +70,9 @@ contract DisputeConflictsWithFinalStateTest is StateProofStaging {
         _apply(
             dispute,
             DisputeFraudProofType.DisputeConflictsWithFinalState,
-            _conflictProof(_finalAtSeven(forkId, _signers(ALICE_KEY, BOB_KEY)), 0, 3)
+            _conflictProof(
+                _finalAtSeven(forkId, _signers(ALICE_KEY, BOB_KEY)), 0, 3, _snapshot(5, genesisData.participants)
+            )
         );
 
         _assertRejected(dispute);
@@ -76,7 +84,12 @@ contract DisputeConflictsWithFinalStateTest is StateProofStaging {
         _apply(
             dispute,
             DisputeFraudProofType.DisputeConflictsWithFinalState,
-            _conflictProof(_finalAtSeven(keccak256("another fork"), _signers(ALICE_KEY, BOB_KEY)), 0, 2)
+            _conflictProof(
+                _finalAtSeven(keccak256("another fork"), _signers(ALICE_KEY, BOB_KEY)),
+                0,
+                2,
+                _snapshot(5, genesisData.participants)
+            )
         );
 
         _assertRejected(dispute);
@@ -88,7 +101,11 @@ contract DisputeConflictsWithFinalStateTest is StateProofStaging {
         ProofWalkInput memory finalProof = _finalAtSeven(forkId, _signers(ALICE_KEY));
         assertFalse(_diamond().verifyMilestones(finalProof).valid, "the final proof does not walk");
 
-        _apply(dispute, DisputeFraudProofType.DisputeConflictsWithFinalState, _conflictProof(finalProof, 0, 2));
+        _apply(
+            dispute,
+            DisputeFraudProofType.DisputeConflictsWithFinalState,
+            _conflictProof(finalProof, 0, 2, _snapshot(5, genesisData.participants))
+        );
 
         _assertRejected(dispute);
     }
@@ -100,7 +117,11 @@ contract DisputeConflictsWithFinalStateTest is StateProofStaging {
         ProofWalkInput memory finalProof = _finalProof(forkId, new MilestoneProof[](0), new StateSnapshot[](0));
         assertTrue(_diamond().verifyMilestones(finalProof).valid, "the empty proof walks to the genesis");
 
-        _apply(dispute, DisputeFraudProofType.DisputeConflictsWithFinalState, _conflictProof(finalProof, 0, 0));
+        _apply(
+            dispute,
+            DisputeFraudProofType.DisputeConflictsWithFinalState,
+            _conflictProof(finalProof, 0, 0, _snapshot(0, genesisData.participants))
+        );
 
         _assertRejected(dispute);
     }
@@ -120,7 +141,9 @@ contract DisputeConflictsWithFinalStateTest is StateProofStaging {
         _apply(
             dispute,
             DisputeFraudProofType.DisputeConflictsWithFinalState,
-            _conflictProof(_finalAtSeven(forkId, _signers(ALICE_KEY, BOB_KEY)), 0, 0)
+            _conflictProof(
+                _finalAtSeven(forkId, _signers(ALICE_KEY, BOB_KEY)), 0, 0, _snapshot(5, genesisData.participants)
+            )
         );
 
         _assertRejected(dispute);
@@ -134,7 +157,11 @@ contract DisputeConflictsWithFinalStateTest is StateProofStaging {
         Dispute memory dispute = _dispute(_one(_genesisRun(8, genesisData.participants, _signers(ALICE_KEY, BOB_KEY))));
         _commit(dispute);
 
-        _apply(dispute, DisputeFraudProofType.DisputeConflictsWithFinalState, _conflictProof(finalProof, 0, 7));
+        _apply(
+            dispute,
+            DisputeFraudProofType.DisputeConflictsWithFinalState,
+            _conflictProof(finalProof, 0, 7, _snapshot(0, genesisData.participants))
+        );
 
         _assertRejected(dispute);
     }
@@ -151,7 +178,9 @@ contract DisputeConflictsWithFinalStateTest is StateProofStaging {
         _apply(
             dispute,
             DisputeFraudProofType.DisputeConflictsWithFinalState,
-            _conflictProof(_finalAtSeven(forkId, _signers(ALICE_KEY, BOB_KEY)), 0, 2)
+            _conflictProof(
+                _finalAtSeven(forkId, _signers(ALICE_KEY, BOB_KEY)), 0, 2, _snapshot(5, genesisData.participants)
+            )
         );
 
         _assertRejected(dispute);
@@ -171,7 +200,9 @@ contract DisputeConflictsWithFinalStateTest is StateProofStaging {
         _apply(
             dispute,
             DisputeFraudProofType.DisputeConflictsWithFinalState,
-            _conflictProof(_finalAtSeven(forkId, _signers(ALICE_KEY, BOB_KEY)), 0, 1)
+            _conflictProof(
+                _finalAtSeven(forkId, _signers(ALICE_KEY, BOB_KEY)), 0, 1, _snapshot(5, genesisData.participants)
+            )
         );
 
         _assertRejected(dispute);
@@ -189,7 +220,7 @@ contract DisputeConflictsWithFinalStateTest is StateProofStaging {
         Dispute memory dispute = _dispute(_one(run));
         _commit(dispute);
 
-        _apply(dispute, DisputeFraudProofType.DisputeConflictsWithFinalState, _conflictProof(finalProof, 0, 0));
+        _apply(dispute, DisputeFraudProofType.DisputeConflictsWithFinalState, _conflictProof(finalProof, 0, 0, anchor));
 
         _assertKilled(dispute);
     }
@@ -204,7 +235,7 @@ contract DisputeConflictsWithFinalStateTest is StateProofStaging {
         _apply(
             dispute,
             DisputeFraudProofType.DisputeConflictsWithFinalState,
-            _conflictProof(_finalAtSeven(forkId, _signers(ALICE_KEY, BOB_KEY)), 1, 0)
+            _conflictProof(_finalAtSeven(forkId, _signers(ALICE_KEY, BOB_KEY)), 1, 0, _snapshot(7, _set(alice)))
         );
 
         _assertKilled(dispute);
@@ -220,7 +251,11 @@ contract DisputeConflictsWithFinalStateTest is StateProofStaging {
         Dispute memory dispute = _dispute(_one(run));
         _commit(dispute);
 
-        _apply(dispute, DisputeFraudProofType.DisputeConflictsWithFinalState, _conflictProof(finalProof, 0, 0));
+        _apply(
+            dispute,
+            DisputeFraudProofType.DisputeConflictsWithFinalState,
+            _conflictProof(finalProof, 0, 0, _snapshot(8, genesisData.participants))
+        );
 
         _assertKilled(dispute);
     }

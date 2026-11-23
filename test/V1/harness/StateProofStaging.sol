@@ -21,7 +21,8 @@ import {
     DisputeStateProofBelowOnChainAnchor,
     DisputeStateProofHeaderMismatch,
     TimeoutSupersededByFinalState,
-    DisputeConflictsWithFinalState
+    DisputeConflictsWithFinalState,
+    DisputeFinalPointRegression
 } from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
 import {InvalidTimestampProof} from "../../../contracts/V1/types/FraudProofTypes.sol";
 import {MESSAGE_TYPE_JOIN} from "../../../contracts/V1/types/MessageTypeHashes.sol";
@@ -587,14 +588,27 @@ abstract contract StateProofStaging is DiamondHarness {
         return abi.encode(TimeoutSupersededByFinalState(_finalProof(proofForkId, milestones, snapshots)));
     }
 
-    /// the conflict allegation: the challenger's final proof and the dispute's block at `blockIndex` of milestone
-    /// `milestoneIndex`
-    function _conflictProof(ProofWalkInput memory finalProof, uint256 milestoneIndex, uint256 blockIndex)
+    /// the conflict allegation: the challenger's final proof, the dispute's block at `blockIndex` of milestone
+    /// `milestoneIndex` and the snapshot of the dispute's latest finalized point `latestFinalizedSnapshot`
+    function _conflictProof(
+        ProofWalkInput memory finalProof,
+        uint256 milestoneIndex,
+        uint256 blockIndex,
+        StateSnapshot memory latestFinalizedSnapshot
+    ) internal pure returns (bytes memory) {
+        return abi.encode(
+            DisputeConflictsWithFinalState(finalProof, milestoneIndex, blockIndex, latestFinalizedSnapshot)
+        );
+    }
+
+    /// the final-point regression allegation: the challenger's final proof and the snapshot of the dispute's latest
+    /// finalized point `latestFinalizedSnapshot`
+    function _regressionProof(ProofWalkInput memory finalProof, StateSnapshot memory latestFinalizedSnapshot)
         internal
         pure
         returns (bytes memory)
     {
-        return abi.encode(DisputeConflictsWithFinalState(finalProof, milestoneIndex, blockIndex));
+        return abi.encode(DisputeFinalPointRegression(finalProof, latestFinalizedSnapshot));
     }
 
     /// the omitted-data invalid-state-proof allegation at milestone `milestoneIndex`: the challenger's genesis data

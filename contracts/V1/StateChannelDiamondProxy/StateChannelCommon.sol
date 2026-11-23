@@ -325,6 +325,20 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return storedBlock.timestamp != 0 || storedBlock.messages.length != 0;
     }
 
+    /// The inbound height of `messageBlockHash`: the stored inbound block's height, else the on-chain snapshot's own
+    /// inbound height when the hash is that snapshot's inbound head. Any other hash reverts: a missing block never
+    /// reads as height zero.
+    function _inboundHeightOf(bytes32 channelId, bytes32 messageBlockHash) internal view returns (uint256) {
+        if (_hasInboundMessageBlock(channelId, messageBlockHash)) {
+            return inboundMessageBlockMap[channelId][messageBlockHash].blockHeight;
+        }
+        SnapshotData storage anchorData = stateSnapshots[channelId].snapshotData;
+        if (messageBlockHash == anchorData.latestInboundMessageBlockHash) {
+            return anchorData.latestInboundMessageBlockHeight;
+        }
+        revert ErrorInboundMessageBlockNotStored(channelId, messageBlockHash);
+    }
+
     // snapshot adoption prunes the canonical inbound chain below its head -> absent above it means never committed
     function _isUncommittedInboundMessageBlock(bytes32 channelId, MessageBlock memory messageBlock)
         internal

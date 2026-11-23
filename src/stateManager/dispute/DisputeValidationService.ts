@@ -14,6 +14,7 @@ import type { BlockPredecessor } from "@/storage/QueueStorage";
 import { timeoutWaitTime } from "@/types";
 import { Address, Bytes, ChannelId, Hash, Signature } from "@/types/types";
 import { hash, isSubset, Logger } from "@/utils";
+import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import { preferLocal } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
@@ -110,7 +111,13 @@ export default class DisputeValidationService {
             return this.rejectStateProof(dispute, evidence, data);
 
         // a conflict with this peer's final history needs no replay state
-        if (await this.tryCreateConflictsWithFinalStateProof(dispute))
+        if (
+            (await this.tryCreateConflictsWithFinalStateProof(
+                dispute,
+                evidence
+            )) ||
+            (await this.tryCreateFinalPointRegressionProof(dispute, evidence))
+        )
             return false;
 
         const walk = await this.verifyAndReplay(dispute, evidence, data);
@@ -131,12 +138,18 @@ export default class DisputeValidationService {
      * verified while auditing another dispute (stored without moving the
      * view). Each conflict is offered to the chain with this peer's proof of
      * the final block's height; the first the chain accepts is stored. A
-     * block the dispute's walk does not check is no conflict.
+     * block the dispute's walk does not check is no conflict. The chain also
+     * compares the final point's inbound height with that of the dispute's
+     * latest finalized point, whose snapshot comes from `evidence`.
      */
     private async tryCreateConflictsWithFinalStateProof(
-        dispute: DisputeStruct
+        dispute: DisputeStruct,
+        evidence: StateProofEvidence
     ): Promise<boolean> {
         const { forkId, stateProof } = dispute.input;
+        // the snapshot the first block of the last milestone commits
+        const latestFinalizedSnapshot = evidence.milestoneSnapshots.at(-1);
+        if (!latestFinalizedSnapshot) return false;
         const [finalized, anchor] = await Promise.all([
             this.agreementManager.getLocalFinalizedSnapshot(forkId),
             this.agreementManager.getChainAnchor(forkId)
@@ -185,11 +198,13 @@ export default class DisputeValidationService {
             const finalizedSnapshot = StateSnapshot.from(
                 finalProof.milestoneSnapshots.at(-1)!
             );
-            const proof = { finalProof, ...conflict };
+            const proof = { finalProof, ...conflict, latestFinalizedSnapshot };
             if (
-                !(await this.stateChannelManagerContract.isDisputeConflictingWithFinalState.staticCall(
-                    dispute,
-                    proof
+                !(await this.isAcceptedByChain(
+                    this.stateChannelManagerContract.isDisputeConflictingWithFinalState.staticCall(
+                        dispute,
+                        proof
+                    )
                 ))
             )
                 continue;
@@ -209,6 +224,62 @@ export default class DisputeValidationService {
             return true;
         }
         return false;
+    }
+
+    /**
+     * The dispute's latest finalized point G, the first block of its last
+     * milestone, is above this peer's latest final point F, and G's snapshot
+     * consumed fewer inbound blocks than F's: on one history the inbound
+     * height never goes down, so the dispute's history skipped inbound the
+     * final history consumed. G's snapshot comes from `evidence` (the posted
+     * auditing data, else this peer's stored snapshots). The chain reads both
+     * inbound heights itself; the proof is stored only when it agrees.
+     */
+    private async tryCreateFinalPointRegressionProof(
+        dispute: DisputeStruct,
+        evidence: StateProofEvidence
+    ): Promise<boolean> {
+        const { forkId, stateProof } = dispute.input;
+        const latestFinalizedSnapshot = evidence.milestoneSnapshots.at(-1);
+        const first = stateProof.milestones.at(-1)?.blockConfirmations[0];
+        const latestFinalized = first && Block.tryFromBlockConfirmation(first);
+        const finalized =
+            await this.agreementManager.getLocalFinalizedSnapshot(forkId);
+        if (
+            !latestFinalizedSnapshot ||
+            !latestFinalized ||
+            !finalized ||
+            latestFinalized.height <= finalized.blockHeight
+        )
+            return false;
+        const finalProof = await this.agreementManager.tryBuildFinalProofAt(
+            forkId,
+            finalized.blockHeight
+        );
+        if (!finalProof) return false;
+        const proof = { finalProof, latestFinalizedSnapshot };
+        if (
+            !(await this.isAcceptedByChain(
+                this.stateChannelManagerContract.isDisputeFinalPointRegression.staticCall(
+                    dispute,
+                    proof
+                )
+            ))
+        )
+            return false;
+        this.logger.warn(
+            "Dispute proof finalizes a point above this peer's final state with fewer inbound blocks",
+            {
+                dispute: LoggerUtils.getDisputeMetadata(dispute),
+                finalized: LoggerUtils.getSnapshotMetadata(finalized),
+                latestFinalizedHeight: latestFinalized.height
+            }
+        );
+        this.disputeFraudProofService.createDisputeFinalPointRegression(
+            dispute,
+            proof
+        );
+        return true;
     }
 
     /** The chain's eligibility of the last milestone's block at `blockIndex` for a block-specific challenge. */
@@ -248,7 +319,16 @@ export default class DisputeValidationService {
                 continue;
             }
             // Another audit may have finalized conflicting history while this walk awaited its verifier.
-            if (await this.tryCreateConflictsWithFinalStateProof(dispute))
+            if (
+                (await this.tryCreateConflictsWithFinalStateProof(
+                    dispute,
+                    evidence
+                )) ||
+                (await this.tryCreateFinalPointRegressionProof(
+                    dispute,
+                    evidence
+                ))
+            )
                 return false;
             const outcome = await this.replayLastMilestoneTail(
                 dispute,
@@ -274,7 +354,14 @@ export default class DisputeValidationService {
                         outboundRun,
                         data
                     ) &&
-                    (await this.tryCreateConflictsWithFinalStateProof(dispute))
+                    ((await this.tryCreateConflictsWithFinalStateProof(
+                        dispute,
+                        evidence
+                    )) ||
+                        (await this.tryCreateFinalPointRegressionProof(
+                            dispute,
+                            evidence
+                        )))
                 )
                     return false;
                 return walk;
@@ -1229,5 +1316,25 @@ export default class DisputeValidationService {
         return !!this.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
             dispute
         );
+    }
+
+    /**
+     * The chain's verdict on a final-history counter. The chain has no
+     * verdict when it knows no inbound height for a compared snapshot: no
+     * counter then. Any other error is rethrown.
+     */
+    private async isAcceptedByChain(verdict: Promise<boolean>) {
+        try {
+            return await verdict;
+        } catch (error) {
+            const custom = tryDecodeCustomError(error);
+            if (custom?.name !== "ErrorInboundMessageBlockNotStored")
+                throw error;
+            this.logger.info(
+                "Chain knows no inbound height for a compared snapshot: no final-history counter",
+                { custom: custom.message }
+            );
+            return false;
+        }
     }
 }

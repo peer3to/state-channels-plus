@@ -156,7 +156,9 @@ contract StateProofFacet is StateChannelCommon {
      * The dispute's block at `blockIndex` of milestone `milestoneIndex`, one its walk checks, is at the height of a
      * threshold-final state F of the same fork (`proof.finalProof`) and commits another snapshot: the dispute's
      * history conflicts with the final history. Only F's own height is compared: the final proof proves the snapshot
-     * at that height, not which blocks lie below it.
+     * at that height, not which blocks lie below it. F's inbound height must also be at least that of the dispute's
+     * latest finalized point (`_latestFinalizedInbound`): a final point that consumed less inbound than the dispute
+     * already finalized is no evidence against it.
      */
     function isDisputeConflictingWithFinalState(Dispute memory dispute, DisputeConflictsWithFinalState memory proof)
         public
@@ -176,10 +178,37 @@ contract StateProofFacet is StateChannelCommon {
         if (!isKept || !hasHeight || proof.blockIndex < fromIndex) return false;
         (bool decoded, Block memory conflicting) = UtilityFacet(utilityFacetAddress)
             .tryDecodeBlock(milestone.blockConfirmations[proof.blockIndex].signedBlock.encodedBlock);
-        return decoded && conflicting.transaction.header.channelId == dispute.input.channelId
-            && conflicting.transaction.header.forkId == dispute.input.forkId
-            && conflicting.transaction.header.transactionCnt == finalPoint.blockHeight
-            && conflicting.stateSnapshotHash != keccak256(abi.encode(finalPoint));
+        if (
+            !decoded || conflicting.transaction.header.channelId != dispute.input.channelId
+                || conflicting.transaction.header.forkId != dispute.input.forkId
+                || conflicting.transaction.header.transactionCnt != finalPoint.blockHeight
+                || conflicting.stateSnapshotHash == keccak256(abi.encode(finalPoint))
+        ) return false;
+        (bool isKnown,,, bytes32 finalizedInboundHash) = _latestFinalizedInbound(dispute, proof.latestFinalizedSnapshot);
+        return isKnown
+            && _inboundHeightOf(dispute.input.channelId, finalPoint.snapshotData.latestInboundMessageBlockHash)
+                >= _inboundHeightOf(dispute.input.channelId, finalizedInboundHash);
+    }
+
+    /**
+     * The dispute's latest finalized point G (`_latestFinalizedInbound`) is above a threshold-final state F of the same
+     * fork (`proof.finalProof`), and G's snapshot consumed fewer inbound blocks than F's: on one history the inbound
+     * height never goes down, so G's history skipped inbound that the final history consumed and never needed the
+     * signature of a joiner F counted. Only the latest finalized point is compared, never an earlier milestone. The
+     * anchor as that point is never above F, which is walked from it.
+     */
+    function isDisputeFinalPointRegression(Dispute memory dispute, DisputeFinalPointRegression memory proof)
+        public
+        view
+        returns (bool)
+    {
+        (bool isFinal, StateSnapshot memory finalPoint) = _finalPointOf(dispute, proof.finalProof);
+        if (!isFinal) return false;
+        (bool isKnown, bool isAnchor, uint256 finalizedHeight, bytes32 finalizedInboundHash) =
+            _latestFinalizedInbound(dispute, proof.latestFinalizedSnapshot);
+        if (!isKnown || isAnchor || finalizedHeight <= finalPoint.blockHeight) return false;
+        return _inboundHeightOf(dispute.input.channelId, finalizedInboundHash)
+            < _inboundHeightOf(dispute.input.channelId, finalPoint.snapshotData.latestInboundMessageBlockHash);
     }
 
     /// The final point of `finalProof` walked from the chain's start, when the proof is on the dispute's channel and
@@ -211,23 +240,76 @@ contract StateProofFacet is StateChannelCommon {
         if (milestones.length == 0) return false;
         BlockConfirmation[] memory lastRun = milestones[milestones.length - 1].blockConfirmations;
         if (blockIndex >= lastRun.length) return false;
-        (bool firstDecoded, Block memory firstBlock) =
-            UtilityFacet(utilityFacetAddress).tryDecodeBlock(lastRun[0].signedBlock.encodedBlock);
+        (
+            bool firstDecoded,
+            bool isAnchor,
+            Block memory firstBlock,
+            bool canUseOnChainSnapshot,
+            StateSnapshot memory anchor
+        ) = _latestFinalizedPoint(dispute);
         (bool decoded, Block memory challengedBlock) =
             UtilityFacet(utilityFacetAddress).tryDecodeBlock(lastRun[blockIndex].signedBlock.encodedBlock);
         if (!firstDecoded || !decoded) return false;
 
-        (bool canUseOnChainSnapshot, StateSnapshot memory anchor) =
-            _getAnchorSnapshot(dispute.input.channelId, dispute.input.forkId);
         uint256 firstHeight = firstBlock.transaction.header.transactionCnt;
         uint256 boundaryEnd = 1;
-        if (canUseOnChainSnapshot && firstHeight <= anchor.blockHeight) {
+        if (isAnchor) {
             boundaryEnd = anchor.blockHeight - firstHeight + 1;
         } else if (!canUseOnChainSnapshot && firstHeight == 0) {
             boundaryEnd = 0;
         }
         if (blockIndex < boundaryEnd) return false;
         return !canUseOnChainSnapshot || challengedBlock.transaction.header.transactionCnt > anchor.blockHeight;
+    }
+
+    /// The dispute's latest finalized point, the protected boundary of `isBlockChallengeEligible`: the first block of
+    /// its last milestone, or the same-fork anchor when that is at or above it (`isAnchor`). False `firstDecoded` when
+    /// the proof has no last-milestone block or that block does not decode.
+    function _latestFinalizedPoint(Dispute memory dispute)
+        internal
+        view
+        returns (
+            bool firstDecoded,
+            bool isAnchor,
+            Block memory firstBlock,
+            bool canUseOnChainSnapshot,
+            StateSnapshot memory anchor
+        )
+    {
+        (canUseOnChainSnapshot, anchor) = _getAnchorSnapshot(dispute.input.channelId, dispute.input.forkId);
+        MilestoneProof[] memory milestones = dispute.input.stateProof.milestones;
+        if (milestones.length == 0) return (false, false, firstBlock, canUseOnChainSnapshot, anchor);
+        BlockConfirmation[] memory lastRun = milestones[milestones.length - 1].blockConfirmations;
+        if (lastRun.length == 0) return (false, false, firstBlock, canUseOnChainSnapshot, anchor);
+        (firstDecoded, firstBlock) =
+            UtilityFacet(utilityFacetAddress).tryDecodeBlock(lastRun[0].signedBlock.encodedBlock);
+        isAnchor =
+            firstDecoded && canUseOnChainSnapshot && firstBlock.transaction.header.transactionCnt <= anchor.blockHeight;
+    }
+
+    /// The height and inbound head of the dispute's latest finalized point (`_latestFinalizedPoint`). The anchor as
+    /// that point is read from the chain; a block as that point must be on the dispute's channel and fork and commit
+    /// `finalizedSnapshot`. False `isKnown` when the point cannot be read or the snapshot is not the one it commits.
+    function _latestFinalizedInbound(Dispute memory dispute, StateSnapshot memory finalizedSnapshot)
+        internal
+        view
+        returns (bool isKnown, bool isAnchor, uint256 height, bytes32 inboundHash)
+    {
+        (bool firstDecoded, bool atAnchor, Block memory firstBlock,, StateSnapshot memory anchor) =
+            _latestFinalizedPoint(dispute);
+        if (!firstDecoded) return (false, false, 0, bytes32(0));
+        if (atAnchor) return (true, true, anchor.blockHeight, anchor.snapshotData.latestInboundMessageBlockHash);
+        if (
+            firstBlock.transaction.header.channelId != dispute.input.channelId
+                || firstBlock.transaction.header.forkId != dispute.input.forkId
+                || firstBlock.stateSnapshotHash != keccak256(abi.encode(finalizedSnapshot))
+        ) return (false, false, 0, bytes32(0));
+        return (
+            true,
+            false,
+            firstBlock.transaction.header.transactionCnt,
+            finalizedSnapshot.snapshotData.latestInboundMessageBlockHash
+        );
     }
 
     /**
