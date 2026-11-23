@@ -60,7 +60,8 @@ error ErrorJoinChannelAtomicFailure(uint256 joinChannelIndex, address participan
 //Inbound message
 error ErrorNoInboundMessagesProvided();
 // No inbound height is known for `blockHash`: the chain holds no such inbound block and it is not the on-chain
-// snapshot's inbound head. No verdict: a missing block never reads as height zero.
+// snapshot's inbound head. No verdict: a missing block never reads as height zero. Also raised when the inbound run
+// from `blockHash` down to a lower head is not stored: a missing run never reads as a run without JOINs.
 error ErrorInboundMessageBlockNotStored(bytes32 channelId, bytes32 blockHash);
 
 //Exit channel

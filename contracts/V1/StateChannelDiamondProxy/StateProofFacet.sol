@@ -156,9 +156,10 @@ contract StateProofFacet is StateChannelCommon {
      * The dispute's block at `blockIndex` of milestone `milestoneIndex`, one its walk checks, is at the height of a
      * threshold-final state F of the same fork (`proof.finalProof`) and commits another snapshot: the dispute's
      * history conflicts with the final history. Only F's own height is compared: the final proof proves the snapshot
-     * at that height, not which blocks lie below it. F's inbound height must also be at least that of the dispute's
-     * latest finalized point (`_latestFinalizedInbound`): a final point that consumed less inbound than the dispute
-     * already finalized is no evidence against it. When that point is the walk's start, F walked from it passes.
+     * at that height, not which blocks lie below it. When the dispute's latest finalized point
+     * (`_latestFinalizedInbound`) consumed more inbound blocks than F, and those extra blocks hold a JOIN of an address
+     * outside F's participants, F is no evidence against it: F's history never counted that joiner. Extra blocks that
+     * only top up F's participants do not refuse the kill. When that point is the walk's start, F walked from it passes.
      */
     function isDisputeConflictingWithFinalState(Dispute memory dispute, DisputeConflictsWithFinalState memory proof)
         public
@@ -189,16 +190,24 @@ contract StateProofFacet is StateChannelCommon {
         if (!isKnown) return false;
         // F is walked from the same start, and a walk never lowers the inbound height
         if (isStart) return true;
-        return _inboundHeightOf(dispute.input.channelId, finalPoint.snapshotData.latestInboundMessageBlockHash)
-            >= _inboundHeightOf(dispute.input.channelId, finalizedInboundHash);
+        bytes32 finalInboundHash = finalPoint.snapshotData.latestInboundMessageBlockHash;
+        if (
+            _inboundHeightOf(dispute.input.channelId, finalInboundHash)
+                >= _inboundHeightOf(dispute.input.channelId, finalizedInboundHash)
+        ) return true;
+        return !_hasJoinOutside(
+            dispute.input.channelId, finalizedInboundHash, finalInboundHash, finalPoint.snapshotData.participants
+        );
     }
 
     /**
      * The dispute's latest finalized point G (`_latestFinalizedInbound`) is above a threshold-final state F of the same
-     * fork (`proof.finalProof`), and G's snapshot consumed fewer inbound blocks than F's: on one history the inbound
-     * height never goes down, so G's history skipped inbound that the final history consumed and never needed the
-     * signature of a joiner F counted. Only the latest finalized point is compared, never an earlier milestone. The
-     * walk's start (the anchor or the fork genesis) as that point is never above F, which is walked from it.
+     * fork (`proof.finalProof`), G's snapshot consumed fewer inbound blocks than F's, and the inbound blocks F consumed
+     * above G's head hold a JOIN of an address outside G's participants: on one history the inbound height never goes
+     * down, so G's history skipped that JOIN and never needed the signature of the joiner F counted. Skipped blocks
+     * that only top up G's participants are no kill. Only the latest finalized point is compared, never an earlier
+     * milestone. The walk's start (the anchor or the fork genesis) as that point is never above F, which is walked
+     * from it.
      */
     function isDisputeFinalPointRegression(Dispute memory dispute, DisputeFinalPointRegression memory proof)
         public
@@ -212,8 +221,35 @@ contract StateProofFacet is StateChannelCommon {
         if (!isKnown || isStart) return false;
         (bool isFinal, StateSnapshot memory finalPoint) = _finalPointOf(dispute, proof.finalProof);
         if (!isFinal || finalizedHeight <= finalPoint.blockHeight) return false;
-        return _inboundHeightOf(dispute.input.channelId, finalizedInboundHash)
-            < _inboundHeightOf(dispute.input.channelId, finalPoint.snapshotData.latestInboundMessageBlockHash);
+        bytes32 finalInboundHash = finalPoint.snapshotData.latestInboundMessageBlockHash;
+        if (
+            _inboundHeightOf(dispute.input.channelId, finalizedInboundHash)
+                >= _inboundHeightOf(dispute.input.channelId, finalInboundHash)
+        ) return false;
+        return _hasJoinOutside(
+            dispute.input.channelId,
+            finalInboundHash,
+            finalizedInboundHash,
+            proof.latestFinalizedSnapshot.snapshotData.participants
+        );
+    }
+
+    /// The stored inbound run above `lowerInboundHash` up to `upperInboundHash` holds a JOIN of an address outside
+    /// `participants` (a top-up of a participant is no such JOIN). The run must be stored down to the lower head: a
+    /// run the chain does not hold, also an upper head that is only the anchor's unstored inbound head, reverts with
+    /// `ErrorInboundMessageBlockNotStored` for the upper head and never reads as a run without JOINs.
+    function _hasJoinOutside(
+        bytes32 channelId,
+        bytes32 upperInboundHash,
+        bytes32 lowerInboundHash,
+        address[] memory participants
+    ) internal view returns (bool) {
+        if (!_isInboundRunStored(channelId, upperInboundHash, lowerInboundHash)) {
+            revert ErrorInboundMessageBlockNotStored(channelId, upperInboundHash);
+        }
+        address[] memory joiners =
+            _derivePendingParticipantsFromInboundHash(channelId, upperInboundHash, lowerInboundHash);
+        return UtilityFacet(utilityFacetAddress).subtractAddressArrays(joiners, participants).length != 0;
     }
 
     /// The final point of `finalProof` walked from the chain's start, when the proof is on the dispute's channel and
