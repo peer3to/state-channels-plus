@@ -8,10 +8,15 @@ import type {
 
 import { HarnessDebug } from "./HarnessDebug";
 import {
+    FLOW_BENCH_FIRST_ADDRESS_SLOT,
+    FLOW_BENCH_LAST_ADDRESS_SLOT,
     flowBenchConfig,
     flowBenchFile,
+    type FlowBenchLabels,
     flowBenchPeer,
+    type FlowBenchPeer,
     flowBenchProxies,
+    provenAddresses,
     writeFlowBench
 } from "./lightClient/flowBench";
 import { RpcNodeProxy } from "./node/RpcNodeProxy";
@@ -1118,6 +1123,7 @@ export class PeerTestHarness<
             this.peers.map(async (peer) =>
                 flowBenchPeer(
                     peer.index,
+                    peer.address,
                     this.rpcNodeProxies.get(peer.index) ?? [],
                     await this.control(peer)
                         .lightClient.getCounts()
@@ -1126,7 +1132,36 @@ export class PeerTestHarness<
                 )
             )
         );
-        writeFlowBench(file, peers);
+        writeFlowBench(
+            file,
+            peers,
+            await this.flowBenchLabels(peers).catch(() => null)
+        );
+    }
+
+    /** What the chain holds for the addresses the peers' proofs name, while the node still runs. */
+    private async flowBenchLabels(
+        peers: FlowBenchPeer[]
+    ): Promise<FlowBenchLabels> {
+        const stateChannelManager = (
+            await this.channelManager.getAddress()
+        ).toLowerCase();
+        const managerAddressSlots: Record<number, string> = {};
+        for (
+            let slot = FLOW_BENCH_FIRST_ADDRESS_SLOT;
+            slot <= FLOW_BENCH_LAST_ADDRESS_SLOT;
+            slot++
+        )
+            managerAddressSlots[slot] = ethers
+                .dataSlice(
+                    await this.provider.getStorage(stateChannelManager, slot),
+                    12
+                )
+                .toLowerCase();
+        const hasCode: Record<string, boolean> = {};
+        for (const address of provenAddresses(peers))
+            hasCode[address] = (await this.provider.getCode(address)) !== "0x";
+        return { stateChannelManager, managerAddressSlots, hasCode };
     }
 
     /** The RPC node proxies of a peer set up with `rpcNodeProxiesByPeer`, in PROVIDER_URLS order. */
