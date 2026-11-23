@@ -1109,7 +1109,7 @@ describe("Unit: DisputeValidationService", function () {
             ).to.equal(true);
         });
 
-        it("the same hop committing Charlie's seated head state (inbound head = his JOIN), signed by all three -> the chain finds no regression, no DisputeFinalPointRegression", async function () {
+        it("the same hop committing Charlie's seated head state (inbound head = his JOIN), signed by all three -> no regression, no DisputeFinalPointRegression", async function () {
             const h = TestSession.getHarness();
             const history = await stageSeatedJoinerHistory(h);
             const { dispute, auditingData, hopBlock, hopSnapshot } =
@@ -1155,7 +1155,41 @@ describe("Unit: DisputeValidationService", function () {
             );
         });
 
-        it("untampered dispute over seated Charlie's history -> true, no proof", async function () {
+        it("the hop sits at Charlie's final height, commits another snapshot and names an inbound head the chain never held -> the chain's conflict check has no inbound height for it, the audit goes on to the walk: false + DisputeInvalidStateProof, no conflict proof", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            const charlie = h.getPeer(history.charlieIndex);
+            const { dispute, auditingData, hopSnapshot } =
+                await constructJoinerBypassDispute(h, history, {
+                    inbound: "unknown",
+                    height: history.charlieFinal.blockHeight
+                });
+            expect(hopSnapshot.hash).to.not.equal(history.charlieFinal.hash);
+            const conflicts = await h.mirror.observe(
+                charlie.index,
+                "isDisputeConflictingWithFinalState"
+            );
+
+            const run = await h.dispute.auditDispute(
+                charlie.index,
+                dispute,
+                auditingData
+            );
+
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.disputeFraudProofCount).to.equal(1);
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.DisputeInvalidStateProof
+            );
+            const { chain } = await conflicts.observation();
+            expect(chain.reads, "the conflict is offered").to.be.greaterThan(0);
+            expect(
+                chain.failures,
+                "every offer reverts on the unknown inbound head"
+            ).to.have.length(chain.reads);
+        });
+
+        it("untampered dispute over seated Charlie's history -> true, no proof, and his stored inbound blocks rule the regression out without a chain read", async function () {
             const h = TestSession.getHarness();
             const history = await stageSeatedJoinerHistory(h);
             await h
@@ -1164,6 +1198,10 @@ describe("Unit: DisputeValidationService", function () {
                 .request();
             const { dispute } = await h.dispute.fetchConstructedDispute(
                 history.aliceIndex
+            );
+            const regressions = await h.mirror.observe(
+                history.charlieIndex,
+                "isDisputeFinalPointRegression"
             );
 
             const run = await h.dispute.auditDispute(
@@ -1174,6 +1212,10 @@ describe("Unit: DisputeValidationService", function () {
             expect(run).to.include({ outcome: "returned", isValid: true });
             expect(run.storedProof).to.equal(undefined);
             expect(run.disputeFraudProofCount).to.equal(0);
+            expect(
+                (await regressions.observation()).chain.reads,
+                "no regression read reaches the chain"
+            ).to.equal(0);
         });
 
         it("auditing data omitted and onChainSlashes = [Charlie], which drops him from the threshold set that allows the omission, Charlie lacking G's snapshot -> false + DisputeOnChainSlashesNotSubset before any walk", async function () {
@@ -1448,7 +1490,7 @@ describe("Unit: DisputeValidationService", function () {
             expect((await regressions.observation()).chain.reads).to.equal(0);
         });
 
-        it("the hop commits Charlie's seated state far above his final point, and a top-up is consumed and final while the audit's walk is parked -> the pre-walk regression read is false, the read after the walk is true: false + DisputeFinalPointRegression", async function () {
+        it("the hop commits Charlie's seated state far above his final point, and a top-up is consumed and final while the audit's walk is parked -> before the walk G's inbound head is his final point's, so no regression read; the read after the walk is true: false + DisputeFinalPointRegression", async function () {
             const h = TestSession.getHarness();
             const history = await stageSeatedJoinerHistory(h);
             const charlie = h.getPeer(history.charlieIndex);
@@ -1471,9 +1513,9 @@ describe("Unit: DisputeValidationService", function () {
             try {
                 await walks.waitUntilHeld([String(hopBlock.hash)]);
                 expect(
-                    (await regressions.observation()).chain.answers,
-                    "before the walk, Charlie's final point has G's inbound"
-                ).to.deep.equal([false]);
+                    (await regressions.observation()).chain.reads,
+                    "before the walk, Charlie's final point has G's inbound head: no chain read"
+                ).to.equal(0);
                 await h.join.forceInboundJoinWait({
                     participant: h.getPeer(history.aliceIndex).address
                 });
@@ -1506,7 +1548,7 @@ describe("Unit: DisputeValidationService", function () {
             );
             expect(
                 (await regressions.observation()).chain.answers
-            ).to.deep.equal([false, true]);
+            ).to.deep.equal([true]);
         });
     });
 

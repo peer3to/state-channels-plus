@@ -266,8 +266,10 @@ export default class DisputeValidationService {
      * final history consumed. F is this peer's latest final point when G is
      * above it, else the highest final point it can prove below G. G's
      * snapshot comes from `evidence` (the posted auditing data, else this
-     * peer's stored snapshots). The chain reads both inbound heights itself;
-     * the proof is stored only when it agrees.
+     * peer's stored snapshots). The chain is not asked when this peer's own
+     * inbound blocks rule the regression out
+     * (`isInboundRegressionRuledOutLocally`). Otherwise the chain reads both
+     * inbound heights itself; the proof is stored only when it agrees.
      */
     private async tryCreateFinalPointRegressionProof(
         dispute: DisputeStruct,
@@ -285,6 +287,14 @@ export default class DisputeValidationService {
         );
         if (!final) return false;
         const { finalProof, finalized } = final;
+        if (
+            this.isInboundRegressionRuledOutLocally(
+                latestFinalizedSnapshot.snapshotData
+                    .latestInboundMessageBlockHash as Hash,
+                finalized.latestInboundMessageBlockHash
+            )
+        )
+            return false;
         const proof = { finalProof, latestFinalizedSnapshot };
         if (
             !(await this.isAcceptedByChain(
@@ -308,6 +318,30 @@ export default class DisputeValidationService {
             proof
         );
         return true;
+    }
+
+    /**
+     * Skip-only filter before the chain read of the regression: true when
+     * this peer's own stored inbound blocks put G's inbound head at or above
+     * F's. Heads are looked up by hash, never by a snapshot's height field. A
+     * hash the store does not hold rules nothing out, so the chain is asked;
+     * a counter is stored only on the chain's verdict.
+     */
+    private isInboundRegressionRuledOutLocally(
+        latestFinalizedInboundHash: Hash,
+        finalInboundHash: Hash
+    ): boolean {
+        if (latestFinalizedInboundHash === finalInboundHash) return true;
+        const { inboundMessages } = this.storage;
+        const latestFinalizedInbound = inboundMessages.getMessageBlock(
+            latestFinalizedInboundHash
+        );
+        const finalInbound = inboundMessages.getMessageBlock(finalInboundHash);
+        if (!latestFinalizedInbound || !finalInbound) return false;
+        return (
+            BigInt(latestFinalizedInbound.blockHeight) >=
+            BigInt(finalInbound.blockHeight)
+        );
     }
 
     /**
