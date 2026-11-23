@@ -2699,10 +2699,19 @@ conflict kill, from its own final point and the dispute's last-milestone snapsho
 only when the chain's check agrees
 ([`REQ-FP-7-4DD0D7.T10`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t10)).
 
+An auditor whose latest final point is not below G uses the highest final point it can prove below G
+instead. Under a genesis start whose block zero is not final, G is the fork's start state, so an
+unfinalized block zero never raises the conflict's inbound check.
+
 **Residual:** when the dispute omits its auditing data, the auditor reads G's snapshot from its
-own store, and a node that does not hold it builds no regression kill. Y gains nothing by omitting
-its data: its upload names the chain's inbound head, so L is in Y's historic threshold set, Y's hop
-is not final over it, and omission is killed by `DisputeLastMilestoneNotFinalAndNoAuditingData`.
+own store, and a node that does not hold it builds no regression kill. Y's upload names the chain's
+inbound head, so L is in Y's historic threshold set. A Y whose `onChainSlashes` is a subset of the
+chain's slashes therefore gains nothing by omitting its data: its hop is not final over that set,
+and omission is killed by `DisputeLastMilestoneNotFinalAndNoAuditingData`. Y can drop L from that
+set only by listing L in `onChainSlashes` although the chain never slashed L. The auditor checks
+that list against the chain before any walk or snapshot lookup, so such a Y is killed by
+`DisputeOnChainSlashesNotSubset` whether or not the auditor holds G's snapshot
+([`REQ-FP-7-4DD0D7.T10`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t10)).
 
 **Evidence:**
 [DisputeFinalPointRegression.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeFinalPointRegression.t.sol.md)
