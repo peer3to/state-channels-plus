@@ -206,10 +206,15 @@ export const codecValues = {
     disputeConflictsWithFinalStateProof: () => ({
         finalProof: codecValues.proofWalkInput(),
         milestoneIndex: 1n,
-        blockIndex: 2n
+        blockIndex: 2n,
+        latestFinalizedSnapshot: snapshot()
     }),
     disputeInvalidOutboundRunProof: () => ({
         auditingData: auditingData()
+    }),
+    disputeFinalPointRegressionProof: () => ({
+        finalProof: codecValues.proofWalkInput(),
+        latestFinalizedSnapshot: snapshot()
     })
 };
 
