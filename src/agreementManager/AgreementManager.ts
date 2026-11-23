@@ -285,14 +285,15 @@ class AgreementManager {
         const built = await this.buildStateProof(forkId, blockHeight, {
             finalizedOnly: true
         });
-        return {
-            finalProof: this.toWalkInput(
-                forkId,
-                built.stateProof,
-                built.evidence
-            ),
-            finalizedSnapshot: built.finalizedSnapshot
-        };
+        return this.toFinalProof(forkId, built);
+    }
+
+    /** `buildFinalProof`, but undefined when `blockHeight` is below the anchor. */
+    public async tryBuildFinalProof(forkId: ForkId, blockHeight: BlockHeight) {
+        const built = await this.tryBuildStateProof(forkId, blockHeight, {
+            finalizedOnly: true
+        });
+        return built && this.toFinalProof(forkId, built);
     }
 
     /** Proves exactly this final point, retaining later stored virtual votes without advancing the view. */
@@ -706,6 +707,17 @@ class AgreementManager {
 
     private get channelId(): ChannelId {
         return this.getChannelId();
+    }
+
+    private toFinalProof(forkId: ForkId, built: BuiltStateProof) {
+        return {
+            finalProof: this.toWalkInput(
+                forkId,
+                built.stateProof,
+                built.evidence
+            ),
+            finalizedSnapshot: built.finalizedSnapshot
+        };
     }
 
     private toWalkInput(
