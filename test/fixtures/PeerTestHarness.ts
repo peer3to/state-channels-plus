@@ -7,6 +7,13 @@ import type {
 } from "./customRpc/harnessControl/HarnessControlRpc";
 
 import { HarnessDebug } from "./HarnessDebug";
+import {
+    flowBenchConfig,
+    flowBenchFile,
+    flowBenchPeer,
+    flowBenchProxies,
+    writeFlowBench
+} from "./lightClient/flowBench";
 import { RpcNodeProxy } from "./node/RpcNodeProxy";
 import { RootCreationControl } from "./runtimeRpc/RootCreationControl";
 import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../scripts/V1/deploy";
@@ -292,10 +299,8 @@ export class PeerTestHarness<
         // LOCAL_DISCOVERY_REGISTRY_URL, …) and any explicit `configOverrides`
         // still win over it — and the merged result flows into the worker's
         // setup payload.
-        this.harnessConfig = createConfig(
-            options?.configOverrides || {},
-            testConfig
-        );
+        const configOverrides = flowBenchConfig(options?.configOverrides || {});
+        this.harnessConfig = createConfig(configOverrides, testConfig);
 
         const resolvedTimeConfig: TimeConfig = resolveTestTimeConfig(
             options?.timeConfig
@@ -318,12 +323,14 @@ export class PeerTestHarness<
                 DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT,
             autoConnect: options?.autoConnect !== false,
             peerSetupConcurrency: options?.peerSetupConcurrency,
-            configOverrides: options?.configOverrides || {},
+            configOverrides,
             customPrecompiles: options?.customPrecompiles || [],
             customRpcManifest: options?.customRpcManifest,
             hostRootManifest: options?.hostRootManifest,
             executorCallGasLimitByPeer: options?.executorCallGasLimitByPeer,
-            rpcNodeProxiesByPeer: options?.rpcNodeProxiesByPeer,
+            rpcNodeProxiesByPeer: flowBenchProxies(
+                options?.rpcNodeProxiesByPeer
+            ),
             rpcNodeProxiesCutAtStart: options?.rpcNodeProxiesCutAtStart
         };
         if (
@@ -1029,6 +1036,9 @@ export class PeerTestHarness<
         this.connectionBarrier.clear();
         this.eventCountsBarrier.clear();
 
+        const benchFile = flowBenchFile();
+        if (benchFile) await this.writeFlowBench(benchFile);
+
         const disposePromises = this.peers.map(async (peer) => {
             try {
                 peer.logger.verbose("Cleaning up peer", {
@@ -1100,6 +1110,23 @@ export class PeerTestHarness<
                 await deployer.sendTransaction({ to: address, value: 0n })
             ).wait();
         }
+    }
+
+    /** What each peer's runtime asked the node and how its light client answered, before the peers go. */
+    private async writeFlowBench(file: string): Promise<void> {
+        const peers = await Promise.all(
+            this.peers.map(async (peer) =>
+                flowBenchPeer(
+                    peer.index,
+                    this.rpcNodeProxies.get(peer.index) ?? [],
+                    await this.control(peer)
+                        .lightClient.getCounts()
+                        .request()
+                        .catch(() => null)
+                )
+            )
+        );
+        writeFlowBench(file, peers);
     }
 
     /** The RPC node proxies of a peer set up with `rpcNodeProxiesByPeer`, in PROVIDER_URLS order. */

@@ -165,7 +165,12 @@ function peer3NodeArgs(nodePort, seal, chain, basePath) {
         "--no-mdns",
         "--no-prometheus",
         "--no-telemetry",
-        "--no-hardware-benchmarks"
+        "--no-hardware-benchmarks",
+        // the light client endpoints (peer3-parachain PR #3), opt-in until the
+        // node image the workers copy carries them
+        ...(process.env.PEER3_NODE_LIGHT_CLIENT === "1"
+            ? ["--light-client"]
+            : [])
     ];
 }
 
