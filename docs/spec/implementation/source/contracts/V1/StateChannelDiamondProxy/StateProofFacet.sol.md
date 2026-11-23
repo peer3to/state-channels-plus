@@ -15,6 +15,7 @@
 - [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)
 - [`REQ-FIN-4-ZFDDS6` (Consequently, in a channel with N participants, N consecutive blocks authored…)](../../../../../specification/protocol-model/finality.md#req-fin-4-zfdds6)
 - [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r)
+- [`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)
 
 ## UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR
 
@@ -54,3 +55,5 @@ Proof predicates
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P30` — Standalone milestone finality accepts the authentic block-zero control when its author is the entire supplied threshold set, returning the latest snapshot hash
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P84` — `isDisputeOutboundRunInvalid` judges a committed run whose block keeps its predecessor and height but carries a `MaxUint256` message balance invalid without reverting, so the counter kills the dispute.
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P85` — `isDisputeOutboundRunInvalid` judges a committed run invalid without reverting when the latest state (signed only by its author) has its outbound head at an overflowing block right above the anchor, so the counter kills the dispute.
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P86` — `isDisputeFinalPointRegression` rejects a supplied snapshot whose hash is not the latest finalized block's commitment
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P87` — `isDisputeConflictingWithFinalState` reads the anchor's inbound head, not the supplied snapshot, when the last milestone holds the chain anchor
