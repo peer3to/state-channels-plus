@@ -132,6 +132,17 @@ export default class DisputeValidationService {
         return await this.continueOtherChecks(dispute, walk, data);
     }
 
+    /** The chain's eligibility of the last milestone's block at `blockIndex` for a block-specific challenge. */
+    public isBlockChallengeEligible(
+        dispute: DisputeStruct,
+        blockIndex: number
+    ): Promise<boolean> {
+        return this.stateChannelManagerContract.isBlockChallengeEligible.staticCall(
+            dispute,
+            blockIndex
+        );
+    }
+
     /**
      * A counter against this peer's final history: a block of the dispute
      * that conflicts with a final block, else a latest finalized point that
@@ -327,17 +338,6 @@ export default class DisputeValidationService {
             finalProof: built.finalProof,
             finalized: built.finalizedSnapshot
         };
-    }
-
-    /** The chain's eligibility of the last milestone's block at `blockIndex` for a block-specific challenge. */
-    public isBlockChallengeEligible(
-        dispute: DisputeStruct,
-        blockIndex: number
-    ): Promise<boolean> {
-        return this.stateChannelManagerContract.isBlockChallengeEligible.staticCall(
-            dispute,
-            blockIndex
-        );
     }
 
     /**
