@@ -37,6 +37,12 @@ const FLOWS: readonly Flow[] = [
         test: "should handle multiple rotation rounds"
     },
     {
+        // transitions four times as long: the difference is the steady state (2026-11-23)
+        name: "steadyState",
+        file: "e2e/E2E-StateTransition.test.ts",
+        test: "keeps peers in sync over 12 rotation rounds"
+    },
+    {
         name: "snapshot",
         file: "e2e/E2E-StateSnapshots.test.ts",
         test: "should post updated state snapshot on-chain after 3 transitions"
