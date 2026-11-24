@@ -123,6 +123,7 @@ describe("MultiRpcProvider", () => {
 
     it("estimates gas at the pending block, for a call valid only after the latest block's second", async () => {
         await assertGasEstimateSeesPendingBlock();
+        throw new Error("TEMP: the pin gate must go red");
     });
 
     it("estimates at the latest block when only the pending block reverts the call", async () => {
