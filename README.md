@@ -415,11 +415,14 @@ yarn test:parallel:server --name worker-one
 When the configured image was built from another revision of the Dockerfile
 than its checkout carries, carries no label, is not on this host (pull a
 published digest before starting), or is not set, the docker server
-builds the image at startup and runs on the new ID: the distributed protocol
+builds the image at startup, after its docker host checks, and runs on the new
+ID: the distributed protocol
 version covers the runner code, not the image, so a host that updated its
 checkout without rebuilding would otherwise accept tasks its image cannot run.
 It prints the new ID; set `SCP_TEST_RUNNER_IMAGE` to it so the next restart
-does not build again. If the build fails, the server does not start.
+does not build again. If the build fails, the server does not start. The docker
+self-check, integration and benchmark tools stay strict: they refuse such an
+image and name the restart or `yarn test:parallel:image` as the fix.
 
 The Docker volume driver must enforce the `size` option. The Linux service
 account also needs permission to create Docker bridge networks and install the

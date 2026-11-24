@@ -8,8 +8,7 @@ const path = require("path");
 const {
     RUNNER_IMAGE_DOCKERFILE,
     RUNNER_IMAGE_REVISION_LABEL,
-    runnerImageRevision,
-    staleRunnerImageReason
+    runnerImageRevision
 } = require("./runnerImage");
 
 // docker build flags that cannot change what goes into the image, with
@@ -67,14 +66,11 @@ function runnerImageBuildArgs(root, idFile, extra) {
     ];
 }
 
-/** Runs docker with `args`; output goes to this process's console. */
-function docker(args, options = {}) {
-    const result = spawnSync("docker", args, {
-        stdio: options.capture ? ["ignore", "pipe", "inherit"] : "inherit",
-        encoding: "utf8"
-    });
+/** Runs docker with `args`, its output on this process's console, and returns its exit status. */
+function docker(args) {
+    const result = spawnSync("docker", args, { stdio: "inherit" });
     if (result.error) throw result.error;
-    return { status: result.status ?? 1, stdout: result.stdout ?? "" };
+    return { status: result.status ?? 1 };
 }
 
 /** Builds the runner image from the checkout at `root` and returns its image ID. */
@@ -95,45 +91,11 @@ function buildRunnerImage(root, extra = [], run = docker) {
     }
 }
 
-/**
- * The runner image a docker server runs: the configured one when it was built from this checkout's
- * runner Dockerfile, otherwise the ID of a fresh build, so a worker that updated its checkout
- * rebuilds instead of refusing to start. Other backends keep the configured image.
- */
-function currentRunnerImage(config, root, run = docker) {
-    const image = config.runnerImage;
-    if (config.executionBackend !== "docker" || config.environmentBackend) {
-        return image;
-    }
-    let reason = `No runner image is configured`;
-    if (image) {
-        const inspect = run(
-            ["image", "inspect", "--format", "{{json .Config.Labels}}", image],
-            { capture: true }
-        );
-        reason =
-            inspect.status === 0
-                ? staleRunnerImageReason(
-                      image,
-                      JSON.parse(inspect.stdout.trim() || "null"),
-                      root
-                  )
-                : `Runner image ${image} is not on this host`;
-        if (!reason) return image;
-    }
-    console.log(`${reason}; building it`);
-    const built = buildRunnerImage(root, [], run);
-    console.log(
-        `Built runner image ${built}; set SCP_TEST_RUNNER_IMAGE to it so the next restart does not build again`
-    );
-    return built;
-}
-
-function main(extra = process.argv.slice(2), run = docker) {
+function main() {
     const root = path.resolve(__dirname, "../../..");
     let imageId;
     try {
-        imageId = buildRunnerImage(root, extra, run);
+        imageId = buildRunnerImage(root, process.argv.slice(2));
     } catch (error) {
         // a refused argument exits 2, a failed build with docker's status, anything else 1
         console.error(error.exitCode ? error.message : error.stack);
@@ -145,4 +107,4 @@ function main(extra = process.argv.slice(2), run = docker) {
 
 if (require.main === module) main();
 
-module.exports = { currentRunnerImage, main, runnerImageBuildArgs };
+module.exports = { buildRunnerImage, runnerImageBuildArgs };
