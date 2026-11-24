@@ -18,7 +18,8 @@ swallows a participant's genesis join log handling, so neither the live log nor 
 the block: that runtime reports the expected detached error "genesis join block unavailable", fires no
 `onAbort`, `onSetState` or completed `onChannelOpened` and stays open, while the other participants
 install. The read-failure case makes only a participant's `openChannelGenesis` provider call fail with a
-call exception without revert data, as a node's error answer: that runtime reports the error as the expected detached error, fires no `onAbort`,
+call exception without revert data, as a node's error answer, and its transport twin with a plain
+transport error: that runtime reports the error as the expected detached error, fires no `onAbort`,
 `onSetState` or completed `onChannelOpened` and stays open, while the other participants install. The
 hook-revert case makes the same call revert with empty revert data: that runtime fires `onAbort` once
 and closes, fires no `onSetState` or completed `onChannelOpened`, and reports "Opened genesis rejected:
@@ -36,5 +37,6 @@ holds no fork.
 - `waits for the open's genesis join log in flight instead of recovering it from the chain`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P26, REQ-LIF-12-TSXRBG.T1.P7
 - `fails the open without aborting when the genesis join block stays unavailable`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P7, REQ-LIF-12-TSXRBG.T1.P5
 - `fails the open without aborting a listed participant whose genesis hook read fails without revert data`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P8, REQ-LIF-12-TSXRBG.T1.P8
+- `fails the open without aborting a listed participant whose genesis hook read fails in transport`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P9, REQ-LIF-12-TSXRBG.T1.P8
 - `aborts a listed participant whose genesis hook reverts while the others install`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P4, REQ-LIF-12-TSXRBG.T1.P4
 - `aborts the listed participants and spares any other runtime when the opened hash matches no genesis`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P3, UNIT-TEST-EVENT-HANDLER-2-Q270TR.P5, REQ-LIF-12-TSXRBG.T1.P3, REQ-LIF-12-TSXRBG.T1.P6
