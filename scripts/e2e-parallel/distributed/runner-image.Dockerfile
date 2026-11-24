@@ -43,4 +43,3 @@ COPY --from=peer3node /usr/local/bin/zero-fee-node /usr/local/bin/zero-fee-node
 
 USER runner
 WORKDIR /environment
-# TEMP: exercises the node pin path in CI
