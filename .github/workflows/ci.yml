@@ -228,10 +228,18 @@ jobs:
             # environment's 256MB /tmp that SCP_BROWSER_CONTAINED moves
             # Chromium's shared memory into. Install and compile happen in the
             # same container so native modules match the image's Node.
-            - name: Run the browser gates in the runner image
+            # A PR that moves runner-image.Dockerfile (a parachain node pin) also runs the tests
+            # that depend on the node's behaviour, on the node this image carries: the workers
+            # still run their own images, so the distributed suite cannot test a new pin.
+            - name: Run the browser gates (and a pin's node tests) in the runner image
               run: |
+                  git fetch --quiet --depth=1 origin "${{ github.base_ref }}"
+                  node_tests=0
+                  git diff --quiet FETCH_HEAD HEAD -- scripts/e2e-parallel/distributed/runner-image.Dockerfile || node_tests=1
+                  node_tests=1 # TEMP: measure on this PR
                   chmod -R a+rwX "$GITHUB_WORKSPACE"
                   docker run --detach --name scp-browser \
+                      --env NODE_TESTS="$node_tests" \
                       --read-only --init --cap-drop=ALL \
                       --security-opt=no-new-privileges:true \
                       --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m \
@@ -244,7 +252,12 @@ jobs:
                           node -e "const p = require(\"playwright\").chromium.executablePath(); console.log(\"Chromium:\", p); if (!p.startsWith(\"/ms-playwright/\")) process.exit(1)"
                           yarn compile
                           yarn test:browser:worker
-                          yarn test:browser:webrtc'
+                          yarn test:browser:webrtc
+                          if [ "$NODE_TESTS" = 1 ]; then
+                              yarn test:parallel --parachain --no-forge \
+                                  --mocha-test-pattern "**/{RpcNodes,E2E-Timeouts}.test.ts" \
+                                  --grep "estimates gas at the pending block|estimates at the latest block|rejects an estimate the latest block also reverts|node cannot build its pending block|next peer to write does not author a block|demonstrate timeout creates disputes|timeout when non-author peer disconnects|timeout when author peer disconnects"
+                          fi'
                   # Peak /tmp use while the gates run, for the shared-memory budget.
                   peak=0
                   while [ "$(docker inspect --format '{{.State.Running}}' scp-browser)" = "true" ]; do
