@@ -43,7 +43,8 @@ genesis hash, so a resolved late call that reached the hash check would refuse i
 peer; the test asserts it is answered as submitted with no blacklist or strike. The foreign-open test plays a lower-address runtime whose
 higher peer opens the derived channel ID first with a key of its own and a hash no genesis derives
 from: the attempt ends `retry`, the peer is blacklisted, and the runtime is neither disposed nor holds
-the opened fork.
+the opened fork. Its targeted twin selects a random channel ID first and negotiates for it: the attempt
+ends `observed-target-open`, the peer is not blacklisted, and the runtime keeps running with no fork.
 
 `INV-NEG-1-6FW90P.T1.P1` (exact match co-signed) and `.P10` (locally derived non-empty data
 accepted) are covered by the higher-role tests, where the runtime receives the proposal. No
@@ -60,6 +61,7 @@ specification permutation names the stale-attempt rule; it is covered only at th
 - `blacklists and clears a proposal whose genesis hash differs from the locally computed genesis`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P14, INV-NEG-1-6FW90P.T1.P12
 - `blacklists a proposal whose altered counterparty balance the genesis hook would reject`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P15, INV-NEG-1-6FW90P.T1.P13
 - `an ordinary attempt whose channel ID the peer opens with another participant set and a hash no genesis derives from retries and blacklists the peer without aborting`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P20, REQ-NEG-2-ED48TZ.T1.P8
+- `a targeted attempt whose channel another participant set opens with a hash no genesis derives from hands off to the observed open without aborting`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P23, REQ-NEG-2-ED48TZ.T1.P9
 - `lower address derivation failure clears the attempt without a proposal or penalty`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P5
 - `higher address derivation failure clears the attempt without co-signing or penalty`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P6
 - `lower address late derivation result after cancellation keeps the replacement attempt`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P7

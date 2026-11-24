@@ -45,8 +45,10 @@ export class OpeningDataProbeRpcMethods extends ANetworkRpcMethods<OpeningDataPr
         return this.service.probeAlteredProposal(alteration);
     }
 
-    public probeForeignGenesisOpen(): Promise<ForeignOpenProbe> {
-        return this.service.probeForeignGenesisOpen();
+    public probeForeignGenesisOpen(
+        mode: "ordinary" | "targeted"
+    ): Promise<ForeignOpenProbe> {
+        return this.service.probeForeignGenesisOpen(mode);
     }
 
     public probeStaleDerivation(

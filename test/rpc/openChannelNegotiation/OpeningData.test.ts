@@ -157,13 +157,28 @@ describe("OpenChannelNegotiationService opening data", function () {
     it("an ordinary attempt whose channel ID the peer opens with another participant set and a hash no genesis derives from retries and blacklists the peer without aborting", async function () {
         const result = await fixture
             .probe()
-            .probeForeignGenesisOpen()
+            .probeForeignGenesisOpen("ordinary")
             .request({ timeoutMs: fixture.openingTimeoutMs() });
 
         expect(result).to.deep.equal({
             outcomeStatus: "retry",
             channelOpen: true,
             peerBlacklisted: true,
+            runtimeDisposed: false,
+            genesisInstalled: false
+        });
+    });
+
+    it("a targeted attempt whose channel another participant set opens with a hash no genesis derives from hands off to the observed open without aborting", async function () {
+        const result = await fixture
+            .probe()
+            .probeForeignGenesisOpen("targeted")
+            .request({ timeoutMs: fixture.openingTimeoutMs() });
+
+        expect(result).to.deep.equal({
+            outcomeStatus: "observed-target-open",
+            channelOpen: true,
+            peerBlacklisted: false,
             runtimeDisposed: false,
             genesisInstalled: false
         });

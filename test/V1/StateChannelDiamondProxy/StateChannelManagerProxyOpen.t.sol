@@ -21,9 +21,8 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
 
     uint256 internal constant SIGNER_PK = 0xA11CE;
     uint256 internal constant SECOND_SIGNER_PK = 0xB0B;
-    uint256 internal constant THIRD_SIGNER_PK = 0xCA401;
     bytes32 internal constant CHANNEL_ID = keccak256("duplicate-participants");
-    bytes32 internal constant PARTIAL_CHANNEL_ID = keccak256("partial-open");
+    bytes32 internal constant REJECTED_OPEN_CHANNEL_ID = keccak256("rejected-open");
     bytes32 internal constant DEADLINE_CHANNEL_ID = keccak256("open-deadline");
     // a deadline far from the default test timestamp, so the warp targets are unambiguous
     uint256 internal constant OPEN_DEADLINE = 1_000_000;
@@ -84,7 +83,7 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         participantPrivateKeys[0] = SIGNER_PK;
 
         OpenChannelConfirmation memory confirmation =
-            _openChannelConfirmation(PARTIAL_CHANNEL_ID, participantPrivateKeys, new uint256[](1));
+            _openChannelConfirmation(REJECTED_OPEN_CHANNEL_ID, participantPrivateKeys, new uint256[](1));
 
         vm.expectRevert(abi.encodeWithSelector(ErrorAtLeastTwoParticipantsRequired.selector, uint256(1)));
         diamond.open(confirmation);
@@ -102,7 +101,7 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         amounts[1] = 0; // the selective consumer rejects it
 
         OpenChannelConfirmation memory confirmation =
-            _openChannelConfirmation(PARTIAL_CHANNEL_ID, participantPrivateKeys, amounts);
+            _openChannelConfirmation(REJECTED_OPEN_CHANNEL_ID, participantPrivateKeys, amounts);
 
         vm.expectRevert(
             abi.encodeWithSelector(ErrorJoinChannelAtomicFailure.selector, uint256(1), vm.addr(SECOND_SIGNER_PK))

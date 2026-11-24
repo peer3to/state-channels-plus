@@ -353,10 +353,24 @@ export class OpeningDataProbeService extends ANetworkRpcService<
      * The lower peer knows the derived channel ID and opens it first with a
      * key of its own and a hash no genesis derives from.
      */
-    public async probeForeignGenesisOpen(): Promise<ForeignOpenProbe> {
+    public async probeForeignGenesisOpen(
+        mode: "ordinary" | "targeted"
+    ): Promise<ForeignOpenProbe> {
         await this.resetLifecycle();
         const service = new OpenChannelNegotiationService(this.p2pManager);
-        const staged = await this.stageAttempt(service, "lower");
+        let targetChannelId: string | undefined;
+        if (mode === "targeted") {
+            // a targeted attempt negotiates for the channel already selected
+            targetChannelId = ethers.hexlify(ethers.randomBytes(32));
+            await this.sm.setChannelId(targetChannelId);
+            this.sm.setStatus(Status.NOT_OPENED);
+        }
+        const staged = await this.stageAttempt(
+            service,
+            "lower",
+            undefined,
+            targetChannelId
+        );
         await this.answerTerms(staged);
         const wallets = [staged.wallet, ethers.Wallet.createRandom()].sort(
             (a, b) => compareAddresses(a.address, b.address)
@@ -550,7 +564,8 @@ export class OpeningDataProbeService extends ANetworkRpcService<
     private async stageAttempt(
         service: OpenChannelNegotiationService,
         role: NegotiationRole,
-        peerBalance: BalanceStruct = { amount: 700n, data: "0x5678" }
+        peerBalance: BalanceStruct = { amount: 700n, data: "0x5678" },
+        targetChannelId?: string
     ): Promise<StagedAttempt> {
         const local = this.localAddress;
         let wallet = ethers.Wallet.createRandom();
@@ -572,9 +587,16 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             advertiserChallenge: ethers.hexlify(ethers.randomBytes(32))
         };
         const localBalance: BalanceStruct = { amount: 321n, data: "0x1234" };
-        const outcome = service.initMatchedNegotiation(match, {
-            balance: localBalance
-        });
+        const outcome = service.initMatchedNegotiation(
+            match,
+            targetChannelId
+                ? {
+                      balance: localBalance,
+                      mode: "targeted",
+                      channelId: targetChannelId
+                  }
+                : { balance: localBalance }
+        );
         let settled: NegotiationOutcome | undefined;
         let failure: unknown;
         outcome.then(
@@ -601,7 +623,7 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             transport,
             profile,
             match,
-            channelId: deriveNegotiatedChannelId(match),
+            channelId: targetChannelId ?? deriveNegotiatedChannelId(match),
             localBalance,
             peerBalance,
             outcome,

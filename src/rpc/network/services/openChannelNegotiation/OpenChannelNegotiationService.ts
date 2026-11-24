@@ -59,7 +59,7 @@ type MatchedAttempt = LobbyMatch & {
     proposalRequestInFlight: boolean;
     openingSubmissionStarted: boolean;
     observedOpenHandoff: boolean;
-    /** This runtime's ChannelOpened handling (genesis install) finished. */
+    /** This runtime's ChannelOpened handling finished; a listed participant installed its genesis first. */
     ownGenesisInstalled: boolean;
     classifyObservedOpening?: Promise<void>;
     timeoutHandle?: ReturnType<typeof setTimeout>;
