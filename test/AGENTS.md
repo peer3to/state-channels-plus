@@ -351,8 +351,9 @@ with the suite still green.
   forge and browser tiers), or `--grep <regexp>` for the narrowest relevant
   task.
 - Browser gates and Mocha files marked `// @distributed-requires: browser` need
-  a protocol 14 or newer worker host whose runner image was built with
-  `yarn test:parallel:image`. Without one they are skipped after the discovery
+  a protocol 14 or newer worker host whose runner image matches its checkout's
+  `runner-image.Dockerfile` (the worker server rebuilds a stale one at
+  startup). Without one they are skipped after the discovery
   window with a warning that lists them; check a green run for it. A Mocha file
   that launches Chromium must carry that marker in its leading comments. See
   "Browser tests" in the root `README.md`.

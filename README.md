@@ -245,10 +245,10 @@ unless the operator exported another path. A gate that cannot find the browser
 says so and names the variable.
 
 A worker runs tasks with the runner from its own checkout, so the browser tier
-reaches it only after **the worker host updates that checkout, restarts
-`yarn test:parallel:server`, and rebuilds its runner image**
-(`yarn test:parallel:image`; the server refuses a stale image, and on restart
-discards cached environments whose containers were created from another image). The browser tier
+reaches it only after **the worker host updates that checkout and restarts
+`yarn test:parallel:server`** (a docker server rebuilds a stale runner image at
+startup, and on restart discards cached environments whose containers were
+created from another image). The browser tier
 arrived with distributed protocol 14. The orchestrator still leases protocol 13
 hosts and hands them only hardhat and forge tasks, so a pool can upgrade one
 host at a time. A Mocha test file that launches Chromium carries
@@ -412,12 +412,17 @@ export SCP_TEST_RUNNER_IMAGE='sha256:<local-image-id>'
 yarn test:parallel:server --name worker-one
 ```
 
-The server refuses to start when the configured image was built from another
-revision of the Dockerfile than its checkout carries, or without the label: the
-distributed protocol version covers the runner code, not the image, so a host
-that updated its checkout without rebuilding would otherwise accept tasks its
-image cannot run. Rebuild the image after every checkout update that changes
-the Dockerfile.
+When the configured image was built from another revision of the Dockerfile
+than its checkout carries, carries no label, is not on this host (pull a
+published digest before starting), or is not set, the docker server
+builds the image at startup, after its docker host checks, and runs on the new
+ID: the distributed protocol
+version covers the runner code, not the image, so a host that updated its
+checkout without rebuilding would otherwise accept tasks its image cannot run.
+It prints the new ID; set `SCP_TEST_RUNNER_IMAGE` to it so the next restart
+does not build again. If the build fails, the server does not start. The docker
+self-check, integration and benchmark tools stay strict: they refuse such an
+image and name the restart or `yarn test:parallel:image` as the fix.
 
 The Docker volume driver must enforce the `size` option. The Linux service
 account also needs permission to create Docker bridge networks and install the
