@@ -1,6 +1,7 @@
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Block, StateSnapshot } from "@/models";
 import P2pEventHooks from "@/P2pEventHooks";
+import { deriveGenesisState } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import type StateManager from "@/stateManager";
 import type { ReductionGenesis } from "@/stateManager/reduction";
 import Storage from "@/storage";
@@ -28,7 +29,7 @@ import {
     DisputeAuditingDataStruct,
     DisputeConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { isError, keccak256, TransactionResponse, ZeroHash } from "ethers";
+import { keccak256, TransactionResponse, ZeroHash } from "ethers";
 
 export type EventCoordinate = {
     blockNumber: number;
@@ -96,17 +97,12 @@ export class EventHandler {
                 Codec.decode(message.data, Type.JoinChannel)
             )
         );
-        let encodedState: Bytes | undefined;
-        try {
-            encodedState =
-                await this.stateManager.stateChannelManagerContract.openChannelGenesis(
-                    joins,
-                    openingData
-                );
-        } catch (error) {
-            // a reverting hook: no genesis derives from the signed terms
-            if (!isError(error, "CALL_EXCEPTION")) throw error;
-        }
+        // undefined -> the hook reverts: no genesis derives from the signed terms
+        const encodedState = await deriveGenesisState(
+            this.stateManager.stateChannelManagerContract,
+            joins,
+            openingData
+        );
         if (
             !encodedState ||
             keccak256(encodedState) !== snapshotData.stateMachineStateHash

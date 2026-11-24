@@ -69,6 +69,7 @@ import {
     type Interface,
     JsonRpcApiProvider,
     type Log,
+    makeError,
     resolveAddress,
     toQuantity,
     type TransactionRequest,
@@ -5093,12 +5094,17 @@ export class StubService extends ANetworkRpcService<
         this.patchChainLogQueries(false);
     }
 
-    /** Make every provider call to one manager function fail with `message`. */
+    /**
+     * Make every provider call to one manager function fail with `message`:
+     * a plain error, a call exception without revert data (a node's error
+     * answer), or a revert with empty revert data.
+     */
     failManagerRead(
         functionName: Parameters<
             StateChannelManagerInterface["interface"]["getFunction"]
         >[0],
-        message: string
+        message: string,
+        failure: "transport" | "nodeError" | "revert" = "transport"
     ): void {
         const contract = this.sm.stateChannelManagerContract;
         if (!this.stubOriginals.has("managerRead")) {
@@ -5114,9 +5120,17 @@ export class StubService extends ANetworkRpcService<
             .getFunction(functionName)
             .selector.slice(2);
         this.chainProvider.call = async (transaction) => {
-            if (String(transaction.data).includes(selector))
-                throw new Error(message);
-            return original(transaction);
+            if (!String(transaction.data).includes(selector))
+                return original(transaction);
+            if (failure === "transport") throw new Error(message);
+            throw makeError(message, "CALL_EXCEPTION", {
+                action: "call",
+                data: failure === "revert" ? "0x" : null,
+                reason: null,
+                transaction: { to: null, data: String(transaction.data) },
+                invocation: null,
+                revert: null
+            });
         };
     }
 

@@ -3405,14 +3405,15 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.droppedEventLogKeys.size;
     }
 
-    /** Make every provider call to the manager's `functionName` fail with `message`. */
+    /** Make every provider call to the manager's `functionName` fail with `message`, as `failure`. */
     public stubFailManagerRead(
         functionName: Parameters<
             StateChannelManagerInterface["interface"]["getFunction"]
         >[0],
-        message: string
+        message: string,
+        failure?: "transport" | "nodeError" | "revert"
     ): boolean {
-        this.service.failManagerRead(functionName, message);
+        this.service.failManagerRead(functionName, message, failure);
         return true;
     }
 

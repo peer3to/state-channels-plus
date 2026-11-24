@@ -1,3 +1,4 @@
+import { isNodeInternalError } from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import type { LobbyMatch } from "@/rpc/network/services/lobbyMatching/LobbyMatchingTypes";
 import { getChecksumAddress } from "@/utils";
 import type { StateChannelManagerInterface } from "@typechain-types";
@@ -154,12 +155,39 @@ export function openChannelJoins(
     }));
 }
 
+/**
+ * The genesis the consumer facet's hook derives from these joins, or
+ * undefined when the hook reverts. A read failure rethrows.
+ */
+export async function deriveGenesisState(
+    manager: StateChannelManagerInterface,
+    joins: JoinChannelStruct[],
+    openingData: BytesLike
+): Promise<string | undefined> {
+    try {
+        return await manager.openChannelGenesis(joins, openingData);
+    } catch (error) {
+        // only a revert carries revert data; a node's error answer has none
+        if (
+            !ethers.isError(error, "CALL_EXCEPTION") ||
+            error.data == null ||
+            isNodeInternalError(error)
+        )
+            throw error;
+        return undefined;
+    }
+}
+
 /** The hash of the genesis the consumer facet's hook derives from these terms. */
 export async function computeGenesisStateHash(
     manager: StateChannelManagerInterface,
     terms: Omit<OpenChannelStruct, "genesisStateHash">
 ): Promise<string> {
-    return ethers.keccak256(
-        await manager.openChannelGenesis(openChannelJoins(terms), terms.data)
+    const encodedState = await deriveGenesisState(
+        manager,
+        openChannelJoins(terms),
+        terms.data
     );
+    if (encodedState === undefined) throw new Error("genesis hook reverted");
+    return ethers.keccak256(encodedState);
 }

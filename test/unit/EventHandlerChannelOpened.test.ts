@@ -151,7 +151,7 @@ describe("Unit: EventHandler.onChannelOpened genesis rebuild", function () {
         await held.release({ replay: false });
     });
 
-    it("fails the open without aborting a listed participant whose genesis hook read fails in transport", async function () {
+    it("fails the open without aborting a listed participant whose genesis hook read fails without revert data", async function () {
         const h = TestSession.getHarness();
         const failing = 2;
         await h.setup(3, {
@@ -159,11 +159,13 @@ describe("Unit: EventHandler.onChannelOpened genesis rebuild", function () {
             channelId: "channel-opened-rebuild-read-failure"
         });
         const ctl = h.control(h.getPeer(failing));
-        // only the hook read fails, and not with a revert
+        // only the hook read fails, as a node's error answer: a call
+        // exception without revert data
         await ctl.stub
             .stubFailManagerRead(
                 "openChannelGenesis",
-                "genesis read transport down"
+                "genesis read node error",
+                "nodeError"
             )
             .request();
 
@@ -171,7 +173,7 @@ describe("Unit: EventHandler.onChannelOpened genesis rebuild", function () {
             observePeerIndices: [0, 1]
         });
         await TestSession.settleDetached({
-            expectedErrorIncludes: "genesis read transport down"
+            expectedErrorIncludes: "genesis read node error"
         });
 
         const snapshot = await h.channelManager.getStateSnapshot(h.channelId);
@@ -188,6 +190,51 @@ describe("Unit: EventHandler.onChannelOpened genesis rebuild", function () {
         );
         expect(h.event.getEventCallCount(failing, "onSetState")).to.equal(0);
         await ctl.stub.restoreManagerRead().request();
+    });
+
+    it("aborts a listed participant whose genesis hook reverts while the others install", async function () {
+        const h = TestSession.getHarness();
+        const failing = 2;
+        await h.setup(3, {
+            autoConnect: false,
+            channelId: "channel-opened-rebuild-hook-revert"
+        });
+        // only this participant's hook read reverts
+        await h
+            .control(h.getPeer(failing))
+            .stub.stubFailManagerRead(
+                "openChannelGenesis",
+                "genesis hook revert",
+                "revert"
+            )
+            .request();
+
+        await h.lifecycle.openChannelForParticipants([0, 1, failing], {
+            observePeerIndices: [0, 1]
+        });
+        await waitFor(
+            () => h.event.getEventCallCount(failing, "onAbort") === 1,
+            h.event.protocolEventTimeoutMs()
+        );
+        await waitFor(
+            () => runtimeIsClosed(h.getPeer(failing).p2pInstance),
+            h.event.protocolEventTimeoutMs() * 2
+        );
+        await TestSession.settleDetached({
+            expectedErrorIncludes: "Opened genesis rejected: hook reverted"
+        });
+
+        const snapshot = await h.channelManager.getStateSnapshot(h.channelId);
+        for (const index of [0, 1]) {
+            expect(
+                await h.control(h.getPeer(index)).query.getForkId().request(),
+                `peer ${index} installed the genesis`
+            ).to.equal(snapshot.forkId);
+        }
+        expect(h.event.getEventCallCount(failing, "onChannelOpened")).to.equal(
+            0
+        );
+        expect(h.event.getEventCallCount(failing, "onSetState")).to.equal(0);
     });
 
     it("aborts the listed participants and spares any other runtime when the opened hash matches no genesis", async function () {

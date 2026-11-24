@@ -18,17 +18,16 @@ swallows a participant's genesis join log handling, so neither the live log nor 
 the block: that runtime reports the expected detached error "genesis join block unavailable", fires no
 `onAbort`, `onSetState` or completed `onChannelOpened` and stays open, while the other participants
 install. The read-failure case makes only a participant's `openChannelGenesis` provider call fail with a
-transport error: that runtime reports the error as the expected detached error, fires no `onAbort`,
-`onSetState` or completed `onChannelOpened` and stays open, while the other participants install. The mismatch case opens for two of three runtimes with unanimous terms carrying a hash no
+call exception without revert data, as a node's error answer: that runtime reports the error as the expected detached error, fires no `onAbort`,
+`onSetState` or completed `onChannelOpened` and stays open, while the other participants install. The
+hook-revert case makes the same call revert with empty revert data: that runtime fires `onAbort` once
+and closes, fires no `onSetState` or completed `onChannelOpened`, and reports "Opened genesis rejected:
+hook reverted" as the expected detached error, while the other participants install. The mismatch case opens for two of three runtimes with unanimous terms carrying a hash no
 genesis derives from and waits only for the receipt: the chain keeps the channel open with that hash;
 on each participant `onAbort` fires once, the runtime closes, no `onSetState` or completed
 `onChannelOpened` reaches the client, and the handler's failure surfaces as the expected detached
 error; the third runtime fires `onChannelOpened` once, no `onAbort` or `onSetState`, stays open and
 holds no fork.
-
-A reverting genesis hook on an opened channel has no test: the shipped Math hook reverts only on an
-overflowing deposit sum, and `open` reverts first on the same sum. It shares the abort with the
-mismatch case.
 
 ## Tests
 
@@ -36,5 +35,6 @@ mismatch case.
 - `recovers a genesis join block it never received and installs`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P2, REQ-LIF-12-TSXRBG.T1.P2
 - `waits for the open's genesis join log in flight instead of recovering it from the chain`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P26, REQ-LIF-12-TSXRBG.T1.P7
 - `fails the open without aborting when the genesis join block stays unavailable`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P7, REQ-LIF-12-TSXRBG.T1.P5
-- `fails the open without aborting a listed participant whose genesis hook read fails in transport`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P8, REQ-LIF-12-TSXRBG.T1.P8
+- `fails the open without aborting a listed participant whose genesis hook read fails without revert data`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P8, REQ-LIF-12-TSXRBG.T1.P8
+- `aborts a listed participant whose genesis hook reverts while the others install`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P4, REQ-LIF-12-TSXRBG.T1.P4
 - `aborts the listed participants and spares any other runtime when the opened hash matches no genesis`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P3, UNIT-TEST-EVENT-HANDLER-2-Q270TR.P5, REQ-LIF-12-TSXRBG.T1.P3, REQ-LIF-12-TSXRBG.T1.P6
