@@ -295,7 +295,45 @@ describe("OpenChannelNegotiationService opening data", function () {
             .request({ timeoutMs: fixture.openingTimeoutMs() });
 
         expect(result.oldOutcome).to.equal("retry");
+        // the stale proposal's junk hash draws no mismatch verdict
         expect(result.staleResult).to.equal("submitted");
+        expect(result.oldPeerBlacklisted).to.equal(false);
+        expect(result.oldPeerStrikes).to.equal(0);
+        expect(result.oldChannelOpen).to.equal(false);
+        expect(result.replacementCurrent).to.equal(true);
+        expect(result.replacementChannelKept).to.equal(true);
+        expect(result.replacementTimeoutKept).to.equal(true);
+        expect(result.replacementOutcomePending).to.equal(true);
+        expect(result.replacementOutcome).to.equal("opened");
+        expect(result.replacementChannelOpen).to.equal(true);
+    });
+
+    it("lower address late genesis hook failure after cancellation keeps the replacement attempt", async function () {
+        const result = await fixture
+            .probe()
+            .probeStaleDerivation("lower", "reject", "genesis")
+            .request({ timeoutMs: fixture.openingTimeoutMs() });
+
+        expect(result.oldOutcome).to.equal("retry");
+        expect(result.replacementCurrent).to.equal(true);
+        expect(result.replacementChannelKept).to.equal(true);
+        expect(result.replacementTimeoutKept).to.equal(true);
+        expect(result.replacementOutcomePending).to.equal(true);
+        expect(result.oldProposalFrames).to.equal(0);
+        expect(result.oldPeerBlacklisted).to.equal(false);
+        expect(result.replacementOutcome).to.equal("opened");
+        expect(result.replacementChannelOpen).to.equal(true);
+    });
+
+    it("higher address late genesis hook failure after cancellation keeps the replacement attempt", async function () {
+        const result = await fixture
+            .probe()
+            .probeStaleDerivation("higher", "reject", "genesis")
+            .request({ timeoutMs: fixture.openingTimeoutMs() });
+
+        expect(result.oldOutcome).to.equal("retry");
+        expect(result.staleResult).to.equal("Genesis unavailable");
+        expect(result.oldPeerBlacklisted).to.equal(false);
         expect(result.oldChannelOpen).to.equal(false);
         expect(result.replacementCurrent).to.equal(true);
         expect(result.replacementChannelKept).to.equal(true);

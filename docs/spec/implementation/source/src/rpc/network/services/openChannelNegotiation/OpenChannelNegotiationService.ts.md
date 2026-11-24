@@ -89,8 +89,10 @@ Opening-data and genesis hooks, stale-attempt rule
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P16` — lower role, the genesis hook rejects the agreed balances: attempt and channel ID cleared, no proposal sent, retry outcome, no strike, blacklist or close
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P17` — higher role, the genesis hook rejects the agreed balances: the proposal is refused with "Genesis unavailable", nothing is co-signed or opened, attempt and channel ID cleared, retry outcome, no penalty
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P18` — lower role, the genesis hash arrives after cancellation: no proposal for the old attempt and the replacement stays current with its channel, deadline and pending outcome, and opens
-- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P19` — higher role, the genesis hash arrives after cancellation: the old proposal is answered without signing, the old channel never opens, the replacement stays current and opens
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P19` — higher role, the genesis hash arrives after cancellation for a stale proposal carrying a junk hash: the old proposal is answered without signing or a mismatch verdict, the old peer has no blacklist or strike, the old channel never opens, the replacement stays current and opens
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P20` — lower role, the counterparty opens the derived ID first with another participant set and a hash no genesis derives from: retry outcome, the counterparty blacklisted, the runtime keeps running with no genesis installed
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P21` — lower role, the genesis hook fails after cancellation: no proposal for the old attempt, no penalty for the old peer, the replacement stays current with its channel, deadline and pending outcome, and opens
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P22` — higher role, the genesis hook fails after cancellation: the old proposal fails with "Genesis unavailable", the old peer has no blacklist, the old channel never opens, the replacement stays current and opens
 
 ## UNIT-TEST-OBSERVED-OPEN-CLASSIFICATION-1-2WWP73
 

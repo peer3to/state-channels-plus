@@ -36,9 +36,11 @@ counterparty balance changed to `MaxUint256`: both are refused, the proposer bla
 cleared with no open; the balance case fails as a balance mismatch, so the term check runs before the
 hook.
 
-Two more late-settlement tests hold the old attempt's genesis hook call instead of its opening data
-(the probe holds the manager's read-only call) and resolve it after the replacement started, with the
-same oracle as the late derivation results. The foreign-open test plays a lower-address runtime whose
+Four more late-settlement tests hold the old attempt's genesis hook call instead of its opening data
+(the probe holds the manager's read-only call) and resolve or reject it after the replacement started,
+with the same oracle as the late derivation results. The higher-role stale proposal carries a junk
+genesis hash, so a resolved late call that reached the hash check would refuse it and blacklist the old
+peer; the test asserts it is answered as submitted with no blacklist or strike. The foreign-open test plays a lower-address runtime whose
 higher peer opens the derived channel ID first with a key of its own and a hash no genesis derives
 from: the attempt ends `retry`, the peer is blacklisted, and the runtime is neither disposed nor holds
 the opened fork.
@@ -66,4 +68,6 @@ specification permutation names the stale-attempt rule; it is covered only at th
 - `higher address late derivation failure after cancellation keeps the replacement attempt`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P10
 - `lower address late genesis hash after cancellation keeps the replacement attempt`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P18
 - `higher address late genesis hash after cancellation keeps the replacement attempt`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P19
+- `lower address late genesis hook failure after cancellation keeps the replacement attempt`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P21
+- `higher address late genesis hook failure after cancellation keeps the replacement attempt`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P22
 - `replacement opens without a signature or penalty from the cancelled attempt`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P11

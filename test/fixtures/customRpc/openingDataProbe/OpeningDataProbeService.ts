@@ -413,8 +413,7 @@ export class OpeningDataProbeService extends ANetworkRpcService<
         const service = this.rootService;
         let takeHold: () => StaleHold | undefined;
         if (point === "genesis") {
-            // a higher-address probe computes the proposer's hash first
-            takeHold = this.holdGenesisCall(role === "higher" ? 1 : 0);
+            takeHold = this.holdGenesisCall(0);
         } else {
             service.holdNextDerivation();
             takeHold = () => {
@@ -436,10 +435,14 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             await this.answerTerms(old);
         } else {
             await this.acceptTerms(service, old);
+            // a stale genesis proposal carries a junk hash -> only the stale
+            // guard keeps the old peer from a mismatch verdict
             staleProposal = this.acceptProposal(
                 service,
                 old,
-                deriveOpeningData(this.expectedTerms(old))
+                deriveOpeningData(this.expectedTerms(old)),
+                undefined,
+                point === "genesis" ? JUNK_GENESIS_HASH : undefined
             ).then(
                 (result) => result.status,
                 (error: unknown) => errorMessage(error)
