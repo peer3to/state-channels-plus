@@ -16,7 +16,6 @@
 - [`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)
 - [`REQ-LIF-8-2HDG3A` (Enumerable open-channel lifecycle)](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
 - [`REQ-LIF-11-KEEN0N` (Open records the agreed commitment)](../../../../../specification/settlement/lifecycle.md#req-lif-11-keen0n)
-  Partial: `open` verifies signatures that bind no chain or manager, so terms replay on another deployment ([`OQ-29-EFY4NF` (Signature domain separation)](../../../../../specification/open-questions.md#oq-29-efy4nf)).
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`REQ-ENFSM-2-G4HBKG` (Adapter confinement)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg)
   Contradicts: `fallback` delegatecalls every unregistered selector to the consumer facet, so its `deposit`/`withdraw` are externally callable ([`OQ-17-6Z5Q0J` (Consumer-facet functions are externally reachable)](../../../../open-questions.md#oq-17-6z5q0j)).
