@@ -25,6 +25,11 @@ const FORWARDED_FLAGS = new Map([
     ["-q", false]
 ]);
 
+/** An error for a refused argument; `yarn test:parallel:image` exits 2 on it. */
+function refusal(message) {
+    return Object.assign(new Error(message), { exitCode: 2 });
+}
+
 /** The docker build arguments for `extra`, or a thrown refusal. */
 function runnerImageBuildArgs(root, idFile, extra) {
     const forwarded = [];
@@ -33,7 +38,7 @@ function runnerImageBuildArgs(root, idFile, extra) {
         const [flag, inline] = arg.split(/=(.*)/s, 2);
         const takesValue = FORWARDED_FLAGS.get(flag);
         if (takesValue === undefined) {
-            throw new Error(
+            throw refusal(
                 `Refusing docker build argument ${arg}: the image label covers only ` +
                     `${RUNNER_IMAGE_DOCKERFILE}, so change its defaults there instead. ` +
                     `Accepted: ${[...FORWARDED_FLAGS.keys()].join(", ")}`
@@ -41,7 +46,7 @@ function runnerImageBuildArgs(root, idFile, extra) {
         }
         if (takesValue && inline === undefined) {
             if (index + 1 >= extra.length) {
-                throw new Error(`${flag} requires a value`);
+                throw refusal(`${flag} requires a value`);
             }
             forwarded.push(arg, extra[++index]);
         } else {
@@ -61,32 +66,45 @@ function runnerImageBuildArgs(root, idFile, extra) {
     ];
 }
 
-function main() {
-    const root = path.resolve(__dirname, "../../..");
+/** Runs docker with `args`, its output on this process's console, and returns its exit status. */
+function docker(args) {
+    const result = spawnSync("docker", args, { stdio: "inherit" });
+    if (result.error) throw result.error;
+    return { status: result.status ?? 1 };
+}
+
+/** Builds the runner image from the checkout at `root` and returns its image ID. */
+function buildRunnerImage(root, extra = [], run = docker) {
     const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "runner-image-"));
     const idFile = path.join(scratch, "image-id");
     try {
-        let args;
-        try {
-            args = runnerImageBuildArgs(root, idFile, process.argv.slice(2));
-        } catch (error) {
-            console.error(error.message);
-            process.exitCode = 2;
-            return;
-        }
-        const build = spawnSync("docker", args, { stdio: "inherit" });
-        if (build.error) throw build.error;
+        const build = run(runnerImageBuildArgs(root, idFile, extra));
         if (build.status !== 0) {
-            process.exitCode = build.status ?? 1;
-            return;
+            throw Object.assign(
+                new Error(`docker build exited with ${build.status}`),
+                { exitCode: build.status }
+            );
         }
-        const imageId = fs.readFileSync(idFile, "utf8").trim();
-        console.log(`\nexport SCP_TEST_RUNNER_IMAGE='${imageId}'`);
+        return fs.readFileSync(idFile, "utf8").trim();
     } finally {
         fs.rmSync(scratch, { recursive: true, force: true });
     }
 }
 
+function main() {
+    const root = path.resolve(__dirname, "../../..");
+    let imageId;
+    try {
+        imageId = buildRunnerImage(root, process.argv.slice(2));
+    } catch (error) {
+        // a refused argument exits 2, a failed build with docker's status, anything else 1
+        console.error(error.exitCode ? error.message : error.stack);
+        process.exitCode = error.exitCode ?? 1;
+        return;
+    }
+    console.log(`\nexport SCP_TEST_RUNNER_IMAGE='${imageId}'`);
+}
+
 if (require.main === module) main();
 
-module.exports = { runnerImageBuildArgs };
+module.exports = { buildRunnerImage, runnerImageBuildArgs };

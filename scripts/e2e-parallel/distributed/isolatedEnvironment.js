@@ -22,6 +22,10 @@ const { staleRunnerImageReason } = require("./runnerImage");
 const RUNTIME_LABEL = "peer3.distributed-environment";
 const ENVIRONMENT_NAME_PREFIX = "peer3-test-";
 const DOCKER_OPERATION_TIMEOUT_MS = 5 * 60 * 1000;
+// What a strict docker tool tells the operator about a stale or missing runner image.
+const REBUILD_RUNNER_IMAGE =
+    "Restart `yarn test:parallel:server`, which rebuilds it, or run " +
+    "`yarn test:parallel:image`, then point SCP_TEST_RUNNER_IMAGE at the new image ID";
 
 function assertEnvironmentKey(environmentKey) {
     if (
@@ -164,6 +168,9 @@ class DockerBackend {
                 ...runOptions
             });
         this.image = options.image;
+        // Builds the runner image from a checkout and returns its ID; given only by the worker
+        // server, which rebuilds a stale image instead of refusing to start.
+        this.buildImage = options.buildImage;
         // The configured image's ID, resolved when a retained container is
         // first compared with it.
         this.imageId = undefined;
@@ -180,11 +187,40 @@ class DockerBackend {
         this.usernsHostRunnerGid = undefined;
     }
 
+    /** Why the configured image does not match this checkout's runner Dockerfile, or null. */
+    async staleImageReason() {
+        if (!this.image) return "No runner image is configured";
+        let labels;
+        try {
+            labels = await this.run("docker", [
+                "image",
+                "inspect",
+                "--format",
+                "{{json .Config.Labels}}",
+                this.image
+            ]);
+        } catch (error) {
+            if (/No such image/i.test(error.stderr?.toString("utf8") ?? ""))
+                return `Runner image ${this.image} is not on this host`;
+            throw error;
+        }
+        return staleRunnerImageReason(
+            this.image,
+            JSON.parse(labels.stdout.toString("utf8").trim() || "null"),
+            this.trustedRoot
+        );
+    }
+
     async detect() {
+        if (!this.image && !this.buildImage)
+            return {
+                available: false,
+                reason: `No runner image is configured. ${REBUILD_RUNNER_IMAGE}`
+            };
         if (
-            !this.image ||
-            (!/^sha256:[a-f0-9]{64}$/.test(this.image) &&
-                !/@sha256:[a-f0-9]{64}$/.test(this.image))
+            this.image &&
+            !/^sha256:[a-f0-9]{64}$/.test(this.image) &&
+            !/@sha256:[a-f0-9]{64}$/.test(this.image)
         ) {
             return {
                 available: false,
@@ -215,19 +251,19 @@ class DockerBackend {
             if (this.platform === "linux") {
                 await this.run("iptables", ["-S", "DOCKER-USER"]);
             }
-            const labels = await this.run("docker", [
-                "image",
-                "inspect",
-                "--format",
-                "{{json .Config.Labels}}",
-                this.image
-            ]);
-            const stale = staleRunnerImageReason(
-                this.image,
-                JSON.parse(labels.stdout.toString("utf8").trim() || "null"),
-                this.trustedRoot
-            );
-            if (stale) return { available: false, reason: stale };
+            const stale = await this.staleImageReason();
+            if (stale && !this.buildImage)
+                return {
+                    available: false,
+                    reason: `${stale}. ${REBUILD_RUNNER_IMAGE}`
+                };
+            if (stale) {
+                console.log(`${stale}; building it`);
+                this.image = this.buildImage(this.trustedRoot);
+                console.log(
+                    `Built runner image ${this.image}; set SCP_TEST_RUNNER_IMAGE to it so the next restart does not build again`
+                );
+            }
             if (
                 this.securityOptions.some((entry) => entry.includes("userns"))
             ) {
@@ -1288,6 +1324,8 @@ class IsolatedEnvironmentManager {
               ? new UnsafeHostBackend({ workRoot: options.workRoot })
               : new DockerBackend({
                     image: options.runnerImage,
+                    buildImage: options.buildRunnerImage,
+                    run: options.dockerRun,
                     trustedRoot: options.trustedRoot,
                     deniedPrivateCidrs: options.deniedPrivateCidrs,
                     volumeDriver: options.volumeDriver

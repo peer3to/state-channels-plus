@@ -30,8 +30,7 @@ function staleRunnerImageReason(image, labels, trustedRoot) {
     if (actual === expected) return null;
     return (
         `Runner image ${image} ${actual ? `was built from runner-image.Dockerfile revision ${actual.slice(0, 12)}` : `has no ${RUNNER_IMAGE_REVISION_LABEL} label`}, ` +
-        `but this checkout expects ${expected.slice(0, 12)}. Rebuild it with ` +
-        "`yarn test:parallel:image` and point SCP_TEST_RUNNER_IMAGE at the new image ID"
+        `but this checkout expects ${expected.slice(0, 12)}`
     );
 }
 
