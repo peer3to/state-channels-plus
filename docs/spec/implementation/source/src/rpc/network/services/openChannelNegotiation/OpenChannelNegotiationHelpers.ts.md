@@ -29,6 +29,8 @@ Mismatch exhaustiveness
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P13` — deadline one second ahead rejected as too close
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P14` — deadline one second below the minimum window (`now + 29`) rejected
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P15` — deadline exactly at the minimum window (`now + 30`) accepted
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P16` — chain ID variation
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P17` — manager address variation
 
 ## UNIT-TEST-NEGOTIATED-CHANNEL-ID-1-4C09GW
 

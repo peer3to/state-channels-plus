@@ -28,6 +28,8 @@ so the expired edge is not a boundary any more; and P3 (sort/alignment canonical
 - `rejects tampered balance data`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P8
 - `rejects a different participant set`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P5
 - `rejects a different channelId`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P1
+- `rejects terms bound to another chain`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P16
+- `rejects terms bound to another manager deployment`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P17
 - `rejects opening data that differs from the locally derived data`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P10
 - `rejects a deadline in the past`: none
 - `rejects a deadline one second ahead as too close`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P13
