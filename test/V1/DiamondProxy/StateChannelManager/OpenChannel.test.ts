@@ -1,7 +1,7 @@
 import StateSnapshot from "@/models/StateSnapshot";
 import { openChannelJoins } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import { Bytes } from "@/types/types";
-import { SignatureUtils } from "@/utils";
+import { Codec, SignatureUtils, Type } from "@/utils";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {
     deployMathChannelProxyFixture,
@@ -194,6 +194,35 @@ describe("StateChannelManagerProxy", function () {
             expect(
                 opened.args.stateSnapshot.snapshotData.stateMachineStateHash
             ).to.equal(openChannel.genesisStateHash);
+        });
+
+        it("the joins built off-chain for the terms are the JOIN messages open stores, in participant order", async function () {
+            const receipt = await (
+                await mathChannelManager.open({
+                    encodedOpenChannel: openChannelSigned.encoded,
+                    signatures: await Promise.all(
+                        [firstSigner, secondSigner].map((signer) =>
+                            SignatureUtils.signOpenChannel(
+                                openChannel,
+                                signer
+                            ).then((s) => s.signature as Bytes)
+                        )
+                    )
+                })
+            ).wait();
+            const inbound = receipt!.logs
+                .map((log) => mathChannelManager.interface.parseLog(log))
+                .find((parsed) => parsed?.name === "InboundMessagesProcessed")!;
+
+            expect(
+                inbound.args.messageBlock.messages.map(
+                    (message: { data: string }) => message.data
+                )
+            ).to.deep.equal(
+                openChannelJoins(openChannel).map((join) =>
+                    Codec.encode(join, Type.JoinChannel)
+                )
+            );
         });
 
         it("8 participants - success records the signed genesis commitment", async function () {

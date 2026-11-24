@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: loopback endpoints for mapped opening-data component cases
 import type {
     DerivationFailureProbe,
+    ForeignOpenProbe,
     NegotiationRole,
     OpeningDataProbe,
     OpeningDataProbeService,
@@ -8,6 +9,7 @@ import type {
     ProposalAlteration,
     ProposalAlterationProbe,
     StaleDerivationProbe,
+    StalePoint,
     StaleSettlement
 } from "./OpeningDataProbeService";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
@@ -43,10 +45,15 @@ export class OpeningDataProbeRpcMethods extends ANetworkRpcMethods<OpeningDataPr
         return this.service.probeAlteredProposal(alteration);
     }
 
+    public probeForeignGenesisOpen(): Promise<ForeignOpenProbe> {
+        return this.service.probeForeignGenesisOpen();
+    }
+
     public probeStaleDerivation(
         role: NegotiationRole,
-        settlement: StaleSettlement
+        settlement: StaleSettlement,
+        point?: StalePoint
     ): Promise<StaleDerivationProbe> {
-        return this.service.probeStaleDerivation(role, settlement);
+        return this.service.probeStaleDerivation(role, settlement, point);
     }
 }

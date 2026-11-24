@@ -866,6 +866,8 @@ export class StubService extends ANetworkRpcService<
     private failedDisputeCommittedCalls = 0;
     /** Dispute-log handlings held in flight until a dispute log query answered. */
     disputeCommittedHandlingGate?: StubGate;
+    /** Inbound-log handlings held in flight until the inbound hold is restored. */
+    inboundMessageHandlingGate?: StubGate;
     /** Resolvers waiting for the first held calldata log. */
     private readonly heldCalldataPostedWaiters: (() => void)[] = [];
     /** Every contract log held by `holdContractLogs`, first delivery each, in arrival order. */

@@ -55,6 +55,17 @@ export type OpeningDataSource = "default" | "derived";
 /** How the held derivation settles after its attempt was cancelled. */
 export type StaleSettlement = "resolve" | "reject";
 
+/** Which await of the old attempt the probe holds: opening data or genesis hook. */
+export type StalePoint = "derivation" | "genesis";
+
+/** A held await of the old attempt, settled by the probe. */
+type StaleHold = { resolve: () => void; reject: (error: Error) => void };
+
+/** A genesis hash the higher address never derives. */
+const JUNK_GENESIS_HASH = ethers.id(
+    "a genesis the higher address never derived"
+);
+
 export type OpeningTermsProjection = {
     channelId: string;
     participants: string[];
@@ -84,6 +95,14 @@ export type ProposalAlterationProbe = {
     attemptCleared: boolean;
     channelOpen: boolean;
     peerBlacklisted: boolean;
+};
+
+export type ForeignOpenProbe = {
+    outcomeStatus: string;
+    channelOpen: boolean;
+    peerBlacklisted: boolean;
+    runtimeDisposed: boolean;
+    genesisInstalled: boolean;
 };
 
 export type DerivationFailureProbe = {
@@ -279,7 +298,8 @@ export class OpeningDataProbeService extends ANetworkRpcService<
                     service,
                     staged,
                     "0x",
-                    "genesis-hash"
+                    undefined,
+                    JUNK_GENESIS_HASH
                 );
             } catch (caught) {
                 error = errorMessage(caught);
@@ -310,7 +330,13 @@ export class OpeningDataProbeService extends ANetworkRpcService<
         await this.acceptTerms(service, staged);
         let error = "";
         try {
-            await this.acceptProposal(service, staged, "0x", alteration);
+            await this.acceptProposal(
+                service,
+                staged,
+                "0x",
+                alteration,
+                JUNK_GENESIS_HASH
+            );
         } catch (caught) {
             error = errorMessage(caught);
         }
@@ -324,17 +350,86 @@ export class OpeningDataProbeService extends ANetworkRpcService<
     }
 
     /**
+     * The lower peer knows the derived channel ID and opens it first with a
+     * key of its own and a hash no genesis derives from.
+     */
+    public async probeForeignGenesisOpen(): Promise<ForeignOpenProbe> {
+        await this.resetLifecycle();
+        const service = new OpenChannelNegotiationService(this.p2pManager);
+        const staged = await this.stageAttempt(service, "lower");
+        await this.answerTerms(staged);
+        const wallets = [staged.wallet, ethers.Wallet.createRandom()].sort(
+            (a, b) => compareAddresses(a.address, b.address)
+        );
+        const foreignOpen: OpenChannelStruct = {
+            channelId: staged.channelId,
+            participants: wallets.map((wallet) => wallet.address),
+            balances: [staged.peerBalance, staged.peerBalance],
+            deadlineTimestamp: Clock.getTimeInSeconds() + 60,
+            data: "0x",
+            genesisStateHash: JUNK_GENESIS_HASH
+        };
+        const signed = await Promise.all(
+            wallets.map((wallet) =>
+                SignatureUtils.signOpenChannel(foreignOpen, wallet)
+            )
+        );
+        await (
+            await this.sm.stateChannelManagerContract.open(
+                {
+                    encodedOpenChannel: signed[0].encoded.toString(),
+                    signatures: signed.map(({ signature }) =>
+                        signature.toString()
+                    )
+                },
+                { gasLimit: 3_000_000 }
+            )
+        ).wait();
+        const outcome = await staged.outcome;
+        const snapshot =
+            await this.sm.stateChannelManagerContract.getStateSnapshot(
+                staged.channelId
+            );
+        return {
+            outcomeStatus: outcome.status,
+            channelOpen: await this.isChannelOpen(staged.channelId),
+            peerBlacklisted: staged.profile.isBlackListed,
+            runtimeDisposed: this.sm.isDisposed,
+            genesisInstalled: this.sm.isActiveFork(String(snapshot.forkId))
+        };
+    }
+
+    /**
      * Holds the old attempt's derivation, cancels that attempt, starts a
      * replacement with another peer, and settles the held derivation while
      * the replacement is active. The replacement then opens the channel.
      */
     public async probeStaleDerivation(
         role: NegotiationRole,
-        settlement: StaleSettlement
+        settlement: StaleSettlement,
+        point: StalePoint = "derivation"
     ): Promise<StaleDerivationProbe> {
         await this.resetLifecycle();
         const service = this.rootService;
-        service.holdNextDerivation();
+        let takeHold: () => StaleHold | undefined;
+        if (point === "genesis") {
+            // a higher-address probe computes the proposer's hash first
+            takeHold = this.holdGenesisCall(role === "higher" ? 1 : 0);
+        } else {
+            service.holdNextDerivation();
+            takeHold = () => {
+                const derivation = service.takeHeldDerivation();
+                return (
+                    derivation && {
+                        resolve: () =>
+                            derivation.resolve(
+                                deriveOpeningData(derivation.terms)
+                            ),
+                        reject: derivation.reject
+                    }
+                );
+            };
+        }
         const old = await this.stageAttempt(service, role);
         let staleProposal: Promise<string> | undefined;
         if (role === "lower") {
@@ -351,8 +446,8 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             );
         }
         const held = await this.waitUntil(
-            () => service.takeHeldDerivation(),
-            "old attempt derivation was not held"
+            takeHold,
+            `old attempt ${point} was not held`
         );
         // the old attempt ends, as a failed match ends it
         await service["clearAttempt"](
@@ -375,7 +470,7 @@ export class OpeningDataProbeService extends ANetworkRpcService<
         const replacementTimeout = replacementAttempt?.timeoutHandle;
 
         if (settlement === "resolve") {
-            held.resolve(deriveOpeningData(held.terms));
+            held.resolve();
         } else {
             held.reject(new Error("opening data source offline"));
         }
@@ -593,13 +688,15 @@ export class OpeningDataProbeService extends ANetworkRpcService<
 
     /**
      * The lower-address peer proposes the opening with `data`; `alteration`
-     * changes one signed field from what the higher address agreed.
+     * changes one signed field from what the higher address agreed, and
+     * `genesisStateHash` replaces the hash the hook derives.
      */
     private async acceptProposal(
         service: OpenChannelNegotiationService,
         staged: StagedAttempt,
         data: string,
-        alteration?: ProposalAlteration
+        alteration?: ProposalAlteration,
+        genesisStateHash?: string
     ): Promise<{ status: "submitted"; encodedOpenChannel: string }> {
         const expected = this.expectedTerms(staged);
         const terms = {
@@ -617,16 +714,16 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             deadlineTimestamp: Clock.getTimeInSeconds() + 60,
             data
         };
-        // the hook reverts on an overflowing balance, so an altered proposal signs any hash
-        const genesisStateHash =
-            alteration === undefined
-                ? await computeGenesisStateHash(
-                      this.sm.stateChannelManagerContract,
-                      terms
-                  )
-                : ethers.id("a genesis the higher address never derived");
         const signed = await SignatureUtils.signOpenChannel(
-            { ...terms, genesisStateHash },
+            {
+                ...terms,
+                genesisStateHash:
+                    genesisStateHash ??
+                    (await computeGenesisStateHash(
+                        this.sm.stateChannelManagerContract,
+                        terms
+                    ))
+            },
             staged.wallet
         );
         const encodedOpenChannel = signed.encoded.toString();
@@ -639,6 +736,28 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             signed.signature.toString()
         );
         return { ...result, encodedOpenChannel };
+    }
+
+    /**
+     * Holds the first openChannelGenesis call after `skip` others until the
+     * probe settles it; returns the hold once a call entered it.
+     */
+    private holdGenesisCall(skip: number): () => StaleHold | undefined {
+        const manager = this.sm.stateChannelManagerContract;
+        const provider = manager.runner!.provider!;
+        const call = provider.call.bind(provider);
+        const selector =
+            manager.interface.getFunction("openChannelGenesis").selector;
+        let held: StaleHold | undefined;
+        provider.call = async (transaction) => {
+            if (!String(transaction.data).startsWith(selector) || skip-- > 0)
+                return call(transaction);
+            provider.call = call;
+            return new Promise<string>((resolve, reject) => {
+                held = { resolve: () => resolve(call(transaction)), reject };
+            });
+        };
+        return () => held;
     }
 
     private framesOf(transport: ProbePeerTransport, method: string): Rpc[] {

@@ -154,6 +154,21 @@ describe("OpenChannelNegotiationService opening data", function () {
         });
     });
 
+    it("an ordinary attempt whose channel ID the peer opens with another participant set and a hash no genesis derives from retries and blacklists the peer without aborting", async function () {
+        const result = await fixture
+            .probe()
+            .probeForeignGenesisOpen()
+            .request({ timeoutMs: fixture.openingTimeoutMs() });
+
+        expect(result).to.deep.equal({
+            outcomeStatus: "retry",
+            channelOpen: true,
+            peerBlacklisted: true,
+            runtimeDisposed: false,
+            genesisInstalled: false
+        });
+    });
+
     it("lower address derivation failure clears the attempt without a proposal or penalty", async function () {
         const result = await fixture
             .probe()
@@ -248,6 +263,39 @@ describe("OpenChannelNegotiationService opening data", function () {
 
         expect(result.oldOutcome).to.equal("retry");
         expect(result.staleResult).to.equal("Opening data unavailable");
+        expect(result.oldChannelOpen).to.equal(false);
+        expect(result.replacementCurrent).to.equal(true);
+        expect(result.replacementChannelKept).to.equal(true);
+        expect(result.replacementTimeoutKept).to.equal(true);
+        expect(result.replacementOutcomePending).to.equal(true);
+        expect(result.replacementOutcome).to.equal("opened");
+        expect(result.replacementChannelOpen).to.equal(true);
+    });
+
+    it("lower address late genesis hash after cancellation keeps the replacement attempt", async function () {
+        const result = await fixture
+            .probe()
+            .probeStaleDerivation("lower", "resolve", "genesis")
+            .request({ timeoutMs: fixture.openingTimeoutMs() });
+
+        expect(result.oldOutcome).to.equal("retry");
+        expect(result.replacementCurrent).to.equal(true);
+        expect(result.replacementChannelKept).to.equal(true);
+        expect(result.replacementTimeoutKept).to.equal(true);
+        expect(result.replacementOutcomePending).to.equal(true);
+        expect(result.oldProposalFrames).to.equal(0);
+        expect(result.replacementOutcome).to.equal("opened");
+        expect(result.replacementChannelOpen).to.equal(true);
+    });
+
+    it("higher address late genesis hash after cancellation keeps the replacement attempt", async function () {
+        const result = await fixture
+            .probe()
+            .probeStaleDerivation("higher", "resolve", "genesis")
+            .request({ timeoutMs: fixture.openingTimeoutMs() });
+
+        expect(result.oldOutcome).to.equal("retry");
+        expect(result.staleResult).to.equal("submitted");
         expect(result.oldChannelOpen).to.equal(false);
         expect(result.replacementCurrent).to.equal(true);
         expect(result.replacementChannelKept).to.equal(true);

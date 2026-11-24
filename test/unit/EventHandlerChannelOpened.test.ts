@@ -76,8 +76,84 @@ describe("Unit: EventHandler.onChannelOpened genesis rebuild", function () {
         ).to.equal(snapshot.snapshotData.stateMachineStateHash);
     });
 
-    it("aborts every runtime without installing when the opened hash matches no genesis", async function () {
+    it("waits for the open's genesis join log in flight instead of recovering it from the chain", async function () {
         const h = TestSession.getHarness();
+        const lagging = 1;
+        await h.setup(2, {
+            autoConnect: false,
+            channelId: "channel-opened-rebuild-in-flight"
+        });
+        const ctl = h.control(h.getPeer(lagging));
+        await ctl.stub.stubCountChainLogQueries().request();
+        // the genesis join log's dispatch stays pending while ChannelOpened arrives
+        const held = await h.rpcStub.holdInboundMessageEvents(lagging, {
+            inFlight: true
+        });
+
+        await h.lifecycle.openChannelForParticipants([0, 1], {
+            observePeerIndices: [0]
+        });
+        await waitFor(
+            async () => (await held.heldCount()) > 0,
+            h.event.protocolEventTimeoutMs()
+        );
+        // premise - the open's logs reached the lagging peer, nothing installed
+        expect(h.event.getEventCallCount(lagging, "onChannelOpened")).to.equal(
+            0
+        );
+        await held.release();
+
+        const snapshot = await h.channelManager.getStateSnapshot(h.channelId);
+        await waitFor(
+            () => h.event.getEventCallCount(lagging, "onChannelOpened") === 1,
+            h.event.protocolEventTimeoutMs()
+        );
+        expect(await ctl.query.getForkId().request()).to.equal(snapshot.forkId);
+        expect(
+            await ctl.query.getLiveStateMachineStateHash().request()
+        ).to.equal(snapshot.snapshotData.stateMachineStateHash);
+        // the join block came from the held dispatch, not a chain query
+        expect(await ctl.stub.getChainLogQueryCount().request()).to.equal(0);
+        await ctl.stub.restoreChainLogQueries().request();
+    });
+
+    it("fails the open without aborting when the genesis join block stays unavailable", async function () {
+        const h = TestSession.getHarness();
+        const lagging = 2;
+        await h.setup(3, {
+            autoConnect: false,
+            channelId: "channel-opened-rebuild-unavailable"
+        });
+        // the handler swallows the genesis join log, so neither the live
+        // dispatch nor a recovery query stores it
+        const held = await h.rpcStub.holdInboundMessageEvents(lagging);
+
+        await h.lifecycle.openChannelForParticipants([0, 1, 2], {
+            observePeerIndices: [0, 1]
+        });
+        await TestSession.settleDetached({
+            expectedErrorIncludes: "genesis join block unavailable"
+        });
+
+        const snapshot = await h.channelManager.getStateSnapshot(h.channelId);
+        for (const index of [0, 1]) {
+            expect(
+                await h.control(h.getPeer(index)).query.getForkId().request(),
+                `peer ${index} installed the genesis`
+            ).to.equal(snapshot.forkId);
+        }
+        expect(h.event.getEventCallCount(lagging, "onAbort")).to.equal(0);
+        expect(runtimeIsClosed(h.getPeer(lagging).p2pInstance)).to.equal(false);
+        expect(h.event.getEventCallCount(lagging, "onChannelOpened")).to.equal(
+            0
+        );
+        expect(h.event.getEventCallCount(lagging, "onSetState")).to.equal(0);
+        await held.release({ replay: false });
+    });
+
+    it("aborts the listed participants and spares any other runtime when the opened hash matches no genesis", async function () {
+        const h = TestSession.getHarness();
+        const outsider = 2;
         await h.setup(3, {
             autoConnect: false,
             channelId: "channel-opened-rebuild-mismatch"
@@ -95,23 +171,25 @@ describe("Unit: EventHandler.onChannelOpened genesis rebuild", function () {
         );
         expect(isOpen).to.equal(true);
         expect(snapshot.snapshotData.stateMachineStateHash).to.equal(junkHash);
+        const participants = [h.getPeer(0), h.getPeer(1)];
         await waitFor(
             () =>
-                h.peers.every(
+                participants.every(
                     (peer) =>
                         h.event.getEventCallCount(peer.index, "onAbort") === 1
                 ),
             h.event.protocolEventTimeoutMs()
         );
         await waitFor(
-            () => h.peers.every((peer) => runtimeIsClosed(peer.p2pInstance)),
+            () =>
+                participants.every((peer) => runtimeIsClosed(peer.p2pInstance)),
             h.event.protocolEventTimeoutMs() * 2
         );
-        // the handler throws after the abort, so the log fails on every runtime
+        // the handler throws after the abort, so the log fails on each participant
         await TestSession.settleDetached({
             expectedErrorIncludes: "Opened genesis rejected: hash mismatch"
         });
-        for (const peer of h.peers) {
+        for (const peer of participants) {
             expect(
                 h.event.getEventCallCount(peer.index, "onChannelOpened"),
                 `peer ${peer.index} completed the open`
@@ -121,5 +199,18 @@ describe("Unit: EventHandler.onChannelOpened genesis rebuild", function () {
                 `peer ${peer.index} installed a state`
             ).to.equal(0);
         }
+        // a runtime outside the opened set installs nothing and keeps running
+        await waitFor(
+            () => h.event.getEventCallCount(outsider, "onChannelOpened") === 1,
+            h.event.protocolEventTimeoutMs()
+        );
+        expect(h.event.getEventCallCount(outsider, "onAbort")).to.equal(0);
+        expect(h.event.getEventCallCount(outsider, "onSetState")).to.equal(0);
+        expect(runtimeIsClosed(h.getPeer(outsider).p2pInstance)).to.equal(
+            false
+        );
+        expect(
+            await h.control(h.getPeer(outsider)).query.getForkId().request()
+        ).to.not.equal(snapshot.forkId);
     });
 });

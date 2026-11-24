@@ -130,7 +130,7 @@ describe("EventSyncService", function () {
             await dropped.release();
         });
 
-        it("logs recovered into an empty inbound store set its tip to the recovered head", async function () {
+        it("the genesis rebuild recovers a lost genesis join log into an empty store, and a later recovery moves the tip", async function () {
             const h = TestSession.getHarness();
             await h.setup(3);
             const lagging = 2;

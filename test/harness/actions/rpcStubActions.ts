@@ -1041,15 +1041,20 @@ export class RpcStubActions<
      * This disables the handler, so on-demand inbound recovery cannot heal it
      * either - recovery re-dispatches the log into the same held handler. Use
      * it to stage the abstain; use `dropInboundMessageLogs` to stage recovery.
+     * With `inFlight` each dispatch stays pending instead, and runs the real
+     * handler on release.
      */
-    async holdInboundMessageEvents(peerIndex: number): Promise<{
+    async holdInboundMessageEvents(
+        peerIndex: number,
+        options: { inFlight?: boolean } = {}
+    ): Promise<{
         /** Chain events held so far. */
         heldCount: () => Promise<number>;
         /** Restore the handler; held events replay unless `replay: false`. */
         release: (options?: { replay?: boolean }) => Promise<void>;
     }> {
         const ctl = () => this.peerStub(peerIndex);
-        await ctl().stubHoldInboundMessageEvents().request();
+        await ctl().stubHoldInboundMessageEvents(options.inFlight).request();
         this.logger.debug(
             `Holding InboundMessagesProcessed on peer ${peerIndex}`
         );

@@ -1,9 +1,7 @@
 import {
     getOpenChannelProposalMismatch,
-    OPEN_CHANNEL_MIN_REMAINING_SECONDS,
-    openChannelJoins
+    OPEN_CHANNEL_MIN_REMAINING_SECONDS
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
-import { Codec, Type } from "@/utils";
 import type { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { expect } from "chai";
 
@@ -154,35 +152,5 @@ describe("getOpenChannelProposalMismatch", function () {
                 deadline
             )
         ).to.equal(null);
-    });
-});
-
-describe("openChannelJoins", function () {
-    it("openChannelJoins maps each participant to its balance, the channel and the deadline in order", function () {
-        const terms = matchingProposal();
-        const joins = openChannelJoins(terms);
-        // the field order `open` encodes into each inbound JOIN message
-        expect(
-            joins.map((join) => Codec.encode(join, Type.JoinChannel))
-        ).to.deep.equal([
-            Codec.encode(
-                {
-                    channelId: CHANNEL_ID,
-                    participant: A,
-                    deadlineTimestamp: 1030n,
-                    balance: { amount: 500n, data: "0x" }
-                },
-                Type.JoinChannel
-            ),
-            Codec.encode(
-                {
-                    channelId: CHANNEL_ID,
-                    participant: B,
-                    deadlineTimestamp: 1030n,
-                    balance: { amount: 700n, data: "0x" }
-                },
-                Type.JoinChannel
-            )
-        ]);
     });
 });

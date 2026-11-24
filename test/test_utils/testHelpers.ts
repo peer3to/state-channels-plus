@@ -50,15 +50,11 @@ export const createJoinChannelTestObject = (
     return jc;
 };
 
-export type OpenChannelTestObjectOptions = TestObjectOptions & {
-    /** Overrides the hash the manager's genesis hook derives for these terms. */
-    genesisStateHash?: string;
-};
-
 export const createOpenChannelTestObject = async (
     manager: StateChannelManagerInterface,
     participants: AddressLike[],
-    options?: OpenChannelTestObjectOptions
+    // genesisStateHash overrides the hash the manager's genesis hook derives
+    options?: TestObjectOptions & { genesisStateHash?: string }
 ): Promise<OpenChannelStruct> => {
     const { channelId, initialBalance, genesisStateHash } = options ?? {};
     let currentTime = 0;

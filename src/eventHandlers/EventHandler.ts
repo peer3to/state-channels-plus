@@ -112,15 +112,23 @@ export class EventHandler {
             keccak256(encodedState) !== snapshotData.stateMachineStateHash
         ) {
             const reason = encodedState ? "hash mismatch" : "hook reverted";
-            this.logger.error(
-                "Opened genesis does not match the signed hash; aborting",
+            // anyone can open a selected channel ID -> only a listed
+            // participant aborts; any other runtime installs nothing
+            const participant =
+                this.stateManager.membershipService.includesSigner(
+                    snapshotData.participants as Address[]
+                );
+            this.logger[participant ? "error" : "warn"](
+                "Opened genesis does not match the signed hash",
                 {
                     channelId,
                     forkId: stateSnapshot.forkId,
                     reason,
+                    participant,
                     signedHash: snapshotData.stateMachineStateHash
                 }
             );
+            if (!participant) return;
             this.stateManager.abort();
             throw new Error(`Opened genesis rejected: ${reason}`);
         }
