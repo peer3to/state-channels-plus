@@ -22,6 +22,10 @@ const { staleRunnerImageReason } = require("./runnerImage");
 const RUNTIME_LABEL = "peer3.distributed-environment";
 const ENVIRONMENT_NAME_PREFIX = "peer3-test-";
 const DOCKER_OPERATION_TIMEOUT_MS = 5 * 60 * 1000;
+// What a strict docker tool tells the operator about a stale or missing runner image.
+const REBUILD_RUNNER_IMAGE =
+    "Restart `yarn test:parallel:server`, which rebuilds it, or run " +
+    "`yarn test:parallel:image`, then point SCP_TEST_RUNNER_IMAGE at the new image ID";
 
 function assertEnvironmentKey(environmentKey) {
     if (
@@ -208,11 +212,15 @@ class DockerBackend {
     }
 
     async detect() {
+        if (!this.image && !this.buildImage)
+            return {
+                available: false,
+                reason: `No runner image is configured. ${REBUILD_RUNNER_IMAGE}`
+            };
         if (
-            this.image
-                ? !/^sha256:[a-f0-9]{64}$/.test(this.image) &&
-                  !/@sha256:[a-f0-9]{64}$/.test(this.image)
-                : !this.buildImage
+            this.image &&
+            !/^sha256:[a-f0-9]{64}$/.test(this.image) &&
+            !/@sha256:[a-f0-9]{64}$/.test(this.image)
         ) {
             return {
                 available: false,
@@ -247,9 +255,7 @@ class DockerBackend {
             if (stale && !this.buildImage)
                 return {
                     available: false,
-                    reason:
-                        `${stale}. Restart \`yarn test:parallel:server\`, which rebuilds it, or run ` +
-                        "`yarn test:parallel:image`, then point SCP_TEST_RUNNER_IMAGE at the new image ID"
+                    reason: `${stale}. ${REBUILD_RUNNER_IMAGE}`
                 };
             if (stale) {
                 console.log(`${stale}; building it`);

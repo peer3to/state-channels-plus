@@ -65,9 +65,13 @@ export function dockerBackendForRunnerImage(options: {
             const inspect =
                 args[0] === "image" && args.includes("{{json .Config.Labels}}");
             if (inspect && options.inspectError !== undefined)
-                throw Object.assign(new Error("docker failed (1)"), {
-                    stderr: Buffer.from(options.inspectError)
-                });
+                // the error runProcess raises for a failed docker call
+                throw Object.assign(
+                    new Error(`docker failed (1): ${options.inspectError}`),
+                    {
+                        stderr: Buffer.from(options.inspectError)
+                    }
+                );
             const labels =
                 backend.image === BUILT
                     ? {

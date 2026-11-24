@@ -19,6 +19,7 @@ const {
     shouldTransferAttemptEvidence
 } = require("../../scripts/e2e-parallel/distributed/artifactSelection.js");
 const {
+    buildRunnerImage,
     runnerImageBuildArgs
 } = require("../../scripts/e2e-parallel/distributed/buildRunnerImage.js");
 const {
@@ -913,7 +914,9 @@ describe("distributed isolated environment", function () {
         });
         const detected = await backend.detect();
         expect(detected.available).to.equal(false);
-        expect(detected.reason).to.equal("docker failed (1)");
+        expect(detected.reason).to.include(
+            "Cannot connect to the Docker daemon"
+        );
         expect(build.count).to.equal(0);
     });
 
@@ -956,28 +959,56 @@ describe("distributed isolated environment", function () {
         });
     });
 
-    it("exits yarn test:parallel:image with docker's status on a failed build and 1 when docker cannot run", function () {
-        // a docker on PATH whose build exits 3, and a PATH with no docker at all
-        const bin = fs.mkdtempSync(path.join(os.tmpdir(), "fake-docker-"));
-        fs.writeFileSync(path.join(bin, "docker"), "#!/bin/sh\nexit 3\n", {
-            mode: 0o755
+    it("returns the built runner image ID and leaves no scratch directory, and carries docker's status on a failed build", function () {
+        const scratchDirs = () =>
+            fs
+                .readdirSync(os.tmpdir())
+                .filter((name) => name.startsWith("runner-image-")).length;
+        const before = scratchDirs();
+        const built = buildRunnerImage(repoRoot(), [], (args: string[]) => {
+            fs.writeFileSync(args[args.indexOf("--iidfile") + 1], `${BUILT}\n`);
+            return { status: 0 };
         });
-        const imageScript = path.join(
-            repoRoot(),
-            "scripts/e2e-parallel/distributed/buildRunnerImage.js"
-        );
-        const status = (PATH: string) =>
-            spawnSync(process.execPath, [imageScript], {
-                encoding: "utf8",
-                env: { ...process.env, PATH }
-            }).status;
+        let failed: unknown;
         try {
-            expect([status(bin), status(path.join(bin, "none"))]).to.deep.equal(
-                [3, 1]
-            );
-        } finally {
-            fs.rmSync(bin, { recursive: true, force: true });
+            buildRunnerImage(repoRoot(), [], () => ({ status: 3 }));
+        } catch (error) {
+            failed = error;
         }
+        expect({
+            built,
+            scratchLeft: scratchDirs() - before,
+            failedExitCode: (failed as { exitCode?: number }).exitCode
+        }).to.deep.equal({ built: BUILT, scratchLeft: 0, failedExitCode: 3 });
+    });
+
+    it("exits yarn test:parallel:image with 1 when docker cannot run", function () {
+        const empty = fs.mkdtempSync(path.join(os.tmpdir(), "no-docker-"));
+        try {
+            const result = spawnSync(
+                process.execPath,
+                [
+                    path.join(
+                        repoRoot(),
+                        "scripts/e2e-parallel/distributed/buildRunnerImage.js"
+                    )
+                ],
+                { encoding: "utf8", env: { ...process.env, PATH: empty } }
+            );
+            expect(result.status).to.equal(1);
+        } finally {
+            fs.rmSync(empty, { recursive: true, force: true });
+        }
+    });
+
+    it("points the strict docker tools at a server restart when no runner image is configured", async function () {
+        const { backend } = dockerBackendForRunnerImage({ image: undefined });
+        expect(await backend.detect()).to.deep.equal({
+            available: false,
+            reason:
+                "No runner image is configured. Restart `yarn test:parallel:server`, which rebuilds it, or run " +
+                "`yarn test:parallel:image`, then point SCP_TEST_RUNNER_IMAGE at the new image ID"
+        });
     });
 
     it("hands the worker server's image build to the docker backend it creates", async function () {
