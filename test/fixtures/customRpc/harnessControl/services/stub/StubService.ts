@@ -5094,7 +5094,12 @@ export class StubService extends ANetworkRpcService<
     }
 
     /** Make every provider call to one manager function fail with `message`. */
-    failManagerRead(functionName: string, message: string): void {
+    failManagerRead(
+        functionName: Parameters<
+            StateChannelManagerInterface["interface"]["getFunction"]
+        >[0],
+        message: string
+    ): void {
         const contract = this.sm.stateChannelManagerContract;
         if (!this.stubOriginals.has("managerRead")) {
             this.stubOriginals.set(
@@ -5105,9 +5110,9 @@ export class StubService extends ANetworkRpcService<
         const original = this.stubOriginals.get(
             "managerRead"
         ) as typeof this.chainProvider.call;
-        const selector = contract
+        const selector = contract.interface
             .getFunction(functionName)
-            .fragment.selector.slice(2);
+            .selector.slice(2);
         this.chainProvider.call = async (transaction) => {
             if (String(transaction.data).includes(selector))
                 throw new Error(message);

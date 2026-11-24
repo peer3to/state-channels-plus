@@ -3,6 +3,7 @@ import {
     EARLY_TIMEOUT_RECHECK_REASON,
     MISMATCH_TIMEOUT_RECHECK_REASON
 } from "@/stateManager/chainFallback/ParticipantTimeoutService";
+import { Status } from "@/types";
 import {
     DisputeFraudProofType,
     FraudProofType,
@@ -442,9 +443,10 @@ describe("Unit: DisputeManager", function () {
             // a spectator synced past the open never saw the genesis join
             // block; with its inbound events held its store head stays empty
             // while ingest advances its snapshot after it joins
-            const joiner = await h.join.addSpectatorWait();
+            const joiner = await h.join.addSpectatorDetached();
             const lagging = joiner.index;
             const held = await h.rpcStub.holdInboundMessageEvents(lagging);
+            await h.event.waitUntilPeerStatus(lagging, Status.SYNCED);
             await h.join.joinChannelWait({ joiner });
             const forkId = h.activeForkId!;
 

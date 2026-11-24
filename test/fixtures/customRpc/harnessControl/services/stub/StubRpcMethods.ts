@@ -75,6 +75,7 @@ import {
 import { errorMessage } from "@/utils/errorMessage";
 import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
+import type { StateChannelManagerInterface } from "@typechain-types";
 import type { ContractTransactionResponse } from "ethers";
 
 /** Marks a snapshot service whose posts `stubPostStateSnapshot` suppressed, the harness's included. */
@@ -3405,7 +3406,12 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /** Make every provider call to the manager's `functionName` fail with `message`. */
-    public stubFailManagerRead(functionName: string, message: string): boolean {
+    public stubFailManagerRead(
+        functionName: Parameters<
+            StateChannelManagerInterface["interface"]["getFunction"]
+        >[0],
+        message: string
+    ): boolean {
         this.service.failManagerRead(functionName, message);
         return true;
     }

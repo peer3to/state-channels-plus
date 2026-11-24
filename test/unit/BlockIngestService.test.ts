@@ -1,6 +1,7 @@
 import * as factory from "../factory";
 import { DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT } from "@/evm/contractExecutor/ContractExecutor";
 import { BlockOrigin } from "@/storage/QueueStorage";
+import { Status } from "@/types";
 import type { Address, Bytes, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import {
@@ -644,7 +645,8 @@ describe("Unit: BlockIngestService", function () {
             // a spectator synced past the open never saw its genesis join block,
             // and its inbound events are held -> it never stores inbound block
             // 1, so a run starting at block 2 links to nothing it holds
-            const lagging = (await h.join.addSpectatorWait()).index;
+            const lagging = (await h.join.addSpectatorDetached()).index;
+            await h.event.waitUntilPeerStatus(lagging, Status.SYNCED);
             const held = await h.rpcStub.holdInboundMessageEvents(lagging);
             const forkId = h.activeForkId!;
             const synced = h.control(h.getPeer(0));

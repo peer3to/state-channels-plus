@@ -1,3 +1,4 @@
+import { Status } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Bytes, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
@@ -166,9 +167,10 @@ describe("E2E: dispute validation / inboundHash", function () {
         });
         // a spectator synced past the open never saw the genesis join block;
         // with its inbound events held its store head never moves
-        const joiner = await h.join.addSpectatorWait();
+        const joiner = await h.join.addSpectatorDetached();
         const laggingIndex = joiner.index;
         const held = await h.rpcStub.holdInboundMessageEvents(laggingIndex);
+        await h.event.waitUntilPeerStatus(laggingIndex, Status.SYNCED);
         await h.join.joinChannelWait({ joiner });
         const forkId = h.activeForkId!;
         await h.transition.advanceState({

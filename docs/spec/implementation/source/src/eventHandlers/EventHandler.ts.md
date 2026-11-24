@@ -55,7 +55,7 @@ Dispute-event branches
 
 Genesis rebuild on open
 
-- Setup: Open on chain with participants and a non-participant observer; select the channel on a fresh runtime only after the open and deliver `ChannelOpened` through the real event pipeline; hold a participant's genesis join log in flight, or swallow its handling; open with unanimous terms carrying a hash no genesis derives from
+- Setup: Open on chain with participants and a non-participant observer; select the channel on a fresh runtime only after the open and deliver `ChannelOpened` through the real event pipeline; swallow a participant's genesis join log handling, or fail its genesis hook read in transport; open with unanimous terms carrying a hash no genesis derives from
 - Oracle: A matching rebuild installs the genesis with the chain's fork and state hash; a genesis join block the runtime never received is recovered from logs and stored before the install; a join block that stays unavailable, or a genesis hook read that fails in transport, fails the event without an abort; a different hash aborts each listed participant with no state set, no completed `onChannelOpened` and the event failed, and leaves a runtime outside the opened set running with no state set and the open reported, while the chain keeps the channel open
 
 - [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P1` — a non-participant observer installs the rebuilt genesis: its fork and state hash equal the chain snapshot's

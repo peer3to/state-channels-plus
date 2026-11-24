@@ -57,7 +57,7 @@ specification permutation names the stale-attempt rule; it is covered only at th
 - `the higher address whose genesis hook rejects the agreed balances clears the attempt without blacklisting, co-signing or opening`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P17, INV-NEG-1-6FW90P.T1.P15
 - `blacklists and clears a proposal whose genesis hash differs from the locally computed genesis`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P14, INV-NEG-1-6FW90P.T1.P12
 - `blacklists a proposal whose altered counterparty balance the genesis hook would reject`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P15, INV-NEG-1-6FW90P.T1.P13
-- `an ordinary attempt whose channel ID the peer opens with another participant set and a hash no genesis derives from retries and blacklists the peer without aborting`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P20, REQ-NEG-2-ED48TZ.T1.P8, REQ-LIF-12-TSXRBG.T1.P6
+- `an ordinary attempt whose channel ID the peer opens with another participant set and a hash no genesis derives from retries and blacklists the peer without aborting`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P20, REQ-NEG-2-ED48TZ.T1.P8
 - `lower address derivation failure clears the attempt without a proposal or penalty`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P5
 - `higher address derivation failure clears the attempt without co-signing or penalty`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P6
 - `lower address late derivation result after cancellation keeps the replacement attempt`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P7
