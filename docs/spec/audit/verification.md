@@ -34,8 +34,9 @@ Engineer decisions (Luke, 2026-11-20, PR #605):
   (`docker/zero-fee-node.Dockerfile` there). In E2E-Timeouts, "should handle timeout when next peer to write does not
   author a block", "should demonstrate timeout creates disputes", "should handle timeout when non-author
   peer disconnects (calldata posting)" and "should handle timeout when author peer disconnects", with
-  all of RpcNodes.test.ts, passed on the farm with `--parachain` on the pinned node, peer3-parachain
-  `4e60b71` (run-1198, 57 passing).
+  all of RpcNodes.test.ts, passed with `--parachain` on the pinned node, peer3-parachain `e5f29f6`, on
+  three workers running this branch's runner image (run-1229, 2026-11-24, 173 passing with the timeout,
+  join, gas and dispute E2E files).
 
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 

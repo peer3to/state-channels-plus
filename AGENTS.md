@@ -82,9 +82,10 @@ add both flags routinely to development validation; CI runs both groups on every
 full gate so the development cycle stays lean.
 
 Browser gates, and Mocha test files marked `// @distributed-requires: browser`,
-run only on a protocol 14 or newer worker host whose runner image was built with
-`yarn test:parallel:image`. When no such host connects within the discovery
-window, the run skips them with a warning that lists them instead of failing,
+run only on a protocol 14 or newer worker host whose runner image matches its
+checkout's `runner-image.Dockerfile` (a docker worker server rebuilds a stale
+one at startup; `yarn test:parallel:image` builds it by hand). When no such
+host connects within the discovery window, the run skips them with a warning that lists them instead of failing,
 so a green run is not complete until that warning has been checked. A Mocha
 test file that launches Chromium must carry that marker in its leading
 comments. See the README's
