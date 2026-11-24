@@ -22,6 +22,7 @@ const {
 const { WorkerLeaseManager } = require("./workerLeaseManager");
 const { loadWorkerKeyPair } = require("./workerIdentity");
 const { EnvironmentCache, deriveEnvironmentKey } = require("./workspaceCache");
+const { currentRunnerImage } = require("./buildRunnerImage");
 const { IsolatedEnvironmentManager } = require("./isolatedEnvironment");
 const {
     profileSummary,
@@ -136,15 +137,16 @@ async function main(options = {}) {
     }
     const audit = new WorkerAuditLog(config.workRoot);
     const environmentCache = new EnvironmentCache(config.workRoot, config);
+    const trustedRoot = path.resolve(__dirname, "../../..");
     const environmentManager = await IsolatedEnvironmentManager.create({
         workRoot: config.workRoot,
-        runnerImage: config.runnerImage,
+        runnerImage: currentRunnerImage(config, trustedRoot),
         executionBackend: config.executionBackend,
         backend: config.environmentBackend,
         backendName: config.environmentBackendName,
         deniedPrivateCidrs: config.deniedPrivateCidrs,
         volumeDriver: config.volumeDriver,
-        trustedRoot: path.resolve(__dirname, "../../..")
+        trustedRoot
     });
     audit.append({
         action: "cache-configuration",

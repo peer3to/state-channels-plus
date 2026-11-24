@@ -227,7 +227,13 @@ class DockerBackend {
                 JSON.parse(labels.stdout.toString("utf8").trim() || "null"),
                 this.trustedRoot
             );
-            if (stale) return { available: false, reason: stale };
+            if (stale)
+                return {
+                    available: false,
+                    reason:
+                        `${stale}. Rebuild it with \`yarn test:parallel:image\` ` +
+                        "and point SCP_TEST_RUNNER_IMAGE at the new image ID"
+                };
             if (
                 this.securityOptions.some((entry) => entry.includes("userns"))
             ) {
