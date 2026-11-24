@@ -276,10 +276,10 @@ describe("Universal Deployment", () => {
             );
 
             const [, secondSigner] = await ethers.getSigners();
-            const openChannel = createOpenChannelTestObject([
-                deployer.address,
-                secondSigner.address
-            ]);
+            const openChannel = await createOpenChannelTestObject(
+                diamondContract,
+                [deployer.address, secondSigner.address]
+            );
             const firstSignature = await SignatureUtils.signOpenChannel(
                 openChannel,
                 deployer

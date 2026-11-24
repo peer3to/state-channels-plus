@@ -1,7 +1,9 @@
 import {
     getOpenChannelProposalMismatch,
-    OPEN_CHANNEL_MIN_REMAINING_SECONDS
+    OPEN_CHANNEL_MIN_REMAINING_SECONDS,
+    openChannelJoins
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import { Codec, Type } from "@/utils";
 import type { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { expect } from "chai";
 
@@ -39,7 +41,7 @@ const matchingProposal = (): OpenChannelStruct =>
             { amount: 700n, data: "0x" }
         ],
         deadlineTimestamp: 1030n,
-        isAtomic: true,
+        genesisStateHash: "0x" + "44".repeat(32),
         data: "0x"
     }) as unknown as OpenChannelStruct;
 
@@ -84,14 +86,6 @@ describe("getOpenChannelProposalMismatch", function () {
         expect(
             getOpenChannelProposalMismatch(decoded, expected, deadline)
         ).to.match(/channelId mismatch/);
-    });
-
-    it("rejects non-atomic opens", function () {
-        const decoded = matchingProposal();
-        decoded.isAtomic = false;
-        expect(
-            getOpenChannelProposalMismatch(decoded, expected, deadline)
-        ).to.match(/isAtomic/);
     });
 
     it("rejects opening data that differs from the locally derived data", function () {
@@ -160,5 +154,35 @@ describe("getOpenChannelProposalMismatch", function () {
                 deadline
             )
         ).to.equal(null);
+    });
+});
+
+describe("openChannelJoins", function () {
+    it("openChannelJoins maps each participant to its balance, the channel and the deadline in order", function () {
+        const terms = matchingProposal();
+        const joins = openChannelJoins(terms);
+        // the field order `open` encodes into each inbound JOIN message
+        expect(
+            joins.map((join) => Codec.encode(join, Type.JoinChannel))
+        ).to.deep.equal([
+            Codec.encode(
+                {
+                    channelId: CHANNEL_ID,
+                    participant: A,
+                    deadlineTimestamp: 1030n,
+                    balance: { amount: 500n, data: "0x" }
+                },
+                Type.JoinChannel
+            ),
+            Codec.encode(
+                {
+                    channelId: CHANNEL_ID,
+                    participant: B,
+                    deadlineTimestamp: 1030n,
+                    balance: { amount: 700n, data: "0x" }
+                },
+                Type.JoinChannel
+            )
+        ]);
     });
 });

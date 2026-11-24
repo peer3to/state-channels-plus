@@ -14,6 +14,7 @@ import {
     DeployedFacetAddresses
 } from "@test/test_utils/testHelpers";
 import {
+    MathConsumerFacet__factory,
     StateChannelManagerInterface,
     StateChannelManagerProxy__factory
 } from "@typechain-types";
@@ -212,6 +213,28 @@ describe("StateChannelManagerProxy selector routing", function () {
             .slice(0, 10);
         expect(await diamond.facetAddressForSelector(unknownSelector)).to.equal(
             consumerFacetAddress
+        );
+    });
+
+    it("routes the genesis hook through the fallback to the consumer facet", async function () {
+        const [first, second] = await ethers.getSigners();
+        const joins = [first, second].map((signer, i) => ({
+            channelId: ethers.id("genesis-hook-through-fallback"),
+            participant: signer.address,
+            deadlineTimestamp: 1_000n,
+            balance: { amount: BigInt(100 * (i + 1)), data: "0x" }
+        }));
+        const consumerFacet = MathConsumerFacet__factory.connect(
+            consumerFacetAddress,
+            ethers.provider
+        );
+        expect(
+            await diamond.facetAddressForSelector(
+                diamond.interface.getFunction("openChannelGenesis").selector
+            )
+        ).to.equal(consumerFacetAddress);
+        expect(await diamond.openChannelGenesis(joins, "0x")).to.equal(
+            await consumerFacet.openChannelGenesis(joins, "0x")
         );
     });
 

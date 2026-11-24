@@ -203,7 +203,11 @@ export async function assertCustomRpcRuntimeFlow(
         // Open a channel with both participants, driven entirely from the
         // client side (connectToChannel forwards over the port; the host wires
         // up local discovery and the handshake).
-        const openChannel = createOpenChannelTestObject([
+        const channelManager = connectStateChannelManager(
+            scmDeployment.address,
+            deployerSigner
+        );
+        const openChannel = await createOpenChannelTestObject(channelManager, [
             peer0Address,
             peer1Address
         ]);
@@ -219,10 +223,6 @@ export async function assertCustomRpcRuntimeFlow(
         await peer0.hostRpc.network.joinSelectedKey(channelId).request();
         await peer1.hostRpc.network.joinSelectedKey(channelId).request();
 
-        const channelManager = connectStateChannelManager(
-            scmDeployment.address,
-            deployerSigner
-        );
         const openTx = await channelManager.open({
             encodedOpenChannel: Codec.encode(openChannel, Type.OpenChannel),
             signatures

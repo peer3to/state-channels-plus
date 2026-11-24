@@ -981,7 +981,7 @@ export default class EventSyncService {
                 await this.eventHandler.onChannelOpened(
                     args.channelId,
                     args.stateSnapshot,
-                    args.encodedState,
+                    args.openingData,
                     coordinate
                 );
                 break;

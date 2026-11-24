@@ -218,10 +218,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return channelBalances[channelId];
     }
 
-    function _isChannelOpen(bytes32 channelId) internal view virtual returns (bool, StateSnapshot memory) {
-        StateSnapshot memory snapshot = stateSnapshots[channelId];
-        bool isOpen = snapshot.snapshotData.participants.length > 0;
-        return (isOpen, snapshot);
+    function _isChannelOpen(bytes32 channelId) internal view virtual returns (bool) {
+        return stateSnapshots[channelId].snapshotData.participants.length > 0;
     }
 
     function _isForkDisputed(bytes32 channelId, bytes32 forkId) internal view virtual returns (bool) {

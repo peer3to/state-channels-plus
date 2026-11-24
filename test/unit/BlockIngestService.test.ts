@@ -640,12 +640,12 @@ describe("Unit: BlockIngestService", function () {
 
         it("runs with no reachable ancestor → persisted, the head never moves above the gap", async function () {
             const h = TestSession.getHarness();
-            await h.setup(3);
-            // held from before the channel opens -> peer 2 never stores inbound
-            // block 1, so a run starting at block 2 links to nothing it holds
-            const lagging = 2;
+            await h.lifecycle.start(2);
+            // a spectator synced past the open never saw its genesis join block,
+            // and its inbound events are held -> it never stores inbound block
+            // 1, so a run starting at block 2 links to nothing it holds
+            const lagging = (await h.join.addSpectatorWait()).index;
             const held = await h.rpcStub.holdInboundMessageEvents(lagging);
-            await h.lifecycle.openChannel();
             const forkId = h.activeForkId!;
             const synced = h.control(h.getPeer(0));
 

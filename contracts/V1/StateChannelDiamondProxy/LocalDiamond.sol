@@ -73,11 +73,12 @@ contract LocalDiamond is StateChannelManagerProxy {
     function onChannelOpened(
         bytes32 channelId,
         StateSnapshot calldata stateSnapshot,
-        bytes calldata, /* encodedState */
         uint256 blockNumber,
         uint256 logIndex
     ) external {
-        if (!_acceptEvent(channelId, CHANNEL_OPENED_FAMILY, bytes32(0), blockNumber, logIndex)) return;
+        if (!_acceptEvent(channelId, CHANNEL_OPENED_FAMILY, bytes32(0), blockNumber, logIndex)) {
+            return;
+        }
         console.log("onChannelOpened");
         // Store the genesis state snapshot
         stateSnapshots[channelId] = stateSnapshot;

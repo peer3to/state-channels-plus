@@ -23,6 +23,13 @@ describe("OpenChannelNegotiationService opening data", function () {
         expect(result.derivationCalls).to.deep.equal([]);
         expect(result.outcomeStatus).to.equal("opened");
         expect(result.channelOpen).to.equal(true);
+        // the proposer signs the hash its hook derives for the signed terms
+        expect(result.proposalGenesisStateHash).to.equal(
+            result.derivedGenesisStateHash
+        );
+        expect(result.chainGenesisStateHash).to.equal(
+            result.proposalGenesisStateHash
+        );
     });
 
     it("higher address accepts empty opening data by default and opens", async function () {
@@ -35,6 +42,9 @@ describe("OpenChannelNegotiationService opening data", function () {
         expect(result.derivationCalls).to.deep.equal([]);
         expect(result.outcomeStatus).to.equal("opened");
         expect(result.channelOpen).to.equal(true);
+        expect(result.chainGenesisStateHash).to.equal(
+            result.derivedGenesisStateHash
+        );
     });
 
     it("lower address derives opening data from the exact agreed terms", async function () {
@@ -51,6 +61,12 @@ describe("OpenChannelNegotiationService opening data", function () {
         expect(result.proposalData).to.equal(result.expectedData);
         expect(result.outcomeStatus).to.equal("opened");
         expect(result.channelOpen).to.equal(true);
+        expect(result.proposalGenesisStateHash).to.equal(
+            result.derivedGenesisStateHash
+        );
+        expect(result.chainGenesisStateHash).to.equal(
+            result.proposalGenesisStateHash
+        );
     });
 
     it("higher address derives opening data from the exact agreed terms", async function () {
@@ -66,6 +82,76 @@ describe("OpenChannelNegotiationService opening data", function () {
         ]);
         expect(result.outcomeStatus).to.equal("opened");
         expect(result.channelOpen).to.equal(true);
+        expect(result.chainGenesisStateHash).to.equal(
+            result.derivedGenesisStateHash
+        );
+    });
+
+    it("the lower address whose genesis hook rejects the agreed balances clears the attempt without blacklisting the peer or proposing", async function () {
+        const result = await fixture
+            .probe()
+            .probeGenesisFailure("lower")
+            .request();
+
+        expect(result).to.deep.equal({
+            error: "",
+            outcomeStatus: "retry",
+            attemptCleared: true,
+            channelIdCleared: true,
+            proposalFrames: 0,
+            channelOpen: false,
+            peerBlacklisted: false,
+            peerStrikes: 0,
+            peerTransportClosed: false
+        });
+    });
+
+    it("the higher address whose genesis hook rejects the agreed balances clears the attempt without blacklisting, co-signing or opening", async function () {
+        const result = await fixture
+            .probe()
+            .probeGenesisFailure("higher")
+            .request();
+
+        expect(result).to.deep.equal({
+            error: "Genesis unavailable",
+            outcomeStatus: "retry",
+            attemptCleared: true,
+            channelIdCleared: true,
+            proposalFrames: 0,
+            channelOpen: false,
+            peerBlacklisted: false,
+            peerStrikes: 0,
+            peerTransportClosed: false
+        });
+    });
+
+    it("blacklists and clears a proposal whose genesis hash differs from the locally computed genesis", async function () {
+        const result = await fixture
+            .probe()
+            .probeAlteredProposal("genesis-hash")
+            .request();
+
+        expect(result).to.deep.equal({
+            error: "Genesis state hash mismatch",
+            attemptCleared: true,
+            channelOpen: false,
+            peerBlacklisted: true
+        });
+    });
+
+    it("blacklists a proposal whose altered counterparty balance the genesis hook would reject", async function () {
+        const result = await fixture
+            .probe()
+            .probeAlteredProposal("overflowing-balance")
+            .request();
+
+        // the terms check runs before the hook: an altered term, not a local failure
+        expect(result).to.deep.equal({
+            error: "Proposal mismatch: balance 0 amount mismatch",
+            attemptCleared: true,
+            channelOpen: false,
+            peerBlacklisted: true
+        });
     });
 
     it("lower address derivation failure clears the attempt without a proposal or penalty", async function () {

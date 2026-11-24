@@ -5,6 +5,8 @@ import type {
     OpeningDataProbe,
     OpeningDataProbeService,
     OpeningDataSource,
+    ProposalAlteration,
+    ProposalAlterationProbe,
     StaleDerivationProbe,
     StaleSettlement
 } from "./OpeningDataProbeService";
@@ -27,6 +29,18 @@ export class OpeningDataProbeRpcMethods extends ANetworkRpcMethods<OpeningDataPr
         role: NegotiationRole
     ): Promise<DerivationFailureProbe> {
         return this.service.probeDerivationFailure(role);
+    }
+
+    public probeGenesisFailure(
+        role: NegotiationRole
+    ): Promise<DerivationFailureProbe> {
+        return this.service.probeGenesisFailure(role);
+    }
+
+    public probeAlteredProposal(
+        alteration: ProposalAlteration
+    ): Promise<ProposalAlterationProbe> {
+        return this.service.probeAlteredProposal(alteration);
     }
 
     public probeStaleDerivation(

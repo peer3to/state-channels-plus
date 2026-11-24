@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: shared facet routing spec and assertion helpers; the executable evidence is mapped from SelectorRouting.test.ts
 import { routedFacets } from "@/utils/routedFacets";
 import {
+    AConsumerFacet__factory,
     StateChannelManagerInterface,
     StateChannelManagerInterface__factory,
     StateChannelManagerProxy__factory
@@ -172,12 +173,21 @@ export function interfaceFunctions(): FunctionFragment[] {
     );
 }
 
-/** Every function callable on the deployed diamond: proxy-owned plus routed. */
+/** The consumer facet's genesis hook, reached through the fallback of last resort. */
+function consumerHookFunctions(): DiamondFunction[] {
+    return functionFragments(AConsumerFacet__factory.abi as InterfaceAbi)
+        .filter((fragment) => fragment.name === "openChannelGenesis")
+        .map((fragment) => ({ implementorName: "AConsumerFacet", fragment }));
+}
+
+/** Every function callable on the deployed diamond: proxy-owned, routed and the consumer hook. */
 export function diamondCallableFunctions(): Map<Selector, DiamondFunction> {
     return new Map(
-        [...proxyOwnedFunctions(), ...routedFacetFunctions()].map(
-            (callable) => [callable.fragment.selector, callable]
-        )
+        [
+            ...proxyOwnedFunctions(),
+            ...routedFacetFunctions(),
+            ...consumerHookFunctions()
+        ].map((callable) => [callable.fragment.selector, callable])
     );
 }
 

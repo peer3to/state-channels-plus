@@ -179,7 +179,8 @@ async function openChannelWithBlockZeroDispute(
     author: string;
 }> {
     const { firstSigner, secondSigner } = await getSigners(ethers);
-    const openChannel = createOpenChannelTestObject(
+    const openChannel = await createOpenChannelTestObject(
+        manager,
         [firstSigner.address, secondSigner.address],
         { channelId: "state-proof-verification-control" }
     );

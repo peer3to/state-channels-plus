@@ -396,7 +396,7 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
     }
 
     function isChannelOpen(bytes32 channelId) public view returns (bool, StateSnapshot memory) {
-        return _isChannelOpen(channelId);
+        return (_isChannelOpen(channelId), stateSnapshots[channelId]);
     }
 
     function isForkDisputed(bytes32 channelId, bytes32 forkId) public view returns (bool) {

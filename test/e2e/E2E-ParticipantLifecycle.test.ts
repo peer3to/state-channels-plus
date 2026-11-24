@@ -155,12 +155,16 @@ describe("E2E: Participant Lifecycle", function () {
             const primaryChannelId = String(h.channelId);
             const extraParticipants = h.peers.map((peer) => peer.address);
             const extraChannels = [
-                createOpenChannelTestObject(extraParticipants, {
-                    channelId: "participant-registry-extra-first"
-                }),
-                createOpenChannelTestObject(extraParticipants, {
-                    channelId: "participant-registry-extra-second"
-                })
+                await createOpenChannelTestObject(
+                    h.channelManager,
+                    extraParticipants,
+                    { channelId: "participant-registry-extra-first" }
+                ),
+                await createOpenChannelTestObject(
+                    h.channelManager,
+                    extraParticipants,
+                    { channelId: "participant-registry-extra-second" }
+                )
             ];
             for (const channel of extraChannels) {
                 const signed = await Promise.all(

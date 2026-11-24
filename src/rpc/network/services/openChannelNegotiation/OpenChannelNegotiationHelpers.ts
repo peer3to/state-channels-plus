@@ -1,6 +1,10 @@
 import type { LobbyMatch } from "@/rpc/network/services/lobbyMatching/LobbyMatchingTypes";
 import { getChecksumAddress } from "@/utils";
-import type { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import type { StateChannelManagerInterface } from "@typechain-types";
+import type {
+    JoinChannelStruct,
+    OpenChannelStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import { ethers, type BytesLike } from "ethers";
 
 export type Address = string;
@@ -122,9 +126,6 @@ export function getOpenChannelProposalMismatch(
             return `balance ${i} data mismatch`;
         }
     }
-    if (decoded.isAtomic !== true) {
-        return "isAtomic must be true";
-    }
     if (
         ethers.hexlify(decoded.data) !== ethers.hexlify(expected.data ?? "0x")
     ) {
@@ -139,4 +140,26 @@ export function getOpenChannelProposalMismatch(
         return "deadline out of range";
     }
     return null;
+}
+
+/** The joins `open` deposits for these terms, in participant order. */
+export function openChannelJoins(
+    terms: Omit<OpenChannelStruct, "genesisStateHash">
+): JoinChannelStruct[] {
+    return terms.participants.map((participant, i) => ({
+        channelId: terms.channelId,
+        participant,
+        deadlineTimestamp: terms.deadlineTimestamp,
+        balance: terms.balances[i]
+    }));
+}
+
+/** The hash of the genesis the consumer facet's hook derives from these terms. */
+export async function computeGenesisStateHash(
+    manager: StateChannelManagerInterface,
+    terms: Omit<OpenChannelStruct, "genesisStateHash">
+): Promise<string> {
+    return ethers.keccak256(
+        await manager.openChannelGenesis(openChannelJoins(terms), terms.data)
+    );
 }

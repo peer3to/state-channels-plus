@@ -165,10 +165,10 @@ describe("E2E: dispute validation / inboundHash", function () {
                 evidenceTime: 4
             }
         });
-        // held from before the channel opens -> the lagging peer never stores
-        // inbound block 1, so its inbound store head can never move
-        await h.rpcStub.holdInboundMessageEvents(laggingIndex);
         await h.lifecycle.openChannel();
+        // held once the genesis installed -> the lagging peer learns later
+        // inbound blocks only from the runs its ingested blocks carry
+        await h.rpcStub.holdInboundMessageEvents(laggingIndex);
         const forkId = h.activeForkId!;
         await h.transition.advanceState({
             count: 2,

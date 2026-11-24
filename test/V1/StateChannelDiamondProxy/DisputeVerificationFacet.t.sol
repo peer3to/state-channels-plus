@@ -1491,7 +1491,16 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         openChannel.participants = participants;
         openChannel.balances = new Balance[](participants.length);
         openChannel.deadlineTimestamp = block.timestamp + 1 days;
-        openChannel.isAtomic = true;
+        JoinChannel[] memory joins = new JoinChannel[](participants.length);
+        for (uint256 i = 0; i < participants.length; i++) {
+            joins[i] = JoinChannel({
+                channelId: CHANNEL_ID,
+                participant: participants[i],
+                deadlineTimestamp: openChannel.deadlineTimestamp,
+                balance: openChannel.balances[i]
+            });
+        }
+        openChannel.genesisStateHash = keccak256(genesisReference.openChannelGenesis(joins, ""));
         bytes memory encodedOpenChannel = abi.encode(openChannel);
         bytes[] memory signatures = new bytes[](participants.length);
         for (uint256 i = 0; i < participants.length; i++) {

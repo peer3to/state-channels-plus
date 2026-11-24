@@ -311,7 +311,7 @@ contract FraudProofFacetPrunedInboundTest is DiamondHarness {
             balance: Balance({amount: amount, data: ""})
         });
         vm.prank(address(diamond));
-        (messageBlock,,) = diamond.depositAssetsComposable(joins, true);
+        (messageBlock,) = diamond.depositAssetsComposable(joins);
     }
 
     function _fabricatedInbound(uint256 height, bytes32 previousBlockHash, uint256 timestamp, uint256 amount)

@@ -94,7 +94,7 @@ bytes32 channelId,
 address[] participants,
 ${BalanceEthersType}[] balances,
 uint deadlineTimestamp,
-bool isAtomic,
+bytes32 genesisStateHash,
 bytes data
 )`;
 

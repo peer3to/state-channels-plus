@@ -138,19 +138,23 @@ describe("EventSyncService", function () {
             // inbound block and no inbound tip
             const dropped = await h.rpcStub.dropInboundMessageLogs(lagging);
             await h.lifecycle.openChannel();
-            const inboundHead = await stageInboundHead(h, lagging);
             await dropped.waitUntilDropped();
+            // the genesis rebuild in ChannelOpened recovered the lost genesis
+            // join log into the empty store and set the tip to it
+            const genesisHead = (
+                await h.channelManager.getStateSnapshot(h.channelId)
+            ).snapshotData.latestInboundMessageBlockHash;
+            expect(await h.query.getLatestInboundMessageHash(lagging)).to.equal(
+                genesisHead
+            );
+            const inboundHead = await stageInboundHead(h, lagging);
             const laggingCtl = h.control(h.getPeer(lagging));
-            const tipBefore =
-                await h.query.getLatestInboundMessageHash(lagging);
 
             const probe = await laggingCtl.validation
                 .probeInboundRunRecovery(inboundHead)
                 .request();
             const tipAfter = await h.query.getLatestInboundMessageHash(lagging);
 
-            // premise - the store really was empty
-            expect(tipBefore).to.equal(null);
             expect(probe.threw).to.equal(null);
             expect(probe.heldAfter).to.equal(true);
             // recovered logs take the tip-moving store path
@@ -928,6 +932,15 @@ describe("EventSyncService", function () {
                     h.channelManager.filters.ChannelOpened(channelId)
                 )
             ).slice(-1);
+            // the non-participant observer installed the genesis it rebuilt
+            expect(
+                await h
+                    .control(h.getPeer(observer))
+                    .query.getLiveStateMachineStateHash()
+                    .request()
+            ).to.equal(
+                openedLog.args.stateSnapshot.snapshotData.stateMachineStateHash
+            );
 
             // premise - the opening completed a block after the hold's start
             expect(openedLog.blockNumber).to.be.greaterThan(startBlock);

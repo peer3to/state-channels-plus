@@ -5,6 +5,7 @@ import {
     setupBrowserPeer
 } from "./sdkSetup.js";
 import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import { computeGenesisStateHash } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import { channelIdToDiscoveryKey, Codec, SignatureUtils, Type } from "@/utils";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import { ethers, NonceManager } from "ethers";
@@ -82,7 +83,11 @@ globalThis.__transportE2E = {
         try {
             const participants = participantIndices.map(hardhatWallet);
             const latestBlock = await provider.getBlock("latest");
-            const openChannel = {
+            const manager = connectStateChannelManager(
+                scmAddress,
+                new NonceManager(hardhatWallet(0).connect(provider))
+            );
+            const terms = {
                 channelId,
                 participants: participants.map((wallet) => wallet.address),
                 balances: participants.map(() => ({
@@ -90,17 +95,16 @@ globalThis.__transportE2E = {
                     data: "0x1234"
                 })),
                 deadlineTimestamp: BigInt(latestBlock.timestamp + 120),
-                isAtomic: true,
                 data: "0x"
+            };
+            const openChannel = {
+                ...terms,
+                genesisStateHash: await computeGenesisStateHash(manager, terms)
             };
             const signatures = await Promise.all(
                 participants.map((wallet) =>
                     SignatureUtils.signOpenChannel(openChannel, wallet)
                 )
-            );
-            const manager = connectStateChannelManager(
-                scmAddress,
-                new NonceManager(hardhatWallet(0).connect(provider))
             );
             await (
                 await manager.open({

@@ -19,14 +19,10 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
 
     function postBlockCalldata(SignedBlock memory signedBlock, uint256 maxTimestamp) public virtual;
 
-    function depositAssetsComposable(JoinChannel[] memory joinChannels, bool isAtomic)
+    function depositAssetsComposable(JoinChannel[] memory joinChannels)
         public
         virtual
-        returns (
-            MessageBlock memory messageBlock,
-            Balance memory newTotalDeposits,
-            JoinChannel[] memory successfulJoins
-        );
+        returns (MessageBlock memory messageBlock, Balance memory newTotalDeposits);
 
     function withdrawAssetsComposable(ExitChannel memory exitChannel) public virtual returns (bool);
 
@@ -314,4 +310,12 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
         SnapshotData memory thresholdSnapshotData,
         MilestoneProof memory milestone
     ) public virtual returns (bool isFinal, bytes32 finalizedSnapshotHash);
+
+    // ********** reached through the fallback on the consumer facet **********
+
+    function openChannelGenesis(JoinChannel[] memory joinChannels, bytes memory optionalOpeningData)
+        external
+        pure
+        virtual
+        returns (bytes memory encodedGenesisState);
 }

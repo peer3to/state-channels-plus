@@ -155,7 +155,7 @@ contract StateSnapshotFacetOpenChannelRegistryTest is DiamondHarness {
             balance: Balance({amount: amount, data: ""})
         });
         vm.prank(address(diamond));
-        (messageBlock,,) = diamond.depositAssetsComposable(joins, true);
+        (messageBlock,) = diamond.depositAssetsComposable(joins);
     }
 
     function _assertRegistry(bytes32[] memory expected) internal view {

@@ -12,6 +12,7 @@ import LobbyMatchingService from "@/rpc/network/services/lobbyMatching/LobbyMatc
 import type { LobbyMatch } from "@/rpc/network/services/lobbyMatching/LobbyMatchingTypes";
 import {
     compareAddresses,
+    computeGenesisStateHash,
     deriveNegotiatedChannelId
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import OpenChannelNegotiationService from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
@@ -5498,9 +5499,19 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 compareAddresses(localAddress, collisionPeer) < 0
                     ? [localAddress, collisionPeer]
                     : [collisionPeer, localAddress];
-            const openChannel = {
-                ...createOpenChannelTestObject(participants),
+            const collisionTerms = {
+                ...(await createOpenChannelTestObject(
+                    this.p2pManager.stateManager.stateChannelManagerContract,
+                    participants
+                )),
                 channelId: collisionChannelId
+            };
+            const openChannel = {
+                ...collisionTerms,
+                genesisStateHash: await computeGenesisStateHash(
+                    this.p2pManager.stateManager.stateChannelManagerContract,
+                    collisionTerms
+                )
             };
             const localOpening = await SignatureUtils.signOpenChannel(
                 openChannel,
@@ -5678,7 +5689,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             this.encodeBalance(500)
         );
         const channelId = service.state.attempt!.channelId;
-        const proposal = {
+        const proposalTerms = {
             channelId,
             participants: [peerAddress, localAddress],
             balances: [
@@ -5686,8 +5697,14 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 { amount: 500, data: "0x" }
             ],
             deadlineTimestamp: Clock.getTimeInSeconds() + 60,
-            isAtomic: true,
             data: "0x"
+        };
+        const proposal = {
+            ...proposalTerms,
+            genesisStateHash: await computeGenesisStateHash(
+                this.p2pManager.stateManager.stateChannelManagerContract,
+                proposalTerms
+            )
         };
         const signed = await SignatureUtils.signOpenChannel(proposal, wallet);
         const manager =
@@ -5843,7 +5860,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             this.encodeBalance(500)
         );
         const openChannelId = openService.state.attempt!.channelId;
-        const openProposal = {
+        const openProposalTerms = {
             channelId: openChannelId,
             participants: [openPeer, localAddress],
             balances: [
@@ -5851,8 +5868,14 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 { amount: 500, data: "0x" }
             ],
             deadlineTimestamp: Clock.getTimeInSeconds() + 60,
-            isAtomic: true,
             data: "0x"
+        };
+        const openProposal = {
+            ...openProposalTerms,
+            genesisStateHash: await computeGenesisStateHash(
+                this.p2pManager.stateManager.stateChannelManagerContract,
+                openProposalTerms
+            )
         };
         const signedOpenProposal = await SignatureUtils.signOpenChannel(
             openProposal,
@@ -5957,7 +5980,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 match.advertiserChallenge,
                 this.encodeBalance(500, "0x5678")
             );
-            const proposal = {
+            const proposalTerms = {
                 channelId,
                 participants: [peerAddress, localAddress],
                 balances: [
@@ -5965,8 +5988,14 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                     { amount: 500n, data: "0x1234" }
                 ],
                 deadlineTimestamp: Clock.getTimeInSeconds() + 60,
-                isAtomic: true,
                 data: "0x"
+            };
+            const proposal = {
+                ...proposalTerms,
+                genesisStateHash: await computeGenesisStateHash(
+                    this.p2pManager.stateManager.stateChannelManagerContract,
+                    proposalTerms
+                )
             };
             const signed = await SignatureUtils.signOpenChannel(
                 proposal,
@@ -6145,7 +6174,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             ordinaryMatch.advertiserChallenge,
             this.encodeBalance(500, "0x5678")
         );
-        const ordinaryProposal = {
+        const ordinaryProposalTerms = {
             channelId: ordinaryService.state.attempt!.channelId,
             participants: [ordinaryPeer, localAddress],
             balances: [
@@ -6153,8 +6182,14 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 { amount: 500n, data: "0x" }
             ],
             deadlineTimestamp: Clock.getTimeInSeconds() + 60,
-            isAtomic: true,
             data: "0x"
+        };
+        const ordinaryProposal = {
+            ...ordinaryProposalTerms,
+            genesisStateHash: await computeGenesisStateHash(
+                this.p2pManager.stateManager.stateChannelManagerContract,
+                ordinaryProposalTerms
+            )
         };
         const ordinarySigned = await SignatureUtils.signOpenChannel(
             ordinaryProposal,

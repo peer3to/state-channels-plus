@@ -12,6 +12,7 @@ import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type { LobbyMatch } from "@/rpc/network/services/lobbyMatching/LobbyMatchingTypes";
 import {
     compareAddresses,
+    computeGenesisStateHash,
     deriveNegotiatedChannelId,
     type Address
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
@@ -65,8 +66,24 @@ export type OpeningDataProbe = {
     expectedTerms: OpeningTermsProjection;
     expectedData: string;
     proposalData: string;
+    /** The hash the signed proposal carries. */
+    proposalGenesisStateHash: string;
+    /** The hash the genesis hook derives for the signed terms. */
+    derivedGenesisStateHash: string;
+    /** The genesis hash the chain recorded for the opened channel. */
+    chainGenesisStateHash: string;
     outcomeStatus: string;
     channelOpen: boolean;
+};
+
+/** A proposal that alters what the higher address agreed. */
+export type ProposalAlteration = "genesis-hash" | "overflowing-balance";
+
+export type ProposalAlterationProbe = {
+    error: string;
+    attemptCleared: boolean;
+    channelOpen: boolean;
+    peerBlacklisted: boolean;
 };
 
 export type DerivationFailureProbe = {
@@ -161,23 +178,40 @@ export class OpeningDataProbeService extends ANetworkRpcService<
         const expectedTerms = this.expectedTerms(staged);
         const expectedData =
             source === "default" ? "0x" : deriveOpeningData(expectedTerms);
-        let proposalData: string;
+        let encodedProposal: string;
         if (role === "lower") {
             await this.answerTerms(staged);
-            proposalData = await this.completeLowerOpening(staged);
+            encodedProposal = await this.completeLowerOpening(staged);
         } else {
             await this.acceptTerms(service, staged);
-            await this.acceptProposal(service, staged, expectedData);
-            proposalData = expectedData;
+            encodedProposal = (
+                await this.acceptProposal(service, staged, expectedData)
+            ).encodedOpenChannel;
         }
+        const proposal = Codec.decode(
+            encodedProposal,
+            Type.OpenChannel
+        ) as OpenChannelStruct;
         const outcome = await staged.outcome;
+        const snapshot =
+            await this.sm.stateChannelManagerContract.getStateSnapshot(
+                staged.channelId
+            );
         return {
             derivationCalls: this.rootService.derivationCalls.map((terms) =>
                 this.projectTerms(terms)
             ),
             expectedTerms: this.projectTerms(expectedTerms),
             expectedData,
-            proposalData,
+            proposalData: ethers.hexlify(proposal.data),
+            proposalGenesisStateHash: ethers.hexlify(proposal.genesisStateHash),
+            derivedGenesisStateHash: await computeGenesisStateHash(
+                this.sm.stateChannelManagerContract,
+                proposal
+            ),
+            chainGenesisStateHash: String(
+                snapshot.snapshotData.stateMachineStateHash
+            ),
             outcomeStatus: outcome.status,
             channelOpen: await this.isChannelOpen(staged.channelId)
         };
@@ -219,6 +253,73 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             peerBlacklisted: staged.profile.isBlackListed,
             peerStrikes: this.strikesOf(staged.profile),
             peerTransportClosed: staged.transport.isClosed
+        };
+    }
+
+    /**
+     * The agreed counterparty balance makes the genesis hook revert: a local
+     * failure that ends the attempt without blaming the peer.
+     */
+    public async probeGenesisFailure(
+        role: NegotiationRole
+    ): Promise<DerivationFailureProbe> {
+        await this.resetLifecycle();
+        const service = new OpenChannelNegotiationService(this.p2pManager);
+        const staged = await this.stageAttempt(service, role, {
+            amount: ethers.MaxUint256,
+            data: "0x5678"
+        });
+        let error = "";
+        if (role === "lower") {
+            await this.answerTerms(staged);
+        } else {
+            await this.acceptTerms(service, staged);
+            try {
+                await this.acceptProposal(
+                    service,
+                    staged,
+                    "0x",
+                    "genesis-hash"
+                );
+            } catch (caught) {
+                error = errorMessage(caught);
+            }
+        }
+        const outcome = await staged.outcome;
+        return {
+            error,
+            outcomeStatus: outcome.status,
+            attemptCleared: !service.state.attempt,
+            channelIdCleared: String(this.sm.channelId) === ethers.ZeroHash,
+            proposalFrames: this.framesOf(staged.transport, "openProposal")
+                .length,
+            channelOpen: await this.isChannelOpen(staged.channelId),
+            peerBlacklisted: staged.profile.isBlackListed,
+            peerStrikes: this.strikesOf(staged.profile),
+            peerTransportClosed: staged.transport.isClosed
+        };
+    }
+
+    /** The higher address receives a proposal that alters an agreed field. */
+    public async probeAlteredProposal(
+        alteration: ProposalAlteration
+    ): Promise<ProposalAlterationProbe> {
+        await this.resetLifecycle();
+        const service = new OpenChannelNegotiationService(this.p2pManager);
+        const staged = await this.stageAttempt(service, "higher");
+        await this.acceptTerms(service, staged);
+        let error = "";
+        try {
+            await this.acceptProposal(service, staged, "0x", alteration);
+        } catch (caught) {
+            error = errorMessage(caught);
+        }
+        await staged.outcome;
+        return {
+            error,
+            attemptCleared: !service.state.attempt,
+            channelOpen: await this.isChannelOpen(staged.channelId),
+            peerBlacklisted: staged.profile.isBlackListed
         };
     }
 
@@ -350,7 +451,8 @@ export class OpeningDataProbeService extends ANetworkRpcService<
      */
     private async stageAttempt(
         service: OpenChannelNegotiationService,
-        role: NegotiationRole
+        role: NegotiationRole,
+        peerBalance: BalanceStruct = { amount: 700n, data: "0x5678" }
     ): Promise<StagedAttempt> {
         const local = this.localAddress;
         let wallet = ethers.Wallet.createRandom();
@@ -372,7 +474,6 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             advertiserChallenge: ethers.hexlify(ethers.randomBytes(32))
         };
         const localBalance: BalanceStruct = { amount: 321n, data: "0x1234" };
-        const peerBalance: BalanceStruct = { amount: 700n, data: "0x5678" };
         const outcome = service.initMatchedNegotiation(match, {
             balance: localBalance
         });
@@ -438,7 +539,7 @@ export class OpeningDataProbeService extends ANetworkRpcService<
     /**
      * Plays the higher peer against a lower-address local runtime: checks
      * the local signature, co-signs, submits the opening, and answers.
-     * Returns the proposal's opening data.
+     * Returns the encoded proposal.
      */
     private async completeLowerOpening(staged: StagedAttempt): Promise<string> {
         const request = await this.waitForFrame(
@@ -474,7 +575,7 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             )
         ).wait();
         await this.answer(staged.transport, request, { status: "submitted" });
-        return ethers.hexlify(proposal.data);
+        return encodedOpenChannel;
     }
 
     private async acceptTerms(
@@ -490,30 +591,54 @@ export class OpeningDataProbeService extends ANetworkRpcService<
         );
     }
 
-    /** The lower-address peer proposes the opening with `data`. */
+    /**
+     * The lower-address peer proposes the opening with `data`; `alteration`
+     * changes one signed field from what the higher address agreed.
+     */
     private async acceptProposal(
         service: OpenChannelNegotiationService,
         staged: StagedAttempt,
-        data: string
-    ): Promise<{ status: "submitted" }> {
-        const terms = this.expectedTerms(staged);
+        data: string,
+        alteration?: ProposalAlteration
+    ): Promise<{ status: "submitted"; encodedOpenChannel: string }> {
+        const expected = this.expectedTerms(staged);
+        const terms = {
+            ...expected,
+            balances:
+                alteration === "overflowing-balance"
+                    ? [
+                          {
+                              ...expected.balances[0],
+                              amount: ethers.MaxUint256
+                          },
+                          expected.balances[1]
+                      ]
+                    : expected.balances,
+            deadlineTimestamp: Clock.getTimeInSeconds() + 60,
+            data
+        };
+        // the hook reverts on an overflowing balance, so an altered proposal signs any hash
+        const genesisStateHash =
+            alteration === undefined
+                ? await computeGenesisStateHash(
+                      this.sm.stateChannelManagerContract,
+                      terms
+                  )
+                : ethers.id("a genesis the higher address never derived");
         const signed = await SignatureUtils.signOpenChannel(
-            {
-                ...terms,
-                deadlineTimestamp: Clock.getTimeInSeconds() + 60,
-                isAtomic: true,
-                data
-            },
+            { ...terms, genesisStateHash },
             staged.wallet
         );
-        return service.acceptOpenProposal(
+        const encodedOpenChannel = signed.encoded.toString();
+        const result = await service.acceptOpenProposal(
             staged.transport,
             staged.match.attemptNonce,
             staged.match.selectorChallenge,
             staged.match.advertiserChallenge,
-            signed.encoded.toString(),
+            encodedOpenChannel,
             signed.signature.toString()
         );
+        return { ...result, encodedOpenChannel };
     }
 
     private framesOf(transport: ProbePeerTransport, method: string): Rpc[] {

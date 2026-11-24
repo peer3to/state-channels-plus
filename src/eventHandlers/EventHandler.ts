@@ -28,7 +28,7 @@ import {
     DisputeAuditingDataStruct,
     DisputeConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { TransactionResponse } from "ethers";
+import { isError, keccak256, TransactionResponse, ZeroHash } from "ethers";
 
 export type EventCoordinate = {
     blockNumber: number;
@@ -65,7 +65,7 @@ export class EventHandler {
     async onChannelOpened(
         channelId: ChannelId,
         stateSnapshot: StateSnapshotStruct,
-        encodedState: Bytes,
+        openingData: Bytes,
         coordinate: EventCoordinate
     ): Promise<void> {
         this.logger.debug("Channel opened", {
@@ -76,10 +76,54 @@ export class EventHandler {
         await this.diamondStateMachine.localDiamondContract.onChannelOpened(
             channelId,
             stateSnapshot,
-            encodedState,
             coordinate.blockNumber,
             coordinate.logIndex
         );
+
+        // the chain holds only the signed genesis hash -> rebuild the genesis
+        // from the genesis JOIN block and the opening data
+        const snapshotData = stateSnapshot.snapshotData;
+        const genesisRun =
+            await this.stateManager.eventSyncService.loadSynchronizedInboundRun(
+                snapshotData.latestInboundMessageBlockHash as Hash,
+                ZeroHash,
+                Number(stateSnapshot.timestamp),
+                channelId
+            );
+        if (!genesisRun) throw new Error("genesis join block unavailable");
+        const joins = genesisRun.flatMap((block) =>
+            block.messages.map((message) =>
+                Codec.decode(message.data, Type.JoinChannel)
+            )
+        );
+        let encodedState: Bytes | undefined;
+        try {
+            encodedState =
+                await this.stateManager.stateChannelManagerContract.openChannelGenesis(
+                    joins,
+                    openingData
+                );
+        } catch (error) {
+            // a reverting hook: no genesis derives from the signed terms
+            if (!isError(error, "CALL_EXCEPTION")) throw error;
+        }
+        if (
+            !encodedState ||
+            keccak256(encodedState) !== snapshotData.stateMachineStateHash
+        ) {
+            const reason = encodedState ? "hash mismatch" : "hook reverted";
+            this.logger.error(
+                "Opened genesis does not match the signed hash; aborting",
+                {
+                    channelId,
+                    forkId: stateSnapshot.forkId,
+                    reason,
+                    signedHash: snapshotData.stateMachineStateHash
+                }
+            );
+            this.stateManager.abort();
+            throw new Error(`Opened genesis rejected: ${reason}`);
+        }
 
         await this.stateManager.withMutex(
             () =>

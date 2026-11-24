@@ -3,6 +3,7 @@ import {
     OPEN_CHANNEL_DEADLINE_SECONDS,
     OPEN_CHANNEL_MIN_REMAINING_SECONDS,
     compareAddresses,
+    computeGenesisStateHash,
     deriveNegotiatedChannelId,
     getOpenChannelProposalMismatch,
     type Address
@@ -170,7 +171,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
 
     /**
      * Application opening data placed in `OpenChannel.data` and handed to the
-     * consumer facet's genesis hook on-chain. The default root opens with no
+     * consumer facet's genesis hook by every participant and observer. The default root opens with no
      * data. A custom root overrides this to supply its genesis; the result
      * MUST be a pure function of the agreed channel, participants, and
      * balances, because the lower address builds the proposal with it and the
@@ -431,6 +432,34 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             this.protocolFailure(attempt, `proposal mismatch: ${mismatch}`);
             throw new Error(`Proposal mismatch: ${mismatch}`);
         }
+        let genesisStateHash: string;
+        try {
+            genesisStateHash = await computeGenesisStateHash(
+                this.p2pManager.stateManager.stateChannelManagerContract,
+                {
+                    channelId: attempt.channelId,
+                    participants,
+                    balances,
+                    deadlineTimestamp: decoded.deadlineTimestamp,
+                    data: expectedData
+                }
+            );
+        } catch (error) {
+            // the hook rejects terms both peers fed, so no one is penalized
+            await this.clearAttempt(
+                attempt,
+                `genesis unavailable: ${errorMessage(error)}`,
+                this.failureOutcome(attempt)
+            );
+            throw new Error("Genesis unavailable");
+        }
+        if (this.state.attempt !== attempt) {
+            return { status: "submitted" };
+        }
+        if (ethers.hexlify(decoded.genesisStateHash) !== genesisStateHash) {
+            this.protocolFailure(attempt, "genesis state hash mismatch");
+            throw new Error("Genesis state hash mismatch");
+        }
 
         const { signature } = await SignatureUtils.signOpenChannel(
             decoded,
@@ -566,13 +595,32 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             if (this.state.attempt !== attempt) return;
             const deadlineTimestamp =
                 Clock.getTimeInSeconds() + OPEN_CHANNEL_DEADLINE_SECONDS;
-            const openChannel: OpenChannelStruct = {
+            const openingTerms = {
                 channelId: attempt.channelId,
                 participants,
                 balances,
                 deadlineTimestamp,
-                isAtomic: true,
                 data
+            };
+            let genesisStateHash: string;
+            try {
+                genesisStateHash = await computeGenesisStateHash(
+                    this.p2pManager.stateManager.stateChannelManagerContract,
+                    openingTerms
+                );
+            } catch (error) {
+                // the hook rejects terms both peers fed, so no one is penalized
+                await this.clearAttempt(
+                    attempt,
+                    `genesis unavailable: ${errorMessage(error)}`,
+                    this.failureOutcome(attempt)
+                );
+                return;
+            }
+            if (this.state.attempt !== attempt) return;
+            const openChannel: OpenChannelStruct = {
+                ...openingTerms,
+                genesisStateHash
             };
             const { encoded, signature } = await SignatureUtils.signOpenChannel(
                 openChannel,

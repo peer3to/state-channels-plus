@@ -10,29 +10,28 @@ import "../../types/DataTypes.sol";
  * @dev Concrete implementation of ConsumerFacet for the Math state machine example
  */
 contract MathConsumerFacet is AConsumerFacet {
-    function openChannelGenesis(JoinChannel[] memory successfulJoinChannels, bytes memory)
+    function openChannelGenesis(JoinChannel[] memory joinChannels, bytes memory)
         external
         pure
         override
-        returns (bytes memory encodedGenesisState, address[] memory participants)
+        returns (bytes memory encodedGenesisState)
     {
         // AStateMachine genesis state
         MathState memory genesisState;
-        genesisState.participants = new address[](successfulJoinChannels.length);
-        genesisState.balances = new uint256[](successfulJoinChannels.length);
+        genesisState.participants = new address[](joinChannels.length);
+        genesisState.balances = new uint256[](joinChannels.length);
 
         // Initialize state.number to sum of all balances to satisfy balance invariant:
         // totalDeposits == totalWithdrawals + getTotalStateBalance()
         uint256 totalBalance = 0;
-        for (uint256 i = 0; i < successfulJoinChannels.length; i++) {
-            genesisState.participants[i] = successfulJoinChannels[i].participant;
-            genesisState.balances[i] = successfulJoinChannels[i].balance.amount;
-            totalBalance += successfulJoinChannels[i].balance.amount;
+        for (uint256 i = 0; i < joinChannels.length; i++) {
+            genesisState.participants[i] = joinChannels[i].participant;
+            genesisState.balances[i] = joinChannels[i].balance.amount;
+            totalBalance += joinChannels[i].balance.amount;
         }
         genesisState.number = totalBalance;
 
-        bytes memory genesisStateEncoded = abi.encode(genesisState);
-        return (genesisStateEncoded, genesisState.participants);
+        return abi.encode(genesisState);
     }
 
     function deposit(JoinChannel memory) external pure override returns (bool) {

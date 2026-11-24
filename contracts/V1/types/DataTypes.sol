@@ -72,7 +72,7 @@ struct OpenChannel {
     address[] participants;
     Balance[] balances; // parallel array to participants
     uint256 deadlineTimestamp;
-    bool isAtomic; // (all or nothing) or allow deposits to fail and only open with successful deposits
+    bytes32 genesisStateHash; // keccak256 of the genesis state every participant derived
     bytes data; // custom data
 }
 
