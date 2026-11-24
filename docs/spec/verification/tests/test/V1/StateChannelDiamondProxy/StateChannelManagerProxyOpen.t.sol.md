@@ -56,7 +56,12 @@ both already used and expired; the oracle is the full revert payload
 `RaceConditionChannelAlreadyOpen(channelId)`, so the already-open check must run before the
 deadline check.
 
-The duplicate-participant, participant-count, deposit-failure, genesis-commitment and deadline gates are exercised here. The other `open()`
+Two deployment cases build valid unanimous terms for this diamond, then submit them to a second
+diamond deployed in the same test, or to this one after `vm.chainId` moves the chain ID by one. The
+oracle is the full revert payload `ErrorOpenChannelWrongDeployment` carrying the signed chain ID and
+manager address.
+
+The duplicate-participant, participant-count, deposit-failure, genesis-commitment, deployment and deadline gates are exercised here. The other `open()`
 gates — zero channel id, threshold shortfall, deposit composition — are covered by the Hardhat suite
 [OpenChannel.test.ts](../DiamondProxy/StateChannelManager/OpenChannel.test.ts.md). The
 `DEF-1-92NTAG` short-balances and zero-address reverts are planned but not yet tested.
@@ -76,3 +81,5 @@ gates — zero channel id, threshold shortfall, deposit composition — are cove
 - `test_open_atDeadline_opensChannel`: REQ-ENFADM-4-2NN96F.T1.P2, UNIT-TEST-MANAGER-PROXY-1-NTYR71.P18
 - `test_open_afterDeadline_revertsWithOpenChannelExpired`: REQ-ENFADM-4-2NN96F.T1.P3, UNIT-TEST-MANAGER-PROXY-1-NTYR71.P19
 - `test_open_alreadyOpenAfterDeadline_revertsWithChannelAlreadyOpen`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P20
+- `test_open_termsSignedForAnotherManager_revertsWithWrongDeployment`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P30, REQ-LIF-11-KEEN0N.T1.P8
+- `test_open_termsSignedForAnotherChain_revertsWithWrongDeployment`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P31, REQ-LIF-11-KEEN0N.T1.P9

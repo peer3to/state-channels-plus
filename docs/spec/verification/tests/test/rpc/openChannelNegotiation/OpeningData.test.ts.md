@@ -34,7 +34,14 @@ same whole result as the derivation failures ("Genesis unavailable" for the high
 altered-proposal tests send the higher role a proposal with a hash it never derived, or with the
 counterparty balance changed to `MaxUint256`: both are refused, the proposer blacklisted and the attempt
 cleared with no open; the balance case fails as a balance mismatch, so the term check runs before the
-hook.
+hook. A third sends a proposal naming a random manager address: it is refused as
+"Proposal mismatch: deployment" with the same blacklist, cleared attempt and no open.
+
+The countersign-failure test plays the higher peer against a lower-address runtime: the lower derives
+the hash through the real Math hook, signs and sends the proposal, and the probe answers it with the
+error "Genesis unavailable". The probe captures the opening-deadline task the lower scheduled and runs
+it: the proposal's hash equals the hook's, the peer has no strike before the deadline and one after it,
+is not blacklisted, the attempt ends `retry` and cleared, and the channel never opens.
 
 Four more late-settlement tests hold the old attempt's genesis hook call instead of its opening data
 (the probe holds the manager's read-only call) and resolve or reject it after the replacement started,
@@ -58,6 +65,8 @@ specification permutation names the stale-attempt rule; it is covered only at th
 - `higher address derives opening data from the exact agreed terms`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P4, INV-NEG-1-6FW90P.T1.P10
 - `the lower address whose genesis hook rejects the agreed balances clears the attempt without blacklisting the peer or proposing`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P16, INV-NEG-1-6FW90P.T1.P14
 - `the higher address whose genesis hook rejects the agreed balances clears the attempt without blacklisting, co-signing or opening`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P17, INV-NEG-1-6FW90P.T1.P15
+- `the lower address whose signed proposal the higher cannot countersign for its own genesis failure counts one close at the deadline without blacklisting`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P25, REQ-NEG-4-ZQ0985.T1.P20
+- `blacklists and clears a proposal bound to another manager deployment`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P24, INV-NEG-1-6FW90P.T1.P17
 - `blacklists and clears a proposal whose genesis hash differs from the locally computed genesis`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P14, INV-NEG-1-6FW90P.T1.P12
 - `blacklists a proposal whose altered counterparty balance the genesis hook would reject`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P15, INV-NEG-1-6FW90P.T1.P13
 - `an ordinary attempt whose channel ID the peer opens with another participant set and a hash no genesis derives from retries and blacklists the peer without aborting`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P20, REQ-NEG-2-ED48TZ.T1.P8
