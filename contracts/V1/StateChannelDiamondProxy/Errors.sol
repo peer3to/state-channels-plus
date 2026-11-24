@@ -111,6 +111,7 @@ error ErrorDisputeInboundMessageBlocksInvalid(
     uint8 failureReason
 );
 error ErrorInvalidLatestState(bytes32 expectedStateMachineStateHash, bytes32 actualStateMachineStateHash);
+error ErrorOpenChannelWrongDeployment(uint256 chainId, address manager);
 
 //Race conditions
 error RaceConditionChannelAlreadyOpen(bytes32 channelId);

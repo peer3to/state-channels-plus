@@ -12,7 +12,7 @@ import Clock from "@/Clock";
 import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import { setupP2pRuntime } from "@/evm/p2pRuntime/setupP2pRuntime";
 import { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot";
-import { computeGenesisStateHash } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import { buildOpenChannel } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import { Codec, SignatureUtils, Type } from "@/utils";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import executorWorkerUrl from "@platform/contractExecutorRootUrl";
@@ -91,10 +91,7 @@ export async function deployStack(providerUrl, openExistingChannel) {
             deadlineTimestamp: BigInt(latestBlock.timestamp + 120),
             data: "0x"
         };
-        const openChannel = {
-            ...terms,
-            genesisStateHash: await computeGenesisStateHash(manager, terms)
-        };
+        const openChannel = await buildOpenChannel(manager, terms);
         const signatures = await Promise.all(
             [deployerWallet, genesisPeerWallet].map((wallet) =>
                 SignatureUtils.signOpenChannel(openChannel, wallet)

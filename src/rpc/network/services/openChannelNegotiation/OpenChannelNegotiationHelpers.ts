@@ -145,7 +145,10 @@ export function getOpenChannelProposalMismatch(
 
 /** The joins `open` deposits for these terms, in participant order. */
 export function openChannelJoins(
-    terms: Omit<OpenChannelStruct, "genesisStateHash">
+    terms: Pick<
+        OpenChannelStruct,
+        "channelId" | "participants" | "balances" | "deadlineTimestamp"
+    >
 ): JoinChannelStruct[] {
     return terms.participants.map((participant, i) => ({
         channelId: terms.channelId,
@@ -178,16 +181,26 @@ export async function deriveGenesisState(
     }
 }
 
-/** The hash of the genesis the consumer facet's hook derives from these terms. */
-export async function computeGenesisStateHash(
+/**
+ * The signed opening for these terms: bound to the manager's chain and
+ * deployment, with the hash of the genesis the consumer facet's hook derives.
+ */
+export async function buildOpenChannel(
     manager: StateChannelManagerInterface,
-    terms: Omit<OpenChannelStruct, "genesisStateHash">
-): Promise<string> {
-    const encodedState = await deriveGenesisState(
-        manager,
-        openChannelJoins(terms),
-        terms.data
-    );
+    terms: Omit<OpenChannelStruct, "genesisStateHash" | "chainId" | "manager">
+): Promise<OpenChannelStruct> {
+    const provider = manager.runner?.provider;
+    if (!provider) throw new Error("manager has no provider");
+    const [network, managerAddress, encodedState] = await Promise.all([
+        provider.getNetwork(),
+        manager.getAddress(),
+        deriveGenesisState(manager, openChannelJoins(terms), terms.data)
+    ]);
     if (encodedState === undefined) throw new Error("genesis hook reverted");
-    return ethers.keccak256(encodedState);
+    return {
+        ...terms,
+        genesisStateHash: ethers.keccak256(encodedState),
+        chainId: network.chainId,
+        manager: getChecksumAddress(managerAddress)
+    };
 }

@@ -1,3 +1,5 @@
+import { isRootDisposedError } from "@/rpc/internal/RemoteRoot";
+import { rejectionOf } from "@test/fixtures/ProvenSubmissionFailureStaging";
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
@@ -117,7 +119,7 @@ describe("Unit: EventHandler.onChannelOpened genesis rebuild", function () {
         await ctl.stub.restoreChainLogQueries().request();
     });
 
-    it("fails the open without aborting when the genesis join block stays unavailable", async function () {
+    it("fails the event without aborting a runtime outside the opened set whose genesis join block stays unavailable", async function () {
         const h = TestSession.getHarness();
         const lagging = 2;
         await h.setup(3, {
@@ -128,7 +130,7 @@ describe("Unit: EventHandler.onChannelOpened genesis rebuild", function () {
         // dispatch nor a recovery query stores it
         const held = await h.rpcStub.holdInboundMessageEvents(lagging);
 
-        await h.lifecycle.openChannelForParticipants([0, 1, 2], {
+        await h.lifecycle.openChannelForParticipants([0, 1], {
             observePeerIndices: [0, 1]
         });
         await TestSession.settleDetached({
@@ -151,18 +153,18 @@ describe("Unit: EventHandler.onChannelOpened genesis rebuild", function () {
         await held.release({ replay: false });
     });
 
-    it("fails the open without aborting a listed participant whose genesis hook read fails without revert data", async function () {
+    it("aborts a listed participant whose genesis hook read fails without revert data while the others install", async function () {
         const h = TestSession.getHarness();
         const failing = 2;
         await h.setup(3, {
             autoConnect: false,
             channelId: "channel-opened-rebuild-read-failure"
         });
-        const ctl = h.control(h.getPeer(failing));
         // only the hook read fails, as a node's error answer: a call
         // exception without revert data
-        await ctl.stub
-            .stubFailManagerRead(
+        await h
+            .control(h.getPeer(failing))
+            .stub.stubFailManagerRead(
                 "openChannelGenesis",
                 "genesis read node error",
                 "nodeError"
@@ -172,6 +174,14 @@ describe("Unit: EventHandler.onChannelOpened genesis rebuild", function () {
         await h.lifecycle.openChannelForParticipants([0, 1, failing], {
             observePeerIndices: [0, 1]
         });
+        await waitFor(
+            () => h.event.getEventCallCount(failing, "onAbort") === 1,
+            h.event.protocolEventTimeoutMs()
+        );
+        await waitFor(
+            () => runtimeIsClosed(h.getPeer(failing).p2pInstance),
+            h.event.protocolEventTimeoutMs() * 2
+        );
         await TestSession.settleDetached({
             expectedErrorIncludes: "genesis read node error"
         });
@@ -183,16 +193,43 @@ describe("Unit: EventHandler.onChannelOpened genesis rebuild", function () {
                 `peer ${index} installed the genesis`
             ).to.equal(snapshot.forkId);
         }
-        expect(h.event.getEventCallCount(failing, "onAbort")).to.equal(0);
-        expect(runtimeIsClosed(h.getPeer(failing).p2pInstance)).to.equal(false);
         expect(h.event.getEventCallCount(failing, "onChannelOpened")).to.equal(
             0
         );
         expect(h.event.getEventCallCount(failing, "onSetState")).to.equal(0);
-        await ctl.stub.restoreManagerRead().request();
     });
 
-    it("fails the open without aborting a listed participant whose genesis hook read fails in transport", async function () {
+    it("aborts a listed participant that cannot rebuild its genesis and rejects its pending lobby join with the runtime-disposed error", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const failing = 1;
+        // the handler swallows the genesis join log -> the rebuild finds no genesis block
+        await h.rpcStub.holdInboundMessageEvents(failing);
+        const topic = ethers.id("channel-opened-rebuild-pending-join");
+        const joins = h.peers.map((peer) =>
+            peer.p2pInstance.p2pSigner.joinLobby(topic)
+        );
+        const failure = rejectionOf(joins[failing]);
+
+        // the peer's join resolves with the channel it opened
+        const opened = await joins[1 - failing];
+        const [isOpen] = await h.channelManager.isChannelOpen(
+            opened!.channelId
+        );
+        expect(isOpen).to.equal(true);
+        expect(isRootDisposedError(await failure)).to.equal(true);
+        expect(h.event.getEventCallCount(failing, "onAbort")).to.equal(1);
+        expect(h.event.getEventCallCount(failing, "onChannelOpened")).to.equal(
+            0
+        );
+        expect(h.event.getEventCallCount(failing, "onSetState")).to.equal(0);
+        await TestSession.settleDetached({
+            expectedErrorIncludes:
+                "Opened genesis rejected: genesis unavailable: genesis join block unavailable"
+        });
+    });
+
+    it("fails the event without aborting a runtime outside the opened set whose genesis hook read fails in transport", async function () {
         const h = TestSession.getHarness();
         const failing = 2;
         await h.setup(3, {
@@ -209,7 +246,7 @@ describe("Unit: EventHandler.onChannelOpened genesis rebuild", function () {
             )
             .request();
 
-        await h.lifecycle.openChannelForParticipants([0, 1, failing], {
+        await h.lifecycle.openChannelForParticipants([0, 1], {
             observePeerIndices: [0, 1]
         });
         await TestSession.settleDetached({

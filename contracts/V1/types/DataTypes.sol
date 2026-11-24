@@ -73,6 +73,8 @@ struct OpenChannel {
     Balance[] balances; // parallel array to participants
     uint256 deadlineTimestamp;
     bytes32 genesisStateHash; // keccak256 of the genesis state every participant derived
+    uint256 chainId; // binds the signed terms to one chain
+    address manager; // binds the signed terms to one manager deployment
     bytes data; // custom data
 }
 

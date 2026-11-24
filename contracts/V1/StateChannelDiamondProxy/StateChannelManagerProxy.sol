@@ -195,6 +195,11 @@ contract StateChannelManagerProxy is StateChannelCommon {
     function open(OpenChannelConfirmation calldata openChannelConfirmation) public virtual {
         OpenChannel memory openChannelData = abi.decode(openChannelConfirmation.encodedOpenChannel, (OpenChannel));
         require(openChannelData.channelId != bytes32(0), ErrorInvalidJoinChannel());
+        // the recorded genesis hash is not derived on-chain -> the terms name their deployment
+        require(
+            openChannelData.chainId == block.chainid && openChannelData.manager == address(this),
+            ErrorOpenChannelWrongDeployment(openChannelData.chainId, openChannelData.manager)
+        );
         require(!_isChannelOpen(openChannelData.channelId), RaceConditionChannelAlreadyOpen(openChannelData.channelId));
         // Opening terms are valid up to and including their deadline, the same boundary as joinChannel
         require(

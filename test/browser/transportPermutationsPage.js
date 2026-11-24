@@ -5,7 +5,7 @@ import {
     setupBrowserPeer
 } from "./sdkSetup.js";
 import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
-import { computeGenesisStateHash } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import { buildOpenChannel } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import { channelIdToDiscoveryKey, Codec, SignatureUtils, Type } from "@/utils";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import { ethers, NonceManager } from "ethers";
@@ -97,10 +97,7 @@ globalThis.__transportE2E = {
                 deadlineTimestamp: BigInt(latestBlock.timestamp + 120),
                 data: "0x"
             };
-            const openChannel = {
-                ...terms,
-                genesisStateHash: await computeGenesisStateHash(manager, terms)
-            };
+            const openChannel = await buildOpenChannel(manager, terms);
             const signatures = await Promise.all(
                 participants.map((wallet) =>
                     SignatureUtils.signOpenChannel(openChannel, wallet)

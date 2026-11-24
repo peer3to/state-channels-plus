@@ -12,7 +12,7 @@ import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type { LobbyMatch } from "@/rpc/network/services/lobbyMatching/LobbyMatchingTypes";
 import {
     compareAddresses,
-    computeGenesisStateHash,
+    buildOpenChannel,
     deriveNegotiatedChannelId,
     type Address
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
@@ -91,7 +91,10 @@ export type OpeningDataProbe = {
 };
 
 /** A proposal that alters what the higher address agreed. */
-export type ProposalAlteration = "genesis-hash" | "overflowing-balance";
+export type ProposalAlteration =
+    | "genesis-hash"
+    | "overflowing-balance"
+    | "other-manager";
 
 export type ProposalAlterationProbe = {
     error: string;
@@ -118,6 +121,16 @@ export type DerivationFailureProbe = {
     peerBlacklisted: boolean;
     peerStrikes: number;
     peerTransportClosed: boolean;
+};
+
+export type CountersignFailureProbe = {
+    proposalHashDerived: boolean;
+    strikesBeforeDeadline: number;
+    outcomeStatus: string;
+    attemptCleared: boolean;
+    channelOpen: boolean;
+    peerBlacklisted: boolean;
+    peerStrikes: number;
 };
 
 export type StaleDerivationProbe = {
@@ -227,9 +240,13 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             expectedData,
             proposalData: ethers.hexlify(proposal.data),
             proposalGenesisStateHash: ethers.hexlify(proposal.genesisStateHash),
-            derivedGenesisStateHash: await computeGenesisStateHash(
-                this.sm.stateChannelManagerContract,
-                proposal
+            derivedGenesisStateHash: ethers.hexlify(
+                (
+                    await buildOpenChannel(
+                        this.sm.stateChannelManagerContract,
+                        proposal
+                    )
+                ).genesisStateHash
             ),
             chainGenesisStateHash: String(
                 snapshot.snapshotData.stateMachineStateHash
@@ -323,6 +340,67 @@ export class OpeningDataProbeService extends ANetworkRpcService<
         };
     }
 
+    /**
+     * The lower-address local runtime signs its proposal and the higher peer
+     * answers that its own genesis derivation failed; the probe then runs
+     * the opening deadline the lower scheduled.
+     */
+    public async probeCountersignFailure(): Promise<CountersignFailureProbe> {
+        await this.resetLifecycle();
+        const service = new OpenChannelNegotiationService(this.p2pManager);
+        const timeoutManager = this.sm.timeoutManager;
+        const scheduleTask = timeoutManager.scheduleTask;
+        let deadlineTask: (() => void | Promise<void>) | undefined;
+        timeoutManager.scheduleTask = ((task, delayMs, taskName) => {
+            if (taskName === "opening payload expiry observation")
+                deadlineTask = task;
+            return scheduleTask.call(timeoutManager, task, delayMs, taskName);
+        }) as typeof timeoutManager.scheduleTask;
+        try {
+            const staged = await this.stageAttempt(service, "lower");
+            await this.answerTerms(staged);
+            const request = await this.waitForFrame(
+                staged.transport,
+                "openProposal"
+            );
+            const proposal = Codec.decode(
+                String(request.params[3]),
+                Type.OpenChannel
+            ) as OpenChannelStruct;
+            await this.answer(
+                staged.transport,
+                request,
+                undefined,
+                "Genesis unavailable"
+            );
+            await this.settleMicrotasks();
+            const strikesBeforeDeadline = this.strikesOf(staged.profile);
+            const runDeadline = await this.waitUntil(
+                () => deadlineTask,
+                "no opening deadline was scheduled"
+            );
+            await runDeadline();
+            const outcome = await staged.outcome;
+            const derived = await buildOpenChannel(
+                this.sm.stateChannelManagerContract,
+                proposal
+            );
+            return {
+                proposalHashDerived:
+                    ethers.hexlify(proposal.genesisStateHash) ===
+                    ethers.hexlify(derived.genesisStateHash),
+                strikesBeforeDeadline,
+                outcomeStatus: outcome.status,
+                attemptCleared: !service.state.attempt,
+                channelOpen: await this.isChannelOpen(staged.channelId),
+                peerBlacklisted: staged.profile.isBlackListed,
+                peerStrikes: this.strikesOf(staged.profile)
+            };
+        } finally {
+            timeoutManager.scheduleTask = scheduleTask;
+        }
+    }
+
     /** The higher address receives a proposal that alters an agreed field. */
     public async probeAlteredProposal(
         alteration: ProposalAlteration
@@ -385,7 +463,8 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             balances: [staged.peerBalance, staged.peerBalance],
             deadlineTimestamp: Clock.getTimeInSeconds() + 60,
             data: "0x",
-            genesisStateHash: JUNK_GENESIS_HASH
+            genesisStateHash: JUNK_GENESIS_HASH,
+            ...(await this.deployment())
         };
         const signed = await Promise.all(
             wallets.map((wallet) =>
@@ -743,15 +822,21 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             deadlineTimestamp: Clock.getTimeInSeconds() + 60,
             data
         };
+        // a given hash skips the hook, so a held or rejecting hook stays the runtime's
+        const openChannel =
+            genesisStateHash === undefined
+                ? await buildOpenChannel(
+                      this.sm.stateChannelManagerContract,
+                      terms
+                  )
+                : { ...terms, ...(await this.deployment()), genesisStateHash };
         const signed = await SignatureUtils.signOpenChannel(
             {
-                ...terms,
-                genesisStateHash:
-                    genesisStateHash ??
-                    (await computeGenesisStateHash(
-                        this.sm.stateChannelManagerContract,
-                        terms
-                    ))
+                ...openChannel,
+                manager:
+                    alteration === "other-manager"
+                        ? ethers.Wallet.createRandom().address
+                        : openChannel.manager
             },
             staged.wallet
         );
@@ -805,17 +890,20 @@ export class OpeningDataProbeService extends ANetworkRpcService<
         );
     }
 
+    /** Answers `request` with `result`, or fails it with `error`. */
     private async answer(
         transport: ProbePeerTransport,
         request: Rpc,
-        result: unknown
+        result: unknown,
+        error?: string
     ): Promise<void> {
         await this.p2pManager.rpcRouter.onRpc(
             JSON.stringify({
                 rpcResponse: true,
                 requestId: request.requestId,
-                ok: true,
-                result
+                ok: error === undefined,
+                result,
+                error
             }),
             transport
         );
@@ -838,6 +926,15 @@ export class OpeningDataProbeService extends ANetworkRpcService<
         for (let turn = 0; turn < 5; turn += 1) {
             await new Promise((resolve) => setTimeout(resolve, 0));
         }
+    }
+
+    /** The chain and manager the signed opening terms name. */
+    private async deployment() {
+        const manager = this.sm.stateChannelManagerContract;
+        return {
+            chainId: (await manager.runner!.provider!.getNetwork()).chainId,
+            manager: await manager.getAddress()
+        };
     }
 
     private async isChannelOpen(channelId: string): Promise<boolean> {

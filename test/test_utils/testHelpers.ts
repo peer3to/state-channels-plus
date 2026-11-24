@@ -1,7 +1,7 @@
 import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../scripts/V1/deploy";
 // @spec-test-coverage-ignore: shared deployment helpers for test files; declares no runnable case, so no specification or implementation IDs apply
 import Clock from "@/Clock";
-import { computeGenesisStateHash } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import { buildOpenChannel } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import { hash } from "@/utils";
 import { routedFacets } from "@/utils/routedFacets";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
@@ -83,10 +83,10 @@ export const createOpenChannelTestObject = async (
         deadlineTimestamp: currentTime + 120, // 2 minutes from now
         data: "0x00"
     };
+    const openChannel = await buildOpenChannel(manager, terms);
     return {
-        ...terms,
-        genesisStateHash:
-            genesisStateHash ?? (await computeGenesisStateHash(manager, terms))
+        ...openChannel,
+        genesisStateHash: genesisStateHash ?? openChannel.genesisStateHash
     };
 };
 

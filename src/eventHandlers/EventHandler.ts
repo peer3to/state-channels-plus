@@ -84,38 +84,46 @@ export class EventHandler {
         // the chain holds only the signed genesis hash -> rebuild the genesis
         // from the genesis JOIN block and the opening data
         const snapshotData = stateSnapshot.snapshotData;
-        const genesisRun =
-            await this.stateManager.eventSyncService.loadSynchronizedInboundRun(
-                snapshotData.latestInboundMessageBlockHash as Hash,
-                ZeroHash,
-                Number(stateSnapshot.timestamp),
-                channelId
-            );
-        if (!genesisRun) throw new Error("genesis join block unavailable");
-        const joins = genesisRun.flatMap((block) =>
-            block.messages.map((message) =>
-                Codec.decode(message.data, Type.JoinChannel)
-            )
+        // anyone can open a selected channel ID -> only a listed participant
+        // aborts; any other runtime installs nothing
+        const participant = this.stateManager.membershipService.includesSigner(
+            snapshotData.participants as Address[]
         );
-        // undefined -> the hook reverts: no genesis derives from the signed terms
-        const encodedState = await deriveGenesisState(
-            this.stateManager.stateChannelManagerContract,
-            joins,
-            openingData
-        );
-        if (
-            !encodedState ||
-            keccak256(encodedState) !== snapshotData.stateMachineStateHash
-        ) {
-            const reason = encodedState ? "hash mismatch" : "hook reverted";
-            // anyone can open a selected channel ID -> only a listed
-            // participant aborts; any other runtime installs nothing
-            const participant =
-                this.stateManager.membershipService.includesSigner(
-                    snapshotData.participants as Address[]
+        let encodedState: string | undefined;
+        let reason: string | undefined;
+        try {
+            const genesisRun =
+                await this.stateManager.eventSyncService.loadSynchronizedInboundRun(
+                    snapshotData.latestInboundMessageBlockHash as Hash,
+                    ZeroHash,
+                    Number(stateSnapshot.timestamp),
+                    channelId
                 );
+            if (!genesisRun) throw new Error("genesis join block unavailable");
+            const joins = genesisRun.flatMap((block) =>
+                block.messages.map((message) =>
+                    Codec.decode(message.data, Type.JoinChannel)
+                )
+            );
+            // undefined -> the hook reverts: no genesis derives from the signed terms
+            encodedState = await deriveGenesisState(
+                this.stateManager.stateChannelManagerContract,
+                joins,
+                openingData
+            );
+            if (!encodedState) reason = "hook reverted";
+            else if (
+                keccak256(encodedState) !== snapshotData.stateMachineStateHash
+            )
+                reason = "hash mismatch";
+        } catch (error) {
+            // a failed log is never re-dispatched -> a participant cannot follow
+            if (!participant) throw error;
+            reason = `genesis unavailable: ${errorMessage(error)}`;
+        }
+        if (reason !== undefined || !encodedState) {
             this.logger[participant ? "error" : "warn"](
-                "Opened genesis does not match the signed hash",
+                "Opened genesis cannot be installed",
                 {
                     channelId,
                     forkId: stateSnapshot.forkId,

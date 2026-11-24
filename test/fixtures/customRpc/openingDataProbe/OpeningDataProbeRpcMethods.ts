@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: loopback endpoints for mapped opening-data component cases
 import type {
+    CountersignFailureProbe,
     DerivationFailureProbe,
     ForeignOpenProbe,
     NegotiationRole,
@@ -38,6 +39,10 @@ export class OpeningDataProbeRpcMethods extends ANetworkRpcMethods<OpeningDataPr
         role: NegotiationRole
     ): Promise<DerivationFailureProbe> {
         return this.service.probeGenesisFailure(role);
+    }
+
+    public probeCountersignFailure(): Promise<CountersignFailureProbe> {
+        return this.service.probeCountersignFailure();
     }
 
     public probeAlteredProposal(

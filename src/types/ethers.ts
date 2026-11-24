@@ -95,6 +95,8 @@ address[] participants,
 ${BalanceEthersType}[] balances,
 uint deadlineTimestamp,
 bytes32 genesisStateHash,
+uint chainId,
+address manager,
 bytes data
 )`;
 

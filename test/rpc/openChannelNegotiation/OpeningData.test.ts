@@ -125,6 +125,38 @@ describe("OpenChannelNegotiationService opening data", function () {
         });
     });
 
+    it("the lower address whose signed proposal the higher cannot countersign for its own genesis failure counts one close at the deadline without blacklisting", async function () {
+        const result = await fixture
+            .probe()
+            .probeCountersignFailure()
+            .request();
+
+        // the lower derived the proposed hash through the real facet hook
+        expect(result).to.deep.equal({
+            proposalHashDerived: true,
+            strikesBeforeDeadline: 0,
+            outcomeStatus: "retry",
+            attemptCleared: true,
+            channelOpen: false,
+            peerBlacklisted: false,
+            peerStrikes: 1
+        });
+    });
+
+    it("blacklists and clears a proposal bound to another manager deployment", async function () {
+        const result = await fixture
+            .probe()
+            .probeAlteredProposal("other-manager")
+            .request();
+
+        expect(result).to.deep.equal({
+            error: "Proposal mismatch: deployment",
+            attemptCleared: true,
+            channelOpen: false,
+            peerBlacklisted: true
+        });
+    });
+
     it("blacklists and clears a proposal whose genesis hash differs from the locally computed genesis", async function () {
         const result = await fixture
             .probe()

@@ -12,7 +12,7 @@ import LobbyMatchingService from "@/rpc/network/services/lobbyMatching/LobbyMatc
 import type { LobbyMatch } from "@/rpc/network/services/lobbyMatching/LobbyMatchingTypes";
 import {
     compareAddresses,
-    computeGenesisStateHash,
+    buildOpenChannel,
     deriveNegotiatedChannelId
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import OpenChannelNegotiationService from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
@@ -5506,13 +5506,10 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 )),
                 channelId: collisionChannelId
             };
-            const openChannel = {
-                ...collisionTerms,
-                genesisStateHash: await computeGenesisStateHash(
-                    this.p2pManager.stateManager.stateChannelManagerContract,
-                    collisionTerms
-                )
-            };
+            const openChannel = await buildOpenChannel(
+                this.p2pManager.stateManager.stateChannelManagerContract,
+                collisionTerms
+            );
             const localOpening = await SignatureUtils.signOpenChannel(
                 openChannel,
                 this.p2pManager.stateManager.signer
@@ -5699,13 +5696,10 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             deadlineTimestamp: Clock.getTimeInSeconds() + 60,
             data: "0x"
         };
-        const proposal = {
-            ...proposalTerms,
-            genesisStateHash: await computeGenesisStateHash(
-                this.p2pManager.stateManager.stateChannelManagerContract,
-                proposalTerms
-            )
-        };
+        const proposal = await buildOpenChannel(
+            this.p2pManager.stateManager.stateChannelManagerContract,
+            proposalTerms
+        );
         const signed = await SignatureUtils.signOpenChannel(proposal, wallet);
         const manager =
             this.p2pManager.stateManager.stateChannelManagerContract;
@@ -5870,13 +5864,10 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             deadlineTimestamp: Clock.getTimeInSeconds() + 60,
             data: "0x"
         };
-        const openProposal = {
-            ...openProposalTerms,
-            genesisStateHash: await computeGenesisStateHash(
-                this.p2pManager.stateManager.stateChannelManagerContract,
-                openProposalTerms
-            )
-        };
+        const openProposal = await buildOpenChannel(
+            this.p2pManager.stateManager.stateChannelManagerContract,
+            openProposalTerms
+        );
         const signedOpenProposal = await SignatureUtils.signOpenChannel(
             openProposal,
             openWallet
@@ -5990,13 +5981,10 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 deadlineTimestamp: Clock.getTimeInSeconds() + 60,
                 data: "0x"
             };
-            const proposal = {
-                ...proposalTerms,
-                genesisStateHash: await computeGenesisStateHash(
-                    this.p2pManager.stateManager.stateChannelManagerContract,
-                    proposalTerms
-                )
-            };
+            const proposal = await buildOpenChannel(
+                this.p2pManager.stateManager.stateChannelManagerContract,
+                proposalTerms
+            );
             const signed = await SignatureUtils.signOpenChannel(
                 proposal,
                 wallet
@@ -6184,13 +6172,10 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             deadlineTimestamp: Clock.getTimeInSeconds() + 60,
             data: "0x"
         };
-        const ordinaryProposal = {
-            ...ordinaryProposalTerms,
-            genesisStateHash: await computeGenesisStateHash(
-                this.p2pManager.stateManager.stateChannelManagerContract,
-                ordinaryProposalTerms
-            )
-        };
+        const ordinaryProposal = await buildOpenChannel(
+            this.p2pManager.stateManager.stateChannelManagerContract,
+            ordinaryProposalTerms
+        );
         const ordinarySigned = await SignatureUtils.signOpenChannel(
             ordinaryProposal,
             ordinaryWallet

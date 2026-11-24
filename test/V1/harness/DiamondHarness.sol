@@ -153,6 +153,8 @@ abstract contract DiamondHarness is Test {
         openChannel.participants = new address[](participantPrivateKeys.length);
         openChannel.balances = new Balance[](participantPrivateKeys.length);
         openChannel.deadlineTimestamp = deadlineTimestamp;
+        openChannel.chainId = block.chainid;
+        openChannel.manager = address(deployedDiamond);
 
         JoinChannel[] memory joins = new JoinChannel[](participantPrivateKeys.length);
         for (uint256 i = 0; i < participantPrivateKeys.length; i++) {
