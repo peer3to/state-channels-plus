@@ -624,7 +624,7 @@ Specification cases tested: 41/41.
 Specification cases tested: 7/7.
 
 [`REQ-LIF-12-TSXRBG` (Observers rebuild the genesis)](../specification/settlement/lifecycle.md#req-lif-12-tsxrbg)
-Specification cases tested: 3/5. Untested: T1.P4, T1.P5.
+Specification cases tested: 6/7. Untested: T1.P4.
 
 [`REQ-LOBBY-1-PZTPKD` (Caller-owned rendezvous)](../specification/peer-communication/lobby-matching.md#req-lobby-1-pztpkd)
 Specification cases tested: 4/4.
@@ -744,7 +744,7 @@ Specification cases tested: 8/9. Untested: T1.P6.
 Specification cases tested: 3/7. Untested: T1.P1, T1.P2, T1.P3, T1.P5.
 
 [`REQ-NEG-2-ED48TZ` (Chain-observed completion)](../specification/peer-communication/channel-negotiation.md#req-neg-2-ed48tz)
-Specification cases tested: 3/7. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
+Specification cases tested: 4/8. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
 
 [`REQ-NEG-4-ZQ0985` (Committed-attempt admission and recovery)](../specification/peer-communication/channel-negotiation.md#req-neg-4-zq0985)
 Specification cases tested: 17/18. Untested: T1.P6.

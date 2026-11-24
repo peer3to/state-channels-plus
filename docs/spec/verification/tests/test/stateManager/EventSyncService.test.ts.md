@@ -63,7 +63,7 @@ its live state hash equals the opened snapshot's.
 - `joins concurrent calldata recovery onto one chain query`: none
 - `run already held → returned with no chain query`: none
 - `missed inbound log → recovered by query, the run becomes walkable`: REQ-MSGSTORE-1-6ME9D7.T2.P2
-- `logs recovered into an empty inbound store set its tip to the recovered head`: REQ-MSGSTORE-1-6ME9D7.T2.P1
+- `the genesis rebuild recovers a lost genesis join log into an empty store, and a later recovery moves the tip`: REQ-MSGSTORE-1-6ME9D7.T2.P1
 - `only the inbound log we do not hold is dispatched`: none
 - `the widening span stays inside the watermark and the chain`: none
 - `gap survives recovery → undefined, no throw`: none

@@ -30,6 +30,7 @@ is assigned to its own test below.
 - `enumerates successful opens in append order with safe page boundaries`: UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7.P1, REQ-LIF-8-2HDG3A.T1.P1, REQ-LIF-8-2HDG3A.T1.P3
 - `keeps the open-channel registry unchanged after a duplicate open reverts`: UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7.P2, REQ-LIF-8-2HDG3A.T1.P2
 - `2 participants - success`: INV-ENFADM-1-H53AQY.T1.P1, UNIT-TEST-MANAGER-PROXY-1-NTYR71.P1
+- `the joins built off-chain for the terms are the JOIN messages open stores, in participant order`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-2-9KPZH4.P1
 - `8 participants - success records the signed genesis commitment`: REQ-LIF-11-KEEN0N.T1.P6
 - `opens with a genesis hash no genesis derives from: the chain records it unchecked`: REQ-LIF-11-KEEN0N.T1.P7
 - `2 participants signatures not inorder - success`: none

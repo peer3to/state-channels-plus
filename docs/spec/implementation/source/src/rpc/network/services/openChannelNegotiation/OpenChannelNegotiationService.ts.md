@@ -88,6 +88,9 @@ Opening-data and genesis hooks, stale-attempt rule
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P15` — higher role, the proposal alters the counterparty balance to one the genesis hook would reject: refused as a balance mismatch and the proposer blacklisted, so the term check runs before the hook
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P16` — lower role, the genesis hook rejects the agreed balances: attempt and channel ID cleared, no proposal sent, retry outcome, no strike, blacklist or close
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P17` — higher role, the genesis hook rejects the agreed balances: the proposal is refused with "Genesis unavailable", nothing is co-signed or opened, attempt and channel ID cleared, retry outcome, no penalty
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P18` — lower role, the genesis hash arrives after cancellation: no proposal for the old attempt and the replacement stays current with its channel, deadline and pending outcome, and opens
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P19` — higher role, the genesis hash arrives after cancellation: the old proposal is answered without signing, the old channel never opens, the replacement stays current and opens
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P20` — lower role, the counterparty opens the derived ID first with another participant set and a hash no genesis derives from: retry outcome, the counterparty blacklisted, the runtime keeps running with no genesis installed
 
 ## UNIT-TEST-OBSERVED-OPEN-CLASSIFICATION-1-2WWP73
 

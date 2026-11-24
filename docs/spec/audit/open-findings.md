@@ -3026,6 +3026,21 @@ period (measured pipeline latency in [`FIND-DISPUTE-5-MZPTTC`](open-findings.md#
 about `2 × evidenceTime` stays the protocol-side pause. [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm) now states the
 ceiling, so the code no longer departs from it.
 
+<a id="find-lif-2-m1mvgj"></a>
+
+### FIND-LIF-2-M1MVGJ
+
+**Defect:** Signed opening terms carry no chain or manager binding: `open` verifies the signatures over
+the encoded `OpenChannel` only
+([StateChannelManagerProxy.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)).
+Terms replayed on another manager deployment before their deadline open a channel there. Since
+[`REQ-LIF-11-KEEN0N` (Open records the agreed commitment)](../specification/settlement/lifecycle.md#req-lif-11-keen0n)
+the replay records a genesis hash that deployment's derivation may not produce, so the deposits sit in a
+channel no runtime follows.
+
+**Proposed direction:** hash `block.chainid` and the manager address into every signed payload. Not done
+with the off-chain genesis change: it alters every signed message type.
+
 ## Evidence backlog retained after traceability repair
 
 <a id="find-verify-1-gferdm"></a>

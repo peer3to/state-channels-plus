@@ -38,4 +38,3 @@ the encoding of the join `open` builds for that participant, in participant orde
 - `rejects a deadline beyond the allowed window`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P11
 - `matches participants and channelId irrespective of address casing`: none
 - `accepts the locally derived application opening data`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P12
-- `openChannelJoins maps each participant to its balance, the channel and the deadline in order`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-2-9KPZH4.P1

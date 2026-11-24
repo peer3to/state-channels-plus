@@ -55,8 +55,8 @@ Lobby role ordering
 
 Opening joins and genesis hash
 
-- Setup: Map fixed opening terms to their joins; compute the genesis hash for terms that open on chain and compare it with what every observer rebuilds from the chain's genesis join block
+- Setup: Map the terms of a real open to their joins and compare them with the JOIN messages the open stores; compute the genesis hash for terms that open on chain and compare it with what every observer rebuilds from the chain's genesis join block
 - Oracle: Each join pairs a participant with its balance, the channel ID and the deadline, in participant order and in the field order `open` encodes; the hash equals the hash of the state the consumer facet's hook derives from the chain's joins
 
-- [x] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-2-9KPZH4.P1` — `openChannelJoins` maps each participant to its balance, the channel and the deadline in order
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-2-9KPZH4.P1` — `openChannelJoins` builds, for the terms of a real open, exactly the JOIN message data that open stores, in participant order
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-2-9KPZH4.P2` — `computeGenesisStateHash` equals the hash an observer rebuilds from the chain's genesis join block

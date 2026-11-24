@@ -55,10 +55,13 @@ Dispute-event branches
 
 Genesis rebuild on open
 
-- Setup: Open on chain with participants and a non-participant observer; select the channel on a fresh runtime only after the open and deliver `ChannelOpened` through the real event pipeline; open with unanimous terms carrying a hash no genesis derives from
-- Oracle: A matching rebuild installs the genesis with the chain's fork and state hash; a genesis join block the runtime never received is recovered from logs and stored before the install; a different hash aborts every runtime with no state set, no completed `onChannelOpened` and the event failed, while the chain keeps the channel open
+- Setup: Open on chain with participants and a non-participant observer; select the channel on a fresh runtime only after the open and deliver `ChannelOpened` through the real event pipeline; hold a participant's genesis join log in flight, or swallow its handling; open with unanimous terms carrying a hash no genesis derives from
+- Oracle: A matching rebuild installs the genesis with the chain's fork and state hash; a genesis join block the runtime never received is recovered from logs and stored before the install; a join log still in flight is awaited with no chain log query; a join block that stays unavailable fails the event without an abort; a different hash aborts each listed participant with no state set, no completed `onChannelOpened` and the event failed, and leaves a runtime outside the opened set running with no state set and the open reported, while the chain keeps the channel open
 
 - [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P1` — a non-participant observer installs the rebuilt genesis: its fork and state hash equal the chain snapshot's
 - [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P2` — a runtime that selected the channel after the open recovers the genesis join block from logs, stores it and installs the genesis
-- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P3` — an opened hash no genesis derives from aborts every runtime: `onAbort` once, no `onSetState`, no completed `onChannelOpened`, the handler's failure surfaces once per runtime
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P3` — an opened hash no genesis derives from aborts each listed participant: `onAbort` once, no `onSetState`, no completed `onChannelOpened`, the handler's failure surfaces once per participant
 - [ ] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P4` — a reverting genesis hook aborts the same way as a mismatch
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P5` — a runtime outside the opened participant set observes an opened hash no genesis derives from: no `onAbort`, no `onSetState`, `onChannelOpened` once, the runtime stays open and holds no fork
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P6` — a participant whose genesis join log is still in flight when `ChannelOpened` arrives installs the genesis from that log after its handling ends, with no chain log query
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P7` — a participant whose genesis join log handling stores nothing fails the event with "genesis join block unavailable": no `onAbort`, no `onSetState`, no completed `onChannelOpened`, while the other participants install
