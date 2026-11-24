@@ -150,7 +150,21 @@ describe("OpenChannelNegotiationService opening data", function () {
             .request();
 
         expect(result).to.deep.equal({
-            error: "Proposal mismatch: deployment",
+            error: "Proposal mismatch: deployment mismatch",
+            attemptCleared: true,
+            channelOpen: false,
+            peerBlacklisted: true
+        });
+    });
+
+    it("blacklists and clears a proposal bound to another chain", async function () {
+        const result = await fixture
+            .probe()
+            .probeAlteredProposal("other-chain")
+            .request();
+
+        expect(result).to.deep.equal({
+            error: "Proposal mismatch: deployment mismatch",
             attemptCleared: true,
             channelOpen: false,
             peerBlacklisted: true
@@ -235,7 +249,7 @@ describe("OpenChannelNegotiationService opening data", function () {
         });
     });
 
-    it("higher address derivation failure clears the attempt without co-signing or penalty", async function () {
+    it("higher address derivation failure clears the attempt without co-signing or penalizing the proposer", async function () {
         const result = await fixture
             .probe()
             .probeDerivationFailure("higher")

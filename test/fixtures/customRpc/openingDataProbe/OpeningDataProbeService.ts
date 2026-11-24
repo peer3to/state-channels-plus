@@ -13,6 +13,7 @@ import type { LobbyMatch } from "@/rpc/network/services/lobbyMatching/LobbyMatch
 import {
     compareAddresses,
     buildOpenChannel,
+    openChannelDeployment,
     deriveNegotiatedChannelId,
     type Address
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
@@ -94,7 +95,8 @@ export type OpeningDataProbe = {
 export type ProposalAlteration =
     | "genesis-hash"
     | "overflowing-balance"
-    | "other-manager";
+    | "other-manager"
+    | "other-chain";
 
 export type ProposalAlterationProbe = {
     error: string;
@@ -464,7 +466,9 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             deadlineTimestamp: Clock.getTimeInSeconds() + 60,
             data: "0x",
             genesisStateHash: JUNK_GENESIS_HASH,
-            ...(await this.deployment())
+            ...(await openChannelDeployment(
+                this.sm.stateChannelManagerContract
+            ))
         };
         const signed = await Promise.all(
             wallets.map((wallet) =>
@@ -829,14 +833,24 @@ export class OpeningDataProbeService extends ANetworkRpcService<
                       this.sm.stateChannelManagerContract,
                       terms
                   )
-                : { ...terms, ...(await this.deployment()), genesisStateHash };
+                : {
+                      ...terms,
+                      ...(await openChannelDeployment(
+                          this.sm.stateChannelManagerContract
+                      )),
+                      genesisStateHash
+                  };
         const signed = await SignatureUtils.signOpenChannel(
             {
                 ...openChannel,
                 manager:
                     alteration === "other-manager"
                         ? ethers.Wallet.createRandom().address
-                        : openChannel.manager
+                        : openChannel.manager,
+                chainId:
+                    alteration === "other-chain"
+                        ? BigInt(openChannel.chainId) + 1n
+                        : openChannel.chainId
             },
             staged.wallet
         );
@@ -926,15 +940,6 @@ export class OpeningDataProbeService extends ANetworkRpcService<
         for (let turn = 0; turn < 5; turn += 1) {
             await new Promise((resolve) => setTimeout(resolve, 0));
         }
-    }
-
-    /** The chain and manager the signed opening terms name. */
-    private async deployment() {
-        const manager = this.sm.stateChannelManagerContract;
-        return {
-            chainId: (await manager.runner!.provider!.getNetwork()).chainId,
-            manager: await manager.getAddress()
-        };
     }
 
     private async isChannelOpen(channelId: string): Promise<boolean> {

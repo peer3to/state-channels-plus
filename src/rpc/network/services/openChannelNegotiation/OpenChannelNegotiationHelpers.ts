@@ -90,6 +90,8 @@ export function getOpenChannelProposalMismatch(
         balances: OpenChannelStruct["balances"];
         /** Application opening data both peers derive locally; empty by default. */
         data?: BytesLike;
+        chainId: bigint;
+        manager: Address;
     },
     /** Inclusive bounds for the proposed deadline, in seconds. */
     deadline: { minSeconds: number; maxSeconds: number }
@@ -98,6 +100,13 @@ export function getOpenChannelProposalMismatch(
         ethers.hexlify(decoded.channelId) !== ethers.hexlify(expected.channelId)
     ) {
         return "channelId mismatch";
+    }
+    if (
+        BigInt(decoded.chainId) !== expected.chainId ||
+        getChecksumAddress(String(decoded.manager)) !==
+            getChecksumAddress(expected.manager)
+    ) {
+        return "deployment mismatch";
     }
     if (decoded.participants.length !== expected.participants.length) {
         return "participants length mismatch";
@@ -181,6 +190,22 @@ export async function deriveGenesisState(
     }
 }
 
+/** The chain and manager deployment that signed opening terms name. */
+export async function openChannelDeployment(
+    manager: StateChannelManagerInterface
+): Promise<{ chainId: bigint; manager: Address }> {
+    const provider = manager.runner?.provider;
+    if (!provider) throw new Error("manager has no provider");
+    const [network, managerAddress] = await Promise.all([
+        provider.getNetwork(),
+        manager.getAddress()
+    ]);
+    return {
+        chainId: network.chainId,
+        manager: getChecksumAddress(managerAddress)
+    };
+}
+
 /**
  * The signed opening for these terms: bound to the manager's chain and
  * deployment, with the hash of the genesis the consumer facet's hook derives.
@@ -189,18 +214,14 @@ export async function buildOpenChannel(
     manager: StateChannelManagerInterface,
     terms: Omit<OpenChannelStruct, "genesisStateHash" | "chainId" | "manager">
 ): Promise<OpenChannelStruct> {
-    const provider = manager.runner?.provider;
-    if (!provider) throw new Error("manager has no provider");
-    const [network, managerAddress, encodedState] = await Promise.all([
-        provider.getNetwork(),
-        manager.getAddress(),
+    const [deployment, encodedState] = await Promise.all([
+        openChannelDeployment(manager),
         deriveGenesisState(manager, openChannelJoins(terms), terms.data)
     ]);
     if (encodedState === undefined) throw new Error("genesis hook reverted");
     return {
         ...terms,
-        genesisStateHash: ethers.keccak256(encodedState),
-        chainId: network.chainId,
-        manager: getChecksumAddress(managerAddress)
+        ...deployment,
+        genesisStateHash: ethers.keccak256(encodedState)
     };
 }

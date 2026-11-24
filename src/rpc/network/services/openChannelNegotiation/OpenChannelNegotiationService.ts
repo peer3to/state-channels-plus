@@ -4,6 +4,7 @@ import {
     OPEN_CHANNEL_MIN_REMAINING_SECONDS,
     compareAddresses,
     buildOpenChannel,
+    openChannelDeployment,
     deriveNegotiatedChannelId,
     getOpenChannelProposalMismatch,
     type Address
@@ -375,12 +376,18 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         const { participants, balances, lower } =
             this.getParticipantsAndBalances(attempt);
         let expectedData: BytesLike;
+        let deployment: { chainId: bigint; manager: Address };
         try {
-            expectedData = await this.buildOpeningData({
-                channelId: attempt.channelId,
-                participants,
-                balances
-            });
+            [expectedData, deployment] = await Promise.all([
+                this.buildOpeningData({
+                    channelId: attempt.channelId,
+                    participants,
+                    balances
+                }),
+                openChannelDeployment(
+                    this.p2pManager.stateManager.stateChannelManagerContract
+                )
+            ]);
         } catch (error) {
             // A local failure to derive the terms is not the peer's fault.
             await this.clearAttempt(
@@ -421,7 +428,8 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
                 channelId: attempt.channelId,
                 participants,
                 balances,
-                data: expectedData
+                data: expectedData,
+                ...deployment
             },
             {
                 minSeconds: nowSeconds + OPEN_CHANNEL_MIN_REMAINING_SECONDS,
@@ -456,13 +464,6 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         }
         if (this.state.attempt !== attempt) {
             return { status: "submitted" };
-        }
-        if (
-            BigInt(decoded.chainId) !== BigInt(expected.chainId) ||
-            getChecksumAddress(decoded.manager) !== expected.manager
-        ) {
-            this.protocolFailure(attempt, "proposal mismatch: deployment");
-            throw new Error("Proposal mismatch: deployment");
         }
         if (
             ethers.hexlify(decoded.genesisStateHash) !==
