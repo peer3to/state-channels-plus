@@ -274,6 +274,8 @@ jobs:
             - name: Run a node pin's tests in the runner image
               if: ${{ !cancelled() && steps.pin.outputs.node_tests == '1' }}
               run: |
+                  # the test run's exit code, not tee's
+                  set -o pipefail
                   docker run --rm --name scp-node-tests \
                       --read-only --init --cap-drop=ALL \
                       --security-opt=no-new-privileges:true \
