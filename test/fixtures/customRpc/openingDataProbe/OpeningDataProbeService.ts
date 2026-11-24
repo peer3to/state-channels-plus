@@ -409,7 +409,15 @@ export class OpeningDataProbeService extends ANetworkRpcService<
     ): Promise<ProposalAlterationProbe> {
         await this.resetLifecycle();
         const service = new OpenChannelNegotiationService(this.p2pManager);
-        const staged = await this.stageAttempt(service, "higher");
+        // a deployment alteration agrees a balance the genesis hook rejects ->
+        // only a deployment check before the hook yields the mismatch verdict
+        const staged = await this.stageAttempt(
+            service,
+            "higher",
+            alteration === "other-manager" || alteration === "other-chain"
+                ? { amount: ethers.MaxUint256, data: "0x5678" }
+                : undefined
+        );
         await this.acceptTerms(service, staged);
         let error = "";
         try {

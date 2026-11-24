@@ -34,8 +34,10 @@ same whole result as the derivation failures ("Genesis unavailable" for the high
 altered-proposal tests send the higher role a proposal with a hash it never derived, or with the
 counterparty balance changed to `MaxUint256`: both are refused, the proposer blacklisted and the attempt
 cleared with no open; the balance case fails as a balance mismatch, so the term check runs before the
-hook. Two more send a proposal naming a random manager address, or the next chain ID: each is refused as
-"Proposal mismatch: deployment mismatch" with the same blacklist, cleared attempt and no open.
+hook. Two more agree a counterparty balance of `MaxUint256`, which the higher's genesis hook rejects, and send
+a proposal naming a random manager address, or the next chain ID: each is refused as "Proposal
+mismatch: deployment mismatch" with the same blacklist, cleared attempt and no open, not as "Genesis
+unavailable", so the deployment check runs before the hook.
 
 The countersign-failure test plays the higher peer against a lower-address runtime: the lower derives
 the hash through the real Math hook, signs and sends the proposal, and the probe answers it with the

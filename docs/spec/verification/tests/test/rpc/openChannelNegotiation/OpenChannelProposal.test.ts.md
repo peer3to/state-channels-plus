@@ -8,7 +8,7 @@ Exercises: [OpenChannelNegotiationHelpers.ts](../../../../../implementation/sour
 The suite unit-tests the pure comparator `getOpenChannelProposalMismatch` with hand-built
 `OpenChannelStruct` fixtures — no service, signatures, or transport. An exactly matching proposal
 returns `null`; then each security-sensitive field is varied one test at a time — a tampered
-balance amount, tampered balance data, a substituted participant, a different `channelId`,
+balance amount, tampered balance data, a substituted participant, a different `channelId`, the chain ID, the manager address,
 non-empty opening `data`, a deadline in the past, deadlines one and 29 seconds
 ahead (below the 30-second minimum), a deadline exactly 30 seconds ahead (accepted), and a deadline
 beyond the allowed window — and each test asserts the specific mismatch reason string. A final test shows

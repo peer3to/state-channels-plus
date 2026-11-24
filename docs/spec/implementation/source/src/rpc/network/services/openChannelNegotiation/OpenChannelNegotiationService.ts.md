@@ -94,9 +94,9 @@ Opening-data and genesis hooks, stale-attempt rule
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P21` — lower role, the genesis hook fails after cancellation: no proposal for the old attempt, no penalty for the old peer, the replacement stays current with its channel, deadline and pending outcome, and opens
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P22` — higher role, the genesis hook fails after cancellation: the old proposal fails with "Genesis unavailable", the old peer has no blacklist, the old channel never opens, the replacement stays current and opens
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P23` — targeted mode, another participant set opens the selected channel first with a hash no genesis derives from: `observed-target-open` outcome, no blacklist, the runtime keeps running with no genesis installed
-- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P24` — higher role, the proposal names another manager deployment: refused with "Proposal mismatch: deployment mismatch" before the genesis hook runs, the proposer blacklisted, the attempt cleared, no open
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P24` — higher role, agreed terms the genesis hook rejects, the proposal names another manager deployment: refused with "Proposal mismatch: deployment mismatch" before the genesis hook runs, the proposer blacklisted, the attempt cleared, no open
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P25` — lower role, the higher answers the signed proposal with its own genesis failure: the proposal carries the hash the real hook derives, no strike before the deadline, then one counted close at the deadline, no blacklist, retry outcome, no open
-- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P26` — higher role, the proposal names another chain: refused with "Proposal mismatch: deployment mismatch", the proposer blacklisted, the attempt cleared, no open
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P26` — higher role, agreed terms the genesis hook rejects, the proposal names another chain: refused with "Proposal mismatch: deployment mismatch" before the genesis hook runs, the proposer blacklisted, the attempt cleared, no open
 
 ## UNIT-TEST-OBSERVED-OPEN-CLASSIFICATION-1-2WWP73
 
