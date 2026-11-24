@@ -13,6 +13,7 @@ import type {
     StaleSettlement
 } from "./OpeningDataProbeService";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type { NegotiationMode } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
 import type NetworkTransport from "@/transport/NetworkTransport";
 
 export class OpeningDataProbeRpcMethods extends ANetworkRpcMethods<OpeningDataProbeService> {
@@ -46,7 +47,7 @@ export class OpeningDataProbeRpcMethods extends ANetworkRpcMethods<OpeningDataPr
     }
 
     public probeForeignGenesisOpen(
-        mode: "ordinary" | "targeted"
+        mode: NegotiationMode
     ): Promise<ForeignOpenProbe> {
         return this.service.probeForeignGenesisOpen(mode);
     }

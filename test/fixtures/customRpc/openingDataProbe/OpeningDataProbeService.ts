@@ -17,7 +17,10 @@ import {
     type Address
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import OpenChannelNegotiationService from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
-import type { NegotiationOutcome } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
+import type {
+    NegotiationMode,
+    NegotiationOutcome
+} from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
 import type Rpc from "@/rpc/Rpc";
 import NetworkTransport from "@/transport/NetworkTransport";
 import { TransportType } from "@/transport/TransportType";
@@ -350,11 +353,12 @@ export class OpeningDataProbeService extends ANetworkRpcService<
     }
 
     /**
-     * The lower peer knows the derived channel ID and opens it first with a
-     * key of its own and a hash no genesis derives from.
+     * The higher peer opens this runtime's channel first (the derived ID, or
+     * in targeted mode the selected ID) with a key of its own and a hash no
+     * genesis derives from.
      */
     public async probeForeignGenesisOpen(
-        mode: "ordinary" | "targeted"
+        mode: NegotiationMode
     ): Promise<ForeignOpenProbe> {
         await this.resetLifecycle();
         const service = new OpenChannelNegotiationService(this.p2pManager);
