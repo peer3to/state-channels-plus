@@ -3404,13 +3404,14 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.droppedEventLogKeys.size;
     }
 
-    public stubFailOnChainSlashesRead(): boolean {
-        this.service.failOnChainSlashesRead();
+    /** Make every provider call to the manager's `functionName` fail with `message`. */
+    public stubFailManagerRead(functionName: string, message: string): boolean {
+        this.service.failManagerRead(functionName, message);
         return true;
     }
 
-    public restoreOnChainSlashesRead(): boolean {
-        return this.service.restoreOnChainSlashesRead();
+    public restoreManagerRead(): boolean {
+        return this.service.restoreManagerRead();
     }
 
     /** Make every provider getLogs answer no logs, so no recovery query finds a missing log. */

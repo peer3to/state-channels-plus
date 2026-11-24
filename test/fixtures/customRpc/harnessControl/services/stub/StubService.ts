@@ -194,7 +194,7 @@ export type StubKey =
     | "localDiamondInboundMessages"
     | "eventLogs"
     | "chainLogQueries"
-    | "onChainSlashesRead"
+    | "managerRead"
     | "disputeCommittedHandler"
     | "disputeCommittedHandling"
     | "disputeLogQueries"
@@ -5093,32 +5093,33 @@ export class StubService extends ANetworkRpcService<
         this.patchChainLogQueries(false);
     }
 
-    failOnChainSlashesRead(): void {
+    /** Make every provider call to one manager function fail with `message`. */
+    failManagerRead(functionName: string, message: string): void {
         const contract = this.sm.stateChannelManagerContract;
-        if (!this.stubOriginals.has("onChainSlashesRead")) {
+        if (!this.stubOriginals.has("managerRead")) {
             this.stubOriginals.set(
-                "onChainSlashesRead",
+                "managerRead",
                 this.chainProvider.call.bind(this.chainProvider)
             );
         }
         const original = this.stubOriginals.get(
-            "onChainSlashesRead"
+            "managerRead"
         ) as typeof this.chainProvider.call;
-        const selector = contract.interface
-            .getFunction("getOnChainSlashedParticipants")!
-            .selector.slice(2);
+        const selector = contract
+            .getFunction(functionName)
+            .fragment.selector.slice(2);
         this.chainProvider.call = async (transaction) => {
             if (String(transaction.data).includes(selector))
-                throw new Error("authoritative slash read failed");
+                throw new Error(message);
             return original(transaction);
         };
     }
 
-    restoreOnChainSlashesRead(): boolean {
-        const original = this.stubOriginals.get("onChainSlashesRead");
+    restoreManagerRead(): boolean {
+        const original = this.stubOriginals.get("managerRead");
         if (original === undefined) return false;
         this.chainProvider.call = original as typeof this.chainProvider.call;
-        this.stubOriginals.delete("onChainSlashesRead");
+        this.stubOriginals.delete("managerRead");
         return true;
     }
 

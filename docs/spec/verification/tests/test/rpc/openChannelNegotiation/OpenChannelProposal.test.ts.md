@@ -20,8 +20,6 @@ per-field tests below are assigned to them. Still unassigned: the length variati
 participants, P6 balances) have no test; P2 (deadline at the expired edge) is probed one second
 past the edge (`now - 1`), and the comparator now rejects everything below the 30-second minimum,
 so the expired edge is not a boundary any more; and P3 (sort/alignment canonicalization) is not what the casing test shows.
-A separate case maps fixed terms through `openChannelJoins` and compares each join's codec encoding with
-the encoding of the join `open` builds for that participant, in participant order.
 
 ## Tests
 

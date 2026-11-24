@@ -3041,6 +3041,8 @@ channel no runtime follows.
 **Proposed direction:** hash `block.chainid` and the manager address into every signed payload. Not done
 with the off-chain genesis change: it alters every signed message type.
 
+**Status:** Open (2026-11-24); low, deferred: the binding alters every signed message type.
+
 ## Evidence backlog retained after traceability repair
 
 <a id="find-verify-1-gferdm"></a>

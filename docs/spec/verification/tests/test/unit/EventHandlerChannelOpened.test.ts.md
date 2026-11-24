@@ -1,7 +1,7 @@
 # EventHandlerChannelOpened.test.ts
 
 Test file: [test/unit/EventHandlerChannelOpened.test.ts](../../../../../../test/unit/EventHandlerChannelOpened.test.ts)
-Exercises: [EventHandler.ts](../../../../implementation/source/src/eventHandlers/EventHandler.ts.md)
+Exercises: [EventHandler.ts](../../../../implementation/source/src/eventHandlers/EventHandler.ts.md), [EventSyncService.ts](../../../../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)
 
 ## Overview
 
@@ -17,7 +17,9 @@ with the chain's fork and state hash, and its provider saw no `getLogs` query. T
 swallows a participant's genesis join log handling, so neither the live log nor a recovery query stores
 the block: that runtime reports the expected detached error "genesis join block unavailable", fires no
 `onAbort`, `onSetState` or completed `onChannelOpened` and stays open, while the other participants
-install. The mismatch case opens for two of three runtimes with unanimous terms carrying a hash no
+install. The read-failure case makes only a participant's `openChannelGenesis` provider call fail with a
+transport error: that runtime reports the error as the expected detached error, fires no `onAbort`,
+`onSetState` or completed `onChannelOpened` and stays open, while the other participants install. The mismatch case opens for two of three runtimes with unanimous terms carrying a hash no
 genesis derives from and waits only for the receipt: the chain keeps the channel open with that hash;
 on each participant `onAbort` fires once, the runtime closes, no `onSetState` or completed
 `onChannelOpened` reaches the client, and the handler's failure surfaces as the expected detached
@@ -26,13 +28,13 @@ holds no fork.
 
 A reverting genesis hook on an opened channel has no test: the shipped Math hook reverts only on an
 overflowing deposit sum, and `open` reverts first on the same sum. It shares the abort with the
-mismatch case. A failed chain read during the rebuild has no test of its own; it fails the event the
-same way as the unavailable case.
+mismatch case.
 
 ## Tests
 
 - `installs the genesis it rebuilds from the genesis join block and the opening data`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P1, REQ-LIF-12-TSXRBG.T1.P1, UNIT-TEST-OPEN-NEGOTIATION-HELPERS-2-9KPZH4.P2
 - `recovers a genesis join block it never received and installs`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P2, REQ-LIF-12-TSXRBG.T1.P2
-- `waits for the open's genesis join log in flight instead of recovering it from the chain`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P6, REQ-LIF-12-TSXRBG.T1.P7
+- `waits for the open's genesis join log in flight instead of recovering it from the chain`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P26, REQ-LIF-12-TSXRBG.T1.P7
 - `fails the open without aborting when the genesis join block stays unavailable`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P7, REQ-LIF-12-TSXRBG.T1.P5
+- `fails the open without aborting a listed participant whose genesis hook read fails in transport`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P8, REQ-LIF-12-TSXRBG.T1.P5
 - `aborts the listed participants and spares any other runtime when the opened hash matches no genesis`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P3, UNIT-TEST-EVENT-HANDLER-2-Q270TR.P5, REQ-LIF-12-TSXRBG.T1.P3, REQ-LIF-12-TSXRBG.T1.P6

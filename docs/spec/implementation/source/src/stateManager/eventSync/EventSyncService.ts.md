@@ -56,8 +56,8 @@ Reconnect catch-up
 
 Ordering and recovery
 
-- Setup: Deliver logs out of order; drop events; restart mid-stream; exhaust recovery attempts; hold the local diamond's inbound applications and release them in either order; read membership before a live snapshot update; fail the local diamond's next write while a recovered log is applied; hold a streamed dispute log's handling in flight while the dispute-window recovery runs, and let it succeed, store its dispute then fail, or fail before storing
-- Oracle: Per-channel order preserved; recovery fills gaps within caps; restart resumes without skips; a membership synchronization is idempotent with live logs and log recovery, never moves the local diamond back, and makes no chain call its pinned read answers; a failed recovery read or a local handler failure on a log the recovery itself dispatched rejects the recovery for every caller; the dispute-window recovery awaits a dispute log already in flight or already failed and rejects with its failure only while its dispute is still missing, so a log that stored its dispute and then failed leaves the window readable
+- Setup: Deliver logs out of order; drop events; restart mid-stream; exhaust recovery attempts; hold the local diamond's inbound applications and release them in either order; read membership before a live snapshot update; fail the local diamond's next write while a recovered log is applied; hold a streamed dispute log's handling in flight while the dispute-window recovery runs, and let it succeed, store its dispute then fail, or fail before storing; hold an open's genesis join log handling in flight while its `ChannelOpened` log arrives
+- Oracle: Per-channel order preserved; recovery fills gaps within caps; restart resumes without skips; a membership synchronization is idempotent with live logs and log recovery, never moves the local diamond back, and makes no chain call its pinned read answers; a failed recovery read or a local handler failure on a log the recovery itself dispatched rejects the recovery for every caller; the dispute-window recovery awaits a dispute log already in flight or already failed and rejects with its failure only while its dispute is still missing, so a log that stored its dispute and then failed leaves the window readable; a `ChannelOpened` log waits for the earlier logs of its transaction, so the genesis install reads the join block locally with no chain log query
 
 - [ ] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P1` — ordering
 - [ ] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P2` — gap recovery within attempts
@@ -83,6 +83,7 @@ Ordering and recovery
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P23` — the dispute-window recovery joins an in-flight dispute log that fails before storing its dispute and rejects with that failure; a second recovery rejects the same way and the dispute stays missing
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P24` — the dispute-window recovery rejects with the failure of a local handler applying a dispute log it dispatched itself
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P25` — the dispute-window recovery for a fork the node already left: the handler runs no audit and stores nothing, the recovery stores the chain's copy of each dispute and resolves with the window
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P26` — a `ChannelOpened` log whose genesis join log handling is still in flight waits for it: the participant installs the genesis after the release with no chain log query
 
 ## UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6
 

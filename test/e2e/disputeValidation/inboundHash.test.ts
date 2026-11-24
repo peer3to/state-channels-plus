@@ -153,11 +153,10 @@ describe("E2E: dispute validation / inboundHash", function () {
     // its own dispute is never provable fraud
     it("honest disputer whose inbound chain event lags → dispute survives, disputer not killed or slashed", async function () {
         const h = TestSession.getHarness();
-        const laggingIndex = 2;
         const attackerIndex = 1;
 
         // larger agreementTime avoids writer-timeout disputes racing the upload
-        await h.setup(3, {
+        await h.lifecycle.start(2, 0, {
             timeConfig: {
                 p2pTime: 2,
                 agreementTime: 8,
@@ -165,10 +164,12 @@ describe("E2E: dispute validation / inboundHash", function () {
                 evidenceTime: 4
             }
         });
-        await h.lifecycle.openChannel();
-        // held once the genesis installed -> the lagging peer learns later
-        // inbound blocks only from the runs its ingested blocks carry
-        await h.rpcStub.holdInboundMessageEvents(laggingIndex);
+        // a spectator synced past the open never saw the genesis join block;
+        // with its inbound events held its store head never moves
+        const joiner = await h.join.addSpectatorWait();
+        const laggingIndex = joiner.index;
+        const held = await h.rpcStub.holdInboundMessageEvents(laggingIndex);
+        await h.join.joinChannelWait({ joiner });
         const forkId = h.activeForkId!;
         await h.transition.advanceState({
             count: 2,
@@ -184,6 +185,14 @@ describe("E2E: dispute validation / inboundHash", function () {
             waitForFinalization: true
         });
         await h.assert.sync.peersInSyncWait();
+        // premise - the disputer's inbound store lags the snapshot it pins
+        expect(await held.heldCount()).to.be.greaterThan(0);
+        expect(
+            await h
+                .control(h.getPeer(laggingIndex))
+                .query.getLatestInboundMessageHash()
+                .request()
+        ).to.equal(null);
         h.event.resetEventSpies();
         h.contextApi.captureOriginalFork();
 

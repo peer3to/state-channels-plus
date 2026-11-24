@@ -279,7 +279,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
 
     // ********** public/external DIAMOND functions **********
 
-    // @dev Callable only by diamond facets - performs the deposit of the specific assets by interpreting `joinChannel` - returns bool success
+    // @dev Callable only by diamond facets - deposits every `joinChannel` atomically - returns the inbound JOIN block and the new deposit totals
     function depositAssetsComposable(JoinChannel[] memory joinChannels)
         public
         virtual

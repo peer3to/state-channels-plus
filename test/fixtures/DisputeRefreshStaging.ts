@@ -52,7 +52,13 @@ export async function assertDisputeRefreshPolicy(
         }
     });
     if (mode === "read-failure") {
-        await h.control(peer).stub.stubFailOnChainSlashesRead().request();
+        await h
+            .control(peer)
+            .stub.stubFailManagerRead(
+                "getOnChainSlashedParticipants",
+                "authoritative slash read failed"
+            )
+            .request();
     }
     await h.control(peer).stub.recordSlashRecoveries().request();
     const attempt = h.execOnHost(
@@ -108,7 +114,7 @@ export async function assertDisputeRefreshPolicy(
         await recorder.restore();
         await h.control(peer).stub.restoreSlashRecoveries().request();
         if (mode === "read-failure")
-            await h.control(peer).stub.restoreOnChainSlashesRead().request();
+            await h.control(peer).stub.restoreManagerRead().request();
     }
 }
 
@@ -129,7 +135,13 @@ export async function assertBackgroundDisputeFailure(
             at: "send"
         }
     });
-    await h.control(peer).stub.stubFailOnChainSlashesRead().request();
+    await h
+        .control(peer)
+        .stub.stubFailManagerRead(
+            "getOnChainSlashedParticipants",
+            "authoritative slash read failed"
+        )
+        .request();
     let diagnostics: Promise<Error[]> | undefined;
     try {
         await h
@@ -170,7 +182,7 @@ export async function assertBackgroundDisputeFailure(
         );
     } finally {
         await recorder.restore();
-        await h.control(peer).stub.restoreOnChainSlashesRead().request();
+        await h.control(peer).stub.restoreManagerRead().request();
         await Promise.all(
             h.peers.map((other) =>
                 h.control(other).stub.restoreDisputeInitiation().request()
