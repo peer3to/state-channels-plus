@@ -37,6 +37,6 @@ holds no fork.
 - `waits for the open's genesis join log in flight instead of recovering it from the chain`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P26, REQ-LIF-12-TSXRBG.T1.P7
 - `fails the open without aborting when the genesis join block stays unavailable`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P7, REQ-LIF-12-TSXRBG.T1.P5
 - `fails the open without aborting a listed participant whose genesis hook read fails without revert data`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P8, REQ-LIF-12-TSXRBG.T1.P8
-- `fails the open without aborting a listed participant whose genesis hook read fails in transport`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P9, REQ-LIF-12-TSXRBG.T1.P8
+- `fails the open without aborting a listed participant whose genesis hook read fails in transport`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P9, REQ-LIF-12-TSXRBG.T1.P9
 - `aborts a listed participant whose genesis hook reverts while the others install`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P4, REQ-LIF-12-TSXRBG.T1.P4
 - `aborts the listed participants and spares any other runtime when the opened hash matches no genesis`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P3, UNIT-TEST-EVENT-HANDLER-2-Q270TR.P5, REQ-LIF-12-TSXRBG.T1.P3, REQ-LIF-12-TSXRBG.T1.P6
