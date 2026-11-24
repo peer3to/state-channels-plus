@@ -26,16 +26,30 @@ outcome, that the old attempt produced no proposal and no open (and, for the hig
 pending proposal returned), and that the replacement then opens. The last test adds the chain
 participant set of the replacement and the old peer's blacklist, strikes and transport state.
 
+The default and derived success tests also return the proposal's genesis hash, the hash the genesis
+hook derives for the signed terms and the hash the chain recorded; the lower-role tests check all three
+are equal, the higher-role tests check the chain's against the derived one. Two genesis-failure tests
+agree a peer balance of `MaxUint256`, which the real Math hook rejects on its checked sum, and check the
+same whole result as the derivation failures ("Genesis unavailable" for the higher role). Two
+altered-proposal tests send the higher role a proposal with a hash it never derived, or with the
+counterparty balance changed to `MaxUint256`: both are refused, the proposer blacklisted and the attempt
+cleared with no open; the balance case fails as a balance mismatch, so the term check runs before the
+hook.
+
 `INV-NEG-1-6FW90P.T1.P1` (exact match co-signed) and `.P10` (locally derived non-empty data
 accepted) are covered by the higher-role tests, where the runtime receives the proposal. No
 specification permutation names the stale-attempt rule; it is covered only at the unit level.
 
 ## Tests
 
-- `lower address proposes empty opening data by default and opens`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P1
-- `higher address accepts empty opening data by default and opens`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P2, INV-NEG-1-6FW90P.T1.P1
+- `lower address proposes empty opening data by default and opens`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P1, UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P12, INV-NEG-1-6FW90P.T1.P16
+- `higher address accepts empty opening data by default and opens`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P2, UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P13, INV-NEG-1-6FW90P.T1.P1
 - `lower address derives opening data from the exact agreed terms`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P3
 - `higher address derives opening data from the exact agreed terms`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P4, INV-NEG-1-6FW90P.T1.P10
+- `the lower address whose genesis hook rejects the agreed balances clears the attempt without blacklisting the peer or proposing`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P16, INV-NEG-1-6FW90P.T1.P14
+- `the higher address whose genesis hook rejects the agreed balances clears the attempt without blacklisting, co-signing or opening`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P17, INV-NEG-1-6FW90P.T1.P15
+- `blacklists and clears a proposal whose genesis hash differs from the locally computed genesis`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P14, INV-NEG-1-6FW90P.T1.P12
+- `blacklists a proposal whose altered counterparty balance the genesis hook would reject`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P15, INV-NEG-1-6FW90P.T1.P13
 - `lower address derivation failure clears the attempt without a proposal or penalty`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P5
 - `higher address derivation failure clears the attempt without co-signing or penalty`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P6
 - `lower address late derivation result after cancellation keeps the replacement attempt`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P7

@@ -9,7 +9,8 @@ Upload refuses any dispute not anchored exactly at the chain's inbound head
 `it.skip` tripwires that never reach a committed dispute: a random `latestInboundMessageBlockHash`, `ZeroHash` with
 `lastInboundMessageBlockHeight = 999999n` (both `DisputeInboundHashNotInChain`), and an anchor below the pinned
 snapshot's inbound height (`DisputeInboundAnchorBehindLatestState`). They run nothing, so no test IDs are
-assigned. The one live case holds the lagging peer's inbound events from before the open, lands an existing
+assigned. The one live case holds the lagging peer's inbound events once the genesis is installed (a runtime
+that installed the genesis holds its join block), lands an existing
 participant's top-up, advances and finalizes past it, then provokes a double-sign dispute that only the lagging
 peer initiates. The oracles assert that dispute commits and resolves, no peer fires `onDisputeKilled`, and the
 lagging disputer is not slashed.

@@ -331,6 +331,9 @@ limit, so it implements only what needs its own storage and composition (`open`,
   `test/fixtures/ProxySelectorRoutingFixture.ts`. That fixture drives
   `SelectorRouting.test.ts`, which fails when a facet function has neither a
   routing entry nor an exclusion.
+- **Consumer-facet functions** (such as `openChannelGenesis`) are reached by
+  the fallback of last resort: they get an interface declaration only, no
+  routing entry.
 
 ### Platform-specific code (node / browser)
 

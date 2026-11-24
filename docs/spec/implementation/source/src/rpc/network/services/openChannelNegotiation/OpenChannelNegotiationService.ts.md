@@ -27,7 +27,6 @@ Terms integrity and completion
 - [ ] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-1-G73XX2.P9` — remote-initiated negotiation
 - [ ] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-1-G73XX2.P10` — altered participants
 - [ ] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-1-G73XX2.P11` — altered balances
-- [ ] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-1-G73XX2.P12` — altered isAtomic
 - [ ] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-1-G73XX2.P13` — altered data
 - [ ] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-1-G73XX2.P14` — altered deadline
 - [ ] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-1-G73XX2.P15` — third-party proposal ignored
@@ -67,10 +66,10 @@ Negotiation admission and balance
 
 ## UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA
 
-Opening-data hook and stale-attempt rule
+Opening-data and genesis hooks, stale-attempt rule
 
-- Setup: Run a committed ordinary negotiation with a probe peer on each side of the address order, through the base service (default hook) and a root service that derives, fails, or holds `buildOpeningData`; cancel a held attempt, start a replacement with another peer, then settle the held hook
-- Oracle: The proposal or accepted data equals the hook result for the exact agreed terms in address order; a hook failure ends the attempt locally with no proposal, co-signature, strike or close; a late hook result or failure after cancellation leaves the replacement current with its channel, deadline and pending outcome, and the replacement opens while the old peer gets no signature and no penalty
+- Setup: Run a committed ordinary negotiation with a probe peer on each side of the address order, through the base service (default hook) and a root service that derives, fails, or holds `buildOpeningData`; agree a counterparty balance of `MaxUint256` so the real Math genesis hook reverts on its checked sum; deliver proposals with an altered genesis hash or an altered counterparty balance; cancel a held attempt, start a replacement with another peer, then settle the held hook
+- Oracle: The proposal or accepted data equals the hook result for the exact agreed terms in address order, and the proposal's genesis hash equals the hash the genesis hook derives for the signed terms and the chain records; a hook failure, opening-data or genesis, ends the attempt locally with no proposal, co-signature, strike or close; an altered genesis hash or term is refused and the proposer blacklisted, the term check running before the genesis hook; a late hook result or failure after cancellation leaves the replacement current with its channel, deadline and pending outcome, and the replacement opens while the old peer gets no signature and no penalty
 
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P1` — lower role, default hook: proposes empty data, no deriving hook is called, the channel opens
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P2` — higher role, default hook: accepts an empty-data proposal, no deriving hook is called, the channel opens
@@ -83,6 +82,12 @@ Opening-data hook and stale-attempt rule
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P9` — higher role, hook result arrives after cancellation: the old proposal is answered without signing, the old channel never opens, the replacement stays current and opens
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P10` — higher role, hook failure arrives after cancellation: the old proposal fails with "Opening data unavailable", the replacement stays current and opens
 - [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P11` — after a cancelled attempt's late failure the replacement opens with exactly the local and new peer, and the old peer gets no proposal, open, strike, blacklist or close
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P12` — lower role: the proposal carries the genesis hash the hook derives for the signed terms, and the chain records that hash
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P13` — higher role: the chain records the genesis hash the higher peer derives for the terms it co-signed
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P14` — higher role, the proposal's genesis hash differs from the locally derived one: refused with "Genesis state hash mismatch", the proposer blacklisted, the attempt cleared, no open
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P15` — higher role, the proposal alters the counterparty balance to one the genesis hook would reject: refused as a balance mismatch and the proposer blacklisted, so the term check runs before the hook
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P16` — lower role, the genesis hook rejects the agreed balances: attempt and channel ID cleared, no proposal sent, retry outcome, no strike, blacklist or close
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P17` — higher role, the genesis hook rejects the agreed balances: the proposal is refused with "Genesis unavailable", nothing is co-signed or opened, attempt and channel ID cleared, retry outcome, no penalty
 
 ## UNIT-TEST-OBSERVED-OPEN-CLASSIFICATION-1-2WWP73
 

@@ -47,6 +47,12 @@ head read that fails rejects with its error; and a head read that never settles 
 false at the timeout and at the abort. Each case that subscribes checks that no block
 listener is left behind.
 
+The empty-store recovery case drops the lagging peer's `InboundMessagesProcessed` logs from before
+the open: the genesis rebuild in `ChannelOpened` recovers the lost genesis join log into the empty store,
+so the tip equals the chain snapshot's inbound head before the probe recovers the next block. The
+start-block hold case also checks that the non-participant observer installed the genesis it rebuilt:
+its live state hash equals the opened snapshot's.
+
 ## Tests
 
 - `authoritative slash recovery returns no change for an empty chain set`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P34, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P5

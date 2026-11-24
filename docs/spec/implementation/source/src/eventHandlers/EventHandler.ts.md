@@ -15,6 +15,7 @@
 - [`REQ-DISPUTE-PIPE-3-PHE3SQ` (Deterministic reduction)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq)
 - [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
 - [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)
+- [`REQ-LIF-12-TSXRBG` (Observers rebuild the genesis)](../../../../specification/settlement/lifecycle.md#req-lif-12-tsxrbg)
 
 ## UNIT-TEST-EVENT-HANDLER-1-RZ2C7W
 
@@ -49,3 +50,15 @@ Dispute-event branches
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P29` — a synced spectator whose chain events were held through a dispute cycle and a same-fork snapshot update ignores the disputes whose window that update cleared: no dispute persisted, no reduction scheduled for the old fork, no event-pipeline failure, and its mirror holds the chain's snapshot
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P30` — a participant whose read node is behind the block of a fork's first dispute waits for that block instead of taking the missing window as cleared: then it requests the acknowledgment, fires `onDisputeStarted` once, audits the invalid dispute and its kill lands
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P31` — a participant disposed while its window read waits for a lagging read node: the runtime release ends the wait well before its deadline, no further read or wait follows, the dispute is not handled (no `onDisputeStarted`, no upload, no kill), and no runtime error is reported
+
+## UNIT-TEST-EVENT-HANDLER-2-Q270TR
+
+Genesis rebuild on open
+
+- Setup: Open on chain with participants and a non-participant observer; select the channel on a fresh runtime only after the open and deliver `ChannelOpened` through the real event pipeline; open with unanimous terms carrying a hash no genesis derives from
+- Oracle: A matching rebuild installs the genesis with the chain's fork and state hash; a genesis join block the runtime never received is recovered from logs and stored before the install; a different hash aborts every runtime with no state set, no completed `onChannelOpened` and the event failed, while the chain keeps the channel open
+
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P1` — a non-participant observer installs the rebuilt genesis: its fork and state hash equal the chain snapshot's
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P2` — a runtime that selected the channel after the open recovers the genesis join block from logs, stores it and installs the genesis
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P3` — an opened hash no genesis derives from aborts every runtime: `onAbort` once, no `onSetState`, no completed `onChannelOpened`, the handler's failure surfaces once per runtime
+- [ ] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P4` — a reverting genesis hook aborts the same way as a mismatch

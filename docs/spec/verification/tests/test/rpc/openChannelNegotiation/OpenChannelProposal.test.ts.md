@@ -8,8 +8,8 @@ Exercises: [OpenChannelNegotiationHelpers.ts](../../../../../implementation/sour
 The suite unit-tests the pure comparator `getOpenChannelProposalMismatch` with hand-built
 `OpenChannelStruct` fixtures — no service, signatures, or transport. An exactly matching proposal
 returns `null`; then each security-sensitive field is varied one test at a time — a tampered
-balance amount, tampered balance data, a substituted participant, a different `channelId`, a
-non-atomic open, non-empty opening `data`, a deadline in the past, deadlines one and 29 seconds
+balance amount, tampered balance data, a substituted participant, a different `channelId`,
+non-empty opening `data`, a deadline in the past, deadlines one and 29 seconds
 ahead (below the 30-second minimum), a deadline exactly 30 seconds ahead (accepted), and a deadline
 beyond the allowed window — and each test asserts the specific mismatch reason string. A final test shows
 participant/address comparison is checksum-canonical (casing-insensitive). What the negotiation
@@ -20,6 +20,8 @@ per-field tests below are assigned to them. Still unassigned: the length variati
 participants, P6 balances) have no test; P2 (deadline at the expired edge) is probed one second
 past the edge (`now - 1`), and the comparator now rejects everything below the 30-second minimum,
 so the expired edge is not a boundary any more; and P3 (sort/alignment canonicalization) is not what the casing test shows.
+A separate case maps fixed terms through `openChannelJoins` and compares each join's codec encoding with
+the encoding of the join `open` builds for that participant, in participant order.
 
 ## Tests
 
@@ -28,7 +30,6 @@ so the expired edge is not a boundary any more; and P3 (sort/alignment canonical
 - `rejects tampered balance data`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P8
 - `rejects a different participant set`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P5
 - `rejects a different channelId`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P1
-- `rejects non-atomic opens`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P9
 - `rejects opening data that differs from the locally derived data`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P10
 - `rejects a deadline in the past`: none
 - `rejects a deadline one second ahead as too close`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P13
@@ -37,3 +38,4 @@ so the expired edge is not a boundary any more; and P3 (sort/alignment canonical
 - `rejects a deadline beyond the allowed window`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P11
 - `matches participants and channelId irrespective of address casing`: none
 - `accepts the locally derived application opening data`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P12
+- `openChannelJoins maps each participant to its balance, the channel and the deadline in order`: UNIT-TEST-OPEN-NEGOTIATION-HELPERS-2-9KPZH4.P1

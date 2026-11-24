@@ -23,13 +23,18 @@ participant's key, and submits both signature slots filled with that one signatu
 satisfies the per-slot signature check while naming the same participant twice. The oracle is the
 revert: `open()` must fail with `ErrorDuplicateParticipant` and no channel may be created.
 
-The second case covers the successful-join count guard. It etches the shared harness
-`SelectiveDepositConsumerFacet` over the deployed consumer facet, so the real deposit loop rejects
-a zero-amount join, and submits a unanimously signed non-atomic open for three participants whose
-balances are `500`, `0` and `0`. Only one deposit succeeds. The oracle is the full revert payload:
-`ErrorAtLeastTwoParticipantsRequired(1)` — the count of SUCCESSFUL joins, which cannot be confused
-with the submitted participant count of three — and the channel must stay closed. Non-atomic is
-required; an atomic batch reverts on the first failing deposit and never reaches the guard.
+Five cases cover the off-chain agreed genesis. The harness signs terms whose `genesisStateHash` it
+computes with its own never-etched `MathConsumerFacet`, so etching the shared
+`SelectiveDepositConsumerFacet` (which rejects a zero-amount deposit and whose genesis hook reverts)
+over the deployed consumer leaves the signed hash real. One open warps to a known time and reads the
+stored snapshot: its state hash is the signed hash, its participants are the terms', its inbound tip
+is the hash of the `InboundMessagesProcessed` block at height 1, its timestamp is the warp time, and
+its fork id hashes its data. One open runs with the reverting hook etched and still succeeds with the
+signed hash, so `open` never calls the hook. One open signs non-empty opening data and decodes the
+`ChannelOpened` log: the data is the signed data and the snapshot equals storage. A one-participant
+open with a zero amount reverts with `ErrorAtLeastTwoParticipantsRequired(1)`, not the deposit
+failure the etched consumer would raise, so the count check runs before any deposit. A two-party open
+whose second amount is zero reverts with `ErrorJoinChannelAtomicFailure(1, bob)`.
 
 The file was named `StateChannelManagerProxyOpen.test.sol` until this change. Forge ran it either
 way, but specification test discovery matches `*.t.sol`, so the case produced no discoverable
@@ -51,7 +56,7 @@ both already used and expired; the oracle is the full revert payload
 `RaceConditionChannelAlreadyOpen(channelId)`, so the already-open check must run before the
 deadline check.
 
-The duplicate-participant, successful-join-count and deadline gates are exercised here. The other `open()`
+The duplicate-participant, participant-count, deposit-failure, genesis-commitment and deadline gates are exercised here. The other `open()`
 gates — zero channel id, threshold shortfall, deposit composition — are covered by the Hardhat suite
 [OpenChannel.test.ts](../DiamondProxy/StateChannelManager/OpenChannel.test.ts.md). The
 `DEF-1-92NTAG` short-balances and zero-address reverts are planned but not yet tested.
@@ -60,7 +65,11 @@ gates — zero channel id, threshold shortfall, deposit composition — are cove
 
 - `test_open_duplicateParticipants_reverts`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P12
 - `test_open_inboundJoinMessageDataIsCanonicalJoinEncoding`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P24, REQ-DATA-1-1KNRQS.T1.P15
-- `test_open_fewerThanTwoSuccessfulJoins_revertsWithSuccessfulJoinCount`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P13
+- `test_open_oneParticipant_revertsBeforeAnyDeposit`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P25, REQ-LIF-11-KEEN0N.T1.P4
+- `test_open_failingDeposit_revertsTheWholeOpen`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P4, REQ-LIF-11-KEEN0N.T1.P5
+- `test_open_recordsTheSignedGenesisCommitment`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P26, REQ-LIF-11-KEEN0N.T1.P1
+- `test_open_neverCallsTheGenesisHook`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P27, REQ-LIF-11-KEEN0N.T1.P2
+- `test_open_emitsTheSnapshotAndTheOpeningData`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P28, REQ-LIF-11-KEEN0N.T1.P3
 - `test_open_participantsAboveMaximum_reverts`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P16
 - `test_open_participantsAtMaximum_passesTheBoundCheck`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P17
 - `test_open_beforeDeadline_opensChannel`: REQ-ENFADM-4-2NN96F.T1.P1

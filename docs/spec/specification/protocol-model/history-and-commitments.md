@@ -186,7 +186,8 @@ Note the level: the hash is over the genesis `SnapshotData` (the inner struct), 
 `StateSnapshot`. Since `SnapshotData.originForkId` names the parent fork, a fork's identity
 transitively commits to its entire fork ancestry back to the channel-opening genesis.
 
-Forks arise at channel opening (the first fork's genesis is produced by `openChannelGenesis`) and
+Forks arise at channel opening (the participants agree the first fork's genesis off-chain with the
+pure `openChannelGenesis` derivation and the chain commits to it by hash) and
 at dispute resolution: every completed dispute produces a canonical successor fork whose genesis
 snapshot is derived from the dispute's reduced result, with `originForkId` pointing at the
 disputed fork ([../protocol/disputes.md](../disputes/disputes.md)). Execution resumes from the
