@@ -236,7 +236,6 @@ jobs:
                   git fetch --quiet --depth=1 origin "${{ github.base_ref }}"
                   node_tests=0
                   git diff --quiet FETCH_HEAD HEAD -- scripts/e2e-parallel/distributed/runner-image.Dockerfile || node_tests=1
-                  node_tests=1 # TEMP: measure on this PR
                   chmod -R a+rwX "$GITHUB_WORKSPACE"
                   docker run --detach --name scp-browser \
                       --env NODE_TESTS="$node_tests" \
