@@ -166,7 +166,11 @@ browser tiers with it. Use `--mocha-test-pattern`, `--forge-test-pattern` or
 `--parachain` runs the slot nodes and tests on the parachain dev node
 (`PEER3_NODE_BIN`, default `zero-fee-node` on `PATH`) instead of Hardhat. The
 runner image copies the node from the image peer3-parachain publishes
-(`docker/zero-fee-node.Dockerfile` there), pinned by digest.
+(`docker/zero-fee-node.Dockerfile` there), pinned by digest. A PR that changes
+that pin also runs the chosen node-sensitive cases (pending-block gas estimates
+in `RpcNodes.test.ts`, block-authoring timeouts in `E2E-Timeouts`) in CI's
+`browser` job, on the image it builds; the distributed suite keeps running on
+the workers' own images until they restart on the merged checkout.
 
 Forge tasks need no Hardhat node, so they take neither a warm slot nor a funded
 account partition. Local and distributed runs build the contracts and the
@@ -258,7 +262,7 @@ and no connected worker has supported the browser runner for the discovery
 window (`--discovery-timeout`), the run skips the browser tasks and those marked
 Mocha tests with a warning that lists them (also written to the GitHub job
 summary) instead of failing; CI's `browser` job runs the same gates inside the
-runner image either way. A task whose attempt was lost with the only host that
+runner image either way (and, for a node pin PR, the node-sensitive cases). A task whose attempt was lost with the only host that
 could run it fails instead of being skipped.
 
 A worker that leaves before it is given a task, whether its lease or workspace
