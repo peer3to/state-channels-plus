@@ -960,26 +960,36 @@ describe("distributed isolated environment", function () {
     });
 
     it("returns the built runner image ID and leaves no scratch directory, and carries docker's status on a failed build", function () {
-        const scratchDirs = () =>
-            fs
-                .readdirSync(os.tmpdir())
-                .filter((name) => name.startsWith("runner-image-")).length;
-        const before = scratchDirs();
+        const idFiles: string[] = [];
+        const idFile = (args: string[]) => {
+            const file = args[args.indexOf("--iidfile") + 1];
+            idFiles.push(file);
+            return file;
+        };
         const built = buildRunnerImage(repoRoot(), [], (args: string[]) => {
-            fs.writeFileSync(args[args.indexOf("--iidfile") + 1], `${BUILT}\n`);
+            fs.writeFileSync(idFile(args), `${BUILT}\n`);
             return { status: 0 };
         });
         let failed: unknown;
         try {
-            buildRunnerImage(repoRoot(), [], () => ({ status: 3 }));
+            buildRunnerImage(repoRoot(), [], (args: string[]) => {
+                idFile(args);
+                return { status: 3 };
+            });
         } catch (error) {
             failed = error;
         }
         expect({
             built,
-            scratchLeft: scratchDirs() - before,
-            failedExitCode: (failed as { exitCode?: number }).exitCode
-        }).to.deep.equal({ built: BUILT, scratchLeft: 0, failedExitCode: 3 });
+            failedExitCode: (failed as { exitCode?: number }).exitCode,
+            scratchLeft: idFiles.map((file) =>
+                fs.existsSync(path.dirname(file))
+            )
+        }).to.deep.equal({
+            built: BUILT,
+            failedExitCode: 3,
+            scratchLeft: [false, false]
+        });
     });
 
     it("exits yarn test:parallel:image with 1 when docker cannot run", function () {
