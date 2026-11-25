@@ -3,7 +3,12 @@ pragma solidity ^0.8.8;
 import {Test} from "forge-std/Test.sol";
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
 import {CanonicalMutations} from "../harness/CanonicalMutations.sol";
-import {ErrorNonCanonicalEncoding} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
+import {_emptyMessageBlocks} from "../harness/StateProofStaging.sol";
+import {
+    ErrorBlockDecodeOutOfGas,
+    ErrorNonCanonicalEncoding
+} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
+import {_decodeGasBudget} from "../../../contracts/V1/StateChannelDiamondProxy/utils/BlockUtils.sol";
 import {Balance, Block, Message, MessageBlock} from "../../../contracts/V1/types/DataTypes.sol";
 
 // stateless property fuzz of the pure array helpers of UtilityFacet.sol, plus
@@ -231,8 +236,130 @@ contract UtilityFacetTest is Test {
         for (uint256 i = 0; i < rejected.length; i++) {
             (bool decodedOk, Block memory blockData) = util.tryDecodeBlock(rejected[i]);
             assertFalse(decodedOk, "noncanonical bytes must not decode");
-            assertEq(blockData.transaction.header.participant, address(0), "failure must yield default block");
-            assertEq(blockData.messageBlocks.length, 0, "failure must yield default block");
+            _assertDefaultBlock(blockData);
+        }
+    }
+
+    /// a canonical block that costs about 2.35M gas to decode: 50 message blocks of 10 empty messages each
+    function _heavyBlock() internal view returns (Block memory b) {
+        b = _canonicalBlock();
+        b.messageBlocks = _emptyMessageBlocks(50, 10);
+    }
+
+    function _assertDefaultBlock(Block memory blockData) internal pure {
+        assertEq(blockData.transaction.header.participant, address(0), "failure must yield default block");
+        assertEq(blockData.messageBlocks.length, 0, "failure must yield default block");
+    }
+
+    function test_tryDecodeBlock_outOfGasRevertsInsteadOfUndecodable() public {
+        bytes memory heavy = abi.encode(_heavyBlock());
+        // too little to fund the decode budget: the decode runs out of gas
+        vm.expectRevert(ErrorBlockDecodeOutOfGas.selector);
+        util.tryDecodeBlock{gas: 1_000_000}(heavy);
+
+        (bool ok, Block memory decoded) = util.tryDecodeBlock(heavy);
+        assertTrue(ok, "the funded decode answers");
+        assertEq(keccak256(abi.encode(decoded)), keccak256(heavy), "every field decoded");
+        assertEq(decoded.messageBlocks.length, 50, "every message block decoded");
+        assertEq(decoded.messageBlocks[49].messages.length, 10, "every message decoded");
+
+        // budget caps the decode, not an entry fee -> 7/8 of it still answers
+        Block memory large = _canonicalBlock();
+        large.messageBlocks[0].messages[0].data = new bytes(200_000);
+        bytes memory encodedLarge = abi.encode(large);
+        (bool okBelowBudget,) = util.tryDecodeBlock{gas: _decodeGasBudget(encodedLarge.length) * 7 / 8}(encodedLarge);
+        assertTrue(okBelowBudget, "a decode that completes inside the gas it received answers");
+    }
+
+    function test_tryDecodeBlock_hugeLengthMalformedBlockIsUndecodable() public view {
+        bytes memory malformed =
+            CanonicalMutations.withMessageBlocksLength(abi.encode(_canonicalBlock()), type(uint64).max);
+        uint256 before = gasleft();
+        (bool ok, Block memory blockData) = util.tryDecodeBlock{gas: 300_000}(malformed);
+        uint256 used = before - gasleft();
+        assertFalse(ok, "a length past the bytes does not decode");
+        _assertDefaultBlock(blockData);
+        assertLt(used, 100_000, "rejected at bounded gas");
+    }
+
+    function test_tryDecodeBlock_aliasOffsetBlockIsUndecodableWithinItsBudget() public view {
+        Block memory b = _canonicalBlock();
+        b.messageBlocks[0].messages[0].data = new bytes(4096);
+        // 1,000 head offsets at one 4 KB message block: about 37 KB that decode to 4 MB
+        bytes memory aliased = CanonicalMutations.withAliasedMessageBlock(abi.encode(b), 1000);
+        uint256 before = gasleft();
+        (bool ok, Block memory blockData) = util.tryDecodeBlock{gas: 30_000_000}(aliased);
+        uint256 used = before - gasleft();
+        assertFalse(ok, "aliased offsets are not the canonical encoding");
+        _assertDefaultBlock(blockData);
+        assertLt(used, _decodeGasBudget(aliased.length) + 100_000, "judged within the budget of its length");
+    }
+
+    /// worst canonical shapes, powers of two and 1.5x midpoints up to the tx cap: decode + 25% fits the budget
+    function test_decodeGasBudget_coversEveryCanonicalWorstCaseShape() public {
+        // shape, then largest count
+        uint256[2][6] memory sizes = [
+            [uint256(0), 16384], // one large body: words of payload
+            [uint256(1), 1900], // empty message blocks
+            [uint256(2), 2048], // empty messages in one message block
+            [uint256(3), 180], // message blocks of 10 empty messages (the repro's heavy block)
+            [uint256(4), 1536], // messages with a one-byte payload and balance data
+            [uint256(5), 1024] // message blocks of one empty message
+        ];
+        for (uint256 i = 0; i < sizes.length; i++) {
+            uint256 largest = sizes[i][1];
+            for (uint256 count = 1; count < largest; count *= 2) {
+                _assertBudgetCovers(sizes[i][0], count);
+                if (count > 1 && count * 3 / 2 < largest) _assertBudgetCovers(sizes[i][0], count * 3 / 2);
+            }
+            _assertBudgetCovers(sizes[i][0], largest);
+        }
+    }
+
+    /// `decodeBlock` gas for `shape` x `count`, in a fresh frame (no memory carry-over)
+    function measureDecode(uint256 shape, uint256 count) external view returns (uint256 used, uint256 length) {
+        bytes memory data = abi.encodeCall(UtilityFacet.decodeBlock, (abi.encode(_shape(shape, count))));
+        // the encoded block's length word sits after the selector and its offset
+        assembly ("memory-safe") {
+            length := mload(add(data, 0x44))
+        }
+        address target = address(util);
+        bool ok;
+        uint256 before = gasleft();
+        assembly ("memory-safe") {
+            ok := staticcall(gas(), target, add(data, 0x20), mload(data), 0, 0)
+        }
+        used = before - gasleft();
+        assertTrue(ok, "a canonical block decodes");
+    }
+
+    function _assertBudgetCovers(uint256 shape, uint256 count) private view {
+        (uint256 used, uint256 length) = this.measureDecode(shape, count);
+        assertLe(
+            used * 125 / 100,
+            _decodeGasBudget(length),
+            string.concat("shape ", vm.toString(shape), " count ", vm.toString(count))
+        );
+    }
+
+    function _shape(uint256 shape, uint256 count) internal pure returns (Block memory b) {
+        b.transaction.header.transactionCnt = 1;
+        if (shape == 0) {
+            b.transaction.body.data = new bytes(count * 32);
+        } else if (shape == 1) {
+            b.messageBlocks = new MessageBlock[](count);
+        } else if (shape == 2) {
+            b.messageBlocks = new MessageBlock[](1);
+            b.messageBlocks[0].messages = new Message[](count);
+        } else if (shape == 4) {
+            b.messageBlocks = new MessageBlock[](1);
+            b.messageBlocks[0].messages = new Message[](count);
+            for (uint256 i = 0; i < count; i++) {
+                b.messageBlocks[0].messages[i].data = new bytes(1);
+                b.messageBlocks[0].messages[i].balance.data = new bytes(1);
+            }
+        } else {
+            b.messageBlocks = _emptyMessageBlocks(count, shape == 3 ? 10 : 1);
         }
     }
 }

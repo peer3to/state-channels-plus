@@ -86,8 +86,10 @@ the replay. Sends are counted from the killer's gas usage table, resends include
 mined once and reverts, is not resent, rejects, and the timeout dispute stays committed with no
 slash; a capped kill-and-dispute multicall is mined once and reverts, `dispute` rejects, and the
 kill sent alone reads the block again, lands and slashes the disputer. A one-shot stub passes the
-handler's preflight at the capped limit, and the resend is held to the replay gas: two reverted
-sends burn exactly twice the replay gas. A spam kill whose first estimate is cut to a third runs
+handler's preflight at the capped limit, and the resend is held to the replay gas: both sends are
+mined and revert short of the replay, refused by the stipend check
+(`ErrorInsufficientGasForStateTransition`) on Hardhat, or on the parachain also out of gas under its
+proof-size floor (the mined send used its whole limit). A spam kill whose first estimate is cut to a third runs
 out of its headroom, is resent at a fresh unscaled estimate, and lands. The non-replaying sends (the
 spam kill, its kill-and-dispute multicall, and a dispute whose only proof is a `BlockDoubleSign`
 proof against a peer that double-signed) record no replay-requirement read and no latest-block

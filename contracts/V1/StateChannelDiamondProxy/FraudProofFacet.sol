@@ -3,7 +3,6 @@ pragma solidity ^0.8.8;
 import "./StateChannelCommon.sol";
 import "./Errors.sol";
 import "../types/FraudProofTypes.sol";
-import "./UtilityFacet.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract FraudProofFacet is StateChannelCommon {
@@ -156,10 +155,12 @@ contract FraudProofFacet is StateChannelCommon {
             return _invalid();
         }
 
-        (address signer1,) = UtilityFacet(utilityFacetAddress)
-            .retrieveSignerAddress(blockDoubleSignProof.block1.encodedBlock, blockDoubleSignProof.block1.signature);
-        (address signer2,) = UtilityFacet(utilityFacetAddress)
-            .retrieveSignerAddress(blockDoubleSignProof.block2.encodedBlock, blockDoubleSignProof.block2.signature);
+        (address signer1,) = _recoverSigner(
+            _eip191SignedHash(blockDoubleSignProof.block1.encodedBlock), blockDoubleSignProof.block1.signature
+        );
+        (address signer2,) = _recoverSigner(
+            _eip191SignedHash(blockDoubleSignProof.block2.encodedBlock), blockDoubleSignProof.block2.signature
+        );
         if (signer1 != signer2) {
             return _invalid();
         }
@@ -176,10 +177,9 @@ contract FraudProofFacet is StateChannelCommon {
         StateSnapshot memory previousStateSnapshot = blockInvalidSTProof.previousBlockStateSnapshot;
         bytes memory previousStateStateMachineState = blockInvalidSTProof.previousStateStateMachineState;
 
-        (address signer,) = UtilityFacet(utilityFacetAddress)
-            .retrieveSignerAddress(
-                blockInvalidSTProof.invalidBlock.encodedBlock, blockInvalidSTProof.invalidBlock.signature
-            );
+        (address signer,) = _recoverSigner(
+            _eip191SignedHash(blockInvalidSTProof.invalidBlock.encodedBlock), blockInvalidSTProof.invalidBlock.signature
+        );
 
         if (fraudProofVerificationContext.channelId != fraudBlock.transaction.header.channelId) {
             return _invalid();
@@ -252,8 +252,8 @@ contract FraudProofFacet is StateChannelCommon {
         // forfeit-of-extra-time: if author signed the previous block, they can't claim extra p2p time
         bool hasForfeited = false;
         if (proof.participantSignatureOnPreviousBlock.length > 0) {
-            (address signerAddr, bool isValid) = UtilityFacet(utilityFacetAddress)
-                .retrieveSignerAddress(abi.encode(previousBlock), proof.participantSignatureOnPreviousBlock);
+            (address signerAddr, bool isValid) =
+                _recoverSigner(_eip191SignedHash(abi.encode(previousBlock)), proof.participantSignatureOnPreviousBlock);
             hasForfeited = isValid && signerAddr == fraudBlock.transaction.header.participant;
         }
 
@@ -305,7 +305,7 @@ contract FraudProofFacet is StateChannelCommon {
             // past genesis on its fork the chain no longer holds the genesis to judge block 0 against -> revert,
             // never slash the prover
             require(
-                UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(onChainSnapshot),
+                _isGenesisSnapshotWithoutTimeCheck(onChainSnapshot),
                 RaceConditionBlockHeightTooOld(onChainSnapshot.blockHeight, _block.transaction.header.transactionCnt)
             );
             if (_block.previousBlockHash != keccak256(abi.encode(onChainSnapshot))) return _valid(blockAuthor);
@@ -325,7 +325,7 @@ contract FraudProofFacet is StateChannelCommon {
         (bool isAvailable, uint256 timestamp) = _getGenesisTimestamp(channelId, originForkId, forkId);
         require(isAvailable, RaceConditionGenesisTimestampNotAvailable(channelId, originForkId, forkId));
         if (timestamp != correctGenesisSnapshot.timestamp) return _invalid();
-        if (!UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(correctGenesisSnapshot)) {
+        if (!_isGenesisSnapshotWithoutTimeCheck(correctGenesisSnapshot)) {
             return _invalid();
         }
         if (_block.previousBlockHash != keccak256(abi.encode(correctGenesisSnapshot))) return _valid(blockAuthor);

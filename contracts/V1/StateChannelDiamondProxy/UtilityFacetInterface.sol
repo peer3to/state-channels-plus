@@ -8,27 +8,11 @@ import "../types/DataTypes.sol";
 /// so `StateChannelCommon` cannot name the concrete type without a definition
 /// cycle - it binds this interface to `utilityFacetAddress` instead.
 abstract contract UtilityFacetInterface {
-    function tryDecodeBlock(bytes memory encodedBlock)
-        public
-        view
-        virtual
-        returns (bool decoded, Block memory blockData);
-
-    function retrieveSignerAddress(bytes memory encodedData, bytes memory signature)
-        public
-        pure
-        virtual
-        returns (address, bool);
+    function decodeBlock(bytes memory encodedBlock) external pure virtual returns (Block memory);
 
     function isAddressInArray(address[] memory array, address adr) public pure virtual returns (bool);
 
     function subtractAddressArrays(address[] memory array1, address[] memory array2)
-        public
-        pure
-        virtual
-        returns (address[] memory);
-
-    function concatAddressArraysNoDuplicates(address[] memory array1, address[] memory array2)
         public
         pure
         virtual
@@ -39,6 +23,4 @@ abstract contract UtilityFacetInterface {
         pure
         virtual
         returns (address[] memory);
-
-    function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot) public pure virtual returns (bool);
 }

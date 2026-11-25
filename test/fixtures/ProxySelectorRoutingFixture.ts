@@ -75,7 +75,8 @@ const notRoutedByFacet: Record<
         retrieveSignerAddresses:
             "stateless helper called on the facet directly",
         subtractAddressArrays: "stateless helper called on the facet directly",
-        tryDecodeBlock: "stateless helper called on the facet directly",
+        tryDecodeBlock:
+            "public try-decode for off-chain callers; contracts use `_tryDecodeBlock`",
         verifyThresholdSigned: "stateless helper called on the facet directly"
     }
 };

@@ -56,8 +56,8 @@ contract JoinChannelFacet is StateChannelCommon {
             RaceConditionJoinChannelSnapshotMismatch(currentSnapshotHash, expectedSnapshotHash)
         );
 
-        address[] memory participantUnion = UtilityFacet(utilityFacetAddress)
-            .concatAddressArraysNoDuplicates(_getSnapshotParticipants(channelId), _getPendingParticipants(channelId));
+        address[] memory participantUnion =
+            _concatAddressArraysNoDuplicates(_getSnapshotParticipants(channelId), _getPendingParticipants(channelId));
         bool isExistingParticipant =
             UtilityFacet(utilityFacetAddress).isAddressInArray(participantUnion, jc.participant);
         require(
@@ -81,7 +81,7 @@ contract JoinChannelFacet is StateChannelCommon {
 
         //verify original signature
         (address retrievedAddress, bool isValidSignature) =
-            UtilityFacet(utilityFacetAddress).retrieveSignerAddress(sjc.encodedJoinChannel, sjc.signature);
+            _recoverSigner(_eip191SignedHash(sjc.encodedJoinChannel), sjc.signature);
         require(
             jc.participant == retrievedAddress && isValidSignature,
             ErrorJoinChannelInvalidSignature(jc.participant, retrievedAddress)

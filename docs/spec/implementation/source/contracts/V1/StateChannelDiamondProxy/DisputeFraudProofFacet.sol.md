@@ -17,6 +17,7 @@
   Missing: `applyDisputeFraudProofs` has no proof type that kills a dispute whose final point regresses the inbound height of a proved final point ([`FIND-DISPUTE-6-E2YJ9X`](../../../../../audit/open-findings.md#find-dispute-6-e2yj9x)).
 - [`REQ-DA-2-KYZ70M` (The specification of any timing-sensitive rule MUST state which of these…)](../../../../../specification/security/data-availability.md#req-da-2-kyz70m)
 - [`INV-TRUST-1-6TYWDH` (Every safety-relevant disagreement MUST be resolvable by the chain from…)](../../../../../specification/security/trust-model.md#inv-trust-1-6tywdh)
+  Partial: `applyDisputeFraudProofs` cannot kill a dispute whose own proof carries a block too large to decode under the per-transaction gas cap ([`FIND-DECODE-2-CZ3FE5`](../../../../../audit/open-findings.md#find-decode-2-cz3fe5)).
 - [`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable…)](../../../../../specification/security/trust-model.md#req-trust-1-k5ps99)
 - [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r)
 
@@ -132,7 +133,7 @@ Kill application
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P103` — A posted hop listing the joiner but missing its signature is killed at the join hop
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P104` — A genuine joiner-authored block spliced with a foreign predecessor is killed through the join hop block pointer
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P105` — A correctly linked joiner-authored support block makes the join hop valid; full chain walk succeeds and its step counter is rejected
-- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P106` — Increasing prior honest hops from eight to thirty-two adds less counter gas than the stated fraction of a full-walk comparison, while both pointed challenges kill their disputes
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P106` — With thirty-two honest hops before the pointed join hop, the pointed step decodes no block of the hops before its predecessor, only the predecessor's first block, and kills the dispute
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P107` — A strictly higher same-fork anchor kills a dispute ending below it without supplied signature evidence
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P108` — An anchor at the same numeric height as a non-genesis dispute tip cannot kill by the below-anchor counter
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P109` — An anchor below a non-genesis dispute tip cannot kill by the below-anchor counter
@@ -227,7 +228,7 @@ Kill application
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P198` — A chain-eligible leaver's honest timeout of an author that produced nothing survives without counters or kills; no one is slashed and executed reduction retains her dispute and the accused timeout
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P199` — A fresh pending auditor with finality at or above the wrong-author timeout target, no departure state and no accused calldata exclusively kills with TimeoutSupersededByFinalState; reduction clears the false timeout, slashes/excludes leaver and keeps accused, without acquiring old state
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P200` — Below-target finality, a foreign-fork proof envelope and stripped confirmation evidence each return false for timeout supersession; their submitted batch produces no kill and slashes its challenger, then genuine final evidence kills with the expected family and slashes the leaver
-- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P201` — Apply an omitted-data step counter with the same earlier threshold fault and 8 versus 32 blocks in an unrelated final run. Both disputes are killed; apply-cost growth is less than half the measured signature/link-walk growth
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P201` — Apply an omitted-data step counter at an earlier threshold fault beside an unrelated 32-block final run. The dispute is killed and the step decodes no interior block of the final run
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P202` — An omitted-data dispute with a missing threshold is killed by its authenticated invalid-step proof even when the missing-data counter also applies
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P203` — a failing proof that declares the zero target, submitted by a non-participant, leaves a valid committed dispute committed and slashes nobody
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P204` — for every proof family with a well-formed failing payload, a zero declared target submitted by a non-participant never kills a valid committed dispute or records a slash; the slash-subset family reverts `RaceConditionOnChainSlashes`

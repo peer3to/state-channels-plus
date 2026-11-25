@@ -67,7 +67,7 @@ export type PostedDispute = { dispute: DisputeStruct; disputeHash: string };
 export async function stageChainAnchor(
     h: MathPeerTestHarness,
     blocksAboveAnchor: number,
-    options: { transitionCount?: number } = {}
+    options: { transitionCount?: number; evidenceTime?: number } = {}
 ): Promise<ChainAnchorStaging> {
     await h.scenario.preDisputeSetup({
         peerCount: 4,
@@ -75,7 +75,7 @@ export async function stageChainAnchor(
         // An auditor walks every milestone of these proofs before it builds
         // and sends its kill, which has taken about nine seconds on a loaded
         // farm: the kill period keeps headroom over that.
-        timeConfig: { evidenceTime: 12 }
+        timeConfig: { evidenceTime: options.evidenceTime ?? 12 }
     });
     // Pin the anchor before authoring; mining and mirror delivery must not
     // consume the next writer's window.
@@ -467,6 +467,43 @@ export function otherPeers(
     return h.peers
         .map((peer) => peer.index)
         .filter((index) => index !== peerIndex);
+}
+
+/**
+ * `source` rebuilt as a heavy block linked to `previous` and re-signed by its author, no confirmations;
+ * 25 message blocks of 10 empty messages -> a decode guard band above the parachain's proof-size floor
+ */
+export async function heavyConfirmation(
+    h: MathPeerTestHarness,
+    source: BlockConfirmationStruct,
+    previous: BlockConfirmationStruct
+): Promise<BlockConfirmationStruct> {
+    const block = Codec.decode(source.signedBlock.encodedBlock, Type.Block);
+    const author = h.peers.find(
+        (peer) => peer.address === block.transaction.header.participant
+    );
+    if (!author) throw new Error("heavyConfirmation: author not a peer");
+    const emptyMessage = {
+        messageType: hash("0x"),
+        participant: author.address,
+        balance: { amount: 0n, data: "0x" },
+        data: "0x"
+    };
+    const heavy = await Block.fromBlockStruct(
+        {
+            ...block,
+            previousBlockHash: hash(previous.signedBlock.encodedBlock),
+            messageBlocks: Array.from({ length: 25 }, () => ({
+                previousBlockHash: hash("0x"),
+                blockHeight: 0n,
+                messages: Array.from({ length: 10 }, () => emptyMessage),
+                totalBalance: { amount: 0n, data: "0x" },
+                timestamp: 0n
+            }))
+        },
+        author.signer
+    );
+    return { signedBlock: heavy.signedBlock, signatures: [] };
 }
 
 /** A block confirmation whose block bytes do not decode, carrying `source`'s real author signature. */

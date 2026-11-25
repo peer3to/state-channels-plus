@@ -119,6 +119,15 @@ contract StateProofWalkTest is StateProofStaging {
         _assertFinalized(_walk(_one(run), _entries(anchor)), anchor, 3);
     }
 
+    function test_U08_anchorAtTheFirstBlockOnAnotherChannelIsABlockFaultAtZero() public {
+        StateSnapshot memory anchor = _seedAnchor(50);
+        MilestoneProof memory run = _run(50, 3, keccak256("block 49"), _signers(ALICE_KEY));
+        Block memory b = _decode(run, 0);
+        b.transaction.header.channelId = keccak256("another channel");
+        _replaceBlock(run, 0, b, _signers(ALICE_KEY));
+        _assertBlockFault(_walk(_one(run), _entries(anchor)), 0);
+    }
+
     function test_U09_blockAtTheAnchorHeightCommittingAnotherSnapshotDoesNotMatch() public {
         StateSnapshot memory anchor = _seedAnchor(50);
         StateSnapshot memory other = _snapshot(50, genesisData.participants);
@@ -449,6 +458,28 @@ contract StateProofWalkTest is StateProofStaging {
         assertFalse(result.snapshotMismatch, "an invalid proof, not forged evidence");
     }
 
+    function test_U110_undecodableOneBlockMilestoneAboveTheAnchorIsABlockFaultAtZero() public {
+        StateSnapshot memory anchor = _seedAnchor(5);
+        MilestoneProof memory run = _run(6, 1, keccak256("block 5"), _signers(ALICE_KEY, BOB_KEY));
+        run.blockConfirmations[0].signedBlock.encodedBlock = hex"deadbeef";
+        _assertBlockFault(_walk(_one(run), _entries(anchor)), 0);
+    }
+
+    function test_U110_undecodableLastBlockOfAMultiBlockMilestoneIsNotBelowTheAnchor() public {
+        StateSnapshot memory anchor = _seedAnchor(50);
+        MilestoneProof memory run = _run(49, 3, keccak256("block 48"), _signers(ALICE_KEY));
+        run.blockConfirmations[2].signedBlock.encodedBlock = hex"deadbeef";
+        // the run holding the anchor is walked, so the walk fails at the last index
+        _assertBlockFault(_walk(_one(run), _entries(anchor)), 2);
+    }
+
+    function test_U110_emptyMilestoneIsNotFinal() public {
+        MilestoneProof memory empty;
+        (bool isFinal, bytes32 finalizedSnapshotHash) = _diamond().isMilestoneFinal(forkId, genesisData, empty);
+        assertFalse(isFinal, "an empty milestone proves nothing");
+        assertEq(finalizedSnapshotHash, bytes32(0), "no finalized snapshot");
+    }
+
     function test_U110_missingSnapshotEntriesCannotVerifyTheProof() public view {
         MilestoneProof memory run = _thresholdRun(3, 1, genesisData.participants, _signers(ALICE_KEY, BOB_KEY));
         ProofWalkResult memory result = _walk(_one(run), new StateSnapshot[](0));
@@ -536,5 +567,13 @@ contract StateProofWalkTest is StateProofStaging {
         (MilestoneProof[] memory milestones, StateSnapshot[] memory snapshots) =
             _atomicJoinAndExitHop(_signers(ALICE_KEY, BOB_KEY, CAROL_KEY));
         _assertFinalized(_walk(milestones, snapshots), snapshots[0], 1);
+    }
+
+    function _assertBlockFault(ProofWalkResult memory result, uint256 failedBlockIndex) private pure {
+        assertFalse(result.valid, "invalid walk");
+        assertFalse(result.snapshotMismatch, "an invalid proof, not forged evidence");
+        assertTrue(result.isBlockFault, "a per-block fault");
+        assertEq(result.failedMilestoneIndex, 0, "the only milestone");
+        assertEq(result.failedBlockIndex, failedBlockIndex, "the failing block");
     }
 }

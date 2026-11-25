@@ -75,6 +75,7 @@ Advance paths
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P52` — storage clearing on an open channel with no inbound block deletes nothing and names the zero hash
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P53` — a routed same-fork final close (zero participants) deletes the snapshot's inbound head and the blocks below it and emits exactly one `ChannelStorageCleared`, naming the head
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P54` — a second open-channel storage clearing at the same snapshot head names the block the first one deleted, deletes nothing and keeps the head with its height
+- [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P55` — a same-fork update with a one-block removal hop is accepted
 
 ## INTEGRATION-TEST-OPEN-CHANNEL-REGISTRY-1-A8M2KP
 

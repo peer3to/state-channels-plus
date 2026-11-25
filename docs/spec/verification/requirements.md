@@ -918,7 +918,7 @@ Specification cases tested: 14/28. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, 
 Specification cases tested: 0/12.
 
 [`REQ-SP-7-70EMAT` (In the retained region, verification checks consecutive heights, hash links,…)](../specification/disputes/state-proofs.md#req-sp-7-70emat)
-Specification cases tested: 26/40. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
+Specification cases tested: 41/55. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
 
 [`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor, which may lag the chain but…)](../specification/disputes/state-proofs.md#req-sp-8-9zccej)
 Specification cases tested: 32/32.

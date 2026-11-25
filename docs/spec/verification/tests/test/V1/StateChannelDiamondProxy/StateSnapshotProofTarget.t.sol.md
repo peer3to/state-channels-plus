@@ -21,3 +21,4 @@ Posts snapshot updates with milestone proof targets. Checks final-point selectio
 - `test_U109_unfinalizedBlocksAfterTheAnchorAreNotATarget`: INV-ENFSNAP-1-9VZ2HE.T2.P11, UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P44
 - `test_U118_separateLastMilestoneMakesTheLaterFinalPointTheTarget`: INV-ENFSNAP-1-9VZ2HE.T2.P12, UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P45
 - `test_U118_changePointIsNotTheTargetOfTheOverlappingProof`: INV-ENFSNAP-1-9VZ2HE.T2.P13, UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P46
+- `test_sameForkUpdate_oneBlockRemovalHopIsAccepted`: UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P83, UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P55

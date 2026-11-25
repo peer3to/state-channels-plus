@@ -1589,7 +1589,10 @@ A sum that cannot be computed returns false on every path: the auditor's
 authenticates the overflowing block, which a latest state signed only by its author can do. An
 out-of-gas in `addBalance` (the caller keeps at most 1/64 of its gas) reverts
 `ErrorOutboundBalanceSumOutOfGas`: no verdict, so a caller-chosen low gas limit never judges an honest
-run invalid. The verdict assumes `addBalance` fails within bounded gas on a balance it cannot add.
+run invalid. The verdict assumes `addBalance` fails within bounded gas on a balance it cannot add. A block decode
+follows the same rule in its one owner `_tryDecodeBlock`: the decode gets `_decodeGasBudget` of the
+block's length, a funded decode answers, and a decode whose failure leaves the caller at most 1/64 of
+its gas reverts `ErrorBlockDecodeOutOfGas` with no verdict.
 The auditor judges the run only after its replay proved the latest state
 (`verifyAndReplay` in
 [DisputeValidationService.ts](../../../src/stateManager/dispute/DisputeValidationService.ts)), so a

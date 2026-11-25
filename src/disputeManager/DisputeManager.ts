@@ -22,9 +22,7 @@ import {
     DebugProxy,
     DetachedPromises,
     hash,
-    Codec,
     CustomEvmError,
-    Type,
     Mutex,
     isReasonlessRevert,
     Logger,
@@ -146,6 +144,7 @@ class DisputeManager {
         forkId: ForkId,
         options?: {
             kill?: DisputeStruct;
+            killHash?: Hash;
             refusedInboundHead?: Hash;
             latestStateProof?: Promise<BuiltStateProof | undefined>;
         }
@@ -220,9 +219,13 @@ class DisputeManager {
 
             const shouldPostAuditingData = dispute.postedAuditingData;
 
+            const disputeHash = hash(
+                disputeConfirmation.signedDispute.encodedDispute
+            );
             LoggerUtils.logDisputeInitiated(
                 this.logger,
                 dispute,
+                disputeHash,
                 fraudProofsToApply
             );
 
@@ -296,10 +299,7 @@ class DisputeManager {
                     );
             }
 
-            this.p2pEventHooks.onInitiatingDispute?.(
-                hash(Codec.encode(dispute, Type.Dispute)),
-                dispute
-            );
+            this.p2pEventHooks.onInitiatingDispute?.(disputeHash, dispute);
             const receipt = await txResponse.wait();
             killLanded = !!killProof;
             const refusal = bestEffort
@@ -432,7 +432,7 @@ class DisputeManager {
             // no upload carried the kill (we already disputed, the fork moved,
             // or the upload failed): the invalid dispute is still killed alone
             if (options?.kill && !killLanded)
-                await this.killDispute(options.kill);
+                await this.killDispute(options.kill, options.killHash);
         }
         // The failed upload has released both the signing marker and dispute
         // mutex. Recheck the timeout through its owner instead of resending it.
@@ -527,9 +527,16 @@ class DisputeManager {
         this.disputeBuilder.clearCache(forkId);
     }
 
-    public async killDispute(dispute: DisputeStruct): Promise<void> {
-        const disputeMeta = LoggerUtils.getDisputeMetadata(dispute);
-        const formattedHash = LoggerUtils.formatHash(disputeMeta.disputeHash);
+    public async killDispute(
+        dispute: DisputeStruct,
+        disputeHash?: Hash
+    ): Promise<void> {
+        const disputeMeta = LoggerUtils.getDisputeMetadata(
+            dispute,
+            disputeHash
+        );
+        // hash from the caller when it has one -> no dispute re-encode for a log
+        const target = `${disputeHash ? LoggerUtils.formatHash(disputeHash) + " " : ""}on fork ${LoggerUtils.formatHash(String(dispute.input.forkId))}`;
         let txResponse;
         // a replaying kill's capped limit, kept by a retry of its revert
         let replayGasLimit: bigint | undefined;
@@ -548,7 +555,7 @@ class DisputeManager {
                 );
                 return;
             }
-            this.logger.info(`killDispute: sending kill ${formattedHash}`, {
+            this.logger.info(`killDispute: sending kill ${target}`, {
                 disputeMeta,
                 ...LoggerUtils.getDisputeDeadlineMetadata({
                     killPeriodEnd: Number(killPeriodEnd)
@@ -574,7 +581,7 @@ class DisputeManager {
 
             await txResponse.wait();
             this.logger.info(
-                `✅ Dispute fraud-proof transaction accepted: ${formattedHash}`
+                `✅ Dispute fraud-proof transaction accepted for the dispute ${target}`
             );
         } catch (error) {
             const success = await tryHandleEvmError(error, {
@@ -587,32 +594,32 @@ class DisputeManager {
                     // a late challenge is fatal: no recovery after the kill period
                     RaceConditionDisputeKillPeriodExpired: (customError) => {
                         this.logger.error(
-                            `killDispute: kill period expired before the challenge of dispute ${formattedHash} landed`,
+                            `killDispute: kill period expired before the challenge of the dispute ${target} landed`,
                             { disputeMeta }
                         );
                         throw customError;
                     },
                     RaceConditionOnChainSlashes: () => {
                         this.logger.info(
-                            `killDispute no-op: on-chain slashes already cover dispute ${formattedHash}`,
+                            `killDispute no-op: on-chain slashes already cover the dispute ${target}`,
                             { disputeMeta }
                         );
                     },
                     RaceConditionGenesisTimestampNotAvailable: () => {
                         this.logger.info(
-                            `killDispute no-op: genesis timestamp not available for dispute ${formattedHash}`,
+                            `killDispute no-op: genesis timestamp not available for the dispute ${target}`,
                             { disputeMeta }
                         );
                     },
                     RaceConditionUnexpectedBlockCalldataPosted: () => {
                         this.logger.info(
-                            `killDispute no-op: unexpected block calldata posted for dispute ${formattedHash}`,
+                            `killDispute no-op: unexpected block calldata posted for the dispute ${target}`,
                             { disputeMeta }
                         );
                     },
                     RaceConditionBlockHeightTooOld: () => {
                         this.logger.info(
-                            `killDispute no-op: a nested fraud proof the chain no longer judges for dispute ${formattedHash}`,
+                            `killDispute no-op: a nested fraud proof the chain no longer judges for the dispute ${target}`,
                             { disputeMeta }
                         );
                     }
@@ -620,7 +627,7 @@ class DisputeManager {
             });
             if (!success) {
                 const custom = tryDecodeCustomError(error);
-                this.logger.error(`❌ Error killing dispute ${formattedHash}`, {
+                this.logger.error(`❌ Error killing the dispute ${target}`, {
                     disputeMeta,
                     custom,
                     error: errorMessage(error)

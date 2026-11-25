@@ -2,7 +2,6 @@ pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
 import "../types/DataTypes.sol";
-import "./UtilityFacet.sol";
 import "./Errors.sol";
 
 contract StateSnapshotFacet is StateChannelCommon {
@@ -17,7 +16,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         if (currentStateSnapshot.forkId == targetForkId) return; // already on the correct fork
         // error args are evaluated eagerly, so the snapshot-data hash is raised
         // inside the failure branch and never computed on the happy path
-        if (!UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(newStateSnapshot)) {
+        if (!_isGenesisSnapshotWithoutTimeCheck(newStateSnapshot)) {
             revert ErrorNotGenesisSnapshot(
                 keccak256(abi.encode(newStateSnapshot.snapshotData)),
                 newStateSnapshot.forkId,
@@ -59,14 +58,14 @@ contract StateSnapshotFacet is StateChannelCommon {
     ) external {
         require(milestoneSnapshots.length > 0, ErrorSnapshotsNotProvided());
 
-        StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
+        StateSnapshot memory currentStateSnapshot = stateSnapshots[channelId];
         StateSnapshot memory newStateSnapshot = milestoneSnapshots[milestoneSnapshots.length - 1];
         require(
             currentStateSnapshot.forkId == newStateSnapshot.forkId,
             RaceConditionSnapshotForkMismatch(currentStateSnapshot.forkId, newStateSnapshot.forkId)
         );
         require(
-            UtilityFacet(utilityFacetAddress).isSnapshotNewer(newStateSnapshot, currentStateSnapshot),
+            _isSnapshotNewer(newStateSnapshot, currentStateSnapshot),
             RaceConditionBlockHeightTooOld(currentStateSnapshot.blockHeight, newStateSnapshot.blockHeight)
         );
         require(

@@ -12,14 +12,15 @@
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r)
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
+- [`REQ-SP-7-70EMAT` (In the retained region, verification checks consecutive heights, hash links,…)](../../../../../specification/disputes/state-proofs.md#req-sp-7-70emat)
 - [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs)
 
 ## UNIT-TEST-UTILITY-FACET-1-ER4P0V
 
 Threshold and shape predicates
 
-- Setup: Verify thresholds with dup/malleated/missing signers; decode valid/invalid blocks; shape predicates at boundaries
-- Oracle: Dedup counting exact; malleability never double-counts; decode failures classified
+- Setup: Verify thresholds with dup/malleated/missing signers; decode valid/invalid blocks, including alias-offset and huge-length inputs, under a gas-limit sweep; shape predicates at boundaries
+- Oracle: Dedup counting exact; malleability never double-counts; decode failures classified; an under-funded decode reverts `ErrorBlockDecodeOutOfGas`, never a verdict; canonical shapes fit the budget
 
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P1` — dup signer once
 - [ ] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P2` — malleated signature
@@ -36,6 +37,10 @@ Threshold and shape predicates
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P14` — `decodeBlock` accepts canonical block bytes with exact fields and re-encodes them byte-identically
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P15` — `decodeBlock` rejects decodable noncanonical encodings with `ErrorNonCanonicalEncoding` and malformed bytes with an ordinary revert
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P16` — `tryDecodeBlock` reports canonical bytes true with exact fields and every noncanonical or malformed input false with the default block
+- [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P17` — `tryDecodeBlock` reverts `ErrorBlockDecodeOutOfGas` when its failed decode leaves the caller at most 1/64 of its gas, decodes the same block with full gas, and decodes a block that completes inside less than its budget
+- [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P18` — `tryDecodeBlock` returns false for a malformed block whose length field runs past its bytes, within bounded gas
+- [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P19` — `tryDecodeBlock` returns false for an alias-offset block within its budget
+- [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P20` — every calibrated canonical worst-case shape decodes within its budget with 25% to spare
 
 ## UNIT-TEST-UTILITY-FACET-3-VYANPT
 

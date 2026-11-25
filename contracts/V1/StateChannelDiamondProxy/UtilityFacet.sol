@@ -13,14 +13,6 @@ import "./UtilityFacetInterface.sol";
 contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
     uint256 internal constant REPLAY_CALL_DEPTH = 5;
 
-    /// EIP-191 - the digest every signature over `encodedData` is actually made
-    /// over. Single owner: `verifyThresholdSigned`, `retrieveSignerAddress` and
-    /// `retrieveSignerAddresses` must agree on it or a recovered signer set
-    /// would not match the set the threshold check compared.
-    function _eip191SignedHash(bytes memory encodedData) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", keccak256(encodedData)));
-    }
-
     /// The addresses `signatures` recover to over `encodedData`, in the order
     /// they were supplied. A signature that fails to recover yields
     /// `address(0)` in its slot rather than reverting, so a rejection can
@@ -33,8 +25,8 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
         bytes32 signedHash = _eip191SignedHash(encodedData);
         signers = new address[](signatures.length);
         for (uint256 i = 0; i < signatures.length; i++) {
-            (address recovered, ECDSA.RecoverError error,) = ECDSA.tryRecover(signedHash, signatures[i]);
-            signers[i] = error == ECDSA.RecoverError.NoError ? recovered : address(0);
+            (address recovered, bool isValid) = _recoverSigner(signedHash, signatures[i]);
+            signers[i] = isValid ? recovered : address(0);
         }
     }
 
@@ -91,34 +83,19 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
     function retrieveSignerAddress(bytes memory encodedData, bytes memory signature)
         public
         pure
-        override
         returns (address, bool)
     {
-        bytes32 signedHash = _eip191SignedHash(encodedData);
-        (address recovered, ECDSA.RecoverError error,) = ECDSA.tryRecover(signedHash, signature);
-        if (error != ECDSA.RecoverError.NoError) {
-            return (recovered, false);
-        }
-        return (recovered, true);
+        return _recoverSigner(_eip191SignedHash(encodedData), signature);
     }
 
-    function decodeBlock(bytes memory encodedBlock) external pure returns (Block memory) {
+    function decodeBlock(bytes memory encodedBlock) external pure override returns (Block memory) {
         Block memory decodedBlock = abi.decode(encodedBlock, (Block));
         require(keccak256(abi.encode(decodedBlock)) == keccak256(encodedBlock), ErrorNonCanonicalEncoding());
         return decodedBlock;
     }
 
-    function tryDecodeBlock(bytes memory encodedBlock)
-        public
-        view
-        override
-        returns (bool decoded, Block memory blockData)
-    {
-        try this.decodeBlock(encodedBlock) returns (Block memory decodedBlock) {
-            return (true, decodedBlock);
-        } catch {
-            return (false, blockData);
-        }
+    function tryDecodeBlock(bytes memory encodedBlock) public view returns (bool decoded, Block memory blockData) {
+        return _tryDecodeBlock(this, encodedBlock);
     }
 
     function isAddressInArray(address[] memory array, address adr) public pure override returns (bool) {
@@ -198,36 +175,9 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
     function concatAddressArraysNoDuplicates(address[] memory array1, address[] memory array2)
         public
         pure
-        override
         returns (address[] memory)
     {
-        // array1 is assumed to contain no duplicates
-        // Create the result array with maximum possible size
-        address[] memory result = new address[](array1.length + array2.length);
-
-        // Copy all items from first array directly to the result
-        for (uint256 i = 0; i < array1.length; i++) {
-            result[i] = array1[i];
-        }
-
-        uint256 uniqueCount = array1.length;
-
-        // Add items from second array, skipping duplicates
-        for (uint256 i = 0; i < array2.length; i++) {
-            // Check if item already exists in array1
-            if (!isAddressInArray(result, array2[i])) {
-                result[uniqueCount] = array2[i];
-                uniqueCount++;
-            }
-        }
-
-        // If we didn't find any duplicates, we can return the result as is
-        if (uniqueCount == array1.length + array2.length) {
-            return result;
-        }
-
-        // Otherwise shrink to the deduplicated size
-        return _shrinkAddressArray(result, uniqueCount);
+        return _concatAddressArraysNoDuplicates(array1, array2);
     }
 
     function insertIntoAddressArrayNoDuplicates(address[] memory array, address newAddress)
@@ -253,8 +203,8 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
         return newArray;
     }
 
-    function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot) public pure override returns (bool) {
-        return snapshot.forkId == keccak256(abi.encode(snapshot.snapshotData)) && snapshot.blockHeight == 0;
+    function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot) public pure returns (bool) {
+        return _isGenesisSnapshotWithoutTimeCheck(snapshot);
     }
 
     function isSnapshotNewer(StateSnapshot memory newSnapshot, StateSnapshot memory currentSnapshot)
@@ -262,15 +212,7 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
         pure
         returns (bool)
     {
-        if (newSnapshot.blockHeight > currentSnapshot.blockHeight) return true;
-        // block 0's snapshot may replace the genesis, but never one that still looks like a genesis -> the chain
-        // would keep judging the fork as at genesis and slash block 0's honest author
-        if (
-            newSnapshot.blockHeight == 0 && currentSnapshot.blockHeight == 0
-                && isGenesisSnapshotWithoutTimeCheck(currentSnapshot) && !isGenesisSnapshotWithoutTimeCheck(newSnapshot)
-                && keccak256(abi.encode(newSnapshot)) != keccak256(abi.encode(currentSnapshot))
-        ) return true;
-        return false;
+        return _isSnapshotNewer(newSnapshot, currentSnapshot);
     }
 
     // ********** proxy storage views - delegatecalled through the proxy's selector routing **********
