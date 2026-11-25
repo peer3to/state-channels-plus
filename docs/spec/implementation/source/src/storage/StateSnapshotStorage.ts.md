@@ -16,7 +16,7 @@ Content addressing and genesis index
 
 - [x] `UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P1` — round trip by hash
 - [x] `UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P2` — genesis registration and lookup
-- [ ] `UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P3` — repeat store idempotent
+- [x] `UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P3` — repeat store idempotent
 - [x] `UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P4` — non-genesis not indexed
 - [x] `UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P5` — absent snapshot hash
 - [x] `UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P6` — absent genesis fork id

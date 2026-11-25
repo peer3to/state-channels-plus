@@ -294,7 +294,6 @@ export default class ChannelJoinService {
         });
         let tx: ContractTransactionResponse | undefined;
         try {
-            await sm.storage.flush();
             tx = await sm.stateChannelManagerContract.joinChannel(
                 confirmation,
                 expectedSnapshotHash,

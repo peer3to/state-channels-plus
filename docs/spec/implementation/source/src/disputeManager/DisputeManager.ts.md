@@ -28,6 +28,8 @@
 - [`REQ-DIS-11-WQK8P2` (A dispute MUST list on-chain slashes only of participants of its latest state…)](../../../../specification/disputes/disputes.md#req-dis-11-wqk8p2)
 - [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
 - [`REQ-DISPUTE-PIPE-13-R2QJZN` (Time out only the next height)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-13-r2qjzn)
+- [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../../../../specification/storage/durability.md#req-stor-3-4rjger)
+- [`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](../../../../specification/storage/durability.md#req-stor-8-25d06n)
 
 ## UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD
 

@@ -193,6 +193,16 @@ dispute's estimate is judged at the block it lands in, a 2 s slot after the buil
 farm load plus one or two blocks can outlast 5 s and the throttle has run out; 10 s leaves room. No
 oracle changed.
 
+## Test timing inputs — 2026-11-03
+
+Measured (Luke 2026-11-03, delegated: keep `p2pTime: 30` only if the default fails): the persistence restart and
+durability tests ran with the harness default timing instead of the `p2pTime: 30` override
+(`RESTART_TIME_CONFIG` in `test/fixtures/PersistenceRestartStaging.ts`, `DURABILITY_TIME_CONFIG` in
+`test/e2e/E2E-PersistenceDurability.test.ts`). With the default, all 12 tests in `E2E-PersistenceRestart` and
+`E2E-PersistenceDurability` passed on the distributed runner (persist-measure run-1, 12/12), and so did the 7
+restore cases of `BlockQueueManager`, `StateManager` and `JoinChannelSignatureRequest` (run-2, 7/7). Both
+overrides are dropped; no per-test widening remains for persistence.
+
 ## Test timing inputs — 2026-10-15
 
 Engineer decision (Luka, 2026-10-15, PR #551): raise the test evidence windows by a few seconds;

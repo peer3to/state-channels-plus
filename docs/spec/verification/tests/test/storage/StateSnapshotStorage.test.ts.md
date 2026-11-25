@@ -11,7 +11,8 @@ exactly (struct deep-equality), a genesis store auto-registers in the fork-id â†
 reads of absent snapshot hashes and unregistered fork ids return `undefined`, and a non-genesis
 snapshot never enters the genesis index. The atomized absent-key permutations are assigned per
 index below; repeated stores and a conflicting genesis registration for a known fork id are not
-present, so the idempotent-repeat and conflict-refusal permutations stay unassigned.
+present except a genesis stored again, which keeps the index on the later candidate (first
+insertion, as a reload rebuilds it); the conflict-refusal permutation stays unassigned.
 
 ## Tests
 
@@ -26,3 +27,4 @@ present, so the idempotent-repeat and conflict-refusal permutations stay unassig
 - `should identify genesis snapshot correctly`: none
 - `should not non-genesis snapshots in genesis mapping`: UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P4
 - `keeps the later of two genesis snapshots for one fork`: none
+- `keeps the later genesis when the earlier one is stored again`: UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P3

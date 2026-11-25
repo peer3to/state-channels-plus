@@ -4,6 +4,7 @@
 
 ## Requirements
 
+- [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../../../../specification/storage/durability.md#req-stor-3-4rjger)
 - [`INV-BLOCK-PIPE-1-1AB2ME` (Atomic ordered commit)](../../../../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me)
 - [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
 - [`REQ-BLOCK-PIPE-6-XQ0RTT` (Total-order application)](../../../../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt)

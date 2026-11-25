@@ -90,6 +90,80 @@ describe("JoinChannel signature requests", function () {
         expect(blacklisted).to.equal(true);
     });
 
+    it("a threshold member held at its restored head refuses to countersign a join until its restart sync settles, then signs it", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 2, {
+            persistentPeers: [1]
+        });
+        const joiner = await h.join.addSpectatorWait();
+        const joinChannel = {
+            participant: joiner.address,
+            channelId: h.channelId,
+            balance: { amount: 500n, data: "0x00" },
+            deadlineTimestamp: BigInt(Clock.getTimeInSeconds() + 600)
+        };
+        const signed = await SignatureUtils.signJoinChannel(
+            joinChannel,
+            joiner.signer
+        );
+        const encodedSignedJoinChannel = String(
+            Codec.encode(
+                {
+                    encodedJoinChannel: String(signed.encoded),
+                    signature: String(signed.signature)
+                },
+                Type.SignedJoinChannel
+            )
+        );
+        // the request arrives as the joiner's, over the member's loopback
+        const countersign = () =>
+            h.execOnHost(
+                h.getPeer(1),
+                async (sm, args) => {
+                    const transport = sm.p2pManager.loopbackTransport;
+                    const peerAddress = transport.peerAddress;
+                    transport.peerAddress = args.joiner;
+                    try {
+                        return await sm.p2pManager.localRpc.joinChannelService.signJoinRequest(
+                            transport,
+                            args.encodedSignedJoinChannel
+                        );
+                    } catch (error) {
+                        return {
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error)
+                        };
+                    } finally {
+                        transport.peerAddress = peerAddress;
+                    }
+                },
+                { joiner: joiner.address, encodedSignedJoinChannel }
+            );
+
+        const restarted = await h.lifecycle.restartPeer(1);
+        const query = h.control(restarted).query;
+        expect(await query.getStatus().request()).to.equal(Status.SYNCED);
+        expect(await countersign()).to.deep.equal({
+            error: "requestJoinSignature: restored head waits for the restart sync"
+        });
+
+        await h.network.connectPeers([1]);
+        await waitFor(
+            async () =>
+                (await query.getStatus().request()) === Status.PARTICIPATING
+        );
+        const answer = await countersign();
+        assert.ok("signature" in answer, JSON.stringify(answer));
+        expect(
+            SignatureUtils.getSignerAddress(
+                String(signed.encoded),
+                answer.signature
+            )
+        ).to.equal(restarted.address);
+    });
+
     it("excludes an on-chain-slashed participant from collection", async function () {
         const h = TestSession.getHarness();
         const { killer, spammer, spectator } =

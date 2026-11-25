@@ -71,6 +71,8 @@ const DEFAULT_MAX_CHANNEL_PARTICIPANTS = 32;
 
 export class QueueStorage {
     public readonly maxChannelParticipants: number;
+    // an entry reaches disk when it is created or restored; a merge into it
+    // reaches disk only with a later write of the entry
     private readonly queuedBlocks: PersistentCollection<Hash, QueuedBlockEntry>;
     private readonly blocksByCoordinates: Map<CoordinateKey, Set<Hash>> =
         new Map();
@@ -125,25 +127,36 @@ export class QueueStorage {
 
     queueBlock(block: Block, options: QueueBlockOptions): Hash | undefined {
         const incoming = this.createEntry(block, options);
-        let accepted = true;
-        this.queuedBlocks.update(block.hash, (existing) => {
-            if (!existing) return incoming;
-            accepted = this.mergeEntry(existing, incoming);
-            return existing;
-        });
-        return accepted ? block.hash : undefined;
+        const existing = this.queuedBlocks.get(block.hash);
+        if (existing) {
+            if (!this.mergeEntry(existing, incoming)) return undefined;
+        } else {
+            this.queuedBlocks.set(block.hash, incoming);
+            this.addHashToCoordinateIndex(
+                block.hash,
+                block.forkId,
+                block.height
+            );
+        }
+        return block.hash;
     }
 
     restoreEntry(entry: QueuedBlockEntry): void {
-        this.queuedBlocks.update(entry.block.hash, (existing) => {
-            if (!existing) return entry;
+        const existing = this.queuedBlocks.get(entry.block.hash);
+        if (existing) {
             this.mergeEntry(existing, entry);
             existing.firstSeenAt = Math.min(
                 existing.firstSeenAt,
                 entry.firstSeenAt
             );
-            return existing;
-        });
+        } else {
+            this.addHashToCoordinateIndex(
+                entry.block.hash,
+                entry.block.forkId,
+                entry.block.height
+            );
+        }
+        this.queuedBlocks.set(entry.block.hash, existing ?? entry);
     }
 
     private mergeEntry(
@@ -197,7 +210,11 @@ export class QueueStorage {
             return [];
         }
 
-        return this.dequeueHashes(hashSet);
+        const entries = this.dequeueHashes(hashSet);
+
+        this.blocksByCoordinates.delete(key);
+
+        return entries;
     }
 
     tryDequeuePriority(
@@ -222,7 +239,10 @@ export class QueueStorage {
         const hashes = this.blocksByCoordinates.get(lowestKey);
         if (!hashes) return [];
 
-        return this.dequeueHashes(hashes);
+        const entries = this.dequeueHashes(hashes);
+        this.blocksByCoordinates.delete(lowestKey);
+
+        return entries;
     }
 
     isBlockQueued(block: Block, options?: { hash?: Hash }): boolean {
@@ -244,7 +264,17 @@ export class QueueStorage {
     }
 
     removeBlock(blockHash: Hash): QueuedBlockEntry | undefined {
-        return this.queuedBlocks.takeMany([blockHash])[0];
+        const entry = this.queuedBlocks.get(blockHash);
+        if (!entry) return undefined;
+
+        this.queuedBlocks.delete(blockHash);
+        const key = coordinateKey(entry.block.forkId, entry.block.height);
+        const hashes = this.blocksByCoordinates.get(key);
+        hashes?.delete(blockHash);
+        if (hashes?.size === 0) {
+            this.blocksByCoordinates.delete(key);
+        }
+        return entry;
     }
 
     clearFork(forkId: ForkId): Hash[] {
@@ -254,18 +284,23 @@ export class QueueStorage {
             if (queuedForkId !== String(forkId)) continue;
 
             for (const hash of hashSet) {
+                this.queuedBlocks.delete(hash);
                 removedHashes.push(hash);
             }
+            this.blocksByCoordinates.delete(key);
         }
-        this.queuedBlocks.deleteMany(removedHashes);
         return removedHashes;
     }
 
     clear(): void {
-        this.queuedBlocks.clear();
+        for (const hash of [...this.queuedBlocks.keys()]) {
+            this.queuedBlocks.delete(hash);
+        }
+        this.blocksByCoordinates.clear();
     }
 
-    rebuildIndexes(): void {
+    // after a load: the coordinate index
+    private rebuildIndexes(): void {
         this.blocksByCoordinates.clear();
         for (const [hash, entry] of this.queuedBlocks.entries()) {
             this.addHashToCoordinateIndex(
@@ -290,7 +325,17 @@ export class QueueStorage {
     }
 
     private dequeueHashes(hashSet: Set<Hash>): QueuedBlockEntry[] {
-        return this.queuedBlocks.takeMany([...hashSet]);
+        const entries: QueuedBlockEntry[] = [];
+
+        for (const hash of hashSet) {
+            const entry = this.queuedBlocks.get(hash);
+            if (entry) {
+                entries.push(entry);
+                this.queuedBlocks.delete(hash);
+            }
+        }
+
+        return entries;
     }
 
     private keyToCoordinates(key: string): {

@@ -29,8 +29,7 @@ function openPartition(location, signerSecret) {
     return openPersistencePartition({
         identity,
         persistence: { location },
-        signerSecret,
-        existingPartition: "allow"
+        signerSecret
     });
 }
 
@@ -58,7 +57,7 @@ globalThis.runPersistenceRestartBrowserSmoke = async () => {
         const firstStorage = new Storage(undefined, undefined, {
             flushIntervalMs: 60_000
         });
-        await firstStorage.bind(openHandle);
+        await firstStorage.open(openHandle, () => undefined);
         for (let height = 1; height <= 10; height++) {
             firstStorage.forceJoin.startJoin(height, 100);
         }
@@ -70,7 +69,7 @@ globalThis.runPersistenceRestartBrowserSmoke = async () => {
         const secondStorage = new Storage(undefined, undefined, {
             flushIntervalMs: 20
         });
-        await secondStorage.bind(openHandle);
+        await secondStorage.open(openHandle, () => undefined);
         const explicitFlushRecovered =
             secondStorage.forceJoin.getJoin()?.submissionHeight === 10;
         secondStorage.forceExit.setForceExit(true);
@@ -83,7 +82,7 @@ globalThis.runPersistenceRestartBrowserSmoke = async () => {
         const fourth = await openPartition(location, signer(8));
         openHandle = fourth.databaseHandle;
         const recoveredStorage = new Storage();
-        await recoveredStorage.bind(openHandle);
+        await recoveredStorage.open(openHandle, () => undefined);
         const forceExitRecovered = recoveredStorage.forceExit.getForceExit();
         await recoveredStorage.close();
 

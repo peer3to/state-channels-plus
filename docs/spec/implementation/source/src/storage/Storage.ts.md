@@ -9,10 +9,15 @@
 - [`REQ-STOR-6-SKP0KM` (Value semantics at the store boundary)](../../../../specification/storage/durability.md#req-stor-6-skp0km)
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
 - [`REQ-STOR-1-D4XE73` (Complete durable set)](../../../../specification/storage/durability.md#req-stor-1-d4xe73)
-  Partial: `Storage` keeps every store in memory, so nothing survives a restart ([`OQ-23-SDBGYB` (SDK restart and recovery semantics)](../../../open-questions.md#oq-23-sdbgyb)).
+  Partial: with persistence off, the default, `Storage` keeps every store in memory only, so nothing survives a restart ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds)).
 - [`REQ-STOR-2-TARP8S` (Commit-aligned durability)](../../../../specification/storage/durability.md#req-stor-2-tarp8s)
 - [`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](../../../../specification/storage/durability.md#req-stor-4-mf6ft6)
+  Missing: nothing prunes, in memory or on disk ([`FIND-STORAGE-12-EE87DD`](../../../../audit/open-findings.md#find-storage-12-ee87dd)).
 - [`REQ-STOR-5-T6EQSA` (Isolation, integrity, and versioned encoding)](../../../../specification/storage/durability.md#req-stor-5-t6eqsa)
+  Partial: `open` checks the head fork's links but never a content-addressed record against its hash ([`FIND-STORAGE-11-00C45C`](../../../../audit/open-findings.md#find-storage-11-00c45c)).
+- [`REQ-STOR-7-K1J7EA` (Write-behind disk copy loaded once)](../../../../specification/storage/durability.md#req-stor-7-k1j7ea)
+- [`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](../../../../specification/storage/durability.md#req-stor-8-25d06n)
+- [`REQ-STOR-9-ZR8A92` (Closed by the one disposal)](../../../../specification/storage/durability.md#req-stor-9-zr8a92)
 
 ## UNIT-TEST-STORAGE-FACADE-1-TF3MZ1
 

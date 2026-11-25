@@ -8,6 +8,7 @@
 - [`REQ-TJOIN-5-Q795M7` (Phase-specific failure)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7)
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
 - [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)
+- [`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](../../../../../specification/storage/durability.md#req-stor-8-25d06n)
 
 ## UNIT-TEST-BLOCK-COMMIT-SERVICE-1-V6TP9S
 

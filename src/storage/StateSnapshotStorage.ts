@@ -6,6 +6,7 @@ import StateSnapshot from "@/models/StateSnapshot";
 import { Hash, ForkId } from "@/types/types";
 
 type StateSnapshotHash = Hash;
+type HeadKey = "value";
 
 type StoreOptions = {
     hash?: StateSnapshotHash;
@@ -21,6 +22,8 @@ export class StateSnapshotStorage {
         ForkId,
         StateSnapshotHash
     >();
+    // the fork of the installed state; fork heights restart at 0, so it is not derived
+    private readonly headForkId: PersistentCollection<HeadKey, ForkId>;
 
     constructor(controller?: PersistenceController) {
         this.snapshotsByHash = new PersistentCollection(
@@ -28,6 +31,7 @@ export class StateSnapshotStorage {
             controller,
             () => this.rebuildIndexes()
         );
+        this.headForkId = new PersistentCollection("headFork", controller);
     }
 
     // ====================================
@@ -40,8 +44,18 @@ export class StateSnapshotStorage {
     ): StateSnapshotHash {
         const hash = options?.hash ?? snapshot.hash;
 
+        // a stored hash keeps its place -> the index follows first insertion, as a reload does
+        if (snapshot.isGenesis && !this.snapshotsByHash.has(hash)) {
+            this.genesisSnapshotByForkId.set(snapshot.forkID, hash);
+        }
+
         this.snapshotsByHash.set(hash, snapshot);
+
         return hash;
+    }
+
+    storeHeadForkId(forkId: ForkId): void {
+        this.headForkId.set("value", forkId);
     }
 
     // ====================================
@@ -62,7 +76,11 @@ export class StateSnapshotStorage {
         return hash === undefined ? undefined : this.snapshotsByHash.get(hash);
     }
 
-    // after every change: the genesis index
+    getHeadForkId(): ForkId | undefined {
+        return this.headForkId.get("value");
+    }
+
+    // after a load, in store order: the latest stored genesis per fork
     private rebuildIndexes(): void {
         this.genesisSnapshotByForkId.clear();
         for (const [hash, snapshot] of this.snapshotsByHash.entries()) {
