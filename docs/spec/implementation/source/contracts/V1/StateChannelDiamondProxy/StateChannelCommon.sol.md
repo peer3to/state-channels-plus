@@ -25,8 +25,8 @@
 
 Shared predicates
 
-- Setup: Drive each shared predicate/derivation through two different facet paths
-- Oracle: Identical classification per path; pending derivation matches unconsumed JOINs; slash queries respect timestamps
+- Setup: Drive each shared predicate/derivation through two different facet paths; a real join through the deployed diamond
+- Oracle: Identical classification per path; pending derivation matches unconsumed JOINs; slash queries respect timestamps; a join stores its inbound record under the full emitted block's hash and writes exactly the five record slots as fresh (zero-to-nonzero) slots
 
 - [ ] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P1` — linkage predicates cross-path agreement
 - [ ] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P2` — pending-participant derivation
@@ -106,9 +106,12 @@ Shared predicates
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P76` — A hop consuming a JOIN while the joiner is absent from both endpoint sets verifies with that joiner signature and finalizes its snapshot
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P77` — `_verifyOutboundMessageBlocks` returns false, without a revert, for a linked run whose upper head points to a block whose balance `addBalance` cannot add
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P78` — `_verifyOutboundMessageBlocks` reverts `ErrorOutboundBalanceSumOutOfGas` when `addBalance` runs out of gas, so it returns no verdict
-- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P79` — `_inboundHeightOf` reads a stored inbound block's stored height
-- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P80` — `_inboundHeightOf` reads the anchor's inbound height for the anchor's inbound head whose block is not stored
-- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P81` — `_inboundHeightOf` reverts with `ErrorInboundMessageBlockNotStored` for a hash that is neither stored nor the anchor's inbound head
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P79` — a join's persisted inbound block is found under the hash of the full emitted block; the same block with altered JOIN data reads as uncommitted
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P80` — the JOIN participants a join's record keeps make up the pending set: exactly the joiner
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P81` — a join after an earlier join writes exactly 5 fresh (zero-to-nonzero) slots: link, packed height and timestamp, deposit total, joiners length and the joiner
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P82` — `_inboundHeightOf` reads a stored inbound block's stored height
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P83` — `_inboundHeightOf` reads the anchor's inbound height for the anchor's inbound head whose block is not stored
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P84` — `_inboundHeightOf` reverts with `ErrorInboundMessageBlockNotStored` for a hash that is neither stored nor the anchor's inbound head
 
 ## UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7
 

@@ -58,9 +58,15 @@ import {StateSnapshotFacet} from "../../../contracts/V1/StateChannelDiamondProxy
 import {JoinChannelFacet} from "../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol";
 import {ErrorDisputeExecutionOutOfGas} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import {MESSAGE_TYPE_EXIT, MESSAGE_TYPE_JOIN} from "../../../contracts/V1/types/MessageTypeHashes.sol";
+import {InboundSeeding} from "../harness/InboundSeeding.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 
-contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificationFacet, DisputeWindowSeeding {
+contract DisputeExpiryGuardHarness is
+    DisputeFraudProofFacet,
+    DisputeVerificationFacet,
+    DisputeWindowSeeding,
+    InboundSeeding
+{
     constructor() {
         evidenceTime = 10;
         disputeVerificationFacetAddress = address(this);
@@ -149,12 +155,10 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
         address slashed,
         uint256 slashTimestamp
     ) external {
-        MessageBlock storage inbound = inboundMessageBlockMap[channelId][inboundHead];
-        inbound.blockHeight = 1;
-        inbound.timestamp = slashTimestamp;
-        inbound.messages.push(_joinMessage(channelId, survivor));
-        inbound.messages.push(_joinMessage(channelId, slashed));
-        channelBalances[channelId].latestInboundMessageBlockHash = inboundHead;
+        address[] memory joiners = new address[](2);
+        joiners[0] = survivor;
+        joiners[1] = slashed;
+        seedInboundJoins(channelId, inboundHead, bytes32(0), 1, slashTimestamp, joiners);
         SnapshotData storage snapshot = stateSnapshots[channelId].snapshotData;
         snapshot.participants.push(survivor);
         snapshot.latestInboundMessageBlockHash = inboundHead;
@@ -189,18 +193,6 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
         returns (address)
     {
         return _handleInvalidDisputeReason(encodedProof, dispute);
-    }
-
-    function _joinMessage(bytes32 channelId, address participant) private pure returns (Message memory) {
-        Balance memory balance = Balance({amount: 0, data: ""});
-        return Message({
-            messageType: MESSAGE_TYPE_JOIN,
-            participant: participant,
-            balance: balance,
-            data: abi.encode(
-                JoinChannel({channelId: channelId, participant: participant, deadlineTimestamp: 0, balance: balance})
-            )
-        });
     }
 }
 

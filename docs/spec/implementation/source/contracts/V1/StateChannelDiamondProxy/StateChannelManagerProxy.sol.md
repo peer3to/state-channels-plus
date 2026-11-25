@@ -32,7 +32,7 @@
 Opening and calldata posting
 
 - Setup: Open with valid/dup/zero ids, unanimous and short signatures, atomic and partial deposits, terms at and past their opening deadline, a duplicate open after the deadline; post calldata within/after the window, as non-author, and twice
-- Oracle: Only valid unanimous opens within their deadline store genesis; posting guards enforce author/no-overwrite/deadline; with valid unanimous signatures, fewer balances than participants reverts the open with panic `0x32`, and an `address(0)` participant slot reverts at the unanimous signature check; either way no channel opens ([`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag))
+- Oracle: Only valid unanimous opens within their deadline store genesis; an open stores the genesis inbound record under the full emitted block's hash; posting guards enforce author/no-overwrite/deadline; with valid unanimous signatures, fewer balances than participants reverts the open with panic `0x32`, and an `address(0)` participant slot reverts at the unanimous signature check; either way no channel opens ([`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag))
 
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P1` — valid open
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P2` — duplicate channel id
@@ -57,6 +57,7 @@ Opening and calldata posting
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P21` — a noncanonical post reverts with `ErrorNonCanonicalEncoding` and stores no commitment
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P22` — a canonical post stores the signed-block/timestamp commitment, including a retry at a previously rejected key
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P24` — an admitted open emits inbound JOIN message data equal to the canonical encoding of each admitted join
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P25` — an open stores the genesis inbound block under the hash of the full emitted block: it is found, it is the snapshot's inbound head at height 1 with the open's deposit total, no participant is pending and the block does not read as uncommitted
 
 ## UNIT-TEST-MANAGER-PROXY-2-KJRMB8
 

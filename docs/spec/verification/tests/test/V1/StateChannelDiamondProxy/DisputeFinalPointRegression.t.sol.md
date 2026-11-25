@@ -15,13 +15,13 @@ Stages a channel whose anchor precedes a later joiner's JOIN, with the joiner's 
 - `test_regression_anchorAsTheLatestFinalizedPointDoesNotKill`: REQ-FP-7-4DD0D7.T10.P5
 - `test_FR1_sideChainFinalPointBelowTheJoinCannotKillTheHonestDisputeThroughAnEarlyMilestone`: REQ-FP-7-4DD0D7.T10.P6
 - `test_FR2_sideChainFinalPointBelowTheJoinCannotKillTheHonestDisputeThroughAConflict`: REQ-FP-7-4DD0D7.T9.P6
-- `test_FR2_conflictWithTheLatestFinalizedPointsInboundKills`: REQ-FP-7-4DD0D7.T9.P7, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P79
+- `test_FR2_conflictWithTheLatestFinalizedPointsInboundKills`: REQ-FP-7-4DD0D7.T9.P7, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P82
 - `test_conflict_anchorAsTheLatestFinalizedPointReadsTheAnchorsInbound`: REQ-FP-7-4DD0D7.T9.P8, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P87
 - `test_conflict_unfinalizedGenesisBlockZeroDoesNotRaiseTheInboundCheck`: REQ-FP-7-4DD0D7.T9.P10, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P88
 - `test_conflict_finalGenesisBlockZeroAboveTheFinalPointsInboundDoesNotKill`: REQ-FP-7-4DD0D7.T9.P11, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P89
 - `test_conflict_snapshotTheLatestFinalizedBlockDoesNotCommitDoesNotKill`: REQ-FP-7-4DD0D7.T9.P12, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P90
-- `test_lookup_anchorInboundHeadOutsideStorageReadsTheAnchorsHeight`: REQ-FP-7-4DD0D7.T10.P7, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P80
-- `test_lookup_inboundHashNeitherStoredNorTheAnchorHeadReverts`: REQ-FP-7-4DD0D7.T10.P8, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P81, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P220
+- `test_lookup_anchorInboundHeadOutsideStorageReadsTheAnchorsHeight`: REQ-FP-7-4DD0D7.T10.P7, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P83
+- `test_lookup_inboundHashNeitherStoredNorTheAnchorHeadReverts`: REQ-FP-7-4DD0D7.T10.P8, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P84, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P220
 - `test_lookup_conflictWithAnInboundHashNeitherStoredNorTheAnchorHeadReverts`: REQ-FP-7-4DD0D7.T9.P13, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P91, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P221
 - `test_regression_largestKillWithinTheCalldataLimitFitsTheGasLimit`: REQ-FP-7-4DD0D7.T10.P9
 - `test_regression_finalPointWhoseExtraInboundIsOnlyATopUpDoesNotKill`: REQ-FP-7-4DD0D7.T10.P26, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P92
