@@ -30,6 +30,7 @@ export class P2pSignerRpcMethods extends AInternalRpcMethods<P2pSignerService> {
             encodedBalance?: string;
         }
     ) {
+        await this.service.bindPersistenceForChannel(channelId);
         return await this.service
             .requireP2pSigner()
             .connectToChannel(channelId, {

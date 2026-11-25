@@ -21,6 +21,7 @@ import type { ConnectToChannelOptions } from "./signer/ConnectToChannelOptions";
 import LocalContractExecutorSigner from "./signer/LocalContractExecutorSigner";
 import LocalP2pSigner from "./signer/LocalP2pSigner";
 import type { LocalStateMachineDeployer } from "../../scripts/V1/deploy";
+import type { PersistenceOptions } from "@/storage/persistence";
 
 export {
     AContractExecutor,
@@ -46,5 +47,6 @@ export type {
     EvmNativeCustomPrecompile,
     LocalStateMachineDeployer,
     ConnectToChannelOptions,
-    GasUsageRow
+    GasUsageRow,
+    PersistenceOptions
 };

@@ -25,3 +25,4 @@ present, so the idempotent-repeat and conflict-refusal permutations stay unassig
 - `should return undefined for non-existent genesis forkId`: UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P6
 - `should identify genesis snapshot correctly`: none
 - `should not non-genesis snapshots in genesis mapping`: UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P4
+- `keeps the later of two genesis snapshots for one fork`: none

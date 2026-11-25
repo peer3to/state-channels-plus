@@ -693,6 +693,7 @@ describe("Codec", function () {
             [codecValues.blockConfirmation(), Type.BlockConfirmation],
             [codecValues.transaction(), Type.Transaction],
             [codecValues.dispute(), Type.Dispute],
+            [codecValues.timeout(), Type.Timeout],
             [codecValues.disputeConfirmation(), Type.DisputeConfirmation],
             [codecValues.stateSnapshot(), Type.StateSnapshot],
             [codecValues.snapshotData(), Type.SnapshotData],

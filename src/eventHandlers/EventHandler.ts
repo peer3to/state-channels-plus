@@ -481,6 +481,8 @@ export class EventHandler {
     private async handleChannelClose(channelId: ChannelId): Promise<void> {
         this.logger.info("Handling channel close", { channelId });
 
+        // TODO(persistence): destroy the settled channel partition after
+        // signer-key lifecycle ownership is defined.
         this.stateManager.setStatus(Status.NOT_OPENED);
 
         // Disconnect from all peers in this channel
