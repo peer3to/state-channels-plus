@@ -138,6 +138,8 @@ export async function createDiamondStateMachine(
             executor,
             machineAddress,
             diamondMachine.address,
+            // no genesis hook runs here
+            "0x",
             machineInterface,
             ethers.Wallet.createRandom(ethers.provider),
             resolveTestTimeConfig(),

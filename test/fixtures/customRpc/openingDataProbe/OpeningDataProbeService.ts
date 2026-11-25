@@ -27,6 +27,7 @@ import { TransportType } from "@/transport/TransportType";
 import { Status } from "@/types";
 import { Codec, SignatureUtils, Type, getChecksumAddress } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
+import { interceptLocalGenesisHook } from "@test/fixtures/customRpc/harnessControl/services/mirror/MirrorService";
 import type {
     BalanceStruct,
     OpenChannelStruct
@@ -90,6 +91,8 @@ export type OpeningDataProbe = {
     emptyDataGenesisStateHash: string;
     /** Hash of the genesis this runtime installed from the open. */
     installedGenesisStateHash: string;
+    /** Genesis hook calls that reached the chain until the outcome, the probe's own included. */
+    chainGenesisCalls: number;
     outcomeStatus: string;
     channelOpen: boolean;
 };
@@ -213,6 +216,17 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             source === "default"
                 ? new OpenChannelNegotiationService(this.p2pManager)
                 : this.rootService;
+        const provider = this.sm.stateChannelManagerContract.runner!.provider!;
+        const call = provider.call.bind(provider);
+        const hookSelector = this.sm.stateChannelManagerContract.interface
+            .getFunction("openChannelGenesis")
+            .selector.slice(2);
+        let chainGenesisCalls = 0;
+        provider.call = async (transaction) => {
+            if (String(transaction.data).includes(hookSelector))
+                chainGenesisCalls += 1;
+            return call(transaction);
+        };
         const staged = await this.stageAttempt(service, role);
         const expectedTerms = this.expectedTerms(staged);
         const expectedData =
@@ -232,11 +246,13 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             Type.OpenChannel
         ) as OpenChannelStruct;
         const outcome = await staged.outcome;
+        provider.call = call;
         const snapshot =
             await this.sm.stateChannelManagerContract.getStateSnapshot(
                 staged.channelId
             );
         return {
+            chainGenesisCalls,
             derivationCalls: this.rootService.derivationCalls.map((terms) =>
                 this.projectTerms(terms)
             ),
@@ -250,7 +266,7 @@ export class OpeningDataProbeService extends ANetworkRpcService<
                         this.sm.stateChannelManagerContract,
                         proposal
                     )
-                ).genesisStateHash
+                ).openChannel.genesisStateHash
             ),
             chainGenesisStateHash: String(
                 snapshot.snapshotData.stateMachineStateHash
@@ -261,7 +277,7 @@ export class OpeningDataProbeService extends ANetworkRpcService<
                         this.sm.stateChannelManagerContract,
                         { ...proposal, data: "0x" }
                     )
-                ).genesisStateHash
+                ).openChannel.genesisStateHash
             ),
             installedGenesisStateHash: ethers.keccak256(
                 await this.sm.diamondStateMachine.getState()
@@ -396,7 +412,7 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             );
             await runDeadline();
             const outcome = await staged.outcome;
-            const derived = await buildOpenChannel(
+            const { openChannel: derived } = await buildOpenChannel(
                 this.sm.stateChannelManagerContract,
                 proposal
             );
@@ -857,7 +873,7 @@ export class OpeningDataProbeService extends ANetworkRpcService<
                         this.sm.stateChannelManagerContract,
                         hashedTerms
                     )
-                ).genesisStateHash
+                ).openChannel.genesisStateHash
         };
         const signed = await SignatureUtils.signOpenChannel(
             openChannel,
@@ -880,20 +896,14 @@ export class OpeningDataProbeService extends ANetworkRpcService<
      * probe settles it; returns the hold once a call entered it.
      */
     private holdGenesisCall(skip: number): () => StaleHold | undefined {
-        const manager = this.sm.stateChannelManagerContract;
-        const provider = manager.runner!.provider!;
-        const call = provider.call.bind(provider);
-        const selector =
-            manager.interface.getFunction("openChannelGenesis").selector;
         let held: StaleHold | undefined;
-        provider.call = async (transaction) => {
-            if (!String(transaction.data).startsWith(selector) || skip-- > 0)
-                return call(transaction);
-            provider.call = call;
-            return new Promise<string>((resolve, reject) => {
-                held = { resolve: () => resolve(call(transaction)), reject };
+        const restore = interceptLocalGenesisHook(this.sm, (data, forward) => {
+            if (skip-- > 0) return forward(data);
+            restore();
+            return new Promise((resolve, reject) => {
+                held = { resolve: () => resolve(forward(data)), reject };
             });
-        };
+        });
         return () => held;
     }
 

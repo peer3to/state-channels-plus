@@ -5506,7 +5506,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 )),
                 channelId: collisionChannelId
             };
-            const openChannel = await buildOpenChannel(
+            const { openChannel } = await buildOpenChannel(
                 this.p2pManager.stateManager.stateChannelManagerContract,
                 collisionTerms
             );
@@ -5696,7 +5696,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             deadlineTimestamp: Clock.getTimeInSeconds() + 60,
             data: "0x"
         };
-        const proposal = await buildOpenChannel(
+        const { openChannel: proposal } = await buildOpenChannel(
             this.p2pManager.stateManager.stateChannelManagerContract,
             proposalTerms
         );
@@ -5864,7 +5864,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             deadlineTimestamp: Clock.getTimeInSeconds() + 60,
             data: "0x"
         };
-        const openProposal = await buildOpenChannel(
+        const { openChannel: openProposal } = await buildOpenChannel(
             this.p2pManager.stateManager.stateChannelManagerContract,
             openProposalTerms
         );
@@ -5981,7 +5981,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 deadlineTimestamp: Clock.getTimeInSeconds() + 60,
                 data: "0x"
             };
-            const proposal = await buildOpenChannel(
+            const { openChannel: proposal } = await buildOpenChannel(
                 this.p2pManager.stateManager.stateChannelManagerContract,
                 proposalTerms
             );
@@ -6172,7 +6172,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             deadlineTimestamp: Clock.getTimeInSeconds() + 60,
             data: "0x"
         };
-        const ordinaryProposal = await buildOpenChannel(
+        const { openChannel: ordinaryProposal } = await buildOpenChannel(
             this.p2pManager.stateManager.stateChannelManagerContract,
             ordinaryProposalTerms
         );

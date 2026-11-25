@@ -97,7 +97,7 @@ globalThis.__transportE2E = {
                 deadlineTimestamp: BigInt(latestBlock.timestamp + 120),
                 data: "0x"
             };
-            const openChannel = await buildOpenChannel(manager, terms);
+            const { openChannel } = await buildOpenChannel(manager, terms);
             const signatures = await Promise.all(
                 participants.map((wallet) =>
                     SignatureUtils.signOpenChannel(openChannel, wallet)

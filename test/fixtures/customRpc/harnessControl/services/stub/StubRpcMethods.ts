@@ -75,7 +75,6 @@ import {
 import { errorMessage } from "@/utils/errorMessage";
 import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
-import type { StateChannelManagerInterface } from "@typechain-types";
 import type { ContractTransactionResponse } from "ethers";
 
 /** Marks a snapshot service whose posts `stubPostStateSnapshot` suppressed, the harness's included. */
@@ -3405,20 +3404,26 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.droppedEventLogKeys.size;
     }
 
-    /** Make every provider call to the manager's `functionName` fail with `message`, as `failure`. */
-    public stubFailManagerRead(
-        functionName: Parameters<
-            StateChannelManagerInterface["interface"]["getFunction"]
-        >[0],
-        message: string,
-        failure?: "transport" | "nodeError" | "revert"
-    ): boolean {
-        this.service.failManagerRead(functionName, message, failure);
+    public stubFailOnChainSlashesRead(): boolean {
+        this.service.failOnChainSlashesRead();
         return true;
     }
 
-    public restoreManagerRead(): boolean {
-        return this.service.restoreManagerRead();
+    public restoreOnChainSlashesRead(): boolean {
+        return this.service.restoreOnChainSlashesRead();
+    }
+
+    /** Make the local diamond's genesis hook fail with `message`, as a local EVM revert or an executor failure. */
+    public stubFailGenesisHook(
+        message: string,
+        failure: "revert" | "executor"
+    ): boolean {
+        this.service.failGenesisHook(message, failure);
+        return true;
+    }
+
+    public restoreGenesisHook(): boolean {
+        return this.service.restoreGenesisHook();
     }
 
     /** Make every provider getLogs answer no logs, so no recovery query finds a missing log. */

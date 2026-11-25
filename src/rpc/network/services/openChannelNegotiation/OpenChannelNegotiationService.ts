@@ -61,6 +61,8 @@ type MatchedAttempt = LobbyMatch & {
     observedOpenHandoff: boolean;
     /** This runtime's ChannelOpened handling finished; a listed participant installed its genesis first. */
     ownGenesisInstalled: boolean;
+    /** The genesis this runtime derived for the terms it signed. */
+    encodedSignedGenesisState?: string;
     classifyObservedOpening?: Promise<void>;
     timeoutHandle?: ReturnType<typeof setTimeout>;
     unsubscribeDisconnected?: () => void;
@@ -433,9 +435,14 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             throw new Error(`Proposal mismatch: ${mismatch}`);
         }
         let expected: OpenChannelStruct;
+        let encodedExpectedGenesisState: string;
         try {
-            expected = await buildOpenChannel(
-                this.p2pManager.stateManager.stateChannelManagerContract,
+            ({
+                openChannel: expected,
+                encodedGenesisState: encodedExpectedGenesisState
+            } = await buildOpenChannel(
+                this.p2pManager.stateManager.diamondStateMachine
+                    .localDiamondContract,
                 {
                     channelId: attempt.channelId,
                     participants,
@@ -443,7 +450,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
                     deadlineTimestamp: decoded.deadlineTimestamp,
                     data: expectedData
                 }
-            );
+            ));
         } catch (error) {
             // after the lower signed, a failure here burns the opening window;
             // the lower counts it at the deadline
@@ -464,6 +471,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             this.protocolFailure(attempt, "genesis state hash mismatch");
             throw new Error("Genesis state hash mismatch");
         }
+        attempt.encodedSignedGenesisState = encodedExpectedGenesisState;
 
         const { signature } = await SignatureUtils.signOpenChannel(
             decoded,
@@ -545,6 +553,17 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         );
     }
 
+    /** The genesis this runtime derived and signed for `channelId`, while its attempt lasts. */
+    public encodedSignedGenesisState(channelId: BytesLike): string | undefined {
+        const attempt = this.state.attempt;
+        if (
+            !attempt ||
+            ethers.hexlify(attempt.channelId) !== ethers.hexlify(channelId)
+        )
+            return undefined;
+        return attempt.encodedSignedGenesisState;
+    }
+
     private async runLowerAddressNegotiation(
         attempt: MatchedAttempt
     ): Promise<void> {
@@ -608,10 +627,13 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             };
             let openChannel: OpenChannelStruct;
             try {
-                openChannel = await buildOpenChannel(
-                    this.p2pManager.stateManager.stateChannelManagerContract,
+                const built = await buildOpenChannel(
+                    this.p2pManager.stateManager.diamondStateMachine
+                        .localDiamondContract,
                     openingTerms
                 );
+                openChannel = built.openChannel;
+                attempt.encodedSignedGenesisState = built.encodedGenesisState;
             } catch (error) {
                 // nothing is signed yet, so neither peer is penalized
                 await this.clearAttempt(

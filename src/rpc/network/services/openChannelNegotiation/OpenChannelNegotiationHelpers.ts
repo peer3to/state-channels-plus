@@ -1,6 +1,6 @@
-import { isNodeInternalError } from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import type { LobbyMatch } from "@/rpc/network/services/lobbyMatching/LobbyMatchingTypes";
 import { getChecksumAddress } from "@/utils";
+import { isLocalEvmExecutionFailure } from "@/utils/evmErrorHandler";
 import type { StateChannelManagerInterface } from "@typechain-types";
 import type {
     JoinChannelStruct,
@@ -159,44 +159,46 @@ export function openChannelJoins(
 }
 
 /**
- * The genesis the consumer facet's hook derives from these joins, or
- * undefined when the hook reverts. A read failure rethrows.
+ * The genesis the consumer facet's pure hook derives from these joins, run on
+ * the local diamond (a local copy of the consumer facet's code, no chain
+ * call), or undefined when it fails inside the EVM. A failure outside the
+ * EVM (the executor) rethrows.
  */
 export async function deriveGenesisState(
-    manager: StateChannelManagerInterface,
+    localDiamond: Pick<StateChannelManagerInterface, "openChannelGenesis">,
     joins: JoinChannelStruct[],
     openingData: BytesLike
 ): Promise<string | undefined> {
     try {
-        return await manager.openChannelGenesis(joins, openingData);
+        return await localDiamond.openChannelGenesis(joins, openingData);
     } catch (error) {
-        // only a revert carries revert data; a node's error answer has none
-        if (
-            !ethers.isError(error, "CALL_EXCEPTION") ||
-            error.data == null ||
-            isNodeInternalError(error)
-        )
-            throw error;
+        // inside the EVM (a revert, or out of gas under the same local cap on
+        // every runtime) no genesis derives; a failure outside it rethrows
+        if (!isLocalEvmExecutionFailure(error)) throw error;
         return undefined;
     }
 }
 
 /**
  * The signed opening for these terms, with the hash of the genesis the
- * consumer facet's hook derives.
+ * consumer facet's hook derives, and that genesis.
  */
 export async function buildOpenChannel(
-    manager: StateChannelManagerInterface,
+    localDiamond: Pick<StateChannelManagerInterface, "openChannelGenesis">,
     terms: Omit<OpenChannelStruct, "genesisStateHash">
-): Promise<OpenChannelStruct> {
-    const encodedState = await deriveGenesisState(
-        manager,
+): Promise<{ openChannel: OpenChannelStruct; encodedGenesisState: string }> {
+    const encodedGenesisState = await deriveGenesisState(
+        localDiamond,
         openChannelJoins(terms),
         terms.data
     );
-    if (encodedState === undefined) throw new Error("genesis hook reverted");
+    if (encodedGenesisState === undefined)
+        throw new Error("genesis hook reverted");
     return {
-        ...terms,
-        genesisStateHash: ethers.keccak256(encodedState)
+        openChannel: {
+            ...terms,
+            genesisStateHash: ethers.keccak256(encodedGenesisState)
+        },
+        encodedGenesisState
     };
 }

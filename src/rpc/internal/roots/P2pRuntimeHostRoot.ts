@@ -158,6 +158,8 @@ export class P2pRuntimeHostRoot<
     // The deployed contract's participant maximum. The queue's retention bound
     // is sized from it, so the chain stays authoritative for both.
     private maxChannelParticipants!: number;
+    // The deployed consumer facet's code; the local diamond runs its pure genesis hook.
+    private consumerFacetCode!: string;
     private signerAddress!: string;
     private readonly context: HostContext;
     private readonly payload: SetupPayload;
@@ -474,7 +476,15 @@ export class P2pRuntimeHostRoot<
                 connectedScmContract.getAllTimes(),
                 connectedScmContract.getGasLimit(),
                 connectedScmContract.getStateTransitionReplayGas(),
-                connectedScmContract.getMaxChannelParticipants()
+                connectedScmContract.getMaxChannelParticipants(),
+                // the consumer facet's code, read once: the local diamond runs its pure genesis hook
+                connectedScmContract
+                    .facetAddressForSelector(
+                        connectedScmContract.interface.getFunction(
+                            "openChannelGenesis"
+                        ).selector
+                    )
+                    .then((address) => signer.provider!.getCode(address))
             ])
         ]);
         if (clockSync.status === "rejected") throw clockSync.reason;
@@ -483,8 +493,10 @@ export class P2pRuntimeHostRoot<
             configTimes,
             disputeExecutionGasLimit,
             stateTransitionReplayGas,
-            maxChannelParticipants
+            maxChannelParticipants,
+            consumerFacetCode
         ] = reads.value;
+        this.consumerFacetCode = consumerFacetCode;
         const timeConfig: TimeConfig = (this.timeConfig = {
             p2pTime: Number(configTimes[0]),
             agreementTime: Number(configTimes[1]),
@@ -547,6 +559,7 @@ export class P2pRuntimeHostRoot<
                 contractExecutor!,
                 localStateMachineAddress,
                 diamondStateMachineAddress,
+                this.consumerFacetCode,
                 stateMachineContract.interface,
                 signer,
                 timeConfig,

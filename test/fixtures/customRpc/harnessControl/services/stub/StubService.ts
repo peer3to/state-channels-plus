@@ -3,7 +3,10 @@ import { EvidenceComparisonRecorder } from "./node/EvidenceComparisonRecorder";
 import { LiveBlockRetentionRecorder } from "./node/LiveBlockRetentionRecorder";
 import StubRpcMethods from "./StubRpcMethods";
 import type { HarnessControlRpcShape } from "../../HarnessControlRpc";
-import { localExecutorConnection } from "../mirror/MirrorService";
+import {
+    interceptLocalGenesisHook,
+    localExecutorConnection
+} from "../mirror/MirrorService";
 import { recoverSigner } from "@/cache";
 import Clock from "@/Clock";
 import type DisputeBuilder from "@/disputeManager/DisputeBuilder";
@@ -63,13 +66,13 @@ import type {
 import type { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import {
     type ContractTransactionResponse,
+    dataSlice,
     getBytes,
     hexlify,
     id,
     type Interface,
     JsonRpcApiProvider,
     type Log,
-    makeError,
     resolveAddress,
     toQuantity,
     type TransactionRequest,
@@ -195,7 +198,7 @@ export type StubKey =
     | "localDiamondInboundMessages"
     | "eventLogs"
     | "chainLogQueries"
-    | "managerRead"
+    | "onChainSlashesRead"
     | "disputeCommittedHandler"
     | "disputeCommittedHandling"
     | "disputeLogQueries"
@@ -869,6 +872,8 @@ export class StubService extends ANetworkRpcService<
     disputeCommittedHandlingGate?: StubGate;
     /** Inbound-log handlings held in flight until the inbound hold is restored. */
     inboundMessageHandlingGate?: StubGate;
+    /** Restores the local genesis hook a `failGenesisHook` intercepts. */
+    private genesisHookRestore?: () => void;
     /** Resolvers waiting for the first held calldata log. */
     private readonly heldCalldataPostedWaiters: (() => void)[] = [];
     /** Every contract log held by `holdContractLogs`, first delivery each, in arrival order. */
@@ -5094,51 +5099,56 @@ export class StubService extends ANetworkRpcService<
         this.patchChainLogQueries(false);
     }
 
-    /**
-     * Make every provider call to one manager function fail with `message`:
-     * a plain error, a call exception without revert data (a node's error
-     * answer), or a revert with empty revert data.
-     */
-    failManagerRead(
-        functionName: Parameters<
-            StateChannelManagerInterface["interface"]["getFunction"]
-        >[0],
-        message: string,
-        failure: "transport" | "nodeError" | "revert" = "transport"
-    ): void {
+    failOnChainSlashesRead(): void {
         const contract = this.sm.stateChannelManagerContract;
-        if (!this.stubOriginals.has("managerRead")) {
+        if (!this.stubOriginals.has("onChainSlashesRead")) {
             this.stubOriginals.set(
-                "managerRead",
+                "onChainSlashesRead",
                 this.chainProvider.call.bind(this.chainProvider)
             );
         }
         const original = this.stubOriginals.get(
-            "managerRead"
+            "onChainSlashesRead"
         ) as typeof this.chainProvider.call;
         const selector = contract.interface
-            .getFunction(functionName)
+            .getFunction("getOnChainSlashedParticipants")!
             .selector.slice(2);
         this.chainProvider.call = async (transaction) => {
-            if (!String(transaction.data).includes(selector))
-                return original(transaction);
-            if (failure === "transport") throw new Error(message);
-            throw makeError(message, "CALL_EXCEPTION", {
-                action: "call",
-                data: failure === "revert" ? "0x" : null,
-                reason: null,
-                transaction: { to: null, data: String(transaction.data) },
-                invocation: null,
-                revert: null
-            });
+            if (String(transaction.data).includes(selector))
+                throw new Error("authoritative slash read failed");
+            return original(transaction);
         };
     }
 
-    restoreManagerRead(): boolean {
-        const original = this.stubOriginals.get("managerRead");
+    restoreOnChainSlashesRead(): boolean {
+        const original = this.stubOriginals.get("onChainSlashesRead");
         if (original === undefined) return false;
         this.chainProvider.call = original as typeof this.chainProvider.call;
-        this.stubOriginals.delete("managerRead");
+        this.stubOriginals.delete("onChainSlashesRead");
+        return true;
+    }
+
+    /**
+     * Make the local diamond's genesis hook fail: a real revert (the call runs
+     * with its arguments cut), or `message` thrown outside the EVM, as the
+     * executor itself failing.
+     */
+    failGenesisHook(message: string, failure: "revert" | "executor"): void {
+        this.restoreGenesisHook();
+        this.genesisHookRestore = interceptLocalGenesisHook(
+            this.sm,
+            async (data, forward) => {
+                if (failure === "executor") throw new Error(message);
+                return forward(dataSlice(data, 0, 4));
+            }
+        );
+    }
+
+    restoreGenesisHook(): boolean {
+        const restore = this.genesisHookRestore;
+        if (!restore) return false;
+        restore();
+        this.genesisHookRestore = undefined;
         return true;
     }
 

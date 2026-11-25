@@ -33,6 +33,7 @@ contract LocalDiamondInboundMirrorTest is DiamondHarness {
                         vm.deployCode("JoinChannelFacet.sol:JoinChannelFacet"),
                         vm.deployCode("StateProofFacet.sol:StateProofFacet"),
                         address(utilityFacet),
+                        address(0),
                         P2P_TIME,
                         0,
                         0,

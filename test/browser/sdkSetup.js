@@ -91,7 +91,7 @@ export async function deployStack(providerUrl, openExistingChannel) {
             deadlineTimestamp: BigInt(latestBlock.timestamp + 120),
             data: "0x"
         };
-        const openChannel = await buildOpenChannel(manager, terms);
+        const { openChannel } = await buildOpenChannel(manager, terms);
         const signatures = await Promise.all(
             [deployerWallet, genesisPeerWallet].map((wallet) =>
                 SignatureUtils.signOpenChannel(openChannel, wallet)

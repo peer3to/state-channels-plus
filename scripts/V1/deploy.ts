@@ -1,4 +1,4 @@
-import { ContractFactory, Signer, ethers } from "ethers";
+import { BytesLike, ContractFactory, Signer, ethers } from "ethers";
 
 import StateChannelManagerProxyArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol/StateChannelManagerProxy.json";
 import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol/LocalDiamond.json";
@@ -313,6 +313,7 @@ export async function deployLocalDiamond(
             args: [
                 stateMachineAddress,
                 ...facetAddresses,
+                ethers.ZeroAddress,
                 timeConfig.p2pTime,
                 timeConfig.agreementTime,
                 timeConfig.chainFallbackTime,
@@ -326,14 +327,44 @@ export async function deployLocalDiamond(
     return { address: diamondAddress, signer };
 }
 
+/**
+ * Puts `runtimeCode` (the deployed consumer facet's code) at a new local
+ * address: an initcode that returns the code verbatim. Code that calls
+ * linked libraries would need them too, so only self-contained code works.
+ */
+async function installRuntimeCodeLocal(
+    signer: Signer,
+    runtimeCode: BytesLike
+): Promise<string> {
+    const code = ethers.getBytes(runtimeCode);
+    // PUSH2 len, DUP1, PUSH1 12, PUSH1 0, CODECOPY, PUSH1 0, RETURN
+    const initcode = ethers.concat([
+        "0x61",
+        ethers.toBeHex(code.length, 2),
+        "0x80600c6000396000f3",
+        code
+    ]);
+    const receipt = await (
+        await signer.sendTransaction({ data: initcode })
+    ).wait();
+    if (!receipt?.contractAddress)
+        throw new Error("Local consumer facet code install failed");
+    return receipt.contractAddress;
+}
+
 export async function deployLocalDiamondWithStateMachineAddress(
     stateMachineAddress: Address,
     signer: Signer,
+    consumerFacetCode: BytesLike,
     timeConfigOverrides?: TimeConfig,
     disputeExecutionGasLimit: number = DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT,
     maxChannelParticipants: number = DEFAULT_MAX_CHANNEL_PARTICIPANTS
 ): Promise<DeploymentResult> {
     const facetAddresses = await deployFacetsLocal(signer);
+    const consumerFacetAddress = await installRuntimeCodeLocal(
+        signer,
+        consumerFacetCode
+    );
     const timeConfig = getTimeConfig(timeConfigOverrides);
 
     const diamondAddress = await deployArtifactLocal(
@@ -343,6 +374,7 @@ export async function deployLocalDiamondWithStateMachineAddress(
             args: [
                 stateMachineAddress.toString(),
                 ...facetAddresses,
+                consumerFacetAddress,
                 timeConfig.p2pTime,
                 timeConfig.agreementTime,
                 timeConfig.chainFallbackTime,

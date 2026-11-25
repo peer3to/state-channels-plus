@@ -83,7 +83,7 @@ export const createOpenChannelTestObject = async (
         deadlineTimestamp: currentTime + 120, // 2 minutes from now
         data: "0x00"
     };
-    const openChannel = await buildOpenChannel(manager, terms);
+    const { openChannel } = await buildOpenChannel(manager, terms);
     return {
         ...openChannel,
         genesisStateHash: genesisStateHash ?? openChannel.genesisStateHash

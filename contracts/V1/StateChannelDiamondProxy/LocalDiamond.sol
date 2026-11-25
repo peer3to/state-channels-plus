@@ -41,6 +41,7 @@ contract LocalDiamond is StateChannelManagerProxy {
         address _joinChannelFacet,
         address _stateProofFacet,
         address _utilityFacet,
+        address _consumerFacet,
         uint256 _p2pTime,
         uint256 _agreementTime,
         uint256 _chainFallbackTime,
@@ -58,7 +59,8 @@ contract LocalDiamond is StateChannelManagerProxy {
             _joinChannelFacet,
             _stateProofFacet,
             _utilityFacet,
-            address(0), // Use 0x00 for consumer facet in local environment
+            // a local copy of the deployed consumer facet's code, so its pure genesis hook runs locally
+            _consumerFacet,
             _p2pTime,
             _agreementTime,
             _chainFallbackTime,

@@ -81,36 +81,31 @@ export class EventHandler {
             coordinate.logIndex
         );
 
-        // the chain holds only the signed genesis hash -> rebuild the genesis
-        // from the genesis JOIN block and the opening data
+        // the chain holds only the signed genesis hash, the authority for it
         const snapshotData = stateSnapshot.snapshotData;
         // anyone can open a selected channel ID -> only a listed participant
         // aborts; any other runtime installs nothing
         const participant = this.stateManager.membershipService.includesSigner(
             snapshotData.participants as Address[]
         );
+        // a participant installs the genesis it derived and signed; any other
+        // runtime, or one that no longer holds it, rebuilds it from the open
+        const encodedSignedGenesisState = participant
+            ? this.stateManager.p2pManager.localRpc.openChannelNegotiationService.encodedSignedGenesisState(
+                  channelId
+              )
+            : undefined;
         let encodedState: string | undefined;
         let reason: string | undefined;
         try {
-            const genesisRun =
-                await this.stateManager.eventSyncService.loadSynchronizedInboundRun(
-                    snapshotData.latestInboundMessageBlockHash as Hash,
-                    ZeroHash,
-                    Number(stateSnapshot.timestamp),
-                    channelId
-                );
-            if (!genesisRun) throw new Error("genesis join block unavailable");
-            const joins = genesisRun.flatMap((block) =>
-                block.messages.map((message) =>
-                    Codec.decode(message.data, Type.JoinChannel)
-                )
-            );
             // undefined -> the hook reverts: no genesis derives from the signed terms
-            encodedState = await deriveGenesisState(
-                this.stateManager.stateChannelManagerContract,
-                joins,
-                openingData
-            );
+            encodedState =
+                encodedSignedGenesisState ??
+                (await this.rebuildGenesisState(
+                    channelId,
+                    stateSnapshot,
+                    openingData
+                ));
             if (!encodedState) reason = "hook reverted";
             else if (
                 keccak256(encodedState) !== snapshotData.stateMachineStateHash
@@ -429,6 +424,38 @@ export class EventHandler {
         // A delivered join event publishes eligibility before later gossip.
         this.stateManager.membershipService.observeInboundMembership(
             messageBlock
+        );
+    }
+
+    /**
+     * The genesis the consumer facet's pure hook derives, on the local
+     * diamond, from the open's genesis JOIN block and its opening data. The
+     * block is read by the hash the chain's snapshot names, so a mirror that
+     * missed it only costs a recovery from the chain's logs.
+     */
+    private async rebuildGenesisState(
+        channelId: ChannelId,
+        stateSnapshot: StateSnapshotStruct,
+        openingData: Bytes
+    ): Promise<string | undefined> {
+        const genesisRun =
+            await this.stateManager.eventSyncService.loadSynchronizedInboundRun(
+                stateSnapshot.snapshotData
+                    .latestInboundMessageBlockHash as Hash,
+                ZeroHash,
+                Number(stateSnapshot.timestamp),
+                channelId
+            );
+        if (!genesisRun) throw new Error("genesis join block unavailable");
+        const joins = genesisRun.flatMap((block) =>
+            block.messages.map((message) =>
+                Codec.decode(message.data, Type.JoinChannel)
+            )
+        );
+        return deriveGenesisState(
+            this.diamondStateMachine.localDiamondContract,
+            joins,
+            openingData
         );
     }
 

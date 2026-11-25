@@ -1528,6 +1528,7 @@ contract DisputeVerificationFacetTest is DiamondHarness {
             address(new JoinChannelFacet()),
             address(new StateProofFacet()),
             address(utilityFacet),
+            address(0),
             P2P_TIME,
             0,
             0,

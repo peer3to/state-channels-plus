@@ -21,6 +21,8 @@ describe("OpenChannelNegotiationService opening data", function () {
 
         expect(result.proposalData).to.equal("0x");
         expect(result.derivationCalls).to.deep.equal([]);
+        // the proposer's hook runs on its local diamond
+        expect(result.chainGenesisCalls).to.equal(0);
         expect(result.outcomeStatus).to.equal("opened");
         expect(result.channelOpen).to.equal(true);
         // the proposer signs the hash its hook derives for the signed terms
@@ -40,6 +42,8 @@ describe("OpenChannelNegotiationService opening data", function () {
 
         expect(result.expectedData).to.equal("0x");
         expect(result.derivationCalls).to.deep.equal([]);
+        // only the probe's own proposal hash reaches the chain
+        expect(result.chainGenesisCalls).to.equal(1);
         expect(result.outcomeStatus).to.equal("opened");
         expect(result.channelOpen).to.equal(true);
         expect(result.chainGenesisStateHash).to.equal(
@@ -59,6 +63,8 @@ describe("OpenChannelNegotiationService opening data", function () {
             { amount: "700", data: "0x5678" }
         ]);
         expect(result.proposalData).to.equal(result.expectedData);
+        // the proposer's hook runs on its local diamond
+        expect(result.chainGenesisCalls).to.equal(0);
         expect(result.outcomeStatus).to.equal("opened");
         expect(result.channelOpen).to.equal(true);
         expect(result.proposalGenesisStateHash).to.equal(
@@ -71,7 +77,7 @@ describe("OpenChannelNegotiationService opening data", function () {
         expect(result.derivedGenesisStateHash).to.not.equal(
             result.emptyDataGenesisStateHash
         );
-        // the runtime rebuilt that genesis from the opened event's data
+        // the runtime installed a genesis with the chain's hash
         expect(result.installedGenesisStateHash).to.equal(
             result.chainGenesisStateHash
         );
@@ -88,6 +94,8 @@ describe("OpenChannelNegotiationService opening data", function () {
             { amount: "700", data: "0x5678" },
             { amount: "321", data: "0x1234" }
         ]);
+        // only the probe's own proposal hash reaches the chain
+        expect(result.chainGenesisCalls).to.equal(1);
         expect(result.outcomeStatus).to.equal("opened");
         expect(result.channelOpen).to.equal(true);
         expect(result.chainGenesisStateHash).to.equal(
@@ -97,7 +105,7 @@ describe("OpenChannelNegotiationService opening data", function () {
         expect(result.derivedGenesisStateHash).to.not.equal(
             result.emptyDataGenesisStateHash
         );
-        // the runtime rebuilt that genesis from the opened event's data
+        // the runtime installed a genesis with the chain's hash
         expect(result.installedGenesisStateHash).to.equal(
             result.chainGenesisStateHash
         );
