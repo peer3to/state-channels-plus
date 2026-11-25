@@ -241,7 +241,8 @@ async function startPeer3Node({
     port,
     logPath,
     label = "peer3 node",
-    lightClient = true
+    lightClient = true,
+    lightClientArgs = []
 } = {}) {
     const nodeBin = process.env.PEER3_NODE_BIN;
     if (!nodeBin) throw new Error("PEER3_NODE_BIN names no peer3 node binary");
@@ -261,7 +262,7 @@ async function startPeer3Node({
             "--dev-seal",
             "interval",
             // the light client endpoints
-            ...(lightClient ? ["--light-client"] : []),
+            ...(lightClient ? ["--light-client", ...lightClientArgs] : []),
             "--rpc-port",
             String(nodePort),
             // the wildcard storage subscription is an unsafe method

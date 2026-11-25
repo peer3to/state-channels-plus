@@ -1,6 +1,12 @@
-import { LIGHT_CLIENT_METHODS } from "./lightClientWire";
+import {
+    LIGHT_CLIENT_METHODS,
+    MAX_WATCHED_KEYS_PER_CALL,
+    type LightClientWatched
+} from "./lightClientWire";
 import type RpcNodeProvider from "../RpcNodeProvider";
 import { isMethodNotServed, type NodeSocket } from "../RpcNodeProvider";
+import type { ProvenBlock } from "./proof/AProvenStateReader";
+import StorageProofError from "./proof/StorageProofError";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 
@@ -12,6 +18,8 @@ type LogTopic = string;
 type SubscriptionId = string;
 /** Identifies one subscription across every socket: the key the listener knows it by. */
 export type SubscriptionKey = string;
+/** A key of the chain's state trie, lowercase 0x-prefixed. */
+type StorageKey = string;
 
 /**
  * Most notifications kept for a subscription id the socket does not know
@@ -39,6 +47,8 @@ export type LightClientSubscriptionListener = {
     pushed(key: SubscriptionKey, message: unknown, receivedAt: number): boolean;
     /** A subscription was opened again: the node ended it, or the listener refused a push. */
     resubscribed(): void;
+    /** Whether `node` lists the method that watches keys. */
+    servesWatch(node: RpcNodeProvider): Promise<boolean>;
 };
 
 /** A `lightClient_storage` notification: a pushed message, or the error that ended the subscription. */
@@ -64,7 +74,28 @@ type HeldSubscription = {
     id: SubscriptionId;
     key: SubscriptionKey;
     topics: readonly LogTopic[];
+    /** Whether the listener took its first message: the node then knows its id for a watch. */
+    hasPushed: boolean;
 };
+
+/** Whether `answer` is a watch of `keys` at `block`: its proof is the reader's to check. */
+function isWatchOf(
+    answer: unknown,
+    keys: ReadonlySet<StorageKey>,
+    block: ProvenBlock
+): answer is LightClientWatched {
+    const watched = answer as Partial<LightClientWatched> | null;
+    return (
+        typeof watched === "object" &&
+        watched !== null &&
+        typeof watched.at === "string" &&
+        watched.at.toLowerCase() === block.hash.toLowerCase() &&
+        Array.isArray(watched.watched) &&
+        watched.watched.every(
+            (key) => typeof key === "string" && keys.has(key.toLowerCase())
+        )
+    );
+}
 
 /** One open node socket and what it is subscribed to. */
 type SubscribedSocket = {
@@ -94,6 +125,11 @@ type SubscribedSocket = {
  * socket that opens later is subscribed too, and syncs from the node's whole
  * partition. A subscription the node ends, or whose push the listener
  * refuses, is opened again.
+ *
+ * The subscription of the contract followed with {@link followContract} also
+ * takes watched keys: keys a read had the node prove, which the node keeps
+ * current for it from then on. Every new subscription of that contract gets
+ * the keys watched so far again, once its first message arrived.
  */
 export class LightClientSubscriptions {
     private readonly logger: Logger;
@@ -102,6 +138,10 @@ export class LightClientSubscriptions {
     private readonly listener: LightClientSubscriptionListener;
     /** What is followed: each contract and the log topics that concern its follower. */
     private readonly followed = new Map<ContractAddress, Set<LogTopic>>();
+    /** The contract followed for itself, whose subscriptions take watched keys. */
+    private watchingContract?: ContractAddress;
+    /** The keys a node confirmed it keeps current: each new subscription watches them again. */
+    private readonly watchedKeys = new Set<StorageKey>();
     private readonly sockets = new Map<NodeSocket, SubscribedSocket>();
     private readonly unwatchNodes: (() => void)[] = [];
     private nextKey = 0;
@@ -137,8 +177,50 @@ export class LightClientSubscriptions {
     unfollow(address: ContractAddress, topic: LogTopic): void {
         const topics = this.followed.get(address);
         if (!topics?.delete(topic)) return;
-        if (topics.size === 0) this.followed.delete(address);
+        if (topics.size === 0 && address !== this.watchingContract)
+            this.followed.delete(address);
         this.subscribeSockets();
+    }
+
+    /**
+     * Follows `address` for itself, with or without topics, until closed:
+     * its subscriptions take watched keys.
+     */
+    followContract(address: ContractAddress): void {
+        this.watchingContract = address;
+        if (!this.followed.has(address)) this.followed.set(address, new Set());
+        this.subscribeSockets();
+    }
+
+    /**
+     * Has `node` prove `keys` at `block` and keep them current from its next
+     * push, through the subscription of the watching contract on its socket.
+     * Undefined when no such subscription has had its first message, or when
+     * more keys are asked than one call takes. Throws
+     * {@link StorageProofError} when the node answers a watch of another block
+     * or of keys not asked.
+     */
+    async watchKeys(
+        node: RpcNodeProvider,
+        keys: string[],
+        block: ProvenBlock
+    ): Promise<{ proof: unknown } | undefined> {
+        if (keys.length > MAX_WATCHED_KEYS_PER_CALL) return undefined;
+        const found = this.watchingSubscription(node);
+        if (!found) return undefined;
+        const asked = new Set(keys.map((key) => key.toLowerCase()));
+        const answer = await found.socket.send(LIGHT_CLIENT_METHODS.watch, [
+            found.held.id,
+            keys,
+            block.hash
+        ]);
+        if (!isWatchOf(answer, asked, block))
+            throw new StorageProofError(
+                "The node answered no watch of the asked keys at the block"
+            );
+        for (const key of answer.watched)
+            this.watchedKeys.add(key.toLowerCase());
+        return { proof: answer.proof };
     }
 
     /** Subscribes what is followed, from now on: the listener takes what the nodes push. */
@@ -154,6 +236,60 @@ export class LightClientSubscriptions {
         for (const subscribed of this.sockets.values()) this.forget(subscribed);
         this.sockets.clear();
         this.followed.clear();
+        this.watchingContract = undefined;
+        this.watchedKeys.clear();
+    }
+
+    /** The watching contract's subscription on a socket of `node` that has had its first message. */
+    private watchingSubscription(
+        node: RpcNodeProvider
+    ): { socket: NodeSocket; held: HeldSubscription } | undefined {
+        if (this.watchingContract === undefined) return undefined;
+        for (const [socket, subscribed] of this.sockets) {
+            if (subscribed.node !== node) continue;
+            const held = subscribed.held.get(this.watchingContract);
+            if (held?.hasPushed) return { socket, held };
+        }
+        return undefined;
+    }
+
+    /**
+     * Has the new subscription `held` watch the keys watched so far, at the
+     * node's best block, in calls of at most one call's keys. A failure is
+     * warned about: the reads that need the keys watch them again.
+     */
+    private watchAgain(
+        socket: NodeSocket,
+        subscribed: SubscribedSocket,
+        held: HeldSubscription
+    ): void {
+        const keys = [...this.watchedKeys];
+        if (keys.length === 0) return;
+        void (async () => {
+            if (!(await this.listener.servesWatch(subscribed.node))) return;
+            for (
+                let at = 0;
+                at < keys.length;
+                at += MAX_WATCHED_KEYS_PER_CALL
+            ) {
+                // a subscription that ended takes no keys
+                if (subscribed.byId.get(held.id) !== held) return;
+                await socket.send(LIGHT_CLIENT_METHODS.watch, [
+                    held.id,
+                    keys.slice(at, at + MAX_WATCHED_KEYS_PER_CALL),
+                    null
+                ]);
+            }
+        })().catch((error: unknown) => {
+            if (socket.destroyed || !this.sockets.has(socket)) return;
+            this.logger.warn(
+                "Light client could not watch the held keys on a new subscription; reads watch them again",
+                {
+                    ...LoggerUtils.getRpcNodeMetadata(subscribed.node.url),
+                    error
+                }
+            );
+        });
     }
 
     private watch(node: RpcNodeProvider, socket: NodeSocket): void {
@@ -210,7 +346,17 @@ export class LightClientSubscriptions {
         const accepted =
             error === undefined &&
             this.listener.pushed(held.key, result, receivedAt);
-        if (!accepted) this.reopen(socket, subscribed, held);
+        if (!accepted) {
+            this.reopen(socket, subscribed, held);
+            return;
+        }
+        if (held.hasPushed) return;
+        held.hasPushed = true;
+        if (
+            this.watchingContract !== undefined &&
+            subscribed.held.get(this.watchingContract) === held
+        )
+            this.watchAgain(socket, subscribed, held);
     }
 
     /**
@@ -339,7 +485,7 @@ export class LightClientSubscriptions {
                 throw error;
             }
             subscribed.isSubscribing = false;
-            const subscription = { id, key, topics };
+            const subscription = { id, key, topics, hasPushed: false };
             subscribed.held.set(address, subscription);
             subscribed.byId.set(id, subscription);
             const early = subscribed.early.get(id) ?? [];

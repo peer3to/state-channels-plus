@@ -39,6 +39,14 @@ export type {
     ReadComparisonCounters
 } from "./lightClient/LightClientCounters";
 
+/** Which light client endpoints a node lists. */
+type ListedEndpoints = {
+    /** The subscription endpoints: the light client is on. */
+    subscriptions: boolean;
+    /** The watch of keys a read proves. */
+    watch: boolean;
+};
+
 /** A read's answer reduced to what must match: its return data, revert data or failure. */
 type ComparedAnswer =
     | { result: unknown }
@@ -134,10 +142,10 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
     private lightClient?: Promise<LightClient>;
     /** The light client once started, for the pushes that arrive meanwhile. */
     private startedLightClient?: LightClient;
-    /** Whether each node lists the light client endpoints, once it answered. */
+    /** Which light client endpoints each node lists, once it answered. */
     private readonly endpointsListed = new Map<
         RpcNodeProvider,
-        Promise<boolean>
+        Promise<ListedEndpoints>
     >();
     /** The start of the subscriptions, once a channel is followed; unset again after it failed. */
     private subscriptionsStart?: Promise<void>;
@@ -190,7 +198,8 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
                 pushed: (key, message, receivedAt) =>
                     this.startedLightClient?.pushed(key, message, receivedAt) ??
                     true,
-                resubscribed: () => this.pushedStateCounters.resubscriptions++
+                resubscribed: () => this.pushedStateCounters.resubscriptions++,
+                servesWatch: (node) => this.servesWatch(node)
             }
         );
     }
@@ -207,6 +216,21 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
             this.startSubscriptions();
         } catch (error) {
             this.logger.error("Light client could not follow the channel", {
+                contract,
+                error
+            });
+        }
+    }
+
+    // Overrides MultiRpcProvider.followContract: the nodes keep the contract's
+    // subscription from now on, and with it the keys its reads had proven.
+    // Like followChannel it never throws.
+    override followContract(contract: string): void {
+        try {
+            this.subscriptions.followContract(contract.toLowerCase());
+            this.startSubscriptions();
+        } catch (error) {
+            this.logger.error("Light client could not follow the contract", {
                 contract,
                 error
             });
@@ -430,8 +454,18 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         // module graph, which only a provider that answers reads pays for.
         const { LightClient } = await import("./lightClient/LightClient");
         this.startedLightClient = new LightClient({
-            reader: this.chain.createReader((method, params) =>
-                this.requestNode(method, params)
+            reader: this.chain.createReader(
+                (method, params) => this.requestNode(method, params),
+                async (keys, block) => {
+                    const node = this.servingNode();
+                    if (!node || !(await this.servesWatch(node)))
+                        return undefined;
+                    return await this.subscriptions.watchKeys(
+                        node,
+                        keys,
+                        block
+                    );
+                }
             ),
             createPartition: () => this.chain.createPartition(),
             servingNode: () => this.servingNode(),
@@ -496,7 +530,18 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
     }
 
     /** Whether `node` lists the light client endpoints; it is asked once. */
-    private hasEndpoints(node: RpcNodeProvider): Promise<boolean> {
+    private async hasEndpoints(node: RpcNodeProvider): Promise<boolean> {
+        return (await this.listedEndpoints(node)).subscriptions;
+    }
+
+    /** Whether `node` lists the light client endpoints and the watch of keys. */
+    private async servesWatch(node: RpcNodeProvider): Promise<boolean> {
+        const listed = await this.listedEndpoints(node);
+        return listed.subscriptions && listed.watch;
+    }
+
+    /** Which light client endpoints `node` lists; it is asked once. */
+    private listedEndpoints(node: RpcNodeProvider): Promise<ListedEndpoints> {
         let listed = this.endpointsListed.get(node);
         if (!listed) {
             // an unanswered question is not kept: the next read asks again
@@ -509,7 +554,9 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         return listed;
     }
 
-    private async askForEndpoints(node: RpcNodeProvider): Promise<boolean> {
+    private async askForEndpoints(
+        node: RpcNodeProvider
+    ): Promise<ListedEndpoints> {
         const sent = await node
             .trySendOnCurrentSocket("rpc_methods", [])
             .catch((error: unknown) => {
@@ -536,6 +583,9 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
                 "RPC node doesn't support LC endpoints; it answers the chain reads itself",
                 LoggerUtils.getRpcNodeMetadata(node.url)
             );
-        return hasEndpoints;
+        return {
+            subscriptions: hasEndpoints,
+            watch: methods.includes(LIGHT_CLIENT_METHODS.watch)
+        };
     }
 }

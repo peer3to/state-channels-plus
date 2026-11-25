@@ -90,7 +90,8 @@ at that block's hash and return, for every account in the order asked, only what
 prove under that block's state root, and nothing that was not asked. When the node gives no
 well-formed proof, or the proof does not decide everything asked, the whole read MUST fail with the
 failure of a proof and yield no value. A read at a block obtained earlier MUST yield that block's
-state after the chain moved on. A read that asks nothing MUST NOT ask the node for a proof.
+state after the chain moved on. A read that asks nothing MUST NOT ask the node for a proof. A proof
+asked through a watch ([`REQ-LC-12-VPAAP0`](light-client.md#req-lc-12-vpaap0)) MUST be checked the same way.
 
 **<a id="req-stproof-6-casbqp"></a>`REQ-STPROOF-6-CASBQP` — The block values a call reads are accepted only as the block commits to them.** The
 participant can ask a node for the values a contract call reads of a block: its number, timestamp,

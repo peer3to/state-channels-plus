@@ -464,6 +464,10 @@ export class P2pRuntimeHostRoot<
             signer
         );
 
+        // The SCM's subscription is kept from here on, so that the keys its
+        // reads prove are pushed current instead of proven again each block.
+        this.chainContext.provider.followContract(payload.scm.address);
+
         // Sync clock to DLT while the SCM proxy's configuration is read. A
         // failed read still waits for the sync: the Clock then owns the
         // provider, and disposal leaves it to the Clock instead of destroying

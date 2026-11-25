@@ -8,6 +8,16 @@ export type NodeRequest = (
     params: unknown[]
 ) => Promise<unknown>;
 
+/**
+ * A read proof of `keys` at `block` that also asks the serving node to keep
+ * them current for the participant; undefined when no subscription can take
+ * them, and the keys are then proven by a plain request.
+ */
+export type WatchRequest = (
+    keys: string[],
+    block: ProvenBlock
+) => Promise<{ proof: unknown } | undefined>;
+
 /** A block whose state root proofs are checked against. */
 export type ProvenBlock = {
     number: number;

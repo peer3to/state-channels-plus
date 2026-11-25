@@ -3,6 +3,25 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## Watched keys — 2026-11-25
+
+For [`REQ-LC-12-VPAAP0` (Keys a read had proven are kept current on the subscription of the contract…)](../specification/runtime/light-client.md#req-lc-12-vpaap0).
+[LightClientSubscriptions.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/LightClientSubscriptions.ts.md)
+gains `followContract` (the contract stays followed with no topics until `close`) and `watchKeys`,
+which sends `lightClient_watchStorage` on that contract's subscription of the serving node's socket
+once the subscription had its first message, refuses an answer of another block or of keys not asked
+with a `StorageProofError`, and keeps the keys the node took; on the first message of every new
+subscription of the contract it sends the kept keys again, 1,024 per call, and warns on failure.
+[LightClientRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/LightClientRpcProvider.ts.md)
+keeps which light client methods each node lists, watches only where the watch is listed, and hands
+the reader the watch.
+[FrontierProvenStateReader.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierProvenStateReader.ts.md)
+proves a read's keys through the watch when it is given one and falls back to `state_getReadProof`
+otherwise; both proofs go through the same check. `MultiRpcProvider.followContract` does nothing, and
+[P2pRuntimeHostRoot.ts](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md)
+calls it with the state channel manager's address before the start-up reads. A read of more than
+1,024 missing keys uses a read proof. The node side is peer3-parachain PR #3 at `6bf84b6`.
+
 ## Event coverage of the state channel manager — 2026-11-21
 
 The light client assumes that the channel's contract logs the channel's id in every transaction

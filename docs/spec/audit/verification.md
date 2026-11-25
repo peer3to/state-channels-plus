@@ -11,6 +11,26 @@ scores are what they are** and which lever moves each one.
 
 The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
 
+## Watched keys — 2026-11-25
+
+Eleven declarations in [LightClientWatchedKeys.test.ts](../verification/tests/test/lightClient/LightClientWatchedKeys.test.ts.md)
+cover [`REQ-LC-12-VPAAP0.T1`](../specification/runtime/light-client.md#req-lc-12-vpaap0.t1) `P1`-`P10` and `P13`, and
+[`REQ-LC-5-MM0BM9.T1.P19`](../specification/runtime/light-client.md#req-lc-5-mm0bm9.t1.p19), against a peer3 node built from
+PR #3 at `6bf84b6` behind the recording proxy. Eleven faults each failed a declaration: no watch, the
+method list ignored (twice), the first message not waited for, no watch again on a new subscription,
+the watch again sent before the first message, the answer's block not checked, its taken keys not
+checked, the asked keys kept instead of the taken ones, the contract dropped at the last unfollow, and
+the reader ignoring the watch. Three of them first survived: the refusal declarations answered with an
+empty proof, which fails anyway, and the new subscription's first message reached the participant
+before the watch could; the declarations now answer with the node's own proof and hold the first
+message, and catch them. Gaps: `P11` and `P12` (more than 1,024 keys) and
+[`REQ-LC-8-BBYC51.T1.P5`](../specification/runtime/light-client.md#req-lc-8-bbyc51.t1.p5), the start-up follow, which
+needs a participant on a peer3 node as `T1.P1`-`P4` do; the local channel flows show it. The light client
+suites passed 116 of 116 locally (run-193) and the canonical distributed gate 4324 of 4324. Local
+channel flows (peer3 node, Mac, three repeats): the steady state asks 0.52 requests per rotation round
+against 2.19 before the watch and 6.00 without the light client; with the reads compared, 413 matched and
+none differed.
+
 ## Startup chain requests: chain id once per connection, one latest-block read per clock sync — 2026-11-23
 
 The node and multi-node providers take the network a node's socket detected instead of asking for

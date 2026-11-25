@@ -609,13 +609,13 @@ Specification cases tested: 4/4.
 Specification cases tested: 7/7.
 
 [`REQ-LC-5-MM0BM9` (A followed channel is subscribed on every connection)](../specification/runtime/light-client.md#req-lc-5-mm0bm9)
-Specification cases tested: 9/9.
+Specification cases tested: 10/10.
 
 [`REQ-LC-7-W8WDN3` (A refused or ended subscription syncs again and is made known)](../specification/runtime/light-client.md#req-lc-7-w8wdn3)
 Specification cases tested: 5/5.
 
 [`REQ-LC-8-BBYC51` (A participant follows the channel it has selected)](../specification/runtime/light-client.md#req-lc-8-bbyc51)
-Specification cases tested: 6/10. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
+Specification cases tested: 6/11. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5.
 
 [`REQ-LC-9-KWXV43` (A read takes from the pushed partitions what they prove at its block)](../specification/runtime/light-client.md#req-lc-9-kwxv43)
 Specification cases tested: 16/16.
@@ -625,6 +625,9 @@ Specification cases tested: 2/2.
 
 [`REQ-LC-11-MTCBF9` (With the reads compared, each answer is checked against the endpoint's at its…)](../specification/runtime/light-client.md#req-lc-11-mtcbf9)
 Specification cases tested: 14/14.
+
+[`REQ-LC-12-VPAAP0` (Keys a read had proven are kept current on the subscription of the contract…)](../specification/runtime/light-client.md#req-lc-12-vpaap0)
+Specification cases tested: 11/13. Untested: T1.P11, T1.P12.
 
 [`REQ-LIF-1-A5BN02` (The best-case complete lifecycle needs at least two base-layer transactions)](../specification/settlement/lifecycle.md#req-lif-1-a5bn02)
 Specification cases tested: 2/13. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13.

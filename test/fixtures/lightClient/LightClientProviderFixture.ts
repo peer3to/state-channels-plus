@@ -50,11 +50,15 @@ export class LightClientProviderFixture {
      * node (one when unset), each behind a proxy of its own. With
      * `withoutEndpoints`, the first proxy answers `rpc_methods` with the
      * node's list less the light client methods, as a node without them
-     * would.
+     * would; with `withoutWatch`, less only the watch of keys, as a node
+     * from before it would.
      */
     static async start(
         options: {
             withoutEndpoints?: boolean;
+            withoutWatch?: boolean;
+            /** The most keys one subscription watches on the node (its own default when unset). */
+            maxWatchedKeys?: number;
             endpoints?: number;
             /** Ask the node every read the light client answers too, and count how they match. */
             comparesReads?: boolean;
@@ -62,21 +66,31 @@ export class LightClientProviderFixture {
             fetchesEachMiss?: boolean;
         } = {}
     ): Promise<LightClientProviderFixture> {
-        const node = await LightClientNodeFixture.start();
+        const node = await LightClientNodeFixture.start({
+            lightClientArgs:
+                options.maxWatchedKeys === undefined
+                    ? []
+                    : [
+                          "--light-client-max-watched-keys",
+                          String(options.maxWatchedKeys)
+                      ]
+        });
         try {
             await node.firstBlockSealed();
             const proxies: RpcNodeProxy[] = [];
             for (let index = 0; index < (options.endpoints ?? 1); index++)
                 proxies.push(await node.proxyToNode());
             const [proxy] = proxies;
-            if (options.withoutEndpoints) {
+            if (options.withoutEndpoints || options.withoutWatch) {
                 const { methods } = (await node.provider.send(
                     "rpc_methods",
                     []
                 )) as { methods: string[] };
                 proxy.answerRequests("rpc_methods", {
-                    methods: methods.filter(
-                        (method) => !method.startsWith("lightClient_")
+                    methods: methods.filter((method) =>
+                        options.withoutEndpoints
+                            ? !method.startsWith("lightClient_")
+                            : method !== LIGHT_CLIENT_METHODS.watch
                     )
                 });
             }
@@ -165,6 +179,17 @@ export class LightClientProviderFixture {
     follow(contract: string, channelId: string): Promise<number> {
         const pushed = this.nextPushedBlock();
         this.provider.followChannel(contract, channelId);
+        return pushed;
+    }
+
+    /**
+     * Has the provider follow `contract` for itself, the subscription that
+     * takes watched keys, and resolves with the number of the first block
+     * pushed after it: the subscription has then had its first message.
+     */
+    followContract(contract: string): Promise<number> {
+        const pushed = this.nextPushedBlock();
+        this.provider.followContract(contract);
         return pushed;
     }
 

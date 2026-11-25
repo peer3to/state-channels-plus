@@ -269,6 +269,15 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     }
 
     /**
+     * Tells the provider that the runtime reads the contract at `contract`
+     * from now on, whichever channel it follows. Plain chain access has no
+     * use for it; a subclass may.
+     */
+    followContract(_contract: string): void {
+        // nothing to do
+    }
+
+    /**
      * Whether a contract read sent now is answered from state the serving
      * node proved: the node's answer is then not trusted, and a second copy of
      * the chain's state adds nothing. Plain chain access trusts the node.

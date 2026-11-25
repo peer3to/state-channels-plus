@@ -1,5 +1,5 @@
 import type AProvenStateReader from "./proof/AProvenStateReader";
-import type { NodeRequest } from "./proof/AProvenStateReader";
+import type { NodeRequest, WatchRequest } from "./proof/AProvenStateReader";
 import type APushedPartition from "./proof/APushedPartition";
 import { PEER3_CHAIN_CONSTANTS } from "./proof/substrate/FrontierChainConstants";
 import FrontierProvenStateReader from "./proof/substrate/FrontierProvenStateReader";
@@ -7,8 +7,14 @@ import FrontierPushedPartition from "./proof/substrate/FrontierPushedPartition";
 
 /** What the light client must know of the chain its nodes serve. */
 export type LightClientChain = {
-    /** The reader of the chain's proof representation, over requests to a node. */
-    createReader: (requestNode: NodeRequest) => AProvenStateReader;
+    /**
+     * The reader of the chain's proof representation, over requests to a
+     * node and, where a subscription takes them, watches of the keys it proves.
+     */
+    createReader: (
+        requestNode: NodeRequest,
+        watch?: WatchRequest
+    ) => AProvenStateReader;
     /** A partition of the chain's proof representation, for one subscription. */
     createPartition: () => APushedPartition;
     /**
@@ -39,8 +45,12 @@ export type LightClientChain = {
  * to the node. A runtime upgrade that changes either must change these too.
  */
 export const PEER3_LIGHT_CLIENT_CHAIN: LightClientChain = {
-    createReader: (requestNode) =>
-        new FrontierProvenStateReader(requestNode, PEER3_CHAIN_CONSTANTS),
+    createReader: (requestNode, watch) =>
+        new FrontierProvenStateReader(
+            requestNode,
+            PEER3_CHAIN_CONSTANTS,
+            watch
+        ),
     createPartition: () => new FrontierPushedPartition(PEER3_CHAIN_CONSTANTS),
     chainPrecompiles: ["0x0000000000000000000000000000000000000800"],
     hardfork: "prague",

@@ -22,6 +22,19 @@ explicit black-box plan and permutation set; the newly added clock-boundary, sep
 and opened-non-participant permutations are planned but not yet covered by executable evidence;
 engineer disposition remains pending.
 
+## 2026-11-25 — Watched keys
+
+[`REQ-LC-12-VPAAP0` (Keys a read had proven are kept current on the subscription of the contract…)](../specification/runtime/light-client.md#req-lc-12-vpaap0) is new, on the engineer's decisions of 2026-11-24 and 2026-11-25 (W-1 to W-4, D-W3-1 to
+D-W3-3): the chain access follows its state channel manager for itself from the participant's start,
+the proof a read needs from the endpoint is a watch on that contract's subscription where the endpoint
+lists it and the subscription has had its first message, and every new subscription of the contract is
+asked to watch the kept keys again. [`REQ-LC-5-MM0BM9` (A followed channel is subscribed on every connection)](../specification/runtime/light-client.md#req-lc-5-mm0bm9) keeps a
+contract followed for itself subscribed without channels, [`REQ-LC-8-BBYC51` (A participant follows the channel it has selected)](../specification/runtime/light-client.md#req-lc-8-bbyc51)
+adds the follow at start, [`REQ-LC-9-KWXV43` (A read takes from the pushed partitions what they prove at its block)](../specification/runtime/light-client.md#req-lc-9-kwxv43) names the watch
+as its request, and [`REQ-STPROOF-5-HRDXEG` (A read from a node yields only what its proof decides, at one block)](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg) checks a
+watch's proof as a read proof. The watch goes beyond the card:
+[`OQ-SPEC-LC-2-XQ3PR7` (Where the light client departs from card 399)](../specification/open-questions.md#oq-spec-lc-2-xq3pr7) item 9. No requirement was deleted.
+
 ## 2026-11-22 — Departures from the light client card
 
 [`OQ-SPEC-LC-2-XQ3PR7` (Where the light client departs from card 399)](../specification/open-questions.md#oq-spec-lc-2-xq3pr7) lists where the light client departs from the card it was built to: six departures

@@ -888,7 +888,7 @@ Owner: [`REQ-LC-9-KWXV43`](runtime/light-client.md#req-lc-9-kwxv43).
 
 Open (2026-11-22). The Light Clients card (Trello 399) is the design the light client was built to.
 Where the build departs from it, the card's owner has not accepted the departure. Items 1 to 6 were
-decided by the engineer on the date given; items 7 and 8 are still open.
+decided by the engineer on the date given, and item 9; items 7 and 8 are still open.
 
 1. **The event-built mirror stays.** The card says to replace the mirror and the duplicate remote
    `eth_call` checks once verified. While reads are proven the mirror answers nothing and the chain
@@ -924,6 +924,13 @@ decided by the engineer on the date given; items 7 and 8 are still open.
    through both paths. The drivers run a synthetic workload (a writer contract and a probe contract).
    Participants running channel flows on a peer3 node need the parachain test mode of PR #606, and the
    plan items [`REQ-MIRROR-5-N5SZC9.T3`](enforcement/local-mirror.md#req-mirror-5-n5szc9.t3) and [`REQ-LC-8-BBYC51.T1`](runtime/light-client.md#req-lc-8-bbyc51.t1) stay gaps until then.
+9. **Watched keys go beyond the card.** The card's partitions hold the keys channel transactions
+   touch; the reads a participant's own simulations make reach keys no such transaction touches
+   (configuration, routing entries, the participant's account, contract code), and they were proven
+   again at every block. The participant holds its state channel manager's subscription from its start
+   and asks the endpoint to keep the keys it had proven current on it
+   ([`REQ-LC-12-VPAAP0`](runtime/light-client.md#req-lc-12-vpaap0), decided by the engineer
+   2026-11-25). The node part is a new endpoint method, `lightClient_watchStorage`.
 
 Two earlier departures no longer apply. The node first recorded only writes (2026-11-18), and the plan
 of 2026-11-20 re-executed each block to find its reads. The node now records the keys each transaction
@@ -932,7 +939,7 @@ One message per peer per block is met.
 
 Blocking effect: none for safety. Items 1 and 2 bound how much RPC work the light client removes;
 items 3, 4, 6 and 8 bound what the report can claim. Requested decisions: the card's owner accepts or
-rejects items 1 to 6; items 7 and 8 close with the farm runs and the
+rejects items 1 to 6 and 9; items 7 and 8 close with the farm runs and the
 channel-flow runs. Affected layers: [light-client.md](runtime/light-client.md),
 [local-mirror.md](enforcement/local-mirror.md), and the report (`docs/light-client-report.md`).
 

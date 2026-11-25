@@ -11,6 +11,7 @@
 - [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../../../../../../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)
 - [`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../../../../../../specification/runtime/light-client.md#req-lc-1-jt5pkt)
 - [`REQ-LC-8-BBYC51` (A participant follows the channel it has selected)](../../../../../../specification/runtime/light-client.md#req-lc-8-bbyc51)
+- [`REQ-LC-12-VPAAP0` (Keys a read had proven are kept current on the subscription of the contract…)](../../../../../../specification/runtime/light-client.md#req-lc-12-vpaap0)
 
 ## UNIT-TEST-MULTI-RPC-1-SVGGZ5
 
