@@ -250,6 +250,30 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         diamond.open(confirmation);
     }
 
+    // the chain keeps a record of the genesis inbound block under the hash of the full emitted block
+    function test_open_storesTheGenesisRecordUnderTheFullBlockHash() public {
+        vm.recordLogs();
+        diamond.open(_deadlineOpenConfirmation());
+        MessageBlock memory genesis = abi.decode(
+            _logData(
+                vm.getRecordedLogs(), StateChannelManagerEvents.InboundMessagesProcessed.selector, DEADLINE_CHANNEL_ID
+            ),
+            (MessageBlock)
+        );
+        bytes32 genesisHash = keccak256(abi.encode(genesis));
+
+        assertTrue(diamond.hasInboundMessageBlock(DEADLINE_CHANNEL_ID, genesisHash), "genesis record not stored");
+        SnapshotData memory snapshotData = diamond.getStateSnapshot(DEADLINE_CHANNEL_ID).snapshotData;
+        assertEq(snapshotData.latestInboundMessageBlockHash, genesisHash, "snapshot head is not the genesis block");
+        assertEq(snapshotData.latestInboundMessageBlockHeight, 1, "genesis height");
+        assertEq(snapshotData.totalDeposits.amount, 500, "genesis deposit total");
+        // the genesis block is the snapshot head -> its joiners are consumed
+        assertEq(diamond.getPendingParticipants(DEADLINE_CHANNEL_ID).length, 0, "openers left pending");
+        assertFalse(
+            diamond.isUncommittedInboundMessageBlock(DEADLINE_CHANNEL_ID, genesis), "genesis block reads uncommitted"
+        );
+    }
+
     function _deadlineOpenConfirmation() internal view returns (OpenChannelConfirmation memory) {
         uint256[] memory participantPrivateKeys = new uint256[](2);
         participantPrivateKeys[0] = SIGNER_PK;

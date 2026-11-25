@@ -58,6 +58,7 @@ The SDK abstracts away most of the complexities of the system and is designed to
 ### Upgrade notes
 
 - Opening a channel no longer runs the consumer facet's genesis hook on chain. The peers agree its hash off-chain and sign it in `OpenChannel.genesisStateHash`, which replaces `isAtomic`; deposits are always all-or-nothing. `openChannelGenesis` returns only the encoded state. It must be pure and call no other contract, an external library included: each runtime reads the deployed consumer facet's code once at start and runs the hook on a local copy. `ChannelOpened` carries the snapshot and the opening data instead of the genesis state, and the `onChannelOpened` hook's third argument is that opening data. `depositAssetsComposable` loses `isAtomic` and returns no join list. `LocalDiamond`'s constructor takes the consumer facet address after the utility facet, and `onChannelOpened` drops its state argument. `createStandaloneFromLocalStateMachineWithExecutor` takes the consumer facet's code after the diamond state machine address, and `deployLocalDiamondWithStateMachineAddress` after the signer. Rebuild any bundled ABI.
+- `inboundMessageBlockMap` now stores a `StoredInboundBlock` (link, height, timestamp, deposit total, JOIN participants) instead of the full `MessageBlock`. Read message data from `InboundMessagesProcessed`. The storage layout changes: deploy a new proxy and redeploy every facet with it. Do not reuse facet addresses from an earlier deployment; the constructor does not detect a facet built for another layout (`FIND-DEPLOY-1-T2XFRK`).
 - `GAS_USAGE_SETTLE_MS` is replaced by `GAS_USAGE_SETTLE_BLOCKS` (default 3): a gas-usage read waits that many blocks at the measured block time, at most half its request timeout. An old `GAS_USAGE_SETTLE_MS` override is ignored.
 - State-machine diamonds MUST route `getNextToWriteOf(bytes)` from `AStateMachine` to the state-machine facet. It sets the given state, so call it only as a simulated call (`eth_call`). The SDK uses it to read the next writer of a given state. An unrouted selector makes every timeout audit throw.
 - The `requestJoinSignature` peer RPC no longer carries the joiner's snapshot and fork pins, and countersigners no longer check them. Mixed SDK versions cannot sign joins: an old countersigner refuses a new collector's request.
@@ -167,7 +168,11 @@ browser tiers with it. Use `--mocha-test-pattern`, `--forge-test-pattern` or
 `--parachain` runs the slot nodes and tests on the parachain dev node
 (`PEER3_NODE_BIN`, default `zero-fee-node` on `PATH`) instead of Hardhat. The
 runner image copies the node from the image peer3-parachain publishes
-(`docker/zero-fee-node.Dockerfile` there), pinned by digest.
+(`docker/zero-fee-node.Dockerfile` there), pinned by digest. A PR that changes
+that pin also runs the chosen node-sensitive cases (pending-block gas estimates
+in `RpcNodes.test.ts`, block-authoring timeouts in `E2E-Timeouts`) in CI's
+`browser` job, on the image it builds; the distributed suite keeps running on
+the workers' own images until they restart on the merged checkout.
 
 Forge tasks need no Hardhat node, so they take neither a warm slot nor a funded
 account partition. Local and distributed runs build the contracts and the
@@ -259,7 +264,7 @@ and no connected worker has supported the browser runner for the discovery
 window (`--discovery-timeout`), the run skips the browser tasks and those marked
 Mocha tests with a warning that lists them (also written to the GitHub job
 summary) instead of failing; CI's `browser` job runs the same gates inside the
-runner image either way. A task whose attempt was lost with the only host that
+runner image either way (and, for a node pin PR, the node-sensitive cases). A task whose attempt was lost with the only host that
 could run it fails instead of being skipped.
 
 A worker that leaves before it is given a task, whether its lease or workspace

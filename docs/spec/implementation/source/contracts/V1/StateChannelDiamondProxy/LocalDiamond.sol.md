@@ -6,6 +6,7 @@
 
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
+  Partial: `onChannelStorageCleared` keeps the mirror's dispute windows, because the mirror never records `disputedForks` ([`FIND-MIRROR-DISPUTE-CLEAR-1-SEWPKN`](../../../../../audit/open-findings.md#find-mirror-dispute-clear-1-sewpkn)).
 - [`REQ-MIRROR-2-E9F3TM` (Unconditional replication)](../../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)
 - [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 - [`REQ-ENFSM-3-JZK0FB` (Genesis derivation)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-3-jzk0fb)
@@ -14,8 +15,8 @@
 
 Mirror replication
 
-- Setup: Replay event sequences incl. duplicates and the open event; apply inbound blocks again and out of height order
-- Oracle: Idempotent convergence with on-chain state; an inbound block is stored once and the inbound head with its deposit total never moves back
+- Setup: Replay event sequences incl. duplicates and the open event; apply inbound blocks again and out of height order; a real join replayed after the open; a mirrored on-chain slash followed by `onChannelStorageCleared`
+- Oracle: Idempotent convergence with on-chain state; an inbound block is stored once and the inbound head with its deposit total never moves back; the mirror's pending set equals the chain's; storage clearing deletes the mirrored slashes and the inbound blocks from the named block down
 
 - [x] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P1` — event replay convergence
 - [x] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P2` — duplicate idempotence
@@ -24,6 +25,8 @@ Mirror replication
 - [x] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P7` — `onChannelStorageCleared` naming a block an earlier clearing already deleted (a later advance with the same head) deletes nothing; the head block, the inbound head and its deposit total stay
 - [x] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P5` — `onInboundMessagesProcessed` with an older block after a newer one stores the older block; the inbound head and its deposit total stay at the newer block
 - [x] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P6` — `onChannelStorageCleared` deletes inbound blocks from the first pruned block the event names and keeps the blocks above it; the inbound head and its deposit total stay
+- [x] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P8` — replaying the open and then a real join's `InboundMessagesProcessed` leaves the mirror's pending set equal to the chain's: exactly the joiner
+- [x] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P9` — `onChannelStorageCleared` deletes the mirrored on-chain slashes (dispute windows: see [`FIND-MIRROR-DISPUTE-CLEAR-1-SEWPKN`](../../../../../audit/open-findings.md#find-mirror-dispute-clear-1-sewpkn))
 
 ## UNIT-TEST-LOCAL-DIAMOND-2-G8M3VQ
 

@@ -91,7 +91,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         // ***** reducedOutput.latestInboundMessageBlockHash *****
         bytes32 inboundHash = channelBalances[channelId].latestInboundMessageBlockHash;
-        MessageBlock storage inboundBlock = inboundMessageBlockMap[channelId][inboundHash];
+        StoredInboundBlock storage inboundBlock = inboundMessageBlockMap[channelId][inboundHash];
         while (inboundHash != bytes32(0) && inboundBlock.timestamp > disputeWindowExpirationTimestamp) {
             inboundHash = inboundBlock.previousBlockHash;
             inboundBlock = inboundMessageBlockMap[channelId][inboundHash];

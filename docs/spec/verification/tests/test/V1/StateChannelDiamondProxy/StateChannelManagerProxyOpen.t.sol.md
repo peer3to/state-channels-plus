@@ -61,18 +61,24 @@ gates — zero channel id, threshold shortfall, deposit composition — are cove
 [OpenChannel.test.ts](../DiamondProxy/StateChannelManager/OpenChannel.test.ts.md). The
 `DEF-1-92NTAG` short-balances and zero-address reverts are planned but not yet tested.
 
+A genesis-record case opens the same two-party channel, decodes the emitted genesis inbound block and
+asserts the chain finds it under the hash of that full block, the snapshot's inbound head is that
+hash at height 1 with total deposits `500`, no participant is pending, and the block does not read
+as uncommitted.
+
 ## Tests
 
 - `test_open_duplicateParticipants_reverts`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P12
 - `test_open_inboundJoinMessageDataIsCanonicalJoinEncoding`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P24, REQ-DATA-1-1KNRQS.T1.P15
-- `test_open_oneParticipant_revertsBeforeAnyDeposit`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P25, REQ-LIF-11-KEEN0N.T1.P4
+- `test_open_oneParticipant_revertsBeforeAnyDeposit`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P26, REQ-LIF-11-KEEN0N.T1.P4
 - `test_open_failingDeposit_revertsTheWholeOpen`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P4, REQ-LIF-11-KEEN0N.T1.P5
-- `test_open_recordsTheSignedGenesisCommitment`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P26, REQ-LIF-11-KEEN0N.T1.P1
-- `test_open_neverCallsTheGenesisHook`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P27, REQ-LIF-11-KEEN0N.T1.P2
-- `test_open_emitsTheSnapshotAndTheOpeningData`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P28, REQ-LIF-11-KEEN0N.T1.P3
+- `test_open_recordsTheSignedGenesisCommitment`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P27, REQ-LIF-11-KEEN0N.T1.P1
+- `test_open_neverCallsTheGenesisHook`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P28, REQ-LIF-11-KEEN0N.T1.P2
+- `test_open_emitsTheSnapshotAndTheOpeningData`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P29, REQ-LIF-11-KEEN0N.T1.P3
 - `test_open_participantsAboveMaximum_reverts`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P16
 - `test_open_participantsAtMaximum_passesTheBoundCheck`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P17
 - `test_open_beforeDeadline_opensChannel`: REQ-ENFADM-4-2NN96F.T1.P1
 - `test_open_atDeadline_opensChannel`: REQ-ENFADM-4-2NN96F.T1.P2, UNIT-TEST-MANAGER-PROXY-1-NTYR71.P18
 - `test_open_afterDeadline_revertsWithOpenChannelExpired`: REQ-ENFADM-4-2NN96F.T1.P3, UNIT-TEST-MANAGER-PROXY-1-NTYR71.P19
 - `test_open_alreadyOpenAfterDeadline_revertsWithChannelAlreadyOpen`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P20
+- `test_open_storesTheGenesisRecordUnderTheFullBlockHash`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P25

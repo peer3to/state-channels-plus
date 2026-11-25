@@ -13,6 +13,6 @@ The Foundry harness opens real manager channels and submits threshold-signed zer
 - `test_updateStateSnapshotSameFork_finalCloseRemovesMiddle`: UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7.P4, REQ-LIF-8-2HDG3A.T1.P5
 - `test_updateStateSnapshotSameFork_finalCloseRemovesLast`: UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7.P5, REQ-LIF-8-2HDG3A.T1.P6
 - `test_updateStateSnapshotSameFork_repeatedFinalCloseDoesNotChangeRegistry`: UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7.P6, REQ-LIF-8-2HDG3A.T1.P7, UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P17, REQ-ENFSNAP-4-ESP98F.T1.P3
-- `test_open_afterFinalCloseAppendsChannelExactlyOnce`: UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7.P7, REQ-LIF-8-2HDG3A.T1.P8, UNIT-TEST-MANAGER-PROXY-1-NTYR71.P29
+- `test_open_afterFinalCloseAppendsChannelExactlyOnce`: UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7.P7, REQ-LIF-8-2HDG3A.T1.P8, UNIT-TEST-MANAGER-PROXY-1-NTYR71.P30
 - `test_updateStateSnapshotSameFork_finalClosePrunesTheInboundHeadWithOneStorageClear`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P53
 - `test_lifecycleEvents_reconstructPagedOpenChannelRegistry`: UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7.P8, REQ-LIF-8-2HDG3A.T1.P9, REQ-LOBBY-1-PZTPKD.T1.P4
