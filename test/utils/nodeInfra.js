@@ -614,6 +614,26 @@ async function provisionSlots(slotCount, logDir) {
 }
 
 /**
+ * The slot a caller started and keeps (`--use-slot`): the JSON `file` names its
+ * `nodeUrl`, `discoveryUrl` and `cacheDir`. Nothing here resets its cache dir,
+ * so the deployments an earlier run on the same node left are reused.
+ */
+function readGivenSlot(file) {
+    const slot = JSON.parse(fs.readFileSync(file, "utf8"));
+    for (const field of ["nodeUrl", "discoveryUrl", "cacheDir"])
+        if (typeof slot?.[field] !== "string" || slot[field].length === 0)
+            throw new Error(
+                `--use-slot ${file}: ${field} is not a nonempty string`
+            );
+    return {
+        id: 0,
+        nodeUrl: slot.nodeUrl,
+        discoveryUrl: slot.discoveryUrl,
+        cacheDir: slot.cacheDir
+    };
+}
+
+/**
  * Poll each slot node every `intervalMs`, scanning new blocks; whenever a block's
  * gasUsed/gasLimit beats that slot's prior peak, record it and call
  * `onNewPeak(slotId, peak)`. Returns `{ stop, gasPeak }`.
@@ -672,5 +692,6 @@ module.exports = {
     resetSlotCacheDir,
     teardownInfra,
     provisionSlots,
+    readGivenSlot,
     startGasMonitor
 };

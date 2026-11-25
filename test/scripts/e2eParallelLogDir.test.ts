@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import type { Slot } from "@test/utils/nodeInfra";
 import { repoRoot as findRepoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
 import { spawnSync } from "child_process";
@@ -21,6 +22,8 @@ type ParsedCliArgs = {
     discoveryTimeoutMs: number;
     forwardEnv: string[];
     executionProfile: Record<string, number>;
+    slots?: number;
+    useSlot?: string;
 };
 const argParser: {
     getHelpText: () => string;
@@ -82,22 +85,34 @@ const { accountPartitionFor } =
             accountPartition: number
         ) => number;
     };
-const { buildBaseEnv, main, resolveDistributedOrchestratorKeyPair } =
-    require("../../scripts/test-e2e-parallel.js") as {
-        buildBaseEnv: (threadModes: {
-            sdkThread: boolean;
-            vmThread: boolean;
-        }) => NodeJS.ProcessEnv;
-        main: (options?: {
-            testPattern?: string;
-            dryRun?: boolean;
-            distributed?: boolean;
-        }) => Promise<void>;
-        resolveDistributedOrchestratorKeyPair: (
-            stateDir: string,
-            environment?: NodeJS.ProcessEnv
-        ) => { publicKey: Buffer; secretKey: Buffer };
-    };
+const {
+    buildBaseEnv,
+    main,
+    resolveDistributedOrchestratorKeyPair,
+    resolveLocalSlots
+} = require("../../scripts/test-e2e-parallel.js") as {
+    buildBaseEnv: (threadModes: {
+        sdkThread: boolean;
+        vmThread: boolean;
+    }) => NodeJS.ProcessEnv;
+    main: (options?: {
+        testPattern?: string;
+        dryRun?: boolean;
+        distributed?: boolean;
+    }) => Promise<void>;
+    resolveDistributedOrchestratorKeyPair: (
+        stateDir: string,
+        environment?: NodeJS.ProcessEnv
+    ) => { publicKey: Buffer; secretKey: Buffer };
+    resolveLocalSlots: (
+        useSlot: string | undefined,
+        slotCount: number,
+        logDir: string
+    ) => Promise<{
+        slots: Slot[];
+        infra: { nodes: unknown[]; discoveries: unknown[] };
+    }>;
+};
 
 const argv = (...args: string[]) => ["node", "runner", ...args];
 
@@ -189,6 +204,7 @@ describe("e2e-parallel argParser - logDir validation", function () {
             "--allow-logdir-purge",
             "--keep-infra-logs",
             "--slots",
+            "--use-slot",
             "--workers",
             "--target-load",
             "--interval",
@@ -322,6 +338,94 @@ describe("e2e-parallel argParser - logDir validation", function () {
         expect(() => parseCliArgs(argv("--forward-env", "CI"))).to.throw(
             /require --distributed/
         );
+    });
+
+    it("parses --use-slot and refuses it with --distributed or --slots", function () {
+        expect(parseCliArgs(argv()).useSlot).to.equal(undefined);
+        expect(parseCliArgs(argv("--use-slot", "slot.json")).useSlot).to.equal(
+            "slot.json"
+        );
+        expect(parseCliArgs(argv("--use-slot=slot.json")).useSlot).to.equal(
+            "slot.json"
+        );
+        expect(() => parseCliArgs(argv("--use-slot"))).to.throw(
+            /--use-slot requires a nonempty path/
+        );
+        expect(() => parseCliArgs(argv("--use-slot", "--parachain"))).to.throw(
+            /--use-slot requires a nonempty path/
+        );
+        expect(() =>
+            parseCliArgs(argv("--use-slot", "slot.json", "--distributed"))
+        ).to.throw(/--use-slot is local only/);
+        expect(() =>
+            parseCliArgs(argv("--use-slot", "slot.json", "--slots", "2"))
+        ).to.throw(/--use-slot conflicts with --slots/);
+    });
+
+    it("runs on the slot --use-slot names, keeps its cache dir and starts nothing to tear down", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "use-slot-"));
+        try {
+            const cacheDir = path.join(root, "cache");
+            fs.mkdirSync(cacheDir);
+            fs.writeFileSync(path.join(cacheDir, "marker"), "0xabc");
+            const file = path.join(root, "slot.json");
+            fs.writeFileSync(
+                file,
+                JSON.stringify({
+                    nodeUrl: "http://127.0.0.1:9944",
+                    discoveryUrl: "http://127.0.0.1:9000",
+                    cacheDir
+                })
+            );
+            const given = await resolveLocalSlots(file, 1, root);
+            expect(given.slots).to.deep.equal([
+                {
+                    id: 0,
+                    nodeUrl: "http://127.0.0.1:9944",
+                    discoveryUrl: "http://127.0.0.1:9000",
+                    cacheDir
+                }
+            ]);
+            expect(given.infra).to.deep.equal({ nodes: [], discoveries: [] });
+            expect(
+                fs.readFileSync(path.join(cacheDir, "marker"), "utf8")
+            ).to.equal("0xabc");
+            // a run with no task on a chain slot uses no slot, given or not
+            const none = await resolveLocalSlots(file, 0, root);
+            expect(none.slots).to.deep.equal([]);
+            expect(none.infra).to.deep.equal({ nodes: [], discoveries: [] });
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("refuses a --use-slot file that misses the node URL, the discovery URL or the cache dir", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "use-slot-"));
+        try {
+            const file = path.join(root, "slot.json");
+            const complete = {
+                nodeUrl: "http://127.0.0.1:9944",
+                discoveryUrl: "http://127.0.0.1:9000",
+                cacheDir: root
+            };
+            for (const field of ["nodeUrl", "discoveryUrl", "cacheDir"]) {
+                fs.writeFileSync(
+                    file,
+                    JSON.stringify({ ...complete, [field]: "" })
+                );
+                let refusal: unknown;
+                try {
+                    await resolveLocalSlots(file, 1, root);
+                } catch (error) {
+                    refusal = error;
+                }
+                expect(String(refusal)).to.include(
+                    `${field} is not a nonempty string`
+                );
+            }
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it("turns distributed capacity flags into an execution profile", function () {
