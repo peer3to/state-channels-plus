@@ -67,6 +67,14 @@ describe("OpenChannelNegotiationService opening data", function () {
         expect(result.chainGenesisStateHash).to.equal(
             result.proposalGenesisStateHash
         );
+        // the consumer's genesis depends on the data, so the signed hash is not the empty data's
+        expect(result.derivedGenesisStateHash).to.not.equal(
+            result.emptyDataGenesisStateHash
+        );
+        // the runtime rebuilt that genesis from the opened event's data
+        expect(result.installedGenesisStateHash).to.equal(
+            result.chainGenesisStateHash
+        );
     });
 
     it("higher address derives opening data from the exact agreed terms", async function () {
@@ -84,6 +92,14 @@ describe("OpenChannelNegotiationService opening data", function () {
         expect(result.channelOpen).to.equal(true);
         expect(result.chainGenesisStateHash).to.equal(
             result.derivedGenesisStateHash
+        );
+        // the consumer's genesis depends on the data, so the signed hash is not the empty data's
+        expect(result.derivedGenesisStateHash).to.not.equal(
+            result.emptyDataGenesisStateHash
+        );
+        // the runtime rebuilt that genesis from the opened event's data
+        expect(result.installedGenesisStateHash).to.equal(
+            result.chainGenesisStateHash
         );
     });
 
@@ -147,6 +163,20 @@ describe("OpenChannelNegotiationService opening data", function () {
         const result = await fixture
             .probe()
             .probeAlteredProposal("genesis-hash")
+            .request();
+
+        expect(result).to.deep.equal({
+            error: "Genesis state hash mismatch",
+            attemptCleared: true,
+            channelOpen: false,
+            peerBlacklisted: true
+        });
+    });
+
+    it("blacklists a proposal carrying the agreed opening data whose genesis hash the hook derives from empty data", async function () {
+        const result = await fixture
+            .probe()
+            .probeAlteredProposal("genesis-of-empty-data")
             .request();
 
         expect(result).to.deep.equal({

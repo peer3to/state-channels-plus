@@ -1,9 +1,9 @@
 // @spec-test-coverage-ignore: shared deployment setup for real test sessions; executable evidence belongs to its calling test declarations
 import type {
     HarnessDeploymentConfig,
-    HarnessLocalStateMachineDeploymentParams,
-    HarnessOnChainContractsDeploymentParams
+    HarnessLocalStateMachineDeploymentParams
 } from "./types";
+import OpeningDataMathConsumerFacetArtifact from "../../../artifacts/contracts/test/OpeningDataMathConsumerFacet.sol/OpeningDataMathConsumerFacet.json";
 import MathConsumerFacetArtifact from "../../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
 import MathStateMachineArtifact from "../../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 
@@ -14,25 +14,29 @@ import {
 import type { MathStateMachine } from "@typechain-types";
 import { MathStateMachine__factory } from "@typechain-types";
 import { ContractFactory, Signer } from "ethers";
+import type { Artifact } from "hardhat/types";
 
-export async function deployDefaultMathOnChainContracts(
-    params: HarnessOnChainContractsDeploymentParams
-): Promise<string> {
-    const deployment = await deployFullStack(params.signer, {
-        stateMachineArtifact: MathStateMachineArtifact,
-        consumerFacetArtifact: MathConsumerFacetArtifact,
-        stateMachineArgs: [
-            params.stateMachineGasLimit,
-            params.maxChannelParticipants ?? DEFAULT_MAX_CHANNEL_PARTICIPANTS
-        ],
-        maxChannelParticipants: params.maxChannelParticipants,
-        consumerFacetArgs: [],
-        timeConfig: params.timeConfig,
-        disputeExecutionGasLimit: params.disputeExecutionGasLimit,
-        facetAddresses: params.facetAddresses
-    });
+function mathOnChainDeployer(
+    consumerFacetArtifact: Artifact
+): HarnessDeploymentConfig<MathStateMachine>["deployOnChainContracts"] {
+    return async (params) => {
+        const deployment = await deployFullStack(params.signer, {
+            stateMachineArtifact: MathStateMachineArtifact,
+            consumerFacetArtifact,
+            stateMachineArgs: [
+                params.stateMachineGasLimit,
+                params.maxChannelParticipants ??
+                    DEFAULT_MAX_CHANNEL_PARTICIPANTS
+            ],
+            maxChannelParticipants: params.maxChannelParticipants,
+            consumerFacetArgs: [],
+            timeConfig: params.timeConfig,
+            disputeExecutionGasLimit: params.disputeExecutionGasLimit,
+            facetAddresses: params.facetAddresses
+        });
 
-    return deployment.address;
+        return deployment.address;
+    };
 }
 
 export async function deployDefaultMathLocalStateMachine(
@@ -66,7 +70,17 @@ export function connectDefaultMathSigner(
 
 export const DEFAULT_MATH_HARNESS_DEPLOYMENT: HarnessDeploymentConfig<MathStateMachine> =
     {
-        deployOnChainContracts: deployDefaultMathOnChainContracts,
+        deployOnChainContracts: mathOnChainDeployer(MathConsumerFacetArtifact),
         deployLocalStateMachine: deployDefaultMathLocalStateMachine,
         connectSigner: connectDefaultMathSigner
+    };
+
+/** Math with a consumer whose genesis folds in the opening data. */
+export const OPENING_DATA_MATH_HARNESS_DEPLOYMENT: HarnessDeploymentConfig<MathStateMachine> =
+    {
+        ...DEFAULT_MATH_HARNESS_DEPLOYMENT,
+        deployOnChainContracts: mathOnChainDeployer(
+            OpeningDataMathConsumerFacetArtifact
+        ),
+        getDeploymentCacheKeyFragment: () => "opening-data-consumer"
     };

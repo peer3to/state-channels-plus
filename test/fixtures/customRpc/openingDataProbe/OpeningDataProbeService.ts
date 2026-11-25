@@ -86,12 +86,19 @@ export type OpeningDataProbe = {
     derivedGenesisStateHash: string;
     /** The genesis hash the chain recorded for the opened channel. */
     chainGenesisStateHash: string;
+    /** The hash the genesis hook derives for the signed terms with empty data. */
+    emptyDataGenesisStateHash: string;
+    /** Hash of the genesis this runtime installed from the open. */
+    installedGenesisStateHash: string;
     outcomeStatus: string;
     channelOpen: boolean;
 };
 
 /** A proposal that alters what the higher address agreed. */
-export type ProposalAlteration = "genesis-hash" | "overflowing-balance";
+export type ProposalAlteration =
+    | "genesis-hash"
+    | "overflowing-balance"
+    | "genesis-of-empty-data";
 
 export type ProposalAlterationProbe = {
     error: string;
@@ -248,6 +255,17 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             chainGenesisStateHash: String(
                 snapshot.snapshotData.stateMachineStateHash
             ),
+            emptyDataGenesisStateHash: ethers.hexlify(
+                (
+                    await buildOpenChannel(
+                        this.sm.stateChannelManagerContract,
+                        { ...proposal, data: "0x" }
+                    )
+                ).genesisStateHash
+            ),
+            installedGenesisStateHash: ethers.keccak256(
+                await this.sm.diamondStateMachine.getState()
+            ),
             outcomeStatus: outcome.status,
             channelOpen: await this.isChannelOpen(staged.channelId)
         };
@@ -403,7 +421,11 @@ export class OpeningDataProbeService extends ANetworkRpcService<
         alteration: ProposalAlteration
     ): Promise<ProposalAlterationProbe> {
         await this.resetLifecycle();
-        const service = new OpenChannelNegotiationService(this.p2pManager);
+        // the empty-data genesis needs agreed data that is not empty
+        const emptyDataGenesis = alteration === "genesis-of-empty-data";
+        const service = emptyDataGenesis
+            ? this.rootService
+            : new OpenChannelNegotiationService(this.p2pManager);
         const staged = await this.stageAttempt(service, "higher");
         await this.acceptTerms(service, staged);
         let error = "";
@@ -411,9 +433,11 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             await this.acceptProposal(
                 service,
                 staged,
-                "0x",
+                emptyDataGenesis
+                    ? deriveOpeningData(this.expectedTerms(staged))
+                    : "0x",
                 alteration,
-                JUNK_GENESIS_HASH
+                emptyDataGenesis ? undefined : JUNK_GENESIS_HASH
             );
         } catch (caught) {
             error = errorMessage(caught);
@@ -818,14 +842,23 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             deadlineTimestamp: Clock.getTimeInSeconds() + 60,
             data
         };
+        // the signed data stays the agreed one; only the hash may come from other data
+        const hashedTerms =
+            alteration === "genesis-of-empty-data"
+                ? { ...terms, data: "0x" }
+                : terms;
         // a given hash skips the hook, so a held or rejecting hook stays the runtime's
-        const openChannel =
-            genesisStateHash === undefined
-                ? await buildOpenChannel(
-                      this.sm.stateChannelManagerContract,
-                      terms
-                  )
-                : { ...terms, genesisStateHash };
+        const openChannel = {
+            ...terms,
+            genesisStateHash:
+                genesisStateHash ??
+                (
+                    await buildOpenChannel(
+                        this.sm.stateChannelManagerContract,
+                        hashedTerms
+                    )
+                ).genesisStateHash
+        };
         const signed = await SignatureUtils.signOpenChannel(
             openChannel,
             staged.wallet

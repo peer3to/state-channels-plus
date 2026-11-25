@@ -11,8 +11,9 @@ import "../../types/DataTypes.sol";
  */
 contract MathConsumerFacet is AConsumerFacet {
     function openChannelGenesis(JoinChannel[] memory joinChannels, bytes memory)
-        external
+        public
         pure
+        virtual
         override
         returns (bytes memory encodedGenesisState)
     {

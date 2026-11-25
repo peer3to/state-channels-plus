@@ -1,7 +1,9 @@
 import { isRootDisposedError } from "@/rpc/internal/RemoteRoot";
+import MathPeerTestHarness from "@test/fixtures/MathPeerTestHarness";
 import { rejectionOf } from "@test/fixtures/ProvenSubmissionFailureStaging";
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
+import { OPENING_DATA_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -34,6 +36,54 @@ describe("Unit: EventHandler.onChannelOpened genesis rebuild", function () {
         expect(h.event.getEventCallCount(observer, "onChannelOpened")).to.equal(
             1
         );
+    });
+
+    it("installs a genesis that depends on the opening data the open signed", async function () {
+        // a standalone harness: its consumer folds the opening data into the genesis
+        const h = new MathPeerTestHarness(OPENING_DATA_MATH_HARNESS_DEPLOYMENT);
+        try {
+            const observer = 2;
+            await h.setup(3, {
+                autoConnect: false,
+                channelId: "channel-opened-rebuild-opening-data"
+            });
+
+            await h.lifecycle.openChannelForParticipants([0, 1]);
+
+            const snapshot = await h.channelManager.getStateSnapshot(
+                h.channelId
+            );
+            const recordedHash = snapshot.snapshotData.stateMachineStateHash;
+            // premise - the recorded genesis is the one of the signed data 0x00, not of empty data
+            const joins = snapshot.snapshotData.participants.map(
+                (participant) => ({
+                    channelId: h.channelId,
+                    participant,
+                    deadlineTimestamp: 0,
+                    balance: { amount: 500, data: "0x00" }
+                })
+            );
+            expect(
+                ethers.keccak256(
+                    await h.channelManager.openChannelGenesis(joins, "0x00")
+                )
+            ).to.equal(recordedHash);
+            expect(
+                ethers.keccak256(
+                    await h.channelManager.openChannelGenesis(joins, "0x")
+                )
+            ).to.not.equal(recordedHash);
+            const query = h.control(h.getPeer(observer)).query;
+            expect(await query.getForkId().request()).to.equal(snapshot.forkId);
+            expect(
+                await query.getLiveStateMachineStateHash().request()
+            ).to.equal(recordedHash);
+            expect(
+                h.event.getEventCallCount(observer, "onChannelOpened")
+            ).to.equal(1);
+        } finally {
+            await h.cleanup();
+        }
     });
 
     it("recovers a genesis join block it never received and installs", async function () {

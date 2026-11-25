@@ -4,16 +4,19 @@ import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot
 import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import type { OpeningDataRpc } from "@test/fixtures/customRpc/OpeningDataRpcManifest";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
+import { OPENING_DATA_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
 import { MathStateMachine } from "@typechain-types";
 import path from "node:path";
 
-/** Runtimes built with a custom root that supplies opening data. */
+/**
+ * Runtimes built with a custom root that supplies opening data, on a consumer
+ * whose genesis depends on it.
+ */
 export class OpeningDataFixture {
     private readonly harness = new PeerTestHarness<
         P2pRuntimeHostRoot<OpeningDataRpc>,
         MathStateMachine
-    >({ deployment: DEFAULT_MATH_HARNESS_DEPLOYMENT });
+    >({ deployment: OPENING_DATA_MATH_HARNESS_DEPLOYMENT });
 
     public async setup(): Promise<void> {
         await this.harness.setup(2, {
