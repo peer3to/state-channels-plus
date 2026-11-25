@@ -25,7 +25,7 @@ readers share the one owner, `_tryDecodeBlock`, whose guard is covered by the ow
 
 ## Tests
 
-- `test_underfundedTrueChallengeAtABlockAfterAHeavyPredecessorIsNoVerdict`: REQ-SP-7-70EMAT.T5.P10, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P79
+- `test_underfundedTrueChallengeAtABlockAfterAHeavyPredecessorIsNoVerdict`: REQ-SP-7-70EMAT.T5.P10, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P82
 - `test_underfundedTrueChallengeAtABlockAfterAHeavyFirstBlockIsNoVerdict`: REQ-SP-7-70EMAT.T5.P21
 - `test_underfundedFalseChallengeAtAHeavyHonestBlockIsNoVerdict`: REQ-SP-7-70EMAT.T5.P11
 - `test_underfundedFalseChallengeAtAHeavyHonestLatestBlockIsNoVerdict`: REQ-SP-7-70EMAT.T5.P22

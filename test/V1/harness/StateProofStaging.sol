@@ -3,6 +3,7 @@ pragma solidity ^0.8.8;
 
 import {DiamondHarness} from "./DiamondHarness.sol";
 import {DisputeWindowSeeding} from "./DisputeWindowSeeding.sol";
+import {InboundSeeding} from "./InboundSeeding.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import {DisputeFraudProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol";
 import {DisputeVerificationFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol";
@@ -31,7 +32,7 @@ import "../../../contracts/V1/types/ProofTypes.sol";
 /// DisputeVerificationFacet's kill and balance invariant inline, and StateProofFacet, FraudProofFacet and UtilityFacet
 /// reached by delegatecall like the proxy routes them. A test places the chain snapshot, inbound blocks, withdrawals,
 /// slashes and the committed dispute directly.
-contract StateProofHarness is DisputeFraudProofFacet, DisputeVerificationFacet, DisputeWindowSeeding {
+contract StateProofHarness is DisputeFraudProofFacet, DisputeVerificationFacet, DisputeWindowSeeding, InboundSeeding {
     constructor(address utilityFacet, address stateProofFacet, address fraudProofFacet, address stateMachine) {
         evidenceTime = 10;
         utilityFacetAddress = utilityFacet;
@@ -60,16 +61,7 @@ contract StateProofHarness is DisputeFraudProofFacet, DisputeVerificationFacet, 
     /// stores `inbound` under its hash, as the chain's new inbound head
     function seedInboundBlock(bytes32 channelId, MessageBlock memory inbound) external returns (bytes32 hash) {
         hash = keccak256(abi.encode(inbound));
-        MessageBlock storage stored = inboundMessageBlockMap[channelId][hash];
-        stored.previousBlockHash = inbound.previousBlockHash;
-        stored.blockHeight = inbound.blockHeight;
-        stored.totalBalance = inbound.totalBalance;
-        stored.timestamp = inbound.timestamp;
-        for (uint256 i = 0; i < inbound.messages.length; i++) {
-            stored.messages.push(inbound.messages[i]);
-        }
-        channelBalances[channelId].latestInboundMessageBlockHash = hash;
-        channelBalances[channelId].latestInboundMessageBlockHeight = inbound.blockHeight;
+        _seedInboundBlock(channelId, hash, inbound);
     }
 
     /// commits `dispute` in its fork's open window the way `uploadDispute` leaves it

@@ -195,25 +195,4 @@ contract StateSnapshotFacet is StateChannelCommon {
         _clearOldInboundMessageBlocks(channelId, firstPrunedInboundMessageBlockHash);
         emit ChannelStorageCleared(channelId, firstPrunedInboundMessageBlockHash);
     }
-
-    function _clearDisputeData(bytes32 channelId) internal {
-        DisputeData storage disputeData = disputeData[channelId];
-        delete disputeData.onChainSlashes; //TODO! Check should we clear this since things happen in 'parallel' now
-        mapping(bytes32 => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
-        for (uint256 i = 0; i < disputeData.disputedForks.length; i++) {
-            delete disputeWindowMap[disputeData.disputedForks[i]];
-        }
-        delete disputeData.disputedForks;
-    }
-
-    function _clearOldInboundMessageBlocks(bytes32 channelId, bytes32 firstPrunedInboundMessageBlockHash) internal {
-        // start from the first pruned block and walk backwards
-        bytes32 keyToDelete = firstPrunedInboundMessageBlockHash;
-        bytes32 prev;
-        while (keyToDelete != bytes32(0)) {
-            prev = inboundMessageBlockMap[channelId][keyToDelete].previousBlockHash;
-            delete inboundMessageBlockMap[channelId][keyToDelete];
-            keyToDelete = prev;
-        }
-    }
 }

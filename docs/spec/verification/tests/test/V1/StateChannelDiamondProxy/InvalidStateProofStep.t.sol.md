@@ -23,7 +23,7 @@ Challenges individual milestone steps with optional block pointers. Cases distin
 - `test_U99_blockOnAnotherChannelKillsThroughTheBlockPointer`: REQ-FP-7-4DD0D7.T2.P29, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P65
 - `test_U99_hugeLengthBlockKillsThroughTheBlockPointerAtBoundedGas`: REQ-SP-7-70EMAT.T5.P17
 - `test_U99_aliasOffsetBlockKillsThroughTheBlockPointerAtBoundedGas`: REQ-SP-7-70EMAT.T5.P14
-- `test_U99_pointerAtBlockOneKillsTheDispute`: UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P81
+- `test_U99_pointerAtBlockOneKillsTheDispute`: UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P84
 - `test_U99_wrongAuthorSignatureKillsThroughTheBlockPointer`: REQ-FP-7-4DD0D7.T2.P30, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P66
 - `test_U99_unrecoverableConfirmationSignatureKillsThroughTheBlockPointer`: REQ-FP-7-4DD0D7.T2.P31, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P67
 - `test_U99_validBlockOfARunWithABrokenLinkIsRejected`: REQ-FP-7-4DD0D7.T2.P32, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P68
