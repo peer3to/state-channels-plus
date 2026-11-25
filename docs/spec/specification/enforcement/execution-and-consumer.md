@@ -104,7 +104,8 @@ consumer capability is not a required protocol endpoint and does not broaden cha
 
 **<a id="req-enfsm-3-jzk0fb"></a>`REQ-ENFSM-3-JZK0FB` — Genesis derivation.** The consumer adapter derives the
 channel's initial encoded state from the opening joins and the optional opening data alone; the derivation
-MUST be pure, so every opening signer and every observer recomputes the same genesis read-only, off-chain, and
+MUST be pure and self-contained (it calls no other contract), so every opening signer and every observer
+recomputes the same genesis off-chain from a copy of the adapter's code, and
 the returned state MUST satisfy the channel-balance invariant over the deposit sum
 ([`INV-MSG-6-1C22RD`](../settlement/cross-layer-messages.md#inv-msg-6-1c22rd)), so the invariant holds from
 the first block. The manager never runs it: it records the hash the signers agreed, and the channel's
@@ -121,6 +122,9 @@ participants are the opening terms' participants.
 - The chain's per-transaction gas cap is runtime configuration: the chain exposes no read of it.
   The configured transition limit must keep the replay requirement within that cap.
 - The shared-deployment constraint above holds for this protocol version.
+- The genesis derivation is self-contained: runtimes run it on a local copy of the adapter's code read
+  once at start, so a derivation that calls another contract, an external library included, is not
+  supported.
 
 ## Security considerations
 
@@ -159,6 +163,11 @@ transaction making the replay transaction cost more than estimated. The adapter 
 defense is confinement (specified delegation points, scoped failures) plus the integrator contract,
 not sandboxing. The known blocked-withdrawal question (a reverting adapter blocking snapshot
 advance) is owned by [cross-layer-messages.md](../settlement/cross-layer-messages.md).
+
+A derivation that calls another contract fails on every runtime's local copy, so no peer can derive or
+check its hash and no channel of that application can open: the failure is total and visible at the first
+open, not a silent divergence. The code copy is read from the runtime's own chain endpoint, which the trust
+model treats as honest.
 
 ## Verification and test plan
 

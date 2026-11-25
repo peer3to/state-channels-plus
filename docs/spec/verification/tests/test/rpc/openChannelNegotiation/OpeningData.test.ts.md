@@ -20,7 +20,7 @@ the agreed terms in address order for the root), the proposal data, the `opened`
 chain-open state. The failure tests fail the hook and check the whole result: thrown error (none
 for the lower role, "Opening data unavailable" for the higher), `retry` outcome, attempt and
 selected channel ID cleared, no proposal frame, no open, and no blacklist, strike or close. The
-late-settlement tests hold the hook, cancel the attempt with `dispose` (outcome `cancelled`),
+late-settlement tests hold the hook, clear the attempt (outcome `retry`),
 start a replacement with a new peer, then resolve or reject the held call; they check that the
 replacement is still the current attempt with its channel selection, deadline handle and pending
 outcome, that the old attempt produced no proposal and no open (and, for the higher role, what its
@@ -29,9 +29,10 @@ participant set of the replacement and the old peer's blacklist, strikes and tra
 
 The default and derived success tests also return the proposal's genesis hash, the hash the genesis
 hook derives for the signed terms and the hash the chain recorded; the lower-role tests check all three
-are equal, the higher-role tests check the chain's against the derived one. The derived tests also check
+are equal, the higher-role tests check the chain's against the derived one. The success tests count the genesis hook calls that reach the chain until the outcome: none for the
+lower role, one for the higher role, the probe's own proposal hash, so both roles derive locally. The derived tests also check
 that the signed hash differs from the hash the hook derives for the same terms with empty data, and that
-the runtime installed the chain's genesis, which it rebuilt from the opened event's data. One
+the runtime installed a genesis with the chain's hash. One
 more altered-proposal test sends the deriving higher role the agreed data with the genesis hash of empty
 data: refused as a genesis mismatch, the proposer blacklisted, no open. Two genesis-failure tests
 agree a peer balance of `MaxUint256`, which the real Math hook rejects on its checked sum, and check the
@@ -48,7 +49,7 @@ it: the proposal's hash equals the hook's, the peer has no strike before the dea
 is not blacklisted, the attempt ends `retry` and cleared, and the channel never opens.
 
 Four more late-settlement tests hold the old attempt's genesis hook call instead of its opening data
-(the probe holds the manager's read-only call) and resolve or reject it after the replacement started,
+(the probe holds the hook's call on the runtime's local executor) and resolve or reject it after the replacement started,
 with the same oracle as the late derivation results. The higher-role stale proposal carries a junk
 genesis hash, so a resolved late call that reached the hash check would refuse it and blacklist the old
 peer; the test asserts it is answered as submitted with no blacklist or strike. The foreign-open test plays a lower-address runtime whose
@@ -63,8 +64,8 @@ specification permutation names the stale-attempt rule; it is covered only at th
 
 ## Tests
 
-- `lower address proposes empty opening data by default and opens`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P1, UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P12, INV-NEG-1-6FW90P.T1.P16
-- `higher address accepts empty opening data by default and opens`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P2, UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P13, INV-NEG-1-6FW90P.T1.P1
+- `lower address proposes empty opening data by default and opens`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P1, UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P12, INV-NEG-1-6FW90P.T1.P16, UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P28
+- `higher address accepts empty opening data by default and opens`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P2, UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P13, INV-NEG-1-6FW90P.T1.P1, UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P29
 - `lower address derives opening data from the exact agreed terms`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P3
 - `higher address derives opening data from the exact agreed terms`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P4, INV-NEG-1-6FW90P.T1.P10
 - `the lower address whose genesis hook rejects the agreed balances clears the attempt without blacklisting the peer or proposing`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P16, INV-NEG-1-6FW90P.T1.P14

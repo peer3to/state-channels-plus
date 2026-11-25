@@ -147,8 +147,9 @@ The proxy's fallback forwards every unmatched selector to the integrator's consu
 `deposit`/`withdraw` are directly externally callable; an unguarded `withdraw` implementation
 would be drainable. Decide: a framework-level guard, or a documented integrator obligation with
 review guidance. See [enforcement/contracts.md](../specification/enforcement/contracts.md). The SDK
-calls the consumer facet's `openChannelGenesis` through this fallback, so a guard that closes the
-fallback must keep that selector reachable.
+reads the consumer facet's address with `facetAddressForSelector(openChannelGenesis)` and runs the
+hook on a local copy through the local diamond's fallback, so a guard must keep that lookup naming
+the consumer facet and the local fallback routing the hook.
 
 <a id="oq-19-y8fdqx"></a>
 

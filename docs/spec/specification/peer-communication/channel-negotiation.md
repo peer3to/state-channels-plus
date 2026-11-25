@@ -173,7 +173,7 @@ observing the derived channel ID open on-chain. An already-open derived ID detec
 failed new attempt, while a submission race for the exact signed attempt defers to chain evidence. A derived
 ID opened on-chain by another participant set fails an ordinary attempt: the counterparty is excluded and the
 attempt retries, also when that open records a genesis hash no derivation produces, which the runtime does not
-install ([`REQ-LIF-12-TSXRBG` (Observers rebuild the genesis)](../settlement/lifecycle.md#req-lif-12-tsxrbg)). A
+install ([`REQ-LIF-12-TSXRBG` (Observers install the agreed genesis)](../settlement/lifecycle.md#req-lif-12-tsxrbg)). A
 targeted attempt hands off to the observed open the same way with no exclusion, and installs nothing either.
 
 **<a id="req-neg-4-zq0985"></a>`REQ-NEG-4-ZQ0985` — Committed-attempt admission and recovery.** Negotiation accepts

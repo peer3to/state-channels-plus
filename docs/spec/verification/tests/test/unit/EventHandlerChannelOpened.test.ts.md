@@ -21,19 +21,19 @@ with the chain's fork and state hash, and its provider saw no `getLogs` query. T
 swallows the genesis join log handling of a runtime outside the opened set, so neither the live log nor
 a recovery query stores the block: that runtime reports the expected detached error "genesis join block
 unavailable", fires no `onAbort`, `onSetState` or completed `onChannelOpened` and stays open, while the
-participants install. The participant read-failure case makes only a participant's `openChannelGenesis`
-provider call fail with a call exception without revert data, as a node's error answer: that runtime
-fires `onAbort` once and closes, fires no `onSetState` or completed `onChannelOpened`, and reports the
-error as the expected detached error, while the other participants install. The pending-join case
-swallows one participant's genesis join log handling while both participants negotiate through
-`joinLobby`: the peer's join resolves with a channel that is open on chain, the failing participant's join rejects with the
-runtime-disposed error, it fires `onAbort` once and no `onSetState` or completed `onChannelOpened`, and
-reports "genesis join block unavailable" inside the abort error. The transport case makes a non-participant's
-`openChannelGenesis` call fail with a plain transport error: that runtime reports the error as the
-expected detached error, fires no `onAbort`, `onSetState` or completed `onChannelOpened` and stays
-open. The hook-revert case makes a participant's call revert with empty revert data: that runtime fires `onAbort` once
-and closes, fires no `onSetState` or completed `onChannelOpened`, and reports "Opened genesis rejected:
-hook reverted" as the expected detached error, while the other participants install. The mismatch case opens for two of three runtimes with unanimous terms carrying a hash no
+participants install. The executor-failure case makes only a participant's local `openChannelGenesis` execution fail
+outside the EVM (the stub throws from the local executor's call for that selector): that runtime fires `onAbort`
+once and closes, fires no `onSetState` or completed `onChannelOpened`, and reports the error as the expected
+detached error, while the other participants install. The two stale-mirror cases swallow the lower or the higher participant's genesis join log handling while both participants negotiate through `joinLobby`: both joins resolve with
+the opened channel, the genesis join block is still not stored on that participant, and it installed the
+genesis it signed, with the chain's fork and state hash and no `onAbort`. The no-signed-genesis case does the
+same to a participant of a harness open, which negotiated nothing: it fires `onAbort` once and no
+`onSetState` or completed `onChannelOpened` and reports "genesis join block unavailable", while the others
+install. The outsider executor-failure case fails a non-participant's local hook execution outside the
+EVM: that runtime reports the error as the expected detached error, fires no `onAbort`, `onSetState` or
+completed `onChannelOpened` and stays open. The hook-revert case runs a participant's local hook call with its arguments cut, so the consumer code really reverts: that runtime fires `onAbort` once and closes, fires no `onSetState` or completed
+`onChannelOpened`, and reports "Opened genesis rejected: hook reverted" as the expected detached error,
+while the other participants install. The mismatch case opens for two of three runtimes with unanimous terms carrying a hash no
 genesis derives from and waits only for the receipt: the chain keeps the channel open with that hash;
 on each participant `onAbort` fires once, the runtime closes, no `onSetState` or completed
 `onChannelOpened` reaches the client, and the handler's failure surfaces as the expected detached
@@ -47,8 +47,10 @@ holds no fork.
 - `recovers a genesis join block it never received and installs`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P2, REQ-LIF-12-TSXRBG.T1.P2
 - `waits for the open's genesis join log in flight instead of recovering it from the chain`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P26, REQ-LIF-12-TSXRBG.T1.P7
 - `fails the event without aborting a runtime outside the opened set whose genesis join block stays unavailable`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P10, REQ-LIF-12-TSXRBG.T1.P5
-- `aborts a listed participant whose genesis hook read fails without revert data while the others install`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P11, REQ-LIF-12-TSXRBG.T1.P11
-- `aborts a listed participant that cannot rebuild its genesis and rejects its pending lobby join with the runtime-disposed error`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P13, REQ-LIF-12-TSXRBG.T1.P10
-- `fails the event without aborting a runtime outside the opened set whose genesis hook read fails in transport`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P12, REQ-LIF-12-TSXRBG.T1.P9
+- `aborts a listed participant whose local genesis hook execution fails outside the EVM while the others install`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P16, REQ-LIF-12-TSXRBG.T1.P14
+- `installs the genesis the lower address signed although its mirror never stored the open's genesis join block`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P18, REQ-LIF-12-TSXRBG.T1.P16
+- `installs the genesis the higher address signed although its mirror never stored the open's genesis join block`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P20, REQ-LIF-12-TSXRBG.T1.P18
+- `aborts a listed participant that holds no signed genesis and cannot rebuild it while the others install`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P19, REQ-LIF-12-TSXRBG.T1.P17
+- `fails the event without aborting a runtime outside the opened set whose local genesis hook execution fails outside the EVM`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P17, REQ-LIF-12-TSXRBG.T1.P15
 - `aborts a listed participant whose genesis hook reverts while the others install`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P4, REQ-LIF-12-TSXRBG.T1.P4
 - `aborts the listed participants and spares any other runtime when the opened hash matches no genesis`: UNIT-TEST-EVENT-HANDLER-2-Q270TR.P3, UNIT-TEST-EVENT-HANDLER-2-Q270TR.P5, REQ-LIF-12-TSXRBG.T1.P3, REQ-LIF-12-TSXRBG.T1.P6

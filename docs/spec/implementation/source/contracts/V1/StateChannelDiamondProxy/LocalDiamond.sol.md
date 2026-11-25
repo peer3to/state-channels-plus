@@ -8,6 +8,7 @@
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
 - [`REQ-MIRROR-2-E9F3TM` (Unconditional replication)](../../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)
 - [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
+- [`REQ-ENFSM-3-JZK0FB` (Genesis derivation)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-3-jzk0fb)
 
 ## UNIT-TEST-LOCAL-DIAMOND-1-PJE47M
 

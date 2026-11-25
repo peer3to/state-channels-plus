@@ -18,7 +18,7 @@
 - [`REQ-MIRROR-3-THD7K8` (Cache, never authority)](../../../../../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8)
 - [`REQ-RMSTORE-1-BWKVBG` (Monotone observation progress)](../../../../../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg)
 - [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
-- [`REQ-LIF-12-TSXRBG` (Observers rebuild the genesis)](../../../../../specification/settlement/lifecycle.md#req-lif-12-tsxrbg)
+- [`REQ-LIF-12-TSXRBG` (Observers install the agreed genesis)](../../../../../specification/settlement/lifecycle.md#req-lif-12-tsxrbg)
 
 ## UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4
 
