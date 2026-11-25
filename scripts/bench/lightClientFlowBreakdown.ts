@@ -14,6 +14,11 @@
  * block or a change before any sync is refused and empties it. A proof
  * request's place among the pushes is the proxy's record order.
  *
+ * A `lightClient_watchStorage` call at a block hash is a fallback read too:
+ * it is placed and its keys classed as a proof request's, and reported apart.
+ * One at no block registers the peer's held keys again on a new
+ * subscription; those are counted only.
+ *
  * Storage slots of the state channel manager are named from its storage
  * layout (`forge inspect StateChannelManagerProxy storageLayout`), with
  * mapping keys looked for among the channel ids the peers subscribed to,
@@ -41,7 +46,8 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type {
     FlowBenchLabels,
-    FlowBenchPeer
+    FlowBenchPeer,
+    FlowBenchTrace
 } from "../../test/fixtures/lightClient/flowBench";
 
 /** `twox128` map prefixes of Frontier's state, as frontierStateKeys.ts. */
@@ -582,8 +588,35 @@ function repeatClasses(
     });
 }
 
+/** A `lightClient_watchStorage` call: a fallback read at `block`, or with no block the held keys registered again. */
+type WatchRequest = {
+    sequence: number;
+    at: number;
+    block: string | null;
+    keys: TrieKey[];
+};
+
+/** The peer's watch calls, from its other requests. */
+function watchRequests(trace: FlowBenchTrace): WatchRequest[] {
+    return trace.others
+        .filter(({ method }) => method === "lightClient_watchStorage")
+        .map(({ sequence, at, params }) => {
+            const [, keys, block] = params as [string, string[], string | null];
+            return {
+                sequence,
+                at,
+                block: block?.toLowerCase() ?? null,
+                keys: keys.map((key) => key.toLowerCase())
+            };
+        });
+}
+
 type PeerAnalysis = {
     proofs: ProofOutcome[];
+    /** The watch calls that read at a block, placed as proof requests are. */
+    watchReads: ProofOutcome[];
+    /** The key counts of the watch calls that registered held keys again. */
+    watchRegistrations: number[];
     headers: number;
     acceptedPushes: number;
     refusedPushes: number;
@@ -693,10 +726,12 @@ function analyzePeer(
     for (const push of trace.pushes)
         if (!push.isError && !firstPushOf.has(push.hash))
             firstPushOf.set(push.hash, push.sequence);
+    const watches = watchRequests(trace);
     type Event =
         | { sequence: number; kind: "push"; index: number }
         | { sequence: number; kind: "unsubscribe"; index: number }
-        | { sequence: number; kind: "proof"; index: number };
+        | { sequence: number; kind: "proof"; index: number }
+        | { sequence: number; kind: "watch"; index: number };
     const events: Event[] = [
         ...trace.pushes.map((push, index) => ({
             sequence: push.sequence,
@@ -712,12 +747,19 @@ function analyzePeer(
             sequence: proof.sequence,
             kind: "proof" as const,
             index
+        })),
+        ...watches.map((watch, index) => ({
+            sequence: watch.sequence,
+            kind: "watch" as const,
+            index
         }))
     ].sort((a, b) => a.sequence - b.sequence);
     let accepted = 0;
     let refused = 0;
     let newestPushAt: number | null = null;
     const proofs: ProofOutcome[] = [];
+    const watchReads: ProofOutcome[] = [];
+    const watchRegistrations: number[] = [];
     for (const event of events) {
         if (event.kind === "unsubscribe") {
             const id = trace.unsubscribes[event.index].subscription;
@@ -762,7 +804,14 @@ function analyzePeer(
             newestPushAt = push.at;
             continue;
         }
-        const proof = trace.proofs[event.index];
+        if (event.kind === "watch" && watches[event.index].block === null) {
+            watchRegistrations.push(watches[event.index].keys.length);
+            continue;
+        }
+        const proof =
+            event.kind === "watch"
+                ? watches[event.index]
+                : trace.proofs[event.index];
         let newest: HeldPartition["block"];
         for (const held of partitions.values())
             if (held.block && held.block.number > (newest?.number ?? -1))
@@ -784,7 +833,7 @@ function analyzePeer(
         const holding = [...partitions.values()].filter(
             (held) => held.block?.hash === proof.block
         );
-        proofs.push({
+        (event.kind === "watch" ? watchReads : proofs).push({
             peer: peer.peer,
             sequence: proof.sequence,
             at: proof.at,
@@ -811,6 +860,8 @@ function analyzePeer(
     }
     return {
         proofs,
+        watchReads,
+        watchRegistrations,
         headers: trace.headers.length,
         acceptedPushes: accepted,
         refusedPushes: refused,
@@ -825,23 +876,27 @@ function analyzePeer(
     };
 }
 
-/** The metrics of one run of one flow. */
-type RunMetrics = {
-    file: string;
-    proofRequests: number;
-    headerRequests: number;
-    reads: { fromPushedState: number; withFallbackRead: number };
+/** What one kind of fallback read asked, over a run's peers: proof requests, or watch calls at a block. */
+type ReadTally = {
     byContext: Record<Context, number>;
     keyProofs: Record<KeyClass, number>;
     distinctKeys: Record<KeyClass, number>;
     requestsWithClass: Record<KeyClass, number>;
-    requestsLeft: { name: string; requests: number }[];
-    contextForcedRequests: number;
     keyProofsProvenEarlierAtAnotherBlock: Record<KeyClass, number>;
     requestsAllProvenEarlier: number;
     byRepeat: Record<RepeatClass, number>;
     details: Record<KeyClass, Record<string, number>>;
     unexpected: ProofOutcome[];
+};
+
+/** The metrics of one run of one flow. */
+type RunMetrics = ReadTally & {
+    file: string;
+    proofRequests: number;
+    headerRequests: number;
+    reads: { fromPushedState: number; withFallbackRead: number };
+    requestsLeft: { name: string; requests: number }[];
+    contextForcedRequests: number;
     pushReconstruction: {
         peer: number;
         rebuiltAccepted: number;
@@ -850,10 +905,79 @@ type RunMetrics = {
         countedRefused: number | null;
     }[];
     slotSearch: { unresolvedSlots: number; truncatedAtDepth: number | null };
+    /** The watch calls: those at a block as the proof requests, and the registrations again. */
+    watch: ReadTally & {
+        readRequests: number;
+        registrations: number;
+        registeredKeys: number;
+    };
 };
 
 function zeroed<K extends string>(keys: readonly K[]): Record<K, number> {
     return Object.fromEntries(keys.map((key) => [key, 0])) as Record<K, number>;
+}
+
+function emptyTally(): ReadTally {
+    return {
+        byContext: zeroed(CONTEXTS),
+        keyProofs: zeroed(KEY_CLASSES),
+        distinctKeys: zeroed(KEY_CLASSES),
+        requestsWithClass: zeroed(KEY_CLASSES),
+        keyProofsProvenEarlierAtAnotherBlock: zeroed(KEY_CLASSES),
+        requestsAllProvenEarlier: 0,
+        byRepeat: zeroed(REPEAT_CLASSES),
+        details: Object.fromEntries(
+            KEY_CLASSES.map((keyClass) => [keyClass, {}])
+        ) as Record<KeyClass, Record<string, number>>,
+        unexpected: []
+    };
+}
+
+/**
+ * Adds one peer's reads of one kind to `tally`: `outcomes` placed in record
+ * order, `asked` the same requests as the repeat classes take them, and
+ * `distinct` the keys seen so far over the run, per class.
+ */
+function tallyPeer(
+    tally: ReadTally,
+    outcomes: readonly ProofOutcome[],
+    asked: readonly { block: string | null; keys: readonly TrieKey[] }[],
+    distinct: Record<KeyClass, Set<string>>
+): void {
+    for (const repeatClass of repeatClasses(asked))
+        tally.byRepeat[repeatClass]++;
+    // key -> the block hashes this peer had it proven at, so far
+    const provenAt = new Map<TrieKey, Set<string | null>>();
+    for (const proof of outcomes) {
+        tally.byContext[proof.context]++;
+        const classes = new Set(proof.keys.map(({ keyClass }) => keyClass));
+        for (const keyClass of classes) tally.requestsWithClass[keyClass]++;
+        let allEarlier = proof.keys.length > 0;
+        for (const { key, keyClass, detail } of proof.keys) {
+            tally.keyProofs[keyClass]++;
+            distinct[keyClass].add(key);
+            const label = detail || "-";
+            tally.details[keyClass][label] =
+                (tally.details[keyClass][label] ?? 0) + 1;
+            const blocks = provenAt.get(key) ?? new Set();
+            const earlierElsewhere = [...blocks].some(
+                (block) => block !== proof.block
+            );
+            if (earlierElsewhere)
+                tally.keyProofsProvenEarlierAtAnotherBlock[keyClass]++;
+            else allEarlier = false;
+            blocks.add(proof.block);
+            provenAt.set(key, blocks);
+        }
+        if (allEarlier) tally.requestsAllProvenEarlier++;
+        if (classes.has("inPartition")) tally.unexpected.push(proof);
+    }
+}
+
+function distinctSets(): Record<KeyClass, Set<string>> {
+    return Object.fromEntries(
+        KEY_CLASSES.map((keyClass) => [keyClass, new Set<string>()])
+    ) as Record<KeyClass, Set<string>>;
 }
 
 function analyzeRun(
@@ -865,7 +989,10 @@ function analyzeRun(
     const keyAddresses = new Set<Address>();
     const managerSlots = new Set<SlotWord>();
     for (const peer of file.peers)
-        for (const proof of peer.trace.proofs)
+        for (const proof of [
+            ...peer.trace.proofs,
+            ...watchRequests(peer.trace)
+        ])
             for (const key of proof.keys) {
                 const parsed = parseKey(key);
                 if (
@@ -907,28 +1034,23 @@ function analyzeRun(
         proofRequests: 0,
         headerRequests: 0,
         reads: { fromPushedState: 0, withFallbackRead: 0 },
-        byContext: zeroed(CONTEXTS),
-        keyProofs: zeroed(KEY_CLASSES),
-        distinctKeys: zeroed(KEY_CLASSES),
-        requestsWithClass: zeroed(KEY_CLASSES),
+        ...emptyTally(),
         requestsLeft: [],
         contextForcedRequests: 0,
-        keyProofsProvenEarlierAtAnotherBlock: zeroed(KEY_CLASSES),
-        requestsAllProvenEarlier: 0,
-        byRepeat: zeroed(REPEAT_CLASSES),
-        details: Object.fromEntries(
-            KEY_CLASSES.map((keyClass) => [keyClass, {}])
-        ) as Record<KeyClass, Record<string, number>>,
-        unexpected: [],
         pushReconstruction: [],
         slotSearch: {
             unresolvedSlots: managerSlots.size - names.size,
             truncatedAtDepth
+        },
+        watch: {
+            readRequests: 0,
+            registrations: 0,
+            registeredKeys: 0,
+            ...emptyTally()
         }
     };
-    const distinct = Object.fromEntries(
-        KEY_CLASSES.map((keyClass) => [keyClass, new Set<string>()])
-    ) as Record<KeyClass, Set<string>>;
+    const distinct = distinctSets();
+    const watchDistinct = distinctSets();
     const covered: Set<KeyClass>[] = [];
     let cumulative = new Set<KeyClass>();
     for (const hypothesis of HYPOTHESES) {
@@ -950,35 +1072,22 @@ function analyzeRun(
             metrics.reads.fromPushedState += analysis.reads.fromPushedState;
             metrics.reads.withFallbackRead += analysis.reads.withFallbackRead;
         }
-        for (const repeatClass of repeatClasses(peer.trace.proofs))
-            metrics.byRepeat[repeatClass]++;
-        // key -> the block hashes this peer had it proven at, so far
-        const provenAt = new Map<TrieKey, Set<string | null>>();
+        tallyPeer(metrics, analysis.proofs, peer.trace.proofs, distinct);
+        metrics.watch.readRequests += analysis.watchReads.length;
+        metrics.watch.registrations += analysis.watchRegistrations.length;
+        for (const keys of analysis.watchRegistrations)
+            metrics.watch.registeredKeys += keys;
+        tallyPeer(
+            metrics.watch,
+            analysis.watchReads,
+            analysis.watchReads.map(({ block, keys }) => ({
+                block,
+                keys: keys.map(({ key }) => key)
+            })),
+            watchDistinct
+        );
         for (const proof of analysis.proofs) {
             metrics.proofRequests++;
-            metrics.byContext[proof.context]++;
-            const classes = new Set(proof.keys.map(({ keyClass }) => keyClass));
-            for (const keyClass of classes)
-                metrics.requestsWithClass[keyClass]++;
-            let allEarlier = proof.keys.length > 0;
-            for (const { key, keyClass, detail } of proof.keys) {
-                metrics.keyProofs[keyClass]++;
-                distinct[keyClass].add(key);
-                const label = detail || "-";
-                metrics.details[keyClass][label] =
-                    (metrics.details[keyClass][label] ?? 0) + 1;
-                const blocks = provenAt.get(key) ?? new Set();
-                const earlierElsewhere = [...blocks].some(
-                    (block) => block !== proof.block
-                );
-                if (earlierElsewhere)
-                    metrics.keyProofsProvenEarlierAtAnotherBlock[keyClass]++;
-                else allEarlier = false;
-                blocks.add(proof.block);
-                provenAt.set(key, blocks);
-            }
-            if (allEarlier) metrics.requestsAllProvenEarlier++;
-            if (classes.has("inPartition")) metrics.unexpected.push(proof);
             if (proof.context !== "atPushedBlock") {
                 metrics.contextForcedRequests++;
                 HYPOTHESES.forEach((_, h) => left[h]++);
@@ -996,8 +1105,10 @@ function analyzeRun(
             });
         }
     });
-    for (const keyClass of KEY_CLASSES)
+    for (const keyClass of KEY_CLASSES) {
         metrics.distinctKeys[keyClass] = distinct[keyClass].size;
+        metrics.watch.distinctKeys[keyClass] = watchDistinct[keyClass].size;
+    }
     metrics.requestsLeft = HYPOTHESES.map((hypothesis, h) => ({
         name: hypothesis.name,
         requests: left[h]
@@ -1309,6 +1420,9 @@ function requestLines(requests: FlowRequests | undefined): string[] {
     ];
 }
 
+/** Appended to a flow's name for the report group of its warm runs. */
+const WARM_GROUP = " (warm)";
+
 function report(
     dir: string,
     byFlow: Map<string, RunMetrics[]>,
@@ -1322,9 +1436,14 @@ function report(
         ""
     ];
     for (const [flow, runs] of byFlow) {
-        const flowDriver = driver[flow] ?? {};
+        const flowName = flow.endsWith(WARM_GROUP)
+            ? flow.slice(0, -WARM_GROUP.length)
+            : flow;
+        const warm = flowName !== flow;
+        const flowDriver = driver[flowName] ?? {};
         const off = (flowDriver.off as DriverRun[] | undefined) ?? [];
-        const on = (flowDriver.on as DriverRun[] | undefined) ?? [];
+        const on =
+            (flowDriver[warm ? "warm" : "on"] as DriverRun[] | undefined) ?? [];
         lines.push(`## ${flow}`, "");
         lines.push(
             "| | off | on |",
@@ -1433,9 +1552,97 @@ function report(
             `Rebuilt pushes match the light clients' counts: ${mismatches.length === 0 ? "yes, every peer" : `NO: ${mismatches.join(", ")}`}. Manager slots unresolved: ${values((r) => r.slotSearch.unresolvedSlots)}${runs.some((r) => r.slotSearch.truncatedAtDepth !== null) ? " (search truncated)" : ""}.`,
             ""
         );
-        lines.push(...requestLines(requestsByFlow.get(flow)));
+        lines.push(...watchLines(runs));
+        const requests = requestsByFlow.get(flow);
+        lines.push(
+            ...requestLines(
+                warm && requests
+                    ? {
+                          off: requestsByFlow.get(flowName)?.off ?? [],
+                          on: requests.on
+                      }
+                    : requests
+            )
+        );
     }
     return lines.join("\n");
+}
+
+/** Lines for the watch calls of a flow's on runs; none when no run made one. */
+function watchLines(runs: RunMetrics[]): string[] {
+    if (
+        runs.every(
+            (r) => r.watch.readRequests === 0 && r.watch.registrations === 0
+        )
+    )
+        return [];
+    const values = (pick: (watch: RunMetrics["watch"]) => number) =>
+        spread(runs.map((r) => pick(r.watch)));
+    const lines = [
+        "### Watch calls",
+        "",
+        `At a block (fallback reads): ${values((w) => w.readRequests)}. Without a block (held keys registered again on a new subscription): ${values((w) => w.registrations)}, with ${values((w) => w.registeredKeys)} keys.`,
+        "",
+        "| watch reads by read block | requests |",
+        "|---|---|",
+        ...CONTEXTS.map(
+            (context) =>
+                `| ${CONTEXT_NAMES[context]} | ${values((w) => w.byContext[context])} |`
+        ),
+        "",
+        "| key class | keys watched | distinct keys | watch reads with it | watched earlier at another block |",
+        "|---|---|---|---|---|"
+    ];
+    for (const keyClass of KEY_CLASSES) {
+        if (runs.every((r) => r.watch.keyProofs[keyClass] === 0)) continue;
+        lines.push(
+            `| ${KEY_CLASS_NAMES[keyClass]} | ${values((w) => w.keyProofs[keyClass])} | ${values((w) => w.distinctKeys[keyClass])} | ${values((w) => w.requestsWithClass[keyClass])} | ${values((w) => w.keyProofsProvenEarlierAtAnotherBlock[keyClass])} |`
+        );
+    }
+    lines.push(
+        "",
+        `Watch reads whose every key the peer had watched before at another block: ${values((w) => w.requestsAllProvenEarlier)}.`,
+        "",
+        "| watch reads by what the peer watched before | requests |",
+        "|---|---|",
+        ...REPEAT_CLASSES.map(
+            (repeatClass) =>
+                `| ${REPEAT_CLASS_NAMES[repeatClass]} | ${values((w) => w.byRepeat[repeatClass])} |`
+        ),
+        ""
+    );
+    const details = new Map<string, number>();
+    for (const run of runs)
+        for (const keyClass of KEY_CLASSES)
+            for (const [detail, count] of Object.entries(
+                run.watch.details[keyClass]
+            ))
+                details.set(
+                    `${keyClass}: ${detail}`,
+                    (details.get(`${keyClass}: ${detail}`) ?? 0) + count
+                );
+    lines.push(
+        "<details><summary>Keys watched by detail, summed over the runs</summary>",
+        "",
+        ...[...details]
+            .sort((a, b) => b[1] - a[1])
+            .map(([detail, count]) => `- ${detail}: ${count}`),
+        "",
+        "</details>",
+        ""
+    );
+    const unexpected = runs.flatMap((run) =>
+        run.watch.unexpected.map((proof) => ({ file: run.file, proof }))
+    );
+    lines.push(
+        `Watch reads naming a key the partition held at the read block: ${unexpected.length}.`,
+        ...unexpected.map(
+            ({ file, proof }) =>
+                `- ${file} peer ${proof.peer} seq ${proof.sequence}: ${proof.keys.filter((k) => k.keyClass === "inPartition").length} of ${proof.keys.length} keys held, ${proof.msSinceNewestPush ?? "?"} ms after the newest push`
+        ),
+        ""
+    );
+    return lines;
 }
 
 /**
@@ -1490,7 +1697,22 @@ function selfTest(layout: Layout): void {
                     keys: []
                 }
             ],
-            others: []
+            others: [
+                {
+                    sequence: 6,
+                    at: 6,
+                    method: "lightClient_watchStorage",
+                    params: ["s", [held, outside], block],
+                    reply: "result"
+                },
+                {
+                    sequence: 7,
+                    at: 7,
+                    method: "lightClient_watchStorage",
+                    params: ["s", [outside, held], null],
+                    reply: "result"
+                }
+            ]
         }
     };
     const labels: FlowBenchLabels = {
@@ -1530,6 +1752,37 @@ function selfTest(layout: Layout): void {
     check(
         analysis.acceptedPushes === 1,
         "the same block pushed again is not accepted twice"
+    );
+    check(analysis.proofs.length === 3, "watch calls are not proof requests");
+    const [watchRead] = analysis.watchReads;
+    check(
+        analysis.watchReads.length === 1 &&
+            watchRead.context === "atPushedBlock" &&
+            watchRead.keys[0].keyClass === "inPartition" &&
+            watchRead.keys[1].keyClass === "ownAccount",
+        "a watch at a block is placed and classed as a proof request"
+    );
+    check(
+        analysis.watchRegistrations.join(",") === "2",
+        "a watch without a block is a registration of its keys"
+    );
+    const run = analyzeRun(
+        "self-test",
+        { labels, peers: [peer] },
+        layout,
+        new Map()
+    );
+    check(
+        run.proofRequests === 3 &&
+            run.unexpected.length === 1 &&
+            run.watch.readRequests === 1 &&
+            run.watch.registrations === 1 &&
+            run.watch.registeredKeys === 2 &&
+            run.watch.unexpected.length === 1 &&
+            run.watch.keyProofs.ownAccount === 1 &&
+            run.watch.byContext.atPushedBlock === 1 &&
+            run.watch.byRepeat.newKey === 1,
+        "a run tallies watch reads apart from proof requests"
     );
 
     // the layout search names slots computed here by hand
@@ -1740,27 +1993,31 @@ function main(): void {
     const byFlow = new Map<string, RunMetrics[]>();
     const requestsByFlow = new Map<string, FlowRequests>();
     for (const name of readdirSync(dir).sort()) {
-        const match = /^(.+)-(off|on)(?:-\d+)?\.json$/.exec(name);
+        // a warm run's warm-up file (<flow>-warm[-<r>].warm-up.json) does not match
+        const match = /^(.+)-(off|on|warm)(?:-\d+)?\.json$/.exec(name);
         if (!match) continue;
         const file = JSON.parse(
             readFileSync(path.join(dir, name), "utf8")
         ) as FlowFile;
-        const lightClientOn = match[2] === "on";
-        const flowRequests = requestsByFlow.get(match[1]) ?? {
+        const lightClientOn = match[2] !== "off";
+        // warm runs are reported apart from the cold ones, never mixed
+        const group =
+            match[2] === "warm" ? `${match[1]}${WARM_GROUP}` : match[1];
+        const flowRequests = requestsByFlow.get(group) ?? {
             off: [],
             on: []
         };
         flowRequests[lightClientOn ? "on" : "off"].push(
             analyzeRequests(name, file, selectors, lightClientOn)
         );
-        requestsByFlow.set(match[1], flowRequests);
+        requestsByFlow.set(group, flowRequests);
         if (!lightClientOn) continue;
         const metrics = analyzeRun(name, file, layout, selectors);
-        const runs = byFlow.get(match[1]) ?? [];
+        const runs = byFlow.get(group) ?? [];
         runs.push(metrics);
-        byFlow.set(match[1], runs);
+        byFlow.set(group, runs);
         console.log(
-            `${name}: ${metrics.proofRequests} proof requests, ${metrics.unexpected.length} unexpected, ${metrics.slotSearch.unresolvedSlots} unresolved manager slots`
+            `${name}: ${metrics.proofRequests} proof requests, ${metrics.unexpected.length} unexpected, ${metrics.watch.readRequests} watch reads, ${metrics.watch.unexpected.length} unexpected, ${metrics.slotSearch.unresolvedSlots} unresolved manager slots`
         );
     }
     writeFileSync(
