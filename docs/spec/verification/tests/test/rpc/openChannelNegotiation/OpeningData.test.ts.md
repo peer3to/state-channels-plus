@@ -5,7 +5,8 @@ Exercises: [OpenChannelNegotiationService.ts](../../../../../implementation/sour
 
 ## Overview
 
-Each test starts one runtime with a custom RPC root and drives it through a worker-side probe.
+Each test starts one runtime with a custom RPC root on a Math consumer whose genesis folds in the
+opening data (`OpeningDataMathConsumerFacet`) and drives it through a worker-side probe.
 The probe registers a peer wallet on the chosen side of the address order, commits an ordinary
 matched negotiation with balances 321 (local) and 700 (peer), and plays the peer's side of the
 term exchange and proposal by hand: as the higher peer it answers the local proposal and submits
@@ -28,7 +29,11 @@ participant set of the replacement and the old peer's blacklist, strikes and tra
 
 The default and derived success tests also return the proposal's genesis hash, the hash the genesis
 hook derives for the signed terms and the hash the chain recorded; the lower-role tests check all three
-are equal, the higher-role tests check the chain's against the derived one. Two genesis-failure tests
+are equal, the higher-role tests check the chain's against the derived one. The derived tests also check
+that the signed hash differs from the hash the hook derives for the same terms with empty data, and that
+the runtime installed the chain's genesis, which it rebuilt from the opened event's data. One
+more altered-proposal test sends the deriving higher role the agreed data with the genesis hash of empty
+data: refused as a genesis mismatch, the proposer blacklisted, no open. Two genesis-failure tests
 agree a peer balance of `MaxUint256`, which the real Math hook rejects on its checked sum, and check the
 same whole result as the derivation failures ("Genesis unavailable" for the higher role). Two
 altered-proposal tests send the higher role a proposal with a hash it never derived, or with the
@@ -66,6 +71,7 @@ specification permutation names the stale-attempt rule; it is covered only at th
 - `the higher address whose genesis hook rejects the agreed balances clears the attempt without blacklisting, co-signing or opening`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P17, INV-NEG-1-6FW90P.T1.P15
 - `the lower address whose signed proposal the higher cannot countersign for its own genesis failure counts one close at the deadline without blacklisting`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P25, REQ-NEG-4-ZQ0985.T1.P20
 - `blacklists and clears a proposal whose genesis hash differs from the locally computed genesis`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P14, INV-NEG-1-6FW90P.T1.P12
+- `blacklists a proposal carrying the agreed opening data whose genesis hash the hook derives from empty data`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P27, INV-NEG-1-6FW90P.T1.P19
 - `blacklists a proposal whose altered counterparty balance the genesis hook would reject`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P15, INV-NEG-1-6FW90P.T1.P13
 - `an ordinary attempt whose channel ID the peer opens with another participant set and a hash no genesis derives from retries and blacklists the peer without aborting`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P20, REQ-NEG-2-ED48TZ.T1.P8
 - `a targeted attempt whose channel another participant set opens with a hash no genesis derives from hands off to the observed open without aborting`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P23, REQ-NEG-2-ED48TZ.T1.P9
