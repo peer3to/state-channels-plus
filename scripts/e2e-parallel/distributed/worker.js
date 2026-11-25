@@ -172,6 +172,12 @@ function rejectPending(error) {
 
 async function start(config) {
     configuration = config;
+    // the run's test chain decides what the slot nodes run; on the parachain
+    // every test process and its SDK threads preload the fee quote
+    if (config.baseEnv.PARACHAIN) {
+        process.env.PARACHAIN = config.baseEnv.PARACHAIN;
+        config.baseEnv.NODE_OPTIONS += ` -r ${path.join(config.projectRoot, "test/utils/peer3FeeData.js")}`;
+    }
     const provisioned = await provisionSlots(
         config.slotCount,
         config.infraLogDir
@@ -276,7 +282,13 @@ async function start(config) {
                     { captureOutput: false }
                 );
             } finally {
-                execution.release();
+                execution
+                    .release()
+                    .catch((error) =>
+                        console.warn(
+                            `Releasing ${task.label}'s resources failed: ${error}`
+                        )
+                    );
             }
             const { stdout: _stdout, stderr: _stderr, ...wireResult } = result;
             const output = spool.readOutput();

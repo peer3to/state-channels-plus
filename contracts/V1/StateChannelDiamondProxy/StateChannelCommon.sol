@@ -151,18 +151,10 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         bytes32 inboundHash = upperInboundHash;
 
         while (inboundHash != bytes32(0) && inboundHash != lowerInboundHash) {
-            MessageBlock storage inboundBlock = inboundMessageBlockMap[channelId][inboundHash];
-            if (inboundBlock.timestamp == 0 && inboundBlock.messages.length == 0) {
-                inboundHash = inboundBlock.previousBlockHash;
-                continue;
-            }
-
-            for (uint256 i = 0; i < inboundBlock.messages.length; i++) {
-                if (inboundBlock.messages[i].messageType == MESSAGE_TYPE_JOIN) {
-                    JoinChannel memory joinChannel = abi.decode(inboundBlock.messages[i].data, (JoinChannel));
-                    pendingParticipants = UtilityFacetInterface(utilityFacetAddress)
-                        .insertIntoAddressArrayNoDuplicates(pendingParticipants, joinChannel.participant);
-                }
+            StoredInboundBlock storage inboundBlock = inboundMessageBlockMap[channelId][inboundHash];
+            for (uint256 i = 0; i < inboundBlock.joiners.length; i++) {
+                pendingParticipants = UtilityFacetInterface(utilityFacetAddress)
+                    .insertIntoAddressArrayNoDuplicates(pendingParticipants, inboundBlock.joiners[i]);
             }
 
             inboundHash = inboundBlock.previousBlockHash;
@@ -261,17 +253,17 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     function _persistInboundMessageBlock(bytes32 channelId, bytes32 blockHash, MessageBlock memory messageBlock)
         internal
     {
-        MessageBlock storage storedBlock = inboundMessageBlockMap[channelId][blockHash];
-        if (storedBlock.timestamp != 0 || storedBlock.messages.length != 0) {
-            revert ErrorInboundMessageBlockAlreadyPersisted(channelId, blockHash);
-        }
+        StoredInboundBlock storage storedBlock = inboundMessageBlockMap[channelId][blockHash];
+        if (storedBlock.timestamp != 0) revert ErrorInboundMessageBlockAlreadyPersisted(channelId, blockHash);
         storedBlock.previousBlockHash = messageBlock.previousBlockHash;
-        storedBlock.blockHeight = messageBlock.blockHeight;
+        storedBlock.blockHeight = uint128(messageBlock.blockHeight); // chain counter + 1
+        storedBlock.timestamp = uint128(messageBlock.timestamp); // block.timestamp
         storedBlock.totalBalance = messageBlock.totalBalance;
-        storedBlock.timestamp = messageBlock.timestamp;
 
         for (uint256 i = 0; i < messageBlock.messages.length; i++) {
-            storedBlock.messages.push(messageBlock.messages[i]);
+            if (messageBlock.messages[i].messageType == MESSAGE_TYPE_JOIN) {
+                storedBlock.joiners.push(messageBlock.messages[i].participant);
+            }
         }
     }
 
@@ -309,20 +301,39 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         if (blockHash == bytes32(0)) {
             return zeroBalance;
         }
-        MessageBlock storage inboundBlock = inboundMessageBlockMap[channelId][blockHash];
-        if (inboundBlock.timestamp == 0 && inboundBlock.messages.length == 0) {
+        if (!_hasInboundMessageBlock(channelId, blockHash)) {
             StateSnapshot storage snapshot = stateSnapshots[channelId];
             if (snapshot.snapshotData.latestInboundMessageBlockHash == blockHash) {
                 return snapshot.snapshotData.totalDeposits;
             }
             return zeroBalance;
         }
-        return inboundBlock.totalBalance;
+        return inboundMessageBlockMap[channelId][blockHash].totalBalance;
     }
 
     function _hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash) internal view virtual returns (bool) {
-        MessageBlock storage storedBlock = inboundMessageBlockMap[channelId][messageBlockHash];
-        return storedBlock.timestamp != 0 || storedBlock.messages.length != 0;
+        return inboundMessageBlockMap[channelId][messageBlockHash].timestamp != 0;
+    }
+
+    function _clearOldInboundMessageBlocks(bytes32 channelId, bytes32 firstPrunedInboundMessageBlockHash) internal {
+        // start from the first pruned block and walk backwards
+        bytes32 keyToDelete = firstPrunedInboundMessageBlockHash;
+        bytes32 prev;
+        while (keyToDelete != bytes32(0)) {
+            prev = inboundMessageBlockMap[channelId][keyToDelete].previousBlockHash;
+            delete inboundMessageBlockMap[channelId][keyToDelete];
+            keyToDelete = prev;
+        }
+    }
+
+    function _clearDisputeData(bytes32 channelId) internal {
+        DisputeData storage disputeData = disputeData[channelId];
+        delete disputeData.onChainSlashes; //TODO! Check should we clear this since things happen in 'parallel' now
+        mapping(bytes32 => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
+        for (uint256 i = 0; i < disputeData.disputedForks.length; i++) {
+            delete disputeWindowMap[disputeData.disputedForks[i]];
+        }
+        delete disputeData.disputedForks;
     }
 
     // snapshot adoption prunes the canonical inbound chain below its head -> absent above it means never committed
