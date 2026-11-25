@@ -16,13 +16,8 @@ const B = "0x" + "22".repeat(20);
 const CHANNEL_ID = "0x" + "33".repeat(32);
 const NOW = 1000;
 
-const CHAIN_ID = 31337n;
-const MANAGER = "0x" + "55".repeat(20);
-
 const expected = {
     channelId: CHANNEL_ID,
-    chainId: CHAIN_ID,
-    manager: MANAGER,
     participants: [A, B] as [string, string],
     balances: [
         { amount: 500, data: "0x" },
@@ -45,8 +40,6 @@ const matchingProposal = (): OpenChannelStruct =>
         ],
         deadlineTimestamp: 1030n,
         genesisStateHash: "0x" + "44".repeat(32),
-        chainId: CHAIN_ID,
-        manager: MANAGER,
         data: "0x"
     }) as unknown as OpenChannelStruct;
 
@@ -91,22 +84,6 @@ describe("getOpenChannelProposalMismatch", function () {
         expect(
             getOpenChannelProposalMismatch(decoded, expected, deadline)
         ).to.match(/channelId mismatch/);
-    });
-
-    it("rejects terms bound to another chain", function () {
-        const decoded = matchingProposal();
-        decoded.chainId = CHAIN_ID + 1n;
-        expect(
-            getOpenChannelProposalMismatch(decoded, expected, deadline)
-        ).to.equal("deployment mismatch");
-    });
-
-    it("rejects terms bound to another manager deployment", function () {
-        const decoded = matchingProposal();
-        decoded.manager = "0x" + "66".repeat(20);
-        expect(
-            getOpenChannelProposalMismatch(decoded, expected, deadline)
-        ).to.equal("deployment mismatch");
     });
 
     it("rejects opening data that differs from the locally derived data", function () {

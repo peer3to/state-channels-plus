@@ -13,7 +13,6 @@ import type { LobbyMatch } from "@/rpc/network/services/lobbyMatching/LobbyMatch
 import {
     compareAddresses,
     buildOpenChannel,
-    openChannelDeployment,
     deriveNegotiatedChannelId,
     type Address
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
@@ -92,11 +91,7 @@ export type OpeningDataProbe = {
 };
 
 /** A proposal that alters what the higher address agreed. */
-export type ProposalAlteration =
-    | "genesis-hash"
-    | "overflowing-balance"
-    | "other-manager"
-    | "other-chain";
+export type ProposalAlteration = "genesis-hash" | "overflowing-balance";
 
 export type ProposalAlterationProbe = {
     error: string;
@@ -409,15 +404,7 @@ export class OpeningDataProbeService extends ANetworkRpcService<
     ): Promise<ProposalAlterationProbe> {
         await this.resetLifecycle();
         const service = new OpenChannelNegotiationService(this.p2pManager);
-        // a deployment alteration agrees a balance the genesis hook rejects ->
-        // only a deployment check before the hook yields the mismatch verdict
-        const staged = await this.stageAttempt(
-            service,
-            "higher",
-            alteration === "other-manager" || alteration === "other-chain"
-                ? { amount: ethers.MaxUint256, data: "0x5678" }
-                : undefined
-        );
+        const staged = await this.stageAttempt(service, "higher");
         await this.acceptTerms(service, staged);
         let error = "";
         try {
@@ -473,10 +460,7 @@ export class OpeningDataProbeService extends ANetworkRpcService<
             balances: [staged.peerBalance, staged.peerBalance],
             deadlineTimestamp: Clock.getTimeInSeconds() + 60,
             data: "0x",
-            genesisStateHash: JUNK_GENESIS_HASH,
-            ...(await openChannelDeployment(
-                this.sm.stateChannelManagerContract
-            ))
+            genesisStateHash: JUNK_GENESIS_HASH
         };
         const signed = await Promise.all(
             wallets.map((wallet) =>
@@ -841,25 +825,9 @@ export class OpeningDataProbeService extends ANetworkRpcService<
                       this.sm.stateChannelManagerContract,
                       terms
                   )
-                : {
-                      ...terms,
-                      ...(await openChannelDeployment(
-                          this.sm.stateChannelManagerContract
-                      )),
-                      genesisStateHash
-                  };
+                : { ...terms, genesisStateHash };
         const signed = await SignatureUtils.signOpenChannel(
-            {
-                ...openChannel,
-                manager:
-                    alteration === "other-manager"
-                        ? ethers.Wallet.createRandom().address
-                        : openChannel.manager,
-                chainId:
-                    alteration === "other-chain"
-                        ? BigInt(openChannel.chainId) + 1n
-                        : openChannel.chainId
-            },
+            openChannel,
             staged.wallet
         );
         const encodedOpenChannel = signed.encoded.toString();

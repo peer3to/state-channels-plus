@@ -34,10 +34,7 @@ same whole result as the derivation failures ("Genesis unavailable" for the high
 altered-proposal tests send the higher role a proposal with a hash it never derived, or with the
 counterparty balance changed to `MaxUint256`: both are refused, the proposer blacklisted and the attempt
 cleared with no open; the balance case fails as a balance mismatch, so the term check runs before the
-hook. Two more agree a counterparty balance of `MaxUint256`, which the higher's genesis hook rejects, and send
-a proposal naming a random manager address, or the next chain ID: each is refused as "Proposal
-mismatch: deployment mismatch" with the same blacklist, cleared attempt and no open, not as "Genesis
-unavailable", so the deployment check runs before the hook.
+hook.
 
 The countersign-failure test plays the higher peer against a lower-address runtime: the lower derives
 the hash through the real Math hook, signs and sends the proposal, and the probe answers it with the
@@ -68,8 +65,6 @@ specification permutation names the stale-attempt rule; it is covered only at th
 - `the lower address whose genesis hook rejects the agreed balances clears the attempt without blacklisting the peer or proposing`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P16, INV-NEG-1-6FW90P.T1.P14
 - `the higher address whose genesis hook rejects the agreed balances clears the attempt without blacklisting, co-signing or opening`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P17, INV-NEG-1-6FW90P.T1.P15
 - `the lower address whose signed proposal the higher cannot countersign for its own genesis failure counts one close at the deadline without blacklisting`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P25, REQ-NEG-4-ZQ0985.T1.P20
-- `blacklists and clears a proposal bound to another manager deployment`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P24, INV-NEG-1-6FW90P.T1.P17
-- `blacklists and clears a proposal bound to another chain`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P26, INV-NEG-1-6FW90P.T1.P18
 - `blacklists and clears a proposal whose genesis hash differs from the locally computed genesis`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P14, INV-NEG-1-6FW90P.T1.P12
 - `blacklists a proposal whose altered counterparty balance the genesis hook would reject`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P15, INV-NEG-1-6FW90P.T1.P13
 - `an ordinary attempt whose channel ID the peer opens with another participant set and a hash no genesis derives from retries and blacklists the peer without aborting`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P20, REQ-NEG-2-ED48TZ.T1.P8

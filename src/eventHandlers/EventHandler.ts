@@ -126,10 +126,11 @@ export class EventHandler {
                 "Opened genesis cannot be installed",
                 {
                     channelId,
-                    forkId: stateSnapshot.forkId,
+                    forkId: String(stateSnapshot.forkId),
                     reason,
                     participant,
-                    signedHash: snapshotData.stateMachineStateHash
+                    snapshotData:
+                        LoggerUtils.getSnapshotDataMetadata(snapshotData)
                 }
             );
             if (!participant) return;

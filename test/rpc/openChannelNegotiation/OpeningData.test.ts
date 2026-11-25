@@ -143,34 +143,6 @@ describe("OpenChannelNegotiationService opening data", function () {
         });
     });
 
-    it("blacklists and clears a proposal bound to another manager deployment", async function () {
-        const result = await fixture
-            .probe()
-            .probeAlteredProposal("other-manager")
-            .request();
-
-        expect(result).to.deep.equal({
-            error: "Proposal mismatch: deployment mismatch",
-            attemptCleared: true,
-            channelOpen: false,
-            peerBlacklisted: true
-        });
-    });
-
-    it("blacklists and clears a proposal bound to another chain", async function () {
-        const result = await fixture
-            .probe()
-            .probeAlteredProposal("other-chain")
-            .request();
-
-        expect(result).to.deep.equal({
-            error: "Proposal mismatch: deployment mismatch",
-            attemptCleared: true,
-            channelOpen: false,
-            peerBlacklisted: true
-        });
-    });
-
     it("blacklists and clears a proposal whose genesis hash differs from the locally computed genesis", async function () {
         const result = await fixture
             .probe()

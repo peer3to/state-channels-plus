@@ -4,7 +4,6 @@ import {
     OPEN_CHANNEL_MIN_REMAINING_SECONDS,
     compareAddresses,
     buildOpenChannel,
-    openChannelDeployment,
     deriveNegotiatedChannelId,
     getOpenChannelProposalMismatch,
     type Address
@@ -376,18 +375,12 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         const { participants, balances, lower } =
             this.getParticipantsAndBalances(attempt);
         let expectedData: BytesLike;
-        let deployment: { chainId: bigint; manager: Address };
         try {
-            [expectedData, deployment] = await Promise.all([
-                this.buildOpeningData({
-                    channelId: attempt.channelId,
-                    participants,
-                    balances
-                }),
-                openChannelDeployment(
-                    this.p2pManager.stateManager.stateChannelManagerContract
-                )
-            ]);
+            expectedData = await this.buildOpeningData({
+                channelId: attempt.channelId,
+                participants,
+                balances
+            });
         } catch (error) {
             // A local failure to derive the terms is not the peer's fault.
             await this.clearAttempt(
@@ -428,8 +421,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
                 channelId: attempt.channelId,
                 participants,
                 balances,
-                data: expectedData,
-                ...deployment
+                data: expectedData
             },
             {
                 minSeconds: nowSeconds + OPEN_CHANNEL_MIN_REMAINING_SECONDS,

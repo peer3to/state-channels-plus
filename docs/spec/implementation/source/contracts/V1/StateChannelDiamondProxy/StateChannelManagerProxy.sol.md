@@ -61,8 +61,6 @@ Opening and calldata posting
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P27` — open succeeds with a consumer whose genesis hook reverts, so it never calls the hook
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P28` — `ChannelOpened` carries the stored snapshot and the opening data
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P29` — the already-open check passes after a full close, so the ID opens again
-- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P30` — terms signed for another manager deployment revert with `ErrorOpenChannelWrongDeployment(chainId, manager)` naming the signed deployment
-- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P31` — terms signed on another chain revert with `ErrorOpenChannelWrongDeployment(chainId, manager)` naming the signed chain
 
 ## UNIT-TEST-MANAGER-PROXY-2-KJRMB8
 

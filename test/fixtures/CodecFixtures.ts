@@ -46,8 +46,6 @@ export const codecValues = {
         ],
         deadlineTimestamp: 41n,
         genesisStateHash: factory.hash(),
-        chainId: 31337n,
-        manager: factory.randomAddress(),
         data: factory.hexString(3)
     }),
     blockConfirmation: () => factory.blockConfirmation(),

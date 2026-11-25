@@ -1491,8 +1491,6 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         openChannel.participants = participants;
         openChannel.balances = new Balance[](participants.length);
         openChannel.deadlineTimestamp = block.timestamp + 1 days;
-        openChannel.chainId = block.chainid;
-        openChannel.manager = address(diamond);
         JoinChannel[] memory joins = new JoinChannel[](participants.length);
         for (uint256 i = 0; i < participants.length; i++) {
             joins[i] = JoinChannel({

@@ -126,7 +126,7 @@ Specification cases tested: 0/8.
 Specification cases tested: 1/7. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7.
 
 [`INV-NEG-1-6FW90P` (Negotiated-terms-only signing)](../specification/peer-communication/channel-negotiation.md#inv-neg-1-6fw90p)
-Specification cases tested: 10/17. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P8, T1.P9.
+Specification cases tested: 8/15. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P8, T1.P9.
 
 [`INV-RPC-1-SJS2T6` (Identity-bound dispatch)](../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6)
 Specification cases tested: 3/6. Untested: T1.P2, T1.P4, T1.P5.
@@ -621,7 +621,7 @@ Specification cases tested: 9/9.
 Specification cases tested: 41/41.
 
 [`REQ-LIF-11-KEEN0N` (Open records the agreed commitment)](../specification/settlement/lifecycle.md#req-lif-11-keen0n)
-Specification cases tested: 9/9.
+Specification cases tested: 7/7.
 
 [`REQ-LIF-12-TSXRBG` (Observers rebuild the genesis)](../specification/settlement/lifecycle.md#req-lif-12-tsxrbg)
 Specification cases tested: 10/10.

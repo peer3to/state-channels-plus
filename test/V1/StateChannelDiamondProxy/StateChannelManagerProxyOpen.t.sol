@@ -8,7 +8,6 @@ import {
     ErrorAtLeastTwoParticipantsRequired,
     ErrorDuplicateParticipant,
     ErrorJoinChannelAtomicFailure,
-    ErrorOpenChannelWrongDeployment,
     ErrorTooManyParticipants,
     RaceConditionChannelAlreadyOpen,
     RaceConditionOpenChannelExpired
@@ -251,29 +250,6 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         diamond.open(confirmation);
     }
 
-    // terms signed for one manager deployment do not open a channel on another
-    function test_open_termsSignedForAnotherManager_revertsWithWrongDeployment() public {
-        OpenChannelConfirmation memory confirmation = _deadlineOpenConfirmation();
-        StateChannelManagerInterface otherDiamond = deployDiamond();
-
-        vm.expectRevert(
-            abi.encodeWithSelector(ErrorOpenChannelWrongDeployment.selector, block.chainid, address(diamond))
-        );
-        otherDiamond.open(confirmation);
-    }
-
-    // terms signed on one chain do not open a channel on another
-    function test_open_termsSignedForAnotherChain_revertsWithWrongDeployment() public {
-        OpenChannelConfirmation memory confirmation = _deadlineOpenConfirmation();
-        uint256 signedChainId = abi.decode(confirmation.encodedOpenChannel, (OpenChannel)).chainId;
-        vm.chainId(signedChainId + 1);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(ErrorOpenChannelWrongDeployment.selector, signedChainId, address(diamond))
-        );
-        diamond.open(confirmation);
-    }
-
     function _deadlineOpenConfirmation() internal view returns (OpenChannelConfirmation memory) {
         uint256[] memory participantPrivateKeys = new uint256[](2);
         participantPrivateKeys[0] = SIGNER_PK;
@@ -307,8 +283,6 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         }
         oc.deadlineTimestamp = block.timestamp + 120;
         oc.genesisStateHash = keccak256("genesis");
-        oc.chainId = block.chainid;
-        oc.manager = address(diamond);
         oc.data = "";
         return abi.encode(oc);
     }
@@ -324,8 +298,6 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         oc.balances[1] = Balance({amount: 500, data: ""});
         oc.deadlineTimestamp = block.timestamp + 120;
         oc.genesisStateHash = keccak256("genesis");
-        oc.chainId = block.chainid;
-        oc.manager = address(diamond);
         oc.data = "";
         return abi.encode(oc);
     }
