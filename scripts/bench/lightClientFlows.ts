@@ -12,22 +12,37 @@
  *   PEER3_NODE_BIN=<zero-fee-node with --light-client> yarn bench:light-client:flows
  *
  * BENCH_FLOWS (all): flow names to run, comma separated.
- * BENCH_FLOWS_MODES (off,on,compared): the modes to run, comma separated.
+ * BENCH_FLOWS_MODES (off,on,compared): the modes to run, comma separated;
+ * `warm` and `warmCompared` are asked for by name only: `on` and `compared`
+ * with the flow run on a node and manager deployment that first served a
+ * warm-up test (WARM_UP).
  * BENCH_FLOWS_REPEATS (1): runs of each flow in each mode; the files of
  * repeat r > 1 are named <flow>-<mode>-<r>.json.
  *
  * Every run also samples the CPU time of the node processes (every process
  * whose command starts with PEER3_NODE_BIN) every 100 ms; the run's node CPU
  * is the last sample of each, summed. On Linux it is read from
- * /proc/<pid>/stat in clock ticks, as ps there shows whole seconds.
+ * /proc/<pid>/stat in clock ticks, as ps there shows whole seconds. A warm
+ * run counts only the CPU its node used after the warm-up.
+ *
+ * A warm run starts the node and discovery itself and hands them to two runs
+ * of the parallel runner through `--use-slot`: the warm-up test, then the
+ * flow. The warm-up's file is the flow's with `.warm-up.json` for `.json`.
  */
 import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { FlowBenchPeer } from "../../test/fixtures/lightClient/flowBench";
+import {
+    startDiscoveryRegistry,
+    startHardhatNode,
+    teardownInfra
+} from "../../test/utils/nodeInfra";
 
-type Mode = "off" | "on" | "compared";
+type Mode = "off" | "on" | "compared" | "warm" | "warmCompared";
 type Flow = { name: string; file: string; test: string };
+/** A test the runner runs: its file under test/ and its title. */
+type RunnerTest = Pick<Flow, "file" | "test">;
 
 /** The flows the engineer chose (2026-11-23), each an existing test. */
 const FLOWS: readonly Flow[] = [
@@ -68,7 +83,20 @@ const FLOWS: readonly Flow[] = [
         test: "remaining peers do not blacklist the leaver after its exit and it can be force-joined back"
     }
 ];
-const MODES: readonly Mode[] = ["off", "on", "compared"];
+const MODES: readonly Mode[] = [
+    "off",
+    "on",
+    "compared",
+    "warm",
+    "warmCompared"
+];
+/** The modes run when BENCH_FLOWS_MODES names none. */
+const DEFAULT_MODES = "off,on,compared";
+/** The test a warm run's node serves before the flow: a channel of four peers, one rotation round (2026-11-25). */
+const WARM_UP: RunnerTest = {
+    file: "e2e/E2E-StateTransition.test.ts",
+    test: "should handle full round rotation"
+};
 /** Requests a light client sends only to prove what it reads. */
 const PROOF_METHODS = ["state_getReadProof", "chain_getHeader"];
 /** Requests that run a call on the node: remote simulations. */
@@ -115,35 +143,51 @@ function processCpuSeconds(pid: number, psTime: string): number | undefined {
     }
 }
 
-function sampleNodeCpu(nodeBin: string): () => {
+/** Adds the CPU seconds of every running node process to `cpuSeconds`, by process id. */
+function sampleNodeProcesses(
+    nodeBin: string,
+    cpuSeconds: Map<number, number>
+): void {
+    let listing: string;
+    try {
+        listing = execFileSync("ps", ["-A", "-o", "pid=,time=,command="], {
+            encoding: "utf8"
+        });
+    } catch {
+        return;
+    }
+    for (const line of listing.split("\n")) {
+        const match = /^\s*(\d+)\s+(\S+)\s+(.*)$/.exec(line);
+        if (!match || !match[3].startsWith(nodeBin)) continue;
+        const seconds = processCpuSeconds(Number(match[1]), match[2]);
+        if (seconds !== undefined) cpuSeconds.set(Number(match[1]), seconds);
+    }
+}
+
+/**
+ * Samples the CPU time of every node process until the returned function is
+ * called; `since` (process id -> CPU seconds) is taken off what a process had
+ * used before the run.
+ */
+function sampleNodeCpu(
+    nodeBin: string,
+    since: ReadonlyMap<number, number> = new Map()
+): () => {
     nodeCpuSeconds: number;
     nodeProcesses: number;
 } {
     // process id -> its CPU seconds at the last sample
     const lastCpuSeconds = new Map<number, number>();
-    const sample = () => {
-        let listing: string;
-        try {
-            listing = execFileSync("ps", ["-A", "-o", "pid=,time=,command="], {
-                encoding: "utf8"
-            });
-        } catch {
-            return;
-        }
-        for (const line of listing.split("\n")) {
-            const match = /^\s*(\d+)\s+(\S+)\s+(.*)$/.exec(line);
-            if (!match || !match[3].startsWith(nodeBin)) continue;
-            const seconds = processCpuSeconds(Number(match[1]), match[2]);
-            if (seconds !== undefined)
-                lastCpuSeconds.set(Number(match[1]), seconds);
-        }
-    };
-    const timer = setInterval(sample, CPU_SAMPLE_MS);
+    const timer = setInterval(
+        () => sampleNodeProcesses(nodeBin, lastCpuSeconds),
+        CPU_SAMPLE_MS
+    );
     return () => {
         clearInterval(timer);
         return {
-            nodeCpuSeconds: [...lastCpuSeconds.values()].reduce(
-                (total, seconds) => total + seconds,
+            nodeCpuSeconds: [...lastCpuSeconds].reduce(
+                (total, [pid, seconds]) =>
+                    total + seconds - (since.get(pid) ?? 0),
                 0
             ),
             nodeProcesses: lastCpuSeconds.size
@@ -152,12 +196,13 @@ function sampleNodeCpu(nodeBin: string): () => {
 }
 
 async function runFlow(
-    flow: Flow,
+    flow: RunnerTest,
     mode: Mode,
     file: string,
-    nodeBin: string
+    nodeBin: string,
+    options: { slotFile?: string; cpuSince?: ReadonlyMap<number, number> } = {}
 ): Promise<{ passed: boolean; nodeCpuSeconds: number; nodeProcesses: number }> {
-    const stopSampling = sampleNodeCpu(nodeBin);
+    const stopSampling = sampleNodeCpu(nodeBin, options.cpuSince);
     const child = spawn(
         "yarn",
         [
@@ -165,6 +210,7 @@ async function runFlow(
             "test:parallel",
             "--parachain",
             "--no-forge",
+            ...(options.slotFile ? ["--use-slot", options.slotFile] : []),
             "--mocha-test-pattern",
             flow.file,
             "--grep",
@@ -176,7 +222,8 @@ async function runFlow(
                 ...process.env,
                 PEER3_NODE_LIGHT_CLIENT: mode === "off" ? "0" : "1",
                 BENCH_FLOWS_FILE: file,
-                BENCH_FLOWS_COMPARE: mode === "compared" ? "1" : "0"
+                BENCH_FLOWS_COMPARE:
+                    mode === "compared" || mode === "warmCompared" ? "1" : "0"
             }
         }
     );
@@ -184,6 +231,69 @@ async function runFlow(
         child.on("close", resolve)
     );
     return { passed: status === 0, ...stopSampling() };
+}
+
+/**
+ * Runs WARM_UP and then `flow` on one node and manager deployment the run
+ * starts itself; the flow's node CPU is what the node used after the warm-up.
+ */
+async function runWarmFlow(
+    flow: Flow,
+    mode: "warm" | "warmCompared",
+    file: string,
+    warmUpFile: string,
+    nodeBin: string
+): Promise<{
+    passed: boolean;
+    warmUpPassed: boolean;
+    nodeCpuSeconds: number;
+    nodeProcesses: number;
+}> {
+    // the node the runner would start for --parachain, with the light client
+    process.env.PARACHAIN = "1";
+    process.env.PEER3_NODE_LIGHT_CLIENT = "1";
+    const slotDir = file.replace(/\.json$/, ".slot");
+    mkdirSync(path.join(slotDir, "cache"), { recursive: true });
+    const infra: Parameters<typeof teardownInfra>[0] = {
+        nodes: [],
+        discoveries: []
+    };
+    try {
+        infra.nodes.push(
+            await startHardhatNode({
+                logPath: path.join(slotDir, "node.log"),
+                label: "warm run node",
+                env: { E2E_INTERVAL_MINING: "1" }
+            })
+        );
+        infra.discoveries.push(
+            await startDiscoveryRegistry({
+                logPath: path.join(slotDir, "discovery.log"),
+                label: "warm run discovery"
+            })
+        );
+        const slotFile = path.join(slotDir, "slot.json");
+        writeFileSync(
+            slotFile,
+            JSON.stringify({
+                nodeUrl: infra.nodes[0].url,
+                discoveryUrl: infra.discoveries[0].url,
+                cacheDir: path.join(slotDir, "cache")
+            })
+        );
+        const warmUp = await runFlow(WARM_UP, "warm", warmUpFile, nodeBin, {
+            slotFile
+        });
+        const cpuSince = new Map<number, number>();
+        sampleNodeProcesses(nodeBin, cpuSince);
+        const run = await runFlow(flow, mode, file, nodeBin, {
+            slotFile,
+            cpuSince
+        });
+        return { ...run, warmUpPassed: warmUp.passed };
+    } finally {
+        teardownInfra(infra);
+    }
 }
 
 function total(counts: Record<string, number>, methods?: string[]): number {
@@ -230,10 +340,11 @@ function median(values: number[]): number | null {
 
 function listFromEnv<T extends string>(
     name: string,
-    all: readonly T[]
+    all: readonly T[],
+    unset: readonly T[] = all
 ): readonly T[] {
     const names = process.env[name]?.split(",").map((n) => n.trim());
-    if (!names) return all;
+    if (!names) return unset;
     const unknown = names.filter((n) => !all.includes(n as T));
     if (unknown.length > 0)
         throw new Error(`${name}: unknown ${unknown.join(", ")}`);
@@ -248,7 +359,11 @@ async function main(): Promise<void> {
         FLOWS.map((flow) => flow.name)
     );
     const flows = FLOWS.filter((flow) => flowNames.includes(flow.name));
-    const modes = listFromEnv("BENCH_FLOWS_MODES", MODES);
+    const modes = listFromEnv(
+        "BENCH_FLOWS_MODES",
+        MODES,
+        DEFAULT_MODES.split(",") as Mode[]
+    );
     const repeats = Number(process.env.BENCH_FLOWS_REPEATS ?? "1");
     if (!Number.isInteger(repeats) || repeats < 1)
         throw new Error("BENCH_FLOWS_REPEATS is not a positive integer");
@@ -270,7 +385,16 @@ async function main(): Promise<void> {
                         ? `${flow.name}-${mode}.json`
                         : `${flow.name}-${mode}-${repeat}.json`;
                 const file = path.resolve(dir, name);
-                const run = await runFlow(flow, mode, file, nodeBin);
+                const run =
+                    mode === "warm" || mode === "warmCompared"
+                        ? await runWarmFlow(
+                              flow,
+                              mode,
+                              file,
+                              file.replace(/\.json$/, ".warm-up.json"),
+                              nodeBin
+                          )
+                        : await runFlow(flow, mode, file, nodeBin);
                 let result: ReturnType<typeof sumPeers> | null = null;
                 try {
                     result = sumPeers(
@@ -285,7 +409,7 @@ async function main(): Promise<void> {
                 }
                 runs.push({ file: name, ...run, ...result });
                 console.log(
-                    `${flow.name} ${mode} #${repeat}: ${run.passed ? "passed" : "FAILED"}, ${result?.totalRequests ?? "?"} requests, node CPU ${run.nodeCpuSeconds.toFixed(2)} s (${run.nodeProcesses} processes)`
+                    `${flow.name} ${mode} #${repeat}: ${run.passed ? "passed" : "FAILED"}${"warmUpPassed" in run ? `, warm-up ${run.warmUpPassed ? "passed" : "FAILED"}` : ""}, ${result?.totalRequests ?? "?"} requests, node CPU ${run.nodeCpuSeconds.toFixed(2)} s (${run.nodeProcesses} processes)`
                 );
             }
             byMode[mode] = runs;
