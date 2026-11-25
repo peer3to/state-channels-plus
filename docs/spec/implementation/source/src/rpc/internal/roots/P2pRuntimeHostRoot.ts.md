@@ -17,6 +17,7 @@
 - [`REQ-STOR-9-ZR8A92` (Closed by the one disposal)](../../../../../../specification/storage/durability.md#req-stor-9-zr8a92)
 - [`REQ-STOR-11-Q4AT07` (Partition identity, ownership, and survival)](../../../../../../specification/storage/durability.md#req-stor-11-q4at07)
 - [`REQ-STOR-8-25D06N` (Durable before a slashable signature leaves)](../../../../../../specification/storage/durability.md#req-stor-8-25d06n)
+- [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 
 ## UNIT-TEST-P2P-RUNTIME-HOST-1-TJYWGM
 
@@ -87,6 +88,16 @@ Local EVM call-gas wiring
 - [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P2` — dedicated-worker executor gets the same limit after the decimal-string round trip
 - [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P3` — a failed `getGasLimit` or `getStateTransitionReplayGas` read fails host startup (inline executor): readiness rejects with the read's error, the executor requested at the start never gets its configuration, and every runtime root the start created, the executor's included, is closed
 - [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P4` — the same failed read with a dedicated executor thread: readiness rejects, the executor thread requested at the start never gets its configuration, and every runtime root the start created is closed
+
+## UNIT-TEST-P2P-RUNTIME-HOST-35-YY8P9R
+
+Replay requirement within the per-transaction gas cap
+
+- Setup: Start a host against the Math manager with `MAX_TRANSACTION_GAS` set one gas below, then equal to, the manager's `getStateTransitionReplayGas`
+- Oracle: Below, readiness rejects with an error naming the requirement and the cap, and every runtime root it started is closed; equal, the runtime starts
+
+- [x] `UNIT-TEST-P2P-RUNTIME-HOST-35-YY8P9R.P1` — a replay requirement one gas above `MAX_TRANSACTION_GAS` fails host startup naming both figures and closes every runtime root it started
+- [x] `UNIT-TEST-P2P-RUNTIME-HOST-35-YY8P9R.P2` — a replay requirement equal to `MAX_TRANSACTION_GAS` starts the host
 
 ## UNIT-TEST-P2P-RUNTIME-HOST-34-517JAX
 

@@ -108,7 +108,7 @@ Specification cases tested: 7/8. Untested: T1.P6.
 Specification cases tested: 4/10. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6.
 
 [`INV-MSG-1-36Y41Q` (Each stream is one hash-linked chain per channel)](../specification/settlement/cross-layer-messages.md#inv-msg-1-36y41q)
-Specification cases tested: 0/14.
+Specification cases tested: 1/15. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
 
 [`INV-MSG-2-PQ0T1K` (No replay, no omission)](../specification/settlement/cross-layer-messages.md#inv-msg-2-pq0t1k)
 Specification cases tested: 0/7.
@@ -462,7 +462,7 @@ Specification cases tested: 2/5. Untested: T1.P2, T1.P3, T1.P4.
 Specification cases tested: 0/5.
 
 [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
-Specification cases tested: 19/22. Untested: T1.P1, T1.P2, T1.P3.
+Specification cases tested: 23/26. Untested: T1.P1, T1.P2, T1.P3.
 
 [`REQ-ENFSM-2-G4HBKG` (Adapter confinement)](../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg)
 Specification cases tested: 0/4.

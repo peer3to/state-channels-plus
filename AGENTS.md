@@ -64,7 +64,7 @@ uncertain, and leave final fingerprint approval to the engineer.
 
 ### Canonical test command and parallel run logs
 
-`yarn test:parallel:distributed --test-parallel-script --test-browser` is the canonical full test gate (also used by CI). Without those flags, parallel-runner self-tests and browser tests are excluded. The full gate runs three
+`yarn test:parallel:distributed --parachain --test-parallel-script --test-browser` is the canonical full test gate (also used by CI). Without `--test-parallel-script` and `--test-browser`, parallel-runner self-tests and browser tests are excluded; without `--parachain`, the tests run on Hardhat instead of the parachain dev node. The full gate runs three
 tiers across the configured distributed workers: all Mocha tests, the forge
 tests and the browser gates (`test/browser/run-*.mjs`). Pass `--e2e-only` to
 limit Mocha discovery to `test/e2e`; it also drops the forge and browser tiers.
@@ -82,9 +82,10 @@ add both flags routinely to development validation; CI runs both groups on every
 full gate so the development cycle stays lean.
 
 Browser gates, and Mocha test files marked `// @distributed-requires: browser`,
-run only on a protocol 14 or newer worker host whose runner image was built with
-`yarn test:parallel:image`. When no such host connects within the discovery
-window, the run skips them with a warning that lists them instead of failing,
+run only on a protocol 14 or newer worker host whose runner image matches its
+checkout's `runner-image.Dockerfile` (a docker worker server rebuilds a stale
+one at startup; `yarn test:parallel:image` builds it by hand). When no such
+host connects within the discovery window, the run skips them with a warning that lists them instead of failing,
 so a green run is not complete until that warning has been checked. A Mocha
 test file that launches Chromium must carry that marker in its leading
 comments. See the README's

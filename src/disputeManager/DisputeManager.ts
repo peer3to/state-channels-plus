@@ -13,6 +13,12 @@ import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import type StateManager from "@/stateManager/StateManager";
 import Storage from "@/storage";
 import {
+    DisputeFraudProofType,
+    FraudProofType,
+    toSolidityDisputeFraudProofType,
+    toSolidityFraudProofType
+} from "@/types/sol-enums";
+import {
     DebugProxy,
     DetachedPromises,
     hash,
@@ -28,15 +34,47 @@ import {
 } from "@/utils";
 import { config } from "@/utils/config";
 import { errorMessage } from "@/utils/errorMessage";
+import { withGasHeadroom } from "@/utils/gas";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
 import {
     DisputeStruct,
     TimeoutStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    DisputeFraudProofStruct,
+    FraudProofStruct
+} from "@typechain-types/contracts/V1/types/ProofTypes";
 import { ethers } from "ethers";
 
 export type { ConstructDisputeResult };
+
+/**
+ * Whether the chain replays a state transition to judge `proof`, so the
+ * transaction carrying it must fund the replay (see fraudProofGasLimit).
+ * DisputeInvalidBlockInStateProofApplyFraudProof counts whatever proof it
+ * wraps: funding a replay that does not run only raises the limit.
+ */
+function replaysStateTransition(
+    proof: FraudProofStruct | DisputeFraudProofStruct
+): boolean {
+    const proofType = Number(proof.proofType);
+    if (!("dispute" in proof))
+        return (
+            proofType ===
+            toSolidityFraudProofType(FraudProofType.BlockInvalidStateTransition)
+        );
+    return (
+        proofType ===
+            toSolidityDisputeFraudProofType(
+                DisputeFraudProofType.TimeoutCalldataPosted
+            ) ||
+        proofType ===
+            toSolidityDisputeFraudProofType(
+                DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
+            )
+    );
+}
 
 class DisputeManager {
     signer: ethers.Signer;
@@ -50,7 +88,7 @@ class DisputeManager {
     private eventSyncService: EventSyncService;
     private logger: Logger;
     private readonly disputeBuilder: DisputeBuilder;
-    // The manager's getStateTransitionReplayGas, read on the first replay send.
+    // The manager's getStateTransitionReplayGas, read on the first replaying send.
     private stateTransitionReplayGas?: Promise<bigint>;
 
     constructor(
@@ -113,6 +151,8 @@ class DisputeManager {
         }
     ): Promise<{ lostEvidenceRace?: CustomEvmError }> {
         let txResponse;
+        // a replaying multicall's capped limit, kept by a retry of its revert
+        let replayGasLimit: bigint | undefined;
         let rethrow: unknown;
         let refreshSlashes = false;
         let retryWithoutStaleProof = false;
@@ -195,7 +235,7 @@ class DisputeManager {
             // sends each upload with its estimate plus headroom (see
             // GAS_ESTIMATE_HEADROOM_PERCENT for the concurrent-dispute race
             // this protects against). A fraud-proof replay must also be
-            // funded upfront (see replayGasLimit).
+            // funded upfront (see fraudProofGasLimit).
 
             const uploadDisputeCalldata = shouldPostAuditingData
                 ? (
@@ -233,9 +273,14 @@ class DisputeManager {
                 // their slashes, and stay landed when the upload is refused
                 calls.push(uploadDisputeCalldata);
                 const estimate = this.estimateBestEffortMulticall(calls);
-                const gasLimit = await this.replayGasLimit(
-                    estimate.then(({ gas }) => gas)
+                const replays =
+                    (!!killProof && replaysStateTransition(killProof)) ||
+                    fraudProofsToApply.some(replaysStateTransition);
+                const gasLimit = await this.fraudProofGasLimit(
+                    estimate.then(({ gas }) => gas),
+                    replays
                 );
+                if (replays) replayGasLimit = gasLimit;
                 estimatedUploadRefusal = (await estimate).refusal;
                 txResponse =
                     await this.stateChannelManagerContract.multicallBestEffortLast(
@@ -274,6 +319,7 @@ class DisputeManager {
             const success = await tryHandleEvmError(error, {
                 // a mined multicall is never resent: its kill already landed
                 tx: uploadRefusedInMulticall ? undefined : txResponse,
+                gasLimit: replayGasLimit,
                 logger: this.logger,
                 forkId,
                 signer: this.signer,
@@ -490,6 +536,8 @@ class DisputeManager {
         const disputeMeta = LoggerUtils.getDisputeMetadata(dispute);
         const formattedHash = LoggerUtils.formatHash(disputeMeta.disputeHash);
         let txResponse;
+        // a replaying kill's capped limit, kept by a retry of its revert
+        let replayGasLimit: bigint | undefined;
         try {
             // a mutex is not needed since we observe and validate a dispute only once and create only 1 disputeFraudProof for it
             const disputeFraudProof = this.getStoredDisputeFraudProof(dispute);
@@ -512,16 +560,21 @@ class DisputeManager {
                 })
             });
             const disputeFraudProofs = [disputeFraudProof];
+            const replays = replaysStateTransition(disputeFraudProof);
+            const gasLimit = await this.fraudProofGasLimit(
+                this.estimateGas(
+                    this.stateChannelManagerContract.interface.encodeFunctionData(
+                        "applyDisputeFraudProofs",
+                        [disputeFraudProofs]
+                    )
+                ),
+                replays
+            );
+            if (replays) replayGasLimit = gasLimit;
             txResponse =
                 await this.stateChannelManagerContract.applyDisputeFraudProofs(
                     disputeFraudProofs,
-                    {
-                        gasLimit: await this.replayGasLimit(
-                            this.stateChannelManagerContract
-                                .getFunction("applyDisputeFraudProofs")
-                                .estimateGas(disputeFraudProofs)
-                        )
-                    }
+                    { gasLimit }
                 );
 
             await txResponse.wait();
@@ -531,6 +584,7 @@ class DisputeManager {
         } catch (error) {
             const success = await tryHandleEvmError(error, {
                 tx: txResponse,
+                gasLimit: replayGasLimit,
                 logger: this.logger,
                 forkId: dispute.input.forkId,
                 signer: this.signer,
@@ -609,21 +663,26 @@ class DisputeManager {
     }
 
     /**
-     * Gas limit for a transaction that may replay a transition as fraud
-     * proof: the signer's estimate (with its headroom) plus the manager's
-     * replay requirement. The state machine refuses a replay unless its full
-     * budget is available when the replay starts, but an estimator that
-     * reports the gas a run spends (the peer3 hardhat fork) counts only what
-     * the transition used, never the unused budget that must be free, and the
-     * work before the replay (proof checks, setting the machine's state) can
-     * exceed any fixed margin. Adding the requirement to the estimate covers
-     * both. A searching estimator already includes the requirement, so there
-     * the limit asks for more than needed, which is safe. Callers estimate
-     * through getFunction, the contract's own method, so an estimate is never
-     * taken from a replaced or wrapped method property. The limit is capped
-     * at the block gas limit: a larger one is never included.
+     * Gas limit for a fraud-proof transaction from its estimate without
+     * headroom. A transaction whose proofs replay no transition gets the
+     * chain signer's headroom, as any other send. A replaying one gets the
+     * manager's replay requirement instead: the state machine refuses a
+     * replay unless its full budget is available when the replay starts, but
+     * an estimator that reports the gas a run spends (the peer3 hardhat fork)
+     * counts only what the transition used, never the unused budget that
+     * must be free, and the work before the replay (proof checks, setting the
+     * machine's state) can exceed any fixed margin. Adding the requirement
+     * covers both, and covers the concurrent-dispute race the headroom is
+     * for. A searching estimator (Frontier, geth) already includes the
+     * requirement, so there the limit asks for more than needed. The limit is
+     * capped at MAX_TRANSACTION_GAS and at the block gas limit: a larger one
+     * is never included.
      */
-    private async replayGasLimit(estimate: Promise<bigint>): Promise<bigint> {
+    private async fraudProofGasLimit(
+        estimate: Promise<bigint>,
+        replays: boolean
+    ): Promise<bigint> {
+        if (!replays) return withGasHeadroom(await estimate);
         let replayGas = this.stateTransitionReplayGas;
         if (!replayGas) {
             const read =
@@ -638,14 +697,31 @@ class DisputeManager {
         const [estimated, required, latestBlock] = await Promise.all([
             estimate,
             replayGas,
-            // a failed read leaves the limit uncapped instead of failing the send
+            // a failed read leaves the limit capped only by MAX_TRANSACTION_GAS
             this.stateChannelManagerContract.runner?.provider
                 ?.getBlock("latest")
                 .catch(() => null)
         ]);
-        const limit = estimated + required;
-        const blockGasLimit = latestBlock?.gasLimit ?? limit;
-        return blockGasLimit < limit ? blockGasLimit : limit;
+        let limit = estimated + required;
+        const transactionCap = BigInt(config.MAX_TRANSACTION_GAS);
+        if (transactionCap < limit) limit = transactionCap;
+        const blockGasLimit = latestBlock?.gasLimit;
+        if (blockGasLimit !== undefined && blockGasLimit < limit)
+            limit = blockGasLimit;
+        return limit;
+    }
+
+    /**
+     * The chain's estimate for this peer calling the manager with `data`,
+     * without the chain signer's headroom.
+     */
+    private async estimateGas(data: string): Promise<bigint> {
+        const contract = this.stateChannelManagerContract;
+        return contract.runner!.provider!.estimateGas({
+            to: await contract.getAddress(),
+            from: this.signerAddress,
+            data
+        });
     }
 
     /**
@@ -662,13 +738,13 @@ class DisputeManager {
     private async estimateBestEffortMulticall(
         calls: string[]
     ): Promise<{ gas: bigint; refusal?: CustomEvmError }> {
-        const contract = this.stateChannelManagerContract;
-        const allOrNothing = contract
-            .getFunction("multicall")
-            .estimateGas(calls);
-        const bestEffort = contract
-            .getFunction("multicallBestEffortLast")
-            .estimateGas(calls);
+        const { interface: manager } = this.stateChannelManagerContract;
+        const allOrNothing = this.estimateGas(
+            manager.encodeFunctionData("multicall", [calls])
+        );
+        const bestEffort = this.estimateGas(
+            manager.encodeFunctionData("multicallBestEffortLast", [calls])
+        );
         // goes unused when the all-or-nothing estimate succeeds
         bestEffort.catch(() => undefined);
         try {

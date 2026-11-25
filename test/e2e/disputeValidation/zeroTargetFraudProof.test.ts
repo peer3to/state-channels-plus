@@ -1,8 +1,8 @@
-import { randomWallet } from "@test/factory";
+import { Address } from "@/types/types";
+import { fundForGas, randomWallet } from "@test/factory";
 import { submitZeroTargetProof } from "@test/fixtures/ZeroTargetFraudProofStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
-import { ethers } from "ethers";
 
 describe("E2E: dispute validation / zero-target dispute fraud proof", function () {
     it("outsider zero-target proof against an honest committed dispute -> no kill, no slash", async function () {
@@ -12,12 +12,10 @@ describe("E2E: dispute validation / zero-target dispute fraud proof", function (
             h,
             1,
             async () => {
-                await (
-                    await h.getPeer(3).p2pInstance.chainSigner.sendTransaction({
-                        to: outsider.address,
-                        value: ethers.parseEther("1")
-                    })
-                ).wait();
+                await fundForGas(
+                    h.getPeer(3).p2pInstance.chainSigner,
+                    outsider.address as Address
+                );
                 return outsider.connect(h.channelManager.runner!.provider!);
             }
         );

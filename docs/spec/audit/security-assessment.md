@@ -486,8 +486,11 @@ budget. History can still lower that cost (under EIP-2200 a slot that held data 
 the transaction is cheaper to write again), which can only let a transition finish, never make an
 honest one fail. The count-reset version this replaced made the same transition cost about 2.3 ×
 more after long old payloads (932,855 against 399,861 gas). The node sends every
-fraud-proof replay with `gasLimit` = its estimate with the signer's 50% headroom plus the
-requirement (engineer decision 2026-09-27). An estimator that reports only the gas spent (the peer3
+fraud-proof replay with `gasLimit` = its estimate without the signer's headroom plus the
+requirement, capped at `MAX_TRANSACTION_GAS` and the block gas limit; a fraud-proof send that
+replays nothing keeps the estimate with headroom (Luke, 2026-11-21, superseding the 2026-09-27
+estimate-with-headroom-plus-requirement decision; see
+[`FIND-GASEST-2-94YFZ6`](open-findings.md#find-gasest-2-94yfz6)). An estimator that reports only the gas spent (the peer3
 hardhat fork used by the poker consumer) counts the gas the transition used, never the unused
 budget that must be free when the replay starts, and the work before the replay (proof checks,
 setting the machine's state) can exceed any fixed margin: on a poker dispute it was about 3.9M with a
@@ -498,17 +501,17 @@ because the refusal makes every lower gas fail, so there the sum declares more t
 excess never changes a verdict, but it is not free: it reserves block space and must fit the block
 gas limit (below). The integrator `try/catch` assumption is no longer needed.
 
-Accepted residual (cost and block fit, not correctness): every replay transaction declares more
-than the requirement, and with a searching estimator the estimate already contains the requirement,
-the signer's 50% headroom applies to it, and the requirement is added again, so the declared limit
-is at least 2.5 × the requirement. With poker's budgets it still fits a 30M block.
-Nothing caps the declared limit at the block gas limit; a replay whose declared limit exceeds it is
-refused by the node at submission, so that fraud stays unproven on-chain until the budget is lowered.
-Blocks are packed by declared limit, so each replay transaction also reserves that much block space. A submitter
-still cannot make an honest transition fail for lack of gas; the worst case of the residual is a
-fraud proof that cannot be sent, never a wrong verdict. The engineer confirmed this rule (review 5,
-FO1); the estimator models, the block-fit dependence on the consumer's budget, the missing cap and
-the missing send test against a searching 30M-block node are open together as
+Accepted residual (cost and transaction fit, not correctness): a replay transaction declares its
+estimate without headroom plus the requirement, capped at `MAX_TRANSACTION_GAS` (the peer3
+parachain's 17,916,000 by default) and the block gas limit; with a searching estimator that is about
+twice the requirement. A runtime whose requirement exceeds the cap does not start (revised
+2026-11-21, Luke). A dispute that bundles several replays needs about one transition budget per
+replay before the last and can still need more than the cap; the node declares it at the cap, so
+the chain admits it and it fails on-chain, charged its full limit, and that fraud stays unproven
+on-chain; the retry after that mined revert preflights and resends at the same capped limit, so a
+reproduced failure sends no second transaction and any resend stays within the cap. A submitter still cannot make an honest transition fail for lack of gas; the worst case
+of the residual is a charged, failed fraud proof, never a wrong verdict.
+Splitting replays across transactions is open as
 [`FIND-GASEST-2-94YFZ6`](open-findings.md#find-gasest-2-94yfz6).
 
 ## Local EVM call gas — 2026-09-26

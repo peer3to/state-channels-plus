@@ -62,12 +62,14 @@ export class LifecycleActions<
                 evidenceTime?: number;
             };
             configOverrides?: HarnessOptions["configOverrides"];
+            stateMachineGasLimit?: number;
         }
     ) {
         const timeConfig = resolveTestTimeConfig(options?.timeConfig);
         await this.start(peerCount, transitionCount, {
             timeConfig,
-            configOverrides: options?.configOverrides
+            configOverrides: options?.configOverrides,
+            stateMachineGasLimit: options?.stateMachineGasLimit
         });
     }
 
