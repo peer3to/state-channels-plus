@@ -283,6 +283,15 @@ should stay stateful against on-chain state or become a stateless fold over the 
 (with the slash-completeness and forced-inclusion guarantees re-established elsewhere) is an open
 engineer decision ([`OQ-39-C3EAMN`](../open-questions.md#oq-39-c3eamn)).
 
+**Fork choice and inbound progress (decided 2026-11-23, adopted 2026-11-25).** `reduce` is not
+changed by the final-point counters: `latestBlock` still ranks by block height, then by block hash.
+Inbound blocks consumed in a dispute's unfinal tail have no effect on fork choice. A history that
+skipped a later joiner's JOIN is removed by the kills of the kill period
+([fraud-proofs.md §3](./fraud-proofs.md)), not by the ranking. Known limit: a kill is a
+transaction. When nobody sends it in the kill period, a final history that consumed fewer inbound
+blocks survives and can win the reduction by length; the joiner then keeps only its deposit in the
+successor fork.
+
 `reduceOutputToSnapshotData` then applies, in order: pending inbound messages (joins etc.),
 the slashes of the candidates that are participants of the resulting participant state (the
 reduced latest state with its pending joins applied — the disputed fork's participant state at
@@ -387,12 +396,14 @@ incomplete-information attacks into evidence against the attacker:
   of one `forkId` imply a double-sign by construction.
 - **Fork choice inside a `forkId` is longest-chain:** the reduction's `latestBlock` rule (§5)
   selects the longest proved history. A submitter who brings a divergent history to the dispute
-  game thereby discloses the double-sign; the resulting fraud-proof slash suppresses any timeout
-  ([`INV-DIS-7-9GGZSD`](disputes.md#inv-dis-7-9ggzsd)), making the cross-history comparison moot. Comparing raw
-  `transactionCnt`/`blockHeight` values is therefore sound: candidates either lie on one chain,
-  where the comparison is meaningful, or their conflict is slashable double-sign evidence.
-  A threshold hop shows only its last block, so a divergent history can hide where it split. Its
-  divergence from a proved final point is still a kill: a block at the final point's height that
+  game with both signed blocks of one height discloses the double-sign; the resulting fraud-proof
+  slash suppresses any timeout ([`INV-DIS-7-9GGZSD`](disputes.md#inv-dis-7-9ggzsd)), making the
+  cross-history comparison moot. A compact divergent history does not always show the double-sign:
+  a threshold hop shows only its last block, so a divergent history can hide where it split, and
+  no double-sign proof can be built from it. Comparing raw `transactionCnt`/`blockHeight` values is
+  still sound: candidates either lie on one chain, where the comparison is meaningful, or their
+  conflict is slashable double-sign evidence, or the divergent one is killed in the kill period. Its
+  divergence from a proved final point is that kill: a block at the final point's height that
   commits another snapshot (`DisputeConflictsWithFinalState`), or a latest finalized point above
   the final point whose snapshot consumed fewer inbound blocks (`DisputeFinalPointRegression`),
   which is how a history that skips a later joiner's JOIN shows
@@ -489,7 +500,12 @@ anchor that moves after the dispute was built cannot frame an honest disputer (�
 replay, the latest state is backed only by the author of the proof's last block, so its outbound
 head can point to a forged block whose balance cannot be added; the total sum makes that run
 invalid instead of a revert that would stop every honest audit and the on-chain counter, and an
-out-of-gas in the sum reverts so a low gas limit never becomes a verdict. Unresolved size bounds, timeout
+out-of-gas in the sum reverts so a low gas limit never becomes a verdict. The final-point counters
+protect a joiner's final history only when someone sends the kill in the kill period (§5). Both
+counters count only a JOIN of an address outside the lower point's participant set. Known residual:
+a colluder whose own JOIN is earlier than a later joiner's can still kill that joiner's honest
+forced-inclusion dispute; this harms the joiner only while a kill also slashes the dispute's
+submitter. Unresolved size bounds, timeout
 edges, and reducer eligibility are security gaps tracked by the linked questions and audit findings.
 
 ## Requirements and invariants

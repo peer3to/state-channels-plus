@@ -65,3 +65,6 @@ Proof predicates
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P93` — `isDisputeConflictingWithFinalState` is not refused by a latest finalized point whose extra inbound blocks hold only a top-up of a participant of the final point
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P94` — `isDisputeFinalPointRegression` reverts with `ErrorInboundMessageBlockNotStored` for the upper inbound head when the run down to the lower head is not stored: the upper head is the anchor's unstored head, or the run reaches a block pruned below the anchor
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P95` — `isDisputeFinalPointRegression` finds a new participant's JOIN above a run of top-ups, from a lower head below the run and from one at its top
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P96` — `isDisputeFinalPointRegression` and `isDisputeConflictingWithFinalState` answer false when the first block of the dispute's last milestone does not decode
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P97` — `isDisputeFinalPointRegression` and `isDisputeConflictingWithFinalState` answer false when the first block of the dispute's last milestone belongs to another fork
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P98` — `isDisputeConflictingWithFinalState` answers false under a genesis start when block zero of the last milestone does not walk from the genesis

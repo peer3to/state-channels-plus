@@ -9,6 +9,16 @@ Stages a channel whose anchor precedes a later joiner's JOIN, with the joiner's 
 ## Tests
 
 - `test_K1_sideChainBypassingALaterJoinerLosesTheReductionToTheJoinersFinalHistory`: REQ-FP-7-4DD0D7.T10.P1, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P218
+- `test_K2_sideChainWhoseUnfinalTailConsumedTheJoinWithoutTheJoinersSignatureIsStillKilled`: REQ-FP-7-4DD0D7.T10.P32
+- `test_K3_disputeExtendingTheFinalPointIsNotKilledAndWinsTheReductionByLength`: REQ-FP-7-4DD0D7.T10.P33
+- `test_K4_signaturesWithheldFromOurTailLetTheAttackerProveOnlyAPointOurHeadExtends`: REQ-FP-7-4DD0D7.T10.P34
+- `test_K5_latestFinalizedPointBelowTheFinalPointWithATailPastItIsKilledByTheConflict`: REQ-FP-7-4DD0D7.T9.P16
+- `test_K8_latestFinalizedSnapshotWithAFalseLargerInboundHeightIsReadAtItsStoredHeight`: REQ-FP-7-4DD0D7.T10.P35
+- `test_K9_anchorInsideTheLastMilestoneIsTheLatestFinalizedPointNotATailBlock`: REQ-FP-7-4DD0D7.T10.P36
+- `test_K9_anchorInsideTheLastMilestoneIsTheLatestFinalizedPointOfTheConflictCheck`: REQ-FP-7-4DD0D7.T9.P17
+- `test_K11_chainAnchorAsTheFinalPointKillsASideChainBelowItsInbound`: REQ-FP-7-4DD0D7.T10.P37
+- `test_K12_unchallengedSideChainWinsTheReductionAndTheJoinerKeepsOnlyItsDeposit`: REQ-FP-7-4DD0D7.T10.P38
+- `test_K14_sideChainOmittingItsAuditingDataWithoutThePendingJoinersSignatureIsKilled`: REQ-FP-7-4DD0D7.T10.P39
 - `test_regression_latestFinalizedPointWithTheFinalPointsInboundDoesNotKill`: REQ-FP-7-4DD0D7.T10.P2, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P219
 - `test_regression_latestFinalizedPointAtTheFinalHeightDoesNotKill`: REQ-FP-7-4DD0D7.T10.P3
 - `test_regression_snapshotTheLatestFinalizedBlockDoesNotCommitDoesNotKill`: REQ-FP-7-4DD0D7.T10.P4, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P86
@@ -23,6 +33,9 @@ Stages a channel whose anchor precedes a later joiner's JOIN, with the joiner's 
 - `test_lookup_anchorInboundHeadOutsideStorageReadsTheAnchorsHeight`: REQ-FP-7-4DD0D7.T10.P7, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P83
 - `test_lookup_inboundHashNeitherStoredNorTheAnchorHeadReverts`: REQ-FP-7-4DD0D7.T10.P8, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P84, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P220
 - `test_lookup_conflictWithAnInboundHashNeitherStoredNorTheAnchorHeadReverts`: REQ-FP-7-4DD0D7.T9.P13, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P91, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P221
+- `test_latestFinalized_undecodableFirstBlockOfTheLastMilestoneGivesFalseOnBothChecks`: REQ-FP-7-4DD0D7.T10.P40, REQ-FP-7-4DD0D7.T9.P18, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P96
+- `test_latestFinalized_firstBlockOfTheLastMilestoneOnAnotherForkGivesFalseOnBothChecks`: REQ-FP-7-4DD0D7.T10.P41, REQ-FP-7-4DD0D7.T9.P19, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P97
+- `test_latestFinalized_genesisBlockZeroThatDoesNotWalkFromTheGenesisGivesFalse`: REQ-FP-7-4DD0D7.T9.P20, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P98
 - `test_regression_largestKillWithinTheCalldataLimitFitsTheGasLimit`: REQ-FP-7-4DD0D7.T10.P9
 - `test_regression_finalPointWhoseExtraInboundIsOnlyATopUpDoesNotKill`: REQ-FP-7-4DD0D7.T10.P26, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P92
 - `test_regression_finalPointWhoseExtraInboundHoldsATopUpAndANewJoinerKills`: REQ-FP-7-4DD0D7.T10.P27

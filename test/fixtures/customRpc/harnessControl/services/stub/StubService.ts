@@ -681,6 +681,8 @@ export class StubService extends ANetworkRpcService<
     private slashRecoveryCount = 0;
     private restoreSlashRecovery?: () => void;
     readonly stubOriginals = new Map<StubKey, unknown>();
+    /** Heights the unprovable-final-point stub refuses to prove. */
+    private readonly unprovableFinalHeights = new Set<BlockHeight>();
     /** Set by the record-dispute-ack stub when its method fires. */
     disputeAckRequestCalled = false;
     /** Set by the record-unsafe-set-latest-state stub when it fires. */
@@ -2423,20 +2425,18 @@ export class StubService extends ANetworkRpcService<
     /**
      * Fault: this peer cannot prove the final point at `blockHeight`
      * (`tryBuildFinalProofAt` answers undefined there), as when the
-     * material for that height is missing. Other heights build as usual.
+     * material for that height is missing. Each call adds one height;
+     * other heights build as usual.
      */
-    public stubUnprovableFinalPointAt(blockHeight: number): void {
+    public stubUnprovableFinalPointAt(blockHeight: BlockHeight): void {
         const agreementManager = this.sm.agreementManager;
-        if (!this.stubOriginals.has("unprovableFinalPoint"))
-            this.stubOriginals.set(
-                "unprovableFinalPoint",
-                agreementManager.tryBuildFinalProofAt.bind(agreementManager)
-            );
-        const build = this.stubOriginals.get(
-            "unprovableFinalPoint"
-        ) as typeof agreementManager.tryBuildFinalProofAt;
+        this.unprovableFinalHeights.add(blockHeight);
+        if (this.stubOriginals.has("unprovableFinalPoint")) return;
+        const build =
+            agreementManager.tryBuildFinalProofAt.bind(agreementManager);
+        this.stubOriginals.set("unprovableFinalPoint", build);
         agreementManager.tryBuildFinalProofAt = async (forkId, finalHeight) =>
-            finalHeight === blockHeight
+            this.unprovableFinalHeights.has(finalHeight)
                 ? undefined
                 : build(forkId, finalHeight);
     }
@@ -2447,6 +2447,7 @@ export class StubService extends ANetworkRpcService<
         this.sm.agreementManager.tryBuildFinalProofAt =
             original as typeof this.sm.agreementManager.tryBuildFinalProofAt;
         this.stubOriginals.delete("unprovableFinalPoint");
+        this.unprovableFinalHeights.clear();
         return true;
     }
 

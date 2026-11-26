@@ -962,7 +962,10 @@ export class RpcStubActions<
         };
     }
 
-    /** Peer `peerIndex` cannot prove its final point at `blockHeight`. */
+    /**
+     * Peer `peerIndex` cannot prove its final point at `blockHeight`. Each
+     * call adds one height; `restore` clears them all.
+     */
     async makeFinalPointUnprovable(
         peerIndex: number,
         blockHeight: number

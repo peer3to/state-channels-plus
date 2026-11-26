@@ -6,6 +6,7 @@ import type EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type NetworkTransport from "@/transport/NetworkTransport";
+import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import type { LocalDiamondContract } from "@/utils/localDiamond";
 import { RuntimeRpcControl } from "@test/fixtures/runtimeRpc/RuntimeRpcControl";
 import type { StateChannelManagerInterface } from "@typechain-types";
@@ -114,6 +115,8 @@ export type MirrorReadSide = {
     failures: string[];
     /** ethers error codes of failed reads ("" when the error has none). */
     failureCodes: string[];
+    /** Custom error names of failed reads ("" when the error decodes to none). */
+    failureErrorNames: string[];
 };
 
 export type MirrorReadObservation = {
@@ -138,7 +141,8 @@ const emptySide = (): MirrorReadSide => ({
     reads: 0,
     answers: [],
     failures: [],
-    failureCodes: []
+    failureCodes: [],
+    failureErrorNames: []
 });
 
 /** A peer's real connection to the executor runtime of its local diamond. */
@@ -230,7 +234,8 @@ export class MirrorService extends ANetworkRpcService<
             reads: side.reads,
             answers: [...side.answers],
             failures: [...side.failures],
-            failureCodes: [...side.failureCodes]
+            failureCodes: [...side.failureCodes],
+            failureErrorNames: [...side.failureErrorNames]
         });
         return { local: copy(local), chain: copy(chain) };
     }
@@ -478,6 +483,9 @@ export class MirrorService extends ANetworkRpcService<
                 ? error.code
                 : ((error as { code?: unknown } | null)?.code ?? "");
             side.failureCodes.push(String(code));
+            side.failureErrorNames.push(
+                tryDecodeCustomError(error)?.name ?? ""
+            );
             throw error;
         }
     }

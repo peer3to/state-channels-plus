@@ -123,6 +123,13 @@ Thus a fully colluding group can lose both its forged-balance dispute and its co
 real-state disputes; the honest auditor then supplies its own dispute for reduction. If the real
 final point is retained first, the conflicting forged dispute is killed against that point.
 
+The two final-history counters (`DisputeConflictsWithFinalState`, then `DisputeFinalPointRegression`)
+are tried before the proof tiers, again after each valid tier walk, and again when the verified
+proof cannot be persisted because one of its blocks conflicts with the auditor's stored history:
+the auditor's final point can advance while the audit runs. A counter is stored only when the
+chain's own check agrees. Stage 5 sends it as the kill in front of the auditor's own dispute, so
+the auditor's final history stays in the window for reduction.
+
 Replay the last milestone's tail from each tier's verified state. A failed earlier replay cannot
 accuse the submitter until the canonical chain start has been tried. Do not carry a corrupt
 pre-anchor replay state into that attempt. Check the latest claimed state, slash set, balance

@@ -160,7 +160,7 @@ Audit order and evidence
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P139` — An omitted-data dispute whose `onChainSlashes` lists a participant the chain never slashed gets `DisputeOnChainSlashesNotSubset` before any state-proof walk or snapshot lookup
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P140` — An omitted-data dispute whose latest finalized snapshot the auditor holds gets `DisputeFinalPointRegression` over that stored snapshot
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P141` — A latest finalized point at or below the auditor's latest final point gets the regression proof from the highest final point the auditor proves below it
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P142` — A conflicting final block the chain refuses on its inbound check yields no conflict proof and no regression proof
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P142` — A conflicting final block the chain refuses on its inbound check yields no conflict proof and no regression proof; the audit goes on to its other counters
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P143` — A chain regression check that fails with another error than `ErrorInboundMessageBlockNotStored` makes the audit throw and store no proof
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P144` — A latest finalized point right above the anchor, with no provable final point below it, sends no regression check to the chain
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P145` — A latest finalized point above an unprovable latest final point sends no regression check to the chain
@@ -168,6 +168,8 @@ Audit order and evidence
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P147` — A conflict candidate whose chain check reverts with `ErrorInboundMessageBlockNotStored` is skipped without a conflict proof, and the audit continues to the walk's counter
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P148` — A latest finalized point whose inbound head the auditor's stored inbound blocks put at or above its final point's sends no regression check to the chain
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P149` — A final point whose stored inbound run above the latest finalized point's head holds only a top-up of a participant sends no regression check to the chain
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P150` — A latest finalized point at block zero of a genesis start has no final point below it and sends no regression check to the chain
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P151` — A verified proof that cannot be persisted because a block now conflicts with stored history makes the audit try the final-history counters again, and a regression that became provable during the audit is stored
 
 ## UNIT-TEST-DISPUTE-VALIDATION-SERVICE-2-7H4K2D
 
