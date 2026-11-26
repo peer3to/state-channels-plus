@@ -1,9 +1,9 @@
 import type StateManager from "../StateManager";
 import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
+import { hasStraySignatures } from "@/agreementManager/AgreementManager";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { BlockValidationResult } from "@/types";
-import { Address } from "@/types/types";
-import { difference, getChecksumAddress, isSubset, Logger } from "@/utils";
+import { difference, Logger } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 
@@ -57,56 +57,32 @@ export default class StoredBlockMergeService {
             return strategy.noNewSignaturesOnExistingBlock(block);
         }
 
-        const participants = new Set<Address>(
-            sm.storage
-                .getParticipantsUnion(
-                    existingBlock.coordinates,
-                    existingBlock.stateSnapshotHash
-                )
-                .map((participant) => getChecksumAddress(participant))
+        const previous = sm.storage.getPreviousStateSnapshot(block.coordinates);
+        const resulting = sm.storage.stateSnapshots.getStateSnapshotByHash(
+            block.stateSnapshotHash
+        );
+        const admission = await sm.agreementManager.getSignerAdmission(
+            block,
+            newSignatures,
+            previous,
+            resulting
         );
 
-        const newSignerAddresses = new Set<Address>(
-            Array.from(newSignatures).map((signature) =>
-                getChecksumAddress(block.signatureToAddress(signature))
-            )
-        );
-
-        if (!isSubset(newSignerAddresses, participants)) {
-            const unexpectedSigners = difference(
-                newSignerAddresses,
-                participants
-            );
-            const unexpectedSignatures = new Set(
-                Array.from(newSignatures).filter((signature) =>
-                    unexpectedSigners.has(
-                        getChecksumAddress(
-                            block.signatureToAddress(signature)
-                        ) as Address
-                    )
-                )
-            );
+        if (hasStraySignatures(admission)) {
             this.logger.warn(
                 "maybeMergeStoredBlockConfirmation - signers outside the participant union",
                 {
                     strategy: strategy.name,
                     block: LoggerUtils.getBlockMetadata(block, sm.storage),
-                    unexpectedSigners: Array.from(unexpectedSigners),
-                    participants: Array.from(participants)
+                    ...LoggerUtils.getSignerAdmissionMetadata(block, admission)
                 }
-            );
-            const previous = sm.storage.getPreviousStateSnapshot(
-                block.coordinates
-            );
-            const resulting = sm.storage.stateSnapshots.getStateSnapshotByHash(
-                block.stateSnapshotHash
             );
             const participantSnapshots =
                 previous && resulting ? { previous, resulting } : undefined;
             const validationResult =
                 await strategy.notAllSingersAreParticipants(
                     entry,
-                    unexpectedSignatures,
+                    admission,
                     participantSnapshots
                 );
             if (validationResult !== BlockValidationResult.SUCCESS) {

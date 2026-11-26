@@ -3,6 +3,7 @@ import AValidationStrategy, {
 } from "./AValidationStrategy";
 import type BlockValidationStrategy from "./BlockValidationStrategy";
 import type BlockQueueManager from "../ingest/BlockQueueManager";
+import type { SignerAdmission } from "@/agreementManager/AgreementManager";
 import { Block } from "@/models";
 import type P2PManager from "@/P2PManager";
 import Storage from "@/storage";
@@ -92,29 +93,36 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
 
     public async notAllSingersAreParticipants(
         entry: QueuedBlockEntry,
-        unexpectedSignatures: Set<Signature>,
+        admission: SignerAdmission,
         _participantSnapshots?: ParticipantSnapshots
     ): Promise<BlockValidationResult> {
         const block = entry.block;
+        const { foreign, viewDependent, unresolved } = admission;
         // The peers that supplied stray signatures are byzantine — cut them,
         // resolved from the entry's signature -> source map.
-        this.blockQueueManager.disconnectPeersForSignatures(
-            entry,
-            unexpectedSignatures
-        );
-        if (unexpectedSignatures.has(block.originalSignature)) {
+        this.blockQueueManager.disconnectPeersForSignatures(entry, foreign);
+        if (foreign.has(block.originalSignature)) {
             // Garbage author outside the participant union - not a channel
             // member, so nobody to slash and no dispute. Blacklist the signers
             // of the junk block and drop it; keep spectating.
-            for (const signature of unexpectedSignatures) {
+            for (const signature of foreign) {
                 this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
                     block.signatureToAddress(signature)
                 );
             }
             return BlockValidationResult.DISCONNECT;
         }
+        if (unresolved.size > 0) {
+            // admission needs a consumed inbound run this node lacks: wait
+            // for it, never reject
+            this.blockQueueManager.restoreQueuedEntry(entry, this);
+            return BlockValidationResult.NOT_READY;
+        }
         // Stray confirmation signatures don't invalidate an otherwise valid block.
-        block.removeConfirmationSignatures(unexpectedSignatures);
+        // A view-dependent signer is stripped without penalty to its supplier.
+        block.removeConfirmationSignatures(
+            new Set([...foreign, ...viewDependent])
+        );
         return BlockValidationResult.SUCCESS;
     }
     public async noNewSignaturesOnExistingBlock(

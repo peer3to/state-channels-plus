@@ -12,6 +12,7 @@
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
+- [`REQ-BLOCK-PIPE-11-DCHAJ2` (Signature admission by participant union)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2)
 
 ## UNIT-TEST-BLOCK-INGEST-1-JV64AS
 

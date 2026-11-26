@@ -5,6 +5,7 @@
 ## Requirements
 
 - [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)
+- [`REQ-BLOCK-PIPE-11-DCHAJ2` (Signature admission by participant union)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2)
 
 ## UNIT-TEST-AVALIDATION-STRATEGY-1-N6Z4YR
 

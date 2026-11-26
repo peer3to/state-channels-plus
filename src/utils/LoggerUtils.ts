@@ -5,6 +5,7 @@ import { hash } from "./hash";
 import { localDiamondAbi } from "./localDiamond";
 import type { Logger, LogLevel } from "./logging/Logger";
 import { difference } from "./set";
+import type { SignerAdmission } from "@/agreementManager/AgreementManager";
 import type { DoubleSignatureReport } from "@/cache";
 import Clock from "@/Clock";
 import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
@@ -29,6 +30,7 @@ import {
     ForkId,
     FunctionSelector,
     Hash,
+    Signature,
     Timestamp
 } from "@/types/types";
 import {
@@ -556,6 +558,23 @@ export class LoggerUtils {
             message: format(String(report.message)),
             firstSignature: format(String(report.firstSignature)),
             secondSignature: format(String(report.secondSignature))
+        };
+    }
+
+    /** A block's signers outside its admission union, by kind. */
+    static getSignerAdmissionMetadata(
+        block: Block,
+        admission: SignerAdmission
+    ) {
+        const signers = (signatures: Set<Signature>) =>
+            [...signatures].map((signature) =>
+                String(block.signatureToAddress(signature))
+            );
+        return {
+            author: block.signerAddress,
+            foreignSigners: signers(admission.foreign),
+            viewDependentSigners: signers(admission.viewDependent),
+            unresolvedSigners: signers(admission.unresolved)
         };
     }
 

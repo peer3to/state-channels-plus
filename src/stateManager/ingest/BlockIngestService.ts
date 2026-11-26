@@ -1,6 +1,7 @@
 import type StateManager from "../StateManager";
 import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import DisputeValidationStrategy from "../validationStrategy/DisputeValidationStrategy";
+import { hasStraySignatures } from "@/agreementManager/AgreementManager";
 import { Block } from "@/models";
 import {
     BlockOrigin,
@@ -8,8 +9,8 @@ import {
     type QueuedBlockEntry
 } from "@/storage/QueueStorage";
 import { BlockValidationResult } from "@/types";
-import { Address, Bytes } from "@/types/types";
-import { difference, Logger } from "@/utils";
+import { Bytes } from "@/types/types";
+import { Logger } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
@@ -285,33 +286,19 @@ export default class BlockIngestService {
                 return keepConnection;
             }
 
-            // Union on the participant set -> check signers
-            const allowedSigners = new Set<Address>(
-                sm.storage.getParticipantsUnionFromSnapshots(
-                    previousStateSnapshot,
-                    stateSnapshot
-                )
-            );
-            const unexpectedSigners = difference(
-                block.allSignerAddresses,
-                allowedSigners
+            // Signer admission: the signers the chain counts for finality
+            const admission = await sm.agreementManager.getSignerAdmission(
+                block,
+                block.allSignatures,
+                previousStateSnapshot,
+                stateSnapshot
             );
 
-            if (unexpectedSigners.size > 0) {
-                const blockForSignatureRecovery = block;
-                const unexpectedSignatures = new Set(
-                    Array.from(block.allSignatures).filter((signature) =>
-                        unexpectedSigners.has(
-                            blockForSignatureRecovery.signatureToAddress(
-                                signature
-                            )
-                        )
-                    )
-                );
+            if (hasStraySignatures(admission)) {
                 restoreReason = "signers not in participant union";
                 validationResult = await strategy.notAllSingersAreParticipants(
                     entry,
-                    unexpectedSignatures,
+                    admission,
                     {
                         previous: previousStateSnapshot,
                         resulting: stateSnapshot
@@ -324,9 +311,10 @@ export default class BlockIngestService {
                         validationResult:
                             BlockValidationResult[validationResult],
                         block: LoggerUtils.getBlockMetadata(block, sm.storage),
-                        author: block.signerAddress,
-                        unexpectedSigners: Array.from(unexpectedSigners),
-                        allowedSigners: Array.from(allowedSigners)
+                        ...LoggerUtils.getSignerAdmissionMetadata(
+                            block,
+                            admission
+                        )
                     }
                 );
                 if (validationResult !== BlockValidationResult.SUCCESS) {

@@ -2,6 +2,7 @@ import AValidationStrategy, {
     ParticipantSnapshots
 } from "./AValidationStrategy";
 import BlockValidationStrategy from "./BlockValidationStrategy";
+import type { SignerAdmission } from "@/agreementManager/AgreementManager";
 import { Block } from "@/models";
 import type ParticipantTimeoutService from "@/stateManager/chainFallback/ParticipantTimeoutService";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
@@ -58,13 +59,13 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
 
     public async notAllSingersAreParticipants(
         entry: QueuedBlockEntry,
-        unexpectedSignatures: Set<Signature>,
+        admission: SignerAdmission,
         participantSnapshots?: ParticipantSnapshots
     ): Promise<BlockValidationResult> {
         // a queued calldata copy merges gossip copies' signatures -> judged as gossip
         return this.blockValidationStrategy.notAllSingersAreParticipants(
             entry,
-            unexpectedSignatures,
+            admission,
             participantSnapshots
         );
     }

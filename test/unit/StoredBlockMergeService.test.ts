@@ -1,9 +1,20 @@
+import { BlockOrigin } from "@/storage/QueueStorage";
 import { BlockValidationResult } from "@/types";
 import { Codec, Type } from "@/utils";
+import {
+    localFinalizedView,
+    stageJoinThenLeave
+} from "@test/fixtures/ProofOwnerStaging";
 import {
     assertStoredCopyQuota,
     assertStoredMalformedNetworkCopy
 } from "@test/fixtures/QueueNetworkRetentionFixture";
+import {
+    restoreCommitEligibility,
+    signStoredBlockAs,
+    stageDepartureHopNotFinal,
+    stageJoinAndExitInOneHop
+} from "@test/fixtures/SignerAdmissionStaging";
 import { assertSpectatorStoredMerge } from "@test/fixtures/SpectatorSilenceFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
@@ -457,5 +468,104 @@ describe("Unit: StoredBlockMergeService", function () {
         expect(r.result).to.equal(BlockValidationResult.DUPLICATE);
         // the signature still merges - only the re-gossip is withheld
         expect(r.persistedSignatures).to.include.members(newSignatures);
+    });
+
+    describe("signer admission", function () {
+        it("a joiner whose JOIN and exit fall in one hop from this peer's final point signs the block after its exit → admitted, BROADCAST and persisted", async function () {
+            const h = TestSession.getHarness();
+            const { leaveHeight, joinerIndex } =
+                await stageJoinAndExitInOneHop(h);
+            const { confirmation, signature } = await signStoredBlockAs(
+                h,
+                0,
+                leaveHeight + 1,
+                joinerIndex
+            );
+
+            const r = await h.transition.runStoredBlockMerge({
+                peerIndex: 0,
+                confirmation: {
+                    signedBlock: confirmation.signedBlock,
+                    signatures: [
+                        ...confirmation.signatures.map(String),
+                        signature
+                    ]
+                }
+            });
+
+            // the chain counts a joiner whose JOIN the hop consumes
+            expect(r.result).to.equal(BlockValidationResult.BROADCAST);
+            expect(r.persistedSignatures).to.include(signature);
+        });
+
+        it("a leaver signs a block after its exit while its departure hop is not final at this peer → admitted, BROADCAST and persisted", async function () {
+            const h = TestSession.getHarness();
+            const { leaveHeight, joinerIndex } =
+                await stageDepartureHopNotFinal(h);
+            const { confirmation, signature } = await signStoredBlockAs(
+                h,
+                0,
+                leaveHeight + 2,
+                joinerIndex
+            );
+
+            const r = await h.transition.runStoredBlockMerge({
+                peerIndex: 0,
+                confirmation: {
+                    signedBlock: confirmation.signedBlock,
+                    signatures: [
+                        ...confirmation.signatures.map(String),
+                        signature
+                    ]
+                }
+            });
+
+            // the leaver is a participant at this peer's final point
+            expect(r.result).to.equal(BlockValidationResult.BROADCAST);
+            expect(r.persistedSignatures).to.include(signature);
+        });
+
+        it("a leaver signs a block after its exit and this peer's final point is past the exit → stripped, DUPLICATE, and the honest sender is not cut", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, leaveHeight, joinerIndex } =
+                await stageJoinThenLeave(h);
+            const { confirmation, blockHash, signature } =
+                await signStoredBlockAs(h, 0, leaveHeight + 1, joinerIndex);
+            const sender = h.getPeer(1);
+            await restoreCommitEligibility(h, 0);
+            // premise - the leaver is outside peer 0's hop
+            expect((await localFinalizedView(h, 0))!.height).to.be.at.least(
+                leaveHeight
+            );
+
+            h.event.resetEventSpies(0);
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: 0,
+                blockConfirmation: {
+                    signedBlock: confirmation.signedBlock,
+                    signatures: [...confirmation.signatures, signature]
+                },
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: sender.address
+                },
+                keepConnection: true,
+                processedKeepConnection: true
+            });
+
+            const query = h.control(h.getPeer(0)).query;
+            const after = await query
+                .getBlockByHeight(forkId, leaveHeight + 1)
+                .request();
+            expect(after!.hash).to.equal(blockHash);
+            expect(after!.confirmationSignatures).to.not.include(signature);
+            expect(after!.confirmationSignatures).to.include.members(
+                confirmation.signatures.map(String)
+            );
+            // another honest peer can count it: no penalty for its sender
+            expect(
+                await query.isBlacklisted(sender.address).request()
+            ).to.equal(false);
+        });
     });
 });

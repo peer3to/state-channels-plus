@@ -1118,10 +1118,11 @@ export class ValidationProbeService extends ANetworkRpcService<
         const earlyAuthorResult =
             await strategy.blockAuthorIsNotParticipant(entry);
         const signatureUnionResult =
-            await strategy.notAllSingersAreParticipants(
-                entry,
-                new Set([block.originalSignature])
-            );
+            await strategy.notAllSingersAreParticipants(entry, {
+                foreign: new Set([block.originalSignature]),
+                viewDependent: new Set(),
+                unresolved: new Set()
+            });
         return {
             earlyAuthorResult: BlockValidationResult[earlyAuthorResult],
             signatureUnionResult: BlockValidationResult[signatureUnionResult],

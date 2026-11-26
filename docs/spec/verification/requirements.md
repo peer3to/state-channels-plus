@@ -249,7 +249,7 @@ Specification cases tested: 1/6. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P6.
 Specification cases tested: 1/5. Untested: T1.P1, T1.P2, T1.P4, T1.P5.
 
 [`REQ-BLOCK-PIPE-11-DCHAJ2` (Signature admission by participant union)](../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2)
-Specification cases tested: 4/7. Untested: T1.P1, T1.P5, T1.P6.
+Specification cases tested: 10/13. Untested: T1.P1, T1.P5, T1.P6.
 
 [`REQ-CDSTORE-1-ECWBNY` (Coordinate-keyed calldata with exact matching)](../specification/storage/calldata-and-timeouts.md#req-cdstore-1-ecwbny)
 Specification cases tested: 2/5. Untested: T1.P1, T1.P4, T1.P5.
@@ -498,7 +498,7 @@ Specification cases tested: 1/12. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6, T
 Specification cases tested: 2/8. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P8.
 
 [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../specification/protocol-model/finality.md#req-fin-7-rtzwqz)
-Specification cases tested: 5/20. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P14, T1.P15, T1.P16, T1.P17.
+Specification cases tested: 6/21. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P14, T1.P15, T1.P16, T1.P17.
 
 [`REQ-FIN-9-B09SWY` (A JOIN that no final point consumed gives no kill)](../specification/protocol-model/finality.md#req-fin-9-b09swy)
 Specification cases tested: 2/2.

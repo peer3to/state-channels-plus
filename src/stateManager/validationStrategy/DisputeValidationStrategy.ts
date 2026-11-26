@@ -4,6 +4,7 @@ import AValidationStrategy, {
 import DisputeFraudProofService from "../dispute/DisputeFraudProofService";
 import type DisputeValidationService from "../dispute/DisputeValidationService";
 import FraudProofService from "../utils/FraudProofService";
+import type { SignerAdmission } from "@/agreementManager/AgreementManager";
 import { Block } from "@/models";
 
 import Storage from "@/storage";
@@ -144,11 +145,12 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
 
     public async notAllSingersAreParticipants(
         entry: QueuedBlockEntry,
-        unexpectedSignatures: Set<Signature>,
+        admission: SignerAdmission,
         participantSnapshots?: ParticipantSnapshots
     ): Promise<BlockValidationResult> {
         const block = entry.block;
-        if (unexpectedSignatures.has(block.originalSignature)) {
+        const { foreign, viewDependent, unresolved } = admission;
+        if (foreign.has(block.originalSignature)) {
             // The outsider author can't be slashed, but the dispute submitter
             // (a union member) packaged this block into the stateProof — kill
             // the dispute with evidence against the submitter. No transport
@@ -168,7 +170,11 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
             );
         }
         // Stray confirmation signatures don't invalidate the replayed block.
-        block.removeConfirmationSignatures(unexpectedSignatures);
+        // A replay cannot wait for a missing inbound run: an unresolved
+        // signer is stripped like the others.
+        block.removeConfirmationSignatures(
+            new Set([...foreign, ...viewDependent, ...unresolved])
+        );
         return BlockValidationResult.SUCCESS;
     }
     public async noNewSignaturesOnExistingBlock(

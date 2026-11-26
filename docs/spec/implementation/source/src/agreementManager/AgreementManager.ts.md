@@ -16,6 +16,7 @@
 - [`REQ-IX-4-BB35GC`](../../../../specification/disputes/README.md#req-ix-4-bb35gc)
 - [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)
 - [`REQ-FIN-4-ZFDDS6` (Consequently, in a channel with N participants, N consecutive blocks authored…)](../../../../specification/protocol-model/finality.md#req-fin-4-zfdds6)
+- [`REQ-BLOCK-PIPE-11-DCHAJ2` (Signature admission by participant union)](../../../../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2)
 
 ## UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D
 

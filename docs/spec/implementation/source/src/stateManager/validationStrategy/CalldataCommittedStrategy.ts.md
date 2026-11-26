@@ -6,6 +6,7 @@
 
 - [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)
 - [`REQ-DISPUTE-PIPE-12-F85KF2` (Force a timeout only over a rejected posted block)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2)
+- [`REQ-BLOCK-PIPE-11-DCHAJ2` (Signature admission by participant union)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2)
 
 ## UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ
 

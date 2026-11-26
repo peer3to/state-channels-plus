@@ -9,6 +9,7 @@
 - [`REQ-BLOCK-PIPE-8-N529VH` (Evidence precedes escalation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)
 - [`REQ-GOSSIP-3-HQZNQX` (Re-broadcast on growth)](../../../../../specification/peer-communication/block-gossip.md#req-gossip-3-hqznqx)
 - [`REQ-MSG-9-BFN9P5` (Spectating MUST be fail-closed)](../../../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5)
+- [`REQ-BLOCK-PIPE-11-DCHAJ2` (Signature admission by participant union)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2)
 
 ## UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH
 

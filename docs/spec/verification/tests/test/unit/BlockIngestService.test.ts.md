@@ -64,3 +64,6 @@ its nonce is unchanged and a rebuilt runtime for its signer engages.
 - `a forged inbound message block → forged hook fires, block rejected`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P28
 - `a rejected block carrying a real inbound run → the run is not stored, the head stays put`: none
 - `a valid block parked on the state mutex when the runtime is disposed → nothing leaves the runtime once the mutex frees`: UNIT-TEST-BLOCK-INGEST-1-JV64AS.P15
+- `a leaver signs a fresh block above its exit at a peer whose final point is past the exit → its signature is stripped, the sender is kept and not cut`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P11
+- `a key that was never in the channel signs a fresh block → its signature is stripped, the sender cut, and the block stored`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P2, REQ-BLOCK-PIPE-11-DCHAJ2.T1.P10
+- `a stray signature judged against a consumed inbound run the peer lacks after event recovery → the block waits in the queue and the sender is not cut; once the run lands the stray is stripped and the block stored`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P12

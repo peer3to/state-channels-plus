@@ -1,3 +1,4 @@
+import type { SignerAdmission } from "@/agreementManager/AgreementManager";
 import { Block, StateSnapshot } from "@/models";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { BlockValidationResult, Signature } from "@/types";
@@ -50,8 +51,9 @@ export default abstract class AValidationStrategy {
 
     /**
      * Signatures on the block recover to addresses outside the block's
-     * previous/resulting participant union. The strategy owns the side effects
-     * (filtering, disconnecting the byzantine senders, fraud proofs); SUCCESS
+     * admission union (`AgreementManager.getSignerAdmission`), by kind. The
+     * strategy owns the side effects (filtering, disconnecting the byzantine
+     * senders, fraud proofs, waiting for a missing inbound run); SUCCESS
      * means the block should continue through the pipeline with the stray
      * signatures removed. The suppliers of the stray signatures resolve from
      * the entry's per-source contribution map. Signers are derivable O(1) via
@@ -59,7 +61,7 @@ export default abstract class AValidationStrategy {
      */
     public abstract notAllSingersAreParticipants(
         entry: QueuedBlockEntry,
-        unexpectedSignatures: Set<Signature>,
+        admission: SignerAdmission,
         participantSnapshots?: ParticipantSnapshots
     ): Promise<BlockValidationResult>;
 

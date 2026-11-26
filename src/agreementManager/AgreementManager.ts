@@ -61,6 +61,29 @@ export type BuiltStateProof = {
     finalizedSnapshot: StateSnapshot;
 };
 
+/**
+ * A block's signatures outside its admission union, by kind
+ * (`getSignerAdmission`). Every other signature is admitted.
+ */
+export type SignerAdmission = {
+    /** outside the node-independent union, or an author outside the previous and resulting participants */
+    foreign: Set<Signature>;
+    /** outside this node's union but inside the node-independent one */
+    viewDependent: Set<Signature>;
+    /** judged only with a consumed inbound run this node does not hold after event recovery */
+    unresolved: Set<Signature>;
+};
+
+/** Whether `admission` holds any signature outside the admission union. */
+export function hasStraySignatures(admission: SignerAdmission): boolean {
+    return (
+        admission.foreign.size +
+            admission.viewDependent.size +
+            admission.unresolved.size >
+        0
+    );
+}
+
 /** The trusted starts a proof is verified from, in order. */
 export enum ProofTier {
     /** the latest locally finalized state in storage */
@@ -819,6 +842,84 @@ class AgreementManager {
         return pending;
     }
 
+    /**
+     * Signer admission: the block's `signatures` the chain does not count
+     * for its finality from this node's view. A signer is admitted when it is
+     * a previous or resulting participant, a joiner the block consumes, or in
+     * the hop from this node's final point to the block (a leaver whose
+     * departure is not final yet, a joiner that exits within the hop). A
+     * signer outside that union but inside the hop from the fork's genesis,
+     * which no node's view changes, is view-dependent: another honest node
+     * can admit it. The author must be a previous or resulting participant.
+     * Without the resulting snapshot only the block's own union is known.
+     */
+    public async getSignerAdmission(
+        block: Block,
+        signatures: Set<Signature>,
+        previous?: StateSnapshot,
+        resulting?: StateSnapshot
+    ): Promise<SignerAdmission> {
+        const admission: SignerAdmission = {
+            foreign: new Set(),
+            viewDependent: new Set(),
+            unresolved: new Set()
+        };
+        const members = new Set<Address>(
+            this.storage.getParticipantsUnionFromSnapshots(previous, resulting)
+        );
+        const blockUnion = new Set<Address>([
+            ...members,
+            ...this.getJoiners(block.messageBlocks)
+        ]);
+        let outside = new Set<Signature>();
+        for (const signature of signatures) {
+            const signer = block.signatureToAddress(signature);
+            if (signature === block.originalSignature) {
+                if (!members.has(signer)) admission.foreign.add(signature);
+            } else if (!blockUnion.has(signer)) outside.add(signature);
+        }
+        if (outside.size === 0) return admission;
+        const genesis = this.storage.stateSnapshots.getGenesisSnapshotByForkId(
+            block.forkId
+        );
+        if (!resulting || !genesis) {
+            for (const signature of outside) admission.foreign.add(signature);
+            return admission;
+        }
+
+        // this node's union: the hop from its final point to the block
+        const finalPoint =
+            (await this.getLocalFinalizedSnapshot(block.forkId)) ??
+            (await this.getConstructionStart(block.forkId)).snapshot;
+        if (finalPoint.blockHeight < block.height) {
+            const nodeUnion = await this.getHopSigners(finalPoint, resulting);
+            if (!nodeUnion) {
+                admission.unresolved = outside;
+                return admission;
+            }
+            outside = new Set(
+                [...outside].filter(
+                    (signature) =>
+                        !nodeUnion.has(block.signatureToAddress(signature))
+                )
+            );
+            if (outside.size === 0) return admission;
+        }
+
+        // the node-independent union: the hop from the fork's genesis
+        const forkUnion = await this.getHopSigners(genesis, resulting);
+        if (!forkUnion) {
+            admission.unresolved = outside;
+            return admission;
+        }
+        for (const signature of outside) {
+            if (forkUnion.has(block.signatureToAddress(signature)))
+                admission.viewDependent.add(signature);
+            else admission.foreign.add(signature);
+        }
+        return admission;
+    }
+
     private async computeLocalFinalizedSnapshot(
         forkId: ForkId,
         latestHeight: BlockHeight
@@ -1075,26 +1176,41 @@ class AgreementManager {
             this.storage.stateSnapshots.getStateSnapshotByHash(
                 thresholdBlock.stateSnapshotHash
             )!;
-        const upper = resultingSnapshot.snapshotData
+        const signers = await this.getHopSigners(
+            previousThresholdSnapshot,
+            resultingSnapshot
+        );
+        if (!signers)
+            throw new Error(
+                `Cannot build a state proof: the inbound run consumed by the hop to block ${thresholdBlock.height} is unavailable`
+            );
+        return signers;
+    }
+
+    /**
+     * The signers the chain counts for one hop: the start's and the resulting
+     * participants plus every joiner whose JOIN the hop consumes. Undefined
+     * when the consumed run is missing after event recovery.
+     */
+    private async getHopSigners(
+        start: StateSnapshot,
+        resulting: StateSnapshot
+    ): Promise<Set<Address> | undefined> {
+        const upper = resulting.snapshotData
             .latestInboundMessageBlockHash as Hash;
-        const lower = previousThresholdSnapshot.snapshotData
-            .latestInboundMessageBlockHash as Hash;
+        const lower = start.snapshotData.latestInboundMessageBlockHash as Hash;
         const consumedRun =
             upper === lower
                 ? []
                 : await this.eventSyncService.loadSynchronizedInboundRun(
                       upper,
                       lower,
-                      previousThresholdSnapshot.timestamp
+                      start.timestamp
                   );
-        if (!consumedRun)
-            throw new Error(
-                `Cannot build a state proof: the inbound run consumed by the hop to block ${thresholdBlock.height} is unavailable`
-            );
+        if (!consumedRun) return undefined;
         return new Set<Address>([
-            ...(previousThresholdSnapshot.snapshotData
-                .participants as Address[]),
-            ...(resultingSnapshot.snapshotData.participants as Address[]),
+            ...(start.snapshotData.participants as Address[]),
+            ...(resulting.snapshotData.participants as Address[]),
             ...this.getJoiners(consumedRun)
         ]);
     }

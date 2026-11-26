@@ -9,6 +9,7 @@
 - [`REQ-DACK-3-J4Z33Y` (Knowledge-gated consequences)](../../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-3-j4z33y)
 - [`REQ-GOSSIP-3-HQZNQX` (Re-broadcast on growth)](../../../../../specification/peer-communication/block-gossip.md#req-gossip-3-hqznqx)
 - [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)
+- [`REQ-BLOCK-PIPE-11-DCHAJ2` (Signature admission by participant union)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2)
 
 ## UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH
 

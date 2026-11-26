@@ -23,3 +23,6 @@ Drive the real merge service under live, spectating, calldata and dispute strate
 - `under CalldataCommittedStrategy a genuine new signature from a merged gossip copy → BROADCAST and persisted, as the live strategy`: UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P8, UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P23
 - `under CalldataCommittedStrategy a stray signature → stripped as the live strategy does, lands DUPLICATE`: UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P16
 - `under DisputeValidationStrategy a genuine new signature → DUPLICATE, not re-gossiped`: UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P9
+- `a joiner whose JOIN and exit fall in one hop from this peer's final point signs the block after its exit → admitted, BROADCAST and persisted`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P8
+- `a leaver signs a block after its exit while its departure hop is not final at this peer → admitted, BROADCAST and persisted`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P9
+- `a leaver signs a block after its exit and this peer's final point is past the exit → stripped, DUPLICATE, and the honest sender is not cut`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P11

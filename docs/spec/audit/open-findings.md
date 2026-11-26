@@ -3278,3 +3278,21 @@ Required evidence: [`REQ-SYNC-1-T2589H.T1.P16`](../specification/peer-communicat
 outcomes and best-effort gossip.
 
 The old queued-exclusion implementation and its unsupported whole-tree coverage credit have been removed. The current [service contract](../implementation/source/src/rpc/internal/services/logger/LoggerService.ts.md) has no per-origin summary. Its [exact tests](../verification/tests/test/utils/logging/LoggerService.test.ts.md) observe local outcomes, generation behavior and receiver arrivals. This disposition does not claim that the former algorithm was correct.
+
+<a id="find-block-pipe-1-papn2b"></a>
+
+### FIND-BLOCK-PIPE-1-PAPN2B — A block deferred for a missing inbound run is retried without a pause
+
+When a counter-signature can be judged only with a consumed inbound run the node lacks after event
+recovery, the block returns to the queue with no verdict
+([`REQ-BLOCK-PIPE-11-DCHAJ2` (Signature admission by participant union)](../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2)).
+The queue drain then takes the same next-height entry again at once. Every retry repeats the chain
+log search for the run; a live retry also re-executes the transition. Live gossip retries until the run is
+stored or the entry's queue lifetime ends. The stored-block merge settles the restored entry as a
+past block, which schedules the merge again, so it retries until the run is stored. A node can reach
+this state only while it misses a consumed run that event recovery cannot return; a supplier
+cannot cause that, but it can keep the loop running by attaching a stray signature.
+
+**Status:** Open. Needs an engineer decision. Directions, none chosen: (1) drain the deferred entry
+again only when an inbound run is stored; (2) back off the retry for a deferred entry; (3) bound the
+merge-path retry by the entry's queue lifetime, as on the live path.

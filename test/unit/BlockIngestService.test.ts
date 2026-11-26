@@ -1,8 +1,9 @@
 import * as factory from "../factory";
 import { DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT } from "@/evm/contractExecutor/ContractExecutor";
+import Block from "@/models/Block";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type { Address, Bytes, Hash } from "@/types/types";
-import { Codec, Type } from "@/utils";
+import { Codec, hash, sleep, Type } from "@/utils";
 import {
     encodeLinkedNextBlock,
     signEncodedBlock
@@ -12,9 +13,16 @@ import {
     BUDGET_ABOVE_DEFAULT,
     TRANSACTION_CAP_ABOVE_BUDGET
 } from "@test/fixtures/LocalEvmCallGas.fixture";
+import {
+    decodeConfirmation,
+    localFinalizedView,
+    stageJoinThenLeave
+} from "@test/fixtures/ProofOwnerStaging";
+import { stageUnobservedInboundTopUp } from "@test/fixtures/SignerAdmissionStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
+import { ethers } from "ethers";
 
 // the pipeline is entered the way production does: through the queue
 // (transition.ingestBlockConfirmation) or, for callers with no transport, by
@@ -391,6 +399,186 @@ describe("Unit: BlockIngestService", function () {
                     .query.isBlacklisted(h.getPeer(2).address)
                     .request()
             ).to.equal(false);
+        });
+    });
+
+    describe("onBlockConfirmation → signer admission", function () {
+        it("a leaver signs a fresh block above its exit at a peer whose final point is past the exit → its signature is stripped, the sender is kept and not cut", async function () {
+            const h = TestSession.getHarness();
+            const { leaveHeight, joinerIndex } = await stageJoinThenLeave(h);
+            const { leader, observer, authored, startHeight, forkId } =
+                await h.transition.authorNextBlockOffWireWait();
+            const confirmation = decodeConfirmation(
+                authored.encodedBlockConfirmation
+            );
+            const leaverSignature = await h
+                .getPeer(joinerIndex)
+                .signer.signMessage(ethers.getBytes(authored.hash));
+            // premise - the leaver is outside this peer's hop
+            expect(
+                (await localFinalizedView(h, observer.index))!.height
+            ).to.be.at.least(leaveHeight);
+
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: observer.index,
+                blockConfirmation: {
+                    signedBlock: confirmation.signedBlock,
+                    signatures: [
+                        ...confirmation.signatures,
+                        leaverSignature as Bytes
+                    ]
+                },
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: leader.address
+                },
+                keepConnection: true,
+                processedKeepConnection: true
+            });
+
+            const stored = await h
+                .control(observer)
+                .query.getBlockByHeight(forkId, startHeight)
+                .request();
+            expect(stored!.hash).to.equal(authored.hash);
+            expect(stored!.confirmationSignatures).to.not.include(
+                leaverSignature
+            );
+            // another honest peer can count it: no penalty for its sender
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlacklisted(leader.address)
+                    .request()
+            ).to.equal(false);
+        });
+
+        it("a key that was never in the channel signs a fresh block → its signature is stripped, the sender cut, and the block stored", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const { leader, observer, authored, startHeight, forkId } =
+                await h.transition.authorNextBlockOffWireWait();
+            const confirmation = decodeConfirmation(
+                authored.encodedBlockConfirmation
+            );
+            const straySignature = signEncodedBlock(
+                factory.randomWallet(),
+                confirmation.signedBlock.encodedBlock as Bytes
+            );
+
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: observer.index,
+                blockConfirmation: {
+                    signedBlock: confirmation.signedBlock,
+                    signatures: [
+                        ...confirmation.signatures,
+                        straySignature as Bytes
+                    ]
+                },
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: leader.address
+                },
+                waitForProcessed: false
+            });
+
+            const query = h.control(observer).query;
+            await waitFor(
+                async () =>
+                    (await query.isBlacklisted(leader.address).request()) &&
+                    (await query
+                        .getBlockByHeight(forkId, startHeight)
+                        .request()) !== null,
+                h.event.protocolEventTimeoutMs()
+            );
+            const stored = await query
+                .getBlockByHeight(forkId, startHeight)
+                .request();
+            expect(stored!.hash).to.equal(authored.hash);
+            expect(stored!.confirmationSignatures).to.not.include(
+                straySignature
+            );
+        });
+
+        it("a stray signature judged against a consumed inbound run the peer lacks after event recovery → the block waits in the queue and the sender is not cut; once the run lands the stray is stripped and the block stored", async function () {
+            const h = TestSession.getHarness();
+            const lagging = 2;
+            const { held, topUpHash } = await stageUnobservedInboundTopUp(
+                h,
+                lagging
+            );
+            const { leader, observer, authored, startHeight, forkId } =
+                await h.transition.authorNextBlockOffWireWait({
+                    observerIndex: lagging
+                });
+            const confirmation = decodeConfirmation(
+                authored.encodedBlockConfirmation
+            );
+            const query = h.control(observer).query;
+            // premise - the block consumes the top-up the observer never stored
+            expect(
+                Block.fromBlockConfirmation(confirmation).messageBlocks.map(
+                    (messageBlock) =>
+                        hash(Codec.encode(messageBlock, Type.MessageBlock))
+                )
+            ).to.include(topUpHash);
+            expect(
+                await query.getInboundMessageBlock(topUpHash).request()
+            ).to.equal(null);
+            const straySignature = signEncodedBlock(
+                factory.randomWallet(),
+                confirmation.signedBlock.encodedBlock as Bytes
+            );
+
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: observer.index,
+                blockConfirmation: {
+                    signedBlock: confirmation.signedBlock,
+                    signatures: [
+                        ...confirmation.signatures,
+                        straySignature as Bytes
+                    ]
+                },
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: leader.address
+                },
+                keepConnection: true,
+                waitForProcessed: false
+            });
+            // the block is judged once without a verdict on the sender
+            await h.event.waitForBlockConfirmationProcessed({
+                peerIndex: observer.index,
+                blockHash: authored.hash,
+                keepConnection: true
+            });
+            // absence window: the queue drain re-judges a next-height entry
+            // within milliseconds; a verdict would have cut the sender and
+            // stored the block by now
+            await sleep(2_000);
+            expect(
+                await query.getBlockByHeight(forkId, startHeight).request()
+            ).to.equal(null);
+            expect(
+                await query.isBlacklisted(leader.address).request()
+            ).to.equal(false);
+
+            await held.release();
+            await waitFor(
+                async () =>
+                    (await query.isBlacklisted(leader.address).request()) &&
+                    (await query
+                        .getBlockByHeight(forkId, startHeight)
+                        .request()) !== null,
+                h.event.protocolEventTimeoutMs()
+            );
+            const stored = await query
+                .getBlockByHeight(forkId, startHeight)
+                .request();
+            expect(stored!.hash).to.equal(authored.hash);
+            expect(stored!.confirmationSignatures).to.not.include(
+                straySignature
+            );
         });
     });
 
