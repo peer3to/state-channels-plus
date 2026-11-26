@@ -199,21 +199,11 @@ Every member runs the same seven steps:
 7. Collect the other members' signatures.
 
 ```mermaid
-flowchart TD
-    R0["round-start read (§3)"] --> S1["1. send own view to R"]
-    S1 --> S2{"2. audit each view:<br/>blocks executed here?<br/>proofs hold on chain?<br/>auditor accepts?"}
-    S2 -- "a check fails" --> X["round ends: today's path"]
-    S2 -- "all pass" --> S3["3. find proven cheaters T,<br/>wait for views from R − T"]
-    S3 -- "view missing when timer A runs out" --> X
-    S3 --> S4["4. merge with reduce"]
-    S4 -- "two leavers, or no reason of its own" --> X
-    S4 --> S5{"5. audit the merged dispute"}
-    S5 -- "rejected" --> X
-    S5 -- "accepted" --> S6["6. write signed record,<br/>sign once, send signature"]
-    S6 --> S7{"7. signatures from all of R − T,<br/>over the same digest?"}
-    S7 -- "invalid, different digest,<br/>or timer A runs out" --> X
-    S7 -- "full set" --> Done["submit (§7)"]
+flowchart LR
+    A[send view] --> B[audit views] --> C["wait for R − T"] --> D[merge] --> E[audit merge] --> F[sign] --> G[collect]
 ```
+
+Any failed check, a missing view when the timer runs out, or a signature over a different digest ends the round, and the member takes today's path.
 
 Below, V is the set of views a member holds, its own included.
 
