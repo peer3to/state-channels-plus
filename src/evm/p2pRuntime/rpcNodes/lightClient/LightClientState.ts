@@ -87,6 +87,12 @@ export class LightClientState extends RPCStateManager {
      * placeholder and is recorded for the next pass.
      */
     fetchMissing?: (missing: AccountStateRead) => Promise<void>;
+    /**
+     * Set for a pass whose every storage read the node is to prove: a slot
+     * held from a pushed partition answers its value and is recorded as
+     * missing too.
+     */
+    missesPushedSlots = false;
 
     constructor(options: LightClientStateOptions) {
         super({ provider: UNUSED_PROVIDER_URL, blockTag: 0n });
@@ -139,10 +145,11 @@ export class LightClientState extends RPCStateManager {
         const known = account.storage.get(slot);
         if (known !== undefined) {
             if (account.fromNode.slots.has(slot)) this.hasUsedNodeProof = true;
+            else if (this.missesPushedSlots)
+                this.missSlot(accountAddress, slot);
             return known;
         }
-        const missingSlots = this.missing(accountAddress).slots;
-        if (!missingSlots.includes(slot)) missingSlots.push(slot);
+        this.missSlot(accountAddress, slot);
         return new Uint8Array(32);
     }
 
@@ -348,6 +355,11 @@ export class LightClientState extends RPCStateManager {
             this.accounts.set(address, account);
         }
         return account;
+    }
+
+    private missSlot(address: AccountAddress, slot: StorageSlotKey): void {
+        const missingSlots = this.missing(address).slots;
+        if (!missingSlots.includes(slot)) missingSlots.push(slot);
     }
 
     private missing(address: AccountAddress): AccountStateRead {

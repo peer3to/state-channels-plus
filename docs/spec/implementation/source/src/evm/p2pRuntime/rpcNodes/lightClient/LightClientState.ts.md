@@ -8,3 +8,4 @@
 - [`REQ-LC-2-PMY1VG` (What cannot be answered from proven state goes to the endpoint)](../../../../../../../specification/runtime/light-client.md#req-lc-2-pmy1vg)
 - [`REQ-LC-5-MM0BM9` (A followed channel is subscribed on every connection)](../../../../../../../specification/runtime/light-client.md#req-lc-5-mm0bm9)
 - [`REQ-LC-9-KWXV43` (A read takes from the pushed partitions what they prove at its block)](../../../../../../../specification/runtime/light-client.md#req-lc-9-kwxv43)
+- [`REQ-LC-13-WAFW39` (Chain access can have the state of coming calls watched ahead of them)](../../../../../../../specification/runtime/light-client.md#req-lc-13-wafw39)

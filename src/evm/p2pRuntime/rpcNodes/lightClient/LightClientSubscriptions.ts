@@ -20,6 +20,8 @@ type SubscriptionId = string;
 export type SubscriptionKey = string;
 /** A key of the chain's state trie, lowercase 0x-prefixed. */
 type StorageKey = string;
+/** A chain block number. */
+type BlockNumber = number;
 
 /**
  * Most notifications kept for a subscription id the socket does not know
@@ -93,7 +95,10 @@ function isWatchOf(
         Array.isArray(watched.watched) &&
         watched.watched.every(
             (key) => typeof key === "string" && keys.has(key.toLowerCase())
-        )
+        ) &&
+        (watched.expiresAfterBlocks === undefined ||
+            (Number.isSafeInteger(watched.expiresAfterBlocks) &&
+                watched.expiresAfterBlocks >= 0))
     );
 }
 
@@ -140,8 +145,13 @@ export class LightClientSubscriptions {
     private readonly followed = new Map<ContractAddress, Set<LogTopic>>();
     /** The contract followed for itself, whose subscriptions take watched keys. */
     private watchingContract?: ContractAddress;
-    /** The keys a node confirmed it keeps current: each new subscription watches them again. */
-    private readonly watchedKeys = new Set<StorageKey>();
+    /**
+     * The keys a node confirmed it keeps current, with the last block it does
+     * so: each new subscription watches again those it still would.
+     */
+    private readonly watchedKeys = new Map<StorageKey, BlockNumber>();
+    /** The newest block a watch was answered at. */
+    private newestWatchBlock: BlockNumber = 0;
     private readonly sockets = new Map<NodeSocket, SubscribedSocket>();
     private readonly unwatchNodes: (() => void)[] = [];
     private nextKey = 0;
@@ -218,9 +228,21 @@ export class LightClientSubscriptions {
             throw new StorageProofError(
                 "The node answered no watch of the asked keys at the block"
             );
+        // a node without expiry keeps them until the subscription ends
+        const lastBlock =
+            answer.expiresAfterBlocks === undefined
+                ? Number.POSITIVE_INFINITY
+                : block.number + answer.expiresAfterBlocks;
         for (const key of answer.watched)
-            this.watchedKeys.add(key.toLowerCase());
+            this.watchedKeys.set(key.toLowerCase(), lastBlock);
+        this.newestWatchBlock = Math.max(this.newestWatchBlock, block.number);
+        this.dropExpiredKeys();
         return { proof: answer.proof };
+    }
+
+    /** Whether a subscription on a socket of `node` takes watched keys now. */
+    watchesOn(node: RpcNodeProvider): boolean {
+        return this.watchingSubscription(node) !== undefined;
     }
 
     /** Subscribes what is followed, from now on: the listener takes what the nodes push. */
@@ -238,6 +260,18 @@ export class LightClientSubscriptions {
         this.followed.clear();
         this.watchingContract = undefined;
         this.watchedKeys.clear();
+    }
+
+    /** The keys watched so far that a node still keeps current. */
+    private watchedKeysNow(): StorageKey[] {
+        this.dropExpiredKeys();
+        return [...this.watchedKeys.keys()];
+    }
+
+    /** Forgets the keys no node keeps current past the newest block a watch was answered at. */
+    private dropExpiredKeys(): void {
+        for (const [key, lastBlock] of this.watchedKeys)
+            if (lastBlock < this.newestWatchBlock) this.watchedKeys.delete(key);
     }
 
     /** The watching contract's subscription on a socket of `node` that has had its first message. */
@@ -263,7 +297,7 @@ export class LightClientSubscriptions {
         subscribed: SubscribedSocket,
         held: HeldSubscription
     ): void {
-        const keys = [...this.watchedKeys];
+        const keys = this.watchedKeysNow();
         if (keys.length === 0) return;
         void (async () => {
             if (!(await this.listener.servesWatch(subscribed.node))) return;

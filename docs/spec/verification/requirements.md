@@ -627,7 +627,13 @@ Specification cases tested: 2/2.
 Specification cases tested: 14/14.
 
 [`REQ-LC-12-VPAAP0` (Keys a read had proven are kept current on the subscription of the contract…)](../specification/runtime/light-client.md#req-lc-12-vpaap0)
-Specification cases tested: 11/13. Untested: T1.P11, T1.P12.
+Specification cases tested: 15/17. Untested: T1.P11, T1.P12.
+
+[`REQ-LC-13-WAFW39` (Chain access can have the state of coming calls watched ahead of them)](../specification/runtime/light-client.md#req-lc-13-wafw39)
+Specification cases tested: 9/9.
+
+[`REQ-LC-14-C00ZPH` (After each live commit the calldata commitments of the coming heights are…)](../specification/runtime/light-client.md#req-lc-14-c00zph)
+Specification cases tested: 6/7. Untested: T1.P7.
 
 [`REQ-LIF-1-A5BN02` (The best-case complete lifecycle needs at least two base-layer transactions)](../specification/settlement/lifecycle.md#req-lif-1-a5bn02)
 Specification cases tested: 2/13. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13.
@@ -993,7 +999,7 @@ Specification cases tested: 15/15.
 Specification cases tested: 5/5.
 
 [`REQ-STPROOF-3-NVJGR0` (A pushed partition is accepted only as its proof decides it under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0)
-Specification cases tested: 25/25.
+Specification cases tested: 26/26.
 
 [`REQ-STPROOF-4-XK5S64` (An account's nonce, balance and code are accepted only when the proof decides…)](../specification/runtime/storage-proofs.md#req-stproof-4-xk5s64)
 Specification cases tested: 19/19.

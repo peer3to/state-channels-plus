@@ -1,4 +1,4 @@
-import type { LightClient } from "./lightClient/LightClient";
+import type { LightClient, LocalCall } from "./lightClient/LightClient";
 import type { LightClientChain } from "./lightClient/LightClientChain";
 import type {
     LightClientCounters,
@@ -234,6 +234,24 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
                 contract,
                 error
             });
+        }
+    }
+
+    // Overrides MultiRpcProvider.watchAhead: the light client has the state
+    // the calls read proven in one watch on the watching subscription, so
+    // that the node keeps it current for the reads that follow. Without such
+    // a subscription it does nothing. Like followContract it never throws.
+    override async watchAhead(calls: LocalCall[]): Promise<void> {
+        const node = this.servingNode();
+        if (!node || !this.subscriptions.watchesOn(node)) return;
+        try {
+            if (!(await this.servesWatch(node))) return;
+            await (await this.getLightClient()).prepare(calls);
+        } catch (error) {
+            this.logger.warn(
+                "Light client could not watch the state of coming calls; their reads prove it",
+                { ...LoggerUtils.getRpcNodeMetadata(node.url), error }
+            );
         }
     }
 

@@ -307,32 +307,61 @@ export class LightClient {
         const evm = await this.getEvm();
         return await this.run(
             true,
-            async (environment) => {
-                try {
-                    const result = await evm.runCall({
-                        caller: request.from
-                            ? Address.fromString(request.from)
-                            : undefined,
-                        to: Address.fromString(request.to),
-                        data: getBytes(request.data),
-                        value: request.value,
-                        gasLimit: environment.gasLimit,
-                        block: this.blockOf(environment)
-                    });
-                    const data = hexlify(result.execResult.returnValue);
-                    const error = result.execResult.exceptionError;
-                    if (!error) return { kind: "return", data };
-                    if (error.error === "revert")
-                        return { kind: "revert", data };
-                    return { kind: "failure", message: error.error };
-                } finally {
-                    this.state.resetCallWrites();
-                    evm.journal.cleanJournal();
-                    evm.transientStorage.clear();
-                }
-            },
+            (environment) => this.execute(evm, request, environment),
             isCallAnswer
         );
+    }
+
+    /**
+     * Has the node prove every storage slot the calls of `requests` read at
+     * one block, also those the pushes hold, together in one request where
+     * the calls' paths allow, so that the node watches them and the reads of
+     * those calls that follow decide locally. Their outcomes are not kept,
+     * and a call that carries value is left out: it runs on the node.
+     */
+    async prepare(requests: LocalCall[]): Promise<void> {
+        const calls = requests.filter((request) => !request.value);
+        if (calls.length === 0) return;
+        const evm = await this.getEvm();
+        await this.run(
+            true,
+            async (environment) => {
+                for (const call of calls)
+                    await this.execute(evm, call, environment);
+            },
+            // preparing answers no read
+            () => false,
+            true
+        );
+    }
+
+    /** Runs `request` in the local EVM on the state held, and leaves nothing of it behind. */
+    private async execute(
+        evm: EVM,
+        request: LocalCall,
+        environment: BlockEnvironment
+    ): Promise<LocalCallOutcome> {
+        try {
+            const result = await evm.runCall({
+                caller: request.from
+                    ? Address.fromString(request.from)
+                    : undefined,
+                to: Address.fromString(request.to),
+                data: getBytes(request.data),
+                value: request.value,
+                gasLimit: environment.gasLimit,
+                block: this.blockOf(environment)
+            });
+            const data = hexlify(result.execResult.returnValue);
+            const error = result.execResult.exceptionError;
+            if (!error) return { kind: "return", data };
+            if (error.error === "revert") return { kind: "revert", data };
+            return { kind: "failure", message: error.error };
+        } finally {
+            this.state.resetCallWrites();
+            evm.journal.cleanJournal();
+            evm.transientStorage.clear();
+        }
     }
 
     /** The 32-byte word of `slot`. */
@@ -379,12 +408,15 @@ export class LightClient {
      * taken from the partitions pushed at that block, or proven by the node
      * at that block, and the read runs again from the start, so one read sees
      * one block. `isAnswer` says whether the value answers the read; one that
-     * does not, a call that failed locally, is not counted as answered.
+     * does not, a call that failed locally, is not counted as answered. With
+     * `provesEveryRead`, every storage slot the read uses is proven by the
+     * node, also one the partitions hold.
      */
     private async run<T>(
         needsEnvironment: boolean,
         read: (environment: BlockEnvironment) => Promise<T>,
-        isAnswer: (value: T) => boolean = () => true
+        isAnswer: (value: T) => boolean = () => true,
+        provesEveryRead = false
     ): Promise<ProvenAnswer<T>> {
         const pushed = await this.pushedBlockAtFloor();
         const block = pushed?.block ?? (await this.headAtFloor());
@@ -397,7 +429,8 @@ export class LightClient {
                 pushed,
                 needsEnvironment,
                 read,
-                isAnswer
+                isAnswer,
+                provesEveryRead
             );
         } finally {
             proofs.readers--;
@@ -412,7 +445,8 @@ export class LightClient {
         pushed: PushedBlock | undefined,
         needsEnvironment: boolean,
         read: (environment: BlockEnvironment) => Promise<T>,
-        isAnswer: (value: T) => boolean
+        isAnswer: (value: T) => boolean,
+        provesEveryRead: boolean
     ): Promise<ProvenAnswer<T>> {
         let askedNode = pushed === undefined;
         let environment = pushed?.environment;
@@ -436,7 +470,8 @@ export class LightClient {
                 this.moveTo(block, fetched);
                 // a pass counts only the state it reads itself
                 this.state.takeUsedNodeProof();
-                if (this.options.fetchesEachMiss)
+                this.state.missesPushedSlots = provesEveryRead;
+                if (this.options.fetchesEachMiss && !provesEveryRead)
                     this.state.fetchMissing = async (missing) => {
                         const undecided = this.fillFromPartitions(block, [
                             missing
@@ -476,7 +511,9 @@ export class LightClient {
                     return { value: outcome.value, block };
                 }
                 // the pass ran on placeholders: its outcome is discarded
-                undecided = this.fillFromPartitions(block, misses);
+                undecided = provesEveryRead
+                    ? this.slotsForNode(block, misses)
+                    : this.fillFromPartitions(block, misses);
             } finally {
                 this.lock.unlock();
             }
@@ -705,6 +742,34 @@ export class LightClient {
             undecided = decision.undecided;
         }
         return undecided;
+    }
+
+    /**
+     * `misses` with every slot left for the node, and the accounts and code
+     * the serving node's partitions pushed at `block` decide filled from them.
+     */
+    private slotsForNode(
+        block: ProvenBlock,
+        misses: AccountStateRead[]
+    ): AccountStateRead[] {
+        const undecided = this.fillFromPartitions(
+            block,
+            misses.map((miss) => ({ ...miss, slots: [] }))
+        );
+        return misses
+            .map(({ address, slots }) => {
+                const rest = undecided.find((read) => read.address === address);
+                return {
+                    address,
+                    slots,
+                    account: rest?.account ?? false,
+                    code: rest?.code ?? false
+                };
+            })
+            .filter(
+                ({ slots, account, code }) =>
+                    slots.length > 0 || account || code
+            );
     }
 
     /** The partitions of the subscriptions on the node the chain access sends its requests to now. */

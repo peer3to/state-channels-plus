@@ -75,6 +75,8 @@ export function isStorageBlock(
         ) &&
         Array.isArray(block.proofNodes) &&
         block.proofNodes.every(isBytes) &&
+        (block.released === undefined ||
+            (Array.isArray(block.released) && block.released.every(isBytes))) &&
         isStages(block.stages)
     );
 }

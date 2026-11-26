@@ -4142,6 +4142,23 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public recordWatchAhead(fails: boolean): boolean {
+        this.service.recordWatchAhead(fails);
+        return true;
+    }
+
+    public getWatchAheadRecord(): {
+        told: { to: string; data: string }[][];
+        warnings: string[];
+    } {
+        return this.service.getWatchAheadRecord();
+    }
+
+    public restoreWatchAhead(): boolean {
+        this.service.restoreWatchAhead();
+        return true;
+    }
+
     public stubFailDisputedForkChecks(times: number): boolean {
         this.service.stubFailDisputedForkChecks(times);
         return true;

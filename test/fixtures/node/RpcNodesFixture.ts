@@ -236,6 +236,24 @@ export async function assertDestroyFailsHeldRequest(): Promise<void> {
     });
 }
 
+export async function assertWatchAheadOfPlainProviderAsksNothing(): Promise<void> {
+    await withProxiedNodes(1, async ({ proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        const before = proxies[0].forwardedMethods.length;
+
+        await provider.watchAhead([
+            { to: Wallet.createRandom().address, data: "0x" }
+        ]);
+        await sleep(ABSENCE_WINDOW_MS);
+
+        expect(
+            proxies[0].forwardedMethods
+                .slice(before)
+                .filter((method) => method !== "eth_blockNumber")
+        ).to.deep.equal([]);
+    });
+}
+
 export async function assertTransactionSentToFirstNodeOnly(): Promise<void> {
     await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
         const provider = new MultiRpcProvider(nodes, logger);

@@ -447,4 +447,389 @@ describe("Light client watched keys", function () {
         });
         expect(fixture.loggedErrors()).to.deep.equal([]);
     });
+    it("watches what coming calls read in one watch on the followed contract's subscription, and answers those calls from the pushes after", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.followContract(contract);
+        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(first.blockNumber);
+        // a call before holds the contract's code and account, as a peer holds the manager's
+        expect(
+            await provider.call({ to: contract, data: toBeHex(5, 32) })
+        ).to.equal(toBeHex(0, 32));
+        const watchesBefore = proxy.forwardedCount(WATCH);
+        const slots = [10, 100, 101, 102];
+        const calls = slots.map((slot) => ({
+            to: contract,
+            data: toBeHex(slot, 32)
+        }));
+        const proofsBefore = fixture.forwardedCount(...PROOF_REQUESTS);
+
+        await provider.watchAhead(calls);
+
+        const watches = requestsOf(proxy.forwardedRequests, WATCH).slice(
+            watchesBefore
+        );
+        expect(watches).to.have.length(1);
+        expect(watchedKeysOf(watches[0].params)).to.deep.equal(
+            slots.map((slot) => slotKey(contract, slot)).sort()
+        );
+        expect(fixture.forwardedCount(...PROOF_REQUESTS)).to.equal(
+            proofsBefore
+        );
+        // preparing answers no read: only the call before counts
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 0,
+            withFallbackRead: 1,
+            failed: 0
+        });
+        // slot 101 takes slot 10's value plus 3; the pushes carry it
+        const second = await node.readWriteLog(contract, CHANNEL_A, 10, 101, 3);
+        await fixture.pushedThrough(second.blockNumber);
+        const requestsBefore = fixture.forwardedCount(WATCH, ...PROOF_REQUESTS);
+        const answers = [];
+        for (const call of calls) answers.push(await provider.call(call));
+        expect(answers).to.deep.equal(
+            [7, 0, 10, 0].map((value) => toBeHex(value, 32))
+        );
+        expect(fixture.forwardedCount(WATCH, ...PROOF_REQUESTS)).to.equal(
+            requestsBefore
+        );
+        expect(provider.lightClientCounters).to.deep.include({
+            fromPushedState: 4,
+            withFallbackRead: 1,
+            failed: 0
+        });
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+        expect(fixture.loggedWarningMessages()).to.deep.equal([]);
+    });
+
+    it("watches again in one watch what coming calls read where the pushes already decide it", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.followContract(contract);
+        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(first.blockNumber);
+        expect(
+            await provider.call({ to: contract, data: toBeHex(5, 32) })
+        ).to.equal(toBeHex(0, 32));
+        const slots = [10, 100];
+        const calls = slots.map((slot) => ({
+            to: contract,
+            data: toBeHex(slot, 32)
+        }));
+        await provider.watchAhead(calls);
+        // a later block: what the calls read is now held from the pushes only
+        const second = await node.readWriteLog(contract, CHANNEL_A, 5, 11, 1);
+        await fixture.pushedThrough(second.blockNumber);
+        // a read at that block takes slot 10 from the pushes first
+        expect(await provider.call(calls[0])).to.equal(toBeHex(7, 32));
+        const watchesBefore = proxy.forwardedCount(WATCH);
+        const proofsBefore = fixture.forwardedCount(...PROOF_REQUESTS);
+
+        await provider.watchAhead(calls);
+
+        const watches = requestsOf(proxy.forwardedRequests, WATCH).slice(
+            watchesBefore
+        );
+        expect(watches).to.have.length(1);
+        expect(watchedKeysOf(watches[0].params)).to.deep.equal(
+            slots.map((slot) => slotKey(contract, slot)).sort()
+        );
+        expect(fixture.forwardedCount(...PROOF_REQUESTS)).to.equal(
+            proofsBefore
+        );
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+        expect(fixture.loggedWarningMessages()).to.deep.equal([]);
+    });
+
+    it("takes the code and account of coming calls from the pushes, and watches only the slots they read", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.followContract(contract);
+        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(first.blockNumber);
+        expect(
+            await provider.call({ to: contract, data: toBeHex(5, 32) })
+        ).to.equal(toBeHex(0, 32));
+        // a later block, which no read has run at yet
+        const second = await node.readWriteLog(contract, CHANNEL_A, 5, 11, 1);
+        await fixture.pushedThrough(second.blockNumber);
+        const watchesBefore = proxy.forwardedCount(WATCH);
+        const proofsBefore = fixture.forwardedCount(...PROOF_REQUESTS);
+
+        await provider.watchAhead([{ to: contract, data: toBeHex(100, 32) }]);
+
+        const watches = requestsOf(proxy.forwardedRequests, WATCH).slice(
+            watchesBefore
+        );
+        expect(watches).to.have.length(1);
+        expect(watchedKeysOf(watches[0].params)).to.deep.equal([
+            slotKey(contract, 100)
+        ]);
+        expect(fixture.forwardedCount(...PROOF_REQUESTS)).to.equal(
+            proofsBefore
+        );
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+        expect(fixture.loggedWarningMessages()).to.deep.equal([]);
+    });
+
+    it("leaves a coming call that carries value out of the watch", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.followContract(contract);
+        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(first.blockNumber);
+        expect(
+            await provider.call({ to: contract, data: toBeHex(5, 32) })
+        ).to.equal(toBeHex(0, 32));
+        const watchesBefore = proxy.forwardedCount(WATCH);
+
+        await provider.watchAhead([
+            { to: contract, data: toBeHex(100, 32) },
+            // from a funded account, so that run locally it would read
+            {
+                from: node.senderAddress,
+                to: contract,
+                data: toBeHex(101, 32),
+                value: 1n
+            }
+        ]);
+
+        const watches = requestsOf(proxy.forwardedRequests, WATCH).slice(
+            watchesBefore
+        );
+        expect(watches).to.have.length(1);
+        expect(watchedKeysOf(watches[0].params)).to.deep.equal([
+            slotKey(contract, 100)
+        ]);
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("warns and does not throw when the watch of coming calls fails, and their reads prove the slots", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.followContract(contract);
+        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(first.blockNumber);
+        expect(
+            await provider.call({ to: contract, data: toBeHex(5, 32) })
+        ).to.equal(toBeHex(0, 32));
+        const call = { to: contract, data: toBeHex(10, 32) };
+        proxy.failNextRequest(WATCH);
+
+        await provider.watchAhead([call]);
+
+        expect(fixture.loggedWarningMessages()).to.deep.equal([
+            "Light client could not watch the state of coming calls; their reads prove it"
+        ]);
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+        const watchesBefore = proxy.forwardedCount(WATCH);
+        expect(await provider.call(call)).to.equal(toBeHex(7, 32));
+        expect(proxy.forwardedCount(WATCH)).to.equal(watchesBefore + 1);
+    });
+
+    it("asks the node nothing ahead of coming calls while the followed contract's subscription has had no message", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        // the node's messages never reach the provider
+        proxy.changeNotifications(
+            LIGHT_CLIENT_METHODS.notification,
+            () => undefined
+        );
+        provider.followContract(contract);
+        await waitFor(() => proxy.forwardedCount(SUBSCRIBE) === 1);
+        const requestsBefore = fixture.forwardedCount(WATCH, ...PROOF_REQUESTS);
+
+        await provider.watchAhead([{ to: contract, data: toBeHex(10, 32) }]);
+        await sleep(UNSENT_REQUEST_WAIT_MS);
+
+        expect(fixture.forwardedCount(WATCH, ...PROOF_REQUESTS)).to.equal(
+            requestsBefore
+        );
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+        expect(fixture.loggedWarningMessages()).to.deep.equal([]);
+    });
+
+    it("asks the node nothing ahead of coming calls where the endpoint does not list the watch", async function () {
+        fixture = await LightClientProviderFixture.start({
+            withoutWatch: true
+        });
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.followContract(contract);
+        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(first.blockNumber);
+        const requestsBefore = fixture.forwardedCount(...PROOF_REQUESTS);
+
+        await provider.watchAhead([{ to: contract, data: toBeHex(100, 32) }]);
+        await sleep(UNSENT_REQUEST_WAIT_MS);
+
+        expect(proxy.forwardedCount(WATCH)).to.equal(0);
+        expect(fixture.forwardedCount(...PROOF_REQUESTS)).to.equal(
+            requestsBefore
+        );
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("asks the node nothing ahead of coming calls while no contract is followed for itself", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.follow(contract, CHANNEL_A);
+        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(first.blockNumber);
+        const requestsBefore = fixture.forwardedCount(...PROOF_REQUESTS);
+
+        await provider.watchAhead([{ to: contract, data: toBeHex(100, 32) }]);
+        await sleep(UNSENT_REQUEST_WAIT_MS);
+
+        expect(proxy.forwardedCount(WATCH)).to.equal(0);
+        expect(fixture.forwardedCount(...PROOF_REQUESTS)).to.equal(
+            requestsBefore
+        );
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("watches a key again at the read after a change once the endpoint's expiry passed since the last watch that named it", async function () {
+        fixture = await LightClientProviderFixture.start({
+            watchedKeyBlocks: 2
+        });
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.followContract(contract);
+        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(first.blockNumber);
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(7, 32)
+        );
+        expect(proxy.forwardedCount(WATCH)).to.equal(1);
+        // more than two blocks after the watch the endpoint no longer pushes the key
+        const watchedBy = await node.provider.getBlockNumber();
+        await fixture.pushedThrough(watchedBy + 3);
+
+        const second = await node.readWriteLog(contract, CHANNEL_A, 10, 10, 1);
+        await fixture.pushedThrough(second.blockNumber);
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(8, 32)
+        );
+
+        const watches = requestsOf(proxy.forwardedRequests, WATCH);
+        expect(
+            watches.map(({ params }) => watchedKeysOf(params))
+        ).to.deep.equal([[slotKey(contract, 10)], [slotKey(contract, 10)]]);
+        expect(provider.lightClientCounters).to.deep.include({
+            withFallbackRead: 2,
+            failed: 0
+        });
+        // the push that released the key named it: taken, not refused, so no new subscription
+        expect(proxy.forwardedCount(SUBSCRIBE)).to.equal(1);
+        expect(fixture.loggedWarningMessages()).to.deep.equal([]);
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("watches again on a new subscription only the keys the endpoint still keeps current", async function () {
+        fixture = await LightClientProviderFixture.start({
+            watchedKeyBlocks: 2
+        });
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.followContract(contract);
+        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(first.blockNumber);
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(7, 32)
+        );
+        const watchedBy = await node.provider.getBlockNumber();
+        await fixture.pushedThrough(watchedBy + 3);
+        // a watch answered past slot 10's expiry: slot 11 is written, so its read needs the node
+        const second = await node.readWriteLog(contract, CHANNEL_A, 5, 11, 4);
+        await fixture.pushedThrough(second.blockNumber);
+        expect(await provider.getStorage(contract, 11)).to.equal(
+            toBeHex(4, 32)
+        );
+        expect(proxy.forwardedCount(WATCH)).to.equal(2);
+
+        await fixture.follow(contract, CHANNEL_B);
+        await waitFor(() => proxy.forwardedCount(WATCH) === 3);
+
+        const again = requestsOf(proxy.forwardedRequests, WATCH)[2];
+        expect(watchedKeysOf(again.params)).to.deep.equal([
+            slotKey(contract, 11)
+        ]);
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("refuses a watch whose expiry is not a whole number of blocks, counts the failed read and answers through the endpoint", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.followContract(contract);
+        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(first.blockNumber);
+        // a proof that decides the key, with an expiry of half a block
+        const { at, proof } = await readProofAt(fixture, contract, 10);
+        proxy.answerNextRequest(WATCH, {
+            at,
+            proof,
+            watched: [slotKey(contract, 10)],
+            expiresAfterBlocks: 0.5
+        });
+
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(7, 32)
+        );
+
+        expect(provider.lightClientCounters).to.deep.include({ failed: 1 });
+        expect(fixture.loggedErrorMessages()).to.deep.equal([FAILED_READ]);
+        expect(fixture.loggedErrors()[0].meta[0]).to.deep.include({
+            reason: "proof rejected"
+        });
+    });
+
+    it("watches a key whose watch named no expiry again on a new subscription however many blocks passed", async function () {
+        fixture = await LightClientProviderFixture.start({
+            watchedKeyBlocks: 2
+        });
+        const { node, provider, proxy } = fixture;
+        const contract = await node.deploy(PARTITION_CONTRACT);
+        await fixture.followContract(contract);
+        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
+        await fixture.pushedThrough(first.blockNumber);
+        // an endpoint without expiry: its answer names none
+        const { at, proof } = await readProofAt(fixture, contract, 10);
+        proxy.answerNextRequest(WATCH, {
+            at,
+            proof,
+            watched: [slotKey(contract, 10)]
+        });
+        expect(await provider.getStorage(contract, 10)).to.equal(
+            toBeHex(7, 32)
+        );
+        const watchedBy = await node.provider.getBlockNumber();
+        await fixture.pushedThrough(watchedBy + 3);
+        // a watch answered past where an expiry of two blocks would end
+        const second = await node.readWriteLog(contract, CHANNEL_A, 5, 11, 4);
+        await fixture.pushedThrough(second.blockNumber);
+        expect(await provider.getStorage(contract, 11)).to.equal(
+            toBeHex(4, 32)
+        );
+        expect(proxy.forwardedCount(WATCH)).to.equal(2);
+
+        await fixture.follow(contract, CHANNEL_B);
+        await waitFor(() => proxy.forwardedCount(WATCH) === 3);
+
+        const again = requestsOf(proxy.forwardedRequests, WATCH)[2];
+        expect(watchedKeysOf(again.params)).to.deep.equal(
+            [slotKey(contract, 10), slotKey(contract, 11)].sort()
+        );
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
 });

@@ -2,10 +2,12 @@ import type { AcceptedBlock } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/
 import StorageProofError from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/StorageProofError";
 import { PEER3_CHAIN_CONSTANTS } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierChainConstants";
 import FrontierPushedPartition from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierPushedPartition";
+import { contractStorageKey } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/frontierStateKeys";
 import SubstrateHeader from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateHeader";
+import type { ChecksumAddress } from "@/types/types";
 import { peer3PartitionPushes } from "@test/fixtures/lightClient/peer3PartitionPushes";
 import { expect } from "chai";
-import { toBeHex } from "ethers";
+import { getAddress, toBeHex } from "ethers";
 
 const { contract, sender, messages, blocks } = peer3PartitionPushes;
 /** The account that deployed the contract, which no transaction of the followed topic touched. */
@@ -136,6 +138,48 @@ describe("FrontierPushedPartition", function () {
         });
     });
 
+    it("takes a change that leaves out a key the node released, and refuses it when the key is not named released", function () {
+        // slot 5, held since block 1, changes at block 2; the change leaves out its value
+        const releasedKey = contractStorageKey(
+            getAddress(contract) as ChecksumAddress,
+            toBeHex(5, 32)
+        ).toLowerCase();
+        const withoutSlot5 = {
+            ...messages[2],
+            values: messages[2].values.filter(
+                ({ key }) => key.toLowerCase() !== releasedKey
+            )
+        };
+        expect(withoutSlot5.values).to.have.length(
+            messages[2].values.length - 1
+        );
+
+        const unnamed = new FrontierPushedPartition(PEER3_CHAIN_CONSTANTS);
+        taken(unnamed, messages[0]);
+        taken(unnamed, messages[1]);
+        expect(() => unnamed.accept(withoutSlot5)).to.throw(
+            StorageProofError,
+            /otherwise than the partition holds it/
+        );
+
+        const partition = new FrontierPushedPartition(PEER3_CHAIN_CONSTANTS);
+        taken(partition, messages[0]);
+        taken(partition, messages[1]);
+        taken(partition, { ...withoutSlot5, released: [releasedKey] });
+        const { decided, undecided } = partition.decide([
+            {
+                address: contract,
+                slots: [toBeHex(10, 32)],
+                account: false,
+                code: false
+            }
+        ]);
+        expect(undecided).to.deep.equal([]);
+        expect(decided[0].proven.storage).to.deep.equal([
+            blocks[2].storage["10"]
+        ]);
+    });
+
     it("refuses a change to a partition it never synced", function () {
         const partition = new FrontierPushedPartition(PEER3_CHAIN_CONSTANTS);
         expect(() => partition.accept(messages[1])).to.throw(
@@ -260,7 +304,12 @@ describe("FrontierPushedPartition", function () {
             // hex that is not whole bytes
             { ...messages[0], ethereumHeader: "0x123" },
             { ...messages[1], values: [{ key: "0x123", value: null }] },
-            { ...messages[1], proofNodes: [...messages[1].proofNodes, "0x123"] }
+            {
+                ...messages[1],
+                proofNodes: [...messages[1].proofNodes, "0x123"]
+            },
+            { ...messages[1], released: "0x" },
+            { ...messages[1], released: ["0x123"] }
         ];
         for (const message of malformed)
             expect(

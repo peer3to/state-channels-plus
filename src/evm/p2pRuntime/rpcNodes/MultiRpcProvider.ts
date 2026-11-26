@@ -1,3 +1,4 @@
+import type { LocalCall } from "./lightClient/LightClient";
 import {
     isNodeInternalError,
     NodeSocketSubscriptions,
@@ -274,6 +275,15 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
      * use for it; a subclass may.
      */
     followContract(_contract: string): void {
+        // nothing to do
+    }
+
+    /**
+     * Tells the provider that the runtime will make `calls` soon: a provider
+     * that proves what reads touch may have it proven and kept current ahead
+     * of them. Plain chain access has no use for it. Never throws.
+     */
+    async watchAhead(_calls: LocalCall[]): Promise<void> {
         // nothing to do
     }
 
