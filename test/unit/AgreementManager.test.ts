@@ -1,11 +1,20 @@
-import { hash as randomHash, randomAddress } from "../factory";
+import { hash as randomHash, randomAddress, randomWallet } from "../factory";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type { BlockHeight } from "@/types/types";
 import { Codec, Type } from "@/utils";
+import {
+    blockSnapshotHashAt,
+    localFinalizedView
+} from "@test/fixtures/ProofOwnerStaging";
+import {
+    signerAdmissionView,
+    signStoredBlockAs,
+    stageDepartureHopNotFinal
+} from "@test/fixtures/SignerAdmissionStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { ZeroHash } from "ethers";
+import { getBytes, ZeroHash } from "ethers";
 
 describe("Unit: AgreementManager", function () {
     describe("getLatestSignedBlockByParticipant", function () {
@@ -1078,6 +1087,49 @@ describe("Unit: AgreementManager", function () {
             expect(r.reducedForkId).to.equal(ZeroHash);
             expect(r.resolvedStateHash).to.equal(r.genesisStateHash);
             expect(r.reduceForkId).to.equal(r.forkId);
+        });
+    });
+
+    describe("getSignerAdmission", function () {
+        it("a stored block above an exit, every run it needs stored → the leaver is admitted at the peer whose departure hop is not final and view-dependent at the peer past the exit; a never-member key is foreign at both", async function () {
+            const h = TestSession.getHarness();
+            const { leaveHeight, joinerIndex } =
+                await stageDepartureHopNotFinal(h);
+            const height = leaveHeight + 2;
+            // premise - peer 1's final point is past the exit
+            expect((await localFinalizedView(h, 1))!.height).to.be.at.least(
+                leaveHeight
+            );
+            const { blockHash, signature: leaverSignature } =
+                await signStoredBlockAs(h, 0, height, joinerIndex);
+            const straySignature = await randomWallet().signMessage(
+                getBytes(blockHash)
+            );
+            // peer 0 lost the block below; it still holds that block's snapshot
+            const previousSnapshotHash = await blockSnapshotHashAt(
+                h,
+                1,
+                height - 1
+            );
+            const options = {
+                height,
+                previousSnapshotHash,
+                signatures: [leaverSignature, straySignature]
+            };
+
+            const atHopNotFinal = await signerAdmissionView(h, 0, options);
+            const atPastExit = await signerAdmissionView(h, 1, options);
+
+            expect(atHopNotFinal).to.deep.equal({
+                foreign: [straySignature],
+                viewDependent: [],
+                unresolved: []
+            });
+            expect(atPastExit).to.deep.equal({
+                foreign: [straySignature],
+                viewDependent: [leaverSignature],
+                unresolved: []
+            });
         });
     });
 });

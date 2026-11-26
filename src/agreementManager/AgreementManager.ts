@@ -68,9 +68,9 @@ export type BuiltStateProof = {
 export type SignerAdmission = {
     /** outside the node-independent union, or an author outside the previous and resulting participants */
     foreign: Set<Signature>;
-    /** outside this node's union but inside the node-independent one */
+    /** outside this node's union but inside the node-independent one, or not judgeable against it for a run this node lacks */
     viewDependent: Set<Signature>;
-    /** judged only with a consumed inbound run this node does not hold after event recovery */
+    /** judged only with a consumed inbound run on this node's own hop that it does not hold after event recovery */
     unresolved: Set<Signature>;
 };
 
@@ -852,6 +852,12 @@ class AgreementManager {
      * which no node's view changes, is view-dependent: another honest node
      * can admit it. The author must be a previous or resulting participant.
      * Without the resulting snapshot only the block's own union is known.
+     * Both hops end at the previous snapshot: the block's own run adds only
+     * its joiners and the resulting participants, already in its own union,
+     * so the run it carries is never read. Without the previous snapshot the
+     * hops end at the resulting one. A run missing on this node's hop defers
+     * the signer (unresolved); one missing only on the hop from the genesis
+     * cannot arrive by waiting, so the signer is view-dependent.
      */
     public async getSignerAdmission(
         block: Block,
@@ -887,12 +893,14 @@ class AgreementManager {
             return admission;
         }
 
+        const hopEnd = previous ?? resulting;
+
         // this node's union: the hop from its final point to the block
         const finalPoint =
             (await this.getLocalFinalizedSnapshot(block.forkId)) ??
             (await this.getConstructionStart(block.forkId)).snapshot;
         if (finalPoint.blockHeight < block.height) {
-            const nodeUnion = await this.getHopSigners(finalPoint, resulting);
+            const nodeUnion = await this.getHopSigners(finalPoint, hopEnd);
             if (!nodeUnion) {
                 admission.unresolved = outside;
                 return admission;
@@ -907,9 +915,11 @@ class AgreementManager {
         }
 
         // the node-independent union: the hop from the fork's genesis
-        const forkUnion = await this.getHopSigners(genesis, resulting);
+        const forkUnion = await this.getHopSigners(genesis, hopEnd);
         if (!forkUnion) {
-            admission.unresolved = outside;
+            // waiting cannot supply a run this hop needs and recovery cannot
+            // return: stripped like a view-dependent signer
+            admission.viewDependent = outside;
             return admission;
         }
         for (const signature of outside) {
@@ -1188,16 +1198,15 @@ class AgreementManager {
     }
 
     /**
-     * The signers the chain counts for one hop: the start's and the resulting
+     * The signers the chain counts for one hop: the start's and the end's
      * participants plus every joiner whose JOIN the hop consumes. Undefined
      * when the consumed run is missing after event recovery.
      */
     private async getHopSigners(
         start: StateSnapshot,
-        resulting: StateSnapshot
+        end: StateSnapshot
     ): Promise<Set<Address> | undefined> {
-        const upper = resulting.snapshotData
-            .latestInboundMessageBlockHash as Hash;
+        const upper = end.snapshotData.latestInboundMessageBlockHash as Hash;
         const lower = start.snapshotData.latestInboundMessageBlockHash as Hash;
         const consumedRun =
             upper === lower
@@ -1210,7 +1219,7 @@ class AgreementManager {
         if (!consumedRun) return undefined;
         return new Set<Address>([
             ...(start.snapshotData.participants as Address[]),
-            ...(resulting.snapshotData.participants as Address[]),
+            ...(end.snapshotData.participants as Address[]),
             ...this.getJoiners(consumedRun)
         ]);
     }

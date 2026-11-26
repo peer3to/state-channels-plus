@@ -3,7 +3,7 @@ import { DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT } from "@/evm/contractExecutor/Contrac
 import Block from "@/models/Block";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type { Address, Bytes, Hash } from "@/types/types";
-import { Codec, hash, sleep, Type } from "@/utils";
+import { Codec, hash, Type } from "@/utils";
 import {
     encodeLinkedNextBlock,
     signEncodedBlock
@@ -18,7 +18,13 @@ import {
     localFinalizedView,
     stageJoinThenLeave
 } from "@test/fixtures/ProofOwnerStaging";
-import { stageUnobservedInboundTopUp } from "@test/fixtures/SignerAdmissionStaging";
+import {
+    holdUnobservedInboundTopUp,
+    restoreCommitEligibility,
+    stageDepartureHopNotFinal,
+    stageSpectatorWithoutGenesisRun,
+    stageUnobservedInboundTopUp
+} from "@test/fixtures/SignerAdmissionStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -500,7 +506,7 @@ describe("Unit: BlockIngestService", function () {
             );
         });
 
-        it("a stray signature judged against a consumed inbound run the peer lacks after event recovery → the block waits in the queue and the sender is not cut; once the run lands the stray is stripped and the block stored", async function () {
+        it("a never-member key signs a fresh block whose own carried inbound run the peer cannot fetch → judged at once: its signature is stripped, the sender cut, and the block stored while the run's events are still held", async function () {
             const h = TestSession.getHarness();
             const lagging = 2;
             const { held, topUpHash } = await stageUnobservedInboundTopUp(
@@ -543,27 +549,9 @@ describe("Unit: BlockIngestService", function () {
                     origin: BlockOrigin.NETWORK,
                     senderAddress: leader.address
                 },
-                keepConnection: true,
                 waitForProcessed: false
             });
-            // the block is judged once without a verdict on the sender
-            await h.event.waitForBlockConfirmationProcessed({
-                peerIndex: observer.index,
-                blockHash: authored.hash,
-                keepConnection: true
-            });
-            // absence window: the queue drain re-judges a next-height entry
-            // within milliseconds; a verdict would have cut the sender and
-            // stored the block by now
-            await sleep(2_000);
-            expect(
-                await query.getBlockByHeight(forkId, startHeight).request()
-            ).to.equal(null);
-            expect(
-                await query.isBlacklisted(leader.address).request()
-            ).to.equal(false);
 
-            await held.release();
             await waitFor(
                 async () =>
                     (await query.isBlacklisted(leader.address).request()) &&
@@ -579,6 +567,120 @@ describe("Unit: BlockIngestService", function () {
             expect(stored!.confirmationSignatures).to.not.include(
                 straySignature
             );
+            // the verdict did not wait for the run: its event is still held
+            expect(await held.heldCount()).to.be.greaterThan(0);
+        });
+
+        it("a leaver signs a fresh block above its exit, the block carrying an inbound run the peer cannot fetch, at a peer whose departure hop is not final → admitted at once: the block is stored with that signature and the sender is not cut", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, joinerIndex } = await stageDepartureHopNotFinal(h);
+            await restoreCommitEligibility(h, 0);
+            const { held, topUpHash } = await holdUnobservedInboundTopUp(h, {
+                laggingIndex: 0,
+                participantIndices: [0, 1],
+                topUpIndex: 1
+            });
+            const { leader, observer, authored, startHeight } =
+                await h.transition.authorNextBlockOffWireWait({
+                    observerIndex: 0
+                });
+            const confirmation = decodeConfirmation(
+                authored.encodedBlockConfirmation
+            );
+            const query = h.control(observer).query;
+            // premise - the block consumes the top-up the observer never stored
+            expect(
+                Block.fromBlockConfirmation(confirmation).messageBlocks.map(
+                    (messageBlock) =>
+                        hash(Codec.encode(messageBlock, Type.MessageBlock))
+                )
+            ).to.include(topUpHash);
+            expect(
+                await query.getInboundMessageBlock(topUpHash).request()
+            ).to.equal(null);
+            const leaverSignature = await h
+                .getPeer(joinerIndex)
+                .signer.signMessage(ethers.getBytes(authored.hash));
+
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: observer.index,
+                blockConfirmation: {
+                    signedBlock: confirmation.signedBlock,
+                    signatures: [
+                        ...confirmation.signatures,
+                        leaverSignature as Bytes
+                    ]
+                },
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: leader.address
+                },
+                keepConnection: true,
+                processedKeepConnection: true
+            });
+
+            const stored = await query
+                .getBlockByHeight(forkId, startHeight)
+                .request();
+            expect(stored, "stored on its first judgement").to.not.equal(null);
+            expect(stored!.hash).to.equal(authored.hash);
+            expect(stored!.confirmationSignatures).to.include(leaverSignature);
+            expect(
+                await query.isBlacklisted(leader.address).request()
+            ).to.equal(false);
+            // the verdict did not wait for the run: its event is still held
+            expect(await held.heldCount()).to.be.greaterThan(0);
+        });
+
+        it("a never-member key signs a fresh block at a spectator that holds no inbound run below its synced point and cannot fetch one → stripped without penalty on the first judgement: the block is stored without it and the sender is not cut", async function () {
+            const h = TestSession.getHarness();
+            const { spectator, topUpHash } =
+                await stageSpectatorWithoutGenesisRun(h);
+            const { leader, observer, authored, startHeight, forkId } =
+                await h.transition.authorNextBlockOffWireWait({
+                    observerIndex: spectator.index
+                });
+            const confirmation = decodeConfirmation(
+                authored.encodedBlockConfirmation
+            );
+            const straySignature = signEncodedBlock(
+                factory.randomWallet(),
+                confirmation.signedBlock.encodedBlock as Bytes
+            );
+
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: observer.index,
+                blockConfirmation: {
+                    signedBlock: confirmation.signedBlock,
+                    signatures: [
+                        ...confirmation.signatures,
+                        straySignature as Bytes
+                    ]
+                },
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: leader.address
+                },
+                keepConnection: true,
+                processedKeepConnection: true
+            });
+
+            const query = h.control(observer).query;
+            const stored = await query
+                .getBlockByHeight(forkId, startHeight)
+                .request();
+            expect(stored, "stored on its first judgement").to.not.equal(null);
+            expect(stored!.hash).to.equal(authored.hash);
+            expect(stored!.confirmationSignatures).to.not.include(
+                straySignature
+            );
+            expect(
+                await query.isBlacklisted(leader.address).request()
+            ).to.equal(false);
+            // judged without the run: it is still not stored
+            expect(
+                await query.getInboundMessageBlock(topUpHash).request()
+            ).to.equal(null);
         });
     });
 

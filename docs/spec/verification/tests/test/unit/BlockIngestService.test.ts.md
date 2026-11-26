@@ -44,6 +44,13 @@ The parked-delivery case parks a valid block on an observer's held state mutex, 
 with its disposal held and then frees the mutex: no frame from the observer reaches the other peers,
 its nonce is unchanged and a rebuilt runtime for its signer engages.
 
+The signer-admission cases feed an off-wire block with an extra signature to one observer. Two
+observers hold their InboundMessagesProcessed events while the block carries a top-up they never
+stored: a never-member signature is stripped and the sender cut, and a leaver signature at a peer
+whose departure hop is not final is stored, both on the first judgement while the event is still
+held. A spectator synced above an anchor that consumed a top-up it never stored, with its events
+held, strips a never-member signature without cutting the sender and stores the block at once.
+
 ## Tests
 
 - `fresh signer validation reads the resulting participant union before persisting the snapshot`: UNIT-TEST-BLOCK-INGEST-1-JV64AS.P3
@@ -66,4 +73,6 @@ its nonce is unchanged and a rebuilt runtime for its signer engages.
 - `a valid block parked on the state mutex when the runtime is disposed → nothing leaves the runtime once the mutex frees`: UNIT-TEST-BLOCK-INGEST-1-JV64AS.P15
 - `a leaver signs a fresh block above its exit at a peer whose final point is past the exit → its signature is stripped, the sender is kept and not cut`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P11
 - `a key that was never in the channel signs a fresh block → its signature is stripped, the sender cut, and the block stored`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P2, REQ-BLOCK-PIPE-11-DCHAJ2.T1.P10
-- `a stray signature judged against a consumed inbound run the peer lacks after event recovery → the block waits in the queue and the sender is not cut; once the run lands the stray is stripped and the block stored`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P12
+- `a never-member key signs a fresh block whose own carried inbound run the peer cannot fetch → judged at once: its signature is stripped, the sender cut, and the block stored while the run's events are still held`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P15
+- `a leaver signs a fresh block above its exit, the block carrying an inbound run the peer cannot fetch, at a peer whose departure hop is not final → admitted at once: the block is stored with that signature and the sender is not cut`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P14
+- `a never-member key signs a fresh block at a spectator that holds no inbound run below its synced point and cannot fetch one → stripped without penalty on the first judgement: the block is stored without it and the sender is not cut`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P17

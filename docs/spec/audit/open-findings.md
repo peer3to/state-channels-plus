@@ -3303,16 +3303,26 @@ The old queued-exclusion implementation and its unsupported whole-tree coverage 
 
 ### FIND-BLOCK-PIPE-1-PAPN2B — A block deferred for a missing inbound run is retried without a pause
 
-When a counter-signature can be judged only with a consumed inbound run the node lacks after event
-recovery, the block returns to the queue with no verdict
+When a counter-signature can be judged only with an earlier consumed inbound run on this node's
+own hop that the node lacks after event recovery, the block returns to the queue with no verdict
 ([`REQ-BLOCK-PIPE-11-DCHAJ2` (Signature admission by participant union)](../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2)).
 The queue drain then takes the same next-height entry again at once. Every retry repeats the chain
-log search for the run; a live retry also re-executes the transition. Live gossip retries until the run is
-stored or the entry's queue lifetime ends. The stored-block merge settles the restored entry as a
-past block, which schedules the merge again, so it retries until the run is stored. A node can reach
-this state only while it misses a consumed run that event recovery cannot return; a supplier
-cannot cause that, but it can keep the loop running by attaching a stray signature.
+log search for the run; a live retry also re-executes the transition. Neither path has a time
+limit: the live entry's queue deadline is re-armed on every restore, and a next-height entry is
+executed again at its deadline instead of evicted; the stored-block merge settles the restored entry
+as a past block, which schedules the merge again. Both retry until the run is stored. A failed
+chain read during the retry throws, and the dequeued entry is lost. One stray signature merged
+into the next-height entry can therefore stall a node that lacks the run at that height and flood
+its RPC provider with log searches.
 
-**Status:** Open. Needs an engineer decision. Directions, none chosen: (1) drain the deferred entry
-again only when an inbound run is stored; (2) back off the retry for a deferred entry; (3) bound the
-merge-path retry by the entry's queue lifetime, as on the live path.
+The honest trigger is removed: both hops end at the block's previous snapshot, so the run a block
+carries is never needed, and a run missing only on the hop from the fork genesis strips the
+signature without a retry. What remains is a run genuinely missing on the node's own hop. Every
+block a node executed stored its run, and a synced node's final point is at or above its installed
+point, so an honest node reaches it only when it proves no local final point and its hop from the
+chain anchor crosses runs below its installed point.
+
+**Status:** Open. Residual accepted by an engineer decision: no event wake (no existing wait
+mechanism fits, and a wake needs a new entry marker). Remaining directions, none chosen: (1) back
+off the retry for a deferred entry; (2) bound both retry paths by a fixed queue lifetime; (3) keep
+the entry when the chain read fails.

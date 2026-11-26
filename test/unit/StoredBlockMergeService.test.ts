@@ -1,7 +1,9 @@
+import { randomWallet } from "../factory";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import { BlockValidationResult } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
+    decodeConfirmation,
     localFinalizedView,
     stageJoinThenLeave
 } from "@test/fixtures/ProofOwnerStaging";
@@ -13,7 +15,8 @@ import {
     restoreCommitEligibility,
     signStoredBlockAs,
     stageDepartureHopNotFinal,
-    stageJoinAndExitInOneHop
+    stageJoinAndExitInOneHop,
+    stageSpectatorWithoutGenesisRun
 } from "@test/fixtures/SignerAdmissionStaging";
 import { assertSpectatorStoredMerge } from "@test/fixtures/SpectatorSilenceFixture";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -566,6 +569,43 @@ describe("Unit: StoredBlockMergeService", function () {
             expect(
                 await query.isBlacklisted(sender.address).request()
             ).to.equal(false);
+        });
+
+        it("a never-member key signs a stored block at a spectator that holds no inbound run below its synced point and cannot fetch one → stripped, DUPLICATE, not re-queued", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, spectator, topUpHash } =
+                await stageSpectatorWithoutGenesisRun(h);
+            const query = h.control(spectator).query;
+            const height = Number(
+                await query.getLatestBlockHeight(forkId).request()
+            );
+            const stored = await query
+                .getBlockByHeight(forkId, height)
+                .request();
+            const confirmation = decodeConfirmation(
+                stored!.encodedBlockConfirmation
+            );
+            const straySignature = await randomWallet().signMessage(
+                ethers.getBytes(stored!.hash)
+            );
+
+            const r = await h.transition.runStoredBlockMerge({
+                peerIndex: spectator.index,
+                confirmation: {
+                    signedBlock: confirmation.signedBlock,
+                    signatures: [
+                        ...confirmation.signatures.map(String),
+                        straySignature
+                    ]
+                }
+            });
+
+            // stripped like a view-dependent signer: no wait for the run
+            expect(r.result).to.equal(BlockValidationResult.DUPLICATE);
+            expect(r.persistedSignatures).to.not.include(straySignature);
+            expect(
+                await query.getInboundMessageBlock(topUpHash).request()
+            ).to.equal(null);
         });
     });
 });

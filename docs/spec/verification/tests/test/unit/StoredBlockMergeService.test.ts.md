@@ -5,7 +5,7 @@ Exercises: [StoredBlockMergeService.ts](../../../../implementation/source/src/st
 
 ## Overview
 
-Drive the real merge service under live, spectating, calldata and dispute strategies with actual signed blocks; inspect persisted signatures and result or tripwire error. The stored-copy quota case overflows the source's allowance with nonce signatures by its own key, checks the bound, and expects the source's blacklist as a double signer.
+Drive the real merge service under live, spectating, calldata and dispute strategies with actual signed blocks; inspect persisted signatures and result or tripwire error. The stored-copy quota case overflows the source's allowance with nonce signatures by its own key, checks the bound, and expects the source's blacklist as a double signer. The signer-admission cases merge a gossip copy carrying one extra signer, judged against the peer's hop from its final point and against the hop from the fork genesis; one runs at a spectator that never stored the run on the genesis hop and cannot fetch it.
 
 ## Tests
 
@@ -26,3 +26,4 @@ Drive the real merge service under live, spectating, calldata and dispute strate
 - `a joiner whose JOIN and exit fall in one hop from this peer's final point signs the block after its exit → admitted, BROADCAST and persisted`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P8
 - `a leaver signs a block after its exit while its departure hop is not final at this peer → admitted, BROADCAST and persisted`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P9
 - `a leaver signs a block after its exit and this peer's final point is past the exit → stripped, DUPLICATE, and the honest sender is not cut`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P11
+- `a never-member key signs a stored block at a spectator that holds no inbound run below its synced point and cannot fetch one → stripped, DUPLICATE, not re-queued`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P18

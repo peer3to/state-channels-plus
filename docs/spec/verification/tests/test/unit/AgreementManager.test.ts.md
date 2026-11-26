@@ -9,7 +9,7 @@ It checks latest signer evidence, everyone-signed predicates, milestone-only `bu
 final and latest snapshot selection, and reduction inputs. Built proofs are checked by the chain
 verifier. The genesis case keeps an unfinalized block-zero run in one milestone and checks the
 replay index and genesis final snapshot. Other cases cover membership changes, missing signatures,
-unknown forks, a height below the anchor (`buildStateProof` throws, `tryBuildStateProof` returns no proof), concurrent construction, and inbound recovery for reduction. Skipped declarations
+unknown forks, a height below the anchor (`buildStateProof` throws, `tryBuildStateProof` returns no proof), concurrent construction, and inbound recovery for reduction. One `getSignerAdmission` case judges the same stored block at two peers of a join-then-leave channel whose final points sit on either side of the exit. Skipped declarations
 record inputs unavailable through the public surface; they are not passing evidence.
 
 The reduced-head case reads reduce data on a spectator that never received the window's reduced head: it returns unavailable, not a throw. The snapshot-without-state variant is skipped: only a verified proof hop is stored without its state, and no staging makes such a hop the window's reduced head.
@@ -51,3 +51,4 @@ The reduced-head case reads reduce data on a spectator that never received the w
 - `reduce-to-genesis → getReduceData resolves the genesis snapshot`: none
 - `reduced head the node never received → undefined, not a throw`: UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX.P4
 - `reduced head snapshot held without its state → undefined, not a throw (needs a synced proof hop that is the reduced head)`: none
+- `a stored block above an exit, every run it needs stored → the leaver is admitted at the peer whose departure hop is not final and view-dependent at the peer past the exit; a never-member key is foreign at both`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P16

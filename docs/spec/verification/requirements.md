@@ -249,7 +249,7 @@ Specification cases tested: 1/6. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P6.
 Specification cases tested: 1/5. Untested: T1.P1, T1.P2, T1.P4, T1.P5.
 
 [`REQ-BLOCK-PIPE-11-DCHAJ2` (Signature admission by participant union)](../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2)
-Specification cases tested: 10/13. Untested: T1.P1, T1.P5, T1.P6.
+Specification cases tested: 14/18. Untested: T1.P1, T1.P5, T1.P6, T1.P12.
 
 [`REQ-CDSTORE-1-ECWBNY` (Coordinate-keyed calldata with exact matching)](../specification/storage/calldata-and-timeouts.md#req-cdstore-1-ecwbny)
 Specification cases tested: 2/5. Untested: T1.P1, T1.P4, T1.P5.
