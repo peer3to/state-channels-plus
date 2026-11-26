@@ -31,6 +31,7 @@ JOIN again reverts with the exact `ErrorDisputeInboundMessageBlocksInvalid` hash
 - `test_K14_sideChainOmittingItsAuditingDataWithoutThePendingJoinersSignatureIsKilled`: REQ-FP-7-4DD0D7.T10.P39
 - `test_regression_latestFinalizedPointWithTheFinalPointsInboundDoesNotKill`: REQ-FP-7-4DD0D7.T10.P2, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P219
 - `test_regression_latestFinalizedPointAtTheFinalHeightDoesNotKill`: REQ-FP-7-4DD0D7.T10.P3
+- `test_CN3_finalProofWhoseLastHopSnapshotNamesALowerHeightDoesNotKill`: REQ-SP-7-70EMAT.T2.P16, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P107
 - `test_regression_snapshotTheLatestFinalizedBlockDoesNotCommitDoesNotKill`: REQ-FP-7-4DD0D7.T10.P4, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P86
 - `test_regression_anchorAsTheLatestFinalizedPointDoesNotKill`: REQ-FP-7-4DD0D7.T10.P5
 - `test_FR1_sideChainFinalPointBelowTheJoinCannotKillTheHonestDisputeThroughAnEarlyMilestone`: REQ-FP-7-4DD0D7.T10.P6

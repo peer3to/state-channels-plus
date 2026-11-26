@@ -20,4 +20,5 @@ Applies final-state conflict counters to disputes and controls. Checks exact fin
 - `test_conflictWithFinalState_blockBeforeTheAnchorBlockInTheRunIsNoConflict`: REQ-FP-7-4DD0D7.T2.P9, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P45
 - `test_conflictWithFinalState_anchorRunAsTheFinalProofProvesTheAnchor`: REQ-FP-7-4DD0D7.T2.P10, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P46
 - `test_conflictWithFinalState_conflictingFirstBlockOfASecondHopMilestoneKills`: REQ-FP-7-4DD0D7.T2.P11, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P47
+- `test_CN3_finalProofWhoseHopSnapshotNamesAnotherHeightDoesNotKill`: REQ-SP-7-70EMAT.T2.P15, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P106
 - `test_conflictWithFinalState_staleFinalProofBelowAnAdvancedAnchorProvesTheAnchor`: REQ-FP-7-4DD0D7.T2.P12, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P48

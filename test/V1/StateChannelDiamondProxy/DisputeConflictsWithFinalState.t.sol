@@ -241,6 +241,22 @@ contract DisputeConflictsWithFinalStateTest is StateProofStaging {
         _assertKilled(dispute);
     }
 
+    function test_CN3_finalProofWhoseHopSnapshotNamesAnotherHeightDoesNotKill() public {
+        // A's honest run 5..8: its block 7 commits the snapshot at 7
+        Dispute memory dispute = _anchorRunDispute(false);
+        // the challenger's "F = 7" is block 6 committing a snapshot that names height 7, signed by A and B
+        StateSnapshot memory misHeighted = _snapshot(7, _set(alice));
+        MilestoneProof memory hop = _thresholdRun(6, 1, genesisData.participants, _signers(ALICE_KEY, BOB_KEY));
+        _commitAt(hop, 0, keccak256(abi.encode(misHeighted)), _signers(ALICE_KEY, BOB_KEY));
+        ProofWalkInput memory finalProof = _finalProof(forkId, _one(hop), _entries(misHeighted));
+        bytes memory proof = _conflictProof(finalProof, 0, 2, _snapshot(5, genesisData.participants));
+        assertFalse(_diamond().verifyMilestones(finalProof).valid, "F's hop proves no state at another height");
+
+        _apply(dispute, DisputeFraudProofType.DisputeConflictsWithFinalState, proof);
+
+        _assertRejected(dispute);
+    }
+
     function test_conflictWithFinalState_staleFinalProofBelowAnAdvancedAnchorProvesTheAnchor() public {
         ProofWalkInput memory finalProof = _finalAtSeven(forkId, _signers(ALICE_KEY, BOB_KEY));
         // the chain anchor moves past F = 7: the proof's milestone is skipped, its final point is the anchor 8

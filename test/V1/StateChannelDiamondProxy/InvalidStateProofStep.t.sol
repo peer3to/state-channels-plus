@@ -127,6 +127,17 @@ contract InvalidStateProofStepTest is StateProofStaging {
         _assertRejected(dispute);
     }
 
+    function test_CN3_hopSnapshotAtAnotherHeightThanItsBlockKillsItsStep() public {
+        _seedAnchor(5);
+        // block 7 commits, signed by A and B, a snapshot that names height 9
+        StateSnapshot memory misHeighted = _snapshot(9, genesisData.participants);
+        MilestoneProof memory run = _thresholdRun(7, 1, genesisData.participants, _signers(ALICE_KEY, BOB_KEY));
+        _commitAt(run, 0, keccak256(abi.encode(misHeighted)), _signers(ALICE_KEY, BOB_KEY));
+        Dispute memory dispute = _dispute(_one(run));
+        _applyStep(dispute, _invalidStep(_entries(misHeighted), 0));
+        _assertKilled(dispute);
+    }
+
     // ==================== block pointers: one per per-block fault ====================
 
     function test_U99_undecodableBlockKillsThroughTheBlockPointer() public {

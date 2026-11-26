@@ -57,7 +57,11 @@ counter rejects that claim, including a genesis claim after block zero became fi
 
 **<a id="req-sp-7-70emat"></a>`REQ-SP-7-70EMAT`.** In the retained region, verification checks
 consecutive heights, hash links, channel and fork identity, authentic authors and confirmations,
-required threshold coverage, snapshot commitments and the latest-state commitment. Supporting snapshot entries must match the milestone count exactly; missing or excess entries and an empty retained milestone are invalid. Malformed checked bytes are invalid. Inner bytes in a skipped prefix are not checked, but bytes needed to determine that cutoff must decode; an undecodable endpoint cannot establish that the run is wholly below the anchor.
+required threshold coverage, snapshot commitments and the latest-state commitment. A threshold
+hop's committed snapshot carries the height of the block that commits it; a hop whose committed
+snapshot names another height proves nothing, and the proof is invalid, not forged evidence. Every
+path that runs the walk (dispute kills, the dispute audit and synchronization from a trusted start)
+applies this rule. Supporting snapshot entries must match the milestone count exactly; missing or excess entries and an empty retained milestone are invalid. Malformed checked bytes are invalid. Inner bytes in a skipped prefix are not checked, but bytes needed to determine that cutoff must decode; an undecodable endpoint cannot establish that the run is wholly below the anchor.
 
 ## Membership and finality
 
@@ -672,6 +676,20 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 <a id="req-sp-7-70emat.t2.p10"></a>`REQ-SP-7-70EMAT.T2.P10` — Exactly one correct snapshot entry for a single hop verifies and yields the correct final point and replay index.
 
 <a id="req-sp-7-70emat.t2.p11"></a>`REQ-SP-7-70EMAT.T2.P11` — A changed shared block in the second overlapping run breaks the proof even when its supplied snapshot matches that changed block.
+
+<a id="req-sp-7-70emat.t2.p12"></a>`REQ-SP-7-70EMAT.T2.P12` — A first hop whose block commits, with the threshold, a snapshot naming another height returns invalid without snapshotMismatch, failing at that step.
+
+<a id="req-sp-7-70emat.t2.p13"></a>`REQ-SP-7-70EMAT.T2.P13` — A later hop whose block commits a snapshot naming another height makes the walk fail at that later step.
+
+<a id="req-sp-7-70emat.t2.p14"></a>`REQ-SP-7-70EMAT.T2.P14` — Control: hops whose snapshots carry their blocks' heights stay final.
+
+<a id="req-sp-7-70emat.t2.p15"></a>`REQ-SP-7-70EMAT.T2.P15` — A conflict kill whose final proof's hop snapshot names another height than its block does not kill an honest dispute; the challenger is slashed.
+
+<a id="req-sp-7-70emat.t2.p16"></a>`REQ-SP-7-70EMAT.T2.P16` — A final-point regression kill whose final proof's last hop snapshot names a lower height than its block does not kill; the challenger is slashed.
+
+<a id="req-sp-7-70emat.t2.p17"></a>`REQ-SP-7-70EMAT.T2.P17` — The invalid-state-proof counter pointed at a hop whose snapshot names another height than its block kills the dispute at that step.
+
+<a id="req-sp-7-70emat.t2.p18"></a>`REQ-SP-7-70EMAT.T2.P18` — The local walk from a trusted start (synchronization) rejects a hop whose snapshot names another height than its block, and finalizes the same hop at its block's height.
 
 #### <a id="req-sp-3-sp1jg4.t2"></a>`REQ-SP-3-SP1JG4.T2`
 

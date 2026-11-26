@@ -539,6 +539,25 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         _assertRejectedBy(side, joiner);
     }
 
+    function test_CN3_finalProofWhoseLastHopSnapshotNamesALowerHeightDoesNotKill() public {
+        (Dispute memory side, StateSnapshot memory sideFinal) = _sideAtThousand(openingInboundHash, 1);
+        // X's join hop at 60, then block 2000 (above Y's G = 1000') committing, signed by A to E and L, the snapshot
+        // that names height 100
+        (StateSnapshot memory joinHop,) = _mathSnapshot(60, _joinedSet(), _balances(100, 100, 50), joinInboundHash, 2);
+        (StateSnapshot memory misHeighted,) =
+            _mathSnapshot(100, _joinedSet(), _balances(70, 100, 80), joinInboundHash, 2);
+        MilestoneProof memory lastHop = _run(2000, 1, keccak256(abi.encode("predecessor", 2000)), _joinedKeys());
+        _commitAt(lastHop, 0, keccak256(abi.encode(misHeighted)), _joinedKeys());
+        ProofWalkInput memory finalProof =
+            _finalProof(forkId, _two(_hopRun(joinHop, 1, _joinedKeys()), lastHop), _entries(joinHop, misHeighted));
+        bytes memory proof = _regressionProofWithHint(finalProof, sideFinal, joinInboundHash);
+        assertFalse(_diamond().verifyMilestones(finalProof).valid, "F's last hop proves no state at another height");
+
+        _applyBy(joiner, side, DisputeFraudProofType.DisputeFinalPointRegression, proof);
+
+        _assertRejectedBy(side, joiner);
+    }
+
     function test_regression_snapshotTheLatestFinalizedBlockDoesNotCommitDoesNotKill() public {
         // Y's 1000' really consumed L's JOIN (inbound 2); the challenger claims a snapshot at inbound 1 instead
         (StateSnapshot memory sideFinal,) =

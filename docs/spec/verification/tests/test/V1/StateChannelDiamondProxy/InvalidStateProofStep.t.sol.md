@@ -17,6 +17,7 @@ Challenges individual milestone steps with optional block pointers. Cases distin
 - `test_U99_milestoneStartingBelowThePreviousOneKillsItsStep`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P84
 - `test_U99_postedSnapshotItsBlockDoesNotCommitKillsThatStep`: REQ-FP-7-4DD0D7.T2.P25, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P61
 - `test_U99_postedHonestProofIsNotKilledAtAnyStep`: REQ-FP-7-4DD0D7.T3.P6, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P85
+- `test_CN3_hopSnapshotAtAnotherHeightThanItsBlockKillsItsStep`: REQ-SP-7-70EMAT.T2.P17, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P108
 - `test_U99_undecodableBlockKillsThroughTheBlockPointer`: REQ-FP-7-4DD0D7.T2.P26, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P62
 - `test_U99_brokenLinkKillsThroughTheBlockPointer`: REQ-FP-7-4DD0D7.T2.P27, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P63
 - `test_U99_blockOnAnotherForkKillsThroughTheBlockPointer`: REQ-FP-7-4DD0D7.T2.P28, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P64

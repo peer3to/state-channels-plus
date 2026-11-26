@@ -55,6 +55,9 @@ Calls the milestone verifier with genesis, same-fork anchors, membership changes
 - `test_U79_blockZeroAdditionMissingTheNewSideStaysUnfinalized`: REQ-SP-3-SP1JG4.T2.P17, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P65
 - `test_U80_snapshotTheBlockDoesNotCommitCannotBeItsProvenState`: REQ-SP-7-70EMAT.T2.P5, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P66
 - `test_U80_sameHeightSubstitutedSnapshotCannotBeItsProvenState`: REQ-SP-7-70EMAT.T2.P6, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P67
+- `test_CN3_hopBlockCommittingASnapshotAtAnotherHeightIsInvalid`: REQ-SP-7-70EMAT.T2.P12, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P87
+- `test_CN3_laterHopCommittingASnapshotAtAnotherHeightIsInvalid`: REQ-SP-7-70EMAT.T2.P13, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P88
+- `test_CN3_hopsCommittingTheirOwnHeightsAreFinal`: REQ-SP-7-70EMAT.T2.P14, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P89
 - `test_U86_laterOnChainSlashDoesNotChangeAValidProof`: REQ-SP-3-SP1JG4.T2.P18, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P68
 - `test_U110_emptyMilestoneCannotEstablishAValidProof`: REQ-SP-7-70EMAT.T2.P7, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P69
 - `test_U110_missingSnapshotEntriesCannotVerifyTheProof`: REQ-SP-7-70EMAT.T2.P8, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P70

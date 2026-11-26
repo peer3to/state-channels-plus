@@ -75,3 +75,6 @@ Proof predicates
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P103` — `isDisputeFinalPointRegression` with a JOIN hint naming a new joiner inside the skipped run returns true
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P104` — a regression kill whose final proof walks an unstored inbound block reverts with `ErrorInboundMessageBlockNotStored`
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P105` — a conflict kill whose final proof walks an unstored inbound block reverts with `ErrorInboundMessageBlockNotStored`
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P106` — `isDisputeConflictingWithFinalState` with a final proof whose hop snapshot names another height than its block returns false
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P107` — `isDisputeFinalPointRegression` with a final proof whose last hop snapshot names a lower height than its block returns false
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P108` — `isStateProofStepInvalid` judges a hop whose snapshot names another height than its block invalid at that step

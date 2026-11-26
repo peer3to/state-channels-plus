@@ -741,10 +741,11 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
      * The one state-proof walk from `start`: the same-fork non-genesis anchor, else the fork genesis. Milestones
      * wholly below the anchor are dropped. The run holding the anchor commits it at the anchor height and needs no
      * threshold. Every other kept milestone proves its first block by the union threshold of the last final point
-     * and its resulting snapshot; only a genesis block 0 of a single-milestone proof may stay unfinalized (then the
-     * whole run is the unfinalized tail). Every kept block decodes, stays on the channel and fork, links by hash and
-     * height + 1 and carries its author's signature. Supplied evidence that does not fit the proof (a snapshot count
-     * other than one per milestone, or a snapshot its block does not commit to) is reported as `snapshotMismatch`.
+     * and its resulting snapshot, which carries that block's height; only a genesis block 0 of a single-milestone
+     * proof may stay unfinalized (then the whole run is the unfinalized tail). Every kept block decodes, stays on the
+     * channel and fork, links by hash and height + 1 and carries its author's signature. Supplied evidence that does
+     * not fit the proof (a snapshot count other than one per milestone, or a snapshot its block does not commit to)
+     * is reported as `snapshotMismatch`.
      * Each milestone is one step (`_walkMilestone`); a failed walk names the failing step.
      */
     function _walkStateProof(ProofWalkInput memory input, StateSnapshot memory start)
@@ -889,6 +890,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             result.snapshotMismatch = true;
             return false;
         }
+        // the committed snapshot's height is its block's: a hop never proves a state at another height
+        if (resultingSnapshot.blockHeight != firstHeight) return false;
         (bool isLinked, bool isThresholdReached) = _walkThresholdHop(input, milestone, resultingSnapshot, result);
         if (!isLinked) return false;
         return _settleThresholdHop(

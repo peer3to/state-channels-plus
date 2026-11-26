@@ -425,6 +425,50 @@ contract StateProofWalkTest is StateProofStaging {
         assertTrue(result.snapshotMismatch, "forged evidence");
     }
 
+    // ---- CN3: a hop's snapshot carries its block's height ----
+
+    function test_CN3_hopBlockCommittingASnapshotAtAnotherHeightIsInvalid() public {
+        _seedAnchor(50);
+        // block 51 commits, and its signers sign, a snapshot that names height 52
+        StateSnapshot memory misHeighted = _snapshot(52, genesisData.participants);
+        MilestoneProof memory run = _thresholdRun(51, 1, genesisData.participants, _signers(ALICE_KEY, BOB_KEY));
+        _commitAt(run, 0, keccak256(abi.encode(misHeighted)), _signers(ALICE_KEY, BOB_KEY));
+
+        ProofWalkResult memory result = _walk(_one(run), _entries(misHeighted));
+
+        assertFalse(result.valid, "the hop proves no state at another height");
+        assertFalse(result.snapshotMismatch, "the block commits that snapshot: an invalid proof, not forged evidence");
+        assertEq(result.failedMilestoneIndex, 0, "the hop's step fails");
+        assertFalse(result.isBlockFault, "no per-block rule fails");
+    }
+
+    function test_CN3_laterHopCommittingASnapshotAtAnotherHeightIsInvalid() public {
+        _seedAnchor(50);
+        uint256[] memory both = _signers(ALICE_KEY, BOB_KEY);
+        StateSnapshot memory first = _snapshot(51, genesisData.participants);
+        // block 60 commits a snapshot that names height 59: the second step fails
+        StateSnapshot memory misHeighted = _snapshot(59, genesisData.participants);
+        MilestoneProof memory second = _thresholdRun(60, 1, genesisData.participants, both);
+        _commitAt(second, 0, keccak256(abi.encode(misHeighted)), both);
+
+        ProofWalkResult memory result = _walk(_two(_hopRun(first, 1, both), second), _entries(first, misHeighted));
+
+        assertFalse(result.valid, "the second hop proves no state at another height");
+        assertFalse(result.snapshotMismatch, "an invalid proof, not forged evidence");
+        assertEq(result.failedMilestoneIndex, 1, "the second hop's step fails");
+    }
+
+    function test_CN3_hopsCommittingTheirOwnHeightsAreFinal() public {
+        _seedAnchor(50);
+        uint256[] memory both = _signers(ALICE_KEY, BOB_KEY);
+        StateSnapshot memory first = _snapshot(51, genesisData.participants);
+        StateSnapshot memory second = _snapshot(60, genesisData.participants);
+
+        _assertFinalized(
+            _walk(_two(_hopRun(first, 1, both), _hopRun(second, 1, both)), _entries(first, second)), second, 1
+        );
+    }
+
     // ---- U86: validity survives a later on-chain slash ----
 
     function test_U86_laterOnChainSlashDoesNotChangeAValidProof() public {

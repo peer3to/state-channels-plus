@@ -18,6 +18,7 @@
 - [`INV-FP-8-BFNRSY` (Proof application is idempotent per offender)](../../../../../specification/disputes/fraud-proofs.md#inv-fp-8-bfnrsy)
 - [`INV-MSG-2-PQ0T1K` (No replay, no omission)](../../../../../specification/settlement/cross-layer-messages.md#inv-msg-2-pq0t1k)
 - [`REQ-SP-3-SP1JG4` (A membership hop requires signatures from the union of the previous…)](../../../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4)
+- [`REQ-SP-7-70EMAT` (In the retained region, verification checks consecutive heights, hash links,…)](../../../../../specification/disputes/state-proofs.md#req-sp-7-70emat)
 - [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r)
 - [`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)
 
@@ -114,6 +115,10 @@ Shared predicates
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P84` — `_inboundHeightOf` reverts with `ErrorInboundMessageBlockNotStored` for a hash that is neither stored nor the anchor's inbound head
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P85` — recording an on-chain slash of an address outside the snapshot and pending sets does not revert, emits `ChainSlashed` and leaves the on-chain threshold set unchanged
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P86` — `_walkThresholdHop` marks a walk that reaches an unstored inbound block as missing, apart from an unlinked run
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P87` — `_walkMilestone` judges a threshold hop whose committed snapshot names another height than its first block an invalid step, not a snapshot mismatch or a block fault
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P88` — the same height rule fails a later hop of a multi-hop walk at that hop's step
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P89` — hops whose committed snapshots carry their blocks' heights stay final
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P90` — `LocalDiamond.verifyMilestonesFromTrustedStart` applies the height rule from a trusted start, and finalizes the honest hop
 
 ## UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7
 
