@@ -61,6 +61,7 @@ Timeouts stay on today's path, since an offline peer can't sign. One case gets s
 | holder                         | a member that has the full set; carrier: whoever sends the final transaction                                                   |
 | pin                            | the chain read taken at round start: inbound head, snapshot, signer set and the fork's dispute window, all at one block        |
 | window                         | the on-chain dispute window of a fork, opened by its first dispute upload                                                      |
+| commitment                     | a dispute recorded in a window; an ordinary upload adds one                                                                    |
 | hold, barrier                  | while a member's signature could still land, it signs no newer block; "the bit" is today's disputed-fork flag                  |
 | writer, turn, M                | the member due to produce the next block, the time it has for that, and the moment it can be timed out                         |
 | local diamond                  | each member's in-memory copy of the contract, fed by chain events; it can lag the chain                                        |
@@ -78,7 +79,7 @@ Spec IDs and code locations for each requirement are listed in the appendix.
 
 1. **Outcome.** The final is what `reduce` produces from the members' views. Before signing, each member checks every view and the merged result with its own auditor, and makes sure the final builds on the latest block of its own view. If any member rejects a view, there is no final. A member signs only on facts the signing rule (below) allows.
 2. **Unanimity.** Every member of the on-chain threshold set (snapshot ∪ pending − on-chain slashed) signs, and each signature counts once, as everywhere else in the SDK. The only members left out are those the same transaction slashes with a proof the chain verifies.
-3. **Exclusivity.** A final never lands into a window that holds a commitment, and never after its deadline.
+3. **Exclusivity.** A final and ordinary disputes never mix on one fork. If anyone has already uploaded an ordinary dispute for the fork, the chain refuses the final, so a final can never wipe out evidence that is still being judged. The chain also refuses a final after its deadline.
 4. **Bounded signatures.** A signer is free again at the first block whose timestamp is past the deadline. It then checks the chain for the outcome in the background, and that check never holds the barrier.
 5. **Chain fallback intact.** A failed round leaves the ordinary path as today. A final uses no throttle or upload slot. After a failed round a member uploads only with a reason or more evidence, as today, plus one re-dispute per full-set holder whose signature ended without a window (§8). Timeouts always settle on the ordinary path.
 6. **Signing barrier.** A member that sent a view signs no newer block on the fork while a final it signed could still land, also across a restart.
