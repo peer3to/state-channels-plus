@@ -4,62 +4,7 @@ state-channels-plus · design only, no code · revision 13 · 2026-11-26 · prop
 
 ## Overview
 
-Members of a channel swap their dispute views over P2P, merge them with the contract's own `reduce`, and all sign the result. One transaction then settles the dispute, and the contract only checks signatures. Today's path stays as the fallback: each member uploads, the chain waits out an evidence period (30 s by default) and a kill period, and a reduce transaction finishes it.
-
-Collecting signatures is the easy part. Most of the design is about what a signature does once it has left a member's hands, and what can go wrong around it.
-
-### A signature can be used by anyone who holds it
-
-Once a member sends its signature, any holder of the full set can submit the final. Two rules keep that safe:
-
-- **It expires.** The signed bytes carry a new field, `finalDeadline`. After that chain time the contract refuses the final, so nobody can sit on the others' signatures and use them later.
-- **It can't race today's path.** A final lands only as the first upload for its fork, before its deadline, and at the inbound head it pinned. An ordinary dispute upload, a deposit or a join kills every signature over it. The chain picks which path wins, so peers never have to agree off chain on who gave up.
-
-```mermaid
-stateDiagram-v2
-    [*] --> Live: member signs the merge
-    Live --> Final: full set submitted first, before the deadline
-    Live --> Dead: someone uploads an ordinary dispute
-    Live --> Dead: deposit or join moves the inbound head
-    Live --> Dead: chain time passes finalDeadline
-    Final --> [*]
-    Dead --> [*]: today's dispute path
-```
-
-### Every member must sign, so one honest member is enough
-
-The contract needs a signature from every member of the on-chain signer set. An honest member signs only bytes it built itself, from views it checked itself. So one honest member blocks any wrong outcome, and a colluding group, majority or not, can only veto. A veto costs a few seconds and falls back to today's path. Agreement buys speed, never safety.
-
-### A live signature freezes block signing, and that sets the timing
-
-While a member holds a signature that could still land, it must not sign newer blocks: if the final landed, those blocks would be thrown away. That pause is dangerous for the next block writer. If the pause runs past its turn, the writer gets timed out and punished even though it did nothing wrong. A peer acting in bad faith could start a round just to cause that.
-
-So a round may start only early enough in a turn that the writer still has time, after the hold ends, to get its block on chain. How early depends on block time. With the intended 2 s blocks, the fast path is open for the first 25 s of a 50 s turn (13 s if skipped slots force a 4 s bound).
-
-```mermaid
-gantt
-    dateFormat ss
-    axisFormat %S s
-    title One 50 s turn, 2 s blocks
-    section Fast path
-    a round may start here        :a, 00, 25s
-    section Latest start
-    round and signature hold      :b, 25, 13s
-    writer posts its block, mined :c, 38, 12s
-```
-
-### The local copy of the chain is not trusted
-
-Each member runs a local copy of the contract (the local diamond) fed by chain events, and it can silently miss an event. So a member signs only on facts that the contract checks again at inclusion, facts pinned by a hash in the signed bytes, or facts it just read from the chain. A "yes" from the local copy alone never lets it sign. For this one decision the round reads the chain directly: one pinned read at the start, and a chain check of every fraud proof. Everything else works as today and recovers when the chain refuses something.
-
-### Two traps the reviews found
-
-- **Repairing the local copy inside `dispute()` deadlocks.** Replaying a missed event runs its handler, some handlers call `dispute()`, and the dispute mutex can't be taken twice. The round therefore never repairs anything. Repair happens after the mutex is released.
-- **Checking a peer's view can move live state.** Today's auditor only ever runs on forks that already have a dispute window, so nobody is still writing to them. Here it runs on a live fork, where its replay could leave the state machine behind or store a block that never executes. A member therefore audits only views whose blocks it already executed, and the audit puts the state back as it found it.
-
-### Who submits, and what if they don't
-
-Nobody is elected. The merged dispute names its author (the leaver, or the owner of the most advanced state), and the author submits right away. Every other member waits 2 s plus one block. If the final still isn't on chain, each submits the same bytes. The chain refuses the extra copies and they change nothing.
+Members exchange their dispute views over P2P, merge them with the contract's own `reduce`, and all sign the merged dispute. One transaction then settles it, and the contract checks the signatures instead of reducing again. When a round fails for any reason, peers fall back to today's path: every member uploads, the chain waits out the evidence and kill periods, and a reduce transaction finishes it.
 
 ```mermaid
 sequenceDiagram
@@ -67,26 +12,38 @@ sequenceDiagram
     participant B
     participant D as D (leaver, author)
     participant Chain
-    A->>B: my view
-    A->>D: my view
-    B->>A: my view
-    D->>A: my view
-    Note over A,D: each audits all views, merges, audits the merge, signs once
+    A->>B: view
+    A->>D: view
+    B->>A: view
+    D->>A: view
+    Note over A,D: audit every view, merge, audit the merge, sign once
     A->>D: signature
     B->>D: signature
-    D->>Chain: co-signed final (one transaction)
-    Chain-->>A: final
-    Chain-->>B: final
-    Note over A,B: if nothing lands within 2 s and one block, A and B submit the same bytes
+    D->>Chain: co-signed final, one transaction
 ```
 
-### What it covers, and what it gives up
+A sent signature stays usable after the round, because anyone holding the full set can submit it. The signed bytes therefore carry an expiry, `finalDeadline`, and the contract takes a final only as the first upload for its fork, at the inbound head it pinned. An ordinary dispute upload, a deposit or a join makes every copy fail. The chain decides which path wins, so peers never need to agree on who gave up.
 
-It covers a member leaving, a proven cheater, and online members who see things differently. In a two-member channel with a proven cheater, the honest member settles alone in one transaction.
+```mermaid
+stateDiagram-v2
+    [*] --> Live: member signs
+    Live --> Final: full set lands first, before the deadline
+    Live --> Dead: ordinary upload, deposit or join
+    Live --> Dead: deadline passes
+    Dead --> [*]: today's dispute path
+```
 
-Timeouts are out: a view carrying a timeout never starts a round, because an offline peer can't sign anyway. One case gets slower: today a member that kills a cheater's dispute and uploads its own in the same transaction can finalize at once. Here that goes through the evidence period (open question 2).
+Every member of the on-chain signer set has to sign, so one honest member can block a wrong outcome. A colluding group of any size can only veto, and a veto sends everyone to today's path.
 
-Before building, two things must hold up in real code: a harness spike runs real views through the real auditor on a live fork, and the block time gets measured (sections 16 and 17).
+While a member holds a live signature it stops signing new blocks, since a landed final would throw them away. That pause must not run the next writer past its timeout, so a round may only start early in a turn. With 2 s blocks that is the first 25 s of a 50 s turn.
+
+The local diamond can miss chain events without noticing. A member signs only on facts the contract checks again, facts fixed by a hash in the signed bytes, or facts it has just read from the chain.
+
+Today's auditor only runs on forks that already have a dispute window. Here the fork is still live, so a member audits only views whose blocks it has already executed, and the audit leaves the state machine as it found it. Replaying a missed event can call `dispute()` again, and the dispute mutex isn't re-entrant, so the round never repairs the local diamond while it holds that mutex.
+
+The merged dispute's author (the leaver, or whoever holds the most advanced state) submits first. The others wait 2 s and one block, then send the same bytes if nothing has landed; the chain refuses the duplicates.
+
+Timeouts stay on today's path, since an offline peer can't sign. One case gets slower than today: killing a cheater's dispute and uploading your own in the same transaction no longer finalizes at once (open question 2).
 
 ## 1. Core ideas
 
