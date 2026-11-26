@@ -33,6 +33,9 @@ contract StateChannelManagerStorage {
     // duplicate-participant scan at open is quadratic in the union, so the
     // bound also keeps that loop's gas finite.
     uint256 internal maxChannelParticipants;
+    // Upper bound on a dispute upload's encoded dispute, in bytes. A kill carries the dispute next to a final proof
+    // in one transaction, so the bound keeps room for that proof under the calldata limit.
+    uint256 internal maxDisputeUploadBytes;
 
     AStateMachine stateMachineImplementation;
 

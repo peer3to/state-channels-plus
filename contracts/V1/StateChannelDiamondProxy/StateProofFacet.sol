@@ -166,7 +166,7 @@ contract StateProofFacet is StateChannelCommon {
         view
         returns (bool)
     {
-        (bool isFinal, StateSnapshot memory finalPoint) = _finalPointOf(dispute, proof.finalProof);
+        (bool isFinal, StateSnapshot memory finalPoint) = _killFinalPointOf(dispute, proof.finalProof);
         MilestoneProof[] memory milestones = dispute.input.stateProof.milestones;
         if (!isFinal || proof.milestoneIndex >= milestones.length) return false;
         MilestoneProof memory milestone = milestones[proof.milestoneIndex];
@@ -207,7 +207,11 @@ contract StateProofFacet is StateChannelCommon {
      * down, so G's history skipped that JOIN and never needed the signature of the joiner F counted. Skipped blocks
      * that only top up G's participants are no kill. Only the latest finalized point is compared, never an earlier
      * milestone. The walk's start (the anchor or the fork genesis) as that point is never above F, which is walked
-     * from it.
+     * from it. The proof names that JOIN's block (`joinInboundBlockHash`): the chain holds one inbound chain, so a
+     * stored block whose height lies above G's head and at most F's head is one F consumed and G skipped. F's head
+     * must be a stored block and G's head a stored block or the anchor's inbound head, else the check reverts with
+     * `ErrorInboundMessageBlockNotStored`; a missing inbound block inside F's walk reverts the same way, so neither
+     * kills nor slashes.
      */
     function isDisputeFinalPointRegression(Dispute memory dispute, DisputeFinalPointRegression memory proof)
         public
@@ -219,19 +223,32 @@ contract StateProofFacet is StateChannelCommon {
         );
         // the height check below also refuses the start; this skips the walk of F
         if (!isKnown || isStart) return false;
-        (bool isFinal, StateSnapshot memory finalPoint) = _finalPointOf(dispute, proof.finalProof);
+        (bool isFinal, StateSnapshot memory finalPoint) = _killFinalPointOf(dispute, proof.finalProof);
         if (!isFinal || finalizedHeight <= finalPoint.blockHeight) return false;
-        bytes32 finalInboundHash = finalPoint.snapshotData.latestInboundMessageBlockHash;
-        if (
-            _inboundHeightOf(dispute.input.channelId, finalizedInboundHash)
-                >= _inboundHeightOf(dispute.input.channelId, finalInboundHash)
-        ) return false;
-        return _hasJoinOutside(
-            dispute.input.channelId,
-            finalInboundHash,
-            finalizedInboundHash,
-            proof.latestFinalizedSnapshot.snapshotData.participants
-        );
+        bytes32 channelId = dispute.input.channelId;
+        // G's head may be the anchor's unstored inbound head: every block above it is stored
+        uint256 finalizedInboundHeight = _inboundHeightOf(channelId, finalizedInboundHash);
+        uint256 finalInboundHeight =
+            _storedInboundHeightOf(channelId, finalPoint.snapshotData.latestInboundMessageBlockHash);
+        if (finalizedInboundHeight >= finalInboundHeight) return false;
+        // the hint replaces a walk of the skipped run: F's own walk already read it
+        if (!_hasInboundMessageBlock(channelId, proof.joinInboundBlockHash)) return false;
+        StoredInboundBlock storage joinBlock = inboundMessageBlockMap[channelId][proof.joinInboundBlockHash];
+        if (joinBlock.blockHeight <= finalizedInboundHeight || joinBlock.blockHeight > finalInboundHeight) {
+            return false;
+        }
+        return UtilityFacet(utilityFacetAddress)
+            .subtractAddressArrays(joinBlock.joiners, proof.latestFinalizedSnapshot.snapshotData.participants)
+            .length != 0;
+    }
+
+    /// The stored height of inbound block `messageBlockHash`. A hash the chain does not store, also the anchor's
+    /// unstored inbound head, reverts with `ErrorInboundMessageBlockNotStored`.
+    function _storedInboundHeightOf(bytes32 channelId, bytes32 messageBlockHash) internal view returns (uint256) {
+        if (!_hasInboundMessageBlock(channelId, messageBlockHash)) {
+            revert ErrorInboundMessageBlockNotStored(channelId, messageBlockHash);
+        }
+        return inboundMessageBlockMap[channelId][messageBlockHash].blockHeight;
     }
 
     /// The stored inbound run above `lowerInboundHash` up to `upperInboundHash` holds a JOIN of an address outside
@@ -259,15 +276,41 @@ contract StateProofFacet is StateChannelCommon {
         view
         returns (bool isFinal, StateSnapshot memory finalPoint)
     {
-        if (finalProof.channelId != dispute.input.channelId || finalProof.forkId != dispute.input.forkId) {
-            return (false, finalPoint);
-        }
-        ProofWalkResult memory walk = _walkStateProof(finalProof, stateSnapshots[finalProof.channelId]);
-        return
-            (
-                walk.valid && _canStartFromOnChainSnapshot(walk.finalizedSnapshot, finalProof.forkId),
-                walk.finalizedSnapshot
+        (isFinal, finalPoint,) = _walkFinalProof(dispute, finalProof);
+    }
+
+    /// `_finalPointOf` for the two kills that read F's inbound: a hop of F whose consumed inbound run the chain does
+    /// not store reverts with `ErrorInboundMessageBlockNotStored` for that hop's inbound head, so the challenger is
+    /// not slashed for the chain's missing block. The dispute's own walk still reads such a hop as not linked.
+    function _killFinalPointOf(Dispute memory dispute, ProofWalkInput memory finalProof)
+        internal
+        view
+        returns (bool isFinal, StateSnapshot memory finalPoint)
+    {
+        ProofWalkResult memory walk;
+        (isFinal, finalPoint, walk) = _walkFinalProof(dispute, finalProof);
+        if (walk.isInboundRunMissing) {
+            revert ErrorInboundMessageBlockNotStored(
+                finalProof.channelId,
+                finalProof.milestoneSnapshots[walk.failedMilestoneIndex].snapshotData.latestInboundMessageBlockHash
             );
+        }
+    }
+
+    function _walkFinalProof(Dispute memory dispute, ProofWalkInput memory finalProof)
+        internal
+        view
+        returns (bool isFinal, StateSnapshot memory finalPoint, ProofWalkResult memory walk)
+    {
+        if (finalProof.channelId != dispute.input.channelId || finalProof.forkId != dispute.input.forkId) {
+            return (false, finalPoint, walk);
+        }
+        walk = _walkStateProof(finalProof, stateSnapshots[finalProof.channelId]);
+        return (
+            walk.valid && _canStartFromOnChainSnapshot(walk.finalizedSnapshot, finalProof.forkId),
+            walk.finalizedSnapshot,
+            walk
+        );
     }
 
     /**

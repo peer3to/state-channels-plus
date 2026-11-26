@@ -73,6 +73,8 @@ export type HarnessDeploymentParams = {
     harnessConfig: Partial<Config>;
     /** Node-cached config-independent SCM facets to reuse (see `deploy`). */
     facetAddresses?: string[];
+    /** The deployed dispute upload cap in bytes; unset keeps the contract default. */
+    maxDisputeUploadBytes?: number;
 };
 
 export type HarnessOnChainContractsDeploymentParams = HarnessDeploymentParams;
@@ -147,6 +149,8 @@ export type HarnessOptions<
     initialBalance?: number;
     stateMachineGasLimit?: number;
     disputeExecutionGasLimit?: number;
+    /** The deployed dispute upload cap in bytes; unset keeps the contract default. */
+    maxDisputeUploadBytes?: number;
     autoConnect?: boolean;
     /** Maximum SDK peers to boot at once. Defaults to two; see PeerTestHarness.setup. */
     peerSetupConcurrency?: number;

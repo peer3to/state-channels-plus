@@ -319,6 +319,11 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
         return _getMaxChannelParticipants();
     }
 
+    /// The largest encoded dispute, in bytes, a dispute upload accepts.
+    function getMaxDisputeUploadBytes() public view returns (uint256) {
+        return _getMaxDisputeUploadBytes();
+    }
+
     function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
         public
         view

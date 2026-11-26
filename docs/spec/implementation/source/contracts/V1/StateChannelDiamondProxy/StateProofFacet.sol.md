@@ -68,3 +68,10 @@ Proof predicates
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P96` — `isDisputeFinalPointRegression` and `isDisputeConflictingWithFinalState` answer false when the first block of the dispute's last milestone does not decode
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P97` — `isDisputeFinalPointRegression` and `isDisputeConflictingWithFinalState` answer false when the first block of the dispute's last milestone belongs to another fork
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P98` — `isDisputeConflictingWithFinalState` answers false under a genesis start when block zero of the last milestone does not walk from the genesis
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P99` — `isDisputeFinalPointRegression` with a JOIN hint naming a top-up by a participant of G returns false
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P100` — `isDisputeFinalPointRegression` with a JOIN hint at G's inbound height returns false
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P101` — `isDisputeFinalPointRegression` with a JOIN hint above F's inbound head returns false
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P102` — `isDisputeFinalPointRegression` with a JOIN hint the chain does not store returns false
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P103` — `isDisputeFinalPointRegression` with a JOIN hint naming a new joiner inside the skipped run returns true
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P104` — a regression kill whose final proof walks an unstored inbound block reverts with `ErrorInboundMessageBlockNotStored`
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P105` — a conflict kill whose final proof walks an unstored inbound block reverts with `ErrorInboundMessageBlockNotStored`

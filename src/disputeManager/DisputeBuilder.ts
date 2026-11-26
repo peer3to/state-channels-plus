@@ -57,6 +57,15 @@ type DisputeInputs = {
     inboundHead: { hash: Hash; height: number };
 };
 
+/** The size the chain's upload cap measures: the signed encoded dispute. */
+function encodedDisputeBytesOf({
+    disputeConfirmation
+}: ConstructDisputeResult): bigint {
+    return BigInt(
+        ethers.dataLength(disputeConfirmation.signedDispute.encodedDispute)
+    );
+}
+
 /**
  * Builds this peer's dispute of a fork and decides whether it adds evidence to
  * another peer's dispute. The inputs are its fingerprint: while a fork's
@@ -79,6 +88,9 @@ export default class DisputeBuilder {
     // per disputed fork, whether our dispute adds evidence to the first
     // audited one
     private readonly evidenceChecks = new Map<ForkId, Promise<boolean>>();
+    // The manager's getMaxDisputeUploadBytes (a deploy parameter), read on the
+    // first construction.
+    private maxDisputeUploadBytes?: Promise<bigint>;
 
     constructor(
         public channelId: ChannelId,
@@ -174,7 +186,13 @@ export default class DisputeBuilder {
         // a block that landed meanwhile needs its own proof
         if (latest.latestBlockHeight !== inputs.latestBlockHeight)
             return this.constructDispute(forkId, options);
-        const result = await this.build(forkId, latest, builtStateProof);
+        const result = await this.fitUploadCap(
+            forkId,
+            latest,
+            await this.build(forkId, latest, builtStateProof),
+            options?.expectedSlashes
+        );
+        if (!result) return undefined;
         this.built.set(forkId, { fingerprint: fingerprintOf(latest), result });
         return result;
     }
@@ -206,6 +224,83 @@ export default class DisputeBuilder {
             latestStateSnapshot,
             String(input.latestInboundMessageBlockHash) as Hash
         );
+    }
+
+    /**
+     * `built` when its encoded dispute fits the chain's upload cap. Otherwise
+     * the largest valid dispute under the cap: the dispute at the highest
+     * lower height that fits. A dispute below the highest block this peer
+     * signed is killable (`DisputeNotLatestState`), so no height below that
+     * block is tried. Undefined when none fits.
+     */
+    private async fitUploadCap(
+        forkId: ForkId,
+        inputs: DisputeInputs,
+        built: ConstructDisputeResult,
+        expectedSlashes: Address[] | undefined
+    ): Promise<ConstructDisputeResult | undefined> {
+        const maxDisputeUploadBytes = await this.readMaxDisputeUploadBytes();
+        if (encodedDisputeBytesOf(built) <= maxDisputeUploadBytes) return built;
+        const ownLatestSigned =
+            this.agreementManager.getLatestSignedBlockByParticipant(
+                forkId,
+                this.signerAddress
+            );
+        const lowestHeight = ownLatestSigned?.block.height ?? 0;
+        for (
+            let height = inputs.latestBlockHeight - 1;
+            height >= lowestHeight;
+            height--
+        ) {
+            const builtStateProof =
+                await this.agreementManager.tryBuildStateProof(forkId, height);
+            // below the anchor: no lower height proves anything
+            if (!builtStateProof) break;
+            const cut = await this.build(
+                forkId,
+                await this.readInputs(forkId, expectedSlashes, height),
+                builtStateProof
+            );
+            if (encodedDisputeBytesOf(cut) > maxDisputeUploadBytes) continue;
+            this.logger.warn(
+                "Dispute above the upload cap: cut to the largest dispute that fits",
+                LoggerUtils.getDisputeUploadCapMetadata({
+                    forkId,
+                    maxDisputeUploadBytes,
+                    latestBlockHeight: inputs.latestBlockHeight,
+                    encodedDisputeBytes: encodedDisputeBytesOf(built),
+                    cutBlockHeight: height,
+                    cutEncodedDisputeBytes: encodedDisputeBytesOf(cut)
+                })
+            );
+            return cut;
+        }
+        this.logger.error(
+            "No valid dispute fits the upload cap: no dispute is built",
+            LoggerUtils.getDisputeUploadCapMetadata({
+                forkId,
+                maxDisputeUploadBytes,
+                latestBlockHeight: inputs.latestBlockHeight,
+                encodedDisputeBytes: encodedDisputeBytesOf(built),
+                lowestHeight
+            })
+        );
+        return undefined;
+    }
+
+    private readMaxDisputeUploadBytes(): Promise<bigint> {
+        let maxBytes = this.maxDisputeUploadBytes;
+        if (!maxBytes) {
+            const read =
+                this.stateChannelManagerContract.getMaxDisputeUploadBytes();
+            maxBytes = this.maxDisputeUploadBytes = read;
+            // A failed read is retried on the next construction.
+            read.catch(() => {
+                if (this.maxDisputeUploadBytes === read)
+                    this.maxDisputeUploadBytes = undefined;
+            });
+        }
+        return maxBytes;
     }
 
     /**
@@ -267,12 +362,13 @@ export default class DisputeBuilder {
         return isEvidenceAdded;
     }
 
+    /** The inputs at `height`, by default this peer's latest block. */
     private async readInputs(
         forkId: ForkId,
-        expectedSlashes: Address[] = []
+        expectedSlashes: Address[] = [],
+        height: number = this.storage.blocks.getLatestBlockHeight(forkId)
     ): Promise<DisputeInputs> {
-        const latestBlockHeight =
-            this.storage.blocks.getLatestBlockHeight(forkId);
+        const latestBlockHeight = height;
 
         const [latestStateSnapshot, _onChainSlashes, _participants] =
             await Promise.all([

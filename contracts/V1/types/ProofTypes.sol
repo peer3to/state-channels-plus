@@ -50,6 +50,8 @@ struct ProofWalkResult {
     bool isBlockFault;
     /// @dev with `isBlockFault`: the block of that milestone
     uint256 failedBlockIndex;
+    /// @dev the step failed because storage does not hold the inbound run its threshold hop consumed
+    bool isInboundRunMissing;
 }
 
 //Fraud FraudProof Types:

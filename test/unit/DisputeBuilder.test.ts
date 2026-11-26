@@ -12,6 +12,13 @@ import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers, ZeroAddress } from "ethers";
 
+// below the fixed part of any encoded dispute
+const BELOW_ANY_DISPUTE_UPLOAD_CAP = 512;
+// halfway between the encoded sizes, in a three-peer channel after blocks
+// 0..1, of the dispute at block 1 (2,144 bytes, signed by all) and at block 2
+// (3,168 bytes, unsigned by the disputer): see the premises of the cut test
+const CUT_DISPUTE_UPLOAD_CAP = 2_656;
+
 describe("Unit: DisputeBuilder", function () {
     describe("constructDispute → reuse", function () {
         it("unchanged inputs → the second construction returns the cached result", async function () {
@@ -393,6 +400,119 @@ describe("Unit: DisputeBuilder", function () {
             );
 
             expect(await hasBuilt()).to.equal(false);
+        });
+    });
+
+    describe("constructDispute → upload cap", function () {
+        it("a dispute above the deployed upload cap at every height this peer may dispute → no dispute is built", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2, {
+                maxDisputeUploadBytes: BELOW_ANY_DISPUTE_UPLOAD_CAP
+            }); // blocks 0..1
+            const forkId = h.activeForkId!;
+
+            const r = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, args) => {
+                    const result = await sm.disputeManager.constructDispute(
+                        args.forkId
+                    );
+                    return {
+                        isBuilt: result !== undefined,
+                        latestHeight: sm.storage.blocks.getLatestBlockHeight(
+                            args.forkId
+                        ),
+                        signedHeight:
+                            sm.agreementManager.getLatestSignedBlockByParticipant(
+                                args.forkId,
+                                sm.signerAddress
+                            )?.block.height
+                    };
+                },
+                { forkId }
+            );
+
+            // premise: a lower height is below this peer's own signature
+            expect(r.signedHeight).to.equal(r.latestHeight);
+            expect(r.isBuilt).to.equal(false);
+        });
+
+        it("the latest dispute above the upload cap while the height this peer last signed fits → the dispute is cut to that height and the chain walks its proof", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2, {
+                maxDisputeUploadBytes: CUT_DISPUTE_UPLOAD_CAP
+            }); // blocks 0..1
+            const forkId = h.activeForkId!;
+            for (const peer of h.peers)
+                await h.rpcStub.suppressTimeoutCheck(peer.index);
+            const writer = await h.query.getNextPeerToWrite();
+            const disputer = h.peers.find(
+                (peer) => peer.index !== writer.index
+            )!;
+            const signedHeightDispute = await h.dispute.fetchConstructedDispute(
+                disputer.index,
+                forkId
+            );
+            const signedHeightBytes = ethers.dataLength(
+                signedHeightDispute.disputeConfirmation.signedDispute
+                    .encodedDispute
+            );
+            // the disputer signs no block of a blacklisted author: the third
+            // peer's relay of the writer's next block is stored unsigned
+            await h.execOnHost(
+                disputer,
+                (sm, args) =>
+                    sm.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                        args.writer
+                    ),
+                { writer: writer.address }
+            );
+            // add() resolves after the writer's own commit
+            await h
+                .getPeer(writer.index)
+                .p2pInstance.p2pContractInstance.add(1); // block 2
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(disputer)
+                        .query.getLatestBlockHeight(forkId)
+                        .request()) === 2,
+                h.event.protocolEventTimeoutMs()
+            );
+
+            const cut = await h.dispute.fetchConstructedDispute(
+                disputer.index,
+                forkId
+            );
+            const signed = await h
+                .control(disputer)
+                .query.getLatestSignedBlockByParticipant(
+                    forkId,
+                    disputer.address
+                )
+                .request();
+            const cutBytes = ethers.dataLength(
+                cut.disputeConfirmation.signedDispute.encodedDispute
+            );
+
+            // premise: block 2 is stored unsigned, block 1's dispute fits
+            const sizes = `built ${cutBytes} bytes, block 1's dispute ${signedHeightBytes} bytes`;
+            expect(signed?.height, sizes).to.equal(1);
+            expect(signedHeightBytes, sizes).to.be.at.most(
+                CUT_DISPUTE_UPLOAD_CAP
+            );
+            expect(
+                Number(cut.auditingData.latestStateSnapshot.blockHeight),
+                sizes
+            ).to.equal(1);
+            expect(cutBytes).to.be.at.most(CUT_DISPUTE_UPLOAD_CAP);
+            expect(
+                await chainAcceptsDisputeProof(
+                    h.channelManager,
+                    cut.dispute,
+                    cut.auditingData
+                )
+            ).to.equal(true);
         });
     });
 

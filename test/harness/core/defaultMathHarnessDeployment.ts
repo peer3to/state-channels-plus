@@ -29,7 +29,8 @@ export async function deployDefaultMathOnChainContracts(
         consumerFacetArgs: [],
         timeConfig: params.timeConfig,
         disputeExecutionGasLimit: params.disputeExecutionGasLimit,
-        facetAddresses: params.facetAddresses
+        facetAddresses: params.facetAddresses,
+        maxDisputeUploadBytes: params.maxDisputeUploadBytes
     });
 
     return deployment.address;

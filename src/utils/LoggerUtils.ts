@@ -758,6 +758,34 @@ export class LoggerUtils {
         };
     }
 
+    /**
+     * A dispute measured against the chain's upload cap: the built dispute at
+     * the latest block, and the cut dispute that fits, or the lowest height
+     * the cut may reach when none fits.
+     */
+    static getDisputeUploadCapMetadata(fit: {
+        forkId: ForkId;
+        maxDisputeUploadBytes: bigint;
+        latestBlockHeight: number;
+        encodedDisputeBytes: bigint;
+        cutBlockHeight?: number;
+        cutEncodedDisputeBytes?: bigint;
+        lowestHeight?: number;
+    }) {
+        return {
+            forkId: fit.forkId,
+            maxDisputeUploadBytes: Number(fit.maxDisputeUploadBytes),
+            latestBlockHeight: fit.latestBlockHeight,
+            encodedDisputeBytes: Number(fit.encodedDisputeBytes),
+            cutBlockHeight: fit.cutBlockHeight,
+            cutEncodedDisputeBytes:
+                fit.cutEncodedDisputeBytes === undefined
+                    ? undefined
+                    : Number(fit.cutEncodedDisputeBytes),
+            lowestHeight: fit.lowestHeight
+        };
+    }
+
     static getMessageStructMeta(message: MessageStruct) {
         const messageType = String(message.messageType);
         const decodedMessageType = this.decodeMessageType(messageType);

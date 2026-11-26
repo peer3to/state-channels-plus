@@ -201,7 +201,7 @@ class DisputeManager {
             if (!constructed) {
                 this.storage.disputes.storeDisputedFork(forkId, false);
                 this.logger.info(
-                    "no dispute: this view is behind the chain's anchor",
+                    "no dispute: this view is behind the chain's anchor, or no valid dispute fits the upload cap",
                     { forkId, channelId: this.channelId }
                 );
                 return {};

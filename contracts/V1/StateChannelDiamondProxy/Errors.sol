@@ -70,6 +70,7 @@ error CantWithdrawMoreThanDeposits(uint256 totalDepositAmount, uint256 totalWith
 
 //Dispute errors
 error ErrorDisputerNotMsgSender(address expectedDisputer, address actualSender);
+error ErrorDisputeUploadTooLarge(uint256 encodedDisputeBytes, uint256 maxDisputeUploadBytes);
 error ErrorDisputeChallengePeriodExpired(uint256 challengePeriodEnd, uint256 currentTimestamp);
 error ErrorDisputeAlreadyPosted(bytes32 forkId, address disputer);
 error ErrorCantParticipateInDispute(bytes32 channelId, address participant);

@@ -41,6 +41,11 @@ contract DisputeManagerFacet is StateChannelCommon {
         internal
         returns (bool isFinal, uint256 disputeWindowCreationTimestamp)
     {
+        // a kill carries the dispute next to a final proof: the bound keeps room for that proof in one transaction
+        uint256 encodedDisputeBytes = disputeConfirmation.signedDispute.encodedDispute.length;
+        if (encodedDisputeBytes > _getMaxDisputeUploadBytes()) {
+            revert ErrorDisputeUploadTooLarge(encodedDisputeBytes, _getMaxDisputeUploadBytes());
+        }
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
         require(msg.sender == dispute.input.disputer, ErrorDisputerNotMsgSender(dispute.input.disputer, msg.sender));
         require(

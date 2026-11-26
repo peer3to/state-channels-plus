@@ -61,3 +61,5 @@ Upload bookkeeping
 - [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P21` — a noncanonical encoded dispute reverts with `ErrorNonCanonicalEncoding` on the upload with calldata, without mutation
 - [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P22` — an offset-gap encoded dispute reverts with `ErrorNonCanonicalEncoding` on the plain upload, without mutation
 - [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P23` — routed through the deployed diamond, a noncanonical encoded dispute reverts with `ErrorNonCanonicalEncoding` and creates no window
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P24` — an encoded dispute above `maxDisputeUploadBytes` reverts with `ErrorDisputeUploadTooLarge` in both upload modes
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P25` — an encoded dispute at `maxDisputeUploadBytes` uploads in both upload modes

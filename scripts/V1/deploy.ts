@@ -207,6 +207,8 @@ export type DeployFullStackParams = {
     maxChannelParticipants?: number;
     /** Reuse already-deployed config-independent facets (see `deploy`). */
     facetAddresses?: string[];
+    /** The largest encoded dispute an upload accepts; 0 keeps the contract default. */
+    maxDisputeUploadBytes?: number;
 };
 
 export async function deploy(
@@ -220,7 +222,9 @@ export async function deploy(
     // a caller that already deployed them (or found them cached on the node)
     // passes their addresses to skip the redeploy — only the proxy carries
     // timeConfig/gas-limit state.
-    existingFacetAddresses?: string[]
+    existingFacetAddresses?: string[],
+    // 0 keeps the contract's default upload bound
+    maxDisputeUploadBytes: number = 0
 ): Promise<{ address: string; contract: StateChannelManagerInterface }> {
     const facetAddresses =
         existingFacetAddresses ?? (await deployFacets(signer));
@@ -238,7 +242,8 @@ export async function deploy(
                 timeConfig.chainFallbackTime,
                 timeConfig.evidenceTime,
                 disputeExecutionGasLimit,
-                maxChannelParticipants
+                maxChannelParticipants,
+                maxDisputeUploadBytes
             ]
         }
     );
@@ -262,7 +267,8 @@ export async function deployFullStack(
         timeConfig,
         disputeExecutionGasLimit,
         maxChannelParticipants,
-        facetAddresses
+        facetAddresses,
+        maxDisputeUploadBytes
     } = params;
 
     // in nonce order, as deployFacets: a concurrent send can reach the node
@@ -289,7 +295,8 @@ export async function deployFullStack(
         timeConfig,
         disputeExecutionGasLimit,
         maxChannelParticipants,
-        facetAddresses
+        facetAddresses,
+        maxDisputeUploadBytes
     );
 }
 

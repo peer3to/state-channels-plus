@@ -21,6 +21,7 @@ import {
 import { MathTestSession as TestSession } from "@test/harness";
 import type { DisputeAuditingDataStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { expect } from "chai";
+import { ethers } from "ethers";
 
 // Alice and Bob post the chain anchor; Charlie joins,
 // the honest history consumes his JOIN and is final past it with his
@@ -336,9 +337,11 @@ describe("E2E: dispute validation / dispute final point regression", function ()
                 "the side chain never consumed the JOIN"
             ).to.equal(history.anchor.latestInboundMessageBlockHash);
         }
+        // the side chain consumed no JOIN G skipped: there is no block to name
         const regression = {
             finalProof: below.finalProof,
-            latestFinalizedSnapshot: latestFinalizedSnapshot.toStruct()
+            latestFinalizedSnapshot: latestFinalizedSnapshot.toStruct(),
+            joinInboundBlockHash: ethers.ZeroHash
         };
         const conflict = {
             finalProof: atG.finalProof,

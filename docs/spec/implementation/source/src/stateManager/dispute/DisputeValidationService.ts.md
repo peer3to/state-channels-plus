@@ -155,7 +155,7 @@ Audit order and evidence
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P134` — A dispute whose last block, signed only by its disputer, commits a forged latest state with its outbound head at an overflowing block: the replay stores `DisputeInvalidBlockInStateProofApplyFraudProof`, the outbound run is never judged, and the audit returns false without throwing.
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P135` — A dispute whose latest finalized point lies above the auditor's own final point with fewer consumed inbound blocks gets a `DisputeFinalPointRegression` from that final point and the last-milestone snapshot, stored only after the chain's check agrees
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P136` — A dispute whose latest finalized point consumed the auditor's final inbound head gets no regression proof
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P137` — A latest finalized point naming an inbound hash the chain does not know makes the chain check revert with `ErrorInboundMessageBlockNotStored`; the auditor stores no regression proof and continues the audit
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P137` — A latest finalized point naming an inbound hash the chain does not know links to no stored inbound run: the auditor offers no regression proof to the chain, stores none and continues the audit
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P138` — An honest dispute over the auditor's own history gets no regression proof
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P139` — An omitted-data dispute whose `onChainSlashes` lists a participant the chain never slashed gets `DisputeOnChainSlashesNotSubset` before any state-proof walk or snapshot lookup
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P140` — An omitted-data dispute whose latest finalized snapshot the auditor holds gets `DisputeFinalPointRegression` over that stored snapshot
@@ -170,6 +170,8 @@ Audit order and evidence
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P149` — A final point whose stored inbound run above the latest finalized point's head holds only a top-up of a participant sends no regression check to the chain
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P150` — A latest finalized point at block zero of a genesis start has no final point below it and sends no regression check to the chain
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P151` — A verified proof that cannot be persisted because a block now conflicts with stored history makes the audit try the final-history counters again, and a regression that became provable during the audit is stored
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P152` — `findSkippedJoin` names the inbound block of the first JOIN by an address outside G's participants, also when G's inbound head is a block this peer does not hold, and the stored regression proof carries it
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P153` — `findSkippedJoin` over a run of top-ups by G's participants only names no JOIN, so no regression proof is built
 
 ## UNIT-TEST-DISPUTE-VALIDATION-SERVICE-2-7H4K2D
 

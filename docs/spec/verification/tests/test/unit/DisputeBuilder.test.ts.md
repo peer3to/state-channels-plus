@@ -63,3 +63,5 @@ peer 1's `onDisputeReducedResultCommitted`, and asserts peer 1 keeps no built di
 - `our dispute with a timeout claim compared to a self-removal dispute without one → evidence added`: INV-DIS-8-1GY6Q5.T1.P27, UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P15
 - `our dispute without a timeout claim compared to a timeout dispute → no evidence added`: INV-DIS-8-1GY6Q5.T1.P27, UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P16
 - `a dispute naming a snapshot absent from storage → rejects naming that snapshot, no auditing data`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P9
+- `a dispute above the deployed upload cap at every height this peer may dispute → no dispute is built`: REQ-DIS-2-PKVZ7E.T1.P36, UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P17
+- `the latest dispute above the upload cap while the height this peer last signed fits → the dispute is cut to that height and the chain walks its proof`: REQ-DIS-2-PKVZ7E.T1.P37, UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P18

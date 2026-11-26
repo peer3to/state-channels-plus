@@ -64,7 +64,8 @@ contract LocalDiamond is StateChannelManagerProxy {
             _chainFallbackTime,
             _evidenceTime,
             _disputeExecutionGasLimit,
-            _maxChannelParticipants
+            _maxChannelParticipants,
+            0 // the mirror never runs an upload: the default upload bound
         )
     {}
 

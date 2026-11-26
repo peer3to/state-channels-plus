@@ -89,6 +89,24 @@ contract StateProofHarness is DisputeFraudProofFacet, DisputeVerificationFacet, 
         addOnChainSlashedParticipant(channelId, participant);
     }
 
+    /// the lowest stored inbound block above `lowerInboundHash` up to `upperInboundHash` holding a JOIN of an address
+    /// outside `participants`, the way a challenger picks its JOIN hint; zero when the stored run holds none
+    function lowestJoinOutside(
+        bytes32 channelId,
+        bytes32 upperInboundHash,
+        bytes32 lowerInboundHash,
+        address[] memory participants
+    ) external view returns (bytes32 joinHash) {
+        bytes32 inboundHash = upperInboundHash;
+        while (inboundHash != lowerInboundHash && _hasInboundMessageBlock(channelId, inboundHash)) {
+            address[] memory joiners = inboundMessageBlockMap[channelId][inboundHash].joiners;
+            if (UtilityFacet(utilityFacetAddress).subtractAddressArrays(joiners, participants).length != 0) {
+                joinHash = inboundHash;
+            }
+            inboundHash = inboundMessageBlockMap[channelId][inboundHash].previousBlockHash;
+        }
+    }
+
     function commitmentCount(bytes32 channelId, bytes32 forkId) external view returns (uint256) {
         return disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments.length;
     }
@@ -603,14 +621,43 @@ abstract contract StateProofStaging is DiamondHarness {
         );
     }
 
-    /// the final-point regression allegation: the challenger's final proof and the snapshot of the dispute's latest
-    /// finalized point `latestFinalizedSnapshot`
+    /// the final-point regression allegation: the challenger's final proof, the snapshot of the dispute's latest
+    /// finalized point `latestFinalizedSnapshot` and the challenger's JOIN hint (`_joinHint`)
     function _regressionProof(ProofWalkInput memory finalProof, StateSnapshot memory latestFinalizedSnapshot)
         internal
-        pure
+        view
         returns (bytes memory)
     {
-        return abi.encode(DisputeFinalPointRegression(finalProof, latestFinalizedSnapshot));
+        return _regressionProofWithHint(
+            finalProof, latestFinalizedSnapshot, _joinHint(finalProof, latestFinalizedSnapshot)
+        );
+    }
+
+    /// the final-point regression allegation naming `joinInboundBlockHash` as the skipped JOIN
+    function _regressionProofWithHint(
+        ProofWalkInput memory finalProof,
+        StateSnapshot memory latestFinalizedSnapshot,
+        bytes32 joinInboundBlockHash
+    ) internal pure returns (bytes memory) {
+        return abi.encode(DisputeFinalPointRegression(finalProof, latestFinalizedSnapshot, joinInboundBlockHash));
+    }
+
+    /// the hint a challenger names: the lowest stored JOIN of an address outside the latest finalized point's
+    /// participants above its inbound head up to the final point's; zero when `finalProof` does not walk or the
+    /// stored run holds none
+    function _joinHint(ProofWalkInput memory finalProof, StateSnapshot memory latestFinalizedSnapshot)
+        internal
+        view
+        returns (bytes32)
+    {
+        ProofWalkResult memory walk = _diamond().verifyMilestones(finalProof);
+        if (!walk.valid) return bytes32(0);
+        return harness.lowestJoinOutside(
+            CHANNEL,
+            walk.finalizedSnapshot.snapshotData.latestInboundMessageBlockHash,
+            latestFinalizedSnapshot.snapshotData.latestInboundMessageBlockHash,
+            latestFinalizedSnapshot.snapshotData.participants
+        );
     }
 
     /// the omitted-data invalid-state-proof allegation at milestone `milestoneIndex`: the challenger's genesis data

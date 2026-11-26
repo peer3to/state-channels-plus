@@ -246,6 +246,10 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return gasLimit;
     }
 
+    function _getMaxDisputeUploadBytes() internal view virtual returns (uint256) {
+        return maxDisputeUploadBytes;
+    }
+
     function _getAllTimes() internal view virtual returns (uint256, uint256, uint256, uint256) {
         return (p2pTime, agreementTime, chainFallbackTime, evidenceTime);
     }
@@ -1000,7 +1004,10 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
                 input.channelId,
                 resultingSnapshot.snapshotData.latestInboundMessageBlockHash,
                 result.finalizedSnapshot.snapshotData.latestInboundMessageBlockHash
-            )) return (false, false);
+            )) {
+            result.isInboundRunMissing = true;
+            return (false, false);
+        }
         address[] memory expectedParticipants = _deriveMilestoneUnionParticipants(
             input.channelId, result.finalizedSnapshot.snapshotData, resultingSnapshot.snapshotData
         );

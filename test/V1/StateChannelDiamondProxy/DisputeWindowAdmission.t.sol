@@ -5,12 +5,20 @@ import "../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol";
 import {DisputeWindowSeeding} from "../harness/DisputeWindowSeeding.sol";
 import {InboundSeeding} from "../harness/InboundSeeding.sol";
 import {CanonicalMutations} from "../harness/CanonicalMutations.sol";
-import {ErrorNonCanonicalEncoding} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
+import {
+    ErrorDisputeUploadTooLarge,
+    ErrorNonCanonicalEncoding
+} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 
 contract DisputeWindowAdmissionHarness is DisputeManagerFacet, DisputeWindowSeeding, InboundSeeding {
     constructor() {
         evidenceTime = 10;
         utilityFacetAddress = address(new UtilityFacet());
+        maxDisputeUploadBytes = type(uint256).max;
+    }
+
+    function setMaxDisputeUploadBytes(uint256 maxBytes) external {
+        maxDisputeUploadBytes = maxBytes;
     }
 
     function seedChannel(bytes32 channelId, address disputer, address other) external {
@@ -138,6 +146,35 @@ contract DisputeWindowAdmissionTest is Test {
         vm.prank(disputer);
         vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
         target.uploadDispute(confirmation);
+    }
+
+    function testFuzz_encodedDisputeAboveTheUploadCapRefused(bool withCalldata) public {
+        (DisputeConfirmation memory confirmation, DisputeAuditingData memory auditing) =
+            _confirmation(false, withCalldata, inboundHead, inboundHeight);
+        uint256 encodedBytes = confirmation.signedDispute.encodedDispute.length;
+        target.setMaxDisputeUploadBytes(encodedBytes - 1);
+        bytes32 beforeState = _state();
+
+        vm.expectRevert(abi.encodeWithSelector(ErrorDisputeUploadTooLarge.selector, encodedBytes, encodedBytes - 1));
+        vm.prank(disputer);
+        if (withCalldata) target.uploadDisputeWithCalldata(confirmation, auditing);
+        else target.uploadDispute(confirmation);
+
+        assertEq(_state(), beforeState, "refusal changes no admission state");
+    }
+
+    function testFuzz_encodedDisputeAtTheUploadCapAccepted(bool withCalldata) public {
+        (DisputeConfirmation memory confirmation, DisputeAuditingData memory auditing) =
+            _confirmation(false, withCalldata, inboundHead, inboundHeight);
+        target.setMaxDisputeUploadBytes(confirmation.signedDispute.encodedDispute.length);
+
+        vm.prank(disputer);
+        if (withCalldata) target.uploadDisputeWithCalldata(confirmation, auditing);
+        else target.uploadDispute(confirmation);
+
+        (,, uint256 count, uint256 posted,) = target.readAdmissionState(CHANNEL, FORK, disputer);
+        assertEq(count, 1, "the dispute at the cap is committed");
+        assertEq(posted, 1);
     }
 
     function _state() internal view returns (bytes32) {

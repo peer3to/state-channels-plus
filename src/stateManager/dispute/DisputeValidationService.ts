@@ -268,10 +268,10 @@ export default class DisputeValidationService {
      * history consumed. F is this peer's latest final point when G is
      * above it, else the highest final point it can prove below G. G's
      * snapshot comes from `evidence` (the posted auditing data, else this
-     * peer's stored snapshots). The chain is not asked when this peer's own
-     * inbound blocks rule the regression out
-     * (`isInboundRegressionRuledOutLocally`). Otherwise the chain reads both
-     * inbound heights itself; the proof is stored only when it agrees.
+     * peer's stored snapshots). The proof names the skipped JOIN's block
+     * (`findSkippedJoin`); without one in this peer's own inbound blocks the
+     * chain is not asked. Otherwise the chain checks the named block against
+     * both inbound heights itself; the proof is stored only when it agrees.
      */
     private async tryCreateFinalPointRegressionProof(
         dispute: DisputeStruct,
@@ -289,14 +289,16 @@ export default class DisputeValidationService {
         );
         if (!final) return false;
         const { finalProof, finalized } = final;
-        if (
-            this.isInboundRegressionRuledOutLocally(
-                latestFinalizedSnapshot.snapshotData,
-                finalized.latestInboundMessageBlockHash
-            )
-        )
-            return false;
-        const proof = { finalProof, latestFinalizedSnapshot };
+        const skippedJoin = this.findSkippedJoin(
+            latestFinalizedSnapshot.snapshotData,
+            finalized.latestInboundMessageBlockHash
+        );
+        if (!skippedJoin) return false;
+        const proof = {
+            finalProof,
+            latestFinalizedSnapshot,
+            joinInboundBlockHash: skippedJoin.blockHash
+        };
         if (
             !(await this.isAcceptedByChain(
                 this.stateChannelManagerContract.isDisputeFinalPointRegression.staticCall(
@@ -311,7 +313,10 @@ export default class DisputeValidationService {
             {
                 dispute: LoggerUtils.getDisputeMetadata(dispute),
                 finalized: LoggerUtils.getSnapshotMetadata(finalized),
-                latestFinalizedHeight: latestFinalized.height
+                latestFinalizedHeight: latestFinalized.height,
+                joinInboundBlock: LoggerUtils.getMessageBlockMetadata(
+                    skippedJoin.messageBlock
+                )
             }
         );
         this.disputeFraudProofService.createDisputeFinalPointRegression(
@@ -322,45 +327,61 @@ export default class DisputeValidationService {
     }
 
     /**
-     * Skip-only filter before the chain read of the regression: true when
-     * this peer's own stored inbound blocks put G's inbound head at or above
-     * F's, or when the stored run above G's head up to F's holds no JOIN of
-     * an address outside G's participants (only top-ups). Heads are looked
-     * up by hash, never by a snapshot's height field. A hash or a run the
-     * store does not hold rules nothing out, so the chain is asked; a counter
-     * is stored only on the chain's verdict.
+     * The JOIN hint of the regression: the first stored inbound block above
+     * G's inbound head up to F's that holds a JOIN of an address outside G's
+     * participants, with its hash. Undefined when this peer's own stored inbound
+     * blocks put G's inbound head at or above F's, or when that run holds
+     * only top-ups. Heads are looked up by hash, never by a snapshot's height
+     * field. G's head may be a block this peer does not hold (a joiner holds
+     * none below its JOIN): the run then ends on its hash. An F head or a run
+     * the store does not hold names no block, so no proof is built: the chain
+     * checks only the block the proof names.
      */
-    private isInboundRegressionRuledOutLocally(
+    private findSkippedJoin(
         latestFinalized: SnapshotDataStruct,
         finalInboundHash: Hash
-    ): boolean {
+    ) {
         const latestFinalizedInboundHash =
             latestFinalized.latestInboundMessageBlockHash as Hash;
-        if (latestFinalizedInboundHash === finalInboundHash) return true;
+        if (latestFinalizedInboundHash === finalInboundHash) return undefined;
         const { inboundMessages } = this.storage;
         const latestFinalizedInbound = inboundMessages.getMessageBlock(
             latestFinalizedInboundHash
         );
         const finalInbound = inboundMessages.getMessageBlock(finalInboundHash);
-        if (!latestFinalizedInbound || !finalInbound) return false;
+        if (!finalInbound) return undefined;
         if (
+            latestFinalizedInbound &&
             BigInt(latestFinalizedInbound.blockHeight) >=
-            BigInt(finalInbound.blockHeight)
+                BigInt(finalInbound.blockHeight)
         )
-            return true;
+            return undefined;
         const skipped = inboundMessages.tryGetMessageBlocksInRange({
             upperBlockHash: finalInboundHash,
             lowerBlockHash: latestFinalizedInboundHash
         });
-        if (skipped.missingBlockHash) return false;
+        if (skipped.missingBlockHash) return undefined;
+        // the run must end on G's head: a walk down to the zero hash never met it
+        if (skipped.blocks[0]?.previousBlockHash !== latestFinalizedInboundHash)
+            return undefined;
         const participants = new Set<ChecksumAddress>(
             latestFinalized.participants.map((participant) =>
                 getChecksumAddress(String(participant))
             )
         );
-        return this.agreementManager
-            .getJoiners(skipped.blocks)
-            .every((joiner) => participants.has(getChecksumAddress(joiner)));
+        // ascending: each block's hash is the next block's previous hash, the
+        // last block's is F's inbound head
+        const index = skipped.blocks.findIndex((messageBlock) =>
+            this.agreementManager
+                .getJoiners([messageBlock])
+                .some((joiner) => !participants.has(getChecksumAddress(joiner)))
+        );
+        if (index === -1) return undefined;
+        const blockHash =
+            index === skipped.blocks.length - 1
+                ? finalInboundHash
+                : (skipped.blocks[index + 1].previousBlockHash as Hash);
+        return { blockHash, messageBlock: skipped.blocks[index] };
     }
 
     /**

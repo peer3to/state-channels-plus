@@ -316,6 +316,7 @@ export class PeerTestHarness<
             disputeExecutionGasLimit:
                 options?.disputeExecutionGasLimit ??
                 DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT,
+            maxDisputeUploadBytes: options?.maxDisputeUploadBytes,
             autoConnect: options?.autoConnect !== false,
             peerSetupConcurrency: options?.peerSetupConcurrency,
             configOverrides: options?.configOverrides || {},
@@ -512,6 +513,8 @@ export class PeerTestHarness<
                     tc: sortedTc,
                     sm: String(stateMachineGasLimit),
                     de: String(disputeExecutionGasLimit),
+                    // the upload cap is baked into the proxy: 0 is the default
+                    upload: this.options.maxDisputeUploadBytes ?? 0,
                     maximum:
                         this.options.maxChannelParticipants ??
                         DEFAULT_MAX_CHANNEL_PARTICIPANTS,
@@ -628,7 +631,9 @@ export class PeerTestHarness<
                             this.options.disputeExecutionGasLimit!,
                         timeConfig: this.options.timeConfig as TimeConfig,
                         harnessConfig: this.harnessConfig,
-                        facetAddresses
+                        facetAddresses,
+                        maxDisputeUploadBytes:
+                            this.options.maxDisputeUploadBytes
                     }
                 );
                 this.logger.debug(

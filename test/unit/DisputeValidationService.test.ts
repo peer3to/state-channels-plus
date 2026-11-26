@@ -1109,6 +1109,104 @@ describe("Unit: DisputeValidationService", function () {
             ).to.equal(true);
         });
 
+        it("the same hop from the chain anchor above Charlie's final point -> the stored DisputeFinalPointRegression names his JOIN, the inbound block the chain reads the new joiner from", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            const { dispute, auditingData } =
+                await constructJoinerBypassDispute(h, history);
+
+            const run = await h.dispute.auditDispute(
+                history.charlieIndex,
+                dispute,
+                auditingData
+            );
+
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.DisputeFinalPointRegression
+            );
+            const proof = Codec.decode(
+                run.storedProof!.encodedProof,
+                DisputeFraudProofType.DisputeFinalPointRegression
+            );
+            // premise: G's inbound head is the anchor's, below the JOIN
+            expect(
+                proof.latestFinalizedSnapshot.snapshotData
+                    .latestInboundMessageBlockHash
+            ).to.equal(history.anchor.latestInboundMessageBlockHash);
+            // Charlie's final point consumed his JOIN last
+            expect(proof.joinInboundBlockHash).to.equal(
+                history.charlieFinal.latestInboundMessageBlockHash
+            );
+        });
+
+        it("only a top-up by a participant of G between G's and F's inbound heads -> no skipped JOIN, so no regression proof is built", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            const forkId = h.activeForkId!;
+            const auditor = h.getPeer(2);
+            const latestHeight = async () =>
+                (await h
+                    .control(auditor)
+                    .query.getLatestBlockHeight(forkId)
+                    .request())!;
+            // G consumed a first top-up, F a second one above it
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait();
+            const latestFinalizedHeight = await latestHeight();
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait();
+            const finalHeight = await latestHeight();
+
+            const r = await h.execOnHost(
+                auditor,
+                async (sm, args) => {
+                    const latestFinalized = (await sm.storage.getStateSnapshot({
+                        forkId: args.forkId,
+                        height: args.latestFinalizedHeight
+                    }))!;
+                    const final = (await sm.storage.getStateSnapshot({
+                        forkId: args.forkId,
+                        height: args.finalHeight
+                    }))!;
+                    const skipped =
+                        sm.storage.inboundMessages.tryGetMessageBlocksInRange({
+                            upperBlockHash: final.latestInboundMessageBlockHash,
+                            lowerBlockHash:
+                                latestFinalized.latestInboundMessageBlockHash
+                        });
+                    const skippedJoin = sm.disputeValidationService[
+                        "findSkippedJoin"
+                    ](
+                        latestFinalized.snapshotData,
+                        final.latestInboundMessageBlockHash
+                    );
+                    return {
+                        skippedCount: skipped.blocks.length,
+                        isRunMissing: skipped.missingBlockHash !== undefined,
+                        skippedJoinHash: skippedJoin?.blockHash ?? null
+                    };
+                },
+                { forkId, latestFinalizedHeight, finalHeight }
+            );
+
+            // premise: F's head is one stored top-up above G's head
+            expect(r.skippedCount).to.equal(1);
+            expect(r.isRunMissing).to.equal(false);
+            expect(r.skippedJoinHash).to.equal(null);
+        });
+
         it("the same hop committing Charlie's seated head state (inbound head = his JOIN), signed by all three -> no regression, no DisputeFinalPointRegression", async function () {
             const h = TestSession.getHarness();
             const history = await stageSeatedJoinerHistory(h);
@@ -1134,7 +1232,7 @@ describe("Unit: DisputeValidationService", function () {
             expect(run.disputeFraudProofCount).to.equal(0);
         });
 
-        it("the hop names an inbound head the chain never held -> the chain's regression check has no inbound height for it and the audit continues: the walk's DisputeInvalidStateProof is stored instead", async function () {
+        it("the hop names an inbound head the chain never held -> no stored inbound run links it to Charlie's head, so no regression is offered and the audit continues: the walk's DisputeInvalidStateProof is stored instead", async function () {
             const h = TestSession.getHarness();
             const history = await stageSeatedJoinerHistory(h);
             const { dispute, auditingData } =
@@ -1158,15 +1256,8 @@ describe("Unit: DisputeValidationService", function () {
                 DisputeFraudProofType.DisputeInvalidStateProof
             );
             const { chain } = await regressions.observation();
-            expect(chain.reads, "the regression is offered").to.be.greaterThan(
-                0
-            );
-            expect(
-                chain.failureErrorNames,
-                "every offer reverts on the unknown inbound head"
-            ).to.deep.equal(
-                Array(chain.reads).fill("ErrorInboundMessageBlockNotStored")
-            );
+            // the proof names a block of the skipped run, which needs a run
+            expect(chain.reads, "no regression is offered").to.equal(0);
         });
 
         it("the hop sits at Charlie's final height, commits another snapshot and names an inbound head the chain never held -> the chain's conflict check has no inbound height for it, the audit goes on to the walk: false + DisputeInvalidStateProof, no conflict proof", async function () {

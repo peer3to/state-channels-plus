@@ -30,3 +30,5 @@ Exercises the public component behavior listed below with real contract or runti
 - `testFuzz_anchorBelowInboundHeadRefused`: UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P18, REQ-DIS-2-PKVZ7E.T1.P28
 - `testFuzz_anchorAtInboundHeadAccepted`: UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P19, REQ-DIS-2-PKVZ7E.T1.P29
 - `testFuzz_anchorAtInboundHeadWrongHeightRefused`: REQ-DIS-2-PKVZ7E.T1.P32
+- `testFuzz_encodedDisputeAboveTheUploadCapRefused`: REQ-DIS-2-PKVZ7E.T1.P33, UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P24
+- `testFuzz_encodedDisputeAtTheUploadCapAccepted`: REQ-DIS-2-PKVZ7E.T1.P34, UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P25

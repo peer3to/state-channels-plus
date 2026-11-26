@@ -46,6 +46,15 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
     uint256 internal constant LARGE_FINAL_HOPS = 7;
     /// the walk-cost case: top-ups of a participant between the anchor's inbound head and L's JOIN
     uint256 internal constant TOP_UP_RUN = 32;
+    /// the bound on the extra cost of the check from below the run: before the JOIN hint, the walk of the skipped run
+    /// cost 158,503 gas over TOP_UP_RUN blocks on cooled storage (about 4,953 per block), so this bound is under two
+    /// skipped blocks
+    uint256 internal constant SKIPPED_INBOUND_WALK_GAS = 8_983;
+    /// the conflict-cost case: top-ups of a participant G consumed above F's inbound head, at two points
+    uint256 internal constant CONFLICT_RUN = 64;
+    uint256 internal constant SHORT_CONFLICT_RUN = 16;
+    /// the largest final proof's hop count a kill must carry next to a dispute at the upload cap
+    uint256 internal constant FINAL_HOP_BOUND = 4;
 
     address internal erin = vm.addr(ERIN_KEY);
     address internal joiner = vm.addr(JOINER_KEY);
@@ -278,7 +287,10 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         ProofWalkInput memory finalProof = _honestFinalProof();
         assertEq(_decode(sideRun, 20).transaction.header.transactionCnt, 100, "premise: Y's block 20 is at F's height");
         assertFalse(
-            _diamond().isDisputeFinalPointRegression(side, DisputeFinalPointRegression(finalProof, sideEighty)),
+            _diamond()
+                .isDisputeFinalPointRegression(
+                    side, DisputeFinalPointRegression(finalProof, sideEighty, _joinHint(finalProof, sideEighty))
+                ),
             "premise: G = 80 is below F, the regression counter cannot kill"
         );
 
@@ -764,28 +776,34 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         (StateSnapshot memory sideHundred,) =
             _mathSnapshot(100, _anchorSet(), _balances(100, 100, 0), openingInboundHash, 1);
         Dispute memory side = _sideDispute(sideHundred);
+        bytes memory encodedProof = _regressionProof(finalProof, sideHundred);
 
         vm.expectRevert(abi.encodeWithSelector(ErrorInboundMessageBlockNotStored.selector, CHANNEL, prunedHead));
-        _apply(side, DisputeFraudProofType.DisputeFinalPointRegression, _regressionProof(finalProof, sideHundred));
+        _apply(side, DisputeFraudProofType.DisputeFinalPointRegression, encodedProof);
 
         _assertNobodySlashed(side, bob);
     }
 
-    function test_lookup_extraInboundWithAPrunedBlockBelowTheAnchorReverts() public {
-        // the anchor's stored inbound head Q (height 2) links to a pruned block; L's JOIN R follows Q at height 3
-        MessageBlock memory anchorHead = _joinBlock(keccak256("a pruned inbound block below the anchor"), 2, erin, 10);
+    function test_lookup_latestFinalizedHeadPrunedBelowTheAnchorReverts() public {
+        // the anchor's stored inbound head Q (height 2) links to a pruned block P (height 1); L's JOIN R follows Q at
+        // height 3
+        bytes32 prunedHash = keccak256("a pruned inbound block below the anchor");
+        MessageBlock memory anchorHead = _joinBlock(prunedHash, 2, erin, 10);
         bytes32 anchorHeadHash = harness.seedInboundBlock(CHANNEL, anchorHead);
         (StateSnapshot memory anchor,) = _mathSnapshot(50, _anchorSet(), _balances(100, 100, 0), anchorHeadHash, 2);
         harness.seedSnapshot(CHANNEL, anchor);
         bytes32 joinAboveHash = harness.seedInboundBlock(CHANNEL, _joinBlock(anchorHeadHash, 3, joiner, 50));
         ProofWalkInput memory finalProof = _finalJoinProofAtSixty(joinAboveHash, 3);
-        // Y's G = 100 names the stored opening block (inbound 1): the run from R down to it passes the pruned block
-        (StateSnapshot memory sideHundred,) =
-            _mathSnapshot(100, _anchorSet(), _balances(100, 100, 0), openingInboundHash, 1);
+        // Y's G = 100 names the pruned P (inbound 1): the chain cannot read its height
+        (StateSnapshot memory sideHundred,) = _mathSnapshot(100, _anchorSet(), _balances(100, 100, 0), prunedHash, 1);
         Dispute memory side = _sideDispute(sideHundred);
 
-        vm.expectRevert(abi.encodeWithSelector(ErrorInboundMessageBlockNotStored.selector, CHANNEL, joinAboveHash));
-        _apply(side, DisputeFraudProofType.DisputeFinalPointRegression, _regressionProof(finalProof, sideHundred));
+        vm.expectRevert(abi.encodeWithSelector(ErrorInboundMessageBlockNotStored.selector, CHANNEL, prunedHash));
+        _apply(
+            side,
+            DisputeFraudProofType.DisputeFinalPointRegression,
+            _regressionProofWithHint(finalProof, sideHundred, joinAboveHash)
+        );
 
         _assertNobodySlashed(side, bob);
     }
@@ -794,14 +812,10 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         bytes32 neverPosted = keccak256("an inbound block the chain never held");
         (StateSnapshot memory sideFinal,) = _mathSnapshot(1000, _anchorSet(), _balances(100, 100, 0), neverPosted, 3);
         Dispute memory side = _sideDispute(sideFinal);
+        bytes memory encodedProof = _regressionProof(_honestFinalProof(), sideFinal);
 
         vm.expectRevert(abi.encodeWithSelector(ErrorInboundMessageBlockNotStored.selector, CHANNEL, neverPosted));
-        _applyBy(
-            joiner,
-            side,
-            DisputeFraudProofType.DisputeFinalPointRegression,
-            _regressionProof(_honestFinalProof(), sideFinal)
-        );
+        _applyBy(joiner, side, DisputeFraudProofType.DisputeFinalPointRegression, encodedProof);
     }
 
     function test_lookup_conflictWithAnInboundHashNeitherStoredNorTheAnchorHeadReverts() public {
@@ -816,6 +830,120 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
             side,
             DisputeFraudProofType.DisputeConflictsWithFinalState,
             _conflictProof(_honestFinalProof(), 0, 0, sideHundred)
+        );
+
+        _assertNobodySlashed(side, joiner);
+    }
+
+    // ==================== the JOIN hint ====================
+
+    function test_hint_topUpInsideTheSkippedRunDoesNotKill() public {
+        (ProofWalkInput memory finalProof, bytes32 topUpHash,) = _lateJoinFinalProof();
+        (Dispute memory side, StateSnapshot memory sideFinal) = _sideAtThousand(openingInboundHash, 1);
+
+        // E's top-up lies above G's head and at most F's head, but E is one of G's participants
+        _applyBy(
+            joiner,
+            side,
+            DisputeFraudProofType.DisputeFinalPointRegression,
+            _regressionProofWithHint(finalProof, sideFinal, topUpHash)
+        );
+
+        _assertRejectedBy(side, joiner);
+    }
+
+    function test_hint_joinAtTheLatestFinalizedInboundHeightDoesNotKill() public {
+        (ProofWalkInput memory finalProof, bytes32 topUpHash,) = _lateJoinFinalProof();
+        (Dispute memory side, StateSnapshot memory sideFinal) = _sideAtThousand(topUpHash, 2);
+
+        // L's setup JOIN is stored at inbound height 2, G's own inbound height: G did not skip it
+        _applyBy(
+            joiner,
+            side,
+            DisputeFraudProofType.DisputeFinalPointRegression,
+            _regressionProofWithHint(finalProof, sideFinal, joinInboundHash)
+        );
+
+        _assertRejectedBy(side, joiner);
+    }
+
+    function test_hint_joinAboveTheFinalPointsInboundHeadDoesNotKill() public {
+        (ProofWalkInput memory finalProof,, bytes32 lateJoinHash) = _lateJoinFinalProof();
+        (Dispute memory side, StateSnapshot memory sideFinal) = _sideAtThousand(openingInboundHash, 1);
+        // a later JOIN at inbound height 4, above F's head: F never consumed it
+        bytes32 laterJoinHash = harness.seedInboundBlock(CHANNEL, _joinBlock(lateJoinHash, 4, joiner, 20));
+
+        _applyBy(
+            joiner,
+            side,
+            DisputeFraudProofType.DisputeFinalPointRegression,
+            _regressionProofWithHint(finalProof, sideFinal, laterJoinHash)
+        );
+
+        _assertRejectedBy(side, joiner);
+    }
+
+    function test_hint_blockTheChainDoesNotStoreDoesNotKill() public {
+        (ProofWalkInput memory finalProof,,) = _lateJoinFinalProof();
+        (Dispute memory side, StateSnapshot memory sideFinal) = _sideAtThousand(openingInboundHash, 1);
+
+        _applyBy(
+            joiner,
+            side,
+            DisputeFraudProofType.DisputeFinalPointRegression,
+            _regressionProofWithHint(finalProof, sideFinal, keccak256("an inbound block the chain never held"))
+        );
+
+        _assertRejectedBy(side, joiner);
+    }
+
+    function test_hint_lateJoinInsideTheSkippedRunKills() public {
+        (ProofWalkInput memory finalProof,, bytes32 lateJoinHash) = _lateJoinFinalProof();
+        (Dispute memory side, StateSnapshot memory sideFinal) = _sideAtThousand(openingInboundHash, 1);
+
+        _applyBy(
+            joiner,
+            side,
+            DisputeFraudProofType.DisputeFinalPointRegression,
+            _regressionProofWithHint(finalProof, sideFinal, lateJoinHash)
+        );
+
+        _assertKilledBy(side, joiner);
+    }
+
+    // ==================== a missing inbound block in F's walk ====================
+
+    function test_finalWalk_missingInboundBlockInTheRegressionKillRevertsAndSlashesNobody() public {
+        (bytes32 unlinkedJoinHash, ProofWalkInput memory finalProof) = _finalProofOverAnUnlinkedJoin();
+        // Y's G = 1000' consumed only the opening (inbound 1)
+        (StateSnapshot memory sideFinal,) =
+            _mathSnapshot(1000, _anchorSet(), _balances(100, 100, 0), openingInboundHash, 1);
+        Dispute memory side = _sideDispute(sideFinal);
+
+        vm.expectRevert(abi.encodeWithSelector(ErrorInboundMessageBlockNotStored.selector, CHANNEL, unlinkedJoinHash));
+        _applyBy(
+            joiner,
+            side,
+            DisputeFraudProofType.DisputeFinalPointRegression,
+            _regressionProofWithHint(finalProof, sideFinal, unlinkedJoinHash)
+        );
+
+        _assertNobodySlashed(side, joiner);
+    }
+
+    function test_finalWalk_missingInboundBlockInTheConflictKillRevertsAndSlashesNobody() public {
+        (bytes32 unlinkedJoinHash, ProofWalkInput memory finalProof) = _finalProofOverAnUnlinkedJoin();
+        // Y's block 60 commits another snapshot than F and consumed only the opening (inbound 1)
+        (StateSnapshot memory sideSixty,) =
+            _mathSnapshot(60, _anchorSet(), _balances(90, 100, 0), openingInboundHash, 1);
+        Dispute memory side = _sideDispute(sideSixty);
+
+        vm.expectRevert(abi.encodeWithSelector(ErrorInboundMessageBlockNotStored.selector, CHANNEL, unlinkedJoinHash));
+        _applyBy(
+            joiner,
+            side,
+            DisputeFraudProofType.DisputeConflictsWithFinalState,
+            _conflictProof(finalProof, 0, 0, sideSixty)
         );
 
         _assertNobodySlashed(side, joiner);
@@ -934,9 +1062,10 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
     }
 
     /// F = 100 consumed TOP_UP_RUN top-ups of E and then L's JOIN. The kill fires whether G sits below the whole run or
-    /// at its top: the top-ups never stop the walk before L's JOIN. Both checks run on cooled storage, after F's walk
-    /// has read the run, as in a kill; their gas difference is the regression walk over TOP_UP_RUN skipped blocks.
-    function test_regression_newJoinerAboveARunOfTopUpsKillsFromBelowTheRunAndFromItsTop() public {
+    /// at its top, and costs the same: the hint names L's JOIN, so the check reads no skipped block that F's own walk
+    /// did not already read. Both checks run on cooled storage, as in a kill. Before the hint, G below the run cost
+    /// about 4,953 gas more per skipped block. F's walk itself stays linear in the inbound blocks it consumed.
+    function test_regression_hintAddsNoSecondPassOverARunOfTopUps() public {
         bytes32 runTop = openingInboundHash;
         for (uint256 i = 0; i < TOP_UP_RUN; i++) {
             runTop = harness.seedInboundBlock(CHANNEL, _joinBlock(runTop, 2 + i, erin, 10));
@@ -946,6 +1075,11 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
             _mathSnapshot(100, _joinedSet(), _balances(70, 100, 80), lateJoinHash, 2 + TOP_UP_RUN);
         ProofWalkInput memory finalProof =
             _finalProof(forkId, _one(_hopRun(finalPoint, 1, _joinedKeys())), _entries(finalPoint));
+        // the same hop consuming only the opening: F's walk over no extra inbound block
+        (StateSnapshot memory openingPoint,) =
+            _mathSnapshot(100, _anchorSet(), _balances(100, 100, 0), openingInboundHash, 1);
+        ProofWalkInput memory openingProof =
+            _finalProof(forkId, _one(_hopRun(openingPoint, 1, _anchorKeys())), _entries(openingPoint));
         // Y's G below the run (inbound 1), Y''s G at the run's top
         (StateSnapshot memory belowRun,) =
             _mathSnapshot(1000, _anchorSet(), _balances(100, 100, 0), openingInboundHash, 1);
@@ -955,24 +1089,158 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
             _postedDisputeBy(alice, _one(_hopRun(belowRun, 1, _anchorKeys())), _entries(belowRun), belowRun);
         (Dispute memory sideAtTop,) =
             _postedDisputeBy(alice, _one(_hopRun(atRunTop, 1, _anchorKeys())), _entries(atRunTop), atRunTop);
+        DisputeFinalPointRegression memory fromBelow =
+            DisputeFinalPointRegression(finalProof, belowRun, _joinHint(finalProof, belowRun));
+        DisputeFinalPointRegression memory fromTop =
+            DisputeFinalPointRegression(finalProof, atRunTop, _joinHint(finalProof, atRunTop));
+        assertEq(fromBelow.joinInboundBlockHash, lateJoinHash, "premise: the hint names L's JOIN");
+        assertEq(fromTop.joinInboundBlockHash, lateJoinHash, "premise: the hint names L's JOIN");
 
         vm.cool(address(harness));
         uint256 before = gasleft();
-        bool killsFromBelow =
-            _diamond().isDisputeFinalPointRegression(side, DisputeFinalPointRegression(finalProof, belowRun));
+        bool killsFromBelow = _diamond().isDisputeFinalPointRegression(side, fromBelow);
         uint256 gasFromBelow = before - gasleft();
         vm.cool(address(harness));
         before = gasleft();
-        bool killsFromTop =
-            _diamond().isDisputeFinalPointRegression(sideAtTop, DisputeFinalPointRegression(finalProof, atRunTop));
+        bool killsFromTop = _diamond().isDisputeFinalPointRegression(sideAtTop, fromTop);
         uint256 gasFromTop = before - gasleft();
+        vm.cool(address(harness));
+        before = gasleft();
+        _diamond().verifyMilestones(finalProof);
+        uint256 finalWalkGas = before - gasleft();
+        vm.cool(address(harness));
+        before = gasleft();
+        _diamond().verifyMilestones(openingProof);
+        uint256 openingWalkGas = before - gasleft();
 
-        assertTrue(killsFromBelow, "G below the run: L's JOIN is found past the top-ups");
+        assertTrue(killsFromBelow, "G below the run: the hint names L's JOIN past the top-ups");
         assertTrue(killsFromTop, "G at the run's top: L's JOIN is the only extra block");
-        assertGt(gasFromBelow, gasFromTop, "the walk reads every skipped block");
+        assertLt(gasFromBelow, gasFromTop + SKIPPED_INBOUND_WALK_GAS, "no skipped block is read a second time");
+        assertGt(finalWalkGas, openingWalkGas, "F's walk reads every inbound block it consumed");
         console.log("regression check gas, G below a run of top-ups", gasFromBelow);
         console.log("regression check gas, G at the run's top", gasFromTop);
-        console.log("regression walk gas per skipped inbound block", (gasFromBelow - gasFromTop) / TOP_UP_RUN);
+        console.log("F walk gas per consumed inbound block", (finalWalkGas - openingWalkGas) / (TOP_UP_RUN + 1));
+    }
+
+    /// The conflict kill keeps its walk: it proves that the inbound blocks G consumed above F's head hold no JOIN of
+    /// an address outside F's participants, and a hint can only prove that one exists. F = 100 consumed the opening;
+    /// Y's block 100 consumed CONFLICT_RUN top-ups of E above it. The check is measured on cooled storage with G at two
+    /// points of the run; the full kill at the run's top is one parachain transaction. The per-block slope and the
+    /// kill's cost give the number of top-ups that exhausts the transaction gas limit.
+    function test_conflict_killWalksEveryTopUpAboveTheFinalPointsInbound() public {
+        bytes32 runTop = openingInboundHash;
+        bytes32 shortRunTop;
+        for (uint256 i = 0; i < CONFLICT_RUN; i++) {
+            runTop = harness.seedInboundBlock(CHANNEL, _joinBlock(runTop, 2 + i, erin, 10));
+            if (i + 1 == SHORT_CONFLICT_RUN) shortRunTop = runTop;
+        }
+        (StateSnapshot memory finalPoint,) =
+            _mathSnapshot(100, _anchorSet(), _balances(70, 100, 0), openingInboundHash, 1);
+        ProofWalkInput memory finalProof =
+            _finalProof(forkId, _one(_hopRun(finalPoint, 1, _anchorKeys())), _entries(finalPoint));
+        (StateSnapshot memory shortSide,) =
+            _mathSnapshot(100, _anchorSet(), _balances(100, 100, 0), shortRunTop, 1 + SHORT_CONFLICT_RUN);
+        (StateSnapshot memory longSide,) =
+            _mathSnapshot(100, _anchorSet(), _balances(100, 100, 0), runTop, 1 + CONFLICT_RUN);
+        Dispute memory shortDispute = _disputeBy(alice, _one(_hopRun(shortSide, 1, _anchorKeys())));
+        Dispute memory longDispute = _sideDispute(longSide);
+        DisputeConflictsWithFinalState memory shortProof = DisputeConflictsWithFinalState(finalProof, 0, 0, shortSide);
+        DisputeConflictsWithFinalState memory longProof = DisputeConflictsWithFinalState(finalProof, 0, 0, longSide);
+
+        vm.cool(address(harness));
+        uint256 before = gasleft();
+        bool shortConflicts = _diamond().isDisputeConflictingWithFinalState(shortDispute, shortProof);
+        uint256 shortGas = before - gasleft();
+        vm.cool(address(harness));
+        before = gasleft();
+        bool longConflicts = _diamond().isDisputeConflictingWithFinalState(longDispute, longProof);
+        uint256 longGas = before - gasleft();
+        uint256 gasPerTopUp = (longGas - shortGas) / (CONFLICT_RUN - SHORT_CONFLICT_RUN);
+
+        DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
+        proofs[0] = DisputeFraudProof({
+            proofType: DisputeFraudProofType.DisputeConflictsWithFinalState,
+            participant: longDispute.input.disputer,
+            dispute: longDispute,
+            encodedProof: abi.encode(longProof)
+        });
+        uint256 calldataGas = _calldataGas(abi.encodeCall(harness.applyDisputeFraudProofs, (proofs)));
+        vm.cool(address(harness));
+        vm.prank(joiner);
+        before = gasleft();
+        harness.applyDisputeFraudProofs(proofs);
+        uint256 transactionGas = TRANSACTION_BASE_GAS + calldataGas + before - gasleft();
+
+        assertTrue(shortConflicts && longConflicts, "top-ups of F's participants never refuse the conflict");
+        _assertKilledBy(longDispute, joiner);
+        assertGt(gasPerTopUp, 0, "the conflict walk reads every top-up G consumed above F's head");
+        assertLt(transactionGas, MAX_TRANSACTION_GAS, "the kill over CONFLICT_RUN top-ups fits one transaction");
+        console.log("conflict check gas per top-up above F's inbound head", gasPerTopUp);
+        console.log("conflict kill transaction gas over CONFLICT_RUN top-ups", transactionGas);
+        console.log(
+            "top-ups that exhaust the transaction gas limit",
+            CONFLICT_RUN + (MAX_TRANSACTION_GAS - transactionGas) / gasPerTopUp
+        );
+    }
+
+    /// The padded-dispute attack: a side dispute padded with tail blocks up to the deployed upload cap, at the largest
+    /// participant count, still leaves room for the regression kill with a final proof of FINAL_HOP_BOUND hops. The
+    /// kill fits the calldata limit and the gas limit. The bytes per hop of D and of F are logged.
+    function test_regression_disputeAtTheUploadCapLeavesRoomForTheKill() public {
+        uint256 uploadCap = deployDiamond().getMaxDisputeUploadBytes();
+        (address[] memory set, uint256[] memory keys, bytes32 openingHash, bytes32 joinHash) = _seedLargeChannel();
+        address[] memory openers = _withoutLast(set);
+        uint256[] memory openerKeys = _withoutLastKey(keys);
+        uint256[] memory balances = new uint256[](LARGE_PARTICIPANTS);
+        // F: FINAL_HOP_BOUND threshold hops from the anchor, all past A's top-up and the joiner's JOIN (inbound 3)
+        MilestoneProof[] memory milestones = new MilestoneProof[](FINAL_HOP_BOUND);
+        StateSnapshot[] memory snapshots = new StateSnapshot[](FINAL_HOP_BOUND);
+        for (uint256 i = 0; i < FINAL_HOP_BOUND; i++) {
+            (snapshots[i],) = _mathSnapshot(60 + 10 * i, set, balances, joinHash, 3);
+            milestones[i] = _hopRun(snapshots[i], 1, keys);
+        }
+        ProofWalkInput memory finalProof = _finalProof(forkId, milestones, snapshots);
+        // Y: one hop of the openers to 1000' below A's top-up (inbound 1), padded with tail blocks up to the cap
+        (StateSnapshot memory sideFinal,) = _mathSnapshot(1000, openers, new uint256[](openers.length), openingHash, 1);
+        uint256 oneHopBytes = abi.encode(_disputeBy(alice, _one(_hopRun(sideFinal, 1, openerKeys)))).length;
+        uint256 tailBlockBytes =
+            abi.encode(_disputeBy(alice, _one(_hopRun(sideFinal, 2, openerKeys)))).length - oneHopBytes;
+        uint256 tailBlocks = (uploadCap - oneHopBytes) / tailBlockBytes;
+        (Dispute memory side,) = _postedDisputeBy(
+            alice, _one(_hopRun(sideFinal, 1 + tailBlocks, openerKeys)), _entries(sideFinal), sideFinal
+        );
+        uint256 disputeBytes = abi.encode(side).length;
+        assertLe(disputeBytes, uploadCap, "premise: the padded dispute passes the upload cap");
+        assertGt(disputeBytes + tailBlockBytes, uploadCap, "premise: one more tail block would not");
+        _commit(side);
+        DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
+        proofs[0] = DisputeFraudProof({
+            proofType: DisputeFraudProofType.DisputeFinalPointRegression,
+            participant: side.input.disputer,
+            dispute: side,
+            encodedProof: _regressionProof(finalProof, sideFinal)
+        });
+        bytes memory callData = abi.encodeCall(harness.applyDisputeFraudProofs, (proofs));
+        uint256 calldataGas = _calldataGas(callData);
+
+        vm.cool(address(harness));
+        vm.prank(joiner);
+        uint256 before = gasleft();
+        harness.applyDisputeFraudProofs(proofs);
+        uint256 transactionGas = TRANSACTION_BASE_GAS + calldataGas + before - gasleft();
+
+        _assertKilledBy(side, joiner);
+        assertLe(callData.length, MAX_CALLDATA_BYTES, "D at the cap and F at the hop bound fit one transaction");
+        assertLt(transactionGas, MAX_TRANSACTION_GAS, "the kill fits one parachain transaction's gas");
+        uint256 finalHopBytes = abi.encode(milestones[0]).length + abi.encode(snapshots[0]).length;
+        console.log("upload cap bytes", uploadCap);
+        console.log("D bytes, one hop of 31 signers", oneHopBytes);
+        console.log("D bytes per hop of 31 signers", abi.encode(_hopRun(sideFinal, 1, openerKeys)).length);
+        console.log("D bytes per tail block", tailBlockBytes);
+        console.log("F bytes per hop of 32 signers", finalHopBytes);
+        console.log("kill calldata bytes", callData.length);
+        console.log("kill fixed bytes", callData.length - disputeBytes - abi.encode(finalProof).length);
+        console.log("kill transaction gas", transactionGas);
     }
 
     // ---- histories ----
@@ -1011,6 +1279,43 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         (dispute,) = _postedDisputeBy(bob, _one(run), _entries(finalPoint), tail);
         finalProof = _finalProof(forkId, _one(run), _entries(finalPoint));
         assertEq(_walk(_one(run), _entries(finalPoint)).finalizedSnapshot.blockHeight, 100, "premise: F = 100");
+    }
+
+    /// E's top-up (inbound 2) and L's JOIN (inbound 3) stored, and L's final proof of F = 100 that consumed both,
+    /// signed by A to E and L
+    function _lateJoinFinalProof()
+        internal
+        returns (ProofWalkInput memory finalProof, bytes32 topUpHash, bytes32 lateJoinHash)
+    {
+        (topUpHash, lateJoinHash) = _seedTopUpThenLateJoin();
+        (StateSnapshot memory finalPoint,) = _mathSnapshot(100, _joinedSet(), _balances(70, 100, 80), lateJoinHash, 3);
+        finalProof = _finalProof(forkId, _one(_hopRun(finalPoint, 1, _joinedKeys())), _entries(finalPoint));
+        assertEq(
+            _diamond().verifyMilestones(finalProof).finalizedSnapshot.blockHeight, 100, "premise: F = 100 is final"
+        );
+    }
+
+    /// Y's committed side dispute whose G = 1000' {A to E} consumed up to `inboundHash` at `inboundHeight`
+    function _sideAtThousand(bytes32 inboundHash, uint256 inboundHeight)
+        internal
+        returns (Dispute memory side, StateSnapshot memory sideFinal)
+    {
+        (sideFinal,) = _mathSnapshot(1000, _anchorSet(), _balances(100, 100, 0), inboundHash, inboundHeight);
+        side = _sideDispute(sideFinal);
+    }
+
+    /// L's final proof of F = 60 that consumed L's JOIN stored at inbound height 2 above a block the chain never held:
+    /// the run from it down to the anchor's inbound head is missing a block. Returns that JOIN's hash and the proof.
+    function _finalProofOverAnUnlinkedJoin()
+        internal
+        returns (bytes32 unlinkedJoinHash, ProofWalkInput memory finalProof)
+    {
+        unlinkedJoinHash = harness.seedInboundBlock(
+            CHANNEL, _joinBlock(keccak256("an inbound block the chain never held"), 2, joiner, 50)
+        );
+        (StateSnapshot memory finalPoint,) =
+            _mathSnapshot(60, _joinedSet(), _balances(90, 100, 50), unlinkedJoinHash, 2);
+        finalProof = _finalProof(forkId, _one(_hopRun(finalPoint, 1, _joinedKeys())), _entries(finalPoint));
     }
 
     /// A's committed side-chain dispute: one hop from the anchor to `latestFinalized`, signed by A to E
@@ -1152,7 +1457,11 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         StateSnapshot memory latestFinalized
     ) internal view {
         assertTrue(
-            _diamond().isDisputeFinalPointRegression(dispute, DisputeFinalPointRegression(finalProof, latestFinalized)),
+            _diamond()
+                .isDisputeFinalPointRegression(
+                    dispute,
+                    DisputeFinalPointRegression(finalProof, latestFinalized, _joinHint(finalProof, latestFinalized))
+                ),
             "premise: the regression check holds"
         );
         assertTrue(
@@ -1171,7 +1480,11 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         StateSnapshot memory latestFinalized
     ) internal view {
         assertFalse(
-            _diamond().isDisputeFinalPointRegression(dispute, DisputeFinalPointRegression(finalProof, latestFinalized)),
+            _diamond()
+                .isDisputeFinalPointRegression(
+                    dispute,
+                    DisputeFinalPointRegression(finalProof, latestFinalized, _joinHint(finalProof, latestFinalized))
+                ),
             "no latest finalized point: no regression"
         );
         assertFalse(

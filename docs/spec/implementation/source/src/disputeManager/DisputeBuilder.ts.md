@@ -17,6 +17,7 @@
 - [`REQ-DISPUTE-PIPE-13-R2QJZN` (Time out only the next height)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-13-r2qjzn)
 - [`REQ-DA-1-NVV85Z` (Block data whose calldata commitment is posted MUST be recoverable from the…)](../../../../specification/security/data-availability.md#req-da-1-nvv85z)
 - [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
+- [`REQ-DIS-2-PKVZ7E` (Upload is limited to eligible disputers)](../../../../specification/disputes/disputes.md#req-dis-2-pkvz7e)
 
 ## UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN
 
@@ -41,6 +42,8 @@ Dispute construction reuses a built dispute only while its inputs are unchanged 
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P14` — a failed state proof build supplied to construction: construction builds its own, and the chain accepts the dispute
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P15` — the evidence comparison of our dispute with a timeout claim against a self-removal dispute without one on the same latest state: evidence added (the fold keeps the real timeout)
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P16` — the evidence comparison of our dispute without a timeout claim against a timeout dispute on the same latest state: no evidence added
+- [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P17` — a dispute above the deployed upload cap at every height from the latest down to this peer's own latest signed block: construction returns no dispute
+- [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P18` — the latest dispute above the cap while the one at this peer's latest signed height fits: construction returns that dispute and the chain accepts its proof
 
 ## UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R
 

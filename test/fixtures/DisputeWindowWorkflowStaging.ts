@@ -9,6 +9,7 @@ import { stripDisputeReasons } from "@test/fixtures/DisputeAuditStaging";
 import { disputeOnHost } from "@test/fixtures/ReplayGasLimitStaging";
 import { waitFor } from "@test/utils/waitFor";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { ethers } from "ethers";
 
 /** The window commitment of `dispute`, as the chain stores it. */
 export function commitmentOf(dispute: DisputeStruct): Hash {
@@ -93,6 +94,8 @@ export async function committedDisputeLogs(h: MathPeerTestHarness) {
             disputer: dispute.input.disputer,
             forkId: dispute.input.forkId,
             commitment: commitmentOf(dispute),
+            // the size the chain's upload cap measured
+            encodedDisputeBytes: ethers.dataLength(encodedDispute),
             transactionHash: log.transactionHash,
             blockNumber: log.blockNumber,
             logIndex: log.index

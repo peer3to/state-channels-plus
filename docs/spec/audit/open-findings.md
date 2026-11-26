@@ -342,6 +342,20 @@ A first observed failure is
 reachable protocol state, by design and not by chance: each submission path needs a stated bound
 that holds for the worst case it can reach, and a test chain that enforces the limit.
 
+**Dispute uploads (2026-11-26):** the chain refuses a dispute upload whose encoded dispute is above
+`maxDisputeUploadBytes` (`ErrorDisputeUploadTooLarge`). The cap is a deploy parameter of the
+manager, read like the dispute gas limit, so a new value needs no ABI change; 0 at deploy selects
+the default of 30,720 bytes. The default is derived from measured sizes at 32 participants: an
+encoded dispute grows by 5,696 bytes per hop, a final proof by 7,552 bytes per hop on about 864
+fixed bytes, and the kill's fixed part is 1,956 bytes, so a dispute at the cap plus a final proof
+of 4 hops fits one 64 KiB kill (about 1.8 KB to spare). An honest dispute at the cap holds 5 hops of
+31 signers. `DisputeBuilder` reads the cap and builds no dispute above it: when the latest dispute
+does not fit, it uploads the highest lower dispute that fits, never one below this peer's own
+latest signed block (that one is killable as not latest), and none when no such height fits.
+Residual: colluders who refuse snapshot updates can grow F past 4 hops, and then the kill exceeds
+64 KiB; an honest history that refuses snapshot updates can also grow its own dispute past the
+cap.
+
 **Status:** Open; high. Engineer decision pending on the direction.
 
 ## Membership-read ownership consolidation
@@ -2733,9 +2747,20 @@ spares the submitter and slashes only the addresses that signed both conflicting
 until it lands, this residual stands
 ([`REQ-FP-7-4DD0D7.T10`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t10)).
 
-Open limits: a missing inbound block inside the sender's own final proof makes the walk return
-false, so the sender is slashed; and the inbound walk has no step bound (about 8,983 gas per
-skipped inbound block).
+Kill robustness (2026-11-26): a missing inbound block inside the sender's own final proof F, in
+either kill, reverts with `ErrorInboundMessageBlockNotStored` and slashes nobody; the dispute's own
+walk still answers "not linked". The regression proof names the skipped JOIN's inbound block
+(`joinInboundBlockHash`); the chain checks that it is stored, that its height lies in (G's inbound
+height, F's inbound height] and that it holds a joiner outside G's participants, without walking
+the skipped run. The remaining gas limits are
+[`FIND-DISPUTE-7-5XSA8H`](open-findings.md#find-dispute-7-5xsa8h) and
+[`FIND-DISPUTE-8-QQK4MA`](open-findings.md#find-dispute-8-qqk4ma).
+
+A padding attacker cannot push the kill past one transaction's calldata: dispute uploads are capped
+at `maxDisputeUploadBytes` (a deploy parameter, default 30,720 bytes of encoded dispute), so a D at
+the cap plus an F of 4 hops signed by 32 participants fits 64 KiB. The finding is resolved for a
+padding attacker only while that cap holds; an F above 4 hops is the residual of
+[`FIND-CALLDATA-1-SZ02TK`](open-findings.md#find-calldata-1-sz02tk).
 
 **Evidence:**
 [DisputeFinalPointRegression.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeFinalPointRegression.t.sol.md)
@@ -2745,6 +2770,45 @@ lookup and cost cases;
 and
 [E2E-DisputeFinalPointRegression.test.ts](../verification/tests/test/e2e/disputeValidation/E2E-DisputeFinalPointRegression.test.ts.md)
 cover the auditor and the on-chain kill by the seated joiner's node.
+[DisputeWindowAdmission.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeWindowAdmission.t.sol.md)
+refuses an upload above the cap, and
+[uploadSizeCap.test.ts](../verification/tests/test/e2e/disputeValidation/uploadRevert/uploadSizeCap.test.ts.md)
+commits an honest dispute at the cap.
+
+<a id="find-dispute-7-5xsa8h"></a>
+
+### FIND-DISPUTE-7-5XSA8H
+
+**Limit:** the `DisputeFinalPointRegression` kill's gas stays linear in F's own walk. The JOIN hint
+removes one pass only: the walk of the run between G's and F's inbound heads (before the hint, 158,503 gas over a
+run of 32 skipped inbound blocks, about 4,953 per block, on cooled storage). Measured on the forge cost cases (2026-11-26): F's walk costs
+about 13,051 gas per inbound block it consumes; over a run of 32 top-ups the check costs 679,511 gas
+with G below the run and 673,679 gas with G at its top, a constant difference, so the hint adds no
+second pass. A long F still costs its own walk.
+
+**Status:** Open; low. Accepted as a documented limit for now; the PR notes carry the numbers for
+the engineer's review.
+
+**Evidence:**
+[DisputeFinalPointRegression.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeFinalPointRegression.t.sol.md)
+(`test_regression_hintAddsNoSecondPassOverARunOfTopUps`).
+
+<a id="find-dispute-8-qqk4ma"></a>
+
+### FIND-DISPUTE-8-QQK4MA
+
+**Limit:** the `DisputeConflictsWithFinalState` kill keeps its walk of the inbound blocks above F's
+inbound head up to D's (the conflict direction has no hint, by decision). Measured (2026-11-26):
+about 11,751 gas per top-up block, 1,271,558 gas for a full kill over 64 top-ups in a five-party
+channel, so about 1,480 top-ups exhaust a 17,916,000-gas transaction. Colluders who consume more
+top-ups than that above an honest final point make the conflict kill unsendable.
+
+**Status:** Open; medium. No refusal past a bound and no per-block counter, by decision; the PR
+notes carry the measured count for the engineer's review.
+
+**Evidence:**
+[DisputeFinalPointRegression.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeFinalPointRegression.t.sol.md)
+(`test_conflict_killWalksEveryTopUpAboveTheFinalPointsInbound`).
 
 <a id="find-events-1-3jf8fm"></a>
 

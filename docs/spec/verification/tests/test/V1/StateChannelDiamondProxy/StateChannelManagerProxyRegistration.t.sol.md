@@ -20,3 +20,5 @@ signed-block/timestamp commitment, including a retry at a previously rejected ke
 - `test_routedSelector_executesOnFacet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P33
 - `test_postBlockCalldata_rejectsNonCanonicalWithoutCommitment`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P21
 - `test_postBlockCalldata_canonicalStoresCommitment`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P22
+- `test_maxDisputeUploadBytes_readsTheDeployParameter`: REQ-DIS-2-PKVZ7E.T1.P38
+- `test_maxDisputeUploadBytes_zeroDeployParameterReadsTheDefault`: REQ-DIS-2-PKVZ7E.T1.P39

@@ -257,7 +257,8 @@ export const DisputeConflictsWithFinalStateProofEthersType = `tuple(
 
 export const DisputeFinalPointRegressionProofEthersType = `tuple(
     ${ProofWalkInputEthersType} finalProof,
-    ${StateSnapshotEthersType} latestFinalizedSnapshot
+    ${StateSnapshotEthersType} latestFinalizedSnapshot,
+    bytes32 joinInboundBlockHash
 )`;
 
 export const DisputeInvalidOutboundRunProofEthersType = `tuple(

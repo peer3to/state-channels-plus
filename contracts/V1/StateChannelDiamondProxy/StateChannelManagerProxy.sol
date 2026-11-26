@@ -29,6 +29,8 @@ contract StateChannelManagerProxy is StateChannelCommon {
     uint256 private constant DEFAULT_EVIDENCE_TIME = 30;
     uint256 private constant DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
     uint256 private constant DEFAULT_MAX_CHANNEL_PARTICIPANTS = 32;
+    // a dispute at this size leaves room in one 64 KiB kill for a final proof of 4 hops signed by 32 participants
+    uint256 private constant DEFAULT_MAX_DISPUTE_UPLOAD_BYTES = 30_720;
 
     constructor(
         address _stateMachineImplementation,
@@ -46,7 +48,8 @@ contract StateChannelManagerProxy is StateChannelCommon {
         uint256 _chainFallbackTime,
         uint256 _evidenceTime,
         uint256 _disputeExecutionGasLimit,
-        uint256 _maxChannelParticipants
+        uint256 _maxChannelParticipants,
+        uint256 _maxDisputeUploadBytes
     ) {
         stateMachineImplementation = AStateMachine(_stateMachineImplementation);
         disputeManagerFacetAddress = _disputeManagerFacet;
@@ -110,6 +113,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
         _registerRoute(UtilityFacet.getGasLimit.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getStateTransitionReplayGas.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getMaxChannelParticipants.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getMaxDisputeUploadBytes.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getAllTimes.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getBlockCallDataCommitment.selector, _utilityFacet);
         _registerRoute(UtilityFacet.hasInboundMessageBlock.selector, _utilityFacet);
@@ -133,6 +137,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
         gasLimit = _disputeExecutionGasLimit == 0 ? DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT : _disputeExecutionGasLimit;
         maxChannelParticipants =
             _maxChannelParticipants == 0 ? DEFAULT_MAX_CHANNEL_PARTICIPANTS : _maxChannelParticipants;
+        maxDisputeUploadBytes = _maxDisputeUploadBytes == 0 ? DEFAULT_MAX_DISPUTE_UPLOAD_BYTES : _maxDisputeUploadBytes;
     }
 
     fallback() external {

@@ -125,10 +125,12 @@ struct DisputeConflictsWithFinalState {
 // A threshold-final state F of the dispute's fork (`finalProof`, walked from the chain's start) and the dispute's
 // latest finalized point G, the first block of its last milestone, whose snapshot is `latestFinalizedSnapshot`: G is
 // above F, but its snapshot consumed fewer inbound blocks than F's. On one history the inbound height never goes down,
-// so the dispute's history skipped inbound that the final history consumed.
+// so the dispute's history skipped inbound that the final history consumed. `joinInboundBlockHash` names the skipped
+// stored inbound block holding a JOIN of an address outside G's participants.
 struct DisputeFinalPointRegression {
     ProofWalkInput finalProof;
     StateSnapshot latestFinalizedSnapshot;
+    bytes32 joinInboundBlockHash;
 }
 
 // The block-specific wrappers locate the challenged block at `blockIndex` counted from the start of the last

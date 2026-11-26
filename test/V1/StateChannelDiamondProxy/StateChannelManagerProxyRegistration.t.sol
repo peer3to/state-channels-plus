@@ -33,6 +33,7 @@ contract DuplicateRouteRegistrationHarness is StateChannelManagerProxy {
             0,
             0,
             0,
+            0,
             0
         )
     {
@@ -42,6 +43,14 @@ contract DuplicateRouteRegistrationHarness is StateChannelManagerProxy {
 
 contract StateChannelManagerProxyRegistrationTest is Test {
     function _deployUtilityProxy() internal returns (StateChannelManagerProxy proxy) {
+        return _deployUtilityProxyWithUploadCap(0);
+    }
+
+    /// a proxy whose routes all reach one UtilityFacet, deployed with the upload cap `maxDisputeUploadBytes`
+    function _deployUtilityProxyWithUploadCap(uint256 maxDisputeUploadBytes)
+        internal
+        returns (StateChannelManagerProxy proxy)
+    {
         UtilityFacet utilityFacet = new UtilityFacet();
         proxy = new StateChannelManagerProxy(
             address(1),
@@ -59,7 +68,8 @@ contract StateChannelManagerProxyRegistrationTest is Test {
             0,
             0,
             0,
-            0
+            0,
+            maxDisputeUploadBytes
         );
     }
 
@@ -142,6 +152,7 @@ contract StateChannelManagerProxyRegistrationTest is Test {
             0,
             0,
             0,
+            0,
             0
         );
     }
@@ -150,5 +161,17 @@ contract StateChannelManagerProxyRegistrationTest is Test {
         StateChannelManagerProxy proxy = _deployUtilityProxy();
 
         assertEq(StateChannelManagerInterface(address(proxy)).getP2pTime(), 15);
+    }
+
+    function test_maxDisputeUploadBytes_readsTheDeployParameter() public {
+        StateChannelManagerProxy proxy = _deployUtilityProxyWithUploadCap(12_345);
+
+        assertEq(StateChannelManagerInterface(address(proxy)).getMaxDisputeUploadBytes(), 12_345);
+    }
+
+    function test_maxDisputeUploadBytes_zeroDeployParameterReadsTheDefault() public {
+        StateChannelManagerProxy proxy = _deployUtilityProxyWithUploadCap(0);
+
+        assertEq(StateChannelManagerInterface(address(proxy)).getMaxDisputeUploadBytes(), 30_720);
     }
 }

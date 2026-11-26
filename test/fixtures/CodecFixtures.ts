@@ -214,7 +214,8 @@ export const codecValues = {
     }),
     disputeFinalPointRegressionProof: () => ({
         finalProof: codecValues.proofWalkInput(),
-        latestFinalizedSnapshot: snapshot()
+        latestFinalizedSnapshot: snapshot(),
+        joinInboundBlockHash: factory.hash()
     })
 };
 

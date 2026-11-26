@@ -51,5 +51,14 @@ JOIN again reverts with the exact `ErrorDisputeInboundMessageBlocksInvalid` hash
 - `test_regression_finalPointWhoseExtraInboundHoldsATopUpAndANewJoinerKills`: REQ-FP-7-4DD0D7.T10.P27
 - `test_conflict_latestFinalizedPointWhoseExtraInboundIsOnlyATopUpKills`: REQ-FP-7-4DD0D7.T9.P15, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P93
 - `test_lookup_extraInboundFromTheAnchorsUnstoredInboundHeadReverts`: REQ-FP-7-4DD0D7.T10.P28, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P94
-- `test_lookup_extraInboundWithAPrunedBlockBelowTheAnchorReverts`: REQ-FP-7-4DD0D7.T10.P29, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P94
-- `test_regression_newJoinerAboveARunOfTopUpsKillsFromBelowTheRunAndFromItsTop`: REQ-FP-7-4DD0D7.T10.P30, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P95
+- `test_lookup_latestFinalizedHeadPrunedBelowTheAnchorReverts`: REQ-FP-7-4DD0D7.T10.P29, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P94
+- `test_regression_hintAddsNoSecondPassOverARunOfTopUps`: REQ-FP-7-4DD0D7.T10.P30, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P95
+- `test_hint_topUpInsideTheSkippedRunDoesNotKill`: REQ-FP-7-4DD0D7.T10.P44, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P99
+- `test_hint_joinAtTheLatestFinalizedInboundHeightDoesNotKill`: REQ-FP-7-4DD0D7.T10.P45, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P100
+- `test_hint_joinAboveTheFinalPointsInboundHeadDoesNotKill`: REQ-FP-7-4DD0D7.T10.P46, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P101
+- `test_hint_blockTheChainDoesNotStoreDoesNotKill`: REQ-FP-7-4DD0D7.T10.P47, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P102
+- `test_hint_lateJoinInsideTheSkippedRunKills`: REQ-FP-7-4DD0D7.T10.P48, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P103
+- `test_finalWalk_missingInboundBlockInTheRegressionKillRevertsAndSlashesNobody`: REQ-FP-7-4DD0D7.T10.P49, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P104, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P86
+- `test_finalWalk_missingInboundBlockInTheConflictKillRevertsAndSlashesNobody`: REQ-FP-7-4DD0D7.T9.P21, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P105
+- `test_conflict_killWalksEveryTopUpAboveTheFinalPointsInbound`: REQ-FP-7-4DD0D7.T9.P22
+- `test_regression_disputeAtTheUploadCapLeavesRoomForTheKill`: REQ-FP-7-4DD0D7.T10.P50
