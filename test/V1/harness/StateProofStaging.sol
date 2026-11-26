@@ -10,7 +10,7 @@ import {DisputeVerificationFacet} from "../../../contracts/V1/StateChannelDiamon
 import {FraudProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol";
 import {StateProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol";
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
-import {_delegatecall} from "../../../contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol";
+import {_delegatecall, _isAddressInArray} from "../../../contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol";
 import {MathState, MathStateMachine} from "../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
 import {
     DisputeBlockAuthorNotParticipant,
@@ -543,10 +543,10 @@ abstract contract StateProofStaging is DiamondHarness {
     {
         assertEq(harness.commitmentCount(CHANNEL, dispute.input.forkId), 0, "dispute killed");
         _assertSlashedExactly(slashes);
-        if (!_isIn(dispute.input.disputer, slashes)) {
+        if (!_isAddressInArray(slashes, dispute.input.disputer)) {
             assertFalse(harness.isSlashed(CHANNEL, dispute.input.disputer), "the disputer outside S is not slashed");
         }
-        if (!_isIn(challenger, slashes)) {
+        if (!_isAddressInArray(slashes, challenger)) {
             assertFalse(harness.isSlashed(CHANNEL, challenger), "challenger keeps its seat");
         }
     }
@@ -575,13 +575,6 @@ abstract contract StateProofStaging is DiamondHarness {
         returns (bool isKill)
     {
         (isKill,) = _diamond().isDisputeFinalPointRegression(dispute, proof);
-    }
-
-    function _isIn(address adr, address[] memory addresses) internal pure returns (bool) {
-        for (uint256 i = 0; i < addresses.length; i++) {
-            if (addresses[i] == adr) return true;
-        }
-        return false;
     }
 
     /// the allegation failed: the dispute stays, its submitter is not punished, the challenger B pays

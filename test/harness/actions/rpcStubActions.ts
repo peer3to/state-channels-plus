@@ -1824,10 +1824,6 @@ export class RpcStubActions<
     }
 
     /**
-     * Stop a peer running the participant-timeout check, so staging is not cut
-     * short by a real timeout dispute. Returns a teardown.
-     */
-    /**
      * Lower peer `peerIndex`'s per-transaction calldata limit to
      * `maxTransactionBytes` (every inline peer's: inline hosts share one
      * config). Returns the restore.
@@ -1843,6 +1839,10 @@ export class RpcStubActions<
         };
     }
 
+    /**
+     * Stop a peer running the participant-timeout check, so staging is not cut
+     * short by a real timeout dispute. Returns a teardown.
+     */
     async suppressTimeoutCheck(
         peerIndex: number
     ): Promise<() => Promise<void>> {

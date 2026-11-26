@@ -32,7 +32,8 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
 import {
     MessageBlockStruct,
-    SnapshotDataStruct
+    SnapshotDataStruct,
+    StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeConflictsWithFinalStateStruct,
@@ -163,12 +164,18 @@ export default class DisputeValidationService {
         dispute: DisputeStruct,
         evidence: StateProofEvidence
     ): Promise<boolean> {
+        // the snapshot the first block of the last milestone commits
+        const latestFinalizedSnapshot = evidence.milestoneSnapshots.at(-1);
+        if (!latestFinalizedSnapshot) return false;
         const counters = [
             ...(await this.findConflictsWithFinalStateCounters(
                 dispute,
-                evidence
+                latestFinalizedSnapshot
             )),
-            ...(await this.findFinalPointRegressionCounters(dispute, evidence))
+            ...(await this.findFinalPointRegressionCounters(
+                dispute,
+                latestFinalizedSnapshot
+            ))
         ];
         const chosen = chooseFinalHistoryCounter(
             counters,
@@ -202,16 +209,14 @@ export default class DisputeValidationService {
      * the final block's height; every one the chain accepts is a counter. A
      * block the dispute's walk does not check is no conflict. The chain also
      * compares the final point's inbound height with that of the dispute's
-     * latest finalized point, whose snapshot comes from `evidence`.
+     * latest finalized point, whose snapshot `latestFinalizedSnapshot` comes
+     * from the audit's `evidence`.
      */
     private async findConflictsWithFinalStateCounters(
         dispute: DisputeStruct,
-        evidence: StateProofEvidence
+        latestFinalizedSnapshot: StateSnapshotStruct
     ) {
         const { forkId, stateProof } = dispute.input;
-        // the snapshot the first block of the last milestone commits
-        const latestFinalizedSnapshot = evidence.milestoneSnapshots.at(-1);
-        if (!latestFinalizedSnapshot) return [];
         const [finalized, anchor] = await Promise.all([
             this.agreementManager.getLocalFinalizedSnapshot(forkId),
             this.agreementManager.getChainAnchor(forkId)
@@ -269,16 +274,13 @@ export default class DisputeValidationService {
                 )
             );
             if (!slashes) continue;
-            const counter = {
+            counters.push({
                 slashes,
                 killBytes: this.killBytes(
                     dispute,
                     DisputeFraudProofType.DisputeConflictsWithFinalState,
                     proof
-                )
-            };
-            counters.push({
-                ...counter,
+                ),
                 store: () => {
                     this.logger.warn(
                         "Dispute proof holds a block that conflicts with this peer's final state",
@@ -289,7 +291,7 @@ export default class DisputeValidationService {
                                     finalizedSnapshot
                                 ),
                             ...conflict,
-                            ...LoggerUtils.getSlashSetMetadata(counter.slashes)
+                            ...LoggerUtils.getSlashSetMetadata(slashes)
                         }
                     );
                     this.disputeFraudProofService.createDisputeConflictsWithFinalState(
@@ -310,22 +312,20 @@ export default class DisputeValidationService {
      * never goes down, so the dispute's history skipped a JOIN the final
      * history consumed. F is this peer's latest final point when G is
      * above it, else the highest final point it can prove below G. G's
-     * snapshot comes from `evidence` (the posted auditing data, else this
-     * peer's stored snapshots). The proof names the skipped JOIN's block
+     * snapshot `latestFinalizedSnapshot` comes from the audit's `evidence`
+     * (the posted auditing data, else this peer's stored snapshots). The proof names the skipped JOIN's block
      * (`findSkippedJoin`); without one in this peer's own inbound blocks the
      * chain is not asked. Otherwise the chain checks the named block against
      * both inbound heights itself; the proof is a counter only when it agrees.
      */
     private async findFinalPointRegressionCounters(
         dispute: DisputeStruct,
-        evidence: StateProofEvidence
+        latestFinalizedSnapshot: StateSnapshotStruct
     ) {
         const { forkId, stateProof } = dispute.input;
-        // the snapshot the first block of the last milestone commits
-        const latestFinalizedSnapshot = evidence.milestoneSnapshots.at(-1);
         const first = stateProof.milestones.at(-1)?.blockConfirmations[0];
         const latestFinalized = first && Block.tryFromBlockConfirmation(first);
-        if (!latestFinalizedSnapshot || !latestFinalized) return [];
+        if (!latestFinalized) return [];
         const final = await this.tryBuildFinalProofBelow(
             forkId,
             latestFinalized.height
@@ -349,17 +349,14 @@ export default class DisputeValidationService {
             )
         );
         if (!slashes) return [];
-        const counter = {
-            slashes,
-            killBytes: this.killBytes(
-                dispute,
-                DisputeFraudProofType.DisputeFinalPointRegression,
-                proof
-            )
-        };
         return [
             {
-                ...counter,
+                slashes,
+                killBytes: this.killBytes(
+                    dispute,
+                    DisputeFraudProofType.DisputeFinalPointRegression,
+                    proof
+                ),
                 store: () => {
                     this.logger.warn(
                         "Dispute proof finalizes a point above this peer's final state with fewer inbound blocks",
@@ -372,7 +369,7 @@ export default class DisputeValidationService {
                                 LoggerUtils.getMessageBlockMetadata(
                                     skippedJoin.messageBlock
                                 ),
-                            ...LoggerUtils.getSlashSetMetadata(counter.slashes)
+                            ...LoggerUtils.getSlashSetMetadata(slashes)
                         }
                     );
                     this.disputeFraudProofService.createDisputeFinalPointRegression(

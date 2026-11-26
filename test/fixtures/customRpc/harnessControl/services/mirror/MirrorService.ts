@@ -211,9 +211,8 @@ export class MirrorService extends ANetworkRpcService<
             observation: { local: emptySide(), chain: emptySide() },
             restore: () => {}
         };
-        const restoreLocal = (
-            CHAIN_ONLY_READS as readonly ObservableRead[]
-        ).includes(read)
+        const chainOnlyReads: readonly ObservableRead[] = CHAIN_ONLY_READS;
+        const restoreLocal = chainOnlyReads.includes(read)
             ? () => {}
             : this.wrapStaticCall(local, read, (original, args) =>
                   this.localRead(entry, local, read, original, args)

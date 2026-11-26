@@ -236,7 +236,8 @@ export default class DisputeBuilder {
         built: ConstructDisputeResult
     ): Promise<ConstructDisputeResult | undefined> {
         const maxDisputeUploadBytes = await this.readMaxDisputeUploadBytes();
-        if (encodedDisputeBytesOf(built) <= maxDisputeUploadBytes) return built;
+        const encodedDisputeBytes = encodedDisputeBytesOf(built);
+        if (encodedDisputeBytes <= maxDisputeUploadBytes) return built;
         const ownLatestSigned =
             this.agreementManager.getLatestSignedBlockByParticipant(
                 forkId,
@@ -257,16 +258,17 @@ export default class DisputeBuilder {
                 await this.readInputs(forkId, height),
                 builtStateProof
             );
-            if (encodedDisputeBytesOf(cut) > maxDisputeUploadBytes) continue;
+            const cutEncodedDisputeBytes = encodedDisputeBytesOf(cut);
+            if (cutEncodedDisputeBytes > maxDisputeUploadBytes) continue;
             this.logger.warn(
                 "Dispute above the upload cap: cut to the largest dispute that fits",
                 LoggerUtils.getDisputeUploadCapMetadata({
                     forkId,
                     maxDisputeUploadBytes,
                     latestBlockHeight: inputs.latestBlockHeight,
-                    encodedDisputeBytes: encodedDisputeBytesOf(built),
+                    encodedDisputeBytes,
                     cutBlockHeight: height,
-                    cutEncodedDisputeBytes: encodedDisputeBytesOf(cut)
+                    cutEncodedDisputeBytes
                 })
             );
             return cut;
@@ -277,7 +279,7 @@ export default class DisputeBuilder {
                 forkId,
                 maxDisputeUploadBytes,
                 latestBlockHeight: inputs.latestBlockHeight,
-                encodedDisputeBytes: encodedDisputeBytesOf(built),
+                encodedDisputeBytes,
                 lowestHeight
             })
         );
@@ -361,10 +363,10 @@ export default class DisputeBuilder {
     /** The inputs at `height`, by default this peer's latest block. */
     private async readInputs(
         forkId: ForkId,
-        height: number = this.storage.blocks.getLatestBlockHeight(forkId)
+        latestBlockHeight: number = this.storage.blocks.getLatestBlockHeight(
+            forkId
+        )
     ): Promise<DisputeInputs> {
-        const latestBlockHeight = height;
-
         const [latestStateSnapshot, _onChainSlashes, _participants] =
             await Promise.all([
                 this.storage.getStateSnapshot({

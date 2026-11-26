@@ -8,6 +8,7 @@ import {StateSnapshotFacet} from "../../../contracts/V1/StateChannelDiamondProxy
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
 import {StateChannelManagerEvents} from "../../../contracts/V1/StateChannelManagerEvents.sol";
 import {MathStateMachine} from "../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
+import {DisputeWindowSeeding} from "../harness/DisputeWindowSeeding.sol";
 import {InboundSeeding} from "../harness/InboundSeeding.sol";
 import {MathState} from "../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
 import {ErrorInboundMessageBlockNotStored} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
@@ -17,6 +18,7 @@ contract InboundHeadPruningHarness is
     DisputeFraudProofFacet,
     DisputeVerificationFacet,
     StateSnapshotFacet,
+    DisputeWindowSeeding,
     InboundSeeding
 {
     constructor() {
@@ -47,11 +49,7 @@ contract InboundHeadPruningHarness is
 
     /// a dispute window on `forkId` opened at `timestamp`
     function seedWindowAt(bytes32 channelId, bytes32 forkId, uint256 timestamp) public {
-        DisputeWindow storage window = disputeData[channelId].disputeWindowMap[forkId];
-        window.forkId = forkId;
-        window.evidence.creationTimestamp = timestamp;
-        window.evidence.lastEvidenceSubmissionTimestamp = timestamp;
-        disputeData[channelId].disputedForks.push(forkId);
+        _seedDisputeWindow(channelId, forkId, timestamp, timestamp);
     }
 
     function clearStorage(bytes32 channelId, bytes32 snapshotInboundHash, bool isChannelClosed) external {
