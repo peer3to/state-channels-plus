@@ -4,6 +4,7 @@ import Clock from "@/Clock";
 import * as eventBusModule from "@/events/EventBus";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import type NetworkTransport from "@/transport/NetworkTransport";
+import { Codec, Type } from "@/utils/Codec";
 import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import { ethers } from "ethers";
 
@@ -13,9 +14,11 @@ import { ethers } from "ethers";
  */
 export type HostExecModules = {
     Clock: typeof Clock;
+    Codec: typeof Codec;
     ethers: typeof ethers;
     eventBus: typeof eventBusModule;
     tryDecodeCustomError: typeof tryDecodeCustomError;
+    Type: typeof Type;
 };
 
 /**
@@ -42,9 +45,11 @@ export class ScenarioRpcMethods extends ANetworkRpcMethods<ScenarioService> {
         ) => unknown;
         return await fn(this.service.sm, args, {
             Clock,
+            Codec,
             ethers,
             eventBus: eventBusModule,
-            tryDecodeCustomError
+            tryDecodeCustomError,
+            Type
         });
     }
 }

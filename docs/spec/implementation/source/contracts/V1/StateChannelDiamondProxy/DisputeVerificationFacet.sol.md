@@ -10,7 +10,6 @@
 - [`REQ-DIS-4-6J6YYG` (Reduction runs only after the kill period expires and consumes exactly the…)](../../../../../specification/disputes/disputes.md#req-dis-4-6j6yyg)
 - [`INV-DIS-7-9GGZSD` (In a fork whose reduction applies an on-chain slash of a participant of the…)](../../../../../specification/disputes/disputes.md#inv-dis-7-9ggzsd)
 - [`INV-DIS-8-1GY6Q5` (A fork applies at most one timeout, targeting the participant at the lowest…)](../../../../../specification/disputes/disputes.md#inv-dis-8-1gy6q5)
-  Contradicts: Empty-timeout struct (height 0) suppresses real timeouts. Slash-carrying case intended (slash precedence, decision 2026-08-14); slash-free case still cancels order-dependently — open per [`OQ-9-XR1MFS` (Timeout precedence edge rules)](../../../../../specification/open-questions.md#oq-9-xr1mfs).
 - [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)
 - [`REQ-DIS-2-PKVZ7E` (Upload is limited to eligible disputers)](../../../../../specification/disputes/disputes.md#req-dis-2-pkvz7e)
@@ -34,12 +33,12 @@
 Reduction algebra
 
 - Setup: Reduce permuted committed sets incl. kills, empty timeouts, tie-breaks, precedence cases
-- Oracle: Deterministic per-field folds; precedence rules hold; divergences documented (empty-timeout, order permutation)
+- Oracle: Deterministic per-field folds; precedence rules hold; divergence documented (order permutation)
 
 - [ ] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P1` — latest-block tie-break
 - [ ] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P2` — slash union + filtering
-- [ ] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P3` — lowest-height timeout
-- [ ] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P4` — empty-timeout cancellation (slash case intended; slash-free case documents [`OQ-9-XR1MFS` (Timeout precedence edge rules)](../../../../../specification/open-questions.md#oq-9-xr1mfs))
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P3` — lowest-height real timeout, in either order around a dispute without a timeout claim; a timeout at height 0 is real
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P4` — an empty timeout never cancels a real timeout: a dispute without a timeout claim (unset participant, any height, with or without slashes) takes no part; only disputes without a claim give no timeout
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P5` — slashes-suppress-timeout
 - [ ] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P6` — order permutations (documents [`OQ-4-JGDCNX` (Dispute-reduction order-independence)](../../../../../verification/open-questions.md#oq-4-jgdcnx))
 - [ ] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P7` — idempotent finalize
@@ -63,6 +62,8 @@ Reduction algebra
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P32` — `reduce` after a same-fork prune whose walk stops on a stored inbound block above the snapshot's inbound head: the output carries that block's hash and its own height
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P33` — `reduce` after a same-fork prune where an inbound block newer than the window's expiry landed: the walk steps over it and ends on the kept head, with the snapshot's inbound height
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P34` — `reduce` after an open-channel storage clearing reports the snapshot's inbound head with its real height, not zero
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P35` — a real timeout and a self-removal without a timeout, in both commit orders, reduce to the same successor snapshot data
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P36` — the lower timeout of a dispute with a shorter latest state applies on the highest state; the participant the longer dispute timed out keeps its seat
 
 ## UNIT-TEST-SM-DISPUTE-VERIFICATION-1-ZAJQV6
 

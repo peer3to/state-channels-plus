@@ -6,6 +6,10 @@ import {
 import { timeoutWaitTime } from "@/types";
 import type { Hash } from "@/types/types";
 import { Codec, sleep, Type } from "@/utils";
+import {
+    expectSuccessorRemovesStalledWriterAndLeaver,
+    stageTimeoutAndSelfRemoval
+} from "@test/fixtures/TimeoutSelfRemovalOrderStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
@@ -797,6 +801,25 @@ describe("E2E: Timeouts", function () {
                 await uploads.restore();
                 await tasks.restore();
             }
+        });
+    });
+
+    describe("Timeout Fold Order", function () {
+        it("timeout dispute committed before a self-removal dispute without a timeout → the successor fork removes the stalled writer and the leaver", async function () {
+            const h = TestSession.getHarness();
+            const forkId = await stageTimeoutAndSelfRemoval(h, "timeoutFirst");
+
+            await expectSuccessorRemovesStalledWriterAndLeaver(h, forkId);
+        });
+
+        it("self-removal dispute without a timeout committed before a timeout dispute → the successor fork removes the stalled writer and the leaver", async function () {
+            const h = TestSession.getHarness();
+            const forkId = await stageTimeoutAndSelfRemoval(
+                h,
+                "selfRemovalFirst"
+            );
+
+            await expectSuccessorRemovesStalledWriterAndLeaver(h, forkId);
         });
     });
 

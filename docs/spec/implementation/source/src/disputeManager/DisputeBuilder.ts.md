@@ -8,6 +8,7 @@
 
 - [`REQ-DIS-1-XAJ1VA` (A dispute MUST state at least one of the five valid inputs)](../../../../specification/disputes/disputes.md#req-dis-1-xaj1va)
 - [`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../../../../specification/disputes/disputes.md#req-dis-10-sahjbn)
+- [`INV-DIS-8-1GY6Q5` (A fork applies at most one timeout, targeting the participant at the lowest…)](../../../../specification/disputes/disputes.md#inv-dis-8-1gy6q5)
 - [`REQ-SP-1-9YABY1` (A milestone normally proves its first block final, directly or through…)](../../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1)
 - [`REQ-SP-2-ST4JJ4` (Proofs connect the trusted start through required final membership hops to the…)](../../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4)
 - [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
@@ -38,6 +39,8 @@ Dispute construction reuses a built dispute only while its inputs are unchanged 
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P12` — a state proof built before construction at the latest height is used without building another, and the chain accepts the dispute
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P13` — a state proof built one block below the latest height is not used: construction builds its own, and the chain accepts the dispute
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P14` — a failed state proof build supplied to construction: construction builds its own, and the chain accepts the dispute
+- [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P15` — the evidence comparison of our dispute with a timeout claim against a self-removal dispute without one on the same latest state: evidence added (the fold keeps the real timeout)
+- [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P16` — the evidence comparison of our dispute without a timeout claim against a timeout dispute on the same latest state: no evidence added
 
 ## UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R
 

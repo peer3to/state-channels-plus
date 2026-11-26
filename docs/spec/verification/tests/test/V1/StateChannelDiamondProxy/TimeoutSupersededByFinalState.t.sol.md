@@ -9,6 +9,7 @@ Applies timeout-supersession counters using later finality or a trusted chain an
 ## Tests
 
 - `test_timeoutSuperseded_finalStateAboveTheTimeoutHeightKillsTheTimeout`: REQ-FP-7-4DD0D7.T2.P13, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P49
+- `test_timeoutSuperseded_olderSideChainBelowTheFinalStateKillsTheTimeout`: REQ-FP-7-4DD0D7.T2.P44, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P222
 - `test_timeoutSuperseded_finalStateAtTheTimeoutHeightKillsTheTimeout`: REQ-FP-7-4DD0D7.T2.P14, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P50
 - `test_timeoutSuperseded_sameForkChainAnchorAboveTheTimeoutHeightKillsWithAnEmptyProof`: REQ-FP-7-4DD0D7.T2.P15, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P51
 - `test_timeoutSuperseded_finalStateBelowTheTimeoutHeightDoesNotKill`: REQ-FP-7-4DD0D7.T2.P16, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P52

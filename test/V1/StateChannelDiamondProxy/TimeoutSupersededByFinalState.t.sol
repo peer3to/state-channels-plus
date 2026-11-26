@@ -50,6 +50,34 @@ contract TimeoutSupersededByFinalStateTest is StateProofStaging {
         _assertKilled(dispute);
     }
 
+    /// an older side chain: A's dispute ends at a block 2' of its own and times B out at 3; the final point is block 5
+    function test_timeoutSuperseded_olderSideChainBelowTheFinalStateKillsTheTimeout() public {
+        uint256[] memory both = _signers(ALICE_KEY, BOB_KEY);
+        MilestoneProof memory honestRun = _genesisRun(3, genesisData.participants, both);
+        MilestoneProof memory sideRun = _genesisRun(3, genesisData.participants, both);
+        Block memory sideBlock = _decode(sideRun, 2);
+        sideBlock.stateSnapshotHash = keccak256("side chain state at 2");
+        _replaceBlock(sideRun, 2, sideBlock, _signers(ALICE_KEY));
+        assertTrue(
+            keccak256(sideRun.blockConfirmations[2].signedBlock.encodedBlock)
+                != keccak256(honestRun.blockConfirmations[2].signedBlock.encodedBlock),
+            "the dispute's latest block 2' is a side block"
+        );
+        Dispute memory dispute = _dispute(_one(sideRun));
+        dispute.input.timeout.participant = bob;
+        dispute.input.timeout.blockHeight = 3;
+        _commit(dispute);
+        (MilestoneProof[] memory milestones, StateSnapshot[] memory snapshots) = _finalAtFive();
+
+        _apply(
+            dispute,
+            DisputeFraudProofType.TimeoutSupersededByFinalState,
+            _supersededProof(forkId, milestones, snapshots)
+        );
+
+        _assertKilled(dispute);
+    }
+
     function test_timeoutSuperseded_finalStateAtTheTimeoutHeightKillsTheTimeout() public {
         Dispute memory dispute = _timeoutDispute(bob);
         _commit(dispute);

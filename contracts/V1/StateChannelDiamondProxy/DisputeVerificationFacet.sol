@@ -69,7 +69,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
     /// Folds the committed disputes of one fork. `slashedParticipants` holds the slash candidates: the on-chain
     /// slashes up to the dispute window end and the disputes' listed slashes, deduplicated. The fold reads no
     /// participant set, so early, late, local and on-chain reducers fold the same candidates; only candidates that
-    /// are participants of the reduced latest state take effect (_generateDisputeOutputState).
+    /// are participants of the reduced latest state take effect (_generateDisputeOutputState). The timeout is the
+    /// lowest-height real timeout (participant set); disputes without a timeout claim take no part.
     function reduce(Dispute[] memory disputes) public view returns (ReduceOutput memory reducedOutput) {
         require(disputes.length > 0, ErrorNoDisputesProvided());
         bytes32 channelId = disputes[0].input.channelId;
@@ -150,9 +151,11 @@ contract DisputeVerificationFacet is StateChannelCommon {
             }
 
             // ***** reducedOutput.timeout *****
+            // a dispute without a timeout claim (participant 0) takes no part, so it never cancels a real timeout
             if (
-                reducedOutput.timeout.participant == address(0)
-                    || dispute.input.timeout.blockHeight < reducedOutput.timeout.blockHeight
+                dispute.input.timeout.participant != address(0)
+                    && (reducedOutput.timeout.participant == address(0)
+                        || dispute.input.timeout.blockHeight < reducedOutput.timeout.blockHeight)
             ) {
                 reducedOutput.timeout = dispute.input.timeout;
             }

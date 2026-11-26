@@ -65,6 +65,17 @@ bytes. A state the state machine cannot decode reverts with empty data, which st
 - `test_reduce_listedSlashesWithoutChannel_keptAsDedupedCandidates`: none
 - `test_reduce_snapshotAlreadyPastSlashedSigner_stillFoldsOnChainSlash`: REQ-DIS-11-WQK8P2.T1.P6, UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P9
 - `testFuzz_reduce_listedSlashCandidatesAreDeduplicated`: none
+- `test_reduce_realTimeoutThenEmptyTimeout_keepsRealTimeout`: INV-DIS-8-1GY6Q5.T1.P19, INV-DIS-8-1GY6Q5.T1.P20, UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P4
+- `test_reduce_emptyTimeoutThenRealTimeout_keepsRealTimeout`: INV-DIS-8-1GY6Q5.T1.P20, UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P4
+- `test_reduce_higherTimeoutEmptyThenLowerTimeout_lowestRealTimeoutWins`: INV-DIS-8-1GY6Q5.T1.P21, UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P3
+- `test_reduce_lowerTimeoutEmptyThenHigherTimeout_lowestRealTimeoutWins`: INV-DIS-8-1GY6Q5.T1.P21, UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P3
+- `test_reduce_allEmptyTimeouts_returnsNoTimeout`: INV-DIS-8-1GY6Q5.T1.P22, UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P4
+- `test_reduce_emptyTimeoutWithNonzeroHeight_isSkipped`: INV-DIS-8-1GY6Q5.T1.P23, UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P4
+- `test_reduce_realGenesisTimeoutThenEmptyTimeout_keepsGenesisTimeout`: INV-DIS-8-1GY6Q5.T1.P24, UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P3
+- `test_reduce_emptyTimeoutThenRealGenesisTimeout_keepsGenesisTimeout`: INV-DIS-8-1GY6Q5.T1.P24, UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P3
+- `test_reduce_slashCarryingEmptyTimeout_foldKeepsTimeoutAndOutputSuppressesIt`: INV-DIS-8-1GY6Q5.T1.P25, INV-DIS-7-9GGZSD.T1.P1, UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P4, UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P5
+- `test_reduce_lowerTimeoutOfAShorterDispute_appliesOnTheHighestState`: INV-DIS-8-1GY6Q5.T1.P26, UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P36
+- `test_reduceOutputToSnapshotData_bothCommitOrders_sameSuccessorForkId`: INV-DIS-8-1GY6Q5.T1.P20, UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P35
 - `test_computeDisputeOutputState_noRemoval_keepsAllParticipantsAndNoExits`: UNIT-TEST-SM-DISPUTE-VERIFICATION-2-DKTKDF.P1
 - `test_removePresentRecordsOnlySuccessfulExit`: REQ-SM-8-8CHSQ8.T1.P15
 - `test_removeAbsentRecordsOnlySuccessfulExit`: REQ-SM-10-JD8TSF.T1.P4

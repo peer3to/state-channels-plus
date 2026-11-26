@@ -308,6 +308,160 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(abi.encode(out.slashedParticipants), abi.encode(fakeSlashes));
     }
 
+    // ---- reduce timeout fold: a dispute without a timeout claim takes no part ----
+    // participants: A1 = 0xA1, A2 = 0xA2, A3 = 0xA3. "T(p, h)" times p out at height h; "E" has no timeout claim.
+
+    function test_reduce_realTimeoutThenEmptyTimeout_keepsRealTimeout() public {
+        Dispute[] memory disputes = new Dispute[](2);
+        disputes[0] = _timeoutDispute(address(0xA1), address(0xA3), 5);
+        disputes[1] = _selfRemovalDispute(address(0xA2));
+
+        ReduceOutput memory out = diamond.reduce(disputes);
+
+        assertEq(out.timeout.participant, address(0xA3), "the real timeout stays");
+        assertEq(out.timeout.blockHeight, 5);
+    }
+
+    function test_reduce_emptyTimeoutThenRealTimeout_keepsRealTimeout() public {
+        Dispute[] memory disputes = new Dispute[](2);
+        disputes[0] = _selfRemovalDispute(address(0xA2));
+        disputes[1] = _timeoutDispute(address(0xA1), address(0xA3), 5);
+
+        ReduceOutput memory out = diamond.reduce(disputes);
+
+        assertEq(out.timeout.participant, address(0xA3), "the real timeout applies");
+        assertEq(out.timeout.blockHeight, 5);
+    }
+
+    function test_reduce_higherTimeoutEmptyThenLowerTimeout_lowestRealTimeoutWins() public {
+        Dispute[] memory disputes = new Dispute[](3);
+        disputes[0] = _timeoutDispute(address(0xA1), address(0xA2), 5);
+        disputes[1] = _selfRemovalDispute(address(0xA1));
+        disputes[2] = _timeoutDispute(address(0xA1), address(0xA3), 3);
+
+        ReduceOutput memory out = diamond.reduce(disputes);
+
+        assertEq(out.timeout.participant, address(0xA3), "A3 at 3 is the lowest real timeout");
+        assertEq(out.timeout.blockHeight, 3);
+    }
+
+    function test_reduce_lowerTimeoutEmptyThenHigherTimeout_lowestRealTimeoutWins() public {
+        Dispute[] memory disputes = new Dispute[](3);
+        disputes[0] = _timeoutDispute(address(0xA1), address(0xA3), 3);
+        disputes[1] = _selfRemovalDispute(address(0xA1));
+        disputes[2] = _timeoutDispute(address(0xA1), address(0xA2), 5);
+
+        ReduceOutput memory out = diamond.reduce(disputes);
+
+        assertEq(out.timeout.participant, address(0xA3), "A3 at 3 is the lowest real timeout");
+        assertEq(out.timeout.blockHeight, 3);
+    }
+
+    function test_reduce_allEmptyTimeouts_returnsNoTimeout() public {
+        Dispute[] memory disputes = new Dispute[](2);
+        disputes[0] = _noTimeoutDispute(address(0xA1));
+        disputes[1] = _noTimeoutDispute(address(0xA2));
+
+        ReduceOutput memory out = diamond.reduce(disputes);
+
+        assertEq(out.timeout.participant, address(0), "no timeout");
+        assertEq(out.timeout.blockHeight, 0);
+        assertEq(abi.encode(_outputParticipants(out, _participants())), abi.encode(_participants()), "nobody removed");
+    }
+
+    function test_reduce_emptyTimeoutWithNonzeroHeight_isSkipped() public {
+        Dispute[] memory disputes = new Dispute[](2);
+        disputes[0] = _timeoutDispute(address(0xA1), address(0xA3), 12);
+        disputes[1] = _selfRemovalDispute(address(0xA2));
+        disputes[1].input.timeout.blockHeight = 9;
+
+        ReduceOutput memory out = diamond.reduce(disputes);
+
+        assertEq(out.timeout.participant, address(0xA3), "a participant-0 timeout at 9 is no claim");
+        assertEq(out.timeout.blockHeight, 12);
+    }
+
+    function test_reduce_realGenesisTimeoutThenEmptyTimeout_keepsGenesisTimeout() public {
+        Dispute[] memory disputes = new Dispute[](2);
+        disputes[0] = _timeoutDispute(address(0xA2), address(0xA1), 0);
+        disputes[1] = _selfRemovalDispute(address(0xA2));
+
+        ReduceOutput memory out = diamond.reduce(disputes);
+
+        assertEq(out.timeout.participant, address(0xA1), "a timeout at height 0 is real");
+        assertEq(out.timeout.blockHeight, 0);
+    }
+
+    function test_reduce_emptyTimeoutThenRealGenesisTimeout_keepsGenesisTimeout() public {
+        Dispute[] memory disputes = new Dispute[](2);
+        disputes[0] = _selfRemovalDispute(address(0xA2));
+        disputes[1] = _timeoutDispute(address(0xA2), address(0xA1), 0);
+
+        ReduceOutput memory out = diamond.reduce(disputes);
+
+        assertEq(out.timeout.participant, address(0xA1), "a timeout at height 0 is real");
+        assertEq(out.timeout.blockHeight, 0);
+    }
+
+    // the fold skips the slash dispute's empty timeout; the slash then suppresses the timeout at output
+    function test_reduce_slashCarryingEmptyTimeout_foldKeepsTimeoutAndOutputSuppressesIt() public {
+        Dispute[] memory disputes = new Dispute[](2);
+        disputes[0] = _timeoutDispute(address(0xA2), address(0xA3), 5);
+        disputes[1] = _noTimeoutDispute(address(0xA2));
+        disputes[1].input.onChainSlashes = _oneAddress(address(0xA1));
+
+        ReduceOutput memory out = diamond.reduce(disputes);
+
+        assertEq(out.timeout.participant, address(0xA3), "the fold keeps the real timeout");
+        assertEq(out.timeout.blockHeight, 5);
+        address[] memory output = _outputParticipants(out, _participants());
+        assertEq(output.length, 2, "only the slash takes effect");
+        assertEq(output[0], address(0xA2));
+        assertEq(output[1], address(0xA3), "the timed-out participant keeps its seat");
+    }
+
+    // a colluder's unseen tail ends at 105 and times A1 out at 106; A1's dispute ends at 103 and times A3 out at 104
+    function test_reduce_lowerTimeoutOfAShorterDispute_appliesOnTheHighestState() public {
+        address[] memory participants = _participants();
+        (StateSnapshot memory snapshot,) = _reducibleSnapshot(participants, bytes32(0));
+        bytes32 snapshotHash = keccak256(abi.encode(snapshot));
+        Dispute[] memory disputes = new Dispute[](2);
+        disputes[0] = _timeoutDispute(address(0xA2), address(0xA1), 106);
+        disputes[0].input.stateProof.milestones = _latestBlockAt(105, snapshotHash);
+        disputes[1] = _timeoutDispute(address(0xA1), address(0xA3), 104);
+        disputes[1].input.stateProof.milestones = _latestBlockAt(103, keccak256("shorter latest state"));
+
+        ReduceOutput memory out = diamond.reduce(disputes);
+
+        assertEq(out.latestBlock.transaction.header.transactionCnt, 105, "the highest state wins");
+        assertEq(out.timeout.participant, address(0xA3), "the lowest timeout applies");
+        assertEq(out.timeout.blockHeight, 104);
+        address[] memory output = _outputParticipants(out, participants);
+        assertEq(output.length, 2);
+        assertEq(output[0], address(0xA1), "A1 keeps its seat");
+        assertEq(output[1], address(0xA2));
+    }
+
+    function test_reduceOutputToSnapshotData_bothCommitOrders_sameSuccessorForkId() public {
+        Dispute[] memory timeoutFirst = new Dispute[](2);
+        timeoutFirst[0] = _timeoutDispute(address(0xA1), address(0xA3), 5);
+        timeoutFirst[1] = _selfRemovalDispute(address(0xA2));
+        Dispute[] memory emptyFirst = new Dispute[](2);
+        emptyFirst[0] = timeoutFirst[1];
+        emptyFirst[1] = timeoutFirst[0];
+
+        (SnapshotData memory fromTimeoutFirst, bytes memory stateFromTimeoutFirst) =
+            _reduceToSnapshotData(diamond.reduce(timeoutFirst), _participants());
+        (SnapshotData memory fromEmptyFirst,) = _reduceToSnapshotData(diamond.reduce(emptyFirst), _participants());
+
+        assertEq(
+            keccak256(abi.encode(fromTimeoutFirst)), keccak256(abi.encode(fromEmptyFirst)), "same successor fork id"
+        );
+        address[] memory output = abi.decode(stateFromTimeoutFirst, (MathState)).participants;
+        assertEq(output.length, 1, "the stalled author and the leaver are removed");
+        assertEq(output[0], address(0xA1));
+    }
+
     // ---- public computeDisputeOutputState (removals + exit shrink) ----
     // Participants include address(0) as a sentinel: a removal list with trailing address(0)
     // slots would strip the sentinel, so these tests go red if such slots reach removeParticipant.
@@ -1618,19 +1772,78 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         internal
         returns (address[] memory)
     {
+        (, bytes memory encodedModifiedState) = _reduceToSnapshotData(reducedOutput, participants);
+        return abi.decode(encodedModifiedState, (MathState)).participants;
+    }
+
+    /// the successor snapshot data and state of `reducedOutput` applied to `_reducibleSnapshot`
+    function _reduceToSnapshotData(ReduceOutput memory reducedOutput, address[] memory participants)
+        internal
+        returns (SnapshotData memory outputSnapshotData, bytes memory encodedModifiedState)
+    {
+        (StateSnapshot memory snapshot, bytes memory encodedState) =
+            _reducibleSnapshot(participants, reducedOutput.latestInboundMessageBlockHash);
+        MessageBlock[] memory inboundMessageBlocks = new MessageBlock[](0);
+        (outputSnapshotData, encodedModifiedState,) = diamond.reduceOutputToSnapshotData(
+            keccak256(abi.encode(snapshot.snapshotData)), reducedOutput, snapshot, encodedState, inboundMessageBlocks
+        );
+    }
+
+    /// a snapshot of `participants` with zero balances that already consumed the inbound head `inboundHash`
+    function _reducibleSnapshot(address[] memory participants, bytes32 inboundHash)
+        internal
+        pure
+        returns (StateSnapshot memory snapshot, bytes memory encodedState)
+    {
         MathState memory state;
         state.participants = participants;
         state.balances = new uint256[](participants.length);
-        StateSnapshot memory snapshot;
-        bytes memory encodedState = abi.encode(state);
+        encodedState = abi.encode(state);
         snapshot.snapshotData.stateMachineStateHash = keccak256(encodedState);
         // the snapshot already consumed the reduced inbound head: no inbound blocks to apply
-        snapshot.snapshotData.latestInboundMessageBlockHash = reducedOutput.latestInboundMessageBlockHash;
-        MessageBlock[] memory inboundMessageBlocks = new MessageBlock[](0);
-        (, bytes memory encodedModifiedState,) = diamond.reduceOutputToSnapshotData(
-            keccak256(abi.encode(snapshot.snapshotData)), reducedOutput, snapshot, encodedState, inboundMessageBlocks
-        );
-        return abi.decode(encodedModifiedState, (MathState)).participants;
+        snapshot.snapshotData.latestInboundMessageBlockHash = inboundHash;
+    }
+
+    /// `disputer`'s dispute on this fork that times `timedOut` out at `blockHeight`
+    function _timeoutDispute(address disputer, address timedOut, uint256 blockHeight)
+        internal
+        pure
+        returns (Dispute memory dispute)
+    {
+        dispute.input.channelId = CHANNEL_ID;
+        dispute.input.forkId = FORK_ID;
+        dispute.input.disputer = disputer;
+        dispute.input.timeout.participant = timedOut;
+        dispute.input.timeout.blockHeight = blockHeight;
+    }
+
+    /// `disputer`'s dispute on this fork without a timeout claim, a self-removal or slashes
+    function _noTimeoutDispute(address disputer) internal pure returns (Dispute memory dispute) {
+        dispute.input.channelId = CHANNEL_ID;
+        dispute.input.forkId = FORK_ID;
+        dispute.input.disputer = disputer;
+    }
+
+    /// `disputer`'s self-removal dispute on this fork, without a timeout claim
+    function _selfRemovalDispute(address disputer) internal pure returns (Dispute memory dispute) {
+        dispute = _noTimeoutDispute(disputer);
+        dispute.input.selfRemoval = true;
+    }
+
+    /// one milestone whose only block is at `transactionCnt` and commits `stateSnapshotHash`
+    function _latestBlockAt(uint256 transactionCnt, bytes32 stateSnapshotHash)
+        internal
+        pure
+        returns (MilestoneProof[] memory milestones)
+    {
+        Block memory latest;
+        latest.transaction.header.channelId = CHANNEL_ID;
+        latest.transaction.header.forkId = FORK_ID;
+        latest.transaction.header.transactionCnt = transactionCnt;
+        latest.stateSnapshotHash = stateSnapshotHash;
+        milestones = new MilestoneProof[](1);
+        milestones[0].blockConfirmations = new BlockConfirmation[](1);
+        milestones[0].blockConfirmations[0].signedBlock.encodedBlock = abi.encode(latest);
     }
 
     // ---- inbound message block walk ----

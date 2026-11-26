@@ -3,6 +3,10 @@ import { Codec, Type } from "@/utils";
 import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
 import { stageMissingParticipantSignature } from "@test/fixtures/LateSignatureStaging";
 import { stageMirrorMissingJoin } from "@test/fixtures/MirrorDivergenceStaging";
+import {
+    compareEvidence,
+    stageStoredTimeoutClaim
+} from "@test/fixtures/TimeoutSelfRemovalOrderStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -438,6 +442,54 @@ describe("Unit: DisputeBuilder", function () {
                     auditingData
                 )
             ).to.equal(true);
+        });
+    });
+
+    describe("hasMoreEvidence → timeout claims", function () {
+        it("our dispute with a timeout claim compared to a self-removal dispute without one → evidence added", async function () {
+            const h = TestSession.getHarness();
+            const forkId = await stageStoredTimeoutClaim(h);
+            const ours = await h.dispute.fetchConstructedDispute(0, forkId);
+            await h.control(h.getPeer(1)).dispute.setForceExit(true).request();
+            const theirs = await h.dispute.fetchConstructedDispute(1, forkId);
+            // premise: same latest state; only ours claims the timeout
+            expect(ours.dispute.input.timeout.participant).to.equal(
+                h.getPeer(2).address
+            );
+            expect(theirs.dispute.input.selfRemoval).to.equal(true);
+            expect(theirs.dispute.input.timeout.participant).to.equal(
+                ZeroAddress
+            );
+            expect(theirs.dispute.input.latestStateSnapshotHash).to.equal(
+                ours.dispute.input.latestStateSnapshotHash
+            );
+
+            expect(
+                await compareEvidence(h, 0, forkId, theirs.dispute)
+            ).to.equal(true);
+        });
+
+        it("our dispute without a timeout claim compared to a timeout dispute → no evidence added", async function () {
+            const h = TestSession.getHarness();
+            const forkId = await stageStoredTimeoutClaim(h);
+            const theirs = await h.dispute.fetchConstructedDispute(0, forkId);
+            const ours = await h.dispute.fetchConstructedDispute(1, forkId);
+            // premise: same latest state; ours has no timeout claim and no other reason
+            expect(theirs.dispute.input.timeout.participant).to.equal(
+                h.getPeer(2).address
+            );
+            expect(ours.dispute.input.timeout.participant).to.equal(
+                ZeroAddress
+            );
+            expect(ours.dispute.input.selfRemoval).to.equal(false);
+            expect(ours.dispute.input.onChainSlashes).to.deep.equal([]);
+            expect(ours.dispute.input.latestStateSnapshotHash).to.equal(
+                theirs.dispute.input.latestStateSnapshotHash
+            );
+
+            expect(
+                await compareEvidence(h, 1, forkId, theirs.dispute)
+            ).to.equal(false);
         });
     });
 

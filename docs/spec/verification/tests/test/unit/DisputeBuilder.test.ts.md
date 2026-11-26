@@ -60,4 +60,6 @@ peer 1's `onDisputeReducedResultCommitted`, and asserts peer 1 keeps no built di
 - `a cached dispute that omits its auditing data, then the chain no longer allows the omission → the next construction builds again and posts the data`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P10
 - `the fork's reduced result committed after a cached construction → the built dispute is dropped`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P11
 - `a newer block committed while construction is held at its state proof → the dispute proves the later block throughout`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P2, REQ-DISPUTE-PIPE-6-6FZB9M.T1.P15
+- `our dispute with a timeout claim compared to a self-removal dispute without one → evidence added`: INV-DIS-8-1GY6Q5.T1.P27, UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P15
+- `our dispute without a timeout claim compared to a timeout dispute → no evidence added`: INV-DIS-8-1GY6Q5.T1.P27, UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P16
 - `a dispute naming a snapshot absent from storage → rejects naming that snapshot, no auditing data`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P9
