@@ -300,22 +300,21 @@ export class EventHandler {
         this.stateManager.membershipService.resetEligibility();
     }
 
+    /**
+     * A kill slashes through `ChainSlashed`, emitted before this event for
+     * each address it slashes (the disputer, or a final-history kill's
+     * double signers): `onChainSlashed` already recorded, observed and
+     * blacklisted them. This handler only removes the dispute.
+     */
     async onDisputeKilled(
         channelId: ChannelId,
         forkId: ForkId,
         disputer: Address,
-        disputeHash: Hash,
-        blockTimestamp: Timestamp
+        disputeHash: Hash
     ): Promise<void> {
         // The cached comparison may have been against the killed dispute; the
         // next audit of this fork compares again.
         this.stateManager.disputeManager.clearCache(forkId);
-        this.stateManager.membershipService.observeOnChainSlash(disputer);
-        await this.diamondStateMachine.localDiamondContract.onOnChainSlashAdded(
-            channelId,
-            disputer,
-            blockTimestamp
-        );
         await this.diamondStateMachine.localDiamondContract.onDisputeKilled(
             channelId,
             forkId,
@@ -331,11 +330,6 @@ export class EventHandler {
             disputeHash: disputeHash,
             channelId
         });
-
-        // disconnect disputer
-        this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-            disputer
-        );
 
         const commitments =
             await this.stateManager.stateChannelManagerContract.getWindowCommitments(
@@ -750,8 +744,9 @@ export class EventHandler {
                 }
             );
 
-            // Our own evidence goes in at once: the kill and our dispute, which
-            // counts the killed submitter's slash, land in one multicall. A peer
+            // Our own evidence goes in at once: the kill and our dispute land in
+            // one multicall (or the kill first, alone, when both do not fit one
+            // transaction). Our dispute lists none of the kill's slashes. A peer
             // that already disputed this fork only kills, at once and
             // concurrently with its own upload. Slashes its own dispute misses
             // are applied in the next fork.

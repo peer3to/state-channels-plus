@@ -138,7 +138,7 @@ author is added.
 - `a counter-signature already requested finishes before a dispute task captures its state`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P13, REQ-DISPUTE-PIPE-8-BVR8XV.T1.P7
 - `a refused dispute reopens own-turn authoring before a retry`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P14, REQ-DISPUTE-PIPE-8-BVR8XV.T1.P8
 - `a refused dispute reopens counter-signing before a retry`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P15, REQ-DISPUTE-PIPE-8-BVR8XV.T1.P9
-- `successor fork: the ancestor fork's slash, also one a kill lands first, is not listed`: REQ-DIS-11-WQK8P2.T1.P3
+- `successor fork: the ancestor fork's slash is not listed`: REQ-DIS-11-WQK8P2.T1.P3
 - `successor fork while the chain anchor is still on the parent fork (no successor snapshot posted) → the dispute built on the successor is accepted by an honest auditor, and the chain accepts its proof`: UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P18
 - `healthy fork → well-formed dispute, the chain accepts its proof`: none
 - `no blocks written yet → a genesis-based dispute with an empty state proof`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P3, UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P4

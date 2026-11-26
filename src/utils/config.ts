@@ -58,6 +58,10 @@ export type Config = {
     // sent at no more than this, and a runtime whose replay requirement is
     // above it does not start.
     MAX_TRANSACTION_GAS: number;
+    // Most calldata bytes the chain admits in one transaction. A dispute
+    // fraud proof larger than this is not sent, and a kill with our own
+    // upload that exceeds it goes out as two transactions.
+    MAX_TRANSACTION_BYTES: number;
     // Crash log collection
     CRASH_LOG_UPLOAD_ENDPOINT: string;
     CRASH_LOG_API_TOKEN: string;
@@ -106,6 +110,8 @@ const DEFAULT_CONFIG: Config = {
     // the peer3 parachain runtime's MAX_TX_GAS (TransactionGasLimit). startup
     // refuses a replay requirement above it; the work around a replay must fit too
     MAX_TRANSACTION_GAS: 17_916_000,
+    // the peer3 parachain runtime's per-transaction calldata limit (64 KiB)
+    MAX_TRANSACTION_BYTES: 65_536,
     // Crash log collection is enabled when upload endpoint is configured.
     CRASH_LOG_UPLOAD_ENDPOINT: "",
     CRASH_LOG_API_TOKEN: "",

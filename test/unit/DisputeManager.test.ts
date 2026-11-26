@@ -202,7 +202,7 @@ describe("Unit: DisputeManager", function () {
         }
     });
     describe("constructDispute", function () {
-        it("successor fork: the ancestor fork's slash, also one a kill lands first, is not listed", async function () {
+        it("successor fork: the ancestor fork's slash is not listed", async function () {
             const h = TestSession.getHarness();
             const { newForkId, maliciousPeerIndices, honestPeerIndices } =
                 await h.scenario.fourPeersDisputeResolution();
@@ -216,9 +216,9 @@ describe("Unit: DisputeManager", function () {
                             sm.channelId
                         );
                     const { dispute } =
-                        (await sm.disputeManager.constructDispute(args.forkId, {
-                            expectedSlashes: [args.removed]
-                        }))!;
+                        (await sm.disputeManager.constructDispute(
+                            args.forkId
+                        ))!;
                     return {
                         onChain: onChain.map(String),
                         listed: dispute.input.onChainSlashes.map(String)

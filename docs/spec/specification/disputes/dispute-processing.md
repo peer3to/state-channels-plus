@@ -64,6 +64,9 @@ one, and escalate.
    holds unapplied evidence against — the fraud proofs themselves, ordered _before_ the upload in
    one submission, so the dispute's claimed slashes are a subset of the on-chain set when it
    executes (fraud enforcement stays separate from reduction, [fraud-proofs.md](./fraud-proofs.md)).
+   A dispute-kill bundled before the node's own upload lists none of that kill's slashes: a
+   final-history kill's slash set S is known only on chain, so the upload states the open window
+   as its reason instead, and later slashes reach the node only from `ChainSlashed` events.
 3. **Timeout claim** if held at the proof's latest block height + 1 (a lower held claim names a
    height the node passed and is dropped; a higher one stays held and is not attached,
    [`REQ-DISPUTE-PIPE-13-R2QJZN`](dispute-processing.md#req-dispute-pipe-13-r2qjzn)); **auditing data** (genesis snapshot data, per-milestone snapshots,
@@ -82,7 +85,12 @@ one, and escalate.
    cap and the block gas limit ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)), and any other batch declares it with the
    signer's headroom; only when that estimate is refused, so the upload already fails, is the
    best-effort form estimated, which keeps a searching estimator from funding the evidence
-   applications alone while the upload could still land. Classify races: ineligibility (the node was slashed), a window
+   applications alone while the upload could still land. Among several accepted final-history
+   counters against one dispute, the node sends the one with the largest slash set S that fits the
+   65,536-byte transaction limit (the earliest on a tie); a counter that fits no transaction is
+   stored but not sent. When the kill fits but the kill plus the upload does not, the kill is sent
+   alone first and the node's own dispute is still uploaded in a second transaction; a kill that
+   another auditor landed first makes the lone kill a no-op and the upload still lands. Classify races: ineligibility (the node was slashed), a window
    opened too early for the timeout, or an expired evidence window (a lost evidence race: a no-op reported to the caller,
    [`OQ-SPEC-EVIDENCE-RACE-1-TKNWBJ` (Interpreting a lost evidence race)](../open-questions.md#oq-spec-evidence-race-1-tknwbj)); roll back the once-per-fork guard on failure. An upload carries the signer's estimate plus headroom, not a fixed gas limit, so a concurrent dispute landing between estimate and inclusion cannot push a late disputer out of gas and past the evidence window; in a replaying batch the replay requirement gives that margin while the batch stays under the cap.
 

@@ -68,10 +68,12 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             DisputeFraudProofType.DisputeConflictsWithFinalState
         );
         expect(
-            await h.channelManager.isDisputeConflictingWithFinalState.staticCall(
-                dispute,
-                proof
-            )
+            (
+                await h.channelManager.isDisputeConflictingWithFinalState.staticCall(
+                    dispute,
+                    proof
+                )
+            )[0]
         ).to.equal(true);
         const walk = await h.channelManager.verifyMilestones.staticCall(
             proof.finalProof
@@ -173,10 +175,12 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             DisputeFraudProofType.DisputeConflictsWithFinalState
         );
         expect(
-            await h.channelManager.isDisputeConflictingWithFinalState.staticCall(
-                dispute,
-                proof
-            )
+            (
+                await h.channelManager.isDisputeConflictingWithFinalState.staticCall(
+                    dispute,
+                    proof
+                )
+            )[0]
         ).to.equal(true);
         expect(
             await h.control(auditor).query.getNextBlockHeight(forkId).request()
@@ -621,8 +625,9 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             expect(lagging.disputeFraudProofCount).to.equal(0);
         });
 
-        it("U42: an auditor holding a final block at the hop's height kills the dispute with DisputeConflictsWithFinalState, which the chain accepts", async function () {
+        it("U42: an auditor holding a final block at the hop's height kills the dispute with DisputeConflictsWithFinalState, which the chain accepts and which slashes exactly the forged hop's signer", async function () {
             const h = TestSession.getHarness();
+            let forgedHopSigner: string | undefined;
             await stageMirrorMissingConsumedTopUp(h, 1);
             const forkId = h.activeForkId!;
             const disputer = h.getPeer(0);
@@ -657,6 +662,10 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
                         previousBlockHash: previous.hash,
                         notAuthor: real.author
                     });
+                    forgedHopSigner =
+                        Block.fromBlockConfirmation(
+                            forgedHop
+                        ).author.toString();
                     posted.input.stateProof.milestones = [
                         { blockConfirmations: [forgedHop] },
                         ...posted.input.stateProof.milestones
@@ -688,7 +697,10 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             expect(kill.appliedProofTypes).to.deep.equal([
                 DisputeFraudProofType.DisputeConflictsWithFinalState
             ]);
-            await h.assert.dispute.slashedOnChain(disputer.address);
+            // the forged hop is the first block of its milestone and only its
+            // author signed it; every participant signed the auditor's final
+            // point, so the author alone signed both
+            await h.assert.dispute.slashedOnChainExactly([forgedHopSigner!]);
         });
     });
 

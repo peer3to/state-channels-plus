@@ -19,6 +19,13 @@ Applies final-state conflict counters to disputes and controls. Checks exact fin
 - `test_conflictWithFinalState_conflictingBlockNamingAnotherForkDoesNotKill`: REQ-FP-7-4DD0D7.T4.P2, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P169
 - `test_conflictWithFinalState_blockBeforeTheAnchorBlockInTheRunIsNoConflict`: REQ-FP-7-4DD0D7.T2.P9, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P45
 - `test_conflictWithFinalState_anchorRunAsTheFinalProofProvesTheAnchor`: REQ-FP-7-4DD0D7.T2.P10, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P46
-- `test_conflictWithFinalState_conflictingFirstBlockOfASecondHopMilestoneKills`: REQ-FP-7-4DD0D7.T2.P11, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P47
+- `test_conflictWithFinalState_conflictingFirstBlockOfASecondHopMilestoneKills`: REQ-FP-7-4DD0D7.T2.P11, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P47, REQ-FP-7-4DD0D7.T11.P1
 - `test_CN3_finalProofWhoseHopSnapshotNamesAnotherHeightDoesNotKill`: REQ-SP-7-70EMAT.T2.P15, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P106
-- `test_conflictWithFinalState_staleFinalProofBelowAnAdvancedAnchorProvesTheAnchor`: REQ-FP-7-4DD0D7.T2.P12, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P48
+- `test_conflictWithFinalState_staleFinalProofBelowAnAdvancedAnchorProvesTheAnchor`: REQ-FP-7-4DD0D7.T2.P12, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P48, REQ-FP-7-4DD0D7.T11.P8
+- `test_case1_honestJoinersDisputeKilledByASideFinalPointSlashesOnlyTheDoubleSigners`: REQ-FP-7-4DD0D7.T11.P1, REQ-FP-7-4DD0D7.T11.P2
+- `test_case2_victimsSideChainDisputeKilledAtATailBlockSlashesNobody`: REQ-FP-7-4DD0D7.T11.P3
+- `test_CN5_replacementAfterAKillThatSlashesNobodyIsNotKillableByInvalidDisputeReason`: REQ-FP-7-4DD0D7.T11.P10
+- `test_CN5_replacementWithoutTheWindowReasonAfterAKillThatSlashesNobodyIsKilled`: REQ-FP-7-4DD0D7.T11.P10
+- `test_slashSet_singleSignatureOverlapSlashesOnlyThatSigner`: REQ-FP-7-4DD0D7.T11.P4
+- `test_slashSet_membershipTurnoverGivesAnEmptySetAndStillKills`: REQ-FP-7-4DD0D7.T11.P5
+- `test_slashSet_firstOfTwoAcceptedCountersDecidesTheSlashSet`: REQ-FP-7-4DD0D7.T11.P6

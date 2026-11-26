@@ -289,13 +289,13 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
         public
         view
         virtual
-        returns (bool);
+        returns (bool, address[] memory slashes);
 
     function isDisputeFinalPointRegression(Dispute memory dispute, DisputeFinalPointRegression memory proof)
         public
         view
         virtual
-        returns (bool);
+        returns (bool, address[] memory slashes);
 
     function isDisputeOutboundRunInvalid(Dispute memory dispute, DisputeInvalidOutboundRun memory proof)
         public

@@ -610,10 +610,12 @@ describe("Unit: DisputeValidationService data availability and older disputes", 
                 DisputeFraudProofType.DisputeConflictsWithFinalState
             );
             expect(
-                await h.channelManager.isDisputeConflictingWithFinalState.staticCall(
-                    staged.dispute,
-                    proof
-                )
+                (
+                    await h.channelManager.isDisputeConflictingWithFinalState.staticCall(
+                        staged.dispute,
+                        proof
+                    )
+                )[0]
             ).to.equal(true);
             // the conflict is found before any walk and its tail replay
             const { local, chain } = await walks.observation();

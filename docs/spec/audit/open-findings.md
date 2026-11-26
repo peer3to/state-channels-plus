@@ -2742,9 +2742,15 @@ top-up by a participant that has left G's set also counts), and there is no mini
 JOIN consumed in a final block still needs its joiner's signature, so a finalized joiner stays
 protected. The harm to L is the submitter's slash (`_killDispute` adds it with
 `addOnChainSlashedParticipant`), not the kill: `_generateDisputeOutputState` applies pending inbound
-before slashes, so the winning dispute still admits L. Decided (Ljuba, 2026-11-23): a later change
-spares the submitter and slashes only the addresses that signed both conflicting final points;
-until it lands, this residual stands
+before slashes, so the winning dispute still admits L. Decided (Ljuba, 2026-11-23): the kill
+spares the submitter and slashes only the addresses that signed both conflicting final points.
+Landed (2026-11-26): both final-history kills slash their set S
+([fraud-proofs.md §3](../specification/disputes/fraud-proofs.md)), so L's honest dispute killed by
+C's side final point slashes only the addresses that signed both F' and G, never L by its
+submission alone. The remaining limits of S are
+[`FIND-DISPUTE-9-2T8SPQ`](open-findings.md#find-dispute-9-2t8spq),
+[`FIND-DISPUTE-10-HS949A`](open-findings.md#find-dispute-10-hs949a) and
+[`FIND-DISPUTE-11-2VZK00`](open-findings.md#find-dispute-11-2vzk00)
 ([`REQ-FP-7-4DD0D7.T10`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t10)).
 
 Kill robustness (2026-11-26): a missing inbound block inside the sender's own final proof F, in
@@ -2809,6 +2815,59 @@ notes carry the measured count for the engineer's review.
 **Evidence:**
 [DisputeFinalPointRegression.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeFinalPointRegression.t.sol.md)
 (`test_conflict_killWalksEveryTopUpAboveTheFinalPointsInbound`).
+
+<a id="find-dispute-9-2t8spq"></a>
+
+### FIND-DISPUTE-9-2T8SPQ
+
+**Limit:** the regression kill's set S is U_F intersected with the direct signers of G, the first
+block of the dispute's last milestone. U_F counts the joiners whose JOIN F consumed. A joiner that
+signed F and also signed G (for example because it followed the side history before F became
+visible to it) is in S and is slashed with the colluders, although it never proposed either
+history. The rule is the decided one: signing two conflicting final points is the offense.
+
+**Status:** Open; low. Documented, not fixed: signing both final points is objective
+equivocation, and a node that persists its head never signs both.
+
+**Evidence:**
+[DisputeFinalPointRegression.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeFinalPointRegression.t.sol.md)
+(`test_K16_victimsDisputeWithTheSideChainItSyncedIsKilledAndOnlyTheDoubleSignersAreSlashed`),
+[DisputeConflictsWithFinalState.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeConflictsWithFinalState.t.sol.md)
+(`test_case1_honestJoinersDisputeKilledByASideFinalPointSlashesOnlyTheDoubleSigners`).
+
+<a id="find-dispute-10-hs949a"></a>
+
+### FIND-DISPUTE-10-HS949A
+
+**Limit:** a final-history kill always kills but slashes only S, which is empty when the
+conflicting block is a tail block of its milestone, when F is the walk's start, or when nobody
+signed both final points. A disputer can therefore post a dispute that it expects to be killed
+this way (or kill its own dispute) and leave the window without a slash, where any other dispute
+counter would slash it. The kill still removes the dispute, so it gains no reduction outcome; it
+only avoids the slash.
+
+**Status:** Open; medium. Accepted by the slash-set decision; the PR notes carry it for the
+engineer's review.
+
+**Evidence:**
+[DisputeConflictsWithFinalState.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeConflictsWithFinalState.t.sol.md)
+(`test_case2_victimsSideChainDisputeKilledAtATailBlockSlashesNobody`,
+`test_slashSet_membershipTurnoverGivesAnEmptySetAndStillKills`),
+[DisputeFinalPointRegression.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeFinalPointRegression.t.sol.md)
+(`test_K11_chainAnchorAsTheFinalPointKillsASideChainBelowItsInbound`).
+
+<a id="find-dispute-11-2vzk00"></a>
+
+### FIND-DISPUTE-11-2VZK00
+
+**Limit:** a node that restarts without persistence, synchronizes another branch and signs its
+first block can sign two conflicting final points without intent. It is then in the set S of a
+final-history kill and is slashed. The fix is the restored-head hold of PR #596, which keeps a
+restarted node from signing before it restores its own head.
+
+**Status:** Open; low. Depends on PR #596; no change in this kill.
+
+**Evidence:** none yet; the restored-head hold carries its own tests.
 
 <a id="find-events-1-3jf8fm"></a>
 

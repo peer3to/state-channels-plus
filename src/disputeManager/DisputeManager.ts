@@ -1,6 +1,7 @@
 import ADiamondStateMachine from "../ADiamondStateMachine";
 import AgreementManager from "../agreementManager";
 import DisputeBuilder, { type ConstructDisputeResult } from "./DisputeBuilder";
+import { KillDelivery, planKillDelivery } from "./planKillDelivery";
 import type { BuiltStateProof } from "../agreementManager/AgreementManager";
 import { Address, ChannelId, ForkId, Hash } from "../types/types";
 import P2pEventHooks from "@/P2pEventHooks";
@@ -131,9 +132,12 @@ class DisputeManager {
 
     /**
      * Uploads this peer's dispute of `forkId`. With `kill`, the dispute fraud
-     * proof against that invalid dispute runs first in the same multicall,
-     * and our dispute already counts its submitter's slash: the kill must
-     * land for our dispute to be admitted. In a multicall the upload is best
+     * proof against that invalid dispute runs first in the same multicall.
+     * Our dispute lists none of the kill's slashes (the chain admits a subset
+     * of its slashes), so it does not depend on the kill landing: when the
+     * kill and the upload together exceed the transaction calldata limit, the
+     * kill goes alone first and the upload follows, and a kill too large to
+     * send alone is not sent (`killDispute`). In a multicall the upload is best
      * effort: the kill and fraud proofs land even when the upload is refused,
      * and that refusal is handled as a refused lone upload. A refusal because
      * the chain's inbound head is newer than our anchor loads the missing
@@ -162,6 +166,8 @@ class DisputeManager {
         let uploadFailed = false;
         let observedOnChainSlashes: Address[] = [];
         let killLanded = false;
+        // the kill went alone ahead of the upload: no second kill after it
+        let killSentAlone = false;
         let latestStateTimestamp = 0;
         let inboundRetry: { chainHead: Hash; anchor: Hash } | undefined;
         // the mined multicall reported the upload's refusal
@@ -195,7 +201,6 @@ class DisputeManager {
                 ? this.getStoredDisputeFraudProof(options.kill)
                 : undefined;
             const constructed = await this.constructDispute(forkId, {
-                expectedSlashes: killProof ? [killProof.participant] : [],
                 latestStateProof: options?.latestStateProof
             });
             if (!constructed) {
@@ -245,14 +250,6 @@ class DisputeManager {
                       )
                   ).data;
             const calls: string[] = [];
-            if (killProof)
-                calls.push(
-                    (
-                        await this.stateChannelManagerContract.applyDisputeFraudProofs.populateTransaction(
-                            [killProof]
-                        )
-                    ).data
-                );
             if (fraudProofsToApply.length > 0)
                 calls.push(
                     (
@@ -262,14 +259,44 @@ class DisputeManager {
                         )
                     ).data
                 );
+            const killCalldata = killProof
+                ? (
+                      await this.stateChannelManagerContract.applyDisputeFraudProofs.populateTransaction(
+                          [killProof]
+                      )
+                  ).data
+                : undefined;
+            const killDelivery =
+                killCalldata === undefined
+                    ? undefined
+                    : planKillDelivery(
+                          ethers.dataLength(killCalldata),
+                          this.multicallBytes([
+                              killCalldata,
+                              ...calls,
+                              uploadDisputeCalldata
+                          ]),
+                          config.MAX_TRANSACTION_BYTES
+                      );
+            const isKillInMulticall = killDelivery === KillDelivery.InMulticall;
+            if (isKillInMulticall) calls.unshift(killCalldata!);
+            if (killDelivery === KillDelivery.Alone) {
+                // the kill and our upload do not fit one transaction: the
+                // kill goes alone first, then the upload without it
+                killSentAlone = true;
+                await this.killDispute(options!.kill!);
+            }
+            // a kill too large to send alone stays out: `killDispute` in the
+            // finally below logs it and sends nothing
             const bestEffort = calls.length > 0;
             if (bestEffort) {
-                // the kill and fraud proofs land before the upload that counts
-                // their slashes, and stay landed when the upload is refused
+                // the kill and fraud proofs land before the upload (which
+                // counts the fraud proofs' slashes, not the kill's), and stay
+                // landed when the upload is refused
                 calls.push(uploadDisputeCalldata);
                 const estimate = this.estimateBestEffortMulticall(calls);
                 const replays =
-                    (!!killProof && replaysStateTransition(killProof)) ||
+                    (isKillInMulticall && replaysStateTransition(killProof!)) ||
                     fraudProofsToApply.some(replaysStateTransition);
                 const gasLimit = await this.fraudProofGasLimit(
                     estimate.then(({ gas }) => gas),
@@ -301,7 +328,7 @@ class DisputeManager {
                 dispute
             );
             const receipt = await txResponse.wait();
-            killLanded = !!killProof;
+            killLanded = isKillInMulticall;
             const refusal = bestEffort
                 ? await this.lastCallRefusal(receipt!, estimatedUploadRefusal)
                 : undefined;
@@ -431,7 +458,7 @@ class DisputeManager {
             this.mutex.unlock();
             // no upload carried the kill (we already disputed, the fork moved,
             // or the upload failed): the invalid dispute is still killed alone
-            if (options?.kill && !killLanded)
+            if (options?.kill && !killLanded && !killSentAlone)
                 await this.killDispute(options.kill);
         }
         // The failed upload has released both the signing marker and dispute
@@ -555,14 +582,29 @@ class DisputeManager {
                 })
             });
             const disputeFraudProofs = [disputeFraudProof];
+            const killCalldata =
+                this.stateChannelManagerContract.interface.encodeFunctionData(
+                    "applyDisputeFraudProofs",
+                    [disputeFraudProofs]
+                );
+            if (
+                ethers.dataLength(killCalldata) > config.MAX_TRANSACTION_BYTES
+            ) {
+                this.logger.warn(
+                    "killDispute no-op: the kill exceeds the transaction calldata limit",
+                    {
+                        disputeMeta,
+                        ...LoggerUtils.getTransactionSizeMetadata(
+                            ethers.dataLength(killCalldata),
+                            config.MAX_TRANSACTION_BYTES
+                        )
+                    }
+                );
+                return;
+            }
             const replays = replaysStateTransition(disputeFraudProof);
             const gasLimit = await this.fraudProofGasLimit(
-                this.estimateGas(
-                    this.stateChannelManagerContract.interface.encodeFunctionData(
-                        "applyDisputeFraudProofs",
-                        [disputeFraudProofs]
-                    )
-                ),
+                this.estimateGas(killCalldata),
                 replays
             );
             if (replays) replayGasLimit = gasLimit;
@@ -634,14 +676,12 @@ class DisputeManager {
     /**
      * This peer's dispute of `forkId` from its active view: the proof
      * through its latest block (persistence-only replay never moves it).
-     * `expectedSlashes` are slashes a kill in the same multicall lands first.
      * undefined when the latest block is below the anchor: this view is
      * behind the chain.
      */
     public constructDispute(
         forkId: ForkId,
         options?: {
-            expectedSlashes?: Address[];
             latestStateProof?: Promise<BuiltStateProof | undefined>;
         }
     ): Promise<ConstructDisputeResult | undefined> {
@@ -717,6 +757,16 @@ class DisputeManager {
             from: this.signerAddress,
             data
         });
+    }
+
+    /** The calldata bytes of `calls` sent as one best-effort multicall. */
+    private multicallBytes(calls: string[]): number {
+        return ethers.dataLength(
+            this.stateChannelManagerContract.interface.encodeFunctionData(
+                "multicallBestEffortLast",
+                [calls]
+            )
+        );
     }
 
     /**

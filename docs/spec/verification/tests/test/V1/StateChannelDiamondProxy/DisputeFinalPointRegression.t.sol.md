@@ -16,15 +16,15 @@ JOIN again reverts with the exact `ErrorDisputeInboundMessageBlocksInvalid` hash
 
 ## Tests
 
-- `test_K1_sideChainBypassingALaterJoinerLosesTheReductionToTheJoinersFinalHistory`: REQ-FP-7-4DD0D7.T10.P1, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P218
+- `test_K1_sideChainBypassingALaterJoinerLosesTheReductionToTheJoinersFinalHistory`: REQ-FP-7-4DD0D7.T10.P1, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P218, REQ-FP-7-4DD0D7.T11.P7
 - `test_K2_sideChainWhoseUnfinalTailConsumedTheJoinWithoutTheJoinersSignatureIsStillKilled`: REQ-FP-7-4DD0D7.T10.P32
 - `test_K3_disputeExtendingTheFinalPointIsNotKilledAndWinsTheReductionByLength`: REQ-FP-7-4DD0D7.T10.P33
 - `test_K4_signaturesWithheldFromOurTailLetTheAttackerProveOnlyAPointOurHeadExtends`: REQ-FP-7-4DD0D7.T10.P34
-- `test_K5_latestFinalizedPointBelowTheFinalPointWithATailPastItIsKilledByTheConflict`: REQ-FP-7-4DD0D7.T9.P16
-- `test_K8_latestFinalizedSnapshotWithAFalseLargerInboundHeightIsReadAtItsStoredHeight`: REQ-FP-7-4DD0D7.T10.P35
+- `test_K5_latestFinalizedPointBelowTheFinalPointWithATailPastItIsKilledByTheConflict`: REQ-FP-7-4DD0D7.T9.P16, REQ-FP-7-4DD0D7.T11.P3
+- `test_K8_latestFinalizedSnapshotWithAFalseLargerInboundHeightIsReadAtItsStoredHeight`: REQ-FP-7-4DD0D7.T10.P35, REQ-FP-7-4DD0D7.T11.P7
 - `test_K9_anchorInsideTheLastMilestoneIsTheLatestFinalizedPointNotATailBlock`: REQ-FP-7-4DD0D7.T10.P36
 - `test_K9_anchorInsideTheLastMilestoneIsTheLatestFinalizedPointOfTheConflictCheck`: REQ-FP-7-4DD0D7.T9.P17
-- `test_K11_chainAnchorAsTheFinalPointKillsASideChainBelowItsInbound`: REQ-FP-7-4DD0D7.T10.P37
+- `test_K11_chainAnchorAsTheFinalPointKillsASideChainBelowItsInbound`: REQ-FP-7-4DD0D7.T10.P37, REQ-FP-7-4DD0D7.T11.P8
 - `test_K12_unchallengedSideChainWinsTheReductionAndTheJoinerKeepsOnlyItsDeposit`: REQ-FP-7-4DD0D7.T10.P38
 - `test_K13_joinOnlyInOurUnfinalTailIsNotKillableAndTheWinnerAdmitsTheJoinerWithItsBareDeposit`: REQ-FIN-9-B09SWY.T1.P1
 - `test_K13_winnerThatConsumedTheJoinInItsOwnTailCarriesTheDepositOnce`: REQ-FIN-9-B09SWY.T1.P2
@@ -47,7 +47,7 @@ JOIN again reverts with the exact `ErrorDisputeInboundMessageBlocksInvalid` hash
 - `test_latestFinalized_undecodableFirstBlockOfTheLastMilestoneGivesFalseOnBothChecks`: REQ-FP-7-4DD0D7.T10.P40, REQ-FP-7-4DD0D7.T9.P18, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P96
 - `test_latestFinalized_firstBlockOfTheLastMilestoneOnAnotherForkGivesFalseOnBothChecks`: REQ-FP-7-4DD0D7.T10.P41, REQ-FP-7-4DD0D7.T9.P19, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P97
 - `test_latestFinalized_genesisBlockZeroThatDoesNotWalkFromTheGenesisGivesFalse`: REQ-FP-7-4DD0D7.T9.P20, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P98
-- `test_regression_largestKillWithinTheCalldataLimitFitsTheGasLimit`: REQ-FP-7-4DD0D7.T10.P9
+- `test_regression_largestKillWithinTheCalldataLimitFitsTheGasLimit`: REQ-FP-7-4DD0D7.T10.P9, REQ-FP-7-4DD0D7.T11.P12
 - `test_regression_finalPointWhoseExtraInboundIsOnlyATopUpDoesNotKill`: REQ-FP-7-4DD0D7.T10.P26, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P92
 - `test_regression_finalPointWhoseExtraInboundHoldsATopUpAndANewJoinerKills`: REQ-FP-7-4DD0D7.T10.P27
 - `test_conflict_latestFinalizedPointWhoseExtraInboundIsOnlyATopUpKills`: REQ-FP-7-4DD0D7.T9.P15, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P93
@@ -63,3 +63,6 @@ JOIN again reverts with the exact `ErrorDisputeInboundMessageBlocksInvalid` hash
 - `test_finalWalk_missingInboundBlockInTheConflictKillRevertsAndSlashesNobody`: REQ-FP-7-4DD0D7.T9.P21, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P105
 - `test_conflict_killWalksEveryTopUpAboveTheFinalPointsInbound`: REQ-FP-7-4DD0D7.T9.P22
 - `test_regression_disputeAtTheUploadCapLeavesRoomForTheKill`: REQ-FP-7-4DD0D7.T10.P50
+- `test_K16_victimsDisputeWithTheSideChainItSyncedIsKilledAndOnlyTheDoubleSignersAreSlashed`: REQ-FP-7-4DD0D7.T11.P7
+- `test_T3_sideChainAboveTheFinalHeightCarryingATimeoutIsKilledByTheRegression`: REQ-FP-7-4DD0D7.T11.P9
+- `test_T4_sideChainWhoseTailPassesTheFinalHeightCarryingATimeoutIsKilledByTheConflict`: REQ-FP-7-4DD0D7.T11.P9, REQ-FP-7-4DD0D7.T11.P3

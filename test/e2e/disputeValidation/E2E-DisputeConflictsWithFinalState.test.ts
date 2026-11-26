@@ -21,7 +21,7 @@ import { expect } from "chai";
 // pending, without the state at the anchor, so he cannot replay their tail.
 
 describe("E2E: dispute validation / dispute that conflicts with a final state", function () {
-    it("the colluders' omitted-data dispute that forks right after the chain anchor is killed on chain by pending Charlie's DisputeConflictsWithFinalState from his own final state, and its submitter is slashed", async function () {
+    it("the colluders' omitted-data dispute that forks right after the chain anchor is killed on chain by pending Charlie's DisputeConflictsWithFinalState from his own final state, and nobody is slashed: the conflicting blocks are tail blocks of the colluders' last milestone, no final point of theirs", async function () {
         const h = TestSession.getHarness();
         const staged = await stageColludersForkAfterAnchor(h);
         const charlie = h.getPeer(staged.charlieIndex);
@@ -80,7 +80,7 @@ describe("E2E: dispute validation / dispute that conflicts with a final state", 
             anchorHeight: staged.anchor.blockHeight,
             auditorFinalHeight: finalHeight!
         });
-        await h.assert.dispute.slashedOnChainExactly([disputer.address]);
+        await h.assert.dispute.slashedOnChainExactly([]);
         // the counter needed no state at the anchor
         expect(
             await holdsState(h, staged.charlieIndex, staged.anchor)

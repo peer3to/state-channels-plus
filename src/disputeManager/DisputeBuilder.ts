@@ -153,7 +153,6 @@ export default class DisputeBuilder {
     /**
      * This peer's dispute of `forkId` from its active view: the proof
      * through its latest block (persistence-only replay never moves it).
-     * `expectedSlashes` are slashes a kill in the same multicall lands first.
      * `latestStateProof` is used when it still reaches the latest block.
      * undefined when the latest block is below the anchor: this view is
      * behind the chain.
@@ -161,11 +160,10 @@ export default class DisputeBuilder {
     public async constructDispute(
         forkId: ForkId,
         options?: {
-            expectedSlashes?: Address[];
             latestStateProof?: Promise<BuiltStateProof | undefined>;
         }
     ): Promise<ConstructDisputeResult | undefined> {
-        const inputs = await this.readInputs(forkId, options?.expectedSlashes);
+        const inputs = await this.readInputs(forkId);
         const built = this.built.get(forkId);
         if (
             built?.fingerprint === fingerprintOf(inputs) &&
@@ -182,15 +180,14 @@ export default class DisputeBuilder {
                   );
         if (!builtStateProof) return undefined;
         // evidence stored while the proof was built goes in too
-        const latest = await this.readInputs(forkId, options?.expectedSlashes);
+        const latest = await this.readInputs(forkId);
         // a block that landed meanwhile needs its own proof
         if (latest.latestBlockHeight !== inputs.latestBlockHeight)
             return this.constructDispute(forkId, options);
         const result = await this.fitUploadCap(
             forkId,
             latest,
-            await this.build(forkId, latest, builtStateProof),
-            options?.expectedSlashes
+            await this.build(forkId, latest, builtStateProof)
         );
         if (!result) return undefined;
         this.built.set(forkId, { fingerprint: fingerprintOf(latest), result });
@@ -236,8 +233,7 @@ export default class DisputeBuilder {
     private async fitUploadCap(
         forkId: ForkId,
         inputs: DisputeInputs,
-        built: ConstructDisputeResult,
-        expectedSlashes: Address[] | undefined
+        built: ConstructDisputeResult
     ): Promise<ConstructDisputeResult | undefined> {
         const maxDisputeUploadBytes = await this.readMaxDisputeUploadBytes();
         if (encodedDisputeBytesOf(built) <= maxDisputeUploadBytes) return built;
@@ -258,7 +254,7 @@ export default class DisputeBuilder {
             if (!builtStateProof) break;
             const cut = await this.build(
                 forkId,
-                await this.readInputs(forkId, expectedSlashes, height),
+                await this.readInputs(forkId, height),
                 builtStateProof
             );
             if (encodedDisputeBytesOf(cut) > maxDisputeUploadBytes) continue;
@@ -365,7 +361,6 @@ export default class DisputeBuilder {
     /** The inputs at `height`, by default this peer's latest block. */
     private async readInputs(
         forkId: ForkId,
-        expectedSlashes: Address[] = [],
         height: number = this.storage.blocks.getLatestBlockHeight(forkId)
     ): Promise<DisputeInputs> {
         const latestBlockHeight = height;
@@ -397,12 +392,10 @@ export default class DisputeBuilder {
             });
 
         // Construction uses the local observation. A refused conditional upload
-        // recovers missing chain slashes before normal reconstruction. The kill
-        // in the same multicall lands `expectedSlashes` first.
-        const slashedOnChain = new Set<Address>([
-            ..._onChainSlashes,
-            ...expectedSlashes
-        ]);
+        // recovers missing chain slashes before normal reconstruction. A kill
+        // in the same multicall adds none: the chain admits a subset of its
+        // slashes.
+        const slashedOnChain = new Set<Address>(_onChainSlashes);
         const participants = new Set<Address>(_participants);
 
         //sanity check

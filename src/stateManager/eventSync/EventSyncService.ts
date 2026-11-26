@@ -695,8 +695,9 @@ export default class EventSyncService {
 
     /**
      * Dispatch the slash logs the local diamond misses for `membership`'s
-     * authoritative set, up to its pinned block. Whether the local diamond
-     * then holds the whole set.
+     * authoritative set, up to its pinned block. Every slash, a kill's too,
+     * emits `ChainSlashed`. Whether the local diamond then holds the whole
+     * set.
      */
     private async recoverSlashes(
         channelId: ChannelId,
@@ -708,7 +709,7 @@ export default class EventSyncService {
         if (expected.every((address) => held.includes(address))) return true;
         for await (const logs of this.searchLogs(
             channelId,
-            ["ChainSlashed", "DisputeKilled"],
+            ["ChainSlashed"],
             membership.blockNumber,
             this.getBlockSpan(this.timeConfig.evidenceTime * 2)
         )) {
@@ -716,10 +717,7 @@ export default class EventSyncService {
                 channelId,
                 logs.filter((log) => {
                     const args = this.parseLog(log)?.args;
-                    return (
-                        args &&
-                        !held.includes(args.participant ?? args.disputer)
-                    );
+                    return args && !held.includes(args.participant);
                 })
             );
             held = await local.getOnChainSlashedParticipants(channelId);
@@ -1046,18 +1044,14 @@ export default class EventSyncService {
                     coordinate
                 );
                 break;
-            case "DisputeKilled": {
-                const block = await this.getProvider().getBlock(log.blockHash);
-                if (!block) throw new Error(`Block ${log.blockHash} not found`);
+            case "DisputeKilled":
                 await this.eventHandler.onDisputeKilled(
                     args.channelId,
                     args.forkId,
                     args.disputer,
-                    args.disputeHash,
-                    block.timestamp
+                    args.disputeHash
                 );
                 break;
-            }
             case "InboundMessagesProcessed":
                 await this.eventHandler.onInboundMessagesProcessed(
                     args.channelId,

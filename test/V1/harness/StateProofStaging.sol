@@ -115,6 +115,10 @@ contract StateProofHarness is DisputeFraudProofFacet, DisputeVerificationFacet, 
         return _isParticipantSlashedOnChain(channelId, participant);
     }
 
+    function slashedParticipants(bytes32 channelId) external view returns (address[] memory) {
+        return _getOnChainSlashedParticipants(channelId);
+    }
+
     /// the participant `fraudProof` proves guilty on `channelId` (zero when it proves nothing), judged by the
     /// FraudProofFacet the dispute pipeline delegates to
     function judgeFraudProof(bytes32 channelId, FraudProof memory fraudProof) external returns (address) {
@@ -526,6 +530,60 @@ abstract contract StateProofStaging is DiamondHarness {
         assertFalse(harness.isSlashed(CHANNEL, challenger), "challenger keeps its seat");
     }
 
+    /// B's final-history conflict held: `dispute` is killed and exactly `slashes` are slashed
+    function _assertConflictKilled(Dispute memory dispute, address[] memory slashes) internal view {
+        _assertConflictKilledBy(dispute, bob, slashes);
+    }
+
+    /// `challenger`'s final-history conflict held: `dispute` is killed and exactly `slashes`, the addresses that signed
+    /// both conflicting final points, are slashed; the disputer and the challenger only when they are among them
+    function _assertConflictKilledBy(Dispute memory dispute, address challenger, address[] memory slashes)
+        internal
+        view
+    {
+        assertEq(harness.commitmentCount(CHANNEL, dispute.input.forkId), 0, "dispute killed");
+        _assertSlashedExactly(slashes);
+        if (!_isIn(dispute.input.disputer, slashes)) {
+            assertFalse(harness.isSlashed(CHANNEL, dispute.input.disputer), "the disputer outside S is not slashed");
+        }
+        if (!_isIn(challenger, slashes)) {
+            assertFalse(harness.isSlashed(CHANNEL, challenger), "challenger keeps its seat");
+        }
+    }
+
+    /// the chain records exactly `slashes`, each once
+    function _assertSlashedExactly(address[] memory slashes) internal view {
+        assertEq(harness.slashedParticipants(CHANNEL).length, slashes.length, "exactly S is slashed");
+        for (uint256 i = 0; i < slashes.length; i++) {
+            assertTrue(harness.isSlashed(CHANNEL, slashes[i]), "a member of S is slashed");
+        }
+    }
+
+    /// the conflict kill's verdict on `dispute`, without its slash set
+    function _conflicts(Dispute memory dispute, DisputeConflictsWithFinalState memory proof)
+        internal
+        view
+        returns (bool isKill)
+    {
+        (isKill,) = _diamond().isDisputeConflictingWithFinalState(dispute, proof);
+    }
+
+    /// the regression kill's verdict on `dispute`, without its slash set
+    function _regresses(Dispute memory dispute, DisputeFinalPointRegression memory proof)
+        internal
+        view
+        returns (bool isKill)
+    {
+        (isKill,) = _diamond().isDisputeFinalPointRegression(dispute, proof);
+    }
+
+    function _isIn(address adr, address[] memory addresses) internal pure returns (bool) {
+        for (uint256 i = 0; i < addresses.length; i++) {
+            if (addresses[i] == adr) return true;
+        }
+        return false;
+    }
+
     /// the allegation failed: the dispute stays, its submitter is not punished, the challenger B pays
     function _assertRejected(Dispute memory dispute) internal view {
         _assertRejectedBy(dispute, bob);
@@ -899,6 +957,10 @@ abstract contract StateProofStaging is DiamondHarness {
         keys[0] = first;
         keys[1] = second;
         keys[2] = third;
+    }
+
+    function _none() internal pure returns (address[] memory addresses) {
+        addresses = new address[](0);
     }
 
     function _set(address first) internal pure returns (address[] memory addresses) {

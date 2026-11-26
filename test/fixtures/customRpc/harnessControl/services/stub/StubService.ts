@@ -49,6 +49,7 @@ import {
     tryDecodeCustomError,
     Type
 } from "@/utils";
+import { config } from "@/utils/config";
 import { errorMessage } from "@/utils/errorMessage";
 import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
 import { Mutex } from "@/utils/Mutex";
@@ -541,8 +542,9 @@ export type PausedConstructDisputeStatus = {
     entered: number;
     /**
      * Constructions for the target fork that `dispute()` started, held or
-     * not. It is the only caller that passes `expectedSlashes`, so an
-     * evidence comparison is not counted.
+     * not. It is the only caller of the manager's `constructDispute` (the
+     * evidence comparison calls the builder), so an evidence comparison is
+     * not counted.
      */
     uploadConstructions: number;
     released: boolean;
@@ -594,6 +596,7 @@ export class StubService extends ANetworkRpcService<
     private restoreFinalityReads?: () => void;
     private restoreSyncRejections?: () => void;
     private restoreClockOffset?: () => void;
+    private restoreTransactionBytes?: () => void;
     /** Reasons passed to the real sync rejection handler. */
     private syncRejectionReasons: string[] = [];
     /** Record of `stubFailNextRestoreAndHoldAbort`, once installed. */
@@ -1372,6 +1375,27 @@ export class StubService extends ANetworkRpcService<
     public releaseClockOffset(): void {
         this.restoreClockOffset?.();
         this.restoreClockOffset = undefined;
+    }
+
+    /**
+     * Lower the chain's per-transaction calldata limit the host sends
+     * against to `maxTransactionBytes`, until `restoreMaxTransactionBytes`.
+     * Per peer only in worker mode (`RUN_SDK_IN_THREAD`); inline hosts share
+     * one config.
+     */
+    public limitTransactionBytes(maxTransactionBytes: number): void {
+        if (this.restoreTransactionBytes)
+            throw new Error("limitTransactionBytes - a limit is already set");
+        const original = config.MAX_TRANSACTION_BYTES;
+        config.MAX_TRANSACTION_BYTES = maxTransactionBytes;
+        this.restoreTransactionBytes = () => {
+            config.MAX_TRANSACTION_BYTES = original;
+        };
+    }
+
+    public restoreMaxTransactionBytes(): void {
+        this.restoreTransactionBytes?.();
+        this.restoreTransactionBytes = undefined;
     }
 
     /** Scoped clock read for deadline tests; the action must be synchronous. */

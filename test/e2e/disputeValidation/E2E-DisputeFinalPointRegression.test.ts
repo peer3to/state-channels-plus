@@ -30,7 +30,7 @@ import { ethers } from "ethers";
 // head below Charlie's JOIN: its walk never needs Charlie.
 
 describe("E2E: dispute validation / dispute final point regression", function () {
-    it("the colluders' posted-data dispute that hops from the chain anchor above seated Charlie's final point without his JOIN is killed on chain by Charlie's DisputeFinalPointRegression, and only its submitter is slashed", async function () {
+    it("the colluders' posted-data dispute that hops from the chain anchor above seated Charlie's final point without his JOIN is killed on chain by Charlie's DisputeFinalPointRegression, and exactly Alice and Bob, who signed both final points, are slashed", async function () {
         const h = TestSession.getHarness();
         const history = await stageSeatedJoinerHistory(h);
         const alice = h.getPeer(history.aliceIndex);
@@ -115,13 +115,18 @@ describe("E2E: dispute validation / dispute final point regression", function ()
             final.finalizedSnapshot.snapshotData.latestInboundMessageBlockHash,
             "F is a final point of Charlie's history, past his JOIN"
         ).to.equal(joinHash);
-        await h.assert.dispute.slashedOnChainExactly([alice.address]);
+        // the hop G and Charlie's final point F are both signed by Alice and Bob
+        await h.assert.dispute.slashedOnChainExactly([
+            alice.address,
+            bob.address
+        ]);
     });
 
-    it("the colluders' bypass dispute and Charlie's honest dispute share one window: Charlie kills the bypass, and after the window expires the reduction continues Charlie's history on the successor fork, with only Alice slashed", async function () {
+    it("the colluders' bypass dispute and Charlie's honest dispute share one window: Charlie kills the bypass, and after the window expires the reduction continues Charlie's history on the successor fork, with exactly Alice and Bob, who signed both final points, slashed", async function () {
         const h = TestSession.getHarness();
         const history = await stageSeatedJoinerHistory(h);
         const alice = h.getPeer(history.aliceIndex);
+        const bob = h.getPeer(history.bobIndex);
         const charlie = h.getPeer(history.charlieIndex);
         const posted = await postJoinerBypassDispute(h, history);
         const bypassState = await readMathState(
@@ -229,7 +234,14 @@ describe("E2E: dispute validation / dispute final point regression", function ()
             successorState.participants,
             "the slashed Alice leaves the channel"
         ).to.not.include(alice.address);
-        await h.assert.dispute.slashedOnChainExactly([alice.address]);
+        expect(
+            successorState.participants,
+            "the slashed Bob leaves the channel"
+        ).to.not.include(bob.address);
+        await h.assert.dispute.slashedOnChainExactly([
+            alice.address,
+            bob.address
+        ]);
     });
 
     it("the colluders' dispute omits its auditing data and lists seated Charlie in onChainSlashes, which drops him from the set that must sign its hop -> Charlie's DisputeOnChainSlashesNotSubset kills it on chain, and only its submitter is slashed", async function () {
@@ -350,17 +362,21 @@ describe("E2E: dispute validation / dispute final point regression", function ()
             latestFinalizedSnapshot: latestFinalizedSnapshot.toStruct()
         };
         expect(
-            await h.channelManager.isDisputeFinalPointRegression.staticCall(
-                dispute,
-                regression
-            ),
+            (
+                await h.channelManager.isDisputeFinalPointRegression.staticCall(
+                    dispute,
+                    regression
+                )
+            )[0],
             "the side-chain point's inbound is not above G's"
         ).to.equal(false);
         expect(
-            await h.channelManager.isDisputeConflictingWithFinalState.staticCall(
-                dispute,
-                conflict
-            ),
+            (
+                await h.channelManager.isDisputeConflictingWithFinalState.staticCall(
+                    dispute,
+                    conflict
+                )
+            )[0],
             "the side-chain point's inbound is below G's"
         ).to.equal(false);
 

@@ -282,8 +282,9 @@ contract DisputeVerificationFacet is StateChannelCommon {
         _commitToDisputeReducedResult(channelId, disputeWindow, winningForkId, block.timestamp - _getEvidenceTime());
     }
 
-    function killDispute(Dispute memory dispute) public {
-        _killDispute(dispute);
+    /// `slashDisputer` is false only for the final-history conflict kills, whose slashes are the dispatcher's set.
+    function killDispute(Dispute memory dispute, bool slashDisputer) public {
+        _killDispute(dispute, slashDisputer);
     }
 
     function reduceOutputToSnapshotData(
@@ -504,7 +505,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return true;
     }
 
-    function _killDispute(Dispute memory dispute) internal {
+    function _killDispute(Dispute memory dispute, bool slashDisputer) internal {
         DisputeData storage disputeData = disputeData[dispute.input.channelId];
         bytes32 forkId = _getDisputeFork(dispute);
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[forkId];
@@ -526,7 +527,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         require(isFound, ErrorDisputeCommitmentNotFound(dispute.input.channelId, forkId, commitment));
 
         // add the disputer to on-chain slashes
-        addOnChainSlashedParticipant(dispute.input.channelId, dispute.input.disputer);
+        if (slashDisputer) addOnChainSlashedParticipant(dispute.input.channelId, dispute.input.disputer);
 
         // remove the dispute commitment
         disputeWindow.evidence.disputeCommitments[foundIndex] =

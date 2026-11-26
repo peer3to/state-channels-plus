@@ -786,6 +786,22 @@ export class LoggerUtils {
         };
     }
 
+    /**
+     * A final-history kill's slash set: the addresses that signed both
+     * conflicting final points.
+     */
+    static getSlashSetMetadata(slashes: Address[]) {
+        return { slashes: slashes.map(String), slashCount: slashes.length };
+    }
+
+    /** A transaction's calldata bytes against the chain's per-transaction limit. */
+    static getTransactionSizeMetadata(
+        transactionBytes: number,
+        maxTransactionBytes: number
+    ) {
+        return { transactionBytes, maxTransactionBytes };
+    }
+
     static getMessageStructMeta(message: MessageStruct) {
         const messageType = String(message.messageType);
         const decodedMessageType = this.decodeMessageType(messageType);

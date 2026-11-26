@@ -4,7 +4,10 @@ import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { timeoutWaitTime } from "@/types";
-import { DisputeFraudProofType } from "@/types/sol-enums";
+import {
+    DisputeFraudProofType,
+    toSolidityDisputeFraudProofType
+} from "@/types/sol-enums";
 import type { Address, ForkId, Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import { buildAndEncodeBlock } from "@test/factory";
@@ -45,7 +48,7 @@ import type {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import type { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { expect } from "chai";
-import { MaxUint256, ZeroAddress } from "ethers";
+import { dataLength, MaxUint256, ZeroAddress } from "ethers";
 
 /**
  * Height of `peerIndex`'s latest locally finalized state (the first audit
@@ -454,6 +457,127 @@ export async function stageReasonlessInitialDispute(
                 h.event.protocolEventTimeoutMs()
             )
     };
+}
+
+/**
+ * A per-transaction calldata limit that holds peer `auditorIndex`'s kill of
+ * peer `spammerIndex`'s reasonless dispute alone and its own upload alone,
+ * but not both in one multicall: the larger of the two plus half the
+ * smaller. Measured from both peers' disputes before the spam is posted;
+ * the half-dispute margin covers what the kill's snapshot and the
+ * replacement's flags change.
+ */
+async function splitTransactionBytes(
+    h: MathPeerTestHarness,
+    spammerIndex: number,
+    auditorIndex: number
+): Promise<number> {
+    const { interface: manager } = h.channelManager;
+    const spam = (await h.dispute.fetchConstructedDispute(spammerIndex))
+        .dispute;
+    const own = await h.dispute.fetchConstructedDispute(auditorIndex);
+    const killBytes = dataLength(
+        manager.encodeFunctionData("applyDisputeFraudProofs", [
+            [
+                {
+                    proofType: toSolidityDisputeFraudProofType(
+                        DisputeFraudProofType.InvalidDisputeReason
+                    ),
+                    participant: spam.input.disputer,
+                    dispute: spam,
+                    encodedProof: Codec.encode(
+                        {
+                            latestStateSnapshot:
+                                own.auditingData.latestStateSnapshot
+                        },
+                        DisputeFraudProofType.InvalidDisputeReason
+                    )
+                }
+            ]
+        ])
+    );
+    const uploadBytes = dataLength(
+        own.dispute.postedAuditingData
+            ? manager.encodeFunctionData("uploadDisputeWithCalldata", [
+                  own.disputeConfirmation,
+                  own.auditingData
+              ])
+            : manager.encodeFunctionData("uploadDispute", [
+                  own.disputeConfirmation
+              ])
+    );
+    return (
+        Math.max(killBytes, uploadBytes) +
+        Math.floor(Math.min(killBytes, uploadBytes) / 2)
+    );
+}
+
+/**
+ * Four peers with a long evidence period; peer 1 uploads a reasonless
+ * dispute, and peer 0's per-transaction calldata limit holds its kill alone
+ * and its own upload alone, but not both (`splitTransactionBytes`). Peer 0's
+ * lone kills and its uploads are recorded and forwarded; with `lostRace`
+ * its kill is held until peer 2's kill and replacement landed. Peers 1 and
+ * 3 (and peer 2 without `lostRace`) stay out of the kill race; timeout
+ * checks and reductions are held.
+ */
+export async function stageSplitKillAndDispute(
+    h: MathPeerTestHarness,
+    options: { lostRace: boolean }
+) {
+    await h.scenario.preDisputeSetup({
+        peerCount: 4,
+        timeConfig: { evidenceTime: 30 }
+    });
+    const forkId = h.activeForkId!;
+    for (const peer of h.peers) {
+        await h.rpcStub.suppressTimeoutCheck(peer.index);
+        await h.rpcStub.holdReductionRace(peer.index);
+    }
+    const auditor = h.getPeer(0);
+    const spammer = h.getPeer(1);
+    const rival = h.getPeer(2);
+    const suppressed = options.lostRace ? [1, 3] : [1, 2, 3];
+    for (const index of suppressed) await h.rpcStub.suppressDisputeKill(index);
+    const maxTransactionBytes = await splitTransactionBytes(
+        h,
+        spammer.index,
+        auditor.index
+    );
+    await h.rpcStub.limitTransactionBytes(auditor.index, maxTransactionBytes);
+    const kills = await h.rpcStub.recordDisputeFraudProofApplies(
+        auditor.index,
+        { hold: options.lostRace }
+    );
+    const uploads = await h.rpcStub.recordDisputeSubmissions(auditor.index, {
+        forward: true
+    });
+    const rivalUploads = options.lostRace
+        ? await h.rpcStub.recordDisputeSubmissions(rival.index, {
+              forward: true
+          })
+        : undefined;
+    await h.tamper.postTamperedDispute(spammer.index, stripDisputeReasons);
+    if (rivalUploads) {
+        await kills.waitUntilHeld(1);
+        // the rival's kill and replacement land while ours waits
+        await waitFor(
+            async () =>
+                (await rivalUploads.submissions()).some(
+                    (submission) => submission.waited
+                ),
+            h.event.protocolEventTimeoutMs()
+        );
+        await kills.release();
+    }
+    await waitFor(
+        async () =>
+            (await uploads.submissions()).some(
+                (submission) => submission.waited || submission.revert !== null
+            ),
+        h.event.protocolEventTimeoutMs()
+    );
+    return { forkId, auditor, spammer, rival, kills, uploads, rivalUploads };
 }
 
 /**
@@ -1997,10 +2121,12 @@ export async function runConcurrentVirtualFinalAudits(
             DisputeFraudProofType.DisputeConflictsWithFinalState
         );
         expect(
-            await h.channelManager.isDisputeConflictingWithFinalState.staticCall(
-                forgedFirst ? real.dispute : forged.dispute,
-                proof
-            )
+            (
+                await h.channelManager.isDisputeConflictingWithFinalState.staticCall(
+                    forgedFirst ? real.dispute : forged.dispute,
+                    proof
+                )
+            )[0]
         ).to.equal(true);
         expect(
             await h.control(auditor).query.getNextBlockHeight(forkId).request()

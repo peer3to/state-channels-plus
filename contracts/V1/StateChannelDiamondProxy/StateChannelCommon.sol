@@ -892,10 +892,15 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         }
         // the committed snapshot's height is its block's: a hop never proves a state at another height
         if (resultingSnapshot.blockHeight != firstHeight) return false;
-        (bool isLinked, bool isThresholdReached) = _walkThresholdHop(input, milestone, resultingSnapshot, result);
+        (bool isLinked, bool isThresholdReached, address[] memory unionParticipants) =
+            _walkThresholdHop(input, milestone, resultingSnapshot, result);
         if (!isLinked) return false;
         return _settleThresholdHop(
-            resultingSnapshot, isThresholdReached, isGenesisZero && input.stateProof.milestones.length == 1, result
+            resultingSnapshot,
+            isThresholdReached,
+            unionParticipants,
+            isGenesisZero && input.stateProof.milestones.length == 1,
+            result
         );
     }
 
@@ -994,13 +999,14 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     /// A milestone proving its first block by the union threshold of the last final point and `resultingSnapshot`,
-    /// which matches its first block. False `isLinked` when the hop cannot be proven.
+    /// which matches its first block. False `isLinked` when the hop cannot be proven. `unionParticipants` is that
+    /// union, the hop's required signers.
     function _walkThresholdHop(
         ProofWalkInput memory input,
         MilestoneProof memory milestone,
         StateSnapshot memory resultingSnapshot,
         ProofWalkResult memory result
-    ) internal view returns (bool isLinked, bool isThresholdReached) {
+    ) internal view returns (bool isLinked, bool isThresholdReached, address[] memory unionParticipants) {
         // a hop's consumed joiners are read from stored inbound blocks: a run this storage does not hold (a lagging
         // mirror) cannot prove the hop, so the caller's next tier decides
         if (!_isInboundRunStored(
@@ -1009,27 +1015,29 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
                 result.finalizedSnapshot.snapshotData.latestInboundMessageBlockHash
             )) {
             result.isInboundRunMissing = true;
-            return (false, false);
+            return (false, false, unionParticipants);
         }
-        address[] memory expectedParticipants = _deriveMilestoneUnionParticipants(
+        unionParticipants = _deriveMilestoneUnionParticipants(
             input.channelId, result.finalizedSnapshot.snapshotData, resultingSnapshot.snapshotData
         );
         uint256 thresholdCount;
         uint256 failedIndex;
         (isLinked, thresholdCount,, failedIndex) =
-            _walkMilestoneBlocks(input.channelId, input.forkId, milestone, 0, expectedParticipants);
-        if (!isLinked) return (_blockFault(result, failedIndex), false);
-        return (true, thresholdCount == expectedParticipants.length);
+            _walkMilestoneBlocks(input.channelId, input.forkId, milestone, 0, unionParticipants);
+        if (!isLinked) return (_blockFault(result, failedIndex), false, unionParticipants);
+        return (true, thresholdCount == unionParticipants.length, unionParticipants);
     }
 
     function _settleThresholdHop(
         StateSnapshot memory resultingSnapshot,
         bool isThresholdReached,
+        address[] memory unionParticipants,
         bool allowUnfinalized,
         ProofWalkResult memory result
     ) internal pure returns (bool) {
         if (isThresholdReached) {
             result.finalizedSnapshot = resultingSnapshot;
+            result.finalizedSignerSet = unionParticipants;
             result.replayBlockIndex = 1;
             return true;
         }

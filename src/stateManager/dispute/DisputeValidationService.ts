@@ -1,3 +1,4 @@
+import { chooseFinalHistoryCounter } from "./chooseFinalHistoryCounter";
 import DisputeFraudProofService from "./DisputeFraudProofService";
 import type StateManager from "../StateManager";
 import DisputeValidationStrategy from "../validationStrategy/DisputeValidationStrategy";
@@ -12,6 +13,7 @@ import { Block, StateSnapshot } from "@/models";
 import Storage from "@/storage";
 import type { BlockPredecessor } from "@/storage/QueueStorage";
 import { timeoutWaitTime } from "@/types";
+import { DisputeFraudProofType } from "@/types/sol-enums";
 import {
     Address,
     BlockHeight,
@@ -23,6 +25,7 @@ import {
     Signature
 } from "@/types/types";
 import { getChecksumAddress, hash, isSubset, Logger } from "@/utils";
+import { config } from "@/utils/config";
 import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import { preferLocal } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -31,7 +34,11 @@ import {
     MessageBlockStruct,
     SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { DisputeInvalidStateProofStruct } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
+import {
+    DisputeConflictsWithFinalStateStruct,
+    DisputeFinalPointRegressionStruct,
+    DisputeInvalidStateProofStruct
+} from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 import {
     DisputeAuditingDataStruct,
     DisputeStruct
@@ -146,20 +153,42 @@ export default class DisputeValidationService {
 
     /**
      * A counter against this peer's final history: a block of the dispute
-     * that conflicts with a final block, else a latest finalized point that
-     * regresses this peer's final point's inbound.
+     * that conflicts with a final block, or a latest finalized point that
+     * regresses this peer's final point's inbound. Every counter the chain
+     * accepts is measured; the one stored is the one whose kill fits one
+     * transaction and slashes the most addresses
+     * (`chooseFinalHistoryCounter`).
      */
     private async tryCreateFinalHistoryProof(
         dispute: DisputeStruct,
         evidence: StateProofEvidence
     ): Promise<boolean> {
-        return (
-            (await this.tryCreateConflictsWithFinalStateProof(
+        const counters = [
+            ...(await this.findConflictsWithFinalStateCounters(
                 dispute,
                 evidence
-            )) ||
-            (await this.tryCreateFinalPointRegressionProof(dispute, evidence))
+            )),
+            ...(await this.findFinalPointRegressionCounters(dispute, evidence))
+        ];
+        const chosen = chooseFinalHistoryCounter(
+            counters,
+            config.MAX_TRANSACTION_BYTES
         );
+        if (!chosen) return false;
+        if (chosen.killBytes > config.MAX_TRANSACTION_BYTES)
+            this.logger.warn(
+                "Final-history kill exceeds the transaction calldata limit: it is stored but not sent",
+                {
+                    dispute: LoggerUtils.getDisputeMetadata(dispute),
+                    ...LoggerUtils.getTransactionSizeMetadata(
+                        chosen.killBytes,
+                        config.MAX_TRANSACTION_BYTES
+                    ),
+                    ...LoggerUtils.getSlashSetMetadata(chosen.slashes)
+                }
+            );
+        chosen.store();
+        return true;
     }
 
     /**
@@ -170,19 +199,19 @@ export default class DisputeValidationService {
      * point and every stored block whose direct or virtual threshold is provable, also one
      * verified while auditing another dispute (stored without moving the
      * view). Each conflict is offered to the chain with this peer's proof of
-     * the final block's height; the first the chain accepts is stored. A
+     * the final block's height; every one the chain accepts is a counter. A
      * block the dispute's walk does not check is no conflict. The chain also
      * compares the final point's inbound height with that of the dispute's
      * latest finalized point, whose snapshot comes from `evidence`.
      */
-    private async tryCreateConflictsWithFinalStateProof(
+    private async findConflictsWithFinalStateCounters(
         dispute: DisputeStruct,
         evidence: StateProofEvidence
-    ): Promise<boolean> {
+    ) {
         const { forkId, stateProof } = dispute.input;
         // the snapshot the first block of the last milestone commits
         const latestFinalizedSnapshot = evidence.milestoneSnapshots.at(-1);
-        if (!latestFinalizedSnapshot) return false;
+        if (!latestFinalizedSnapshot) return [];
         const [finalized, anchor] = await Promise.all([
             this.agreementManager.getLocalFinalizedSnapshot(forkId),
             this.agreementManager.getChainAnchor(forkId)
@@ -218,6 +247,7 @@ export default class DisputeValidationService {
                     : [];
             })
         );
+        const counters = [];
         for (const { height, ...conflict } of conflicts) {
             const finalProof = await this.agreementManager.tryBuildFinalProofAt(
                 forkId,
@@ -232,31 +262,44 @@ export default class DisputeValidationService {
                 finalProof.milestoneSnapshots.at(-1)!
             );
             const proof = { finalProof, ...conflict, latestFinalizedSnapshot };
-            if (
-                !(await this.isAcceptedByChain(
-                    this.stateChannelManagerContract.isDisputeConflictingWithFinalState.staticCall(
+            const slashes = await this.acceptedSlashes(
+                this.stateChannelManagerContract.isDisputeConflictingWithFinalState.staticCall(
+                    dispute,
+                    proof
+                )
+            );
+            if (!slashes) continue;
+            const counter = {
+                slashes,
+                killBytes: this.killBytes(
+                    dispute,
+                    DisputeFraudProofType.DisputeConflictsWithFinalState,
+                    proof
+                )
+            };
+            counters.push({
+                ...counter,
+                store: () => {
+                    this.logger.warn(
+                        "Dispute proof holds a block that conflicts with this peer's final state",
+                        {
+                            dispute: LoggerUtils.getDisputeMetadata(dispute),
+                            finalized:
+                                LoggerUtils.getSnapshotMetadata(
+                                    finalizedSnapshot
+                                ),
+                            ...conflict,
+                            ...LoggerUtils.getSlashSetMetadata(counter.slashes)
+                        }
+                    );
+                    this.disputeFraudProofService.createDisputeConflictsWithFinalState(
                         dispute,
                         proof
-                    )
-                ))
-            )
-                continue;
-            this.logger.warn(
-                "Dispute proof holds a block that conflicts with this peer's final state",
-                {
-                    dispute: LoggerUtils.getDisputeMetadata(dispute),
-                    finalized:
-                        LoggerUtils.getSnapshotMetadata(finalizedSnapshot),
-                    ...conflict
+                    );
                 }
-            );
-            this.disputeFraudProofService.createDisputeConflictsWithFinalState(
-                dispute,
-                proof
-            );
-            return true;
+            });
         }
-        return false;
+        return counters;
     }
 
     /**
@@ -271,59 +314,74 @@ export default class DisputeValidationService {
      * peer's stored snapshots). The proof names the skipped JOIN's block
      * (`findSkippedJoin`); without one in this peer's own inbound blocks the
      * chain is not asked. Otherwise the chain checks the named block against
-     * both inbound heights itself; the proof is stored only when it agrees.
+     * both inbound heights itself; the proof is a counter only when it agrees.
      */
-    private async tryCreateFinalPointRegressionProof(
+    private async findFinalPointRegressionCounters(
         dispute: DisputeStruct,
         evidence: StateProofEvidence
-    ): Promise<boolean> {
+    ) {
         const { forkId, stateProof } = dispute.input;
         // the snapshot the first block of the last milestone commits
         const latestFinalizedSnapshot = evidence.milestoneSnapshots.at(-1);
         const first = stateProof.milestones.at(-1)?.blockConfirmations[0];
         const latestFinalized = first && Block.tryFromBlockConfirmation(first);
-        if (!latestFinalizedSnapshot || !latestFinalized) return false;
+        if (!latestFinalizedSnapshot || !latestFinalized) return [];
         const final = await this.tryBuildFinalProofBelow(
             forkId,
             latestFinalized.height
         );
-        if (!final) return false;
+        if (!final) return [];
         const { finalProof, finalized } = final;
         const skippedJoin = this.findSkippedJoin(
             latestFinalizedSnapshot.snapshotData,
             finalized.latestInboundMessageBlockHash
         );
-        if (!skippedJoin) return false;
+        if (!skippedJoin) return [];
         const proof = {
             finalProof,
             latestFinalizedSnapshot,
             joinInboundBlockHash: skippedJoin.blockHash
         };
-        if (
-            !(await this.isAcceptedByChain(
-                this.stateChannelManagerContract.isDisputeFinalPointRegression.staticCall(
-                    dispute,
-                    proof
-                )
-            ))
-        )
-            return false;
-        this.logger.warn(
-            "Dispute proof finalizes a point above this peer's final state with fewer inbound blocks",
+        const slashes = await this.acceptedSlashes(
+            this.stateChannelManagerContract.isDisputeFinalPointRegression.staticCall(
+                dispute,
+                proof
+            )
+        );
+        if (!slashes) return [];
+        const counter = {
+            slashes,
+            killBytes: this.killBytes(
+                dispute,
+                DisputeFraudProofType.DisputeFinalPointRegression,
+                proof
+            )
+        };
+        return [
             {
-                dispute: LoggerUtils.getDisputeMetadata(dispute),
-                finalized: LoggerUtils.getSnapshotMetadata(finalized),
-                latestFinalizedHeight: latestFinalized.height,
-                joinInboundBlock: LoggerUtils.getMessageBlockMetadata(
-                    skippedJoin.messageBlock
-                )
+                ...counter,
+                store: () => {
+                    this.logger.warn(
+                        "Dispute proof finalizes a point above this peer's final state with fewer inbound blocks",
+                        {
+                            dispute: LoggerUtils.getDisputeMetadata(dispute),
+                            finalized:
+                                LoggerUtils.getSnapshotMetadata(finalized),
+                            latestFinalizedHeight: latestFinalized.height,
+                            joinInboundBlock:
+                                LoggerUtils.getMessageBlockMetadata(
+                                    skippedJoin.messageBlock
+                                ),
+                            ...LoggerUtils.getSlashSetMetadata(counter.slashes)
+                        }
+                    );
+                    this.disputeFraudProofService.createDisputeFinalPointRegression(
+                        dispute,
+                        proof
+                    );
+                }
             }
-        );
-        this.disputeFraudProofService.createDisputeFinalPointRegression(
-            dispute,
-            proof
-        );
-        return true;
+        ];
     }
 
     /**
@@ -1424,13 +1482,17 @@ export default class DisputeValidationService {
     }
 
     /**
-     * The chain's verdict on a final-history counter. The chain has no
+     * The chain's verdict on a final-history counter: the addresses its kill
+     * slashes when the chain accepts it, else undefined. The chain has no
      * verdict when it knows no inbound height for a compared snapshot: no
      * counter then. Any other error is rethrown.
      */
-    private async isAcceptedByChain(verdict: Promise<boolean>) {
+    private async acceptedSlashes(
+        verdict: Promise<[boolean, string[]]>
+    ): Promise<Address[] | undefined> {
         try {
-            return await verdict;
+            const [isKill, slashes] = await verdict;
+            return isKill ? slashes.map(getChecksumAddress) : undefined;
         } catch (error) {
             const custom = tryDecodeCustomError(error);
             if (custom?.name !== "ErrorInboundMessageBlockNotStored")
@@ -1439,7 +1501,32 @@ export default class DisputeValidationService {
                 "Chain knows no inbound height for a compared snapshot: no final-history counter",
                 { customError: LoggerUtils.getCustomEvmErrorMetadata(custom) }
             );
-            return false;
+            return undefined;
         }
+    }
+
+    /** The calldata bytes of the kill of `dispute` by `proof`, sent alone. */
+    private killBytes(
+        dispute: DisputeStruct,
+        type:
+            | DisputeFraudProofType.DisputeConflictsWithFinalState
+            | DisputeFraudProofType.DisputeFinalPointRegression,
+        proof:
+            | DisputeConflictsWithFinalStateStruct
+            | DisputeFinalPointRegressionStruct
+    ): number {
+        return ethers.dataLength(
+            this.stateChannelManagerContract.interface.encodeFunctionData(
+                "applyDisputeFraudProofs",
+                [
+                    [
+                        this.disputeFraudProofService.toDisputeFraudProof(
+                            dispute,
+                            { type, struct: proof }
+                        )
+                    ]
+                ]
+            )
+        );
     }
 }

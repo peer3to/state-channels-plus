@@ -1653,6 +1653,16 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public limitTransactionBytes(maxTransactionBytes: number): boolean {
+        this.service.limitTransactionBytes(maxTransactionBytes);
+        return true;
+    }
+
+    public restoreMaxTransactionBytes(): boolean {
+        this.service.restoreMaxTransactionBytes();
+        return true;
+    }
+
     public recordSyncRejections(): boolean {
         this.service.recordSyncRejections();
         return true;
@@ -3133,8 +3143,9 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
                 return originalConstruct(requestedForkId, options);
             }
             state.inside = true;
-            // only the upload passes expectedSlashes; the evidence comparison does not
-            if (options?.expectedSlashes) state.uploadConstructions += 1;
+            // only the upload constructs through the manager; the evidence
+            // comparison calls the builder directly
+            state.uploadConstructions += 1;
             // the audit's proof is dropped -> construction builds its own and parks
             return originalConstruct(
                 requestedForkId,

@@ -90,8 +90,8 @@ export type MirrorChainEvent =
 
 /**
  * The local diamond's event-application entry points a mirror hold can
- * suspend: InboundMessagesProcessed, ChainSlashed (also applied on
- * DisputeKilled), StateSnapshotUpdated, ChannelStorageCleared (a snapshot
+ * suspend: InboundMessagesProcessed, ChainSlashed (every slash, a kill's
+ * too), StateSnapshotUpdated, ChannelStorageCleared (a snapshot
  * update's pruning of consumed inbound blocks) and DisputeCommitted logs.
  */
 export const MIRROR_UPDATES = [
@@ -109,7 +109,10 @@ export type MirrorReleaseOrder = "recorded" | "reverse";
 /** What one side answered for one read, in call order. */
 export type MirrorReadSide = {
     reads: number;
-    /** The boolean answer (a walk's `valid`), or null for another struct answer. */
+    /**
+     * The boolean answer (a walk's `valid`, a final-history verdict's kill
+     * flag), or null for another struct answer.
+     */
     answers: (boolean | null)[];
     /** Messages of failed reads. */
     failures: string[];
@@ -471,8 +474,11 @@ export class MirrorService extends ANetworkRpcService<
     ): Promise<unknown> {
         try {
             const answer = await run();
+            // a walk answers a struct with `valid`; a final-history verdict
+            // a (bool, address[]) tuple
+            const walkValid = (answer as { valid?: unknown } | null)?.valid;
             const value =
-                (answer as { valid?: unknown } | null)?.valid ?? answer;
+                walkValid ?? (Array.isArray(answer) ? answer[0] : answer);
             side.answers.push(typeof value === "boolean" ? value : null);
             return answer;
         } catch (error) {

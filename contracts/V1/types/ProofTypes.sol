@@ -42,6 +42,9 @@ struct ProofWalkResult {
     StateSnapshot startSnapshot;
     /// @dev the start snapshot, or the last threshold-proven snapshot
     StateSnapshot finalizedSnapshot;
+    /// @dev the union whose signatures proved `finalizedSnapshot` (its hop's required signers); empty when no hop of
+    /// this walk proved it (the start, a resumed step)
+    address[] finalizedSignerSet;
     /// @dev the last milestone's unfinalized tail starts at this index; its length means no tail
     uint256 replayBlockIndex;
     /// @dev when `valid` is false: the milestone whose walk step failed
@@ -73,7 +76,7 @@ enum FraudProofType {
 
 struct DisputeFraudProof {
     DisputeFraudProofType proofType;
-    address participant; // The participant that is being slashed - encoded proof returns the same address when run.
+    address participant; // The kill target (the dispute's disputer) - encoded proof returns the same address when run.
     Dispute dispute;
     bytes encodedProof;
 }

@@ -157,3 +157,4 @@ that joins again is removed by it.
 - `test_handleOnChainSlashesNotSubset_disputeOmittingAnExitedAddressSlash_isNotKilled`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P225
 - `test_computeDisputeOutputState_slashOfAnExitedAddress_takesNoEffectAndKeepsTheTimeout`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P49
 - `test_computeDisputeOutputState_exitedAddressJoinsAgain_slashRemovesItAndSuppressesTheTimeout`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P50
+- `test_killDispute_withoutTheDisputerSlashRemovesTheCommitmentAndSlashesNobody`: REQ-FP-7-4DD0D7.T11.P11

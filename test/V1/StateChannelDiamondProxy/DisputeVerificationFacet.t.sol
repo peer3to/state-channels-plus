@@ -998,12 +998,12 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         vm.warp(t1);
         Dispute memory d1 = _structurallyInvalidDispute(keccak256("slash-cutoff-1"), first);
         harness.seedDispute(d1, t1);
-        harness.killDispute(d1);
+        harness.killDispute(d1, true);
 
         vm.warp(t2);
         Dispute memory d2 = _structurallyInvalidDispute(keccak256("slash-cutoff-2"), second);
         harness.seedDispute(d2, t2);
-        harness.killDispute(d2);
+        harness.killDispute(d2, true);
 
         // (a) cutoff before any slash -> empty
         address[] memory beforeAny = harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, t1 - 1);
@@ -1181,7 +1181,7 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         vm.expectRevert(
             abi.encodeWithSelector(RaceConditionDisputeKillPeriodExpired.selector, seededAt + 10, seededAt + 15)
         );
-        harness.killDispute(dispute);
+        harness.killDispute(dispute, true);
         assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 1);
     }
 
@@ -2110,6 +2110,21 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         );
     }
 
+    function test_killDispute_withoutTheDisputerSlashRemovesTheCommitmentAndSlashesNobody() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory dispute = _structurallyInvalidDispute(keccak256("kill-without-slash"), address(0xA1));
+        harness.seedDispute(dispute, block.timestamp);
+
+        harness.killDispute(dispute, false);
+
+        assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 0, "the dispute is killed");
+        assertEq(
+            harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, block.timestamp).length,
+            0,
+            "the disputer is not slashed"
+        );
+    }
+
     function test_killDispute_disputeNotInWindowCommitments_revertsCarryingCommitment() public {
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
         Dispute memory committed = _structurallyInvalidDispute(keccak256("kill-committed"), address(0xA1));
@@ -2125,7 +2140,7 @@ contract DisputeVerificationFacetTest is DiamondHarness {
                 keccak256(abi.encode(uncommitted))
             )
         );
-        harness.killDispute(uncommitted);
+        harness.killDispute(uncommitted, true);
         assertEq(harness.commitmentCount(CHANNEL_ID, committed.input.forkId), 1);
     }
 

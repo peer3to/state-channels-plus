@@ -224,7 +224,7 @@ describe("Unit: EventHandler evidence comparison", function () {
         expect(await uploads.submissions()).to.have.length(1);
     });
 
-    it("a kill of another dispute follows a kept positive comparison: dispute(kill) builds its own dispute with the killed submitter's slash instead of the compared one", async function () {
+    it("a kill of another dispute follows a kept positive comparison: dispute(kill) uploads the compared dispute in the kill's multicall, without building it again; it lists no kill slash", async function () {
         const h = TestSession.getHarness();
         const { auditorIndex, quietIndices, recorder, uploads } =
             await stageKeptHigherStateComparison(h);
@@ -244,13 +244,13 @@ describe("Unit: EventHandler evidence comparison", function () {
 
         const [upload] = await uploads.submissions();
         expect(upload.innerMethods).to.include("applyDisputeFraudProofs");
-        expect(own.input.onChainSlashes).to.include(
-            h.getPeer(spammerIndex).address
-        );
-        expect(hash(Codec.encode(own, Type.Dispute))).to.not.equal(
+        // the kill's slashes are not listed: the kill does not change the
+        // construction inputs
+        expect(own.input.onChainSlashes).to.deep.equal([]);
+        expect(hash(Codec.encode(own, Type.Dispute))).to.equal(
             (await recorder.comparisons())[0].disputeHash
         );
-        expect(await recorder.disputeBuilds()).to.equal(1);
+        expect(await recorder.disputeBuilds()).to.equal(0);
     });
 
     it("a comparison dropped by a kill cannot erase its replacement when it settles later", async function () {

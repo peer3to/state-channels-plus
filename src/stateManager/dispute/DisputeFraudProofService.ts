@@ -366,16 +366,24 @@ export default class DisputeFraudProofService {
         });
     }
 
-    private storeFraudProof(
+    /** The dispute fraud proof that sends `proof` against `dispute`'s disputer. */
+    public toDisputeFraudProof(
         dispute: DisputeStruct,
         proof: { type: DisputeFraudProofType; struct: DisputeFraudStruct }
-    ): Hash {
-        const disputeFraudProof: DisputeFraudProofStruct = {
+    ): DisputeFraudProofStruct {
+        return {
             proofType: toSolidityDisputeFraudProofType(proof.type),
             participant: dispute.input.disputer,
             dispute: dispute,
             encodedProof: Codec.encode(proof.struct, proof.type)
         };
+    }
+
+    private storeFraudProof(
+        dispute: DisputeStruct,
+        proof: { type: DisputeFraudProofType; struct: DisputeFraudStruct }
+    ): Hash {
+        const disputeFraudProof = this.toDisputeFraudProof(dispute, proof);
 
         const disputeHash =
             this.storage.disputeFraudProofs.storeFraudProof(disputeFraudProof);

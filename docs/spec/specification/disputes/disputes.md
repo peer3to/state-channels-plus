@@ -117,7 +117,7 @@ stateDiagram-v2
     end note
     Idle --> Open: uploadDispute[WithCalldata] with an independent reason (opener commitment recorded immediately)
     Open --> Open: valid state contributions committed (≤1 per participant, each resets the kill period)
-    Open --> Open: applyDisputeFraudProofs kills an invalid dispute — its disputer is slashed
+    Open --> Open: applyDisputeFraudProofs kills an invalid dispute — its disputer is slashed (a final-history kill slashes its set S)
     Open --> Reduced: kill period expired → reduceAndFinalize
     Open --> Reduced: full-threshold-signed dispute → immediate finalization
     Reduced --> Advanced: updateStateSnapshotFork walks reducedResult links once uncontestable
@@ -186,7 +186,10 @@ submission, bounds challenges to committed disputes and gates reduction; it is e
 
 While the kill period runs, anyone may apply dispute fraud proofs against committed disputes. A
 valid proof (it establishes the dispute's disputer as the offender) removes the
-commitment from the window and slashes the disputer. An invalid proof slashes its submitter only
+commitment from the window and slashes the disputer. A final-history kill
+(`DisputeConflictsWithFinalState`, `DisputeFinalPointRegression`) instead slashes its set S, the
+addresses that signed both conflicting final points, which can be empty
+([fraud-proofs.md §3](./fraud-proofs.md)). An invalid proof slashes its submitter only
 when the submitter is dispute-eligible ([`REQ-FP-6-TS1QAV`](fraud-proofs.md#req-fp-6-ts1qav)). A target that is no longer
 committed (already killed, or never uploaded) is a no-op; an expired kill period reverts the whole
 batch ([`REQ-FP-7-4DD0D7`](fraud-proofs.md#req-fp-7-4dd0d7)). The kill itself is not an external entry point; it is reachable
@@ -250,7 +253,8 @@ Every reduction produces the canonical successor fork ([`REQ-DIS-6-Y92H1M`](disp
 - The output carries forward the latest valid proved state: the winning latest block's state, plus
   deterministically applied slashes, removals (timeout/self-removal), and pending inbound
   messages. Rejected claims do not prevent the fork — a killed dispute simply contributes nothing
-  except its disputer's slash, which the reduction then consumes.
+  except its kill's slashes (its disputer, or a final-history kill's set S), which the reduction
+  then consumes.
 - Off-chain execution resumes from the successor fork's genesis
   (`ReductionManager` schedules the
   reduction attempt at kill-period end and restarts the channel on the reduced fork).
@@ -408,7 +412,9 @@ incomplete-information attacks into evidence against the attacker:
   commits another snapshot (`DisputeConflictsWithFinalState`), or a latest finalized point above
   the final point whose snapshot consumed fewer inbound blocks (`DisputeFinalPointRegression`),
   which is how a history that skips a later joiner's JOIN shows
-  ([fraud-proofs.md §3](./fraud-proofs.md)). A JOIN that no final point consumed gives no such kill:
+  ([fraud-proofs.md §3](./fraud-proofs.md)). That kill slashes only the addresses that signed both
+  final points; a kill whose set is empty slashes nobody, and the reduction still runs on the
+  remaining disputes. A JOIN that no final point consumed gives no such kill:
   the joiner can lose unfinal outcomes, and the reduction carries its deposit
   ([`REQ-FIN-9-B09SWY`](../protocol-model/finality.md#req-fin-9-b09swy)).
 - **Evidence availability needs no finer definition.** Evidence changes an already-proposed

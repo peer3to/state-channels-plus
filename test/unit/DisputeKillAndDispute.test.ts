@@ -1,4 +1,3 @@
-import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, hash, Type } from "@/utils";
 import { withGasHeadroom } from "@/utils/gas";
 import {
@@ -6,6 +5,7 @@ import {
     expectSlowAuditorLostRaceNoOp,
     stageReasonlessInitialDispute,
     stageRefusedKillAndDispute,
+    stageSplitKillAndDispute,
     stageSlowAuditorPastEvidencePeriod,
     stripDisputeReasons,
     waitUntilAuditsSettled
@@ -105,7 +105,7 @@ describe("Unit: evidence submission when the dispute window opens", function () 
 });
 
 describe("Unit: kill then dispute", function () {
-    it("U129: the initial dispute is invalid -> the auditor's kill and its own dispute go in one multicall, kill first, carrying the killed submitter's slash, and land without another valid dispute", async function () {
+    it("U129: the initial dispute is invalid -> the auditor's kill and its own dispute go in one multicall, kill first; the dispute lists none of the kill's slashes, needs the open window, and lands", async function () {
         const h = TestSession.getHarness();
         const { spammer, submissions, waitUntilSettled } =
             await stageReasonlessInitialDispute(h, { hold: false });
@@ -127,7 +127,8 @@ describe("Unit: kill then dispute", function () {
             Type.Dispute
         );
         expect(replacement.input.disputer).to.equal(h.getPeer(0).address);
-        expect(replacement.input.onChainSlashes).to.include(spammer.address);
+        expect(replacement.input.onChainSlashes).to.deep.equal([]);
+        expect(replacement.input.requireExistingDisputeWindow).to.equal(true);
         await h.assert.dispute.slashedOnChain(spammer.address);
         expect(
             await h.channelManager.getWindowCommitments(h.channelId, forkId)
@@ -181,7 +182,7 @@ describe("Unit: kill then dispute", function () {
         expect(await stateProofBuilds!.count()).to.equal(0);
     });
 
-    it("U129: the replacement counts the killed submitter's slash -> held before the multicall that slash is not established and an auditor counters it; the multicall lands the kill first and the replacement passes", async function () {
+    it("U129: the replacement lists none of the kill's slashes -> held before the multicall, an auditor already finds it valid; the multicall lands the kill first and the replacement stays valid", async function () {
         const h = TestSession.getHarness();
         const { spammer, submissions, waitUntilSettled } =
             await stageReasonlessInitialDispute(h, { hold: true });
@@ -192,18 +193,16 @@ describe("Unit: kill then dispute", function () {
         const auditingData = held.encodedAuditingData
             ? Codec.decode(held.encodedAuditingData, Type.DisputeAuditingData)
             : undefined;
-        expect(replacement.input.onChainSlashes).to.include(spammer.address);
+        expect(replacement.input.onChainSlashes).to.deep.equal([]);
 
-        // before the kill: the replacement's slash is not on chain
+        // before the kill: the replacement does not depend on it
         const early = await h.dispute.auditDispute(
             2,
             replacement,
             auditingData
         );
-        expect(early).to.include({ outcome: "returned", isValid: false });
-        expect(early.storedProof?.disputeFraudProofType).to.equal(
-            DisputeFraudProofType.DisputeOnChainSlashesNotSubset
-        );
+        expect(early).to.include({ outcome: "returned", isValid: true });
+        expect(early.storedProof).to.equal(undefined);
 
         await submissions.release();
         await waitUntilSettled();
@@ -212,10 +211,37 @@ describe("Unit: kill then dispute", function () {
         expect(landed.waited).to.equal(true);
         await h.assert.dispute.slashedOnChain(spammer.address);
 
-        // after the kill in the same transaction: the slash is established
         const late = await h.dispute.auditDispute(3, replacement, auditingData);
         expect(late).to.include({ outcome: "returned", isValid: true });
         expect(late.storedProof).to.equal(undefined);
+    });
+
+    it("CN-5: the kill and the auditor's own dispute do not fit one transaction -> the kill goes alone first, then the dispute alone; it lists no slash, needs the open window, and lands", async function () {
+        const h = TestSession.getHarness();
+        const { forkId, auditor, spammer, kills, uploads } =
+            await stageSplitKillAndDispute(h, { lostRace: false });
+
+        const applies = await kills.applies();
+        expect(applies).to.have.length(1);
+        expect(applies[0]).to.include({ error: null, waited: true });
+        expect(applies[0].participants).to.deep.equal([spammer.address]);
+        const recorded = await uploads.submissions();
+        expect(recorded).to.have.length(1);
+        const [upload] = recorded;
+        expect(["uploadDispute", "uploadDisputeWithCalldata"]).to.include(
+            upload.method
+        );
+        expect(upload.revert).to.equal(null);
+        const replacement = Codec.decode(upload.encodedDispute, Type.Dispute);
+        expect(replacement.input.disputer).to.equal(auditor.address);
+        expect(replacement.input.onChainSlashes).to.deep.equal([]);
+        expect(replacement.input.requireExistingDisputeWindow).to.equal(true);
+        await h.assert.dispute.slashedOnChain(spammer.address);
+        // the lone kill emptied the window, so the other peers may replace
+        // the dispute too
+        expect(
+            await h.channelManager.getWindowCommitments(h.channelId, forkId)
+        ).to.include(hash(Codec.encode(replacement, Type.Dispute)));
     });
 
     it("a slow auditor's kill and dispute land after another auditor's kill and replacement closed the evidence period → the multicall lands its kill, its refused upload is a no-op, no kill is sent alone, and its event pipeline stays alive", async function () {

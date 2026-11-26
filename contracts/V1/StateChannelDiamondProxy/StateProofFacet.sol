@@ -160,23 +160,28 @@ contract StateProofFacet is StateChannelCommon {
      * (`_latestFinalizedInbound`) consumed more inbound blocks than F, and those extra blocks hold a JOIN of an address
      * outside F's participants, F is no evidence against it: F's history never counted that joiner. Extra blocks that
      * only top up F's participants do not refuse the kill. When that point is the walk's start, F walked from it passes.
+     * `slashes` are the addresses that signed both conflicting final points: F's finality signer set (`_directSignersIn`)
+     * members whose own signature is on the dispute's block, when that block is a final point of the dispute (the
+     * first block of a milestone, but not an unfinalized genesis block zero). A tail block, or F as the walk's start,
+     * slashes nobody.
      */
     function isDisputeConflictingWithFinalState(Dispute memory dispute, DisputeConflictsWithFinalState memory proof)
         public
         view
-        returns (bool)
+        returns (bool, address[] memory slashes)
     {
-        (bool isFinal, StateSnapshot memory finalPoint) = _killFinalPointOf(dispute, proof.finalProof);
+        (bool isFinal, StateSnapshot memory finalPoint, address[] memory finalSigners) =
+            _killFinalPointOf(dispute, proof.finalProof);
         MilestoneProof[] memory milestones = dispute.input.stateProof.milestones;
-        if (!isFinal || proof.milestoneIndex >= milestones.length) return false;
+        if (!isFinal || proof.milestoneIndex >= milestones.length) return (false, slashes);
         MilestoneProof memory milestone = milestones[proof.milestoneIndex];
-        if (proof.blockIndex >= milestone.blockConfirmations.length) return false;
+        if (proof.blockIndex >= milestone.blockConfirmations.length) return (false, slashes);
         WalkCursor memory cursor;
         cursor.start = stateSnapshots[dispute.input.channelId];
         cursor.useOnChainSnapshot = _canStartFromOnChainSnapshot(cursor.start, dispute.input.forkId);
         // a block the dispute's walk does not check (history below the anchor) is no conflict
         (bool isKept, bool hasHeight, uint256 fromIndex) = _checkedRunStart(milestone, cursor);
-        if (!isKept || !hasHeight || proof.blockIndex < fromIndex) return false;
+        if (!isKept || !hasHeight || proof.blockIndex < fromIndex) return (false, slashes);
         (bool decoded, Block memory conflicting) = UtilityFacet(utilityFacetAddress)
             .tryDecodeBlock(milestone.blockConfirmations[proof.blockIndex].signedBlock.encodedBlock);
         if (
@@ -184,20 +189,33 @@ contract StateProofFacet is StateChannelCommon {
                 || conflicting.transaction.header.forkId != dispute.input.forkId
                 || conflicting.transaction.header.transactionCnt != finalPoint.blockHeight
                 || conflicting.stateSnapshotHash == keccak256(abi.encode(finalPoint))
-        ) return false;
+        ) return (false, slashes);
         (bool isKnown, bool isStart,, bytes32 finalizedInboundHash) =
             _latestFinalizedInbound(dispute, proof.latestFinalizedSnapshot, proof.finalProof.genesisStateSnapshotData);
-        if (!isKnown) return false;
+        if (!isKnown) return (false, slashes);
+        if (!isStart && _hasJoinOutsideFinalPoint(dispute.input.channelId, finalPoint, finalizedInboundHash)) {
+            return (false, slashes);
+        }
+        // the start as the dispute's latest finalized point is a last milestone without a final first block
+        if (proof.blockIndex == 0 && !(isStart && proof.milestoneIndex == milestones.length - 1)) {
+            slashes = _directSignersIn(milestone.blockConfirmations[0], finalSigners);
+        }
+        return (true, slashes);
+    }
+
+    /// The dispute's latest finalized point, whose inbound head is `finalizedInboundHash`, consumed more inbound blocks
+    /// than F (`finalPoint`) and those extra blocks hold a JOIN of an address outside F's participants.
+    function _hasJoinOutsideFinalPoint(bytes32 channelId, StateSnapshot memory finalPoint, bytes32 finalizedInboundHash)
+        internal
+        view
+        returns (bool)
+    {
         // F is walked from the same start, and a walk never lowers the inbound height
-        if (isStart) return true;
         bytes32 finalInboundHash = finalPoint.snapshotData.latestInboundMessageBlockHash;
-        if (
-            _inboundHeightOf(dispute.input.channelId, finalInboundHash)
-                >= _inboundHeightOf(dispute.input.channelId, finalizedInboundHash)
-        ) return true;
-        return !_hasJoinOutside(
-            dispute.input.channelId, finalizedInboundHash, finalInboundHash, finalPoint.snapshotData.participants
-        );
+        if (_inboundHeightOf(channelId, finalInboundHash) >= _inboundHeightOf(channelId, finalizedInboundHash)) {
+            return false;
+        }
+        return _hasJoinOutside(channelId, finalizedInboundHash, finalInboundHash, finalPoint.snapshotData.participants);
     }
 
     /**
@@ -211,35 +229,73 @@ contract StateProofFacet is StateChannelCommon {
      * stored block whose height lies above G's head and at most F's head is one F consumed and G skipped. F's head
      * must be a stored block and G's head a stored block or the anchor's inbound head, else the check reverts with
      * `ErrorInboundMessageBlockNotStored`; a missing inbound block inside F's walk reverts the same way, so neither
-     * kills nor slashes.
+     * kills nor slashes. `slashes` are the addresses that signed both conflicting final points: F's finality signer
+     * set members whose own signature is on G (`_directSignersIn`); F as the walk's start slashes nobody.
      */
     function isDisputeFinalPointRegression(Dispute memory dispute, DisputeFinalPointRegression memory proof)
         public
         view
-        returns (bool)
+        returns (bool, address[] memory slashes)
     {
-        (bool isKnown, bool isStart, uint256 finalizedHeight, bytes32 finalizedInboundHash) = _latestFinalizedInbound(
-            dispute, proof.latestFinalizedSnapshot, proof.finalProof.genesisStateSnapshotData
-        );
+        (bool isKnown, bool isStart, uint256 finalizedHeight, bytes32 finalizedInboundHash) =
+            _latestFinalizedInbound(dispute, proof.latestFinalizedSnapshot, proof.finalProof.genesisStateSnapshotData);
         // the height check below also refuses the start; this skips the walk of F
-        if (!isKnown || isStart) return false;
-        (bool isFinal, StateSnapshot memory finalPoint) = _killFinalPointOf(dispute, proof.finalProof);
-        if (!isFinal || finalizedHeight <= finalPoint.blockHeight) return false;
+        if (!isKnown || isStart) return (false, slashes);
+        (bool isFinal, StateSnapshot memory finalPoint, address[] memory finalSigners) =
+            _killFinalPointOf(dispute, proof.finalProof);
+        if (!isFinal || finalizedHeight <= finalPoint.blockHeight) return (false, slashes);
         bytes32 channelId = dispute.input.channelId;
         // G's head may be the anchor's unstored inbound head: every block above it is stored
         uint256 finalizedInboundHeight = _inboundHeightOf(channelId, finalizedInboundHash);
         uint256 finalInboundHeight =
             _storedInboundHeightOf(channelId, finalPoint.snapshotData.latestInboundMessageBlockHash);
-        if (finalizedInboundHeight >= finalInboundHeight) return false;
+        if (finalizedInboundHeight >= finalInboundHeight) return (false, slashes);
         // the hint replaces a walk of the skipped run: F's own walk already read it
-        if (!_hasInboundMessageBlock(channelId, proof.joinInboundBlockHash)) return false;
+        if (!_hasInboundMessageBlock(channelId, proof.joinInboundBlockHash)) return (false, slashes);
         StoredInboundBlock storage joinBlock = inboundMessageBlockMap[channelId][proof.joinInboundBlockHash];
         if (joinBlock.blockHeight <= finalizedInboundHeight || joinBlock.blockHeight > finalInboundHeight) {
-            return false;
+            return (false, slashes);
         }
-        return UtilityFacet(utilityFacetAddress)
-            .subtractAddressArrays(joinBlock.joiners, proof.latestFinalizedSnapshot.snapshotData.participants)
-            .length != 0;
+        if (
+            UtilityFacet(utilityFacetAddress)
+                .subtractAddressArrays(joinBlock.joiners, proof.latestFinalizedSnapshot.snapshotData.participants)
+                .length == 0
+        ) return (false, slashes);
+        MilestoneProof[] memory milestones = dispute.input.stateProof.milestones;
+        return (true, _directSignersIn(milestones[milestones.length - 1].blockConfirmations[0], finalSigners));
+    }
+
+    /// The members of `signerSet` whose own signature is on `confirmation`'s block: the author's signature or a
+    /// confirmation signature. A signature that does not recover is skipped; each member is listed once.
+    function _directSignersIn(BlockConfirmation memory confirmation, address[] memory signerSet)
+        internal
+        view
+        returns (address[] memory signers)
+    {
+        address[] memory found = new address[](signerSet.length);
+        bytes memory encodedBlock = confirmation.signedBlock.encodedBlock;
+        uint256 count = _tryInsertDirectSigner(encodedBlock, confirmation.signedBlock.signature, signerSet, found, 0);
+        for (uint256 i = 0; i < confirmation.signatures.length; i++) {
+            count = _tryInsertDirectSigner(encodedBlock, confirmation.signatures[i], signerSet, found, count);
+        }
+        signers = new address[](count);
+        count = 0;
+        for (uint256 i = 0; i < found.length; i++) {
+            if (found[i] != address(0)) signers[count++] = found[i];
+        }
+    }
+
+    function _tryInsertDirectSigner(
+        bytes memory encodedBlock,
+        bytes memory signature,
+        address[] memory signerSet,
+        address[] memory found,
+        uint256 count
+    ) internal view returns (uint256) {
+        (address signer, bool isValid) =
+            UtilityFacet(utilityFacetAddress).retrieveSignerAddress(encodedBlock, signature);
+        if (!isValid) return count;
+        return _tryInsertAddressInThresholdSet(signer, found, count, signerSet);
     }
 
     /// The stored height of inbound block `messageBlockHash`. A hash the chain does not store, also the anchor's
@@ -285,7 +341,7 @@ contract StateProofFacet is StateChannelCommon {
     function _killFinalPointOf(Dispute memory dispute, ProofWalkInput memory finalProof)
         internal
         view
-        returns (bool isFinal, StateSnapshot memory finalPoint)
+        returns (bool isFinal, StateSnapshot memory finalPoint, address[] memory finalSigners)
     {
         ProofWalkResult memory walk;
         (isFinal, finalPoint, walk) = _walkFinalProof(dispute, finalProof);
@@ -295,6 +351,7 @@ contract StateProofFacet is StateChannelCommon {
                 finalProof.milestoneSnapshots[walk.failedMilestoneIndex].snapshotData.latestInboundMessageBlockHash
             );
         }
+        finalSigners = walk.finalizedSignerSet;
     }
 
     function _walkFinalProof(Dispute memory dispute, ProofWalkInput memory finalProof)

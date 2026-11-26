@@ -24,11 +24,25 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             (bool isExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
             // A successful batch means every committed proof was eligible and applied.
             require(!isExpired, RaceConditionDisputeKillPeriodExpired(killPeriodEnd, block.timestamp));
-            address slashedParticipant = _getHandle(proofs[i].proofType)(proofs[i].encodedProof, dispute);
+            bool isConflictKill = _isFinalHistoryConflict(proofs[i].proofType);
+            address killTarget;
+            // the final-history conflict kills slash these addresses instead of the disputer
+            address[] memory slashes;
+            if (isConflictKill) {
+                (killTarget, slashes) =
+                    _finalHistoryConflictVerdict(proofs[i].proofType, proofs[i].encodedProof, dispute);
+            } else {
+                killTarget = _getHandle(proofs[i].proofType)(proofs[i].encodedProof, dispute);
+            }
             // zero is the invalid verdict -> never a kill target
-            if (slashedParticipant != address(0) && slashedParticipant == proofs[i].participant) {
+            if (killTarget != address(0) && killTarget == proofs[i].participant) {
+                // recorded before the kill emits DisputeKilled
+                for (uint256 j = 0; j < slashes.length; j++) {
+                    addOnChainSlashedParticipant(dispute.input.channelId, slashes[j]);
+                }
                 _delegatecall(
-                    disputeVerificationFacetAddress, abi.encodeCall(DisputeVerificationFacet.killDispute, (dispute))
+                    disputeVerificationFacetAddress,
+                    abi.encodeCall(DisputeVerificationFacet.killDispute, (dispute, !isConflictKill))
                 );
             } else if (_canParticipateInDisputesNow(dispute.input.channelId, msg.sender)) {
                 addOnChainSlashedParticipant(dispute.input.channelId, msg.sender);
@@ -96,20 +110,44 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (proofType == DisputeFraudProofType.TimeoutSupersededByFinalState) {
             return _handleTimeoutSupersededByFinalState;
         }
-        if (proofType == DisputeFraudProofType.DisputeConflictsWithFinalState) {
-            return _handleDisputeConflictsWithFinalState;
-        }
         if (proofType == DisputeFraudProofType.DisputeInvalidOutboundRun) return _handleDisputeInvalidOutboundRun;
-        if (proofType == DisputeFraudProofType.DisputeFinalPointRegression) {
-            return _handleDisputeFinalPointRegression;
-        }
         return _handleInvalidDisputeFraudProofType;
+    }
+
+    /// The two kills of a dispute whose history conflicts with a final history: they slash the addresses that signed
+    /// both conflicting final points, not the disputer.
+    function _isFinalHistoryConflict(DisputeFraudProofType proofType) internal pure returns (bool) {
+        return proofType == DisputeFraudProofType.DisputeConflictsWithFinalState
+            || proofType == DisputeFraudProofType.DisputeFinalPointRegression;
+    }
+
+    /// The disputer and the slash set when the final-history conflict holds, else no one.
+    function _finalHistoryConflictVerdict(
+        DisputeFraudProofType proofType,
+        bytes memory encodedFraudProof,
+        Dispute memory dispute
+    ) internal returns (address, address[] memory) {
+        if (proofType == DisputeFraudProofType.DisputeConflictsWithFinalState) {
+            return _handleDisputeConflictsWithFinalState(encodedFraudProof, dispute);
+        }
+        return _handleDisputeFinalPointRegression(encodedFraudProof, dispute);
     }
 
     /// The disputer when the StateProofFacet `call` answers true, else no one.
     function _delegatedVerdict(Dispute memory dispute, bytes memory call) internal returns (address) {
         if (abi.decode(_delegatecall(stateProofFacetAddress, call), (bool))) return _valid(dispute.input.disputer);
         return _invalid();
+    }
+
+    /// `_delegatedVerdict` for a StateProofFacet `call` that also answers the slash set of a true verdict.
+    function _delegatedSlashingVerdict(Dispute memory dispute, bytes memory call)
+        internal
+        returns (address, address[] memory slashes)
+    {
+        bool isKill;
+        (isKill, slashes) = abi.decode(_delegatecall(stateProofFacetAddress, call), (bool, address[]));
+        if (isKill) return (_valid(dispute.input.disputer), slashes);
+        return (_invalid(), new address[](0));
     }
 
     function _valid(address adr) internal pure returns (address) {
@@ -292,21 +330,22 @@ contract DisputeFraudProofFacet is StateChannelCommon {
 
     function _handleDisputeConflictsWithFinalState(bytes memory encodedFraudProof, Dispute memory dispute)
         internal
-        returns (address)
+        returns (address, address[] memory)
     {
         DisputeConflictsWithFinalState memory proof = abi.decode(encodedFraudProof, (DisputeConflictsWithFinalState));
-        return _delegatedVerdict(
+        return _delegatedSlashingVerdict(
             dispute, abi.encodeCall(StateProofFacet.isDisputeConflictingWithFinalState, (dispute, proof))
         );
     }
 
     function _handleDisputeFinalPointRegression(bytes memory encodedFraudProof, Dispute memory dispute)
         internal
-        returns (address)
+        returns (address, address[] memory)
     {
         DisputeFinalPointRegression memory proof = abi.decode(encodedFraudProof, (DisputeFinalPointRegression));
-        return
-            _delegatedVerdict(dispute, abi.encodeCall(StateProofFacet.isDisputeFinalPointRegression, (dispute, proof)));
+        return _delegatedSlashingVerdict(
+            dispute, abi.encodeCall(StateProofFacet.isDisputeFinalPointRegression, (dispute, proof))
+        );
     }
 
     function _handleDisputeInvalidOutboundRun(bytes memory encodedFraudProof, Dispute memory dispute)

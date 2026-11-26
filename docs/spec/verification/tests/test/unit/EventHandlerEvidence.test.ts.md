@@ -34,8 +34,8 @@ send and a second dispute lands after it. The reuse case holds the auditor's com
 construction and releases it as is: the committed dispute has the compared dispute's hash and
 `dispute` built nothing. There is no case for adding signatures to the unchanged latest block or
 for a newer block arriving during a held build. The kill case keeps a positive comparison while the auditor's initiation is suppressed,
-then a reasonless dispute makes the auditor kill it in its own multicall: `dispute` builds once and
-lists the killed submitter's slash. The exiting case sets the auditor's force-exit flag before the
+then a reasonless dispute makes the auditor kill it in its own multicall: `dispute` builds nothing,
+uploads the compared dispute and lists no kill slash. The exiting case sets the auditor's force-exit flag before the
 genesis dispute: the audit answers yes with no comparison and the committed dispute is a
 self-removal, built once. The kill-replacement case holds the comparison against one dispute while
 another participant kills the spam dispute of the same fork, lets a replacement comparison settle,
@@ -51,6 +51,6 @@ and only then fails the dropped one. The reduced-result case keeps the answer un
 - `a positive comparison whose upload fails is kept: the next audit retries the upload without comparing again`: UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P4
 - `a leaving node audits a valid dispute: it disputes at once with its self-removal, building its dispute once and comparing nothing`: UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P13
 - `a counter-dispute uploads the dispute its comparison built, without building it again`: UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P10
-- `a kill of another dispute follows a kept positive comparison: dispute(kill) builds its own dispute with the killed submitter's slash instead of the compared one`: UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P12
+- `a kill of another dispute follows a kept positive comparison: dispute(kill) uploads the compared dispute in the kill's multicall, without building it again; it lists no kill slash`: UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P12
 - `a comparison dropped by a kill cannot erase its replacement when it settles later`: UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P9
 - `a committed reduced result drops the fork's kept comparison: asked again, the fork compares again`: UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P7

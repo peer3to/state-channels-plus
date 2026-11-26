@@ -73,7 +73,7 @@ describe("E2E: dispute validation / balanceInvariant", function () {
         });
     });
 
-    it("the colluders' real-head dispute audited first by the pending auditor, then peer 2's forged-head dispute → the auditor accepts the real head and kills the forged dispute with DisputeConflictsWithFinalState (real audited first)", async function () {
+    it("the colluders' real-head dispute audited first by the pending auditor, then peer 2's forged-head dispute → the auditor accepts the real head and kills the forged dispute with DisputeConflictsWithFinalState, slashing exactly the three participants that signed both heads (real audited first)", async function () {
         const h = TestSession.getHarness();
         // The real audit precedes the forged upload and its follow-up disputes.
         await h.scenario.preDisputeSetup({ timeConfig: { evidenceTime: 15 } });
@@ -118,8 +118,16 @@ describe("E2E: dispute validation / balanceInvariant", function () {
             DisputeFraudProofType.DisputeConflictsWithFinalState
         ]);
         await restoreGossip();
-        await h.dispute.resolveDisputeWait({ forkId });
-        await h.assert.dispute.slashedOnChainExactly([h.getPeer(2).address]);
+        // every participant signed the real final head and the forged one;
+        // the slashes land after the window's cut, so the reduction only
+        // completes here and their eviction is a later fork's
+        await h.assert.dispute.reductionCompletedWait({
+            sourceForkId: forkId,
+            peerIndices: [auditorIndex]
+        });
+        await h.assert.dispute.slashedOnChainExactly(
+            [0, 1, 2].map((index) => h.getPeer(index).address)
+        );
     });
 
     it("the pending auditor audits the forged-head and two real-head disputes at the same time, the forged walk released first → the forged head is stored, its dispute is killed with DisputeInvalidBalanceInvariant, each real-head dispute with DisputeConflictsWithFinalState, and the channel reduces from the auditor's own dispute", async function () {
@@ -204,7 +212,7 @@ describe("E2E: dispute validation / balanceInvariant", function () {
         });
     });
 
-    it("the pending auditor audits the forged-head and two real-head disputes at the same time, the real walks released first → the real head is stored and the forged dispute is killed with DisputeConflictsWithFinalState after its walk", async function () {
+    it("the pending auditor audits the forged-head and two real-head disputes at the same time, the real walks released first → the real head is stored and the forged dispute is killed with DisputeConflictsWithFinalState after its walk, slashing exactly the three participants that signed both heads", async function () {
         const h = TestSession.getHarness();
         const staged = await stageParallelHeadAudits(h);
         const { forkId, auditorIndex, walks, realHead, forgedHead } = staged;
@@ -238,16 +246,20 @@ describe("E2E: dispute validation / balanceInvariant", function () {
             "only the real head is stored"
         ).to.equal(realHead.hash);
         await staged.restoreGossip();
-        // the real-head disputes stand: peer 0 leaves by its self-removal,
-        // peer 2 is slashed, and peer 1 stays with the auditor
+        // the real-head disputes stand; every participant signed the real
+        // final head and the forged one, so only the auditor stays
+        for (const index of [0, 1, 2])
+            h.contextApi.markMaliciousPeer({ maliciousPeerIndex: index });
         await h.dispute.resolveDisputeWait({
             forkId,
-            honestPeerIndices: [1, auditorIndex]
+            honestPeerIndices: [auditorIndex]
         });
-        await h.assert.dispute.slashedOnChainExactly([h.getPeer(2).address]);
+        await h.assert.dispute.slashedOnChainExactly(
+            [0, 1, 2].map((index) => h.getPeer(index).address)
+        );
     });
 
-    it("control: the same forged head audited by participants that hold the real final block at that height → DisputeConflictsWithFinalState kills it", async function () {
+    it("control: the same forged head audited by participants that hold the real final block at that height → DisputeConflictsWithFinalState kills it and slashes exactly the three participants, who signed both heads", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
         const forkId = h.activeForkId!;
@@ -262,7 +274,13 @@ describe("E2E: dispute validation / balanceInvariant", function () {
         await h.event.waitForPeers("onDisputeKilled", [0, 1], 1, {
             mode: "atLeast"
         });
-        await h.assert.dispute.slashedOnChain(h.getPeer(2).address);
-        await h.dispute.resolveDisputeWait({ forkId });
+        // the forged head is threshold-final only with every participant's
+        // signature: all three signed both heads, and no participant is left
+        await h.assert.dispute.slashedOnChainExactly(
+            [0, 1, 2].map((index) => h.getPeer(index).address)
+        );
+        expect(
+            await h.channelManager.getWindowCommitments(h.channelId, forkId)
+        ).to.deep.equal([]);
     });
 });

@@ -43,8 +43,12 @@ blocks. The correction is the intended design, and it is also what the required 
 **<a id="inv-fin-2-mk27j6"></a>`INV-FIN-2-MK27J6`.** Signing a block is a binding, non-equivocating vote for that block **and the
 history it links to**. A participant MUST NOT sign two different blocks at the same
 `(forkId, height)` or otherwise commit to conflicting histories. Provable equivocation is fraud:
-the `BlockDoubleSign` fraud proof slashes the signer
-([fraud-proofs.md](../disputes/fraud-proofs.md), `fraud-proof verifier`).
+the `BlockDoubleSign` fraud proof slashes the author of two different blocks at one
+`(forkId, height)`, and a final-history dispute kill (`DisputeConflictsWithFinalState`,
+`DisputeFinalPointRegression`) slashes every address that signed both conflicting final points
+([fraud-proofs.md §3](../disputes/fraud-proofs.md), `fraud-proof verifier`). A co-signer of two
+conflicting blocks that are not both final points is not slashed by either; that residual is
+recorded as a finding.
 
 This invariant is what makes the rest of this document safe: votes can be counted across blocks
 (§4) because no participant can validly vote for two competing histories, and a non-final suffix

@@ -1,4 +1,5 @@
 import { Codec, Type } from "@/utils";
+import { stageSplitKillAndDispute } from "@test/fixtures/DisputeAuditStaging";
 import {
     commitmentOf,
     committedDisputeLogs,
@@ -20,7 +21,7 @@ const KILL_PERIOD_EXPIRED = "RaceConditionDisputeKillPeriodExpired";
  * kill window (E22).
  */
 describe("E2E: kill then dispute, and challenge timing", function () {
-    it("E49: an invalid opener is killed and the auditor's own dispute lands in the same multicall, kill first, with the killed submitter's slash as its reason; reduction completes from it", async function () {
+    it("E49: an invalid opener is killed and the auditor's own dispute lands in the same multicall, kill first; it lists none of the kill's slashes and needs the open window; reduction completes from it", async function () {
         const h = TestSession.getHarness();
         const { forkId, replacer, spammer, spam, replacement, loneKills } =
             await stageKillAndReplacement(h, { holdReplacement: false });
@@ -46,8 +47,10 @@ describe("E2E: kill then dispute, and challenge timing", function () {
         ]);
         expect(submission.revert).to.equal(null);
         expect(own.input.disputer).to.equal(replacer.address);
-        // the replacement counts the slash its own kill establishes
-        expect(own.input.onChainSlashes).to.include(spammer.address);
+        // the replacement lists none of its kill's slashes: its reason is
+        // the open window
+        expect(own.input.onChainSlashes).to.deep.equal([]);
+        expect(own.input.requireExistingDisputeWindow).to.equal(true);
         // the kill rode in the multicall: no lone kill was sent
         expect(await loneKills.applies()).to.deep.equal([]);
 
@@ -88,7 +91,7 @@ describe("E2E: kill then dispute, and challenge timing", function () {
         }
     });
 
-    it("E49 ext: when the kill in the kill-then-dispute multicall cannot land (kill period over), the whole multicall reverts: no replacement claiming the unestablished slash is committed, and the failure is fatal", async function () {
+    it("E49 ext: when the kill in the kill-then-dispute multicall cannot land (kill period over), the whole multicall reverts: no replacement is committed, and the failure is fatal", async function () {
         const h = TestSession.getHarness();
         const { forkId, replacer, spammer, spam, replacement, loneKills } =
             await stageKillAndReplacement(h, { holdReplacement: true });
@@ -99,7 +102,7 @@ describe("E2E: kill then dispute, and challenge timing", function () {
         const claimed = Codec.decode(held.encodedDispute, Type.Dispute);
         expect(held.method).to.equal("multicallBestEffortLast");
         expect(held.innerMethods[0]).to.equal("applyDisputeFraudProofs");
-        expect(claimed.input.onChainSlashes).to.include(spammer.address);
+        expect(claimed.input.onChainSlashes).to.deep.equal([]);
 
         const period = await waitPastKillPeriod(h, forkId, replacer.index);
         expect(period.isExpired).to.equal(true);
@@ -126,6 +129,49 @@ describe("E2E: kill then dispute, and challenge timing", function () {
         expect(
             await h.control(replacer).query.didIDispute(forkId).request()
         ).to.equal(false);
+    });
+
+    it("E49 ext: the kill and the auditor's own dispute do not fit one transaction, and another auditor's kill and replacement land while its lone kill waits -> the late kill changes nothing, its own dispute still lands without a slash, and only the spammer is slashed", async function () {
+        const h = TestSession.getHarness();
+        const {
+            forkId,
+            auditor,
+            spammer,
+            rival,
+            kills,
+            uploads,
+            rivalUploads
+        } = await stageSplitKillAndDispute(h, { lostRace: true });
+
+        // the rival's kill landed first
+        const killed = await killedDisputeLogs(h);
+        expect(killed).to.have.length(1);
+        expect(killed[0].disputer).to.equal(spammer.address);
+        const [rivalUpload] = await rivalUploads!.submissions();
+        expect(rivalUpload.revert).to.equal(null);
+        // the auditor's lone kill went out first and found nothing to kill
+        const applies = await kills.applies();
+        expect(applies).to.have.length(1);
+        expect(applies[0].participants).to.deep.equal([spammer.address]);
+        expect(applies[0].error).to.equal(null);
+        // then its own dispute alone, independent of that kill
+        const [upload] = await uploads.submissions();
+        expect(["uploadDispute", "uploadDisputeWithCalldata"]).to.include(
+            upload.method
+        );
+        expect(upload.revert).to.equal(null);
+        const own = Codec.decode(upload.encodedDispute, Type.Dispute);
+        expect(own.input.disputer).to.equal(auditor.address);
+        expect(own.input.onChainSlashes).to.deep.equal([]);
+        expect(
+            await h.channelManager.getWindowCommitments(h.channelId, forkId)
+        ).to.have.members([
+            commitmentOf(own),
+            commitmentOf(Codec.decode(rivalUpload.encodedDispute, Type.Dispute))
+        ]);
+        expect(
+            await h.channelManager.getOnChainSlashedParticipants(h.channelId)
+        ).to.deep.equal([spammer.address]);
     });
 
     it("E22: an audit that completes inside the kill window kills the invalid dispute in time: the challenge lands before the period ends and slashes the submitter", async function () {

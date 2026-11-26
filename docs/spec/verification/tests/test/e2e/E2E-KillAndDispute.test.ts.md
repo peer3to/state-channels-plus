@@ -8,7 +8,8 @@ Submits invalid disputes and follows real audit transactions. Checks atomic kill
 
 ## Tests
 
-- `E49: an invalid opener is killed and the auditor's own dispute lands in the same multicall, kill first, with the killed submitter's slash as its reason; reduction completes from it`: REQ-DISPUTE-PIPE-6-6FZB9M.T4.P1, INV-ENFDIS-1-1K65DT.T1.P3
-- `E49 ext: when the kill in the kill-then-dispute multicall cannot land (kill period over), the whole multicall reverts: no replacement claiming the unestablished slash is committed, and the failure is fatal`: REQ-DISPUTE-PIPE-5-RZZB48.T3.P1
+- `E49: an invalid opener is killed and the auditor's own dispute lands in the same multicall, kill first; it lists none of the kill's slashes and needs the open window; reduction completes from it`: REQ-DISPUTE-PIPE-6-6FZB9M.T4.P1, INV-ENFDIS-1-1K65DT.T1.P3, REQ-FP-7-4DD0D7.T11.P15
+- `E49 ext: when the kill in the kill-then-dispute multicall cannot land (kill period over), the whole multicall reverts: no replacement is committed, and the failure is fatal`: REQ-DISPUTE-PIPE-5-RZZB48.T3.P1, REQ-FP-7-4DD0D7.T11.P15
 - `E22: an audit that completes inside the kill window kills the invalid dispute in time: the challenge lands before the period ends and slashes the submitter`: REQ-FP-7-4DD0D7.T7.P1
 - `E22: a challenge sent after the kill period ends reverts with RaceConditionDisputeKillPeriodExpired and is fatal: no kill, no slash, the invalid dispute stays committed`: REQ-DISPUTE-PIPE-5-RZZB48.T3.P2
+- `E49 ext: the kill and the auditor's own dispute do not fit one transaction, and another auditor's kill and replacement land while its lone kill waits -> the late kill changes nothing, its own dispute still lands without a slash, and only the spammer is slashed`: REQ-FP-7-4DD0D7.T11.P14

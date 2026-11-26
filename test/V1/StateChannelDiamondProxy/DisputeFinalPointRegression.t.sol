@@ -100,10 +100,7 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         for (uint256 i = 0; i < side.input.stateProof.milestones.length; i++) {
             for (uint256 j = 0; j < side.input.stateProof.milestones[i].blockConfirmations.length; j++) {
                 assertFalse(
-                    _diamond()
-                        .isDisputeConflictingWithFinalState(
-                            side, DisputeConflictsWithFinalState(honestProof, i, j, sideFinal)
-                        ),
+                    _conflicts(side, DisputeConflictsWithFinalState(honestProof, i, j, sideFinal)),
                     "premise: no block of Y conflicts with F"
                 );
             }
@@ -134,8 +131,7 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         );
 
         assertEq(harness.commitmentCount(CHANNEL, forkId), 1, "Y is killed, X stays");
-        assertTrue(harness.isSlashed(CHANNEL, alice), "Y's disputer is slashed");
-        assertFalse(harness.isSlashed(CHANNEL, joiner), "the challenger L keeps its seat");
+        _assertOnlyAToESlashed();
         // the property: reduce over the disputes the kill period leaves keeps the joiner's final history
         assertEq(
             harness.reduce(_only(honest)).latestBlock.transaction.header.transactionCnt,
@@ -188,8 +184,7 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         );
 
         assertEq(harness.commitmentCount(CHANNEL, forkId), 1, "Y is killed, X stays");
-        assertTrue(harness.isSlashed(CHANNEL, alice), "Y's disputer is slashed");
-        assertFalse(harness.isSlashed(CHANNEL, joiner), "the challenger L keeps its seat");
+        _assertOnlyAToESlashed();
     }
 
     function test_K3_disputeExtendingTheFinalPointIsNotKilledAndWinsTheReductionByLength() public {
@@ -207,8 +202,7 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         _commit(extending);
         ProofWalkInput memory finalProof = _honestFinalProof();
         assertFalse(
-            _diamond()
-                .isDisputeConflictingWithFinalState(extending, DisputeConflictsWithFinalState(finalProof, 1, 0, later)),
+            _conflicts(extending, DisputeConflictsWithFinalState(finalProof, 1, 0, later)),
             "D's block at F's height commits F: no conflict"
         );
 
@@ -256,10 +250,7 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         Dispute memory attackers = _disputeBy(carol, _two(honestMilestones[0], withheld));
         _commit(attackers);
         assertFalse(
-            _diamond()
-                .isDisputeConflictingWithFinalState(
-                    ours, DisputeConflictsWithFinalState(attackerProof, 1, 1, honestSnapshots[1])
-                ),
+            _conflicts(ours, DisputeConflictsWithFinalState(attackerProof, 1, 1, honestSnapshots[1])),
             "our block 101 commits F': no conflict"
         );
 
@@ -287,10 +278,7 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         ProofWalkInput memory finalProof = _honestFinalProof();
         assertEq(_decode(sideRun, 20).transaction.header.transactionCnt, 100, "premise: Y's block 20 is at F's height");
         assertFalse(
-            _diamond()
-                .isDisputeFinalPointRegression(
-                    side, DisputeFinalPointRegression(finalProof, sideEighty, _joinHint(finalProof, sideEighty))
-                ),
+            _regresses(side, DisputeFinalPointRegression(finalProof, sideEighty, _joinHint(finalProof, sideEighty))),
             "premise: G = 80 is below F, the regression counter cannot kill"
         );
 
@@ -301,7 +289,8 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
             _conflictProof(finalProof, 0, 20, sideEighty)
         );
 
-        _assertKilledBy(side, joiner);
+        // Y's block 100 is a tail block, no final point of Y: nobody is slashed
+        _assertConflictKilledBy(side, joiner, _none());
     }
 
     function test_K8_latestFinalizedSnapshotWithAFalseLargerInboundHeightIsReadAtItsStoredHeight() public {
@@ -317,7 +306,7 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
             _regressionProof(_honestFinalProof(), sideFinal)
         );
 
-        _assertKilledBy(side, joiner);
+        _assertConflictKilledBy(side, joiner, _anchorSet());
     }
 
     function test_K9_anchorInsideTheLastMilestoneIsTheLatestFinalizedPointNotATailBlock() public {
@@ -364,7 +353,8 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
             _conflictProof(finalProof, 0, 15, claimed)
         );
 
-        _assertKilledBy(side, joiner);
+        // block 60 is a tail block of the run: nobody is slashed
+        _assertConflictKilledBy(side, joiner, _none());
     }
 
     function test_K11_chainAnchorAsTheFinalPointKillsASideChainBelowItsInbound() public {
@@ -389,7 +379,8 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
             joiner, side, DisputeFraudProofType.DisputeFinalPointRegression, _regressionProof(anchorProof, sideFinal)
         );
 
-        _assertKilledBy(side, joiner);
+        // the anchor's signers are not on chain: F as the anchor slashes nobody, not even Y's disputer
+        _assertConflictKilledBy(side, joiner, _none());
     }
 
     function test_K12_unchallengedSideChainWinsTheReductionAndTheJoinerKeepsOnlyItsDeposit() public {
@@ -503,6 +494,65 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         _apply(side, DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData, _notFinalProof());
 
         _assertKilled(side);
+    }
+
+    function test_K16_victimsDisputeWithTheSideChainItSyncedIsKilledAndOnlyTheDoubleSignersAreSlashed() public {
+        // M, an honest victim that synced only Y, disputes with Y's 1000' (signed by A to E alone)
+        address victim = vm.addr(0x3A11);
+        StateSnapshot memory sideFinal = _sideFinalAboveTheFinalPoint();
+        Dispute memory side = _uncommittedSideDispute(victim, sideFinal);
+        _commit(side);
+
+        _applyBy(
+            joiner,
+            side,
+            DisputeFraudProofType.DisputeFinalPointRegression,
+            _regressionProof(_honestFinalProof(), sideFinal)
+        );
+
+        // A to E signed both F's hop and G; M signed neither
+        _assertConflictKilledBy(side, joiner, _anchorSet());
+        assertFalse(harness.isSlashed(CHANNEL, victim), "the victim is not slashed");
+    }
+
+    function test_T3_sideChainAboveTheFinalHeightCarryingATimeoutIsKilledByTheRegression() public {
+        // Y's 1000' above F = 100, below L's JOIN, carries a timeout of L
+        StateSnapshot memory sideFinal = _sideFinalAboveTheFinalPoint();
+        Dispute memory side = _uncommittedSideDispute(alice, sideFinal);
+        side.input.timeout.participant = joiner;
+        side.input.timeout.blockHeight = 1001;
+        _commit(side);
+
+        _applyBy(
+            joiner,
+            side,
+            DisputeFraudProofType.DisputeFinalPointRegression,
+            _regressionProof(_honestFinalProof(), sideFinal)
+        );
+
+        // the timeout goes with the dispute; the timed-out L keeps its seat
+        _assertConflictKilledBy(side, joiner, _anchorSet());
+    }
+
+    function test_T4_sideChainWhoseTailPassesTheFinalHeightCarryingATimeoutIsKilledByTheConflict() public {
+        // Y: the hop to 80 below L's JOIN, then a tail signed by A alone past F's height 100, with a timeout of L
+        (StateSnapshot memory sideEighty,) =
+            _mathSnapshot(80, _anchorSet(), _balances(100, 100, 0), openingInboundHash, 1);
+        MilestoneProof memory sideRun = _hopRun(sideEighty, 22, _anchorKeys());
+        Dispute memory side = _disputeBy(alice, _one(sideRun));
+        side.input.timeout.participant = joiner;
+        side.input.timeout.blockHeight = 102;
+        _commit(side);
+
+        _applyBy(
+            joiner,
+            side,
+            DisputeFraudProofType.DisputeConflictsWithFinalState,
+            _conflictProof(_honestFinalProof(), 0, 20, sideEighty)
+        );
+
+        // Y's block 100 is a tail block: nobody is slashed, the timeout goes with the dispute
+        _assertConflictKilledBy(side, joiner, _none());
     }
 
     // ==================== DisputeFinalPointRegression boundaries ====================
@@ -629,7 +679,7 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
             joiner, side, DisputeFraudProofType.DisputeFinalPointRegression, _regressionProof(finalProof, sideFinal)
         );
 
-        _assertKilledBy(side, joiner);
+        _assertConflictKilledBy(side, joiner, _anchorSet());
     }
 
     function test_FR1_sideChainFinalPointBelowTheJoinCannotKillTheHonestDisputeThroughAnEarlyMilestone() public {
@@ -678,7 +728,8 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
 
         _apply(dispute, DisputeFraudProofType.DisputeConflictsWithFinalState, _conflictProof(finalProof, 0, 0, forked));
 
-        _assertKilled(dispute);
+        // A to E signed both hops to 60, the challenger B among them
+        _assertConflictKilled(dispute, _anchorSet());
     }
 
     function test_conflict_latestFinalizedPointWhoseExtraInboundIsOnlyATopUpKills() public {
@@ -702,7 +753,7 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
             _conflictProof(finalProof, 0, 0, sideHundred)
         );
 
-        _assertKilledBy(side, joiner);
+        _assertConflictKilledBy(side, joiner, _anchorSet());
     }
 
     function test_conflict_anchorAsTheLatestFinalizedPointReadsTheAnchorsInbound() public {
@@ -718,7 +769,8 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
             dispute, DisputeFraudProofType.DisputeConflictsWithFinalState, _conflictProof(finalProof, 0, 10, claimed)
         );
 
-        _assertKilled(dispute);
+        // block 60 is a tail block of the anchor run: nobody is slashed
+        _assertConflictKilled(dispute, _none());
     }
 
     function test_conflict_unfinalizedGenesisBlockZeroDoesNotRaiseTheInboundCheck() public {
@@ -732,7 +784,8 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
             dispute, DisputeFraudProofType.DisputeConflictsWithFinalState, _conflictProof(finalProof, 0, 0, carolJoined)
         );
 
-        _assertKilled(dispute);
+        // the unfinalized block 0 is no final point of the dispute: A, its only signer, is not slashed
+        _assertConflictKilled(dispute, _none());
     }
 
     function test_conflict_finalGenesisBlockZeroAboveTheFinalPointsInboundDoesNotKill() public {
@@ -778,7 +831,7 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
 
         _apply(side, DisputeFraudProofType.DisputeFinalPointRegression, _regressionProof(finalProof, sideHundred));
 
-        _assertKilled(side);
+        _assertConflictKilled(side, _anchorSet());
     }
 
     function test_lookup_extraInboundFromTheAnchorsUnstoredInboundHeadReverts() public {
@@ -927,7 +980,7 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
             _regressionProofWithHint(finalProof, sideFinal, lateJoinHash)
         );
 
-        _assertKilledBy(side, joiner);
+        _assertConflictKilledBy(side, joiner, _anchorSet());
     }
 
     // ==================== a missing inbound block in F's walk ====================
@@ -998,10 +1051,7 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         MilestoneProof memory run = _genesisRunTo(carolJoined, 1, _signers(ALICE_KEY));
         Dispute memory dispute = _disputeBy(alice, _one(run));
         assertTrue(
-            _diamond()
-                .isDisputeConflictingWithFinalState(
-                    dispute, DisputeConflictsWithFinalState(finalProof, 0, 0, carolJoined)
-                ),
+            _conflicts(dispute, DisputeConflictsWithFinalState(finalProof, 0, 0, carolJoined)),
             "premise: block 0 walks from the genesis and the conflict kills"
         );
 
@@ -1009,10 +1059,7 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         _breakLinkAt(run, 0);
 
         assertFalse(
-            _diamond()
-                .isDisputeConflictingWithFinalState(
-                    dispute, DisputeConflictsWithFinalState(finalProof, 0, 0, carolJoined)
-                ),
+            _conflicts(dispute, DisputeConflictsWithFinalState(finalProof, 0, 0, carolJoined)),
             "an unwalkable block 0 gives no latest finalized point"
         );
     }
@@ -1021,7 +1068,8 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
 
     /// The size this guards: N = 32 participants (the staged machine's participant cap; the last one joins above the
     /// anchor), every hop signed by all of them, and the largest final proof the parachain's calldata limit admits next
-    /// to a one-hop side dispute (LARGE_FINAL_HOPS hops). F's extra inbound holds A's top-up and the joiner's JOIN, so
+    /// to a one-hop side dispute (LARGE_FINAL_HOPS hops). All N sign the side dispute's G too, so the kill records N
+    /// slashes, the largest slash set of a participant-capped final point. F's extra inbound holds A's top-up and the joiner's JOIN, so
     /// the kill walks both. The storage is cooled before the kill, as in a fresh transaction, and the transaction's
     /// cost is the measured execution plus the intrinsic 21,000 and the calldata gas of the encoded call. Calldata
     /// binds first, so the gas check shows that any such regression kill that fits the calldata limit also fits the
@@ -1029,7 +1077,6 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
     function test_regression_largestKillWithinTheCalldataLimitFitsTheGasLimit() public {
         (address[] memory set, uint256[] memory keys, bytes32 openingHash, bytes32 joinHash) = _seedLargeChannel();
         address[] memory openers = _withoutLast(set);
-        uint256[] memory openerKeys = _withoutLastKey(keys);
         uint256[] memory balances = new uint256[](LARGE_PARTICIPANTS);
         // F: LARGE_FINAL_HOPS threshold hops from the anchor, all past A's top-up and the joiner's JOIN (inbound 3)
         MilestoneProof[] memory milestones = new MilestoneProof[](LARGE_FINAL_HOPS);
@@ -1044,10 +1091,11 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
             60 + 10 * (LARGE_FINAL_HOPS - 1),
             "premise: the last hop of F is final"
         );
-        // Y: one hop of the openers to 1000' below A's top-up (inbound 1)
+        // Y: one hop of the openers to 1000' below A's top-up (inbound 1); all LARGE_PARTICIPANTS sign it, so the kill
+        // slashes the whole signer set of F
         (StateSnapshot memory sideFinal,) = _mathSnapshot(1000, openers, new uint256[](openers.length), openingHash, 1);
         (Dispute memory side,) =
-            _postedDisputeBy(alice, _one(_hopRun(sideFinal, 1, openerKeys)), _entries(sideFinal), sideFinal);
+            _postedDisputeBy(alice, _one(_hopRun(sideFinal, 1, keys)), _entries(sideFinal), sideFinal);
         _commit(side);
         DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
         proofs[0] = DisputeFraudProof({
@@ -1067,7 +1115,8 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         uint256 executionGas = before - gasleft();
         uint256 transactionGas = TRANSACTION_BASE_GAS + calldataGas + executionGas;
 
-        _assertKilledBy(side, joiner);
+        assertEq(harness.commitmentCount(CHANNEL, forkId), 0, "Y is killed");
+        _assertSlashedExactly(_largeSet());
         console.log("DisputeFinalPointRegression kill execution gas", executionGas);
         console.log("DisputeFinalPointRegression kill calldata gas", calldataGas);
         console.log("DisputeFinalPointRegression kill transaction gas", transactionGas);
@@ -1117,11 +1166,11 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
 
         vm.cool(address(harness));
         uint256 before = gasleft();
-        bool killsFromBelow = _diamond().isDisputeFinalPointRegression(side, fromBelow);
+        bool killsFromBelow = _regresses(side, fromBelow);
         uint256 gasFromBelow = before - gasleft();
         vm.cool(address(harness));
         before = gasleft();
-        bool killsFromTop = _diamond().isDisputeFinalPointRegression(sideAtTop, fromTop);
+        bool killsFromTop = _regresses(sideAtTop, fromTop);
         uint256 gasFromTop = before - gasleft();
         vm.cool(address(harness));
         before = gasleft();
@@ -1168,11 +1217,11 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
 
         vm.cool(address(harness));
         uint256 before = gasleft();
-        bool shortConflicts = _diamond().isDisputeConflictingWithFinalState(shortDispute, shortProof);
+        bool shortConflicts = _conflicts(shortDispute, shortProof);
         uint256 shortGas = before - gasleft();
         vm.cool(address(harness));
         before = gasleft();
-        bool longConflicts = _diamond().isDisputeConflictingWithFinalState(longDispute, longProof);
+        bool longConflicts = _conflicts(longDispute, longProof);
         uint256 longGas = before - gasleft();
         uint256 gasPerTopUp = (longGas - shortGas) / (CONFLICT_RUN - SHORT_CONFLICT_RUN);
 
@@ -1191,7 +1240,7 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         uint256 transactionGas = TRANSACTION_BASE_GAS + calldataGas + before - gasleft();
 
         assertTrue(shortConflicts && longConflicts, "top-ups of F's participants never refuse the conflict");
-        _assertKilledBy(longDispute, joiner);
+        _assertConflictKilledBy(longDispute, joiner, _anchorSet());
         assertGt(gasPerTopUp, 0, "the conflict walk reads every top-up G consumed above F's head");
         assertLt(transactionGas, MAX_TRANSACTION_GAS, "the kill over CONFLICT_RUN top-ups fits one transaction");
         console.log("conflict check gas per top-up above F's inbound head", gasPerTopUp);
@@ -1248,7 +1297,7 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         harness.applyDisputeFraudProofs(proofs);
         uint256 transactionGas = TRANSACTION_BASE_GAS + calldataGas + before - gasleft();
 
-        _assertKilledBy(side, joiner);
+        _assertConflictKilledBy(side, joiner, openers);
         assertLe(callData.length, MAX_CALLDATA_BYTES, "D at the cap and F at the hop bound fit one transaction");
         assertLt(transactionGas, MAX_TRANSACTION_GAS, "the kill fits one parachain transaction's gas");
         uint256 finalHopBytes = abi.encode(milestones[0]).length + abi.encode(snapshots[0]).length;
@@ -1339,10 +1388,19 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
 
     /// A's committed side-chain dispute: one hop from the anchor to `latestFinalized`, signed by A to E
     function _sideDispute(StateSnapshot memory latestFinalized) internal returns (Dispute memory dispute) {
-        (dispute,) = _postedDisputeBy(
-            alice, _one(_hopRun(latestFinalized, 1, _anchorKeys())), _entries(latestFinalized), latestFinalized
-        );
+        dispute = _uncommittedSideDispute(alice, latestFinalized);
         _commit(dispute);
+    }
+
+    /// `disputer`'s side-chain dispute, not committed: one hop from the anchor to `latestFinalized`, signed by A to E
+    function _uncommittedSideDispute(address disputer, StateSnapshot memory latestFinalized)
+        internal
+        view
+        returns (Dispute memory dispute)
+    {
+        (dispute,) = _postedDisputeBy(
+            disputer, _one(_hopRun(latestFinalized, 1, _anchorKeys())), _entries(latestFinalized), latestFinalized
+        );
     }
 
     /// E's top-up at inbound height 2 after the opening, then L's JOIN at inbound height 3: E needs no new signer,
@@ -1434,6 +1492,15 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         harness.seedSnapshot(CHANNEL, anchor);
     }
 
+    /// the cost case's LARGE_PARTICIPANTS participants, as `_seedLargeChannel` stages them
+    function _largeSet() internal view returns (address[] memory set) {
+        set = new address[](LARGE_PARTICIPANTS);
+        set[0] = alice;
+        for (uint256 i = 1; i < LARGE_PARTICIPANTS; i++) {
+            set[i] = vm.addr(0x5EA7_0000 + i);
+        }
+    }
+
     /// L's final proof of F = 60 {A to E, L} that consumed L's JOIN `joinHash` at inbound `inboundHeight`, signed by A
     /// to E and L
     function _finalJoinProofAtSixty(bytes32 joinHash, uint256 inboundHeight)
@@ -1476,18 +1543,14 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         StateSnapshot memory latestFinalized
     ) internal view {
         assertTrue(
-            _diamond()
-                .isDisputeFinalPointRegression(
-                    dispute,
-                    DisputeFinalPointRegression(finalProof, latestFinalized, _joinHint(finalProof, latestFinalized))
-                ),
+            _regresses(
+                dispute,
+                DisputeFinalPointRegression(finalProof, latestFinalized, _joinHint(finalProof, latestFinalized))
+            ),
             "premise: the regression check holds"
         );
         assertTrue(
-            _diamond()
-                .isDisputeConflictingWithFinalState(
-                    dispute, DisputeConflictsWithFinalState(finalProof, 0, 0, latestFinalized)
-                ),
+            _conflicts(dispute, DisputeConflictsWithFinalState(finalProof, 0, 0, latestFinalized)),
             "premise: the conflict check holds"
         );
     }
@@ -1499,18 +1562,14 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         StateSnapshot memory latestFinalized
     ) internal view {
         assertFalse(
-            _diamond()
-                .isDisputeFinalPointRegression(
-                    dispute,
-                    DisputeFinalPointRegression(finalProof, latestFinalized, _joinHint(finalProof, latestFinalized))
-                ),
+            _regresses(
+                dispute,
+                DisputeFinalPointRegression(finalProof, latestFinalized, _joinHint(finalProof, latestFinalized))
+            ),
             "no latest finalized point: no regression"
         );
         assertFalse(
-            _diamond()
-                .isDisputeConflictingWithFinalState(
-                    dispute, DisputeConflictsWithFinalState(finalProof, 0, 0, latestFinalized)
-                ),
+            _conflicts(dispute, DisputeConflictsWithFinalState(finalProof, 0, 0, latestFinalized)),
             "no latest finalized point: no conflict"
         );
     }
@@ -1667,6 +1726,13 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         assertEq(harness.commitmentCount(CHANNEL, dispute.input.forkId), 2, "both disputes stay committed");
         assertFalse(harness.isSlashed(CHANNEL, dispute.input.disputer), "dispute submitter not punished");
         assertTrue(harness.isSlashed(CHANNEL, challenger), "the unsupported allegation costs the challenger");
+    }
+
+    /// S of a side chain Y killed against X's F: A to E signed both F's hop and Y's G; L, in F's signer set, never
+    /// signed Y and keeps its seat
+    function _assertOnlyAToESlashed() internal view {
+        _assertSlashedExactly(_anchorSet());
+        assertFalse(harness.isSlashed(CHANNEL, joiner), "the challenger L keeps its seat");
     }
 
     function _only(Dispute memory dispute) internal pure returns (Dispute[] memory disputes) {

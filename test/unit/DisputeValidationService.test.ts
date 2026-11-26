@@ -1102,10 +1102,12 @@ describe("Unit: DisputeValidationService", function () {
                 "F is Charlie's own final point"
             ).to.equal(history.charlieFinal.hash);
             expect(
-                await h.channelManager.isDisputeFinalPointRegression.staticCall(
-                    dispute,
-                    proof
-                )
+                (
+                    await h.channelManager.isDisputeFinalPointRegression.staticCall(
+                        dispute,
+                        proof
+                    )
+                )[0]
             ).to.equal(true);
         });
 
@@ -1401,10 +1403,12 @@ describe("Unit: DisputeValidationService", function () {
                 StateSnapshot.from(proof.latestFinalizedSnapshot).hash
             ).to.equal(hopSnapshot.hash);
             expect(
-                await h.channelManager.isDisputeFinalPointRegression.staticCall(
-                    dispute,
-                    proof
-                )
+                (
+                    await h.channelManager.isDisputeFinalPointRegression.staticCall(
+                        dispute,
+                        proof
+                    )
+                )[0]
             ).to.equal(true);
         });
 
@@ -1460,10 +1464,12 @@ describe("Unit: DisputeValidationService", function () {
                 "F is past Charlie's JOIN"
             ).to.equal(history.charlieFinal.latestInboundMessageBlockHash);
             expect(
-                await h.channelManager.isDisputeFinalPointRegression.staticCall(
-                    dispute,
-                    proof
-                )
+                (
+                    await h.channelManager.isDisputeFinalPointRegression.staticCall(
+                        dispute,
+                        proof
+                    )
+                )[0]
             ).to.equal(true);
         });
 
