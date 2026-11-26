@@ -4,7 +4,14 @@
  * to one channel's partition, and takes every pushed message through the
  * SDK's own verification and apply (`FrontierPushedPartition.accept`). A peer
  * with a fallback read also proves one key outside its partition at each
- * block it accepts.
+ * block it accepts. A peer with `watch` also follows the contract with a
+ * subscription of no topics, as a participant follows its manager: once that
+ * subscription's first message arrived it watches the contract's
+ * `configCount` slots from `configBase`, and with `freshBase` it then watches
+ * one never written slot at a block it accepts on its channel (at each block,
+ * or with the chance `freshRate`), as a participant proves the empty calldata
+ * commitment of each received block. With `prefill` it watches that many of
+ * those slots with the config slots, as a peer that has run for a while.
  *
  * Messages from the main thread: `{ type: "add", peers }` opens peers,
  * `{ type: "take" }` answers with what was recorded since the last take and
@@ -17,7 +24,9 @@ import { parentPort, workerData } from "node:worker_threads";
 import { LIGHT_CLIENT_METHODS } from "@/evm/p2pRuntime/rpcNodes/lightClient/lightClientWire";
 import { PEER3_CHAIN_CONSTANTS } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierChainConstants";
 import FrontierPushedPartition from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierPushedPartition";
+import { contractStorageKey } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/frontierStateKeys";
 import { JsonRpcSocket } from "@test/fixtures/lightClient/JsonRpcSocket";
+import { getAddress, toBeHex } from "ethers";
 import { contractStoragePrefix, contractValueCount } from "./benchUtils";
 
 export type PeerSpec = {
@@ -26,6 +35,16 @@ export type PeerSpec = {
     channel: string;
     /** A storage key outside the peer's partition it proves at each block, if any. */
     fallbackKey?: string;
+    /** The contract's slots the peer watches, if any (see the file comment). */
+    watch?: {
+        configBase: number;
+        configCount: number;
+        freshBase?: number;
+        /** Never written slots from `freshBase` watched with the config slots. */
+        prefill?: number;
+        /** The chance, per block, of a fresh slot's watch. */
+        freshRate?: number;
+    };
 };
 
 /** One accepted push at one peer; times are Unix milliseconds. */
@@ -65,12 +84,32 @@ export type PeerReport = {
     unopened: number;
     fallbackReadMs: number[];
     failedFallbackReads: number;
+    /** The subscriptions of no topics: their pushes, as `pushes`, and what they refused or skipped. */
+    watchPushes: PushSample[];
+    watchSkippedBlocks: number;
+    watchRefused: number;
+    watchEnded: number;
+    /** Milliseconds from asking to watch the config slots to the answer, per peer. */
+    watchRegistrationMs: number[];
+    failedWatchRegistrations: number;
+    /** Milliseconds of each per-block watch of a fresh slot. */
+    watchMs: number[];
+    failedWatches: number;
+    /** Keys a watch answered without watching them: the subscription's cap. */
+    keysNotWatched: number;
     /** Share of the worker's time its event loop was busy since the last take. */
     eventLoopUtilization: number;
     /** Peers the worker hosts. */
     peers: number;
     /** Bytes of the worker's heap in use above what it used before its first peer opened. */
     heapAbovePeerlessBytes: number;
+};
+
+/** One subscription of a peer: its pushed partition and what it accepted. */
+type Followed = {
+    partition: FrontierPushedPartition;
+    lastNumber?: number;
+    synced: boolean;
 };
 
 type Peer = {
@@ -82,6 +121,8 @@ type Peer = {
     subscribedAt: number;
     lastNumber?: number;
     synced: boolean;
+    /** The subscription of no topics, with its id once the node answered. */
+    watch?: Followed & { id?: string; registered: boolean; nextFresh: number };
 };
 
 /** How long a peer may take to open its socket and subscribe before it counts as unopened. */
@@ -107,6 +148,15 @@ function emptyReport(): PeerReport {
         unopened: 0,
         fallbackReadMs: [],
         failedFallbackReads: 0,
+        watchPushes: [],
+        watchSkippedBlocks: 0,
+        watchRefused: 0,
+        watchEnded: 0,
+        watchRegistrationMs: [],
+        failedWatchRegistrations: 0,
+        watchMs: [],
+        failedWatches: 0,
+        keysNotWatched: 0,
         eventLoopUtilization: 0,
         peers: 0,
         heapAbovePeerlessBytes: 0
@@ -167,8 +217,121 @@ function onPush(peer: Peer, params: unknown): void {
             acceptMs
         });
         void fallbackRead(peer, accepted.block.hash);
+        if (!accepted.sync) void watchFresh(peer, accepted.block.hash);
     } catch {
         report.refused++;
+    }
+}
+
+/** The trie keys of the contract's slots `first` to `first + count - 1`. */
+function slotKeys(contract: string, first: number, count: number): string[] {
+    const address = getAddress(contract);
+    return Array.from({ length: count }, (_, index) =>
+        contractStorageKey(address, toBeHex(first + index, 32))
+    );
+}
+
+/** The config slots' keys, per contract: the same for every peer of a worker. */
+const configKeys = new Map<string, string[]>();
+
+/** Asks the node to watch `keys` on the peer's subscription of no topics, at `block` or the best block. */
+async function watchKeys(
+    peer: Peer,
+    keys: string[],
+    block: string | null
+): Promise<number> {
+    const started = performance.now();
+    const answer = await peer.socket.request<{ watched: string[] }>(
+        LIGHT_CLIENT_METHODS.watch,
+        [peer.watch!.id, keys, block]
+    );
+    report.keysNotWatched += keys.length - answer.watched.length;
+    return performance.now() - started;
+}
+
+async function registerWatchedKeys(peer: Peer): Promise<void> {
+    const { contract, watch } = peer.spec;
+    if (!watch) return;
+    let keys = configKeys.get(contract);
+    if (!keys) {
+        keys = slotKeys(contract, watch.configBase, watch.configCount);
+        configKeys.set(contract, keys);
+    }
+    const prefill = watch.prefill ?? 0;
+    if (prefill > 0)
+        keys = [...keys, ...slotKeys(contract, watch.freshBase!, prefill)];
+    try {
+        report.watchRegistrationMs.push(await watchKeys(peer, keys, null));
+        peer.watch!.nextFresh = prefill;
+        peer.watch!.registered = true;
+    } catch {
+        report.failedWatchRegistrations++;
+    }
+}
+
+/** Watches one slot of the contract never written, at `blockHash`. */
+async function watchFresh(peer: Peer, blockHash: string): Promise<void> {
+    const freshBase = peer.spec.watch?.freshBase;
+    const freshRate = peer.spec.watch?.freshRate;
+    if (freshBase === undefined || freshRate === undefined) return;
+    if (!peer.watch?.registered || Math.random() >= freshRate) return;
+    const slot = freshBase + peer.watch.nextFresh++;
+    try {
+        report.watchMs.push(
+            await watchKeys(
+                peer,
+                slotKeys(peer.spec.contract, slot, 1),
+                blockHash
+            )
+        );
+    } catch {
+        report.failedWatches++;
+    }
+}
+
+/** A push on the peer's subscription of no topics. */
+function onWatchPush(peer: Peer, params: unknown): void {
+    const receivedAt = Date.now();
+    const watch = peer.watch!;
+    const { result } = params as { result?: unknown };
+    if (result === undefined) {
+        report.watchEnded++;
+        return;
+    }
+    try {
+        const acceptStarted = performance.now();
+        const accepted = watch.partition.accept(result);
+        const acceptMs = performance.now() - acceptStarted;
+        const verifiedAt = Date.now();
+        if (!accepted) return;
+        if (!watch.synced && accepted.sync) {
+            watch.synced = true;
+            void registerWatchedKeys(peer);
+        }
+        const number = accepted.block.number;
+        if (watch.lastNumber !== undefined && number > watch.lastNumber + 1)
+            report.watchSkippedBlocks += number - watch.lastNumber - 1;
+        watch.lastNumber = number;
+        report.watchPushes.push({
+            peer: peer.spec.id,
+            number,
+            sync: accepted.sync,
+            executedAt: accepted.stages.executedAt,
+            builtAt: accepted.stages.builtAt,
+            sentAt: accepted.stages.sentAt,
+            receivedAt,
+            verifiedAt,
+            bytes: Buffer.byteLength(JSON.stringify(params)),
+            values: accepted.values,
+            contractValues: contractValueCount(
+                (result as { values: { key: string }[] }).values,
+                peer.storagePrefix
+            ),
+            newNodes: accepted.newNodes,
+            acceptMs
+        });
+    } catch {
+        report.watchRefused++;
     }
 }
 
@@ -206,16 +369,46 @@ async function openPeer(spec: PeerSpec): Promise<void> {
         subscribedAt: Date.now(),
         synced: false
     };
+    if (spec.watch)
+        peer.watch = {
+            partition: new FrontierPushedPartition(PEER3_CHAIN_CONSTANTS),
+            synced: false,
+            registered: false,
+            nextFresh: 0
+        };
+    // pushes that came before their subscription's id did: handled once it is known
+    const early: { subscription: string; params: unknown }[] = [];
+    let channelId: string | undefined;
+    const route = (subscription: string, params: unknown) => {
+        if (subscription === channelId) onPush(peer, params);
+        else if (subscription === peer.watch?.id) onWatchPush(peer, params);
+        else early.push({ subscription, params });
+    };
     socket.onNotification((method, params) => {
-        if (method === LIGHT_CLIENT_METHODS.notification) onPush(peer, params);
+        if (method === LIGHT_CLIENT_METHODS.notification)
+            route((params as { subscription: string }).subscription, params);
     });
+    const known = () => {
+        for (const { subscription, params } of early.splice(0))
+            route(subscription, params);
+    };
     try {
-        await withinTime(
-            socket.request(LIGHT_CLIENT_METHODS.subscribe, [
+        channelId = await withinTime(
+            socket.request<string>(LIGHT_CLIENT_METHODS.subscribe, [
                 { address: spec.contract, topics: [spec.channel] }
             ]),
             OPEN_TIMEOUT_MS
         );
+        known();
+        if (peer.watch) {
+            peer.watch.id = await withinTime(
+                socket.request<string>(LIGHT_CLIENT_METHODS.subscribe, [
+                    { address: spec.contract, topics: [] }
+                ]),
+                OPEN_TIMEOUT_MS
+            );
+            known();
+        }
     } catch (error) {
         socket.close();
         throw error;
