@@ -4,7 +4,7 @@ state-channels-plus · design only, no code · revision 13 · 2026-11-26 · prop
 
 ## Overview
 
-Members exchange their dispute views over P2P, merge them with the contract's own `reduce`, and all sign the merged dispute. One transaction then settles it, and the contract checks the signatures instead of reducing again. When a round fails for any reason, peers fall back to today's path: every member uploads, the chain waits out the evidence and kill periods, and a reduce transaction finishes it.
+Members exchange their dispute views over P2P, merge them with the contract's own `reduce`, and all sign the merged dispute. That signed dispute is called the _final_ in this doc. One transaction then settles it, and the contract checks the signatures instead of reducing again. When a round fails for any reason, peers fall back to today's path: every member uploads, the chain waits out the evidence and kill periods, and a reduce transaction finishes it.
 
 ```mermaid
 sequenceDiagram
@@ -44,6 +44,27 @@ Today's auditor only runs on forks that already have a dispute window. Here the 
 The merged dispute's author (the leaver, or whoever holds the most advanced state) submits first. The others wait 2 s and one block, then send the same bytes if nothing has landed; the chain refuses the duplicates.
 
 Timeouts stay on today's path, since an offline peer can't sign. One case gets slower than today: killing a cheater's dispute and uploading your own in the same transaction no longer finalizes at once (open question 2).
+
+## Terms
+
+| Term                           | Meaning                                                                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| final                          | the merged dispute every member signed. It settles in one transaction, with no evidence or kill period.                        |
+| ordinary path, ordinary upload | today's dispute flow: each member uploads its own dispute, then evidence period, kill period and a reduce transaction          |
+| round                          | one exchange of views and signatures for one fork                                                                              |
+| view                           | one member's own dispute for the fork, sent to the others as a proposal                                                        |
+| merge                          | the dispute every member computes from all views with the contract's `reduce`                                                  |
+| signer set, R                  | the members whose signatures the contract requires (the on-chain threshold set)                                                |
+| T                              | members proven to have cheated by a fraud proof carried in the round. The final slashes them and needs no signature from them. |
+| full set                       | signatures from every member of R − T                                                                                          |
+| author                         | the member named as `disputer` in the final, who submits it first                                                              |
+| holder                         | a member that has the full set; carrier: whoever sends the final transaction                                                   |
+| pin                            | the chain read taken at round start: inbound head, snapshot, signer set and the fork's dispute window, all at one block        |
+| window                         | the on-chain dispute window of a fork, opened by its first dispute upload                                                      |
+| hold, barrier                  | while a member's signature could still land, it signs no newer block; "the bit" is today's disputed-fork flag                  |
+| writer, turn, M                | the member due to produce the next block, the time it has for that, and the moment it can be timed out                         |
+| local diamond                  | each member's in-memory copy of the contract, fed by chain events; it can lag the chain                                        |
+| A, B, g, s                     | agreement time (5 s), block-time bound (2 s intended), grace before others submit (2 s), slack (1 s)                           |
 
 ## 1. Core ideas
 
