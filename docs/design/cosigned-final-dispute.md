@@ -35,7 +35,7 @@ stateDiagram-v2
 
 Every member of the on-chain signer set has to sign, so one honest member can block a wrong outcome. A colluding group of any size can only veto, and a veto sends everyone to today's path.
 
-While a member holds a live signature it stops signing new blocks, since a landed final would throw them away. That pause must not run the next writer past its timeout, so a round may only start early in a turn. With 2 s blocks that is the first 25 s of a 50 s turn.
+While a member holds a live signature it stops signing new blocks, since a landed final would throw them away. That pause must not run the next writer past its timeout, so a round may only start early in a turn. The round, the hold and the writer's catch-up take 13 s plus six block times, because six steps wait for a block. With 2 s blocks that is 25 s, so a round must start in the first 25 s of a 50 s turn (worked example in section 11).
 
 The local diamond can miss chain events without noticing. A member signs only on facts the contract checks again, facts fixed by a hash in the signed bytes, or facts it has just read from the chain.
 
@@ -284,6 +284,22 @@ A = `agreementTime` (5 s default, read at boot, [P2pRuntimeHostRoot.ts#L488-L493
 | 4 s          | 19 s               | first 13 s       |
 | 6 s          | 25 s               | first 1 s        |
 | above ~6.1 s | ~25 s+             | none             |
+
+**Worked example** (2 s blocks, round starting at second 0 of the turn; the writer's limit is second 50):
+
+| Step                                             | Takes    | Clock |
+| ------------------------------------------------ | -------- | ----- |
+| members swap views and signatures (A)            | 5 s      | 0 → 5 |
+| the head they read may be a block old            | 1 block  | → 7   |
+| the author's transaction is mined                | 1 block  | → 9   |
+| grace before the others submit (g)               | 2 s      | → 11  |
+| a fallback copy is mined: the deadline           | 1 block  | → 13  |
+| the frozen writer sees a block past the deadline | 1 block  | → 15  |
+| slack (s)                                        | 1 s      | → 16  |
+| the writer collects signatures for its block (A) | 5 s      | → 21  |
+| if that fails, its calldata post is mined        | 2 blocks | → 25  |
+
+Fixed parts 2A + g + s = 13 s, plus six block waits: the latest start is 50 − 13 − 6B = 37 − 6B, which is 25 s at B = 2 s.
 
 Common triggers come early in a turn (an invalid or double-signed block is caught on arrival), so B ≤ 4 s covers them; at 6 s the fast path is off. The ordinary path is delayed by at most A against the ~30 s `evidenceTime` target. The long hold blocks only new block signing, only in the adversarial case, never past a writer's turn.
 
