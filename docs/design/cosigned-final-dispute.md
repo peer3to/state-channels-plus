@@ -188,29 +188,98 @@ The new pair is `src/rpc/network/services/disputeAgreement/DisputeAgreementServi
 
 ## 5. Agreement algorithm
 
-Each member runs the same steps.
+Every member runs the same seven steps:
 
-1. **Send** its view to R − self.
-2. **Audit each view as it arrives.**
-    - _Only executed blocks._ Audit a view only if its latest block is stored on this member's live path at or below the fork's live height (`getLatestBlockHeight`, [BlockStorage.ts#L246-L249](../../src/storage/BlockStorage.ts#L246-L249)), or if the view has no block. Otherwise a joiner does not join, and a member in a round ends it. The check is local and can only be wrong toward "no". It costs the round only while a block is in flight, was withheld, or was double-signed.
-    - _Proofs on the chain._ Run each carried proof with `runFraudProof.staticCall` at the head ([FraudProofFacet.sol#L31-L36](../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L31-L36)), with the replay gas the real send would use. It must return its stated target. If it returns another address or reverts, the view is invalid. A revert means "not judged". It comes from an under-funded replay ([StateChannelManagerProxy.sol#L398-L409](../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L398-L409)) or from a proof the chain no longer judges ([FraudProofFacet.sol#L307-L310](../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L307-L310), [L361-L365](../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L361-L365)). A revert ends the round and is never fatal. The same check runs on the proofs in the member's own view. `applyFraudProofs` ([L11-L29](../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L11-L29)) runs the same code at inclusion, so if the chain changes in between, the final reverts. With the light client, the same call is answered from proven state.
-    - _Then the existing auditor:_ `validateDispute(view, auditingData, pendingSlashes)` ([DisputeValidationService.ts#L68](../../src/stateManager/dispute/DisputeValidationService.ts#L68)). `pendingSlashes` is a new optional argument: the targets of the view's verified proofs. The slash-subset check ([L734-L752](../../src/stateManager/dispute/DisputeValidationService.ts#L734-L752)) accepts them alongside on-chain slashes. Without it, every view that carries a proof is invalid (prototype S11). When the auditor accepts a slash from the local set, that is signing-rule kind (d).
-    - _The audit leaves live state alone._ Today the auditor runs only on forks with a window, and such forks never produce blocks again. Its tail replay ([L347](../../src/stateManager/dispute/DisputeValidationService.ts#L347)) goes through the live ingest path ([L380-L384](../../src/stateManager/dispute/DisputeValidationService.ts#L380-L384)). That path sets the shared state machine to each predecessor and keeps the advanced state ([BlockIngestService.ts#L160-L163](../../src/stateManager/ingest/BlockIngestService.ts#L160-L163), [L354-L359](../../src/stateManager/ingest/BlockIngestService.ts#L354-L359)). So the replay holds the state mutex for its whole tail, where today it takes the mutex per block ([L95](../../src/stateManager/ingest/BlockIngestService.ts#L95)). It also puts back the state it found on every outcome (valid, invalid, throw), for every caller. The auditor reads states from storage ([DisputeValidationService.ts#L782-L786](../../src/stateManager/dispute/DisputeValidationService.ts#L782-L786)). The replay also stores the blocks it runs ([BlockCommitService.ts#L78-L81](../../src/stateManager/block/BlockCommitService.ts#L78-L81), [L105-L108](../../src/stateManager/block/BlockCommitService.ts#L105-L108)). Under the executed-blocks rule those blocks are already stored. So the store only merges signatures, and it moves no height or outbound head ([BlockStorage.ts#L59-L68](../../src/storage/BlockStorage.ts#L59-L68)). Without the rule, a block that an audit stored but never executed would count as "past" when it arrived live, and it would never execute ([BlockQueueManager.ts#L329-L335](../../src/stateManager/ingest/BlockQueueManager.ts#L329-L335)). The spike checks whether the replay can be skipped for executed blocks. That would remove the whole-tail mutex and the restore (section 15).
-    - A rejected view ends the round. The auditor stores a dispute fraud proof keyed by the view's bytes ([DisputeFraudProofService.ts#L358-L378](../../src/stateManager/dispute/DisputeFraudProofService.ts#L358-L378)). With `finalDeadline != 0` those bytes are never an ordinary chain dispute, so nothing acts on that proof.
-    - An auditor throw (missing data, read error, [L60-L66](../../src/stateManager/dispute/DisputeValidationService.ts#L60-L66), [L83-L86](../../src/stateManager/dispute/DisputeValidationService.ts#L83-L86)) ends the round and is logged. It is never fatal, because the input was a peer message.
-    - The auditor's inbound recovery ([L855-L861](../../src/stateManager/dispute/DisputeValidationService.ts#L855-L861)) may apply a recovered inbound log through the live handler. That handler calls no `dispute()` ([EventHandler.ts#L356-L376](../../src/eventHandlers/EventHandler.ts#L356-L376)), so it cannot wait on the round's mutex. The round itself adds no repair.
-3. **Proven members T.** P is the set of proofs carried in V (the own view included) that passed the chain check. T is the set of targets of proofs in P whose sender is not itself a target in P. This is a single pass with no fixed point, so a proven member's proofs do not count. Wait for a view from every member of R − T, or until the round timer A runs out.
-4. **Merge.** Sort the views of R − T by `disputer` and run `localDiamondContract.reduce.staticCall(sortedViews)` ([DisputeVerificationFacet.sol#L69-L73](../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L69-L73)). Use its `latestBlock` (highest `transactionCnt`, ties go to the lowest hash), its slash union and its self-removers. Its timeout output is empty.
-    - `reduce` reads the local diamond, but harmlessly. The window timestamp and the slashes up to the window end are empty, since there is no window on chain and the local diamond only lags. The inbound head, inbound map and snapshot ([L93-L106](../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L93-L106)) feed only inbound outputs, which the merge ignores, and they cannot revert. Each view lists the on-chain slashes it saw, so the union covers them. A forge test checks this ([`OQ-39-C3EAMN`](../../docs/spec/specification/open-questions.md#oq-39-c3eamn) may make `reduce` stateless).
-    - More than one self-remover: one dispute cannot carry more than one ([L533-L536](../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L533-L536)), so the round ends.
-    - **Finish** with the tail of `DisputeBuilder.build` ([L476-L533](../../src/disputeManager/DisputeBuilder.ts#L476-L533)), turned into one method that `build` and the merge both use. Its inputs are the dispute input, the auditing data, the latest state machine state, the author, and whether a local "may omit" is confirmed on chain. The state is the input of `computeDisputeOutputSnapshotData` ([L488-L493](../../src/disputeManager/DisputeBuilder.ts#L488-L493)); for a merge it comes from storage, since the base's latest block was executed. The base is the first sorted view whose last block is `latestBlock`, or the first sorted view if no view has a block ([DisputeVerificationFacet.sol#L113-L131](../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L113-L131)). Its state proof, auditing data and snapshot are used as they are. Four fields are replaced. `onChainSlashes` becomes the slash union ∩ the base snapshot's participants. `selfRemoval` becomes the self-remover. `disputer` becomes the self-remover, or else the base's disputer. `finalDeadline` becomes the minimum over the views of R − T; a proven member's view never enters, so it cannot move the deadline. `requireExistingDisputeWindow` and `outputSnapshotDataHash` are recomputed. If the merge has no reason of its own, the round ends.
-    - **`postedAuditingData`** takes the local diamond's answer. Unlike `build` ([DisputeBuilder.ts#L518-L533](../../src/disputeManager/DisputeBuilder.ts#L518-L533)), it gets no chain confirmation of a "may omit". The flag only picks the entry point, never the outcome, and with no kill period it never makes a signer slashable. It derives from the snapshot, which the round-start read covers. A snapshot posted mid-round can make members compute different digests, which costs only the round.
-    - **Proofs to apply**: for each target in T, the first proof in sorted order that targets it.
-5. **Audit the merge** with `validateDispute(merged, base auditing data, T)`. This catches anything the fold produced that no view showed (prototype S2c). If the merge is rejected, the round ends. _The merge extends every view._ Every audited view's latest block lies on this member's live chain, which has one block per height ([BlockStorage.ts#L59-L61](../../src/storage/BlockStorage.ts#L59-L61)). So the highest of them extends all the others, the own view's included. The merge alone does not guarantee this. It picks by `transactionCnt` and hash ([L117-L131](../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L117-L131)), and the auditor accepts a sibling block it cannot prove final ([DisputeValidationService.ts#L180-L184](../../src/stateManager/dispute/DisputeValidationService.ts#L180-L184)). A sibling exists only after a double-sign, and the ordinary path slashes that.
-6. **Sign once.** Re-check the turn rule with the merged deadline. Write the signed record "fork F, digest D, `finalDeadline`" to `DisputeStorage` _before_ sending. Sign `Codec.encode(merged, Type.Dispute)` with `signDispute` ([SignatureUtils.ts#L67](../../src/utils/SignatureUtils.ts#L67)) and send `onDisputeSignature`. A member never signs a second final for a fork.
-7. **Collect.** An invalid signature, or one over a different digest, ends the round. Signatures from all of R − T make the full set (§7).
+1. Send its own view to the other members of R.
+2. Audit each view it receives.
+3. Work out which members are proven cheaters (T). Wait for a view from everyone else, or until the round timer A runs out.
+4. Merge the views into one dispute.
+5. Audit the merged dispute.
+6. Sign it once and send the signature.
+7. Collect the other members' signatures.
 
-**Convergence.** Honest members differ only in what they know: a proof, a leave, or a block in flight. The merge is a union over proofs and leaves. A block in flight ends the round at the member that lacks it. The same V and the same round-start read give the same bytes. Sorting fixes the order of `reduce`'s input, so `INV-DIS-5` order-independence does not matter here. A different V or chain state gives different bytes. Then no digest collects every signature, and nothing is submitted, which is safe. There is no retry and no second round, since under unanimity any member can block anyway.
+```mermaid
+flowchart TD
+    R0["round-start read (§3)"] --> S1["1. send own view to R"]
+    S1 --> S2{"2. audit each view:<br/>blocks executed here?<br/>proofs hold on chain?<br/>auditor accepts?"}
+    S2 -- "a check fails" --> X["round ends: today's path"]
+    S2 -- "all pass" --> S3["3. find proven cheaters T,<br/>wait for views from R − T"]
+    S3 -- "view missing when timer A runs out" --> X
+    S3 --> S4["4. merge with reduce"]
+    S4 -- "two leavers, or no reason of its own" --> X
+    S4 --> S5{"5. audit the merged dispute"}
+    S5 -- "rejected" --> X
+    S5 -- "accepted" --> S6["6. write signed record,<br/>sign once, send signature"]
+    S6 --> S7{"7. signatures from all of R − T,<br/>over the same digest?"}
+    S7 -- "invalid, different digest,<br/>or timer A runs out" --> X
+    S7 -- "full set" --> Done["submit (§7)"]
+```
+
+Below, V is the set of views a member holds, its own included.
+
+### Step 2: audit each view
+
+A view passes only if all three checks pass. A failed check ends the round. Nothing here is ever fatal, because the view is a peer message.
+
+1. **Its blocks were executed here.** The view's latest block must be stored on this member's live path, at or below the fork's live height (`getLatestBlockHeight`, [BlockStorage.ts#L246-L249](../../src/storage/BlockStorage.ts#L246-L249)), or the view has no block. If not, a member that has not joined yet does not join. The check is local and can only be wrong toward "no". It costs the round only while a block is in flight, was withheld, or was double-signed.
+2. **Its fraud proofs hold on chain.** Each carried proof is run with `runFraudProof.staticCall` at the head ([FraudProofFacet.sol#L31-L36](../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L31-L36)), with the replay gas the real send would use, and must return its stated target.
+    - Another address means the proof is bad.
+    - A revert means the chain did not judge it: an under-funded replay ([StateChannelManagerProxy.sol#L398-L409](../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L398-L409)), or a proof the chain no longer judges ([FraudProofFacet.sol#L307-L310](../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L307-L310), [L361-L365](../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L361-L365)).
+    - The same check runs on the proofs in the member's own view.
+    - `applyFraudProofs` ([L11-L29](../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L11-L29)) runs the same code when the final is included, so if the chain changes in between, the final reverts. With the light client, the same call is answered from proven state.
+3. **The existing auditor accepts it:** `validateDispute(view, auditingData, pendingSlashes)` ([DisputeValidationService.ts#L68](../../src/stateManager/dispute/DisputeValidationService.ts#L68)). `pendingSlashes` is a new optional argument: the targets of the view's verified proofs. The slash-subset check ([L734-L752](../../src/stateManager/dispute/DisputeValidationService.ts#L734-L752)) accepts them next to on-chain slashes. Without it, every view that carries a proof would be rejected (prototype S11). A slash the auditor accepts from the local set is the "local fact that can only be wrong toward no" of the signing rule.
+
+**What a failed audit leaves behind.**
+
+- A rejected view: the auditor stores a dispute fraud proof keyed by the view's bytes ([DisputeFraudProofService.ts#L358-L378](../../src/stateManager/dispute/DisputeFraudProofService.ts#L358-L378)). Those bytes have `finalDeadline != 0`, so they are never an ordinary chain dispute, and nothing acts on that proof.
+- An auditor throw (missing data, read error, [L60-L66](../../src/stateManager/dispute/DisputeValidationService.ts#L60-L66), [L83-L86](../../src/stateManager/dispute/DisputeValidationService.ts#L83-L86)) is logged.
+- The auditor's inbound recovery ([L855-L861](../../src/stateManager/dispute/DisputeValidationService.ts#L855-L861)) may apply a recovered inbound log through the live handler. That handler never calls `dispute()` ([EventHandler.ts#L356-L376](../../src/eventHandlers/EventHandler.ts#L356-L376)), so it cannot wait on the round's mutex.
+
+**The audit must not change live state.** Today the auditor only runs on forks that already have a window, and those forks never produce blocks again. Here the fork is live.
+
+- The auditor's tail replay ([L347](../../src/stateManager/dispute/DisputeValidationService.ts#L347)) goes through the live ingest path ([L380-L384](../../src/stateManager/dispute/DisputeValidationService.ts#L380-L384)). That path sets the shared state machine to each predecessor and keeps the advanced state ([BlockIngestService.ts#L160-L163](../../src/stateManager/ingest/BlockIngestService.ts#L160-L163), [L354-L359](../../src/stateManager/ingest/BlockIngestService.ts#L354-L359)). So the replay holds the state mutex for its whole tail, where today it takes it per block ([L95](../../src/stateManager/ingest/BlockIngestService.ts#L95)), and puts back the state it found on every outcome (valid, invalid, throw). The auditor reads states from storage ([DisputeValidationService.ts#L782-L786](../../src/stateManager/dispute/DisputeValidationService.ts#L782-L786)).
+- The replay also stores the blocks it runs ([BlockCommitService.ts#L78-L81](../../src/stateManager/block/BlockCommitService.ts#L78-L81), [L105-L108](../../src/stateManager/block/BlockCommitService.ts#L105-L108)). Because of check 1 those blocks are already stored, so the store only merges signatures and moves no height or outbound head ([BlockStorage.ts#L59-L68](../../src/storage/BlockStorage.ts#L59-L68)). Without check 1, a block an audit stored but never executed would count as "past" when it arrived live, and would never execute ([BlockQueueManager.ts#L329-L335](../../src/stateManager/ingest/BlockQueueManager.ts#L329-L335)).
+- The spike checks whether the replay can be skipped for executed blocks. That would remove the whole-tail mutex and the restore (section 15).
+
+### Step 3: proven members
+
+P is the set of proofs in V that passed the chain check. T is the set of their targets, leaving out any proof whose sender is itself a target in P. This is a single pass: a proven cheater's own proofs do not count. The member then waits for a view from every member of R − T, or until the round timer A runs out.
+
+### Step 4: merge
+
+Sort the views of R − T by `disputer` and run `localDiamondContract.reduce.staticCall(sortedViews)` ([DisputeVerificationFacet.sol#L69-L73](../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L69-L73)). Three of its outputs are used: `latestBlock` (highest `transactionCnt`, ties go to the lowest hash), the union of slashes, and the self-removers. Its timeout output is empty.
+
+- More than one self-remover ends the round, because one dispute cannot carry more than one ([L533-L536](../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L533-L536)).
+- `reduce` reads the local diamond, but harmlessly. The window timestamp and the slashes up to the window end are empty, since there is no window on chain and the local diamond only lags. The inbound head, inbound map and snapshot ([L93-L106](../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L93-L106)) only feed inbound outputs, which the merge ignores, and they cannot revert. Each view lists the on-chain slashes it saw, so the union covers them. A forge test checks this ([`OQ-39-C3EAMN`](../../docs/spec/specification/open-questions.md#oq-39-c3eamn) may make `reduce` stateless).
+
+The merged dispute is then built by the tail of `DisputeBuilder.build` ([L476-L533](../../src/disputeManager/DisputeBuilder.ts#L476-L533)), turned into one method that `build` and the merge both call. It takes the dispute input, the auditing data, the latest state machine state, the author, and whether a local "may omit" is confirmed on chain. The state feeds `computeDisputeOutputSnapshotData` ([L488-L493](../../src/disputeManager/DisputeBuilder.ts#L488-L493)); for a merge it comes from storage, since the base's latest block was executed.
+
+- **Base view:** the first sorted view whose last block is `latestBlock`, or the first sorted view if no view has a block ([DisputeVerificationFacet.sol#L113-L131](../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L113-L131)). Its state proof, auditing data and snapshot are used unchanged.
+- **Four fields replaced:**
+    - `onChainSlashes` = the slash union ∩ the base snapshot's participants;
+    - `selfRemoval` = the self-remover;
+    - `disputer` = the self-remover, else the base's disputer;
+    - `finalDeadline` = the minimum over the views of R − T. A proven member's view is not among them, so it cannot move the deadline.
+- **Recomputed:** `requireExistingDisputeWindow` and `outputSnapshotDataHash`. If the merged dispute has no reason of its own, the round ends.
+- **`postedAuditingData`** takes the local diamond's answer, with no chain confirmation of a "may omit" (unlike `build`, [DisputeBuilder.ts#L518-L533](../../src/disputeManager/DisputeBuilder.ts#L518-L533)). The flag only picks the entry point, never the outcome, and with no kill period it never makes a signer slashable. It derives from the snapshot, which the round-start read covers. A snapshot posted mid-round can make members compute different digests, which costs only the round.
+- **Proofs to apply:** for each target in T, the first proof in sorted order that targets it.
+
+### Step 5: audit the merged dispute
+
+Run `validateDispute(merged, base auditing data, T)`. This catches anything the merge produced that no single view showed (prototype S2c). If it is rejected, the round ends.
+
+This also makes sure the merged dispute builds on every view. Every audited view's latest block lies on this member's live chain, which has one block per height ([BlockStorage.ts#L59-L61](../../src/storage/BlockStorage.ts#L59-L61)). So the highest one builds on all the others, the member's own included. `reduce` alone would not guarantee this: it picks by `transactionCnt` and hash ([L117-L131](../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L117-L131)), and the auditor accepts a sibling block it cannot prove final ([DisputeValidationService.ts#L180-L184](../../src/stateManager/dispute/DisputeValidationService.ts#L180-L184)). A sibling exists only after a double-sign, which the ordinary path slashes.
+
+### Steps 6 and 7: sign and collect
+
+- Re-check the turn rule with the merged deadline.
+- Write the signed record "fork F, digest D, `finalDeadline`" to `DisputeStorage` _before_ sending.
+- Sign `Codec.encode(merged, Type.Dispute)` with `signDispute` ([SignatureUtils.ts#L67](../../src/utils/SignatureUtils.ts#L67)) and send `onDisputeSignature`. A member never signs a second final for a fork.
+- Collect: an invalid signature, or one over a different digest, ends the round. Signatures from all of R − T make the full set (§7).
+
+### Why members converge
+
+Honest members differ only in what they know: a proof, a leave, or a block in flight. The merge is a union over proofs and leaves, and a block in flight ends the round at the member that lacks it. The same V and the same round-start read give the same bytes; sorting fixes the input order of `reduce`, so `INV-DIS-5` order-independence does not matter here. A different V or chain state gives different bytes, no digest collects every signature, and nothing is submitted, which is safe. There is no retry and no second round, because under unanimity any member can block anyway.
 
 ## 6. What is signed, and the contract branch
 
