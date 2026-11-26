@@ -11,10 +11,10 @@ export async function assertDeployedMaximum(maximum?: number) {
     const expected = maximum ?? DEFAULT_MAX_CHANNEL_PARTICIPANTS;
     const managerAddress = await h.channelManager.getAddress();
     // Coupled to contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol:
-    // slots 0..5 are p2pTime, agreementTime, chainFallbackTime, evidenceTime,
-    // gasLimit and maxChannelParticipants (uint256 each); implementation is slot 6.
-    // Update this index if that storage layout changes.
-    const implementationSlot = await h.provider.getStorage(managerAddress, 6);
+    // slots 0..6 are p2pTime, agreementTime, chainFallbackTime, evidenceTime,
+    // gasLimit, maxChannelParticipants and maxDisputeUploadBytes (uint256 each);
+    // implementation is slot 7. Update this index if that storage layout changes.
+    const implementationSlot = await h.provider.getStorage(managerAddress, 7);
     const implementation = ethers.getAddress(
         ethers.dataSlice(implementationSlot, 12)
     );
