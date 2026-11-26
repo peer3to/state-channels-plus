@@ -76,16 +76,16 @@ Timeouts stay on today's path, since an offline peer can't sign. One case gets s
 
 Spec IDs and code locations for each requirement are listed in the appendix.
 
-1. **Outcome.** A final equals `reduce` over the views every signer's auditor accepted; every signer's auditor accepted the merge; the final's latest block extends every signer's own view. Any rejected view: no final. Every fact behind a signature follows the signing rule.
-2. **Unanimity.** Every member of the on-chain threshold set (snapshot ∪ pending − on-chain slashed) signs, counted once. No quorum. Only members the same transaction slashes with a chain-verified proof are left out.
+1. **Outcome.** The final is what `reduce` produces from the members' views. Before signing, each member checks every view and the merged result with its own auditor, and makes sure the final builds on the latest block of its own view. If any member rejects a view, there is no final. A member signs only on facts the signing rule (below) allows.
+2. **Unanimity.** Every member of the on-chain threshold set signs, and each signature counts once. That set is the snapshot participants plus pending joiners, minus members already slashed on chain. There is no quorum: the only members left out are those the same transaction slashes with a proof the chain verifies.
 3. **Exclusivity.** A final never lands into a window that holds a commitment, and never after its deadline.
-4. **Bounded signatures.** A signer is free at the first header past the deadline. It then settles from the chain, detached; the settle never holds the barrier.
+4. **Bounded signatures.** A signer is free again at the first block whose timestamp is past the deadline. It then checks the chain for the outcome in the background, and that check never holds the barrier.
 5. **Chain fallback intact.** A failed round leaves the ordinary path as today. A final uses no throttle or upload slot. After a failed round a member uploads only with a reason or more evidence, as today, plus one re-dispute per full-set holder whose signature ended without a window (§8). Timeouts always settle on the ordinary path.
 6. **Signing barrier.** A member that sent a view signs no newer block on the fork while a final it signed could still land, also across a restart.
 7. **No honest writer loses its turn.** A hold ends early enough that the fork's next writer, if not proven, can get its calldata mined before it can be timed out, while blocks arrive within the bound B. At release the writer is told its turn again.
 8. **No central gatekeeper.** No operator or elected leader decides the outcome or the submitter.
 9. **Few duplicates.** With an honest author and no missed logs, another member submits only when its handler for the final has not run by chain head h + 2. Duplicates are refused and change nothing.
-10. **RPC rules.** `*Service` + `*RpcMethods` pair, identity-bound dispatch, sends to participants only, bounded resources, no peer message reaches the fatal path.
+10. **RPC rules.** The new messages follow the repo's RPC rules: a `*Service` and `*RpcMethods` pair, dispatch bound to the sender's identity, sends to participants only, bounded resources, and no peer message can reach the fatal path.
 
 **Trust model.** Safety needs one honest member of the threshold set; the snapshot argument (§6) needs that member to be a snapshot participant (open question 8). If every signer colludes they can finalize anything, which the spec already accepts. A colluding strict subset, minority or majority, can only veto. The chain head does not reorg (open question 6). The local diamond is not trusted to be in sync: its event stream can drop a log while the socket stays open, and the watermark then moves past the hole. The signing rule keeps safety independent of it. Spectators and watchtowers take no part.
 
