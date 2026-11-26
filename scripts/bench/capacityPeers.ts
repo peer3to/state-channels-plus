@@ -12,6 +12,12 @@
  * or with the chance `freshRate`), as a participant proves the empty calldata
  * commitment of each received block. With `prefill` it watches that many of
  * those slots with the config slots, as a peer that has run for a while.
+ * With `ahead` it instead watches a window of `keys` never written slots with
+ * the config slots, and every `every` blocks moves it `step` slots on and
+ * watches it again in one call, as a participant watches the commitments of
+ * the coming heights; with `configEvery` it also watches the config slots
+ * again every that many blocks, as a participant's read does once the node
+ * released them.
  *
  * Messages from the main thread: `{ type: "add", peers }` opens peers,
  * `{ type: "take" }` answers with what was recorded since the last take and
@@ -44,6 +50,13 @@ export type PeerSpec = {
         prefill?: number;
         /** The chance, per block, of a fresh slot's watch. */
         freshRate?: number;
+        /** A window of never written slots from `freshBase`, watched ahead. */
+        ahead?: {
+            keys: number;
+            every: number;
+            step: number;
+            configEvery?: number;
+        };
     };
 };
 
@@ -122,7 +135,13 @@ type Peer = {
     lastNumber?: number;
     synced: boolean;
     /** The subscription of no topics, with its id once the node answered. */
-    watch?: Followed & { id?: string; registered: boolean; nextFresh: number };
+    watch?: Followed & {
+        id?: string;
+        registered: boolean;
+        nextFresh: number;
+        /** Blocks of its channel accepted since the watches were registered. */
+        blocksWatched: number;
+    };
 };
 
 /** How long a peer may take to open its socket and subscribe before it counts as unopened. */
@@ -257,20 +276,23 @@ async function registerWatchedKeys(peer: Peer): Promise<void> {
         keys = slotKeys(contract, watch.configBase, watch.configCount);
         configKeys.set(contract, keys);
     }
-    const prefill = watch.prefill ?? 0;
+    const prefill = watch.ahead?.keys ?? watch.prefill ?? 0;
     if (prefill > 0)
         keys = [...keys, ...slotKeys(contract, watch.freshBase!, prefill)];
     try {
         report.watchRegistrationMs.push(await watchKeys(peer, keys, null));
-        peer.watch!.nextFresh = prefill;
+        // the window starts at the first slot; fresh slots follow the prefill
+        peer.watch!.nextFresh = watch.ahead ? 0 : prefill;
         peer.watch!.registered = true;
     } catch {
         report.failedWatchRegistrations++;
     }
 }
 
-/** Watches one slot of the contract never written, at `blockHash`. */
+/** Watches the window ahead again, or one slot never written, at `blockHash`. */
 async function watchFresh(peer: Peer, blockHash: string): Promise<void> {
+    const ahead = peer.spec.watch?.ahead;
+    if (ahead) return await watchAhead(peer, blockHash, ahead);
     const freshBase = peer.spec.watch?.freshBase;
     const freshRate = peer.spec.watch?.freshRate;
     if (freshBase === undefined || freshRate === undefined) return;
@@ -287,6 +309,37 @@ async function watchFresh(peer: Peer, blockHash: string): Promise<void> {
     } catch {
         report.failedWatches++;
     }
+}
+
+/** Every `every` blocks the window moved `step` slots on, and every `configEvery` the config slots, watched at `blockHash`. */
+async function watchAhead(
+    peer: Peer,
+    blockHash: string,
+    ahead: NonNullable<NonNullable<PeerSpec["watch"]>["ahead"]>
+): Promise<void> {
+    const watch = peer.watch;
+    const spec = peer.spec.watch!;
+    if (!watch?.registered) return;
+    const blocks = ++watch.blocksWatched;
+    const calls: string[][] = [];
+    if (blocks % ahead.every === 0) {
+        watch.nextFresh += ahead.step;
+        calls.push(
+            slotKeys(
+                peer.spec.contract,
+                spec.freshBase! + watch.nextFresh,
+                ahead.keys
+            )
+        );
+    }
+    if (ahead.configEvery && blocks % ahead.configEvery === 0)
+        calls.push(configKeys.get(peer.spec.contract)!);
+    for (const keys of calls)
+        try {
+            report.watchMs.push(await watchKeys(peer, keys, blockHash));
+        } catch {
+            report.failedWatches++;
+        }
 }
 
 /** A push on the peer's subscription of no topics. */
@@ -374,7 +427,8 @@ async function openPeer(spec: PeerSpec): Promise<void> {
             partition: new FrontierPushedPartition(PEER3_CHAIN_CONSTANTS),
             synced: false,
             registered: false,
-            nextFresh: 0
+            nextFresh: 0,
+            blocksWatched: 0
         };
     // pushes that came before their subscription's id did: handled once it is known
     const early: { subscription: string; params: unknown }[] = [];

@@ -40,7 +40,12 @@
  * that a peer then watches one never written slot (1: every block);
  * BENCH_WATCH_PREFILL (0): never written slots each peer watches with the
  * config slots, as a long-running peer has gathered them (50 + 974 reaches
- * the node's 1,024 per subscription). With more
+ * the node's 1,024 per subscription); BENCH_WATCH_AHEAD_KEYS (0): instead, a
+ * window of that many never written slots each peer watches with the config
+ * slots and, every BENCH_WATCH_AHEAD_EVERY (16) blocks, moves
+ * BENCH_WATCH_AHEAD_STEP (48) slots on and watches again in one call, with the
+ * config slots watched again every BENCH_WATCH_CONFIG_EVERY (0: never) blocks,
+ * as participants watch the commitments of the coming heights. With more
  * than one key per partition or per write, or with watched keys, the
  * partitions are written by MULTI_PARTITION_CONTRACT, one transaction per
  * channel. BENCH_BUSY_CHANNELS: channels written each block, in place of
@@ -99,6 +104,10 @@ const PEERS_PER_CHANNEL = Number(process.env.BENCH_PEERS_PER_CHANNEL ?? 0);
 const WATCHED_KEYS = Number(process.env.BENCH_WATCHED_KEYS ?? 0);
 const WATCH_FRESH = Number(process.env.BENCH_WATCH_FRESH ?? 0);
 const WATCH_PREFILL = Number(process.env.BENCH_WATCH_PREFILL ?? 0);
+const WATCH_AHEAD_KEYS = Number(process.env.BENCH_WATCH_AHEAD_KEYS ?? 0);
+const WATCH_AHEAD_EVERY = Number(process.env.BENCH_WATCH_AHEAD_EVERY ?? 16);
+const WATCH_AHEAD_STEP = Number(process.env.BENCH_WATCH_AHEAD_STEP ?? 48);
+const WATCH_CONFIG_EVERY = Number(process.env.BENCH_WATCH_CONFIG_EVERY ?? 0);
 const BUSY_CHANNELS =
     process.env.BENCH_BUSY_CHANNELS === undefined
         ? undefined
@@ -547,12 +556,22 @@ async function main(): Promise<void> {
                         watch: {
                             configBase: CONFIG_SLOTS,
                             configCount: WATCHED_KEYS,
-                            ...((WATCH_FRESH > 0 || WATCH_PREFILL > 0) && {
+                            ...((WATCH_FRESH > 0 ||
+                                WATCH_PREFILL > 0 ||
+                                WATCH_AHEAD_KEYS > 0) && {
                                 freshBase:
                                     FRESH_SLOTS + opened * FRESH_SLOTS_PER_PEER,
                                 prefill: WATCH_PREFILL
                             }),
-                            ...(WATCH_FRESH > 0 && { freshRate: WATCH_FRESH })
+                            ...(WATCH_FRESH > 0 && { freshRate: WATCH_FRESH }),
+                            ...(WATCH_AHEAD_KEYS > 0 && {
+                                ahead: {
+                                    keys: WATCH_AHEAD_KEYS,
+                                    every: WATCH_AHEAD_EVERY,
+                                    step: WATCH_AHEAD_STEP,
+                                    configEvery: WATCH_CONFIG_EVERY
+                                }
+                            })
                         }
                     })
                 });
