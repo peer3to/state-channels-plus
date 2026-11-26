@@ -97,7 +97,23 @@ The appendix lists the spec IDs and code locations for each requirement.
 
 **Trust model.** Safety needs one honest member of the threshold set. That member must also be a snapshot participant, not only a pending joiner (§6, open question 7). If every signer colludes, they can finalize anything; the spec already accepts this. A colluding strict subset, whether a minority or a majority, can only veto. The design assumes the chain head does not reorg (open question 5). The local diamond is not trusted to be in sync. Its event stream can drop a log while the socket stays open. The watermark (the last block whose logs the member processed) then moves past the missing log, so the gap goes unnoticed. The signing rule keeps safety independent of the local diamond. Spectators and watchtowers take no part.
 
-**Signing rule.** A member signs only on facts of four kinds: (a) facts the contract checks again when it includes the final; (b) facts fixed by a hash in the signed bytes; (c) facts read from the chain in one of the round's chain reads; (d) local facts that can only be wrong in the direction of "no". Kind (d) is allowed because the local diamond only lags the chain, so a slash it holds really is on chain. A member also audits only views whose blocks it executed itself. So the merge extends its own latest block, and it never signs away state it already signed. With this rule, one honest signer is enough for a correct final, whatever its local diamond missed. The round reads the chain for this decision only, four times: one read at round start (§3), the check of each fraud proof while auditing views (§5), the sender's check of those proofs right before sending (§7), and one read after a signature expires, to learn whether the final was accepted (§8). Reading block headers to learn the chain time does not count. Everything else acts on local data. When the chain refuses something, the member recovers after the dispute mutex is released.
+**Signing rule.** A member's local diamond may be out of date, so before signing it relies only on facts that cannot mislead it:
+
+- facts the contract checks again when it accepts the final;
+- facts fixed by a hash in the signed bytes;
+- facts it read from the chain during the round;
+- local facts that can only be wrong toward "no". The local diamond only lags the chain, so a slash it already holds really is on chain.
+
+A member also audits only views whose blocks it executed itself. The merge then builds on its own latest block, so it never signs away state it already signed. With this rule one honest signer is enough for a correct final, whatever its local diamond missed.
+
+The round reads the chain four times, all for this decision:
+
+1. once at round start (§3);
+2. each fraud proof, while auditing views (§5);
+3. the same proofs again, right before the final is sent (§7);
+4. once after a signature expires, to learn whether the final was accepted (§8).
+
+Reading block headers for the chain time does not count. Everything else uses local data, and when the chain refuses something, the member recovers after the dispute mutex is released.
 
 ## 3. When a round runs, and with whom
 
