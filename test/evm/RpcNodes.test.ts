@@ -56,8 +56,7 @@ import {
     assertTransactionInternalErrorIsFinal,
     assertTransactionSentToFirstNodeOnly,
     assertUnsubscribeAnsweredAfterDestroyStaysQuiet,
-    assertUnsubscribeErrorAnswerStaysQuiet,
-    assertWatchAheadOfPlainProviderAsksNothing
+    assertUnsubscribeErrorAnswerStaysQuiet
 } from "@test/fixtures/node/RpcNodesFixture";
 import { expect } from "chai";
 
@@ -112,10 +111,6 @@ describe("RpcNodeProvider", () => {
 });
 
 describe("MultiRpcProvider", () => {
-    it("asks the nodes nothing when told of coming calls", async () => {
-        await assertWatchAheadOfPlainProviderAsksNothing();
-    });
-
     it("sends a transaction to the first node only while it is connected", async () => {
         await assertTransactionSentToFirstNodeOnly();
     });

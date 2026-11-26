@@ -58,6 +58,8 @@ Predicate chain
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P36` — forged-inbound detector: a carried genuine inbound block that is the snapshot's inbound head, absent from local storage, is not flagged
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P37` — forged-inbound detector: a fabricated inbound block one above the snapshot's inbound head, absent locally and on chain, is flagged and returned
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P38` — chain reads proven: `isDisputedFork` with no dispute record of its own asks the chain whether the fork is disputed, not the local diamond
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P39` — on-chain post timing: a block received within `agreementTime` with no stored on-chain timestamp reads nothing from the chain and is accepted
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P40` — on-chain post timing: a block received outside `agreementTime` with no stored on-chain timestamp is recovered from the chain, and an on-time posting is accepted and persisted
 
 ## UNIT-TEST-SM-VALIDATION-1-1GFNNY
 

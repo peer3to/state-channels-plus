@@ -3,18 +3,14 @@ import type StateManager from "../StateManager";
 import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import DisputeValidationStrategy from "../validationStrategy/DisputeValidationStrategy";
 import Clock from "@/Clock";
-import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import { Block, StateSnapshot } from "@/models";
 import { Status, timeoutWaitTime } from "@/types";
-import { BlockHeight, Bytes, ForkId } from "@/types/types";
+import { Bytes } from "@/types/types";
 import { Logger } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 
 import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-
-/** Heights after a committed block whose calldata commitments are watched ahead. */
-const WATCH_AHEAD_HEIGHTS = 32;
 
 /**
  * Commits a validated block: persists the snapshot, state and block, signs and
@@ -23,8 +19,6 @@ const WATCH_AHEAD_HEIGHTS = 32;
  */
 export default class BlockCommitService {
     private readonly logger: Logger;
-    /** The fork and the last height whose calldata commitments were watched ahead. */
-    private watchedAhead?: { forkId: ForkId; toHeight: BlockHeight };
 
     constructor(
         private readonly stateManager: StateManager,
@@ -147,15 +141,6 @@ export default class BlockCommitService {
         // step 9 - success callback
         successCallback();
 
-        // step 9b - the commitments of the coming heights, which validating
-        // each of their blocks reads, are watched ahead in one request
-        this.watchCommitmentsAhead(block).catch((error: unknown) =>
-            this.logger.warn(
-                "Could not watch the coming calldata commitments; their reads prove them",
-                { block: LoggerUtils.getBlockMetadata(block), error }
-            )
-        );
-
         // step 10 - notify any event hooks
         const nextToWrite = await sm.diamondStateMachine.getNextToWrite();
         const relevantTimestamp = block.getRelevantTimestamp(nextToWrite);
@@ -191,44 +176,6 @@ export default class BlockCommitService {
             "participantTimeout(onSuccess)"
         );
         // tryExecuteFromQueue is universally scheduled on mutex release
-    }
-
-    /**
-     * Has the chain provider watch the calldata commitments of the next
-     * {@link WATCH_AHEAD_HEIGHTS} heights of the block's fork, for every
-     * participant: who authors a later height is not known yet. Again once
-     * fewer than half of them are left, or on another fork. A provider that
-     * does not prove reads does nothing.
-     */
-    private async watchCommitmentsAhead(block: Block): Promise<void> {
-        const sm = this.stateManager;
-        const contract = sm.stateChannelManagerContract;
-        const provider = contract.runner?.provider;
-        if (!(provider instanceof MultiRpcProvider)) return;
-        const ahead = this.watchedAhead;
-        if (
-            ahead?.forkId === block.forkId &&
-            ahead.toHeight - block.height >= WATCH_AHEAD_HEIGHTS / 2
-        )
-            return;
-        const toHeight = block.height + WATCH_AHEAD_HEIGHTS;
-        this.watchedAhead = { forkId: block.forkId, toHeight };
-        const participants = sm.storage.getParticipantsUnion(
-            block.coordinates,
-            block.stateSnapshotHash
-        );
-        const to = await contract.getAddress();
-        const calls = [];
-        for (let height = block.height + 1; height <= toHeight; height++)
-            for (const participant of participants)
-                calls.push({
-                    to,
-                    data: contract.interface.encodeFunctionData(
-                        "getBlockCallDataCommitment",
-                        [sm.channelId, block.forkId, height, participant]
-                    )
-                });
-        await provider.watchAhead(calls);
     }
 
     private async shouldSignBlock(block: Block): Promise<boolean> {

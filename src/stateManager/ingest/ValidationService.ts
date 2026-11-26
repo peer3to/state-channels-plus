@@ -402,14 +402,25 @@ export default class ValidationService {
         );
     }
 
+    /**
+     * When the block's calldata was posted on chain, against its deadline.
+     * Without a stored on-chain timestamp it is recovered from the chain only
+     * when `recoversFromChain`: for a block received within agreementTime a
+     * post found now is never too late, so the read cannot change its verdict.
+     */
     private async getOnChainPostTiming(
         previousTimestamp: Timestamp,
-        block: Block
+        block: Block,
+        recoversFromChain: boolean
     ): Promise<OnChainPostTiming> {
         const storedOnChainTimestamp = this.getStoredOnChainTimestamp(block);
         if (storedOnChainTimestamp !== undefined) {
             block.onChainTimestamp = storedOnChainTimestamp;
         }
+
+        // a block received in time is not posted too late: nothing to fetch
+        if (block.onChainTimestamp === undefined && !recoversFromChain)
+            return OnChainPostTiming.NOT_POSTED;
 
         // if doesn't have on-chain timestamp try and fetch it
         if (block.onChainTimestamp === undefined) {
@@ -640,10 +651,15 @@ export default class ValidationService {
             return this.validateTimeLogic(entry, strategy);
         }
 
+        const receivedWithinAgreementTime =
+            Math.abs(nowSeconds - block.timestamp) <=
+            this.timeConfig.agreementTime;
+
         // OBJECTIVE: Check if block was posted too late on-chain
         const onChainPostTiming = await this.getOnChainPostTiming(
             previousTimestamp,
-            block
+            block,
+            !receivedWithinAgreementTime
         );
         if (onChainPostTiming === OnChainPostTiming.TOO_LATE) {
             // Block posted too late - create InvalidTimestamp fraud proof
@@ -681,10 +697,6 @@ export default class ValidationService {
         // verified synchronization proof is proven history, not a live
         // arrival: the agreement-window judgment does not apply to it, or a
         // suffix older than one window could never be applied.
-        const receivedWithinAgreementTime =
-            Math.abs(nowSeconds - block.timestamp) <=
-            this.timeConfig.agreementTime;
-
         if (!receivedWithinAgreementTime) {
             return await strategy.subjectiveInvalidTimestampDetected(block);
         }

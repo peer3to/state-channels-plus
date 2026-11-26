@@ -240,7 +240,7 @@ Specification cases tested: 3/9. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6, T1
 Specification cases tested: 0/3.
 
 [`REQ-BLOCK-PIPE-8-N529VH` (Evidence precedes escalation)](../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)
-Specification cases tested: 10/10.
+Specification cases tested: 12/12.
 
 [`REQ-BLOCK-PIPE-9-QA66GT` (Dead-fork containment)](../specification/block-progression/block-processing.md#req-block-pipe-9-qa66gt)
 Specification cases tested: 1/6. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P6.
@@ -628,12 +628,6 @@ Specification cases tested: 14/14.
 
 [`REQ-LC-12-VPAAP0` (Keys a read had proven are kept current on the subscription of the contract…)](../specification/runtime/light-client.md#req-lc-12-vpaap0)
 Specification cases tested: 15/17. Untested: T1.P11, T1.P12.
-
-[`REQ-LC-13-WAFW39` (Chain access can have the state of coming calls watched ahead of them)](../specification/runtime/light-client.md#req-lc-13-wafw39)
-Specification cases tested: 9/9.
-
-[`REQ-LC-14-C00ZPH` (After each live commit the calldata commitments of the coming heights are…)](../specification/runtime/light-client.md#req-lc-14-c00zph)
-Specification cases tested: 6/7. Untested: T1.P7.
 
 [`REQ-LIF-1-A5BN02` (The best-case complete lifecycle needs at least two base-layer transactions)](../specification/settlement/lifecycle.md#req-lif-1-a5bn02)
 Specification cases tested: 2/13. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13.

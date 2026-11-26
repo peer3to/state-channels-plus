@@ -1112,9 +1112,9 @@ describe("Unit: ValidationService", function () {
 
             expect(r.resultName).to.equal("SUCCESS");
             expect(r.disputedForkIds).to.deep.equal([]);
-            // one recovery for the parent, then the recursive pass looks up the
-            // candidate's own (unposted) calldata
-            expect(r.calldataRecoveryQueries).to.equal(2);
+            // one recovery for the parent; the candidate, received in time, is
+            // not looked up on chain in the recursive pass
+            expect(r.calldataRecoveryQueries).to.equal(1);
 
             const cached = await h
                 .control(observer)
@@ -1290,7 +1290,7 @@ describe("Unit: ValidationService", function () {
             );
         });
 
-        it("no cached timestamp, calldata recoverable on-chain → recovered, persisted, ON_TIME → SUCCESS", async function () {
+        it("no cached timestamp, received outside agreementTime, calldata recoverable on-chain → recovered, persisted, ON_TIME → SUCCESS", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
                 timeConfig: TIMESTAMP_TIME_CONFIG
@@ -1320,6 +1320,11 @@ describe("Unit: ValidationService", function () {
                 .request();
             expect(before, "the observer must not hold the block yet").to.be
                 .null;
+            // a block received in time is never read on chain
+            await h.event.waitPastAgreementTime(
+                observer.index,
+                authored.timestamp
+            );
 
             const r = await h
                 .control(observer)
@@ -1344,6 +1349,36 @@ describe("Unit: ValidationService", function () {
                 .request();
             expect(recovered, "recovered timestamp must be persisted").to.not.be
                 .null;
+        });
+
+        it("no cached timestamp, received within agreementTime → no on-chain read → SUCCESS", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0, {
+                timeConfig: TIMESTAMP_TIME_CONFIG
+            });
+            const { observer, authored, forkId } =
+                await h.transition.authorNextBlockOffWireWait();
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation
+                )
+                .request();
+
+            // a post found now could not be too late: validation reads nothing
+            expect(r.calldataRecoveryQueries).to.equal(0);
+            expect(r.resultName).to.equal("SUCCESS");
+            expect(r.disputedForkIds).to.deep.equal([]);
+            const timestamp = await h
+                .control(observer)
+                .query.getBlockCalldataTimestamp(
+                    forkId,
+                    authored.height,
+                    authored.author as Address
+                )
+                .request();
+            expect(timestamp).to.be.null;
         });
 
         it("height 1 posted one second past the no-grace deadline → TOO_LATE → DISPUTE", async function () {

@@ -12,7 +12,6 @@
 - [`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../../../../../../specification/runtime/light-client.md#req-lc-1-jt5pkt)
 - [`REQ-LC-8-BBYC51` (A participant follows the channel it has selected)](../../../../../../specification/runtime/light-client.md#req-lc-8-bbyc51)
 - [`REQ-LC-12-VPAAP0` (Keys a read had proven are kept current on the subscription of the contract…)](../../../../../../specification/runtime/light-client.md#req-lc-12-vpaap0)
-- [`REQ-LC-13-WAFW39` (Chain access can have the state of coming calls watched ahead of them)](../../../../../../specification/runtime/light-client.md#req-lc-13-wafw39)
 
 ## UNIT-TEST-MULTI-RPC-1-SVGGZ5
 

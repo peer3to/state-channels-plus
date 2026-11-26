@@ -91,7 +91,8 @@ once the chain is past genesis, does not abort and stores no proof.
 - `block replayed from a synchronization proof outside agreementTime → the subjective window does not apply → SUCCESS`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P11, UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P21, UNIT-TEST-BLOCK-INGEST-1-JV64AS.P1, UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P23
 - `on-chain timestamp exactly at the post deadline → ON_TIME → SUCCESS even outside agreementTime`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P5
 - `on-chain timestamp one second past the deadline → objectiveInvalidTimestampDetected → DISPUTE + InvalidTimestamp`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P14, UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P19
-- `no cached timestamp, calldata recoverable on-chain → recovered, persisted, ON_TIME → SUCCESS`: none
+- `no cached timestamp, received outside agreementTime, calldata recoverable on-chain → recovered, persisted, ON_TIME → SUCCESS`: REQ-BLOCK-PIPE-8-N529VH.T1.P12, UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P40
+- `no cached timestamp, received within agreementTime → no on-chain read → SUCCESS`: REQ-BLOCK-PIPE-8-N529VH.T1.P11, UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P39
 - `height 1 posted one second past the no-grace deadline → TOO_LATE → DISPUTE`: none
 - `objectively valid but never posted, received outside agreementTime → subjectiveInvalidTimestampDetected → NOT_ENOUGH_TIME`: REQ-BLOCK-PIPE-8-N529VH.T1.P2, UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P20, REQ-BLOCK-PIPE-3-WW2SB7.T1.P6
 - `the same stale unposted block under the dispute strategy → subjective hook accepts history → SUCCESS`: none

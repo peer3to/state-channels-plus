@@ -7,7 +7,6 @@ import { localExecutorConnection } from "../mirror/MirrorService";
 import { recoverSigner } from "@/cache";
 import Clock from "@/Clock";
 import type DisputeBuilder from "@/disputeManager/DisputeBuilder";
-import type { LocalCall } from "@/evm/p2pRuntime/rpcNodes/lightClient/LightClient";
 import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import { Block } from "@/models";
 import StateSnapshot from "@/models/StateSnapshot";
@@ -748,13 +747,6 @@ export class StubService extends ANetworkRpcService<
     private restoreChainReads?: () => void;
     // undoes stubProvenChainReads: the provider's own answer again
     private restoreProvenReads?: () => void;
-    // the batches of coming calls the chain access was told of, and the
-    // commit service's warnings, while recordWatchAhead runs
-    private watchAheadRecord?: {
-        told: { to: string; data: string }[][];
-        warnings: string[];
-        restore: () => void;
-    };
     private restoreDisputedForkChecks?: () => void;
     private restoreKillPeriodReads?: () => void;
     // reads of the stubbed kill-period method: rejected, then passed through
@@ -2943,51 +2935,6 @@ export class StubService extends ANetworkRpcService<
     public restoreProvenChainReads(): void {
         this.restoreProvenReads?.();
         this.restoreProvenReads = undefined;
-    }
-
-    // records each batch of coming calls the chain access is told of instead
-    // of passing it on, and the commit service's warnings; with `fails` each
-    // telling rejects
-    public recordWatchAhead(fails: boolean): void {
-        this.restoreWatchAhead();
-        const provider = this.chainProvider;
-        if (!(provider instanceof MultiRpcProvider))
-            throw new Error("Expected the runtime RPC node provider");
-        // the service's logger is private
-        const logger = this.sm.blockCommitService["logger"];
-        const warn = logger.warn.bind(logger);
-        const record = {
-            told: [] as { to: string; data: string }[][],
-            warnings: [] as string[],
-            restore: () => {
-                Reflect.deleteProperty(provider, "watchAhead");
-                logger.warn = warn;
-            }
-        };
-        Reflect.set(provider, "watchAhead", async (calls: LocalCall[]) => {
-            record.told.push(calls.map(({ to, data }) => ({ to, data })));
-            if (fails) throw new Error("stubbed watch-ahead failure");
-        });
-        logger.warn = (message, ...meta) => {
-            record.warnings.push(String(message));
-            return warn(message, ...meta);
-        };
-        this.watchAheadRecord = record;
-    }
-
-    public getWatchAheadRecord(): {
-        told: { to: string; data: string }[][];
-        warnings: string[];
-    } {
-        return {
-            told: [...(this.watchAheadRecord?.told ?? [])],
-            warnings: [...(this.watchAheadRecord?.warnings ?? [])]
-        };
-    }
-
-    public restoreWatchAhead(): void {
-        this.watchAheadRecord?.restore();
-        this.watchAheadRecord = undefined;
     }
 
     public getChainReadObservation(): { failed: number; passed: number } {

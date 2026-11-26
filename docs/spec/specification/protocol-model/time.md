@@ -211,6 +211,21 @@ previousRelevantTimestamp + firstBlockGrace + p2pTime + agreementTime + chainFal
 is invalid (`OnChainPostTiming.TOO_LATE`), while posting exactly at the deadline is on time
 (inclusive boundary; covered by a dedicated unit test).
 
+**Where the posting time is read.** A block received within `agreementTime` of the local estimated
+clock (`|now − block.timestamp| ≤ agreementTime`) whose on-chain posting timestamp is not already
+stored is not looked up on chain: it is treated as not posted and the subjective in-time check
+(§5.1) accepts it. A stored on-chain posting timestamp is still checked, so `TOO_LATE` still
+disputes. A block received outside `agreementTime` (a late arrival, a replay) has its posting
+looked up as before, and an on-time posting is persisted. The read cannot change the verdict of a
+block received in time: once the objective check passed, `block.timestamp ≤ R + grace + p2pTime`,
+with `R` the previous relevant timestamp and `grace` the `firstBlockGrace`; received in time,
+`now ≤ block.timestamp + agreementTime`; a post that already exists has an on-chain timestamp no
+later than the chain head, which is at most `now + d`, where `d` is how far the chain head can run
+ahead of the local estimated clock. `TOO_LATE` needs a posting later than
+`R + grace + p2pTime + agreementTime + chainFallbackTime`, which is impossible while
+`d < chainFallbackTime`. Peers therefore cannot disagree because of the skip. A post made late
+after the block was accepted is judged by the chain event synchronization as before.
+
 ### 5.3 Timeouts and slashing boundaries
 
 Unavailability claims carry their own time floor: a `Timeout` names the participant, the block
@@ -240,6 +255,11 @@ RPC view that eventually reflects that chain, bounded clock-estimation error, an
 than expected chain inclusion, observation, network, and processing delays. Local wall time is never objective
 evidence. Timestamp comparisons must define inclusive/exclusive boundaries, overflow behavior, stale reads,
 reorganizations, and the maximum supported skew.
+
+The skip of the posting lookup for a block received in time (§5.2) assumes `d < chainFallbackTime`,
+where `d` is how far the chain head can run ahead of the local estimated clock; this is
+[`REQ-TIME-3-MT1MMF`](time.md#req-time-3-mt1mmf) (windows dominate skew) applied to
+`chainFallbackTime`. A deployment that breaks it can accept a block that was posted too late.
 
 ## Security considerations
 
