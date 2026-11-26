@@ -13,6 +13,8 @@
 - [`REQ-SM-6-BJZVQ5` (Turn authorization enforced generically at the protocol layer)](../../../../../specification/protocol-model/state-machines.md#req-sm-6-bjzvq5)
   Partial: On-chain invalid-state-transition replay does not perform the generic leader check, so wrong-turn slashing still depends on an in-contract guard ([`OQ-26-XH59SP` (On-chain wrong-turn enforceability)](../../../../../specification/open-questions.md#oq-26-xh59sp)).
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
+- [`INV-FIN-2-MK27J6` (Signing a block is a binding, non-equivocating vote for that block and the…)](../../../../../specification/protocol-model/finality.md#inv-fin-2-mk27j6)
+  Partial: `checkConflictingBlock` reports a double sign only when both blocks have the same author, so a co-signer of two different blocks at one height is never reported ([`FIND-DISPUTE-12-V556W3`](../../../../../audit/open-findings.md#find-dispute-12-v556w3)).
 
 ## UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV
 

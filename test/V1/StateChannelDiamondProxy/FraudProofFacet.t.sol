@@ -580,6 +580,46 @@ contract FraudProofFacetTest is TimeoutCalldataPostedStaging {
         assertTrue(_isSlashed(CHALLENGER_PK), "participant submitter slashed");
     }
 
+    // ---- a double sign is any signer's, not only the author's ----
+
+    /// AUTHOR_PK authors two different blocks at one (forkId, transactionCnt); PEER_PK co-signs both. The
+    /// co-signer's two signatures prove its double sign; the author signed neither copy.
+    function test_applyFraudProofs_blockDoubleSignByACoSignerSlashesTheCoSignerNotTheAuthor() public {
+        _openHonestChannel();
+        BlockDoubleSignProof memory proof = BlockDoubleSignProof({
+            block1: _coSignedBlock(PEER_PK, keccak256("first payload")),
+            block2: _coSignedBlock(PEER_PK, keccak256("second payload"))
+        });
+
+        assertTrue(
+            _applyAs(
+                vm.addr(CHALLENGER_PK),
+                FraudProof({
+                    proofType: FraudProofType.BlockDoubleSign,
+                    participant: vm.addr(PEER_PK),
+                    encodedProof: abi.encode(proof)
+                })
+            )
+        );
+
+        assertTrue(_isSlashed(PEER_PK), "the double-signing co-signer is slashed");
+        assertFalse(_isSlashed(AUTHOR_PK), "the author signed neither copy");
+        assertFalse(_isSlashed(CHALLENGER_PK), "a valid proof costs its participant submitter nothing");
+    }
+
+    /// a block at transactionCnt 1 of the honest channel's fork, authored by AUTHOR_PK and signed by `signerPk`
+    function _coSignedBlock(uint256 signerPk, bytes32 payload) internal view returns (SignedBlock memory) {
+        Block memory coSigned;
+        coSigned.transaction.header.channelId = HONEST_CHANNEL_ID;
+        coSigned.transaction.header.forkId = diamond.getStateSnapshot(HONEST_CHANNEL_ID).forkId;
+        coSigned.transaction.header.participant = vm.addr(AUTHOR_PK);
+        coSigned.transaction.header.transactionCnt = 1;
+        coSigned.transaction.header.timestamp = block.timestamp;
+        coSigned.transaction.body.data = abi.encode(payload);
+        bytes memory encodedBlock = abi.encode(coSigned);
+        return SignedBlock({encodedBlock: encodedBlock, signature: _sign(signerPk, encodedBlock)});
+    }
+
     function _sort3(uint256 x, uint256 y, uint256 z) internal pure returns (uint256, uint256, uint256) {
         if (x > y) (x, y) = (y, x);
         if (y > z) (y, z) = (z, y);

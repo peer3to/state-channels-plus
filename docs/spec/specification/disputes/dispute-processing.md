@@ -175,8 +175,9 @@ counter punishing the submitter.
   The kill stays in one transaction with the node's own dispute, in front of it; the node does
   not send it alone first to gain time. A node that already disputed the fork sends the kill alone at once,
   concurrently with its own upload; it does not wait for that upload. Its dispute counts only the
-  slashes known when it was built, so a kill landing first can leave it threshold-final without
-  that slash; the missed slash is applied in the next fork (2026-10-08).
+  slashes known when it was built. A kill landing first therefore keeps a threshold-confirmed
+  dispute from finalizing at upload: it takes the normal window, and the reduction at window end
+  removes the slashed members ([`REQ-DIS-13-SNWKMF`](disputes.md#req-dis-13-snwkmf)).
 - **Kill or slash observed on-chain:** record the offender in the local slash view (a kill is the
   disputer's slash) and exclude it from peer communication. A slash of a still-participating peer on
   an undisputed current fork escalates (Stage 1); a kill that empties the window triggers

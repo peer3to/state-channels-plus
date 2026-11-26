@@ -43,6 +43,9 @@ kills the honest dispute holding the block. Three cases keep the true positives:
 predecessor whose replay misses the block's snapshot hash, and a first or later block that links
 to another fork's snapshot, all slash the signer.
 
+A BlockDoubleSign case opens the three-party channel and submits, as the participant challenger, two
+different blocks at transactionCnt 1 that AUTHOR_PK wrote and PEER_PK signed: only PEER_PK is slashed.
+
 ## Tests
 
 - `testFuzz_hasInvalidTimestamp_genesisNeverReverts`: UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04.P1
@@ -67,3 +70,4 @@ to another fork's snapshot, all slash the signer.
 - `test_applyFraudProofs_linkedOtherForkLaterBlockSlashesSigner`: UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P25
 - `testFuzz_applyDisputeFraudProofs_nestedUnlinkedSnapshotNeverKillsHonestDispute`: INV-ENFFP-1-BGVZN4.T1.P15
 - `test_applyDisputeFraudProofs_nestedUnlinkedOtherForkSnapshotSlashesParticipantSubmitter`: UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P22
+- `test_applyFraudProofs_blockDoubleSignByACoSignerSlashesTheCoSignerNotTheAuthor`: INV-FIN-2-MK27J6.T1.P14, UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P41

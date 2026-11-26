@@ -2869,6 +2869,26 @@ restarted node from signing before it restores its own head.
 
 **Evidence:** none yet; the restored-head hold carries its own tests.
 
+<a id="find-dispute-12-v556w3"></a>
+
+### FIND-DISPUTE-12-V556W3
+
+**Limit:** the chain's `BlockDoubleSign` proof slashes any signer whose two signatures cover two
+different blocks at one `(forkId, height)`, author or co-signer. The node detects a double sign only
+when both blocks have the same author (`ValidationService.checkConflictingBlock`), and
+`FraudProofService.createDoubleSignProof` builds the proof against the block's signer. A co-signer of
+two different blocks at one height (card case 2, a tail-block conflict) is therefore never
+reported, although the chain would slash it.
+
+**Status:** Open; medium. Decided (Ljuba, 2026-11-26): widen detection and submission to every
+co-signer, off-chain only, after the stop-signing mechanism lands, so that an honest node that
+restarts without persistence or switches branches is not slashed.
+
+**Evidence:**
+[FraudProofFacet.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/FraudProofFacet.t.sol.md)
+(`test_applyFraudProofs_blockDoubleSignByACoSignerSlashesTheCoSignerNotTheAuthor`) shows the chain
+side; the node side has no test yet.
+
 <a id="find-events-1-3jf8fm"></a>
 
 ### FIND-EVENTS-1-3JF8FM

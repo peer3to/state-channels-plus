@@ -63,7 +63,7 @@ Specification cases tested: 0/3.
 Specification cases tested: 14/19. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6.
 
 [`INV-FIN-2-MK27J6` (Signing a block is a binding, non-equivocating vote for that block and the…)](../specification/protocol-model/finality.md#inv-fin-2-mk27j6)
-Specification cases tested: 2/13. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13.
+Specification cases tested: 3/14. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13.
 
 [`INV-FIN-8-G6V1M1` (Valid transitions that lacked finality when a dispute began are not reverted)](../specification/protocol-model/finality.md#inv-fin-8-g6v1m1)
 Specification cases tested: 0/8.
@@ -370,6 +370,9 @@ Specification cases tested: 6/6.
 
 [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../specification/disputes/disputes.md#req-dis-12-axy60r)
 Specification cases tested: 24/24.
+
+[`REQ-DIS-13-SNWKMF` (A dispute confirmed by the full on-chain threshold set MUST finalize at upload…)](../specification/disputes/disputes.md#req-dis-13-snwkmf)
+Specification cases tested: 5/5.
 
 [`REQ-DISPUTE-PIPE-1-HRBFP7` (Bound intake)](../specification/disputes/dispute-processing.md#req-dispute-pipe-1-hrbfp7)
 Specification cases tested: 3/8. Untested: T1.P1, T1.P2, T1.P3, T1.P7, T1.P8.

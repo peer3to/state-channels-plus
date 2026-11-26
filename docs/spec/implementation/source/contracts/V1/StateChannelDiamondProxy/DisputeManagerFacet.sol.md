@@ -10,6 +10,7 @@
 - [`REQ-DIS-2-PKVZ7E` (Upload is limited to eligible disputers)](../../../../../specification/disputes/disputes.md#req-dis-2-pkvz7e)
 - [`REQ-DIS-3-C4KYSF` (An uploaded dispute records its commitment immediately)](../../../../../specification/disputes/disputes.md#req-dis-3-c4kysf)
 - [`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../../../../../specification/disputes/disputes.md#req-dis-10-sahjbn)
+- [`REQ-DIS-13-SNWKMF` (A dispute confirmed by the full on-chain threshold set MUST finalize at upload…)](../../../../../specification/disputes/disputes.md#req-dis-13-snwkmf)
 - [`REQ-LIF-4-SW8GVY` (Every initiated dispute runs through the dispute game and produces a canonical…)](../../../../../specification/settlement/lifecycle.md#req-lif-4-sw8gvy)
 - [`INV-TRUST-1-6TYWDH` (Every safety-relevant disagreement MUST be resolvable by the chain from…)](../../../../../specification/security/trust-model.md#inv-trust-1-6tywdh)
 - [`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable…)](../../../../../specification/security/trust-model.md#req-trust-1-k5ps99)
@@ -63,3 +64,7 @@ Upload bookkeeping
 - [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P23` — routed through the deployed diamond, a noncanonical encoded dispute reverts with `ErrorNonCanonicalEncoding` and creates no window
 - [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P24` — an encoded dispute above `maxDisputeUploadBytes` reverts with `ErrorDisputeUploadTooLarge` in both upload modes
 - [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P25` — an encoded dispute at `maxDisputeUploadBytes` uploads in both upload modes
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P26` — a threshold-confirmed dispute that lists every chain-slashed member finalizes at upload: its output is the reduced result and both periods are back-dated
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P27` — a threshold-confirmed dispute that omits one chain-slashed member opens a normal window with no reduced result; `reduce` over it at window end lists every chain-slashed member
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P28` — an unlisted chain slash of a non-member does not keep a threshold-confirmed dispute from finalizing at upload
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P29` — a threshold-confirmed dispute that omits a chain-slashed pending joiner opens a normal window

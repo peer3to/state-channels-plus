@@ -209,10 +209,34 @@ contract DisputeManagerFacet is StateChannelCommon {
         if (disputeConfirmation.signatures.length + 1 < thresholdSet.length) {
             return false;
         }
+        // the shortcut commits this dispute's output and skips `reduce`, which folds the chain slashes: a slashed
+        // member the dispute does not list would stay seated, so that dispute takes the normal window instead
+        if (!_listsEverySlashedMember(dispute.input)) {
+            return false;
+        }
         bytes[] memory signatures = UtilityFacet(utilityFacetAddress)
             .insertBytesInByteArray(disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures);
         (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress)
             .verifyThresholdSigned(thresholdSet, disputeConfirmation.signedDispute.encodedDispute, signatures);
         return isThresholdFinal;
+    }
+
+    /// Whether the dispute lists every chain-slashed address that is still a member: a current snapshot participant
+    /// or a pending joiner. A slashed address that is no longer a member needs no listing.
+    function _listsEverySlashedMember(DisputeInput memory input) internal view returns (bool) {
+        address[] memory slashed = _getOnChainSlashedParticipants(input.channelId);
+        if (slashed.length == 0) {
+            return true;
+        }
+        address[] memory members = UtilityFacetInterface(utilityFacetAddress)
+            .concatAddressArraysNoDuplicates(
+                _getSnapshotParticipants(input.channelId), _getPendingParticipants(input.channelId)
+            );
+        for (uint256 i = 0; i < slashed.length; i++) {
+            if (_isAddressInArray(members, slashed[i]) && !_isAddressInArray(input.onChainSlashes, slashed[i])) {
+                return false;
+            }
+        }
+        return true;
     }
 }

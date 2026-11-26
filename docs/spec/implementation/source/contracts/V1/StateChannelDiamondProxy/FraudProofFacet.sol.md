@@ -73,6 +73,7 @@ Proof application
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P38` — WrongGenesis citing an unlinked block 0 after block 0's own height-0 snapshot (other data than the genesis) was adopted reverts `RaceConditionBlockHeightTooOld(0, 0)`; nobody is slashed
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P39` — WrongGenesis citing another channel's block 0 is invalid in the context channel: the author is not slashed there, the eligible prover is
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P40` — after a genesis look-alike block-0 snapshot was refused, WrongGenesis citing the honest linked block 0 is still judged at genesis and reverts `RaceConditionDisputeWindowNotOpen`; nobody is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P41` — BlockDoubleSign over two different blocks at one `(forkId, transactionCnt)` that one author wrote and a co-signer signed both slashes the co-signer, not the author or the participant submitter
 
 ## UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04
 

@@ -492,10 +492,11 @@ describe("parallel forge task discovery", function () {
             "StateSnapshotFacetSameForkTest",
             "StateSnapshotFacetUpdateForkTest",
             "StateSnapshotProofTargetTest",
+            "ThresholdShortcutChainSlashesTest",
             "TimeoutSupersededByFinalStateTest",
             "UtilityFacetTest"
         ]);
-        expect(tasks).to.have.lengthOf(32);
+        expect(tasks).to.have.lengthOf(33);
     });
 
     it("includes a test contract declared in a .test.sol file", function () {
