@@ -127,7 +127,7 @@ A member runs at most one round per fork. Every way out of `agree()` closes the 
 
 ### Which disputes can start a round
 
-Only a dispute with a reason of its own: a leave, a fraud proof or a forced inbound message. In code this is `requireExistingDisputeWindow == false` ([DisputeBuilder.ts#L480](../../src/disputeManager/DisputeBuilder.ts#L480), rule [DisputeUtils.sol#L113-L121](../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol#L113-L121)). A timeout is also a reason, but it never starts or joins a round. A dispute with no reason ("reason-less") can only add to a window that already exists.
+Only a dispute with a reason of its own: a leave, a fraud proof, a slash already recorded on chain, or a forced inbound message. In code this is `requireExistingDisputeWindow == false` ([DisputeBuilder.ts#L480](../../src/disputeManager/DisputeBuilder.ts#L480), rule [DisputeUtils.sol#L113-L121](../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol#L113-L121)). A timeout is also a reason, but it never starts or joins a round. A dispute with no reason ("reason-less") can only add to a window that already exists.
 
 ### The round-start read
 
