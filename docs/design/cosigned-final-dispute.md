@@ -434,7 +434,7 @@ Rejected: one co-signed variant per submitter (self-removal binds to `disputer`,
 
 ## 18. Open questions
 
-1. **Contract branch.** Accept `DisputeInput.finalDeadline` and the co-signed branch? It drops the sender-bound checks for finals and retires count-based finality for ordinary uploads. Proposed: yes. The fallback, exclusivity and signatures expire all depend on it.
+1. **Contract branch.** Accept `DisputeInput.finalDeadline` and the co-signed branch? It drops the sender-bound checks for finals and retires count-based finality for ordinary uploads. Proposed: yes. The fallback, exclusivity and the expiry of signatures all depend on it.
 2. **Window-opening finals only.** A final never lands into an open window, so the auditor's kill-or-add-evidence uploads stay ordinary. What changes: today a member that kills a cheater's dispute and uploads its own in one multicall finalizes at once when the set shrinks to itself; under this design that takes evidence period + kill period + a reduce transaction, at least `evidenceTime` (30 s default) later. The no-window case keeps one-transaction settlement through the trivial round. Proposed: accept. A sender-alone exception would let a colluding last member erase an honest commitment.
 3. **Fallback shape.** All remaining holders submit at once, as the ticket asks (n − 2 cheap reverts when the author withholds), or stagger by sorted address, one block per rank? Proposed: all at once.
 4. **Timing.** Round timer A, grace 2 s, deadline pin time + A + g + 3B, fallback at h + 2. Measure inclusion latency and audit time on the parachain before fixing the values? Proposed: yes (section 15).
