@@ -990,8 +990,7 @@ export async function assertRpcNodesProviderFailsWithoutReachableNode(): Promise
                 {
                     PROVIDER_URL: urls[0],
                     PROVIDER_URLS: urls,
-                    LIGHT_CLIENT_COMPARE_READS: false,
-                    LIGHT_CLIENT_FETCH_EACH_MISS: false
+                    LIGHT_CLIENT_COMPARE_READS: false
                 },
                 logger
             ).then(

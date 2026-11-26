@@ -887,8 +887,8 @@ Owner: [`REQ-LC-9-KWXV43`](runtime/light-client.md#req-lc-9-kwxv43).
 ## OQ-SPEC-LC-2-XQ3PR7 — Where the light client departs from card 399
 
 Open (2026-11-22). The Light Clients card (Trello 399) is the design the light client was built to.
-Where the build departs from it, the card's owner has not accepted the departure. Items 1 to 6 were
-decided by the engineer on the date given, and item 9; items 7 and 8 are still open.
+Where the build departs from it, the card's owner has not accepted the departure. Every item was
+decided by the engineer on the date given.
 
 1. **The event-built mirror stays.** The card says to replace the mirror and the duplicate remote
    `eth_call` checks once verified. While reads are proven the mirror answers nothing and the chain
@@ -915,15 +915,20 @@ decided by the engineer on the date given, and item 9; items 7 and 8 are still o
    gives the remote simulation's cost, and a light client path alone the serving node's push and
    proof cost (2026-11-22). Not measured: a remote simulation's latency on a node that does not also
    push.
-7. **A fallback strategy is in place before the benchmark.** The card asks to benchmark the
-   strategies before choosing one. The light client batches the misses of each pass and runs the call
-   again (strategy 2); proving each miss and continuing (strategy 1) is a benchmark configuration
-   ([`REQ-LC-9-KWXV43`](runtime/light-client.md#req-lc-9-kwxv43)). The choice stays provisional until
-   the farm numbers, and the losing strategies are removed then.
-8. **The benchmark's calls are not channel flows.** The card asks to replay the same blocks and calls
-   through both paths. The drivers run a synthetic workload (a writer contract and a probe contract).
-   Participants running channel flows on a peer3 node need the parachain test mode of PR #606, and the
-   plan items [`REQ-MIRROR-5-N5SZC9.T3`](enforcement/local-mirror.md#req-mirror-5-n5szc9.t3) and [`REQ-LC-8-BBYC51.T1`](runtime/light-client.md#req-lc-8-bbyc51.t1) stay gaps until then.
+7. **Strategy 2 is chosen.** The card asks to benchmark the strategies before choosing one. Strategy 1
+   (prove each miss as the call reaches it and go on) and strategy 2 (prove each pass's misses in one
+   request and run the call again) were measured on 2026-11-22 (`docs/light-client-report.md`, Calls).
+   In the channel flows a steady-state round needs 0.11 requests to the endpoint once received blocks
+   no longer read their commitment (development machine, 2026-11-26), so how a miss is fetched changes
+   little. Strategy 2 stays and strategy 1, which was a benchmark
+   configuration, is removed (2026-11-26). Strategy 3, the endpoint's own simulation, stays as the
+   fallback of a read that fails ([`REQ-LC-3-W7RRHM` (A failed read falls back to the endpoint and is made known)](runtime/light-client.md#req-lc-3-w7rrhm)) and for
+   the calls the light client leaves to the endpoint ([`REQ-LC-2-PMY1VG`](runtime/light-client.md#req-lc-2-pmy1vg)).
+8. **Channel flows are measured; the synthetic drivers stay for capacity.** Participants run the seven
+   channel flows on a peer3 node with the light client off, on and compared (2026-11-23 to 2026-11-26,
+   `docs/light-client-report.md`, Channel flows). Capacity ramps use a workload calibrated from those
+   flows, not the flows themselves. The test gaps of [`REQ-MIRROR-5-N5SZC9.T3`](enforcement/local-mirror.md#req-mirror-5-n5szc9.t3)
+   and [`REQ-LC-8-BBYC51.T1`](runtime/light-client.md#req-lc-8-bbyc51.t1) stay open.
 9. **Watched keys go beyond the card.** The card's partitions hold the keys channel transactions
    touch; the reads a participant's own simulations make reach keys no such transaction touches
    (configuration, routing entries, the participant's account, contract code), and they were proven
@@ -939,8 +944,7 @@ One message per peer per block is met.
 
 Blocking effect: none for safety. Items 1 and 2 bound how much RPC work the light client removes;
 items 3, 4, 6 and 8 bound what the report can claim. Requested decisions: the card's owner accepts or
-rejects items 1 to 6 and 9; items 7 and 8 close with the farm runs and the
-channel-flow runs. Affected layers: [light-client.md](runtime/light-client.md),
+rejects items 1 to 9. Affected layers: [light-client.md](runtime/light-client.md),
 [local-mirror.md](enforcement/local-mirror.md), and the report (`docs/light-client-report.md`).
 
 Owner: [`REQ-LC-1-JT5PKT`](runtime/light-client.md#req-lc-1-jt5pkt).

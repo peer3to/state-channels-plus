@@ -160,12 +160,6 @@ export type LightClientOptions = {
     blockFloor: () => number | undefined;
     /** The longest a read waits for the serving node to push the block at {@link blockFloor}. */
     pushWaitMs: number;
-    /**
-     * For benchmarks: state a read finds missing is proven key by key as the
-     * read reaches it, and the read goes on, instead of a pass collecting
-     * every miss for one request and the read running again.
-     */
-    fetchesEachMiss: boolean;
     /** Counted on: the reads this light client answers. */
     counters: LightClientCounters;
     /** Counted on: the pushed blocks it takes. */
@@ -436,33 +430,12 @@ export class LightClient {
                 this.moveTo(block, fetched);
                 // a pass counts only the state it reads itself
                 this.state.takeUsedNodeProof();
-                if (this.options.fetchesEachMiss)
-                    this.state.fetchMissing = async (missing) => {
-                        const undecided = this.fillFromPartitions(block, [
-                            missing
-                        ]);
-                        if (undecided.length === 0) return;
-                        askedNode = true;
-                        const proven = await this.options.reader.read(
-                            block,
-                            undecided
-                        );
-                        this.state.fill(undecided, proven, true);
-                        undecided.forEach((fetchedRead, index) =>
-                            fetched.push({
-                                read: fetchedRead,
-                                proven: proven[index]
-                            })
-                        );
-                    };
                 let outcome: { value: T } | { error: unknown };
                 try {
                     // a read that needs no environment never reads it
                     outcome = { value: await read(environment!) };
                 } catch (error) {
                     outcome = { error };
-                } finally {
-                    this.state.fetchMissing = undefined;
                 }
                 const misses = this.state.takeMisses();
                 if (misses.length === 0) {

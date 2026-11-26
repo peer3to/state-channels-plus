@@ -13,10 +13,6 @@ export type Config = {
     // too, at the block that proved it, and a different answer is logged as
     // an error and counted. It doubles the chain reads.
     LIGHT_CLIENT_COMPARE_READS: boolean;
-    // For benchmarks: state a light client read finds missing is proven key
-    // by key as the read reaches it, and the read goes on, instead of being
-    // collected for one request per pass and the read run again.
-    LIGHT_CLIENT_FETCH_EACH_MISS: boolean;
     DEBUG_STATE_MANAGER: boolean;
     DEBUG_DISPUTE_HANDLER: boolean;
     DEBUG_P2P_MANAGER: boolean;
@@ -92,7 +88,6 @@ const DEFAULT_CONFIG: Config = {
     PROVIDER_URLS: [],
     LOG_QUERY_MAX_BLOCKS: 1000,
     LIGHT_CLIENT_COMPARE_READS: false,
-    LIGHT_CLIENT_FETCH_EACH_MISS: false,
     DEBUG_STATE_MANAGER: false,
     DEBUG_DISPUTE_HANDLER: false,
     DEBUG_P2P_MANAGER: false,

@@ -13,12 +13,12 @@
  * - batchPerPass: the light client as it is, which collects what a pass
  *   finds missing, proves it in one request and runs the call again
  *   (strategy 2);
- * - fetchEachMiss: the light client proving each missing key as the call
- *   reaches it and going on (strategy 1, `LIGHT_CLIENT_FETCH_EACH_MISS`).
  * - cold: the light client as batchPerPass, following no channel, so it
  *   proves every key a call reads. The share of those keys the followed paths
  *   did not have to prove is their hit rate.
- * Both strategy paths follow the same channel of the partition contract.
+ * The batchPerPass path follows one channel of the partition contract.
+ * Strategy 1 (proving each miss as the call reaches it) was measured on
+ * 2026-11-22 and removed when strategy 2 was chosen (2026-11-26).
  * A call that reverts answers `revert:<data>`, so reverts compare across paths.
  *
  * Each round writes to the channels, waits until the following light clients
@@ -75,7 +75,7 @@ import {
 type RpcMethod = string;
 /** Requests the node received, per method. */
 type MethodCounts = Record<RpcMethod, number>;
-type PathName = "current" | "batchPerPass" | "fetchEachMiss" | "cold";
+type PathName = "current" | "batchPerPass" | "cold";
 type CallKind =
     | "storageInPartition"
     | "callReadInPartition"
@@ -150,12 +150,7 @@ type ReconnectRecord = {
     bytes: number;
 };
 
-const PATHS: readonly PathName[] = [
-    "current",
-    "batchPerPass",
-    "fetchEachMiss",
-    "cold"
-];
+const PATHS: readonly PathName[] = ["current", "batchPerPass", "cold"];
 const ROUNDS = Number(process.env.BENCH_ROUNDS ?? 30);
 const CHANNELS = Number(process.env.BENCH_CHANNELS ?? 4);
 const IDLE_EVERY = Number(process.env.BENCH_IDLE_EVERY ?? 3);
@@ -594,8 +589,7 @@ async function main(): Promise<void> {
                 {
                     PROVIDER_URL: proxy.url,
                     PROVIDER_URLS: [proxy.url],
-                    LIGHT_CLIENT_COMPARE_READS: COMPARES_READS,
-                    LIGHT_CLIENT_FETCH_EACH_MISS: name === "fetchEachMiss"
+                    LIGHT_CLIENT_COMPARE_READS: COMPARES_READS
                 },
                 logger
             );
