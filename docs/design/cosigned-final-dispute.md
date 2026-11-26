@@ -133,9 +133,9 @@ The round starts with one `EventSyncService.readPinnedChainMembership` call ([Ev
 
 ### Who must sign
 
-R is the threshold set from the round-start read. T₀ is the members this member already knows are proven cheaters: the targets of the fraud proofs in its own view ([DisputeBuilder.ts#L355-L386](../../src/disputeManager/DisputeBuilder.ts#L355-L386)) and in received views it kept (those proofs were already checked on chain when it joined). The member waits for R − T₀, so it never waits for someone it has seen proven.
+A member does not wait for anyone it holds a valid fraud proof against (call them T₀): the final slashes those members in the same transaction, so their signatures are not needed. It knows them from proofs it built itself ([DisputeBuilder.ts#L355-L386](../../src/disputeManager/DisputeBuilder.ts#L355-L386)) and from proofs in received views, which it checked on chain. So it waits for R − T₀, where R is the signer set from the round-start read.
 
-If R − T₀ is only the member itself, the round is trivial: steps 4 to 7 of §5 run at once on its own view, with no messages and no timer. This keeps today's one-transaction settlement for a 2-member channel where the other member is a proven cheater.
+If that leaves only the member itself, it signs and submits at once, with no messages and no timer. In a 2-member channel with a proven cheater, this keeps today's one-transaction settlement.
 
 ### When no round runs
 
