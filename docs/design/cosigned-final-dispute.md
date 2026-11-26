@@ -108,12 +108,13 @@ The appendix lists the spec IDs and code locations for each requirement.
 
 A member also audits only views whose blocks it executed itself. The merge then builds on its own latest block, so it never signs away state it already signed. With this rule one honest signer is enough for a correct final, whatever its local diamond missed.
 
-The round reads the chain four times, all for this decision:
+The round reads the chain up to five times, all for this decision:
 
 1. once at round start (§3);
 2. each fraud proof, while auditing views (§5);
 3. the same proofs again, right before the final is sent (§7);
-4. once after a signature expires, to learn whether the final was accepted (§8).
+4. when the merged dispute may omit its auditing data, the chain confirms that (the check `build` already makes, §5);
+5. once after a signature expires, to learn whether the final was accepted (§8).
 
 Reading block headers for the chain time does not count. Everything else uses local data, and when the chain refuses something, the member recovers after the dispute mutex is released.
 
@@ -244,7 +245,7 @@ Sort the views of R − T by `disputer` and run `localDiamondContract.reduce.sta
 - More than one self-remover ends the round, because one dispute cannot carry more than one ([L533-L536](../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L533-L536)).
 - `reduce` reads the local diamond, but harmlessly. The window timestamp and the slashes up to the window end are empty, since there is no window on chain and the local diamond only lags. The inbound head, inbound map and snapshot ([L93-L106](../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L93-L106)) only feed inbound outputs, which the merge ignores, and they cannot revert. Each view lists the on-chain slashes it saw, so the union covers them. A forge test checks this ([`OQ-39-C3EAMN`](../../docs/spec/specification/open-questions.md#oq-39-c3eamn) may make `reduce` stateless).
 
-The merged dispute is then built by the tail of `DisputeBuilder.build` ([L476-L533](../../src/disputeManager/DisputeBuilder.ts#L476-L533)), turned into one method that `build` and the merge both call. It takes the dispute input, the auditing data, the latest state machine state, the author, and whether a local "may omit" is confirmed on chain. The state feeds `computeDisputeOutputSnapshotData` ([L488-L493](../../src/disputeManager/DisputeBuilder.ts#L488-L493)); for a merge it comes from storage, since the base's latest block was executed.
+The merged dispute is then built by the tail of `DisputeBuilder.build` ([L476-L533](../../src/disputeManager/DisputeBuilder.ts#L476-L533)), turned into one method that `build` and the merge both call. It takes the dispute input, the auditing data, the latest state machine state, and the author. The state feeds `computeDisputeOutputSnapshotData` ([L488-L493](../../src/disputeManager/DisputeBuilder.ts#L488-L493)); for a merge it comes from storage, since the base's latest block was executed.
 
 - **Base view:** the first sorted view whose last block is `latestBlock`, or the first sorted view if no view has a block ([DisputeVerificationFacet.sol#L113-L131](../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L113-L131)). Its state proof, auditing data and snapshot are used unchanged.
 - **Four fields replaced:**
@@ -253,7 +254,7 @@ The merged dispute is then built by the tail of `DisputeBuilder.build` ([L476-L5
     - `disputer` = the self-remover, else the base's disputer;
     - `finalDeadline` = the minimum over the views of R − T. A proven member's view is not among them, so it cannot move the deadline.
 - **Recomputed:** `requireExistingDisputeWindow` and `outputSnapshotDataHash`. If the merged dispute has no reason of its own, the round ends.
-- **`postedAuditingData`** takes the local diamond's answer, with no chain confirmation of a "may omit" (unlike `build`, [DisputeBuilder.ts#L518-L533](../../src/disputeManager/DisputeBuilder.ts#L518-L533)). The flag only picks the entry point, never the outcome, and with no kill period it never makes a signer slashable. It derives from the snapshot, which the round-start read covers. A snapshot posted mid-round can make members compute different digests, which costs only the round.
+- **`postedAuditingData`** is decided the way `build` decides it today ([DisputeBuilder.ts#L518-L533](../../src/disputeManager/DisputeBuilder.ts#L518-L533)): a local "must post" is used as is, because posting is never wrong; a local "may omit" is confirmed on chain with `isAuditingDataOmissionAllowed.staticCall`, because omitting data the chain requires breaks the data-availability rule. The finish method keeps that step. A snapshot posted mid-round can make members compute different answers, which costs only the round.
 - **Proofs to apply:** for each target in T, the first proof in sorted order that targets it.
 
 ### Step 5: audit the merged dispute
@@ -293,7 +294,7 @@ The contract verifies the signatures with `verifyThresholdSigned` ([UtilityFacet
 | `selfRemoval`, `disputer`                                          | leaver, author                                                                                                                                        | the leaver's own signature                                                           |
 | `timeout`                                                          | empty                                                                                                                                                 | any view with a timeout ends the round                                               |
 | `outputSnapshotDataHash`                                           | the successor fork                                                                                                                                    | computed from hash-bound inputs                                                      |
-| `postedAuditingData`                                               | entry point                                                                                                                                           | affects liveness only                                                                |
+| `postedAuditingData`                                               | entry point                                                                                                                                           | a local \"must post\", or a \"may omit\" confirmed on chain                          |
 
 - **Deadline.** Each view proposes `round-start time + A + g + 3B` (§10). The merge takes the minimum, so equal V gives an equal value. A Byzantine proposal can only shorten the deadline, which amounts to a veto, and an honest proposal caps it.
 - **Only the merge is signed.** The finish method stops before the builder's signing line ([DisputeBuilder.ts#L544-L547](../../src/disputeManager/DisputeBuilder.ts#L544-L547)). The only signature over bytes with `finalDeadline != 0` is the one from step 6, which comes with a signed record and the signing pause.
