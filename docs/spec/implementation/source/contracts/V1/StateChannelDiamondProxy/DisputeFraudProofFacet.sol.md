@@ -248,3 +248,5 @@ Kill application
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P220` — A `DisputeFinalPointRegression` check that reverts reverts the whole application, slashing nobody
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P221` — A `DisputeConflictsWithFinalState` check that reverts reverts the whole application, slashing nobody
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P222` — `TimeoutSupersededByFinalState` kills a timeout dispute that ends on a side block of its own, below the final point
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P223` — `DisputeInboundAnchorBehindLatestState` kills a dispute whose tail consumes an inbound block not yet on chain
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P224` — a nested `ForgedInboundMessageBlock` against the tail block kills the same dispute

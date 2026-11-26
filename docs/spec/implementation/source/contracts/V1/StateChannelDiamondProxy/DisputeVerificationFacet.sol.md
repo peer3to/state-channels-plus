@@ -64,6 +64,8 @@ Reduction algebra
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P34` — `reduce` after an open-channel storage clearing reports the snapshot's inbound head with its real height, not zero
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P35` — a real timeout and a self-removal without a timeout, in both commit orders, reduce to the same successor snapshot data
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P36` — the lower timeout of a dispute with a shorter latest state applies on the highest state; the participant the longer dispute timed out keeps its seat
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P37` — `reduceAndFinalize` reverts on the inbound run when the winner's tail consumed an inbound block that landed after the window cut; nothing is committed
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P38` — when that block landed before the cut, the successor applies only the blocks above the winner's head: each deposit counts once
 
 ## UNIT-TEST-SM-DISPUTE-VERIFICATION-1-ZAJQV6
 

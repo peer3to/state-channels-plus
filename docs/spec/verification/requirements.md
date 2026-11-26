@@ -351,13 +351,13 @@ Specification cases tested: 4/15. Untested: T1.P2, T1.P4, T1.P6, T1.P7, T1.P8, T
 Specification cases tested: 18/33. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16.
 
 [`REQ-DIS-3-C4KYSF` (An uploaded dispute records its commitment immediately)](../specification/disputes/disputes.md#req-dis-3-c4kysf)
-Specification cases tested: 5/22. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P17, T1.P18, T1.P20, T1.P21.
+Specification cases tested: 7/24. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P17, T1.P18, T1.P20, T1.P21.
 
 [`REQ-DIS-4-6J6YYG` (Reduction runs only after the kill period expires and consumes exactly the…)](../specification/disputes/disputes.md#req-dis-4-6j6yyg)
 Specification cases tested: 2/16. Untested: T1.P1, T1.P2, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15.
 
 [`REQ-DIS-6-Y92H1M` (Every initiated dispute window MUST end in a canonical successor fork, genesis…)](../specification/disputes/disputes.md#req-dis-6-y92h1m)
-Specification cases tested: 5/17. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
+Specification cases tested: 7/19. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
 
 [`REQ-DIS-9-64WHCD` (The on-chain snapshot advances to a successor fork only along committed…)](../specification/disputes/disputes.md#req-dis-9-64whcd)
 Specification cases tested: 1/22. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16, T1.P17, T1.P18, T1.P19, T1.P20, T1.P21, T1.P22.
