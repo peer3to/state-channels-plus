@@ -75,6 +75,11 @@ Advance paths
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P52` — storage clearing on an open channel with no inbound block deletes nothing and names the zero hash
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P53` — a routed same-fork final close (zero participants) deletes the snapshot's inbound head and the blocks below it and emits exactly one `ChannelStorageCleared`, naming the head
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P54` — a second open-channel storage clearing at the same snapshot head names the block the first one deleted, deletes nothing and keeps the head with its height
+- [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P55` — the snapshot-update deposit read takes a stored new inbound head
+- [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P56` — the snapshot-update deposit read takes the snapshot inbound head whose block is not stored
+- [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P57` — a snapshot update whose new inbound head is neither stored nor the snapshot head reverts `ErrorInboundMessageBlockNotStored` instead of reading zero deposits
+- [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P58` — a snapshot update whose new inbound head is the zero hash on a channel with inbound blocks reverts `ErrorInboundMessageBlockNotStored`
+- [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P59` — an open-channel storage clearing deletes a recorded on-chain slash of an address that already exited
 
 ## INTEGRATION-TEST-OPEN-CHANNEL-REGISTRY-1-A8M2KP
 

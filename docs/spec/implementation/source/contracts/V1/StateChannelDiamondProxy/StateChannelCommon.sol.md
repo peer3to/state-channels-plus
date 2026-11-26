@@ -112,6 +112,7 @@ Shared predicates
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P82` — `_inboundHeightOf` reads a stored inbound block's stored height
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P83` — `_inboundHeightOf` reads the anchor's inbound height for the anchor's inbound head whose block is not stored
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P84` — `_inboundHeightOf` reverts with `ErrorInboundMessageBlockNotStored` for a hash that is neither stored nor the anchor's inbound head
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P85` — recording an on-chain slash of an address outside the snapshot and pending sets does not revert, emits `ChainSlashed` and leaves the on-chain threshold set unchanged
 
 ## UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7
 

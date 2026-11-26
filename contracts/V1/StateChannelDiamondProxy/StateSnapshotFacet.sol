@@ -161,7 +161,12 @@ contract StateSnapshotFacet is StateChannelCommon {
         SnapshotData memory newSnapshotData
     ) internal {
         ChannelBalance storage cb = channelBalances[channelId];
-        Balance memory totalDeposits = _resolveTotalDeposits(channelId, newSnapshotData.latestInboundMessageBlockHash);
+        // the new snapshot's inbound head is the channel head or a reduction's head: stored or the anchor's head
+        (bool hasDeposits, Balance memory totalDeposits) =
+            _resolveTotalDeposits(channelId, newSnapshotData.latestInboundMessageBlockHash);
+        if (!hasDeposits) {
+            revert ErrorInboundMessageBlockNotStored(channelId, newSnapshotData.latestInboundMessageBlockHash);
+        }
         Balance memory totalWithdrawals = cb.totalWithdrawals;
         for (uint256 i = 0; i < outboundMessageBlocks.length; i++) {
             for (uint256 j = 0; j < outboundMessageBlocks[i].messages.length; j++) {

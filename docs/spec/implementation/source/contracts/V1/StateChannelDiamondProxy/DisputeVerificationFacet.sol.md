@@ -67,6 +67,18 @@ Reduction algebra
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P36` — the lower timeout of a dispute with a shorter latest state applies on the highest state; the participant the longer dispute timed out keeps its seat
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P37` — `reduceAndFinalize` reverts on the inbound run when the winner's tail consumed an inbound block that landed after the window cut; nothing is committed
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P38` — when that block landed before the cut, the successor applies only the blocks above the winner's head: each deposit counts once
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P39` — `reduce` whose snapshot inbound head block is not stored (a mirror gap, or a closing clearing) reads the snapshot's own inbound height for that head
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P40` — `reduce` of a window opened in the same block as the prune cuts at the snapshot inbound head's time and stops on that head with its height
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P41` — `reduceAndFinalize` for a window opened before the prune below the snapshot head finds no window (the prune deleted it), so it reduces and commits nothing
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P42` — the public `reduce` view without an expired dispute window cuts before every inbound block and reads the zero hash at height zero without reverting
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P43` — `reduce` whose cut is before the first inbound block reads the zero hash at height zero without reverting
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P44` — `reduce` whose cut is before the pruned snapshot inbound head's time ends on the pruned block below the head and reads height zero without reverting
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P45` — the balance-invariant check reads the deposit total of a stored inbound head, not the snapshot's total
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P46` — the balance-invariant check reads the snapshot's deposit total for the snapshot inbound head whose block is not stored
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P47` — the balance-invariant check of a state naming an inbound head that is not on chain answers false and does not revert
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P48` — the balance-invariant check of a state naming the zero inbound hash on a channel with inbound blocks answers false and does not revert
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P49` — an on-chain slash of an address outside the reduced state takes no effect: balances keep and the real timeout still applies
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P50` — an exited address that joins again in the pending inbound run is removed by its on-chain slash, and that effective slash suppresses the timeout
 
 ## UNIT-TEST-SM-DISPUTE-VERIFICATION-1-ZAJQV6
 

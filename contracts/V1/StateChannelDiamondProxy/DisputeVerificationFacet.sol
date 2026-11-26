@@ -98,11 +98,11 @@ contract DisputeVerificationFacet is StateChannelCommon {
             inboundBlock = inboundMessageBlockMap[channelId][inboundHash];
         }
         reducedOutput.latestInboundMessageBlockHash = inboundHash;
-        // the snapshot's own inbound head -> take its height from the snapshot
-        SnapshotData storage snapshotData = stateSnapshots[channelId].snapshotData;
-        reducedOutput.latestInboundMessageBlockHeight = inboundHash == snapshotData.latestInboundMessageBlockHash
-            ? snapshotData.latestInboundMessageBlockHeight
-            : inboundBlock.blockHeight;
+        // A committed window's cut never passes the on-chain snapshot's inbound head: the prune below that head
+        // clears every dispute window, and a later window cuts at or after the head's time. The public `reduce` view
+        // without an expired window (an off-chain comparison) cuts before every block and walks to the zero hash or
+        // a pruned block, so a missing block reads height zero here instead of reverting.
+        (, reducedOutput.latestInboundMessageBlockHeight) = _resolveInboundHeight(channelId, inboundHash);
 
         uint256 selfRemovalCount;
         bool latestBlockInitialized;
@@ -474,7 +474,11 @@ contract DisputeVerificationFacet is StateChannelCommon {
     ) public returns (bool) {
         ChannelBalance storage channelBalance = channelBalances[channelId];
         console.log("BALANCE 1");
-        Balance memory onChainDeposits = _resolveTotalDeposits(channelId, snapshotData.latestInboundMessageBlockHash);
+        // a dispute's latest state can name an inbound head that is not on chain: the check answers false then, so
+        // a missing block reads as zero deposits here instead of reverting
+        (bool hasDeposits, Balance memory onChainDeposits) =
+            _resolveTotalDeposits(channelId, snapshotData.latestInboundMessageBlockHash);
+        if (!hasDeposits) onChainDeposits = stateMachineImplementation.getZeroBalance();
         Balance memory onChainWithdrawals = channelBalance.totalWithdrawals;
         if (snapshotData.stateMachineStateHash != keccak256(encodedStateMachineState)) return false;
         console.log("BALANCE 2");

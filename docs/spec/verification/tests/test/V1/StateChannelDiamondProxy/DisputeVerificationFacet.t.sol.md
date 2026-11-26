@@ -60,6 +60,11 @@ leaves it; the call still reverts with `ErrorDisputeExecutionOutOfGas`. An inbou
 state machine does not handle reverts with the exact `ErrorDisputeStateMachineInboundProcessingFailed`
 bytes. A state the state machine cannot decode reverts with empty data, which stays empty.
 
+An on-chain slash of an address that already exited is recorded without a revert and leaves the
+threshold set unchanged; the honest dispute that omits it is not killed by the subset counter, the
+slash takes no effect on the reduced state and the timeout still applies, and only an exited address
+that joins again is removed by it.
+
 ## Tests
 
 - `test_reduce_listedSlashesWithoutChannel_keptAsDedupedCandidates`: none
@@ -148,3 +153,7 @@ bytes. A state the state machine cannot decode reverts with empty data, which st
 - `test_commitToDisputeReducedResult_windowAlreadyReducedRevertsCarryingAllThreeForkIds`: UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P18
 - `test_challengeDisputeReduction_afterChallengePeriodRevertsCarryingDeadlineAndCurrentTime`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P27
 - `test_commitToDisputeReducedResult_noDisputeWindow_revertsNamingTheMissingWindow`: UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P16
+- `test_addOnChainSlashedParticipant_exitedAddress_recordsWithoutRevertAndKeepsTheThresholdSet`: UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P85
+- `test_handleOnChainSlashesNotSubset_disputeOmittingAnExitedAddressSlash_isNotKilled`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P225
+- `test_computeDisputeOutputState_slashOfAnExitedAddress_takesNoEffectAndKeepsTheTimeout`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P49
+- `test_computeDisputeOutputState_exitedAddressJoinsAgain_slashRemovesItAndSuppressesTheTimeout`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P50

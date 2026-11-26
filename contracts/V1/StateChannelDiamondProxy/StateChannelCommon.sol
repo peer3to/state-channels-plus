@@ -296,19 +296,29 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         emit InboundMessagesProcessed(channelId, messageBlock);
     }
 
-    function _resolveTotalDeposits(bytes32 channelId, bytes32 blockHash) internal view returns (Balance memory) {
-        Balance memory zeroBalance = stateMachineImplementation.getZeroBalance();
-        if (blockHash == bytes32(0)) {
-            return zeroBalance;
-        }
-        if (!_hasInboundMessageBlock(channelId, blockHash)) {
-            StateSnapshot storage snapshot = stateSnapshots[channelId];
-            if (snapshot.snapshotData.latestInboundMessageBlockHash == blockHash) {
-                return snapshot.snapshotData.totalDeposits;
-            }
-            return zeroBalance;
-        }
-        return inboundMessageBlockMap[channelId][blockHash].totalBalance;
+    /// The deposit total at inbound block `blockHash` through `_resolveInboundBlock`. `found` is false for a missing
+    /// block; each caller decides whether that reverts.
+    function _resolveTotalDeposits(bytes32 channelId, bytes32 blockHash)
+        internal
+        view
+        returns (bool found, Balance memory totalDeposits)
+    {
+        (bool isStored, bool isAnchorHead) = _resolveInboundBlock(channelId, blockHash);
+        if (isStored) return (true, inboundMessageBlockMap[channelId][blockHash].totalBalance);
+        if (isAnchorHead) return (true, stateSnapshots[channelId].snapshotData.totalDeposits);
+        return (false, totalDeposits);
+    }
+
+    /// The one inbound lookup behind the height and deposit readers: the stored block, else the on-chain snapshot's
+    /// inbound head, whose height and deposit total the snapshot holds (a local mirror can lack that block). Both
+    /// false: the block is missing.
+    function _resolveInboundBlock(bytes32 channelId, bytes32 messageBlockHash)
+        internal
+        view
+        returns (bool isStored, bool isAnchorHead)
+    {
+        if (_hasInboundMessageBlock(channelId, messageBlockHash)) return (true, false);
+        return (false, messageBlockHash == stateSnapshots[channelId].snapshotData.latestInboundMessageBlockHash);
     }
 
     function _hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash) internal view virtual returns (bool) {
@@ -339,15 +349,23 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     /// The inbound height of `messageBlockHash`: the stored inbound block's height, else the on-chain snapshot's own
     /// inbound height when the hash is that snapshot's inbound head. Any other hash reverts: a missing block never
     /// reads as height zero.
-    function _inboundHeightOf(bytes32 channelId, bytes32 messageBlockHash) internal view returns (uint256) {
-        if (_hasInboundMessageBlock(channelId, messageBlockHash)) {
-            return inboundMessageBlockMap[channelId][messageBlockHash].blockHeight;
-        }
-        SnapshotData storage anchorData = stateSnapshots[channelId].snapshotData;
-        if (messageBlockHash == anchorData.latestInboundMessageBlockHash) {
-            return anchorData.latestInboundMessageBlockHeight;
-        }
-        revert ErrorInboundMessageBlockNotStored(channelId, messageBlockHash);
+    function _inboundHeightOf(bytes32 channelId, bytes32 messageBlockHash) internal view returns (uint256 blockHeight) {
+        bool found;
+        (found, blockHeight) = _resolveInboundHeight(channelId, messageBlockHash);
+        if (!found) revert ErrorInboundMessageBlockNotStored(channelId, messageBlockHash);
+    }
+
+    /// The inbound height of `messageBlockHash` through `_resolveInboundBlock`. `found` is false for a missing block;
+    /// each caller decides whether that reverts.
+    function _resolveInboundHeight(bytes32 channelId, bytes32 messageBlockHash)
+        internal
+        view
+        returns (bool found, uint256 blockHeight)
+    {
+        (bool isStored, bool isAnchorHead) = _resolveInboundBlock(channelId, messageBlockHash);
+        if (isStored) return (true, inboundMessageBlockMap[channelId][messageBlockHash].blockHeight);
+        if (isAnchorHead) return (true, stateSnapshots[channelId].snapshotData.latestInboundMessageBlockHeight);
+        return (false, 0);
     }
 
     // snapshot adoption prunes the canonical inbound chain below its head -> absent above it means never committed

@@ -250,3 +250,4 @@ Kill application
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P222` — `TimeoutSupersededByFinalState` kills a timeout dispute that ends on a side block of its own, below the final point
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P223` — `DisputeInboundAnchorBehindLatestState` kills a dispute whose tail consumes an inbound block not yet on chain
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P224` — a nested `ForgedInboundMessageBlock` against the tail block kills the same dispute
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P225` — a dispute that omits the recorded on-chain slash of an exited address is a subset of the record: `DisputeOnChainSlashesNotSubset` does not kill it

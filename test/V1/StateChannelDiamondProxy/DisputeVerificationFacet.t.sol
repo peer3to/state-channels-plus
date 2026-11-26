@@ -1,6 +1,7 @@
 pragma solidity ^0.8.8;
 
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
+import {StateChannelManagerEvents} from "../../../contracts/V1/StateChannelManagerEvents.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import {DisputeFraudProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol";
 import {DisputeVerificationFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol";
@@ -168,6 +169,15 @@ contract DisputeExpiryGuardHarness is
 
     function pendingParticipants(bytes32 channelId) external view returns (address[] memory) {
         return _getPendingParticipants(channelId);
+    }
+
+    /// what `_killDispute` writes for a slashed disputer: no membership check
+    function slashOnChain(bytes32 channelId, address participant) external {
+        addOnChainSlashedParticipant(channelId, participant);
+    }
+
+    function onChainThresholdSet(bytes32 channelId) external view returns (address[] memory) {
+        return _getOnChainThresholdSet(channelId);
     }
 
     /// Seeds only the channel's recorded on-chain slash set, so the slash-subset
@@ -762,6 +772,88 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(abi.encode(result.participants), abi.encode(participants));
         assertEq(abi.encode(result.balances), abi.encode(_participantBalances(participants.length)));
         assertEq(out.outboundMessageBlock.messages.length, 0);
+    }
+
+    // ---- a slash of an address that already exited ----
+
+    function test_addOnChainSlashedParticipant_exitedAddress_recordsWithoutRevertAndKeepsTheThresholdSet() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        address[] memory participants = _participants();
+        address exited = address(0xE1);
+        StateSnapshot memory snapshot;
+        snapshot.snapshotData.participants = participants;
+        harness.seedSnapshot(CHANNEL_ID, snapshot);
+
+        vm.expectEmit(address(harness));
+        emit StateChannelManagerEvents.ChainSlashed(CHANNEL_ID, exited, block.timestamp);
+        harness.slashOnChain(CHANNEL_ID, exited);
+
+        assertEq(
+            abi.encode(harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, block.timestamp)),
+            abi.encode(_oneAddress(exited)),
+            "recorded"
+        );
+        assertEq(abi.encode(harness.onChainThresholdSet(CHANNEL_ID)), abi.encode(participants), "threshold set");
+    }
+
+    /// The honest builder lists only participants of its latest state, so it omits the exited address's slash:
+    /// the subset counter has nothing to kill.
+    function test_handleOnChainSlashesNotSubset_disputeOmittingAnExitedAddressSlash_isNotKilled() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        address exited = address(0xE1);
+        harness.slashOnChain(CHANNEL_ID, exited);
+        Dispute memory dispute;
+        dispute.input.channelId = CHANNEL_ID;
+        dispute.input.disputer = address(0xA1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RaceConditionOnChainSlashes.selector, CHANNEL_ID, new address[](0), _oneAddress(exited)
+            )
+        );
+        harness.handleOnChainSlashesNotSubset("", dispute);
+    }
+
+    function test_computeDisputeOutputState_slashOfAnExitedAddress_takesNoEffectAndKeepsTheTimeout() public {
+        address[] memory participants = _participants();
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        input.onChainSlashes = _oneAddress(address(0xE1));
+        input.timeout.participant = participants[2];
+
+        (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(participants, input);
+
+        address[] memory remaining = new address[](2);
+        remaining[0] = participants[0];
+        remaining[1] = participants[1];
+        assertEq(abi.encode(result.participants), abi.encode(remaining));
+        _assertExactExitMessages(out, _oneAddress(participants[2]), _oneAmount(30));
+    }
+
+    /// An exited address that joins again in the pending inbound run is a participant after the joins: the slash
+    /// removes it and suppresses the timeout. Exiting does not escape the slash.
+    function test_computeDisputeOutputState_exitedAddressJoinsAgain_slashRemovesItAndSuppressesTheTimeout() public {
+        address[] memory participants = _participants();
+        address exited = address(0xE1);
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        input.onChainSlashes = _oneAddress(exited);
+        input.timeout.participant = participants[2];
+        MessageBlock[] memory inbound = new MessageBlock[](1);
+        inbound[0].blockHeight = 1;
+        inbound[0].messages = new Message[](1);
+        inbound[0].messages[0] = _joinInboundMessage(exited);
+        (bytes memory encodedState, StateSnapshot memory snapshot) = _seededMathState(participants);
+
+        DisputeOutputState memory out = outputHarness.computeDisputeOutputState(input, snapshot, encodedState, inbound);
+
+        MathState memory result = abi.decode(out.encodedModifiedState, (MathState));
+        assertEq(abi.encode(result.participants), abi.encode(participants), "timeout suppressed, rejoiner removed");
+        _assertExactExitMessages(out, _oneAddress(exited), _oneAmount(0));
     }
 
     function test_computeDisputeOutputState_absentRemovalPreservesStateAndEmitsNoExit() public {
