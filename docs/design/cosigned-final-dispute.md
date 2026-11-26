@@ -117,21 +117,61 @@ Reading block headers for the chain time does not count. Everything else uses lo
 
 ## 3. When a round runs, and with whom
 
-- The round runs inside `DisputeManager.dispute` ([DisputeManager.ts#L145](../../src/disputeManager/DisputeManager.ts#L145)), after the barrier ([L180-L192](../../src/disputeManager/DisputeManager.ts#L180-L192)) and `constructDispute` ([L197](../../src/disputeManager/DisputeManager.ts#L197)), and before the upload. Every trigger ends up there. The new call `agree(forkId, constructed)` enters a round at most once per fork. Every exit closes the fork, and a later call returns "no round" at once. So a Byzantine member gets one bad round, which is a veto it already has.
-- **The pin.** The round starts with one `EventSyncService.readPinnedChainMembership` call ([EventSyncService.ts#L460-L503](../../src/stateManager/eventSync/EventSyncService.ts#L460-L503)). Today this multicall returns the slashed set, the snapshot and the balance, together with the inbound head, all at one block. It gains two values: the threshold set and the fork's window creation time. Both are already routed ([StateChannelManagerProxy.sol#L97](../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L97), [L117](../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L117)). The call runs no handler and writes nothing, so it is safe under the mutex. Its block, timestamp and values are the **pin**.
-- **R** is the pin's threshold set. **T₀** is the set of members targeted by fraud proofs in two places. The first is the member's own view (the proofs construction would apply, [DisputeBuilder.ts#L355-L386](../../src/disputeManager/DisputeBuilder.ts#L355-L386)). The second is the received views it kept, whose proofs the join audit already checked on the chain. This way a joiner without a reason of its own does not wait for a member that it saw proven.
-- **No round** runs, and nothing is delayed, in any of these cases:
-    - the pinned read fails or throws;
-    - the pin shows a window for the fork;
-    - the own dispute's inbound head, or the local snapshot, differs from the pin's. Slashes are not compared: listing fewer slashes is the accepted race of §6, and the constructed list also holds pending targets ([DisputeBuilder.ts#L385-L400](../../src/disputeManager/DisputeBuilder.ts#L385-L400));
-    - the own dispute carries a timeout;
-    - the own dispute has no reason and the call does not take the join mark. It continues as today. A reason-less upload is today's kill replacement ([EventHandler.ts#L341-L353](../../src/eventHandlers/EventHandler.ts#L341-L353)), and when the chain refuses it, that runs today's missed-slash recovery ([DisputeManager.ts#L322-L324](../../src/disputeManager/DisputeManager.ts#L322-L324));
-    - a member of R − T₀ has no open transport;
-    - the turn rule fails (§8).
-- **Own reason** means `requireExistingDisputeWindow == false` ([DisputeBuilder.ts#L480](../../src/disputeManager/DisputeBuilder.ts#L480), rule [DisputeUtils.sol#L113-L121](../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol#L113-L121)). The reasons are a leave, a fraud proof, a forced inbound message or a timeout. A dispute with none of them is "reason-less" and can only join a window that already exists. A timeout never starts or joins a round.
-- **Repair from the pin.** When the pin disagreed with local data, `agree()` returns the pin. After the unlock, `dispute()` repairs in the background, detached and observed like `requestDispute` ([DisputeManager.ts#L503-L510](../../src/disputeManager/DisputeManager.ts#L503-L510)). For an inbound or snapshot mismatch it calls `synchronizeChainMembership(channelId, pin)` ([EventSyncService.ts#L514-L549](../../src/stateManager/eventSync/EventSyncService.ts#L514-L549)). For a window it has not seen, it runs the settle read (§8). No new chain read is added. It treats the answer as today's caller does ([MembershipService.ts#L128-L155](../../src/stateManager/membership/MembershipService.ts#L128-L155)): `false` is logged and dropped, and a throw goes to the fatal funnel ([EventSyncService.ts#L506-L513](../../src/stateManager/eventSync/EventSyncService.ts#L506-L513), [L399-L404](../../src/stateManager/eventSync/EventSyncService.ts#L399-L404)). Without this repair, one dropped log would disable the fast path for good, because an ordinary upload is not refused for a missed snapshot.
-- **Trivial round.** When R − T₀ is this member alone, steps 4-7 of §5 run at once on V = {own view}, with no messages and no timer. (V is the set of views a member holds.) This keeps the one-transaction settlement between 2 members when the cheater is proven.
-- **Joining.** A member that receives a view for its active fork joins only when all of these hold: the fork is open, its bit is clear, the view passes the §4 checks and the §5 audit, the view has a reason of its own, and the turn rule holds. It marks the fork "join requested" and calls the existing detached `requestDispute(forkId)` once. That call raises its barrier, builds its view, pins and enters the round. The first reason-less `agree()` call takes the mark. It is answered "joined" whether or not a round runs. (A pin mismatch, a missing transport or the turn rule can end it with no round, and then it uploads nothing.) Every other reason-less call finds no mark and takes today's path, even while a view is kept. Those calls are evidence adds, kill replacements and §8 re-disputes. The received view is kept, checked against the pin and merged. If the bit is already set, the member's own `dispute()` is running, so it does not join. Its own call, if it has a reason, meets the kept view. So two triggers at the same time run a single round.
+### Where the round starts
+
+Every dispute trigger already ends up in `DisputeManager.dispute` ([DisputeManager.ts#L145](../../src/disputeManager/DisputeManager.ts#L145)). The round is one new call there, `agree(forkId, constructed)`. It sits after the barrier is raised ([L180-L192](../../src/disputeManager/DisputeManager.ts#L180-L192)) and the member's own dispute is built ([L197](../../src/disputeManager/DisputeManager.ts#L197)), and before the upload.
+
+A member runs at most one round per fork. Every way out of `agree()` closes the fork for that member, and a later call returns "no round" at once. A Byzantine member can therefore spoil one round, which is no more than the veto it already has.
+
+### Which disputes can start a round
+
+Only a dispute with a reason of its own: a leave, a fraud proof or a forced inbound message. In code this is `requireExistingDisputeWindow == false` ([DisputeBuilder.ts#L480](../../src/disputeManager/DisputeBuilder.ts#L480), rule [DisputeUtils.sol#L113-L121](../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol#L113-L121)). A timeout is also a reason, but it never starts or joins a round. A dispute with no reason ("reason-less") can only add to a window that already exists.
+
+### The pin: one chain read at the start
+
+The round starts with one `EventSyncService.readPinnedChainMembership` call ([EventSyncService.ts#L460-L503](../../src/stateManager/eventSync/EventSyncService.ts#L460-L503)). This multicall already returns the slashed set, the snapshot and the channel balance with the inbound head, all at one block. It gains two values that the proxy already routes: the threshold set and the fork's window creation time ([StateChannelManagerProxy.sol#L97](../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L97), [L117](../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L117)). The call runs no event handler and writes nothing, so it is safe to make while holding the dispute mutex. Its block, timestamp and values are the **pin**.
+
+### Who must sign
+
+R is the threshold set from the pin. T₀ is the members this member already knows are proven cheaters: the targets of the fraud proofs in its own view ([DisputeBuilder.ts#L355-L386](../../src/disputeManager/DisputeBuilder.ts#L355-L386)) and in received views it kept (those proofs were already checked on chain when it joined). The member waits for R − T₀, so it never waits for someone it has seen proven.
+
+If R − T₀ is only the member itself, the round is trivial: steps 4 to 7 of §5 run at once on its own view, with no messages and no timer. This keeps today's one-transaction settlement for a 2-member channel where the other member is a proven cheater.
+
+### When no round runs
+
+The member goes straight to today's path, with no added delay, if any of these holds:
+
+- the pinned read fails or throws;
+- the pin shows the fork already has a window;
+- its own dispute's inbound head, or its local snapshot, differs from the pin (its local data is stale). Slashes are not compared: a list with fewer slashes is the race §6 accepts, and the member's own list also holds pending targets ([DisputeBuilder.ts#L385-L400](../../src/disputeManager/DisputeBuilder.ts#L385-L400));
+- its own dispute carries a timeout;
+- its own dispute is reason-less and did not come in to join a round (see below). It then uploads as today: as the replacement upload after a kill ([EventHandler.ts#L341-L353](../../src/eventHandlers/EventHandler.ts#L341-L353)), and if the chain refuses it, today's missed-slash recovery runs ([DisputeManager.ts#L322-L324](../../src/disputeManager/DisputeManager.ts#L322-L324));
+- it has no open connection to some member of R − T₀;
+- the turn rule fails (§8).
+
+### Joining another member's round
+
+A member that receives a view for its active fork joins only if all of these hold:
+
+1. it has not already run a round on the fork, and its own disputed-fork bit is clear;
+2. the view passes the message checks (§4) and the audit (§5);
+3. the view has a reason of its own;
+4. the turn rule holds.
+
+To join, it marks the fork "join requested" and calls the existing `requestDispute(forkId)` once, in the background. That call raises the barrier, builds the member's own view, reads the pin and enters the round. The received view is kept and later checked against the pin and merged.
+
+The mark lets `agree()` tell this call apart from other reason-less calls. The first reason-less call takes the mark and is answered "joined", whether or not a round then runs; if none runs (pin mismatch, missing connection, turn rule), it uploads nothing. Every other reason-less call (adding evidence, a replacement upload after a kill, a §8 re-dispute) finds no mark and goes the usual way.
+
+If the member's bit is already set, its own `dispute()` is already running, so it does not join. If that call has a reason, it simply meets the kept view. Two members that trigger at the same time therefore end up in a single round.
+
+### Repair after a mismatch
+
+When the pin disagreed with local data, `agree()` returns the pin. After the mutex is released, `dispute()` repairs the local diamond in the background, detached and watched like `requestDispute` ([DisputeManager.ts#L503-L510](../../src/disputeManager/DisputeManager.ts#L503-L510)):
+
+- for an inbound head or snapshot mismatch it calls `synchronizeChainMembership(channelId, pin)` ([EventSyncService.ts#L514-L549](../../src/stateManager/eventSync/EventSyncService.ts#L514-L549));
+- for a window it has not seen, it runs the settle read (§8).
+
+No new chain read is added. The answer is handled as today's caller handles it ([MembershipService.ts#L128-L155](../../src/stateManager/membership/MembershipService.ts#L128-L155)): `false` is logged and dropped, and a throw goes to the fatal handler ([EventSyncService.ts#L506-L513](../../src/stateManager/eventSync/EventSyncService.ts#L506-L513), [L399-L404](../../src/stateManager/eventSync/EventSyncService.ts#L399-L404)). Without this repair, one dropped event would turn the fast path off for good, because the chain does not refuse an ordinary upload over a missed snapshot.
 
 ## 4. Messages (RPC)
 
