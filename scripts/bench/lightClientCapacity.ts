@@ -570,14 +570,11 @@ async function main(): Promise<void> {
             );
             // a block whose pushes the warm-up already took belongs to it, even
             // when the node's block number does not show that block yet
-            const firstBlock = Math.max(
-                await node.provider.getBlockNumber(),
-                ...warmup.flatMap(({ report }) =>
-                    [...report.pushes, ...report.watchPushes].map(
-                        (push) => push.number
-                    )
-                )
-            );
+            // (a loop: spreading every push into Math.max overflows the stack)
+            let firstBlock = await node.provider.getBlockNumber();
+            for (const { report } of warmup)
+                for (const push of [...report.pushes, ...report.watchPushes])
+                    firstBlock = Math.max(firstBlock, push.number);
             const started = Date.now();
             const nodeSamples: {
                 cpuSeconds: number;
