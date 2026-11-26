@@ -500,6 +500,9 @@ Specification cases tested: 2/8. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1
 [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../specification/protocol-model/finality.md#req-fin-7-rtzwqz)
 Specification cases tested: 5/20. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P14, T1.P15, T1.P16, T1.P17.
 
+[`REQ-FIN-9-B09SWY` (A JOIN that no final point consumed gives no kill)](../specification/protocol-model/finality.md#req-fin-9-b09swy)
+Specification cases tested: 2/2.
+
 [`REQ-FP-1-9PD823` (Fraud-proof enforcement is separate from the dispute game)](../specification/disputes/fraud-proofs.md#req-fp-1-9pd823)
 Specification cases tested: 1/12. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11.
 

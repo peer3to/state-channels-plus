@@ -22,6 +22,7 @@
 - [`INV-DIS-5-J1QZ92` (The reduced result is independent of the order in which valid dispute inputs…)](../../../../../specification/disputes/disputes.md#inv-dis-5-j1qz92)
 - [`REQ-DIS-6-Y92H1M` (Every initiated dispute window MUST end in a canonical successor fork, genesis…)](../../../../../specification/disputes/disputes.md#req-dis-6-y92h1m)
 - [`INV-FIN-8-G6V1M1` (Valid transitions that lacked finality when a dispute began are not reverted)](../../../../../specification/protocol-model/finality.md#inv-fin-8-g6v1m1)
+- [`REQ-FIN-9-B09SWY` (A JOIN that no final point consumed gives no kill)](../../../../../specification/protocol-model/finality.md#req-fin-9-b09swy)
 - [`REQ-FP-1-9PD823` (Fraud-proof enforcement is separate from the dispute game)](../../../../../specification/disputes/fraud-proofs.md#req-fp-1-9pd823)
 - [`REQ-FP-5-ZXW0J5` (A dispute may list any subset of recorded slashes)](../../../../../specification/disputes/fraud-proofs.md#req-fp-5-zxw0j5)
 - [`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)

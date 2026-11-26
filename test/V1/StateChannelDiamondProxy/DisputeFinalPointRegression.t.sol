@@ -3,7 +3,11 @@ pragma solidity ^0.8.8;
 import {console} from "../../../lib/forge-std/src/console.sol";
 import {StateProofStaging} from "../harness/StateProofStaging.sol";
 import {MathState} from "../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
-import {ErrorInboundMessageBlockNotStored} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
+import {
+    ErrorDisputeInboundMessageBlocksInvalid,
+    ErrorInboundMessageBlockNotStored,
+    INBOUND_FAILURE_HASH_LINK
+} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import {
     DisputeConflictsWithFinalState,
     DisputeFinalPointRegression
@@ -396,6 +400,78 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         MathState memory next = abi.decode(nextState, (MathState));
         assertEq(next.balances[0], 100, "A's loss to L on X is undone");
         assertEq(next.balances[5], 50, "L holds its bare deposit");
+    }
+
+    // L's JOIN is consumed only in our unfinal tail; the other dispute's final inbound (1) is not below ours (1)
+    function test_K13_joinOnlyInOurUnfinalTailIsNotKillableAndTheWinnerAdmitsTheJoinerWithItsBareDeposit() public {
+        (Dispute memory ours, ProofWalkInput memory ourFinalProof) = _ourDisputeWithTheJoinInAnUnfinalTail();
+        _commit(ours);
+        (StateSnapshot memory sideFinal, bytes memory sideState) =
+            _mathSnapshot(1000, _anchorSet(), _balances(100, 100, 0), openingInboundHash, 1);
+        Dispute memory side = _sideDispute(sideFinal);
+
+        Dispute[] memory both = new Dispute[](2);
+        both[0] = ours;
+        both[1] = side;
+        // reduced before any allegation: a failed allegation slashes its challenger, which the fold then removes
+        ReduceOutput memory reduced = harness.reduce(both);
+        assertEq(reduced.latestBlock.transaction.header.transactionCnt, 1000, "reduce picks the side chain's 1000'");
+        (SnapshotData memory nextFork, bytes memory nextState,) =
+            harness.reduceOutputToSnapshotData(forkId, reduced, sideFinal, sideState, _inbound(joinInbound));
+        MathState memory next = abi.decode(nextState, (MathState));
+        assertEq(nextFork.participants.length, 6, "L is a participant of the new fork");
+        assertEq(nextFork.participants[5], joiner, "L joins through the pending inbound run");
+        assertEq(next.balances[5], 50, "L holds its bare deposit; its unfinal outcome is lost");
+        // the anchor's 500 plus L's 50
+        assertEq(nextFork.totalDeposits.amount, 550, "L's deposit is carried");
+
+        // B proves our final point F = 100 against the side chain's G = 1000': F holds no inbound above G's
+        _applyBy(
+            bob, side, DisputeFraudProofType.DisputeFinalPointRegression, _regressionProof(ourFinalProof, sideFinal)
+        );
+
+        _assertBothStayAndChallengerPays(side, bob);
+    }
+
+    // the winner's own unfinal tail consumed L's JOIN: the successor adds no inbound on top of it
+    function test_K13_winnerThatConsumedTheJoinInItsOwnTailCarriesTheDepositOnce() public {
+        (Dispute memory ours,) = _ourDisputeWithTheJoinInAnUnfinalTail();
+        _commit(ours);
+        (StateSnapshot memory sideFinal,) =
+            _mathSnapshot(1000, _anchorSet(), _balances(100, 100, 0), openingInboundHash, 1);
+        (StateSnapshot memory sideTail, bytes memory sideTailState) =
+            _mathSnapshot(1001, _joinedSet(), _balances(100, 100, 50), joinInboundHash, 2);
+        MilestoneProof memory sideRun = _hopRun(sideFinal, 2, _anchorKeys());
+        _commitAt(sideRun, 1, keccak256(abi.encode(sideTail)), _signers(ALICE_KEY));
+        (Dispute memory side,) = _postedDisputeBy(alice, _one(sideRun), _entries(sideFinal), sideTail);
+        _commit(side);
+        Dispute[] memory both = new Dispute[](2);
+        both[0] = ours;
+        both[1] = side;
+        ReduceOutput memory reduced = harness.reduce(both);
+        assertEq(reduced.latestBlock.transaction.header.transactionCnt, 1001, "premise: reduce picks the tail 1001'");
+
+        (SnapshotData memory nextFork, bytes memory nextState,) =
+            harness.reduceOutputToSnapshotData(forkId, reduced, sideTail, sideTailState, new MessageBlock[](0));
+
+        MathState memory next = abi.decode(nextState, (MathState));
+        assertEq(nextFork.participants.length, 6, "L is a participant once");
+        assertEq(next.balances[5], 50, "L holds its deposit once");
+        // the tail's 550 already holds L's 50; a second count would be 600
+        assertEq(nextFork.totalDeposits.amount, 550, "the deposit counts once");
+        // offering L's JOIN again does not link to the tail's inbound head
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeInboundMessageBlocksInvalid.selector,
+                joinInboundHash,
+                joinInboundHash,
+                joinInboundHash,
+                0,
+                1,
+                INBOUND_FAILURE_HASH_LINK
+            )
+        );
+        harness.reduceOutputToSnapshotData(forkId, reduced, sideTail, sideTailState, _inbound(joinInbound));
     }
 
     function test_K14_sideChainOmittingItsAuditingDataWithoutThePendingJoinersSignatureIsKilled() public {
@@ -918,6 +994,23 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
     function _honestFinalProof() internal view returns (ProofWalkInput memory finalProof) {
         (MilestoneProof[] memory milestones, StateSnapshot[] memory snapshots) = _honestHistory();
         finalProof = _finalProof(forkId, milestones, snapshots);
+    }
+
+    /// B's dispute: a hop from the anchor to the final point 100 (inbound 1, before L's JOIN) signed by A to E, then
+    /// 101 signed by A alone, which consumed L's JOIN. Returns it with its final proof of 100.
+    function _ourDisputeWithTheJoinInAnUnfinalTail()
+        internal
+        view
+        returns (Dispute memory dispute, ProofWalkInput memory finalProof)
+    {
+        (StateSnapshot memory finalPoint,) =
+            _mathSnapshot(100, _anchorSet(), _balances(70, 100, 0), openingInboundHash, 1);
+        (StateSnapshot memory tail,) = _mathSnapshot(101, _joinedSet(), _balances(70, 100, 50), joinInboundHash, 2);
+        MilestoneProof memory run = _hopRun(finalPoint, 2, _anchorKeys());
+        _commitAt(run, 1, keccak256(abi.encode(tail)), _signers(ALICE_KEY));
+        (dispute,) = _postedDisputeBy(bob, _one(run), _entries(finalPoint), tail);
+        finalProof = _finalProof(forkId, _one(run), _entries(finalPoint));
+        assertEq(_walk(_one(run), _entries(finalPoint)).finalizedSnapshot.blockHeight, 100, "premise: F = 100");
     }
 
     /// A's committed side-chain dispute: one hop from the anchor to `latestFinalized`, signed by A to E

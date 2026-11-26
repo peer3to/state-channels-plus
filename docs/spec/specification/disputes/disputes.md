@@ -408,7 +408,9 @@ incomplete-information attacks into evidence against the attacker:
   commits another snapshot (`DisputeConflictsWithFinalState`), or a latest finalized point above
   the final point whose snapshot consumed fewer inbound blocks (`DisputeFinalPointRegression`),
   which is how a history that skips a later joiner's JOIN shows
-  ([fraud-proofs.md §3](./fraud-proofs.md)).
+  ([fraud-proofs.md §3](./fraud-proofs.md)). A JOIN that no final point consumed gives no such kill:
+  the joiner can lose unfinal outcomes, and the reduction carries its deposit
+  ([`REQ-FIN-9-B09SWY`](../protocol-model/finality.md#req-fin-9-b09swy)).
 - **Evidence availability needs no finer definition.** Evidence changes an already-proposed
   timeout only through the two existing mechanisms — the slash set consumed at reduction time, or
   killing the dispute during the kill period — and that is intended. Non-slash inputs leak
