@@ -16,11 +16,9 @@ import { timeoutWaitTime } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import {
     Address,
-    BlockHeight,
     Bytes,
     ChannelId,
     ChecksumAddress,
-    ForkId,
     Hash,
     Signature
 } from "@/types/types";
@@ -268,28 +266,31 @@ export default class DisputeValidationService {
 
     /**
      * The dispute's proof holds a block that commits another snapshot than a
-     * threshold-final block this peer verified at that height: its history
-     * conflicts with the final history (under one honest peer, two realities
-     * cannot both be final). The final blocks are this view's latest final
-     * point, every stored block whose direct or virtual threshold is
-     * provable, and the final block of each hop verified while auditing
-     * another dispute (kept as proof evidence, outside block history). Each
-     * conflict is offered to the chain with this peer's proof of the final
-     * block's height; every one the chain accepts is a counter. A
-     * block the dispute's walk does not check is no conflict. The chain also
-     * compares the final point's inbound height with that of the dispute's
-     * latest finalized point, whose snapshot `latestFinalizedSnapshot` comes
-     * from the audit's `evidence`.
+     * final point this peer proves at that height: its history conflicts
+     * with the final history (under one honest peer, two realities cannot
+     * both be final). The final points are this peer's stored proof's (its
+     * hop points and its latest final point, `getProvableFinalPoints`) and,
+     * at heights where it has none, those of audit evidence that agrees
+     * with it (`getEvidenceFinalPoints`). A block at any other height is no
+     * conflict, even when this peer holds a block there. Each conflict is
+     * offered to the chain with the prefix that proves that point; every one
+     * the chain accepts is a counter. A block the dispute's walk does not
+     * check is no conflict.
+     * The chain also compares the final point's inbound height with that of
+     * the dispute's latest finalized point, whose snapshot
+     * `latestFinalizedSnapshot` comes from the audit's `evidence`.
      */
     private async findConflictsWithFinalStateCounters(
         dispute: DisputeStruct,
         latestFinalizedSnapshot: StateSnapshotStruct
     ) {
         const { forkId, stateProof } = dispute.input;
-        const [finalized, anchor] = await Promise.all([
-            this.agreementManager.getLocalFinalizedSnapshot(forkId),
+        const [ownPoints, evidencePoints, anchor] = await Promise.all([
+            this.agreementManager.getProvableFinalPoints(forkId),
+            this.agreementManager.getEvidenceFinalPoints(forkId),
             this.agreementManager.getChainAnchor(forkId)
         ]);
+        const finalPoints = [...ownPoints, ...evidencePoints];
         const conflicts = stateProof.milestones.flatMap((milestone, i) =>
             milestone.blockConfirmations.flatMap((confirmation, j) => {
                 const block = Block.tryFromBlockConfirmation(confirmation);
@@ -300,24 +301,11 @@ export default class DisputeValidationService {
                     (anchor && block.height <= anchor.blockHeight)
                 )
                     return [];
-                const stored = this.storage.blocks.getBlock(
-                    forkId,
-                    block.height
-                );
-                const conflictsWithView =
-                    block.height === finalized?.blockHeight &&
-                    block.stateSnapshotHash !== finalized.hash;
-                const conflictsWithVerified = [
-                    ...(stored ? [stored] : []),
-                    ...this.agreementManager.getEvidenceFinalBlocks(
-                        forkId,
-                        block.height
-                    )
-                ].some(
-                    (other) =>
-                        other.stateSnapshotHash !== block.stateSnapshotHash
-                );
-                return conflictsWithView || conflictsWithVerified
+                return finalPoints.some(
+                    (point) =>
+                        point.blockHeight === block.height &&
+                        point.hash !== block.stateSnapshotHash
+                )
                     ? [
                           {
                               milestoneIndex: i,
@@ -334,10 +322,9 @@ export default class DisputeValidationService {
                 forkId,
                 height
             );
-            // only a final point at the conflicting height proves the conflict.
-            // Skipping is safe for the verdict: a stored block this peer cannot
-            // prove final at that height is no evidence against the dispute, and
-            // the walk and the replay still judge the dispute in full
+            // the stored proof changed since its points were read, or its walk
+            // fails: skipping is safe for the verdict, the walk and the replay
+            // still judge the dispute in full
             if (!finalProof) continue;
             const finalizedSnapshot = StateSnapshot.from(
                 finalProof.milestoneSnapshots.at(-1)!
@@ -386,10 +373,13 @@ export default class DisputeValidationService {
      * fewer inbound blocks than F's, and those extra blocks hold a JOIN of an
      * address outside G's participants: on one history the inbound height
      * never goes down, so the dispute's history skipped a JOIN the final
-     * history consumed. F is this peer's latest final point when G is
-     * above it, else the highest final point it can prove below G. G's
-     * snapshot `latestFinalizedSnapshot` comes from the audit's `evidence`
-     * (the posted auditing data, else this peer's stored snapshots). The proof names the skipped JOIN's block
+     * history consumed. F comes from this peer's stored proof
+     * (`getProvableFinalPoints`: its hop points and its latest final point).
+     * When G is above the latest final point, F is that point, with no
+     * fallback. Otherwise F is each final point below G, fewest hops first,
+     * so on an equal slash set the smallest kill is chosen. G's snapshot `latestFinalizedSnapshot` comes from the
+     * audit's `evidence` (the posted auditing data, else this peer's stored
+     * snapshots). The proof names the skipped JOIN's block
      * (`findSkippedJoin`); without one in this peer's own inbound blocks the
      * chain is not asked. Otherwise the chain checks the named block against
      * both inbound heights itself; the proof is a counter only when it agrees.
@@ -402,31 +392,42 @@ export default class DisputeValidationService {
         const first = stateProof.milestones.at(-1)?.blockConfirmations[0];
         const latestFinalized = first && Block.tryFromBlockConfirmation(first);
         if (!latestFinalized) return [];
-        const final = await this.tryBuildFinalProofBelow(
-            forkId,
-            latestFinalized.height
-        );
-        if (!final) return [];
-        const { finalProof, finalized } = final;
-        const skippedJoin = this.findSkippedJoin(
-            latestFinalizedSnapshot.snapshotData,
-            finalized.latestInboundMessageBlockHash
-        );
-        if (!skippedJoin) return [];
-        const proof = {
-            finalProof,
-            latestFinalizedSnapshot,
-            joinInboundBlockHash: skippedJoin.blockHash
-        };
-        const slashes = await this.acceptedSlashes(
-            this.stateChannelManagerContract.isDisputeFinalPointRegression.staticCall(
-                dispute,
-                proof
-            )
-        );
-        if (!slashes) return [];
-        return [
-            {
+        const provable =
+            await this.agreementManager.getProvableFinalPoints(forkId);
+        const latest = provable.at(-1);
+        // G above the latest final point: that point is F, with no fallback;
+        // otherwise every final point below G is a candidate
+        const finalPoints =
+            latest && latestFinalized.height > latest.blockHeight
+                ? [latest]
+                : provable.filter(
+                      (point) => point.blockHeight < latestFinalized.height
+                  );
+        const counters = [];
+        for (const finalized of finalPoints) {
+            const skippedJoin = this.findSkippedJoin(
+                latestFinalizedSnapshot.snapshotData,
+                finalized.latestInboundMessageBlockHash
+            );
+            if (!skippedJoin) continue;
+            const finalProof = await this.agreementManager.tryBuildFinalProofAt(
+                forkId,
+                finalized.blockHeight
+            );
+            if (!finalProof) continue;
+            const proof = {
+                finalProof,
+                latestFinalizedSnapshot,
+                joinInboundBlockHash: skippedJoin.blockHash
+            };
+            const slashes = await this.acceptedSlashes(
+                this.stateChannelManagerContract.isDisputeFinalPointRegression.staticCall(
+                    dispute,
+                    proof
+                )
+            );
+            if (!slashes) continue;
+            counters.push({
                 slashes,
                 killBytes: this.killBytes(
                     dispute,
@@ -453,8 +454,9 @@ export default class DisputeValidationService {
                         proof
                     );
                 }
-            }
-        ];
+            });
+        }
+        return counters;
     }
 
     /**
@@ -513,36 +515,6 @@ export default class DisputeValidationService {
                 ? finalInboundHash
                 : (skipped.blocks[index + 1].previousBlockHash as Hash);
         return { blockHash, messageBlock: skipped.blocks[index] };
-    }
-
-    /**
-     * This peer's proof of a final point below `height`: its latest final
-     * point when that is below, else the highest final point it can prove
-     * below `height` (the latest one may lie at or above it). Undefined when
-     * it proves none above its start: the dispute's walk passed the start.
-     */
-    private async tryBuildFinalProofBelow(forkId: ForkId, height: BlockHeight) {
-        const finalized =
-            await this.agreementManager.getLocalFinalizedSnapshot(forkId);
-        if (!finalized) return undefined;
-        if (height > finalized.blockHeight) {
-            const finalProof = await this.agreementManager.tryBuildFinalProofAt(
-                forkId,
-                finalized.blockHeight
-            );
-            return finalProof && { finalProof, finalized };
-        }
-        if (height === 0) return undefined;
-        const built = await this.agreementManager.tryBuildFinalProof(
-            forkId,
-            height - 1
-        );
-        if (!built || built.finalProof.stateProof.milestones.length === 0)
-            return undefined;
-        return {
-            finalProof: built.finalProof,
-            finalized: built.finalizedSnapshot
-        };
     }
 
     /**

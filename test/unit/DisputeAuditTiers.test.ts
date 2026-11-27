@@ -7,6 +7,7 @@ import { hash as randomHash, randomAddress } from "@test/factory";
 import {
     blockConfirmationAt,
     runConcurrentVirtualFinalAudits,
+    stageFrozenAuditorWithEvidence,
     craftInvalidBlockAfter,
     craftInvalidLinkedBlock,
     postForgedFinalHopDispute,
@@ -25,7 +26,6 @@ import {
     unsignedOwnMilestonesThrough
 } from "@test/fixtures/DisputeAuditStaging";
 import { killSpamDispute } from "@test/fixtures/EvidenceComparisonStaging";
-import { syncSpectatorOnServedPayload } from "@test/fixtures/MilestoneSyncStaging";
 import { stageMirrorMissingConsumedTopUp } from "@test/fixtures/MirrorDivergenceStaging";
 import { readDisputeKill } from "@test/fixtures/OmittedInboundJoinerStaging";
 import {
@@ -108,55 +108,8 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
 
     it("FR1: an audit retains virtual votes above a frozen view for a later final-conflict counter", async function () {
         const h = TestSession.getHarness();
-        let served = "";
-        const { forkId, observerIndex } = await stageFinalityFromNextBlock(
-            h,
-            async () => {
-                const payload = await h
-                    .control(h.getPeer(1))
-                    .spectate.generateSyncPayload(
-                        h.channelId,
-                        h.activeForkId!,
-                        1
-                    )
-                    .request();
-                if (!payload)
-                    throw new Error(
-                        "The initial finalized state was not served"
-                    );
-                served = payload.encodedSyncPayload;
-            }
-        );
-        const auditor = await syncSpectatorOnServedPayload(
-            h,
-            served,
-            [0, 1, 2],
-            [],
-            async (peer) => {
-                await h.rpcStub.dropNetworkConfirmations(peer.index);
-            }
-        );
-        const before = await h
-            .control(auditor)
-            .query.getNextBlockHeight(forkId)
-            .request();
-        expect(before).to.equal(2);
-        const original = await h.dispute.fetchConstructedDispute(observerIndex);
-        expect(
-            original.dispute.input.stateProof.milestones.map((milestone) =>
-                milestone.blockConfirmations.map(
-                    (confirmation) =>
-                        Block.fromBlockConfirmation(confirmation).height
-                )
-            ),
-            "the stored audit evidence must prove 2 through 3"
-        ).to.deep.equal([[2, 3]]);
-        const accepted = await h.dispute.auditDispute(
-            auditor.index,
-            original.dispute,
-            original.auditingData
-        );
-        expect(accepted).to.include({ outcome: "returned", isValid: true });
+        const { forkId, observerIndex, auditor, before } =
+            await stageFrozenAuditorWithEvidence(h);
         expect(
             await h.control(auditor).query.getNextBlockHeight(forkId).request()
         ).to.equal(before);
@@ -189,6 +142,32 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
         ).to.equal(before);
     });
 
+    it("a dispute block that conflicts with audit evidence at a height that is no final point of that evidence (a later signature carrier of its hop) -> no conflict is offered", async function () {
+        const h = TestSession.getHarness();
+        const { observerIndex, auditor } =
+            await stageFrozenAuditorWithEvidence(h);
+        // block 3 carries the votes of the evidence's final point 2
+        const stateProof = await craftConflictingAnchorRun(h, {
+            observerIndex,
+            anchorHeight: 2,
+            linked: true
+        });
+        const { dispute } = await h.dispute.fetchConstructedDispute(0);
+        replaceStateProof(dispute, stateProof.milestones);
+        const conflicts = await h.mirror.observe(
+            auditor.index,
+            "isDisputeConflictingWithFinalState"
+        );
+
+        const audit = await h.dispute.auditDispute(auditor.index, dispute);
+
+        expect(audit.outcome).to.equal("returned");
+        expect(audit.storedProof?.disputeFraudProofType).to.not.equal(
+            DisputeFraudProofType.DisputeConflictsWithFinalState
+        );
+        expect((await conflicts.observation()).chain.reads).to.equal(0);
+    });
+
     it("FR1: concurrent virtual-final audits keep the real proof first and counter the conflicting proof", async function () {
         await runConcurrentVirtualFinalAudits(TestSession.getHarness(), false);
     });
@@ -219,11 +198,11 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             const { local, chain } = await walks.observation();
             expect(local.reads).to.equal(0);
             expect(chain.reads).to.equal(0);
-            // the local final point is proven twice (conflict check, tier
-            // start), then the first tier walks the dispute's proof from it
+            // the first tier walks the dispute's proof from the local final
+            // point; no final proof is built: the dispute holds no block at a
+            // final point of the auditor and skips no JOIN
             const trusted = (await trustedWalks.observation()).local;
-            expect(trusted.reads).to.be.at.least(3);
-            expect(trusted.answers.at(-1)).to.equal(true);
+            expect(trusted.answers).to.deep.equal([true]);
         });
 
         it("U27: no locally finalized state -> the local diamond's walk accepts, no chain walk, true", async function () {
@@ -262,6 +241,42 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             const { local, chain } = await walks.observation();
             expect(local.answers).to.deep.equal([false]);
             expect(chain.answers).to.deep.equal([true]);
+        });
+
+        it("an honest dispute that fails only from the auditor's final point (its local diamond misses the inbound run a hop consumes) -> no final-history counter is offered and no final proof is built: true, no proof", async function () {
+            const h = TestSession.getHarness();
+            await stageMirrorMissingConsumedTopUp(h, 1, {
+                dropLaggingBlocksFromTopUp: true
+            });
+            const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            const trustedWalks = await h.mirror.observe(
+                1,
+                "verifyMilestonesFromTrustedStart"
+            );
+            const walks = await h.mirror.observe(1, "verifyMilestones");
+            const conflicts = await h.mirror.observe(
+                1,
+                "isDisputeConflictingWithFinalState"
+            );
+            const regressions = await h.mirror.observe(
+                1,
+                "isDisputeFinalPointRegression"
+            );
+
+            const run = await h.dispute.auditDispute(1, dispute);
+
+            expect(run).to.include({ outcome: "returned", isValid: true });
+            expect(run.disputeFraudProofCount).to.equal(0);
+            // premise: the walk from the final point fails, the chain's accepts
+            expect((await walks.observation()).chain.answers).to.deep.equal([
+                true
+            ]);
+            // the only trusted-start walk is the dispute's own, which fails
+            expect(
+                (await trustedWalks.observation()).local.answers
+            ).to.deep.equal([false]);
+            expect((await conflicts.observation()).chain.reads).to.equal(0);
+            expect((await regressions.observation()).chain.reads).to.equal(0);
         });
 
         it("D4: an authentic block conflicts with the local final point -> the conflict counter is stored before any tier walk", async function () {
@@ -406,7 +421,7 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             expect(chain.reads).to.equal(0);
         });
 
-        it("U30 (audit entry): storage lacks a required participant-change block of the local final point -> the audit throws, no walk runs, no proof", async function () {
+        it("U30 (audit entry): storage lacks a participant-change block below the local final point -> the audit does not need it, its final point comes from the stored proof: the first tier accepts, no local-diamond or chain walk, true", async function () {
             const h = TestSession.getHarness();
             const { forkId, joinHeight, observerIndex } =
                 await stageJoinHopWithLaterFinalPoint(h, { postAnchor: true });
@@ -427,10 +442,7 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
                 dispute.postedAuditingData ? auditingData : undefined
             );
 
-            expect(run.outcome).to.equal("threw");
-            expect(run.outcome === "threw" ? run.threwMessage : "").to.match(
-                /missing the participant-change block/
-            );
+            expect(run).to.include({ outcome: "returned", isValid: true });
             expect(run.disputeFraudProofCount).to.equal(0);
             const { local, chain } = await walks.observation();
             expect(local.reads + chain.reads).to.equal(0);
@@ -488,8 +500,7 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             expect(chain.reads).to.equal(0);
             // the walk from the final point ran and accepted the proof
             const trusted = (await trustedWalks.observation()).local;
-            expect(trusted.reads).to.be.at.least(3);
-            expect(trusted.answers.at(-1)).to.equal(true);
+            expect(trusted.answers).to.deep.equal([true]);
         });
 
         it("U32: the same unproven hop above the auditor's trusted start (chain anchor still the genesis) -> false + DisputeInvalidStateProof whose evidence the chain accepts", async function () {

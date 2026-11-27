@@ -22,6 +22,7 @@ import {
     readPreJoinHeightAboveAnchor,
     stageSeatedJoinerHistory
 } from "@test/fixtures/OmittedInboundJoinerStaging";
+import { storedFinalPointHeights } from "@test/fixtures/StoredProofStaging";
 import {
     MathTestSession as TestSession,
     resolveTestTimeConfig
@@ -1347,7 +1348,7 @@ describe("Unit: DisputeValidationService", function () {
             ).to.equal(true);
         });
 
-        it("G at Charlie's latest final height, where he cannot prove the conflict -> false + DisputeFinalPointRegression over his highest final point below G", async function () {
+        it("G at Charlie's latest final height, where he cannot prove the conflict -> false + DisputeFinalPointRegression over a final point of his stored proof below G", async function () {
             const h = TestSession.getHarness();
             const history = await stageSeatedJoinerHistory(h);
             const charlie = h.getPeer(history.charlieIndex);
@@ -1391,9 +1392,13 @@ describe("Unit: DisputeValidationService", function () {
                 proof.finalProof
             );
             const final = StateSnapshot.from(walk.finalizedSnapshot);
-            expect(final.blockHeight, "F is below G")
-                .to.be.lessThan(hopSnapshot.blockHeight)
-                .and.to.be.at.least(history.charlieFinal.blockHeight);
+            expect(final.blockHeight, "F is below G").to.be.lessThan(
+                hopSnapshot.blockHeight
+            );
+            expect(
+                await storedFinalPointHeights(h, charlie.index, history.forkId),
+                "F is a final point of Charlie's stored proof"
+            ).to.include(final.blockHeight);
             expect(
                 final.latestInboundMessageBlockHash,
                 "F is past Charlie's JOIN"
@@ -1408,11 +1413,94 @@ describe("Unit: DisputeValidationService", function () {
             ).to.equal(true);
         });
 
-        it("the hop commits Charlie's seated state at a height where his final block is still before his JOIN -> the chain refuses the conflict on its inbound, no final-history proof", async function () {
+        it("G at Charlie's latest final height, where he cannot prove the conflict, and two final points of his stored proof below G past his JOIN (his JOIN's and Dave's) -> both regressions kill with the same slash set: false + the DisputeFinalPointRegression over the point with fewer hops", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            const charlie = h.getPeer(history.charlieIndex);
+            const seated = [
+                history.aliceIndex,
+                history.bobIndex,
+                charlie.index
+            ];
+            const { peer: dave } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: seated,
+                minimumBlocks: 1,
+                maximumBlocks: 20,
+                waitForFinalization: true
+            });
+            await h.scenario.joinUntilPromotedWait({
+                joiner: dave,
+                authoringPeerIndices: seated
+            });
+            await h.transition.advanceState({
+                count: 3,
+                waitForFinalization: true
+            });
+            const latestFinal = await readLocalFinalSnapshot(
+                h,
+                charlie.index,
+                history.forkId
+            );
+            expect(
+                latestFinal.snapshotData.participants,
+                "Charlie's latest final point consumed Dave's JOIN"
+            ).to.include(dave.address);
+            const { dispute, auditingData, hopSnapshot } =
+                await constructJoinerBypassDispute(h, history, {
+                    height: latestFinal.blockHeight
+                });
+            await h.rpcStub.makeFinalPointUnprovable(
+                charlie.index,
+                latestFinal.blockHeight
+            );
+            const regressions = await h.mirror.observe(
+                charlie.index,
+                "isDisputeFinalPointRegression"
+            );
+
+            const run = await h.dispute.auditDispute(
+                charlie.index,
+                dispute,
+                auditingData
+            );
+
+            // premise: both final points below G qualify
+            expect(
+                (await regressions.observation()).chain.answers
+            ).to.deep.equal([true, true]);
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.DisputeFinalPointRegression
+            );
+            const proof = Codec.decode(
+                run.storedProof!.encodedProof,
+                DisputeFraudProofType.DisputeFinalPointRegression
+            );
+            const walk = await h.channelManager.verifyMilestones.staticCall(
+                proof.finalProof
+            );
+            const final = StateSnapshot.from(walk.finalizedSnapshot);
+            expect(final.blockHeight).to.be.lessThan(hopSnapshot.blockHeight);
+            expect(
+                final.snapshotData.participants,
+                "F is the point before Dave's join hop"
+            ).to.not.include(dave.address);
+            expect(
+                final.latestInboundMessageBlockHash,
+                "F is past Charlie's JOIN"
+            ).to.equal(history.charlieFinal.latestInboundMessageBlockHash);
+        });
+
+        it("the hop commits Charlie's seated state at a height where he holds a final block before his JOIN, and that height is no final point of his stored proof -> no conflict is offered, no final-history proof", async function () {
             const h = TestSession.getHarness();
             const history = await stageSeatedJoinerHistory(h);
             const charlie = h.getPeer(history.charlieIndex);
             const height = await readPreJoinHeightAboveAnchor(h, history);
+            // premise: Charlie holds another final block at the hop's height,
+            // and his stored proof has no final point there
+            expect(
+                await storedFinalPointHeights(h, charlie.index, history.forkId)
+            ).to.not.include(height);
             const { dispute, auditingData, hopSnapshot } =
                 await constructJoinerBypassDispute(h, history, {
                     inbound: "join",
@@ -1439,12 +1527,16 @@ describe("Unit: DisputeValidationService", function () {
             expect(run.storedProof?.disputeFraudProofType).to.equal(
                 DisputeFraudProofType.DisputeNotLatestState
             );
-            const { chain } = await conflicts.observation();
-            expect(chain.reads, "the conflict is offered").to.be.greaterThan(0);
+            const stored = await h
+                .control(charlie)
+                .query.getBlockHashAt(history.forkId, height)
+                .request();
+            expect(stored, "Charlie holds a block at the hop's height").to
+                .exist;
             expect(
-                chain.answers.filter((answer) => answer !== false),
-                "the chain refuses every offer"
-            ).to.deep.equal([]);
+                (await conflicts.observation()).chain.reads,
+                "no conflict is offered"
+            ).to.equal(0);
         });
 
         it("the chain's regression read reverts for another reason than an unknown inbound height -> the audit throws, no proof", async function () {
@@ -1829,9 +1921,13 @@ describe("Unit: DisputeValidationService", function () {
                 proof.finalProof
             );
             const final = StateSnapshot.from(walk.finalizedSnapshot);
-            expect(final.blockHeight, "F is below G")
-                .to.be.lessThan(hopBlock.height)
-                .and.to.be.at.least(history.charlieFinal.blockHeight);
+            expect(final.blockHeight, "F is below G").to.be.lessThan(
+                hopBlock.height
+            );
+            expect(
+                await storedFinalPointHeights(h, charlie.index, history.forkId),
+                "F is a final point of Charlie's stored proof"
+            ).to.include(final.blockHeight);
             expect(
                 final.latestInboundMessageBlockHash,
                 "F is past Charlie's JOIN"

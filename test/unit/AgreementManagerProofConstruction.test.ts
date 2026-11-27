@@ -37,6 +37,10 @@ import {
     postSnapshotFrom,
     prepareSameForkView
 } from "@test/fixtures/ProofOwnerStaging";
+import {
+    storedFinalPointHeights,
+    storedProofView
+} from "@test/fixtures/StoredProofStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -82,7 +86,7 @@ describe("Unit: AgreementManager proof construction", function () {
         });
     });
 
-    it("TO1: exact join finality retains the later union vote and disappears when that sole vote is removed", async function () {
+    it("TO1: the exact final proof at a join height is the stored proof's prefix to its join hop: it verifies on chain at exactly that height without moving the view, and removing a stored block's sole later vote leaves it unchanged", async function () {
         const h = TestSession.getHarness();
         const {
             observerIndex,
@@ -91,6 +95,12 @@ describe("Unit: AgreementManager proof construction", function () {
             joinHeight,
             latestHeight
         } = await stageExactJoinWithLaterVote(h);
+        const points = await storedFinalPointHeights(h, observerIndex, forkId);
+        expect(
+            points,
+            "the join is a final point of the stored proof"
+        ).to.include(joinHeight);
+        const stored = await storedProofView(h, observerIndex, forkId);
         const result = await exactFinalProofView(h, observerIndex, joinHeight);
         expect(result.after).to.equal(result.before);
         expect(result.proof?.valid).to.equal(true);
@@ -100,30 +110,22 @@ describe("Unit: AgreementManager proof construction", function () {
             result.proof?.milestones.map((run) =>
                 run.map((block) => block.height)
             )
-        ).to.deep.equal([heightRange(joinHeight, latestHeight)]);
-        expect(
-            new Set(
-                result.proof!.milestones[0].flatMap((block) => block.signers)
-            )
-        ).to.deep.equal(new Set(h.peers.map((peer) => peer.address)));
-        const voter = h.getPeer(offlineIndex).address;
-        expect(
-            result
-                .proof!.milestones[0].filter((block) =>
-                    block.signers.includes(voter)
-                )
-                .map((block) => block.height)
-        ).to.deep.equal([latestHeight]);
+        ).to.deep.equal(
+            stored!.hopHeights.slice(0, points.indexOf(joinHeight) + 1)
+        );
         await h
             .control(h.getPeer(observerIndex))
-            .stub.stripStoredBlockSignature(forkId, latestHeight, voter)
+            .stub.stripStoredBlockSignature(
+                forkId,
+                latestHeight,
+                h.getPeer(offlineIndex).address
+            )
             .request();
-        const missing = await exactFinalProofView(h, observerIndex, joinHeight);
-        expect(missing.proof).to.equal(null);
-        expect(missing.after).to.equal(missing.before);
+        const again = await exactFinalProofView(h, observerIndex, joinHeight);
+        expect(again.proof).to.deep.equal(result.proof);
     });
 
-    it("TO1: exact exit finality retains the old and new union and needs its sole later confirmation", async function () {
+    it("TO1: the exact final proof at an exit height is the stored proof's prefix to its exit hop: it verifies on chain at exactly that height without the leaver, and removing a stored block's sole later confirmation leaves it unchanged", async function () {
         const h = TestSession.getHarness();
         const {
             observerIndex,
@@ -135,6 +137,16 @@ describe("Unit: AgreementManager proof construction", function () {
             releaseExitPost
         } = await stageExactExitWithLaterVote(h);
         try {
+            const points = await storedFinalPointHeights(
+                h,
+                observerIndex,
+                forkId
+            );
+            expect(
+                points,
+                "the exit is a final point of the stored proof"
+            ).to.include(finalHeight);
+            const stored = await storedProofView(h, observerIndex, forkId);
             const result = await exactFinalProofView(
                 h,
                 observerIndex,
@@ -148,36 +160,26 @@ describe("Unit: AgreementManager proof construction", function () {
                 result.proof?.milestones.map((run) =>
                     run.map((block) => block.height)
                 )
-            ).to.deep.equal([[finalHeight, supportHeight]]);
-            expect(result.proof!.participants[0]).not.to.include(
+            ).to.deep.equal(
+                stored!.hopHeights.slice(0, points.indexOf(finalHeight) + 1)
+            );
+            expect(result.proof!.participants.at(-1)).not.to.include(
                 h.getPeer(leaverIndex).address
             );
-            expect(
-                new Set(
-                    result.proof!.milestones[0].flatMap(
-                        (block) => block.signers
-                    )
-                )
-            ).to.deep.equal(new Set(h.peers.map((peer) => peer.address)));
-            const voter = h.getPeer(voterIndex).address;
-            expect(
-                result
-                    .proof!.milestones[0].filter((block) =>
-                        block.signers.includes(voter)
-                    )
-                    .map((block) => block.height)
-            ).to.deep.equal([supportHeight]);
             await h
                 .control(h.getPeer(observerIndex))
-                .stub.stripStoredBlockSignature(forkId, supportHeight, voter)
+                .stub.stripStoredBlockSignature(
+                    forkId,
+                    supportHeight,
+                    h.getPeer(voterIndex).address
+                )
                 .request();
-            const missing = await exactFinalProofView(
+            const again = await exactFinalProofView(
                 h,
                 observerIndex,
                 finalHeight
             );
-            expect(missing.proof).to.equal(null);
-            expect(missing.after).to.equal(missing.before);
+            expect(again.proof).to.deep.equal(result.proof);
         } finally {
             await releaseExitPost();
         }

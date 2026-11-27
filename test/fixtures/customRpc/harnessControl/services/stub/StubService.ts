@@ -2454,9 +2454,9 @@ export class StubService extends ANetworkRpcService<
 
     /**
      * Fault: this peer cannot prove the final point at `blockHeight`
-     * (`tryBuildFinalProofAt` answers undefined there), as when the
-     * material for that height is missing. Each call adds one height;
-     * other heights build as usual.
+     * (`tryBuildFinalProofAt` answers undefined there), as when the stored
+     * proof's prefix to that point does not verify. Each call adds one
+     * height; other heights build as usual.
      */
     public stubUnprovableFinalPointAt(blockHeight: BlockHeight): void {
         const agreementManager = this.sm.agreementManager;

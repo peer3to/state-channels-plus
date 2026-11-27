@@ -2292,6 +2292,60 @@ export async function stageBlindPendingBelowRealAnchor(h: MathPeerTestHarness) {
     return { forkId, anchor, charlieIndex: charlie.index, dispute };
 }
 
+/**
+ * A spectator synced to block 1 whose view stays frozen at next height 2
+ * (it drops network confirmations) accepts the observer's real dispute,
+ * whose one milestone [2, 3] proves block 2 final: that audit's evidence
+ * holds a final point at height 2 above the view. Returns the auditor and
+ * its frozen next height.
+ */
+export async function stageFrozenAuditorWithEvidence(h: MathPeerTestHarness) {
+    let served = "";
+    const { forkId, observerIndex } = await stageFinalityFromNextBlock(
+        h,
+        async () => {
+            const payload = await h
+                .control(h.getPeer(1))
+                .spectate.generateSyncPayload(h.channelId, h.activeForkId!, 1)
+                .request();
+            if (!payload)
+                throw new Error("The initial finalized state was not served");
+            served = payload.encodedSyncPayload;
+        }
+    );
+    const auditor = await syncSpectatorOnServedPayload(
+        h,
+        served,
+        [0, 1, 2],
+        [],
+        async (peer) => {
+            await h.rpcStub.dropNetworkConfirmations(peer.index);
+        }
+    );
+    const before = await h
+        .control(auditor)
+        .query.getNextBlockHeight(forkId)
+        .request();
+    expect(before).to.equal(2);
+    const original = await h.dispute.fetchConstructedDispute(observerIndex);
+    expect(
+        original.dispute.input.stateProof.milestones.map((milestone) =>
+            milestone.blockConfirmations.map(
+                (confirmation) =>
+                    Block.fromBlockConfirmation(confirmation).height
+            )
+        ),
+        "the stored audit evidence must prove 2 through 3"
+    ).to.deep.equal([[2, 3]]);
+    const accepted = await h.dispute.auditDispute(
+        auditor.index,
+        original.dispute,
+        original.auditingData
+    );
+    expect(accepted).to.include({ outcome: "returned", isValid: true });
+    return { forkId, observerIndex, auditor, before };
+}
+
 /** A frozen spectator audits two valid virtual-final walks with conflicting commitments at height 2. */
 export async function runConcurrentVirtualFinalAudits(
     h: MathPeerTestHarness,

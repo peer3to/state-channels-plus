@@ -91,6 +91,19 @@ export async function storedProofView(
     );
 }
 
+/**
+ * The heights of the final points in peer `peerIndex`'s stored proof of
+ * `forkId`, in hop order: each hop's first block. Empty when none is stored.
+ */
+export async function storedFinalPointHeights(
+    h: MathPeerTestHarness,
+    peerIndex: number,
+    forkId?: ForkId
+): Promise<number[]> {
+    const view = await storedProofView(h, peerIndex, forkId);
+    return (view?.hopHeights ?? []).map(([pointHeight]) => pointHeight);
+}
+
 /** The final point a sync payload proves: its last milestone's first block. */
 function servedFinalPoint(payload: SyncPayload): SnapshotPoint {
     return {
