@@ -15,3 +15,14 @@ Coordinate encoding
 
 - [x] `UNIT-TEST-KEYS-32-FMYDFT.P1` — preserves zero-height coordinates
 - [x] `UNIT-TEST-KEYS-32-FMYDFT.P2` — separates positive heights and fork identities
+
+## UNIT-TEST-KEYS-33-YJ66W1
+
+Evidence key encoding
+
+- Setup: Use real hashes as a dispute hash, a finalized snapshot hash and one hash shared by both.
+- Oracle: Audit keys equal `dispute:<disputeHash>`, sync keys equal `sync:<finalizedSnapshotHash>`, and only a sync key is recognised as one, also when both kinds carry the same hash.
+
+- [x] `UNIT-TEST-KEYS-33-YJ66W1.P1` — audit evidence key is `dispute:<disputeHash>`
+- [x] `UNIT-TEST-KEYS-33-YJ66W1.P2` — sync evidence key is `sync:<finalizedSnapshotHash>`
+- [x] `UNIT-TEST-KEYS-33-YJ66W1.P3` — a sync key is told from an audit key of the same hash

@@ -554,7 +554,7 @@ export class P2pRuntimeHostRoot<
             );
         steps.mark("stateMachine");
 
-        const storage = new Storage(this.maxChannelParticipants);
+        const storage = new Storage(this.maxChannelParticipants, logger);
 
         const stateManager = new StateManager<MainRpcService, unknown>(
             // Managed signer: becomes StateManager.signer → DisputeManager.signer,

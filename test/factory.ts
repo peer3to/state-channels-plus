@@ -4,7 +4,7 @@
 // boots the whole Hardhat runtime — incl. hardhat-foundry's sync `forge config`
 // exec — blocking the worker's event loop for ~800ms.
 import { Block, StateSnapshot } from "@/models";
-import type { ReduceData, StoredProof } from "@/types/disputes";
+import type { ProofEvidence, ReduceData, StoredProof } from "@/types/disputes";
 import {
     DisputeFraudProofType,
     FraudProofType,
@@ -761,5 +761,26 @@ export function storedProof(
         hops,
         finalizedSnapshot: finalizedSnapshot.toStruct(),
         encodedFinalizedState
+    };
+}
+
+/**
+ * Proof evidence of `forkId`: a stored proof (see `storedProof`) and a latest
+ * snapshot one height above its final point, with the state there (hashing to
+ * the latest snapshot's state hash).
+ */
+export function proofEvidence(forkId: ForkId, hopCount: number): ProofEvidence {
+    const encodedLatestState = hexString(64);
+    return {
+        forkId,
+        proof: storedProof(forkId, hopCount),
+        latestSnapshot: stateSnapshot({
+            forkId,
+            blockHeight: hopCount + 1,
+            snapshotData: {
+                stateMachineStateHash: ethers.keccak256(encodedLatestState)
+            }
+        }).toStruct(),
+        encodedLatestState
     };
 }

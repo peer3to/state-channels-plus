@@ -48,6 +48,7 @@ by the wrapper declaration here and owns `UNIT-TEST-BLOCK-MODEL-1-037DM6.P30`.
 - `round-trips StateProof`: UNIT-TEST-CODEC-1-HFAA3B.P22
 - `round-trips SyncPayload`: UNIT-TEST-CODEC-1-HFAA3B.P23
 - `round-trips StoredProof`: UNIT-TEST-CODEC-1-HFAA3B.P63
+- `round-trips ProofEvidence`: UNIT-TEST-CODEC-1-HFAA3B.P64
 - `preserves uint256 values above Number.MAX_SAFE_INTEGER and canonical ABI bytes`: UNIT-TEST-CODEC-1-HFAA3B.P2
 - `round-trips BlockDoubleSign fraud proof`: UNIT-TEST-CODEC-1-HFAA3B.P25
 - `round-trips BlockInvalidStateTransition fraud proof`: UNIT-TEST-CODEC-1-HFAA3B.P26

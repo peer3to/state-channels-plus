@@ -1,6 +1,10 @@
 import type { ContractExecutionResult } from "@/evm/contractExecutor";
-import type { StoredProof, SyncPayload } from "@/types";
-import { StoredProofEthersType, SyncPayloadEthersType } from "@/types";
+import type { ProofEvidence, StoredProof, SyncPayload } from "@/types";
+import {
+    ProofEvidenceEthersType,
+    StoredProofEthersType,
+    SyncPayloadEthersType
+} from "@/types";
 import {
     BlockEthersType,
     BlockCommitmentEthersType,
@@ -167,7 +171,8 @@ type StructType =
     | SignedBlockStruct
     | StateProofStruct
     | SyncPayload
-    | StoredProof;
+    | StoredProof
+    | ProofEvidence;
 
 // Enum for better autocomplete and type safety
 export enum Type {
@@ -192,7 +197,8 @@ export enum Type {
     SignedBlock,
     StateProof,
     SyncPayload,
-    StoredProof
+    StoredProof,
+    ProofEvidence
 }
 
 export class Codec {
@@ -224,6 +230,7 @@ export class Codec {
         [Type.StateProof, StateProofEthersType],
         [Type.SyncPayload, SyncPayloadEthersType],
         [Type.StoredProof, StoredProofEthersType],
+        [Type.ProofEvidence, ProofEvidenceEthersType],
         // Fraud proofs
         [FraudProofType.BlockDoubleSign, BlockDoubleSignProofEthersType],
         [
@@ -441,6 +448,10 @@ export class Codec {
     ): SnapshotDataStruct;
     public static decode(encoded: Bytes, type: Type.SyncPayload): SyncPayload;
     public static decode(encoded: Bytes, type: Type.StoredProof): StoredProof;
+    public static decode(
+        encoded: Bytes,
+        type: Type.ProofEvidence
+    ): ProofEvidence;
     public static decode(
         encoded: Bytes,
         type: Type.JoinChannelBlock

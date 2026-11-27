@@ -9,6 +9,7 @@ import { ForceJoinStorage } from "./ForceJoinStorage";
 import { FraudProofStorage } from "./FraudProofStorage";
 import { MessageBlockStorage } from "./MessageBlockStorage";
 import { ParticipantSetChangeStorage } from "./ParticipantSetChangeStorage";
+import { ProofEvidenceStorage } from "./ProofEvidenceStorage";
 import { type BlockPredecessor, QueueStorage } from "./QueueStorage";
 import { StateMachineStateStorage } from "./StateMachineStateStorage";
 import { StateSnapshotStorage } from "./StateSnapshotStorage";
@@ -19,6 +20,7 @@ import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 import { ForkId, Bytes, BlockOrSnapshot, Hash } from "@/types/types";
 import { Address } from "@/types/types";
 import { deepCopyProxy, getChecksumAddress } from "@/utils";
+import type { Logger } from "@/utils/logging/Logger";
 
 export class Storage {
     public readonly blocks: BlockStorage;
@@ -38,10 +40,12 @@ export class Storage {
     public readonly eventSync: EventSyncStorage;
     public readonly blacklist: BlacklistStorage;
     public readonly storedProofs: StoredProofStorage;
+    public readonly proofEvidence: ProofEvidenceStorage;
 
     // `maxChannelParticipants` comes from the deployed contract, so the queue's
-    // retention bound follows the chain instead of restating it.
-    constructor(maxChannelParticipants?: number) {
+    // and the sync evidence's retention bounds follow the chain instead of
+    // restating it.
+    constructor(maxChannelParticipants?: number, logger?: Logger) {
         this.blocks = deepCopyProxy(new BlockStorage());
         this.inboundMessages = deepCopyProxy(new MessageBlockStorage());
         this.outboundMessages = deepCopyProxy(new MessageBlockStorage());
@@ -61,6 +65,10 @@ export class Storage {
         this.eventSync = deepCopyProxy(new EventSyncStorage());
         this.blacklist = deepCopyProxy(new BlacklistStorage());
         this.storedProofs = deepCopyProxy(new StoredProofStorage());
+        // the queue owns the validated bound and its default
+        this.proofEvidence = deepCopyProxy(
+            new ProofEvidenceStorage(this.queues.maxChannelParticipants, logger)
+        );
         return deepCopyProxy(this);
     }
 

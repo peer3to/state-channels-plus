@@ -5,6 +5,7 @@ import {
     testAccount,
     withIsolatedHardhatNode
 } from "./IsolatedHardhatNode";
+import { recordingLogger } from "./RecordingLogger";
 import { RpcNodeProxy } from "./RpcNodeProxy";
 import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import RpcNodeProvider from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
@@ -15,9 +16,7 @@ import { readLogPages } from "@/stateManager/eventSync/EventSyncService";
 import { sleep } from "@/utils";
 import { config } from "@/utils/config";
 import { createLogger } from "@/utils/logging";
-import type { LogEntry, Logger } from "@/utils/logging/Logger";
-import { LogStore } from "@/utils/logging/logStore";
-import { NodeLogger } from "@/utils/logging/node/NodeLogger";
+import type { Logger } from "@/utils/logging/Logger";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import {
@@ -1245,24 +1244,6 @@ export async function assertTransactionWaitResolvesAfterReconnect(): Promise<voi
         },
         { seal: "perTransaction" }
     );
-}
-
-/** A logger whose entries the test reads back. */
-function recordingLogger(level: "debug" | "warn"): {
-    logger: Logger;
-    entries: () => LogEntry[];
-} {
-    const store = new LogStore(1024 * 1024, true);
-    const logger = new NodeLogger(
-        {},
-        {},
-        level,
-        store,
-        { attachErrorListener: false },
-        new Set(),
-        true
-    );
-    return { logger, entries: () => store.getAllLogs() };
 }
 
 /** Collects the unhandled rejections raised while `use` runs. */

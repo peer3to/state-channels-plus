@@ -36,6 +36,13 @@ export const StoredProofEthersType = `tuple(
     bytes encodedFinalizedState
 )`;
 
+export const ProofEvidenceEthersType = `tuple(
+    bytes32 forkId,
+    ${StoredProofEthersType} proof,
+    ${StateSnapshotEthersType} latestSnapshot,
+    bytes encodedLatestState
+)`;
+
 export const FraudProofEthersType = `tuple(
     uint8 proofType,
     address participant,
@@ -170,6 +177,18 @@ export type StoredProof = {
     finalizedSnapshot: StateSnapshotStruct;
     /** the state machine state at `finalizedSnapshot` */
     encodedFinalizedState: Bytes;
+};
+
+/**
+ * A proof kept as evidence (audit or sync), outside the stored proof: the
+ * proven run and the latest point seen on `forkId` with its state there.
+ */
+export type ProofEvidence = {
+    forkId: ForkId;
+    proof: StoredProof;
+    latestSnapshot: StateSnapshotStruct;
+    /** the state machine state at `latestSnapshot`; `0x` when not held */
+    encodedLatestState: Bytes;
 };
 
 // DisputeFraudProofs etheres types

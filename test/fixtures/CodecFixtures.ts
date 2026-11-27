@@ -107,6 +107,7 @@ export const codecValues = {
         chainBlock: 7n
     }),
     storedProof: () => factory.storedProof(factory.hash(), 2),
+    proofEvidence: () => factory.proofEvidence(factory.hash(), 2),
     blockDoubleSignProof: () => ({
         block1: factory.signedBlock(),
         block2: factory.signedBlock()
