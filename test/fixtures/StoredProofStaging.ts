@@ -1,7 +1,7 @@
 // @spec-test-coverage-ignore: stored proof staging exercised by explicit AgreementManagerStoredProof and E2E-StoredProof declarations
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import StateSnapshot from "@/models/StateSnapshot";
-import type { SyncPayload } from "@/types";
+import type { ProofEvidence, StoredProof, SyncPayload } from "@/types";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import {
@@ -26,6 +26,7 @@ import {
 } from "@test/fixtures/SyncInstallStaging";
 import { stageSpectatorBehindUnfinalizedTail } from "@test/fixtures/SyncReplayBaseStaging";
 import { expect } from "chai";
+import { ethers } from "ethers";
 
 type Peer = ReturnType<MathPeerTestHarness["getPeer"]>;
 
@@ -440,6 +441,67 @@ export async function assertForkChangeResetsStoredProof(
         expect(view!.hopHeights, "the proven hops").to.not.be.empty;
         expect(view!.finalized.hash).to.not.equal(anchorsBefore[i].hash);
     }
+}
+
+/**
+ * Installs `storedProof` as peer `peerIndex`'s stored proof of its active
+ * fork and each of `auditEvidence` as an audit record there, then reads the
+ * final points a conflict counter rests on: the stored proof's own points
+ * and the points audit evidence adds. `evidenceBefore` is the evidence read
+ * before the install.
+ */
+export async function readConflictFinalPoints(
+    h: MathPeerTestHarness,
+    peerIndex: number,
+    storedProof: StoredProof,
+    auditEvidence: ProofEvidence[]
+): Promise<{
+    evidenceBefore: SnapshotPoint[];
+    own: SnapshotPoint[];
+    evidence: SnapshotPoint[];
+}> {
+    return h.execOnHost(
+        h.getPeer(peerIndex),
+        async (sm, args, modules) => {
+            const am = sm.agreementManager;
+            const forkId = sm.forkId;
+            const points = (snapshots: StateSnapshot[]) =>
+                snapshots.map((snapshot) => ({
+                    hash: String(snapshot.hash),
+                    height: Number(snapshot.blockHeight)
+                }));
+            // its read waits for the queued stored-proof writes
+            const evidenceBefore = points(
+                await am.getEvidenceFinalPoints(forkId)
+            );
+            sm.storage.storedProofs.set(
+                forkId,
+                modules.Codec.decode(
+                    args.encodedStoredProof,
+                    modules.Type.StoredProof
+                )
+            );
+            args.encodedAuditEvidence.forEach((encoded, i) =>
+                sm.storage.proofEvidence.setAuditEvidence(
+                    modules.ethers.id(`audited dispute ${i}`),
+                    modules.Codec.decode(encoded, modules.Type.ProofEvidence)
+                )
+            );
+            return {
+                evidenceBefore,
+                own: points(await am.getProvableFinalPoints(forkId)),
+                evidence: points(await am.getEvidenceFinalPoints(forkId))
+            };
+        },
+        {
+            encodedStoredProof: ethers.hexlify(
+                Codec.encode(storedProof, Type.StoredProof)
+            ),
+            encodedAuditEvidence: auditEvidence.map((record) =>
+                ethers.hexlify(Codec.encode(record, Type.ProofEvidence))
+            )
+        }
+    );
 }
 
 async function genesisHash(

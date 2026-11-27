@@ -1,3 +1,5 @@
+import StateSnapshot from "@/models/StateSnapshot";
+import { proofEvidence, storedProof } from "@test/factory";
 import {
     assertAbortedInstallPublishesNoStoredProof,
     assertAuditKeepsStoredProof,
@@ -5,9 +7,11 @@ import {
     assertOldForkAdvanceKeepsActiveStoredProof,
     assertStaleAbortKeepsResponder,
     assertSyncAdvancesStoredProof,
-    assertSyncKeepsNotNewerStoredProof
+    assertSyncKeepsNotNewerStoredProof,
+    readConflictFinalPoints
 } from "@test/fixtures/StoredProofStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 describe("Unit: AgreementManager stored proof", function () {
     it("S4: a sync to a later final point than the stored one → the install stores the served final point with its state", async function () {
@@ -48,5 +52,76 @@ describe("Unit: AgreementManager stored proof", function () {
 
     it("a stored block at the stored final point is dropped → the final point and the proof built over it are unchanged", async function () {
         await assertHistoryEditKeepsStoredFinalPoint(TestSession.getHarness());
+    });
+
+    describe("conflict final points", function () {
+        it("an evidence point is not used at a height where our stored proof has a point", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 0);
+            const forkId = h.activeForkId!;
+            // own final points at heights 1 and 2
+            const own = storedProof(forkId, 2);
+            // the same hops at 1 and 2, then a hop at 3, where own has none
+            const longer = storedProof(forkId, 3);
+            const record = {
+                ...proofEvidence(forkId, 3),
+                proof: {
+                    ...longer,
+                    anchorSnapshot: own.anchorSnapshot,
+                    hops: [...own.hops, longer.hops[2]]
+                }
+            };
+
+            const read = await readConflictFinalPoints(h, 0, own, [record]);
+
+            expect(read.evidenceBefore, "no evidence before").to.deep.equal([]);
+            expect(
+                read.own.map(({ height }) => height),
+                "own points at 1 and 2"
+            ).to.deep.equal([1, 2]);
+            expect(read.evidence).to.deep.equal([
+                {
+                    hash: String(
+                        StateSnapshot.from(longer.hops[2].snapshot).hash
+                    ),
+                    height: 3
+                }
+            ]);
+        });
+
+        it("an evidence record that conflicts with one of our own points is skipped", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 0);
+            const forkId = h.activeForkId!;
+            // own final points at heights 1 and 2
+            const own = storedProof(forkId, 2);
+            // other snapshots at 1 and 2 than own's, and a hop at 3
+            const conflicting = proofEvidence(forkId, 3);
+            // own's hops at 1 and 2, then a hop at 4
+            const longer = storedProof(forkId, 4);
+            const agreeing = {
+                ...proofEvidence(forkId, 4),
+                proof: {
+                    ...longer,
+                    anchorSnapshot: own.anchorSnapshot,
+                    hops: [...own.hops, longer.hops[3]]
+                }
+            };
+
+            const read = await readConflictFinalPoints(h, 0, own, [
+                conflicting,
+                agreeing
+            ]);
+
+            expect(read.evidenceBefore, "no evidence before").to.deep.equal([]);
+            expect(read.evidence).to.deep.equal([
+                {
+                    hash: String(
+                        StateSnapshot.from(longer.hops[3].snapshot).hash
+                    ),
+                    height: 4
+                }
+            ]);
+        });
     });
 });
