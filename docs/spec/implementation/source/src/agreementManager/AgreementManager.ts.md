@@ -109,9 +109,9 @@ Reduction inbound evidence
 
 A failed recovery of a genesis-hop inbound run is remembered per fork and upper inbound hash, so later signer-admission checks of the same hop do not rescan chain logs.
 
-- Setup: A spectator that holds no inbound run below its synced point and cannot fetch one; stored-block merges whose copies add stray never-member signatures; a chain-log query counter
-- Oracle: Each stray signature is stripped and the copy is `DUPLICATE`; the chain-log query count after the second merge equals the count after the first; a fork change or more than 256 remembered misses forgets the oldest miss
+- Setup: A spectator that holds no inbound run below its synced point and cannot fetch one; stored-block merges whose copies add stray never-member signatures; a chain-log query counter. For the fork and bound cases: a never-member signature on the block at a peer's local final point, judged against hop ends whose upper inbound hash names a run the chain never held, on the disputed fork and its successor
+- Oracle: Each stray signature is stripped and the copy is `DUPLICATE`; the chain-log query count after the second merge equals the count after the first; a remembered miss is judged without a chain-log query; the same upper hash on another fork is queried, and that fork's miss makes the first fork query again; after 257 misses the oldest is queried again and the second oldest is not
 
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-3-ZBC869.P1` — a second never-member signer of the same stored block after the genesis hop's recovery failed: no new chain-log scan
-- [ ] `UNIT-TEST-AGREEMENT-MANAGER-3-ZBC869.P2` — after a fork change, the same hop's recovery scans the chain logs again
-- [ ] `UNIT-TEST-AGREEMENT-MANAGER-3-ZBC869.P3` — past 256 remembered misses, the oldest is forgotten and its hop is scanned again
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-3-ZBC869.P2` — after a fork change, the same hop's recovery scans the chain logs again
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-3-ZBC869.P3` — past 256 remembered misses, the oldest is forgotten and its hop is scanned again

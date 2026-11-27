@@ -16,9 +16,12 @@ import { expect } from "chai";
  * finality is admitted from gossip and keeps the hop provable on chain.
  */
 describe("E2E: Signer admission", function () {
-    it("a joiner added and removed in one hop signs the block after its exit → peers admit its relayed signature without cutting the sender, and the contract's milestone walk from the genesis proves the hop final only with that signature", async function () {
+    it("a joiner added and removed in one hop signs the block after its exit → peers admit its relayed signature without cutting the sender, and the chain's milestone walk from the genesis proves the hop final only with that signature", async function () {
         const h = TestSession.getHarness();
-        const { leaveHeight, joinerIndex } = await stageJoinAndExitInOneHop(h);
+        // the exit never lands, so the chain's anchor stays the genesis
+        const { leaveHeight, joinerIndex } = await stageJoinAndExitInOneHop(h, {
+            exitPost: "suppressed"
+        });
         const joiner = h.getPeer(joinerIndex).address;
         const { confirmation, blockHash, signature } = await signStoredBlockAs(
             h,
@@ -53,7 +56,7 @@ describe("E2E: Signer admission", function () {
 
         const proof = await buildProofView(h, 0, { finalizedOnly: true });
         const walks = await walkAllTiersView(h, 0, proof.stateProof);
-        const genesisWalk = walks.find((walk) => walk.tier === "localDiamond");
+        const genesisWalk = walks.find((walk) => walk.tier === "chain");
         // the same proof without the joiner's signature on the hop's end
         const hopEnd =
             proof.stateProof.milestones.at(-1)!.blockConfirmations[0];
@@ -83,13 +86,13 @@ describe("E2E: Signer admission", function () {
         };
         const strippedGenesisWalk = (
             await walkAllTiersView(h, 0, withoutJoiner)
-        ).find((walk) => walk.tier === "localDiamond");
+        ).find((walk) => walk.tier === "chain");
 
         // one hop from the genesis spans the join and the exit
         expect(proof.start.hash).to.equal(proof.genesisHash);
         expect(proof.milestoneHeights.at(-1)![0]).to.equal(leaveHeight + 1);
         expect(proof.milestoneSigners.at(-1)![0]).to.include(joiner);
-        // the contract's walk from the genesis accepts that signature
+        // the chain's walk from the genesis accepts that signature
         expect(genesisWalk!.start).to.equal(null);
         expect(genesisWalk!.valid).to.equal(true);
         const hopEndSnapshotHash = await blockSnapshotHashAt(

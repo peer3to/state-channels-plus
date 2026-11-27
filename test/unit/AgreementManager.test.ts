@@ -2,11 +2,13 @@ import { hash as randomHash, randomAddress, randomWallet } from "../factory";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type { BlockHeight } from "@/types/types";
 import { Codec, Type } from "@/utils";
+import { suppressTimeoutChecks } from "@test/fixtures/OlderDisputeStaging";
 import {
     blockSnapshotHashAt,
     localFinalizedView
 } from "@test/fixtures/ProofOwnerStaging";
 import {
+    judgeGenesisHopMisses,
     signerAdmissionView,
     signStoredBlockAs,
     stageDepartureHopNotFinal
@@ -1130,6 +1132,108 @@ describe("Unit: AgreementManager", function () {
                 viewDependent: [leaverSignature],
                 unresolved: []
             });
+        });
+
+        it("a genesis-hop miss remembered on one fork, then a miss of the same hop on another fork → the other fork scans the chain logs for it, and the first fork scans them again", async function () {
+            const h = TestSession.getHarness();
+            const { originalForkId, newForkId, honestPeerIndices } =
+                await h.scenario.fourPeersDisputeResolution();
+            await suppressTimeoutChecks(h, honestPeerIndices);
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: honestPeerIndices,
+                waitForFinalization: true
+            });
+            const peerIndex = honestPeerIndices[0];
+            const upperInboundHashes = [randomHash()];
+
+            const first = await judgeGenesisHopMisses(
+                h,
+                peerIndex,
+                originalForkId,
+                upperInboundHashes
+            );
+            const repeated = await judgeGenesisHopMisses(
+                h,
+                peerIndex,
+                originalForkId,
+                upperInboundHashes
+            );
+            const onOtherFork = await judgeGenesisHopMisses(
+                h,
+                peerIndex,
+                newForkId,
+                upperInboundHashes
+            );
+            const backOnFirstFork = await judgeGenesisHopMisses(
+                h,
+                peerIndex,
+                originalForkId,
+                upperInboundHashes
+            );
+
+            expect(first.viewDependent).to.equal(1);
+            expect(
+                first.chainLogQueries,
+                "the first miss scanned the chain logs"
+            ).to.be.greaterThan(0);
+            // premise - a remembered miss is stripped without a scan
+            expect(repeated).to.deep.equal({
+                viewDependent: 1,
+                chainLogQueries: 0
+            });
+            expect(onOtherFork.viewDependent).to.equal(1);
+            expect(
+                onOtherFork.chainLogQueries,
+                "the same upper inbound hash on another fork is scanned"
+            ).to.be.greaterThan(0);
+            expect(backOnFirstFork.viewDependent).to.equal(1);
+            expect(
+                backOnFirstFork.chainLogQueries,
+                "the other fork's miss forgot the first fork's misses"
+            ).to.be.greaterThan(0);
+        });
+
+        it("257 genesis-hop misses on one fork, one more than it remembers → the oldest is forgotten and scanned again, the second oldest is still stripped without a scan", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            await suppressTimeoutChecks(h, [0, 1, 2]);
+            await h.transition.advanceState({
+                count: 1,
+                waitForFinalization: true
+            });
+            const forkId = h.activeForkId!;
+            const upperInboundHashes = Array.from({ length: 257 }, () =>
+                randomHash()
+            );
+
+            const filled = await judgeGenesisHopMisses(
+                h,
+                0,
+                forkId,
+                upperInboundHashes
+            );
+            const secondOldest = await judgeGenesisHopMisses(h, 0, forkId, [
+                upperInboundHashes[1]
+            ]);
+            const oldest = await judgeGenesisHopMisses(h, 0, forkId, [
+                upperInboundHashes[0]
+            ]);
+
+            expect(filled.viewDependent).to.equal(257);
+            expect(
+                filled.chainLogQueries,
+                "every new miss scanned the chain logs"
+            ).to.be.at.least(257);
+            expect(secondOldest).to.deep.equal({
+                viewDependent: 1,
+                chainLogQueries: 0
+            });
+            expect(oldest.viewDependent).to.equal(1);
+            expect(
+                oldest.chainLogQueries,
+                "the oldest miss was evicted at the bound"
+            ).to.be.greaterThan(0);
         });
     });
 });

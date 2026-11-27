@@ -978,25 +978,41 @@ export async function stageFinalJoinThenUnfinalizedTail(
  * the consumed inbound blocks: peer 0's mirror holds that snapshot update
  * and the pruning (a mirror behind the chain), so it keeps no anchor and the
  * JOIN's inbound block.
+ *
+ * `exitPost: "suppressed"`: the leaver posts no snapshot, so the exit never
+ * lands and the chain's anchor stays the fork genesis; the leaver does not
+ * settle, and peer 0's mirror holds nothing.
  */
-export async function stageJoinThenLeave(h: MathPeerTestHarness): Promise<{
+export async function stageJoinThenLeave(
+    h: MathPeerTestHarness,
+    options: { exitPost?: "landed" | "suppressed" } = {}
+): Promise<{
     forkId: ForkId;
     joinHeight: number;
     leaveHeight: number;
     joinerIndex: number;
     latestHeight: number;
 }> {
+    const isExitPosted = options.exitPost !== "suppressed";
     const { forkId, joinHeight, leaveHeight, joiner } =
         await stageJoinUntilLeaveTurn(h);
     // the exit's StateSnapshotUpdated and the ChannelStorageCleared emitted
     // before it in the same transaction are held together at peer 0
     const stub = h.control(h.getPeer(0)).stub;
-    await stub.stubHoldSnapshotUpdatedEvents().request();
-    await stub.stubHoldChannelStorageClearedEvents().request();
-    await h.transition.participantLeaveDetached({
-        leaverIndex: joiner.index,
-        waitForPeers: [0, 1, 2]
-    });
+    if (isExitPosted) {
+        await stub.stubHoldSnapshotUpdatedEvents().request();
+        await stub.stubHoldChannelStorageClearedEvents().request();
+        await h.transition.participantLeaveDetached({
+            leaverIndex: joiner.index,
+            waitForPeers: [0, 1, 2]
+        });
+    } else {
+        await h.control(joiner).stub.stubPostStateSnapshot().request();
+        await h.transition.participantLeaveStateTransition({
+            leaverIndex: joiner.index,
+            waitForPeers: [0, 1, 2]
+        });
+    }
     expect(
         await authorIndexAt(h, 0, leaveHeight),
         "the joiner authors its own leave"
@@ -1006,11 +1022,13 @@ export async function stageJoinThenLeave(h: MathPeerTestHarness): Promise<{
         waitForPeers: [0, 1],
         waitForFinalization: true
     });
-    await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
-    expect(
-        await stub.getHeldChannelStorageClearedCount().request(),
-        "peer 0 held the exit snapshot's inbound pruning"
-    ).to.be.greaterThan(0);
+    if (isExitPosted) {
+        await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
+        expect(
+            await stub.getHeldChannelStorageClearedCount().request(),
+            "peer 0 held the exit snapshot's inbound pruning"
+        ).to.be.greaterThan(0);
+    }
     return {
         forkId,
         joinHeight,

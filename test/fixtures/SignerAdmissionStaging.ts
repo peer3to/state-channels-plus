@@ -1,7 +1,9 @@
 // @spec-test-coverage-ignore: signer-admission staging shared by mapped ingest, merge and e2e tests
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
+import type StateSnapshot from "@/models/StateSnapshot";
 import type { BlockHeight, ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
+import { randomWallet } from "@test/factory";
 import { freshSpectatorSyncedFrom } from "@test/fixtures/MilestoneSyncStaging";
 import { suppressTimeoutChecks } from "@test/fixtures/OlderDisputeStaging";
 import {
@@ -53,15 +55,17 @@ export async function signStoredBlockAs(
 }
 
 /**
- * `stageJoinThenLeave`, then peer 0 holds no final point above the genesis:
- * it lost the joiner's signature on the join block `j` and the blocks `j + 1`
- * and `k`. Its one hop from the genesis spans the join and the exit, and the
- * joiner is in neither the genesis nor the post-exit snapshot.
+ * `stageJoinThenLeave` (with its `exitPost` option), then peer 0 holds no
+ * final point above the genesis: it lost the joiner's signature on the join
+ * block `j` and the blocks `j + 1` and `k`. Its one hop from the genesis
+ * spans the join and the exit, and the joiner is in neither the genesis nor
+ * the post-exit snapshot.
  */
 export async function stageJoinAndExitInOneHop(
-    h: MathPeerTestHarness
+    h: MathPeerTestHarness,
+    options: { exitPost?: "landed" | "suppressed" } = {}
 ): Promise<JoinExitStaging> {
-    const staging = await stageJoinThenLeave(h);
+    const staging = await stageJoinThenLeave(h, options);
     const { forkId, joinHeight, leaveHeight, joinerIndex } = staging;
     await h
         .control(h.getPeer(0))
@@ -216,6 +220,79 @@ export async function signerAdmissionView(
         },
         options
     );
+}
+
+/**
+ * A never-member key signs peer `peerIndex`'s stored block at its local
+ * final point of `forkId`, and `getSignerAdmission` judges that signature
+ * once per `upperInboundHashes` entry, in order. Each judgment's hop end is
+ * the block's own snapshot with that upper inbound hash: a run the peer never
+ * stored and the chain never held, so the recovery of the hop from the fork
+ * genesis fails. The block is at the final point, so the peer's own hop is
+ * not read. How many judgments found the signer view-dependent, and the
+ * chain log queries they made.
+ */
+export async function judgeGenesisHopMisses(
+    h: MathPeerTestHarness,
+    peerIndex: number,
+    forkId: ForkId,
+    upperInboundHashes: string[]
+): Promise<{ viewDependent: number; chainLogQueries: number }> {
+    const peer = h.getPeer(peerIndex);
+    const finalPoint = await localFinalizedView(h, peerIndex, forkId);
+    expect(finalPoint, "a local final point on the fork").to.not.equal(null);
+    const block = await h
+        .control(peer)
+        .query.getBlockByHeight(forkId, finalPoint!.height)
+        .request();
+    expect(block, "the block at the final point").to.not.equal(null);
+    const signature = await randomWallet().signMessage(
+        ethers.getBytes(block!.hash)
+    );
+    const stub = h.control(peer).stub;
+    await stub.stubCountChainLogQueries().request();
+    const viewDependent = await h.execOnHost(
+        peer,
+        async (sm, args) => {
+            const judged = sm.storage.blocks.getBlock(
+                args.forkId,
+                args.height
+            )!;
+            const resulting = sm.storage.stateSnapshots.getStateSnapshotByHash(
+                judged.stateSnapshotHash
+            )!;
+            const snapshot = resulting.toStruct();
+            const snapshotType = resulting.constructor as typeof StateSnapshot;
+            let count = 0;
+            for (const upperInboundHash of args.upperInboundHashes) {
+                const hopEnd = snapshotType.from({
+                    ...snapshot,
+                    snapshotData: {
+                        ...snapshot.snapshotData,
+                        latestInboundMessageBlockHash: upperInboundHash
+                    }
+                });
+                const admission = await sm.agreementManager.getSignerAdmission(
+                    judged,
+                    new Set([args.signature]),
+                    hopEnd,
+                    resulting
+                );
+                if (admission.viewDependent.has(args.signature)) count += 1;
+            }
+            return count;
+        },
+        {
+            forkId,
+            height: finalPoint!.height,
+            signature,
+            upperInboundHashes
+        }
+    );
+    return {
+        viewDependent,
+        chainLogQueries: await stub.getChainLogQueryCount().request()
+    };
 }
 
 /**
