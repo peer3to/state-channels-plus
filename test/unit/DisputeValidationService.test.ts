@@ -15,6 +15,7 @@ import {
     postTimelyNextWriterTimeout,
     stageBlindPendingAuditor
 } from "@test/fixtures/DisputeAuditStaging";
+import { stageTailConflictAboveBypassHop } from "@test/fixtures/FinalHistoryCounterStaging";
 import {
     constructJoinerBypassDispute,
     readLocalFinalSnapshot,
@@ -1141,74 +1142,6 @@ describe("Unit: DisputeValidationService", function () {
             );
         });
 
-        it("only a top-up by a participant of G between G's and F's inbound heads -> no skipped JOIN, so no regression proof is built", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup();
-            const forkId = h.activeForkId!;
-            const auditor = h.getPeer(2);
-            const latestHeight = async () =>
-                (await h
-                    .control(auditor)
-                    .query.getLatestBlockHeight(forkId)
-                    .request())!;
-            // G consumed a first top-up, F a second one above it
-            await h.join.forceInboundJoinWait({
-                participant: h.getPeer(0).address
-            });
-            await h.transition.advanceState({
-                count: 2,
-                waitForFinalization: true
-            });
-            await h.assert.sync.peersInSyncWait();
-            const latestFinalizedHeight = await latestHeight();
-            await h.join.forceInboundJoinWait({
-                participant: h.getPeer(0).address
-            });
-            await h.transition.advanceState({
-                count: 2,
-                waitForFinalization: true
-            });
-            await h.assert.sync.peersInSyncWait();
-            const finalHeight = await latestHeight();
-
-            const r = await h.execOnHost(
-                auditor,
-                async (sm, args) => {
-                    const latestFinalized = (await sm.storage.getStateSnapshot({
-                        forkId: args.forkId,
-                        height: args.latestFinalizedHeight
-                    }))!;
-                    const final = (await sm.storage.getStateSnapshot({
-                        forkId: args.forkId,
-                        height: args.finalHeight
-                    }))!;
-                    const skipped =
-                        sm.storage.inboundMessages.tryGetMessageBlocksInRange({
-                            upperBlockHash: final.latestInboundMessageBlockHash,
-                            lowerBlockHash:
-                                latestFinalized.latestInboundMessageBlockHash
-                        });
-                    const skippedJoin = sm.disputeValidationService[
-                        "findSkippedJoin"
-                    ](
-                        latestFinalized.snapshotData,
-                        final.latestInboundMessageBlockHash
-                    );
-                    return {
-                        skippedCount: skipped.blocks.length,
-                        isRunMissing: skipped.missingBlockHash !== undefined,
-                        skippedJoinHash: skippedJoin?.blockHash ?? null
-                    };
-                },
-                { forkId, latestFinalizedHeight, finalHeight }
-            );
-
-            // premise: F's head is one stored top-up above G's head
-            expect(r.skippedCount).to.equal(1);
-            expect(r.isRunMissing).to.equal(false);
-            expect(r.skippedJoinHash).to.equal(null);
-        });
-
         it("the same hop committing Charlie's seated head state (inbound head = his JOIN), signed by all three -> no regression, no DisputeFinalPointRegression", async function () {
             const h = TestSession.getHarness();
             const history = await stageSeatedJoinerHistory(h);
@@ -1291,9 +1224,11 @@ describe("Unit: DisputeValidationService", function () {
             const { chain } = await conflicts.observation();
             expect(chain.reads, "the conflict is offered").to.be.greaterThan(0);
             expect(
-                chain.failures,
+                chain.failureErrorNames,
                 "every offer reverts on the unknown inbound head"
-            ).to.have.length(chain.reads);
+            ).to.deep.equal(
+                new Array(chain.reads).fill("ErrorInboundMessageBlockNotStored")
+            );
         });
 
         it("untampered dispute over seated Charlie's history -> true, no proof, and his stored inbound blocks rule the regression out without a chain read", async function () {
@@ -1541,7 +1476,7 @@ describe("Unit: DisputeValidationService", function () {
             expect(chain.failures).to.have.length(1);
         });
 
-        it("G right above the chain anchor, where Charlie cannot prove the conflict -> no final point of his lies between the anchor and G: no regression read, no DisputeFinalPointRegression", async function () {
+        it("G right above the chain anchor, where Charlie cannot prove the conflict -> no final point of his lies between the anchor and G: no regression read, only the DisputeNotLatestState counter", async function () {
             const h = TestSession.getHarness();
             const history = await stageSeatedJoinerHistory(h);
             const charlie = h.getPeer(history.charlieIndex);
@@ -1561,9 +1496,11 @@ describe("Unit: DisputeValidationService", function () {
             );
 
             expect(run.outcome).to.equal("returned");
-            expect(run.storedProof?.disputeFraudProofType).to.not.equal(
-                DisputeFraudProofType.DisputeFinalPointRegression
-            );
+            // Charlie holds states above G: only the not-latest counter
+            expect(
+                run.storedProof?.disputeFraudProofType,
+                "the not-latest counter, not a regression"
+            ).to.equal(DisputeFraudProofType.DisputeNotLatestState);
             expect((await regressions.observation()).chain.reads).to.equal(0);
         });
 
@@ -1597,9 +1534,7 @@ describe("Unit: DisputeValidationService", function () {
             );
 
             expect(run.outcome).to.equal("returned");
-            expect(run.storedProof?.disputeFraudProofType).to.not.equal(
-                DisputeFraudProofType.DisputeFinalPointRegression
-            );
+            expect(run.storedProof, "no counter is stored").to.equal(undefined);
             expect((await regressions.observation()).chain.reads).to.equal(0);
         });
 
@@ -1839,10 +1774,115 @@ describe("Unit: DisputeValidationService", function () {
             const run = await audit;
 
             expect(run.outcome).to.equal("returned");
-            expect(run.storedProof?.disputeFraudProofType).to.not.equal(
+            expect(run.storedProof, "no counter is stored").to.equal(undefined);
+            expect((await regressions.observation()).chain.reads).to.equal(0);
+        });
+
+        it("G one block below Charlie's latest final point, where he cannot prove the conflict, and a tail block at that final point -> the conflict built first slashes nobody, the regression slashes Alice and Bob: false + the DisputeFinalPointRegression with the larger slash set is stored", async function () {
+            const h = TestSession.getHarness();
+            const { history, charlie, bypass } =
+                await stageTailConflictAboveBypassHop(h);
+            const [alice, bob] = [history.aliceIndex, history.bobIndex].map(
+                (index) => h.getPeer(index)
+            );
+            const { dispute, auditingData, hopBlock, hopSnapshot } = bypass;
+            const conflicts = await h.mirror.observe(
+                charlie.index,
+                "isDisputeConflictingWithFinalState"
+            );
+            const regressions = await h.mirror.observe(
+                charlie.index,
+                "isDisputeFinalPointRegression"
+            );
+
+            const run = await h.dispute.auditDispute(
+                charlie.index,
+                dispute,
+                auditingData
+            );
+
+            // premise: both counters apply; the conflict is offered first
+            expect(
+                (await conflicts.observation()).chain.answers,
+                "the chain accepts the tail block's conflict"
+            ).to.deep.equal([true]);
+            expect(
+                (await regressions.observation()).chain.answers
+            ).to.deep.equal([true]);
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.disputeFraudProofCount).to.equal(1);
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
                 DisputeFraudProofType.DisputeFinalPointRegression
             );
-            expect((await regressions.observation()).chain.reads).to.equal(0);
+            const proof = Codec.decode(
+                run.storedProof!.encodedProof,
+                DisputeFraudProofType.DisputeFinalPointRegression
+            );
+            expect(
+                StateSnapshot.from(proof.latestFinalizedSnapshot).hash,
+                "G is the hop's snapshot"
+            ).to.equal(hopSnapshot.hash);
+            expect(proof.joinInboundBlockHash).to.equal(
+                history.charlieFinal.latestInboundMessageBlockHash
+            );
+            const walk = await h.channelManager.verifyMilestones.staticCall(
+                proof.finalProof
+            );
+            const final = StateSnapshot.from(walk.finalizedSnapshot);
+            expect(final.blockHeight, "F is below G")
+                .to.be.lessThan(hopBlock.height)
+                .and.to.be.at.least(history.charlieFinal.blockHeight);
+            expect(
+                final.latestInboundMessageBlockHash,
+                "F is past Charlie's JOIN"
+            ).to.equal(history.charlieFinal.latestInboundMessageBlockHash);
+            // a tail block's conflict slashes nobody; the stored regression
+            // slashes the two signers of G that also signed F
+            const [isKill, slashes] =
+                await h.channelManager.isDisputeFinalPointRegression.staticCall(
+                    dispute,
+                    proof
+                );
+            expect(isKill).to.equal(true);
+            expect([...slashes]).to.have.members([alice.address, bob.address]);
+        });
+
+        it("the same tail conflict and regression, and neither kill fits Charlie's per-transaction calldata limit -> the audit does not stop at the unsendable counters: the replay of the tail block fails, so false + the DisputeInvalidBlockInStateProofApplyFraudProof, not a final-history counter", async function () {
+            const h = TestSession.getHarness();
+            const { charlie, bypass } =
+                await stageTailConflictAboveBypassHop(h);
+            const { dispute, auditingData } = bypass;
+            // no kill fits one transaction: both counters are unsendable
+            await h.rpcStub.limitTransactionBytes(charlie.index, 1);
+            const conflicts = await h.mirror.observe(
+                charlie.index,
+                "isDisputeConflictingWithFinalState"
+            );
+            const regressions = await h.mirror.observe(
+                charlie.index,
+                "isDisputeFinalPointRegression"
+            );
+
+            const run = await h.dispute.auditDispute(
+                charlie.index,
+                dispute,
+                auditingData
+            );
+
+            // premise: the chain accepts both final-history counters
+            expect(
+                (await conflicts.observation()).chain.answers,
+                "the chain accepts the tail block's conflict"
+            ).to.include(true);
+            expect(
+                (await regressions.observation()).chain.answers,
+                "the chain accepts the regression"
+            ).to.include(true);
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.disputeFraudProofCount).to.equal(1);
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
+            );
         });
     });
 

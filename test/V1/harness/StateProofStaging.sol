@@ -6,6 +6,7 @@ import {DisputeWindowSeeding} from "./DisputeWindowSeeding.sol";
 import {InboundSeeding} from "./InboundSeeding.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import {DisputeFraudProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol";
+import {DisputeManagerFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol";
 import {DisputeVerificationFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol";
 import {FraudProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol";
 import {StateProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol";
@@ -31,12 +32,20 @@ import "../../../contracts/V1/types/DataTypes.sol";
 import "../../../contracts/V1/types/ProofTypes.sol";
 
 /// The dispute fraud-proof pipeline over its own storage: the DisputeFraudProofFacet handlers with
-/// DisputeVerificationFacet's kill and balance invariant inline, and StateProofFacet, FraudProofFacet and UtilityFacet
-/// reached by delegatecall like the proxy routes them. A test places the chain snapshot, inbound blocks, withdrawals,
-/// slashes and the committed dispute directly.
-contract StateProofHarness is DisputeFraudProofFacet, DisputeVerificationFacet, DisputeWindowSeeding, InboundSeeding {
+/// DisputeVerificationFacet's kill and balance invariant inline, DisputeManagerFacet's upload, and StateProofFacet,
+/// FraudProofFacet and UtilityFacet reached by delegatecall like the proxy routes them. A test places the chain
+/// snapshot, inbound blocks, withdrawals, slashes and the committed dispute directly, or uploads a dispute.
+contract StateProofHarness is
+    DisputeFraudProofFacet,
+    DisputeVerificationFacet,
+    DisputeManagerFacet,
+    DisputeWindowSeeding,
+    InboundSeeding
+{
     constructor(address utilityFacet, address stateProofFacet, address fraudProofFacet, address stateMachine) {
         evidenceTime = 10;
+        // the upload size cap has its own cases (DisputeWindowAdmission)
+        maxDisputeUploadBytes = type(uint256).max;
         utilityFacetAddress = utilityFacet;
         stateProofFacetAddress = stateProofFacet;
         fraudProofFacetAddress = fraudProofFacet;
@@ -44,11 +53,14 @@ contract StateProofHarness is DisputeFraudProofFacet, DisputeVerificationFacet, 
         stateMachineImplementation = MathStateMachine(stateMachine);
     }
 
-    /// the routed StateProofFacet reads and the `isGenesisSnapshotWithoutTimeCheck` self-call, answered by the facet
-    /// the proxy routes them to
+    /// the routed StateProofFacet reads, the `isGenesisSnapshotWithoutTimeCheck` self-call and the
+    /// `canParticipateInDisputes` read, answered by the facet the proxy routes them to
     fallback() external {
         address facet = stateProofFacetAddress;
-        if (msg.sig == UtilityFacet.isGenesisSnapshotWithoutTimeCheck.selector) facet = utilityFacetAddress;
+        if (
+            msg.sig == UtilityFacet.isGenesisSnapshotWithoutTimeCheck.selector
+                || msg.sig == UtilityFacet.canParticipateInDisputes.selector
+        ) facet = utilityFacetAddress;
         bytes memory result = _delegatecall(facet, msg.data);
         assembly ("memory-safe") {
             return(add(result, 32), mload(result))
@@ -107,8 +119,28 @@ contract StateProofHarness is DisputeFraudProofFacet, DisputeVerificationFacet, 
         }
     }
 
+    /// the proxy's `multicall`: each call runs on this contract in order by delegatecall, and a revert of one reverts
+    /// them all
+    function multicall(bytes[] calldata calls) external returns (bytes[] memory results) {
+        results = new bytes[](calls.length);
+        for (uint256 i = 0; i < calls.length; i++) {
+            (bool success, bytes memory result) = address(this).delegatecall(calls[i]);
+            if (!success) {
+                assembly ("memory-safe") {
+                    revert(add(result, 32), mload(result))
+                }
+            }
+            results[i] = result;
+        }
+    }
+
     function commitmentCount(bytes32 channelId, bytes32 forkId) external view returns (uint256) {
         return disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments.length;
+    }
+
+    /// `dispute`'s commitment is in its fork's window
+    function isCommitted(Dispute memory dispute) external view returns (bool) {
+        return isDisputeCommitted(dispute);
     }
 
     function isSlashed(bytes32 channelId, address participant) external view returns (bool) {
@@ -496,6 +528,17 @@ abstract contract StateProofStaging is DiamondHarness {
 
     function _commit(Dispute memory dispute) internal {
         harness.seedDispute(dispute);
+    }
+
+    /// `dispute`'s upload confirmation, signed by its disputer alone
+    function _uploadConfirmation(Dispute memory dispute)
+        internal
+        view
+        returns (DisputeConfirmation memory confirmation)
+    {
+        confirmation.signedDispute.encodedDispute = abi.encode(dispute);
+        confirmation.signedDispute.signature =
+            _sign(_keyOf(dispute.input.disputer), confirmation.signedDispute.encodedDispute);
     }
 
     /// B submits one dispute fraud proof against `dispute`

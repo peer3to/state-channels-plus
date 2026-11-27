@@ -20,7 +20,6 @@ import {
 } from "@test/fixtures/ProofOwnerStaging";
 import {
     holdUnobservedInboundTopUp,
-    restoreCommitEligibility,
     stageDepartureHopNotFinal,
     stageSpectatorWithoutGenesisRun,
     stageUnobservedInboundTopUp
@@ -489,14 +488,13 @@ describe("Unit: BlockIngestService", function () {
             });
 
             const query = h.control(observer).query;
-            await waitFor(
-                async () =>
-                    (await query.isBlacklisted(leader.address).request()) &&
-                    (await query
-                        .getBlockByHeight(forkId, startHeight)
-                        .request()) !== null,
-                h.event.protocolEventTimeoutMs()
-            );
+            await h.event.waitForBlockConfirmationProcessed({
+                peerIndex: observer.index,
+                blockHash: authored.hash as Hash
+            });
+            expect(
+                await query.isBlacklisted(leader.address).request()
+            ).to.equal(true);
             const stored = await query
                 .getBlockByHeight(forkId, startHeight)
                 .request();
@@ -552,14 +550,13 @@ describe("Unit: BlockIngestService", function () {
                 waitForProcessed: false
             });
 
-            await waitFor(
-                async () =>
-                    (await query.isBlacklisted(leader.address).request()) &&
-                    (await query
-                        .getBlockByHeight(forkId, startHeight)
-                        .request()) !== null,
-                h.event.protocolEventTimeoutMs()
-            );
+            await h.event.waitForBlockConfirmationProcessed({
+                peerIndex: observer.index,
+                blockHash: authored.hash as Hash
+            });
+            expect(
+                await query.isBlacklisted(leader.address).request()
+            ).to.equal(true);
             const stored = await query
                 .getBlockByHeight(forkId, startHeight)
                 .request();
@@ -574,7 +571,6 @@ describe("Unit: BlockIngestService", function () {
         it("a leaver signs a fresh block above its exit, the block carrying an inbound run the peer cannot fetch, at a peer whose departure hop is not final → admitted at once: the block is stored with that signature and the sender is not cut", async function () {
             const h = TestSession.getHarness();
             const { forkId, joinerIndex } = await stageDepartureHopNotFinal(h);
-            await restoreCommitEligibility(h, 0);
             const { held, topUpHash } = await holdUnobservedInboundTopUp(h, {
                 laggingIndex: 0,
                 participantIndices: [0, 1],

@@ -471,14 +471,15 @@ describe("Unit: DisputeBuilder", function () {
             await h
                 .getPeer(writer.index)
                 .p2pInstance.p2pContractInstance.add(1); // block 2
-            await waitFor(
-                async () =>
-                    (await h
-                        .control(disputer)
-                        .query.getLatestBlockHeight(forkId)
-                        .request()) === 2,
-                h.event.protocolEventTimeoutMs()
-            );
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [writer.index, disputer.index]
+            });
+            expect(
+                await h
+                    .control(disputer)
+                    .query.getLatestBlockHeight(forkId)
+                    .request()
+            ).to.equal(2);
 
             const cut = await h.dispute.fetchConstructedDispute(
                 disputer.index,

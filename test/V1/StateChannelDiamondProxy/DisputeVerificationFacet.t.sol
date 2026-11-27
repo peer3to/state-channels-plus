@@ -814,6 +814,25 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         harness.handleOnChainSlashesNotSubset("", dispute);
     }
 
+    /// A dispute built from a state that still listed the exited address names its slash: the address is slashed on
+    /// chain, so the list is a subset and the subset counter has nothing to kill.
+    function test_handleOnChainSlashesNotSubset_disputeListingAnExitedAddressSlash_isNotKilled() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        address exited = address(0xE1);
+        harness.slashOnChain(CHANNEL_ID, exited);
+        Dispute memory dispute;
+        dispute.input.channelId = CHANNEL_ID;
+        dispute.input.disputer = address(0xA1);
+        dispute.input.onChainSlashes = _oneAddress(exited);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RaceConditionOnChainSlashes.selector, CHANNEL_ID, _oneAddress(exited), _oneAddress(exited)
+            )
+        );
+        harness.handleOnChainSlashesNotSubset("", dispute);
+    }
+
     function test_computeDisputeOutputState_slashOfAnExitedAddress_takesNoEffectAndKeepsTheTimeout() public {
         address[] memory participants = _participants();
         DisputeInput memory input;

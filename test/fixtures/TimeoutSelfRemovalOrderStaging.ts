@@ -2,7 +2,6 @@
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import type { ForkId } from "@/types";
 import { Codec, Type } from "@/utils";
-import { waitFor } from "@test/utils/waitFor";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { expect } from "chai";
 import { ZeroAddress } from "ethers";
@@ -50,12 +49,11 @@ export async function stageTimeoutAndSelfRemoval(
         try {
             // the build starts once the writer's deadline has passed, so the
             // self-removal window opens after the timeout's minTimeStamp
-            await waitFor(
-                async () =>
-                    (await disputer.stub.getTimeoutBuildObservation().request())
-                        .entered >= 1,
-                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
-            );
+            await disputer.stub.awaitTimeoutBuildEntered().request({
+                timeoutMs: h.event.protocolEventTimeoutMs({
+                    withFirstBlockGrace: true
+                })
+            });
             await postSelfRemoval(h, forkId);
             await h.assert.dispute.committedWait({
                 peersIndices: REMAINING_PEER_INDICES,
@@ -142,19 +140,15 @@ export async function stageStoredTimeoutClaim(
     // the store is counted only while the build is held
     await control.stub.holdTimeoutBuild().request();
     try {
-        await waitFor(
-            async () =>
-                (await control.stub.getTimeoutBuildObservation().request())
-                    .entered >= 1,
-            h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
-        );
+        await control.stub.awaitTimeoutBuildEntered().request({
+            timeoutMs: h.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            })
+        });
         await control.stub.releaseTimeoutBuild().request();
-        await waitFor(
-            async () =>
-                (await control.stub.getTimeoutBuildObservation().request())
-                    .stored >= 1,
-            h.event.protocolEventTimeoutMs()
-        );
+        await control.stub.awaitTimeoutStored().request({
+            timeoutMs: h.event.protocolEventTimeoutMs()
+        });
     } finally {
         await control.stub.restoreTimeoutBuildRecording().request();
     }

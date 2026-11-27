@@ -986,6 +986,46 @@ export async function stageJoinThenLeave(h: MathPeerTestHarness): Promise<{
     joinerIndex: number;
     latestHeight: number;
 }> {
+    const { forkId, joinHeight, leaveHeight, joiner } =
+        await stageJoinUntilLeaveTurn(h);
+    // the exit's StateSnapshotUpdated and the ChannelStorageCleared emitted
+    // before it in the same transaction are held together at peer 0
+    const stub = h.control(h.getPeer(0)).stub;
+    await stub.stubHoldSnapshotUpdatedEvents().request();
+    await stub.stubHoldChannelStorageClearedEvents().request();
+    await h.transition.participantLeaveDetached({
+        leaverIndex: joiner.index,
+        waitForPeers: [0, 1, 2]
+    });
+    expect(
+        await authorIndexAt(h, 0, leaveHeight),
+        "the joiner authors its own leave"
+    ).to.equal(joiner.index);
+    await h.transition.advanceState({
+        count: 2,
+        waitForPeers: [0, 1],
+        waitForFinalization: true
+    });
+    await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
+    expect(
+        await stub.getHeldChannelStorageClearedCount().request(),
+        "peer 0 held the exit snapshot's inbound pruning"
+    ).to.be.greaterThan(0);
+    return {
+        forkId,
+        joinHeight,
+        leaveHeight,
+        joinerIndex: joiner.index,
+        latestHeight: leaveHeight + 2
+    };
+}
+
+/**
+ * The common start of the join-then-leave stagings: two peers; a spectator
+ * syncs and joins (peer 2) at `j`, three fully signed blocks follow, and the
+ * peers author until the joiner is the next writer, at `k`.
+ */
+async function stageJoinUntilLeaveTurn(h: MathPeerTestHarness) {
     await h.lifecycle.start(2, 0);
     await suppressTimeoutChecks(h, [0, 1]);
     const { peer: joiner } = await h.join.addSpectatorAuthoring({
@@ -1028,36 +1068,7 @@ export async function stageJoinThenLeave(h: MathPeerTestHarness): Promise<{
     const leaveHeight = Number(
         await query.getNextBlockHeight(forkId).request()
     );
-    await h
-        .control(h.getPeer(0))
-        .stub.stubHoldSnapshotUpdatedEvents()
-        .request();
-    const pruning = await h.mirror.holdUpdates(0, "onChannelStorageCleared");
-    await h.transition.participantLeaveDetached({
-        leaverIndex: joiner.index,
-        waitForPeers: [0, 1, 2]
-    });
-    expect(
-        await authorIndexAt(h, 0, leaveHeight),
-        "the joiner authors its own leave"
-    ).to.equal(joiner.index);
-    await h.transition.advanceState({
-        count: 2,
-        waitForPeers: [0, 1],
-        waitForFinalization: true
-    });
-    await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
-    expect(
-        await pruning.heldCount(),
-        "peer 0's mirror held the exit snapshot's inbound pruning"
-    ).to.be.greaterThan(0);
-    return {
-        forkId,
-        joinHeight,
-        leaveHeight,
-        joinerIndex: joiner.index,
-        latestHeight: leaveHeight + 2
-    };
+    return { forkId, joinHeight, leaveHeight, joiner };
 }
 
 /**

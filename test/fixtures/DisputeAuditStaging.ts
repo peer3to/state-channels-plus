@@ -4,15 +4,13 @@ import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { timeoutWaitTime } from "@/types";
-import {
-    DisputeFraudProofType,
-    toSolidityDisputeFraudProofType
-} from "@/types/sol-enums";
+import { DisputeFraudProofType } from "@/types/sol-enums";
 import type { Address, ForkId, Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import { buildAndEncodeBlock } from "@test/factory";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type {
+    DisputeSubmissionFailureSpec,
     RecordedBestEffortEstimate,
     RecordedDisputeSubmission,
     RecordedFraudProofApply,
@@ -162,14 +160,23 @@ export async function relinkBlock(
 
 /**
  * An authentic block at `height` linked to `previousBlockHash`, authored by a
- * participant other than `notAuthor`, whose committed snapshot is no state
- * transition result: replaying it fails.
+ * participant other than `notAuthor` (and other than `alsoNotAuthor`), whose
+ * committed snapshot is no state transition result: replaying it fails.
  */
 export async function craftInvalidLinkedBlock(
     h: MathPeerTestHarness,
-    options: { height: number; previousBlockHash: Hash; notAuthor: Address }
+    options: {
+        height: number;
+        previousBlockHash: Hash;
+        notAuthor: Address;
+        alsoNotAuthor?: Address;
+    }
 ): Promise<BlockConfirmationStruct> {
-    const author = h.peers.find((peer) => peer.address !== options.notAuthor);
+    const author = h.peers.find(
+        (peer) =>
+            peer.address !== options.notAuthor &&
+            peer.address !== options.alsoNotAuthor
+    );
     if (!author) throw new Error("No other harness peer can author");
     const encoded = await buildAndEncodeBlock(author.signer, {
         header: {
@@ -181,6 +188,77 @@ export async function craftInvalidLinkedBlock(
         previousBlockHash: options.previousBlockHash
     });
     return Codec.decode(encoded, Type.BlockConfirmation);
+}
+
+/**
+ * Three peers (`stageMirrorMissingConsumedTopUp` with peer 1 lagging); every
+ * peer's kill is suppressed and peer 1 misses the dispute log. Peer 0 posts
+ * a dispute whose first milestone is a forged hop at the height of its
+ * latest finalized point: a block committing a snapshot nobody holds,
+ * authored by a peer that is neither that height's real author nor the
+ * disputer. Peer 2 holds the final block at that height. With
+ * `auditorTransactionBytes`, peer 2's per-transaction calldata limit is set
+ * before the post.
+ */
+export async function postForgedFinalHopDispute(
+    h: MathPeerTestHarness,
+    options: { auditorTransactionBytes?: number } = {}
+) {
+    let forgedHopSigner: string | undefined;
+    await stageMirrorMissingConsumedTopUp(h, 1);
+    // set before the post, so the live audit sees the same limit
+    if (options.auditorTransactionBytes !== undefined)
+        await h.rpcStub.limitTransactionBytes(
+            2,
+            options.auditorTransactionBytes
+        );
+    const forkId = h.activeForkId!;
+    const disputer = h.getPeer(0);
+    const kills = await Promise.all(
+        h.peers.map((peer) => h.rpcStub.suppressDisputeKill(peer.index))
+    );
+    // the lagging peer is not under test: it misses the dispute log
+    await h.rpcStub.holdDisputeCommittedEvents(1, { passFirst: false });
+    const { dispute } = await h.tamper.postTamperedDispute(
+        disputer.index,
+        async (posted) => {
+            // the hop sits at the height of the dispute's latest
+            // finalized point, so the auditor's final block there has
+            // consumed as many inbound blocks as that point
+            const latestFinalizedHeight = Block.fromBlockConfirmation(
+                posted.input.stateProof.milestones.at(-1)!
+                    .blockConfirmations[0]!
+            ).height;
+            const previous = Block.fromBlockConfirmation(
+                await blockConfirmationAt(h, 0, latestFinalizedHeight - 1)
+            );
+            const real = Block.fromBlockConfirmation(
+                await blockConfirmationAt(h, 0, latestFinalizedHeight)
+            );
+            // a hop committing a snapshot nobody holds, signed by
+            // neither the real author nor the disputer
+            const forgedHop = await craftInvalidLinkedBlock(h, {
+                height: latestFinalizedHeight,
+                previousBlockHash: previous.hash,
+                notAuthor: real.author,
+                alsoNotAuthor: disputer.address
+            });
+            forgedHopSigner =
+                Block.fromBlockConfirmation(forgedHop).author.toString();
+            posted.input.stateProof.milestones = [
+                { blockConfirmations: [forgedHop] },
+                ...posted.input.stateProof.milestones
+            ];
+        }
+    );
+    expect(forgedHopSigner, "the forged hop was built").to.not.equal(undefined);
+    return {
+        forkId,
+        disputer,
+        kills,
+        dispute,
+        forgedHopSigner: forgedHopSigner!
+    };
 }
 
 /**
@@ -459,6 +537,25 @@ export async function stageReasonlessInitialDispute(
     };
 }
 
+/** The calldata bytes of peer `peerIndex`'s own dispute upload sent alone, as it constructs it now. */
+export async function ownUploadBytes(
+    h: MathPeerTestHarness,
+    peerIndex: number
+): Promise<number> {
+    const { interface: manager } = h.channelManager;
+    const own = await h.dispute.fetchConstructedDispute(peerIndex);
+    return dataLength(
+        own.dispute.postedAuditingData
+            ? manager.encodeFunctionData("uploadDisputeWithCalldata", [
+                  own.disputeConfirmation,
+                  own.auditingData
+              ])
+            : manager.encodeFunctionData("uploadDispute", [
+                  own.disputeConfirmation
+              ])
+    );
+}
+
 /**
  * A per-transaction calldata limit that holds peer `auditorIndex`'s kill of
  * peer `spammerIndex`'s reasonless dispute alone and its own upload alone,
@@ -472,40 +569,21 @@ async function splitTransactionBytes(
     spammerIndex: number,
     auditorIndex: number
 ): Promise<number> {
-    const { interface: manager } = h.channelManager;
     const spam = (await h.dispute.fetchConstructedDispute(spammerIndex))
         .dispute;
     const own = await h.dispute.fetchConstructedDispute(auditorIndex);
-    const killBytes = dataLength(
-        manager.encodeFunctionData("applyDisputeFraudProofs", [
-            [
-                {
-                    proofType: toSolidityDisputeFraudProofType(
-                        DisputeFraudProofType.InvalidDisputeReason
-                    ),
-                    participant: spam.input.disputer,
-                    dispute: spam,
-                    encodedProof: Codec.encode(
-                        {
-                            latestStateSnapshot:
-                                own.auditingData.latestStateSnapshot
-                        },
-                        DisputeFraudProofType.InvalidDisputeReason
-                    )
-                }
-            ]
-        ])
-    );
-    const uploadBytes = dataLength(
-        own.dispute.postedAuditingData
-            ? manager.encodeFunctionData("uploadDisputeWithCalldata", [
-                  own.disputeConfirmation,
-                  own.auditingData
-              ])
-            : manager.encodeFunctionData("uploadDispute", [
-                  own.disputeConfirmation
-              ])
-    );
+    const { killBytes } = await h
+        .control(h.getPeer(auditorIndex))
+        .dispute.getKillBytes(
+            Codec.encode(spam, Type.Dispute) as string,
+            DisputeFraudProofType.InvalidDisputeReason,
+            Codec.encode(
+                { latestStateSnapshot: own.auditingData.latestStateSnapshot },
+                DisputeFraudProofType.InvalidDisputeReason
+            )
+        )
+        .request();
+    const uploadBytes = await ownUploadBytes(h, auditorIndex);
     return (
         Math.max(killBytes, uploadBytes) +
         Math.floor(Math.min(killBytes, uploadBytes) / 2)
@@ -517,13 +595,14 @@ async function splitTransactionBytes(
  * dispute, and peer 0's per-transaction calldata limit holds its kill alone
  * and its own upload alone, but not both (`splitTransactionBytes`). Peer 0's
  * lone kills and its uploads are recorded and forwarded; with `lostRace`
- * its kill is held until peer 2's kill and replacement landed. Peers 1 and
- * 3 (and peer 2 without `lostRace`) stay out of the kill race; timeout
- * checks and reductions are held.
+ * its kill is held until peer 2's kill and replacement landed, and with
+ * `killFailure` its lone kill fails as that spec says. Peers 1 and 3 (and
+ * peer 2 without `lostRace`) stay out of the kill race; timeout checks and
+ * reductions are held.
  */
 export async function stageSplitKillAndDispute(
     h: MathPeerTestHarness,
-    options: { lostRace: boolean }
+    options: { lostRace: boolean; killFailure?: DisputeSubmissionFailureSpec }
 ) {
     await h.scenario.preDisputeSetup({
         peerCount: 4,
@@ -544,10 +623,13 @@ export async function stageSplitKillAndDispute(
         spammer.index,
         auditor.index
     );
-    await h.rpcStub.limitTransactionBytes(auditor.index, maxTransactionBytes);
+    const restoreTransactionBytes = await h.rpcStub.limitTransactionBytes(
+        auditor.index,
+        maxTransactionBytes
+    );
     const kills = await h.rpcStub.recordDisputeFraudProofApplies(
         auditor.index,
-        { hold: options.lostRace }
+        { hold: options.lostRace, failWith: options.killFailure }
     );
     const uploads = await h.rpcStub.recordDisputeSubmissions(auditor.index, {
         forward: true
@@ -557,26 +639,36 @@ export async function stageSplitKillAndDispute(
               forward: true
           })
         : undefined;
+    // an upload landed once its dispute is in the window; each
+    // DisputeCommitted event wakes the check
+    const uploadLanded = async (recorder: typeof uploads, who: string) => {
+        const timeoutMs = h.event.protocolEventTimeoutMs();
+        await h.eventCountsBarrier.waitFor(
+            async () => {
+                const window = await h.channelManager.getWindowCommitments(
+                    h.channelId,
+                    forkId
+                );
+                return (await recorder.submissions()).some((submission) =>
+                    window.includes(hash(submission.encodedDispute) as string)
+                );
+            },
+            {
+                timeoutMs,
+                timeoutMessage: `${who}'s upload did not land within ${timeoutMs}ms`
+            }
+        );
+    };
     await h.tamper.postTamperedDispute(spammer.index, stripDisputeReasons);
     if (rivalUploads) {
         await kills.waitUntilHeld(1);
         // the rival's kill and replacement land while ours waits
-        await waitFor(
-            async () =>
-                (await rivalUploads.submissions()).some(
-                    (submission) => submission.waited
-                ),
-            h.event.protocolEventTimeoutMs()
-        );
+        await uploadLanded(rivalUploads, "the rival");
         await kills.release();
     }
-    await waitFor(
-        async () =>
-            (await uploads.submissions()).some(
-                (submission) => submission.waited || submission.revert !== null
-            ),
-        h.event.protocolEventTimeoutMs()
-    );
+    await uploadLanded(uploads, "the auditor");
+    // the kill and the upload were sent: the limit is no longer needed
+    await restoreTransactionBytes();
     return { forkId, auditor, spammer, rival, kills, uploads, rivalUploads };
 }
 

@@ -1825,8 +1825,7 @@ export class RpcStubActions<
 
     /**
      * Lower peer `peerIndex`'s per-transaction calldata limit to
-     * `maxTransactionBytes` (every inline peer's: inline hosts share one
-     * config). Returns the restore.
+     * `maxTransactionBytes`. Returns the restore.
      */
     async limitTransactionBytes(
         peerIndex: number,

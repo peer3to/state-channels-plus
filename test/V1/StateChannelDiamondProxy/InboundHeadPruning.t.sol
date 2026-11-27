@@ -21,6 +21,8 @@ contract InboundHeadPruningHarness is
     DisputeWindowSeeding,
     InboundSeeding
 {
+    bytes32 internal constant APPLICATION_MESSAGE_TYPE = keccak256("INBOUND_HEAD_PRUNING_TEST_OUTBOUND_MESSAGE");
+
     constructor() {
         evidenceTime = 10;
         utilityFacetAddress = address(new UtilityFacet());
@@ -96,6 +98,22 @@ contract InboundHeadPruningHarness is
 
     function onChainSlashes(bytes32 channelId) external view returns (address[] memory) {
         return _getOnChainSlashedParticipants(channelId);
+    }
+
+    /// the deposit read of a snapshot update that pays out one outbound block: one application message withdrawing
+    /// `amount`
+    function applyOneWithdrawal(bytes32 channelId, uint256 amount, SnapshotData memory newSnapshotData) external {
+        MessageBlock[] memory outbound = new MessageBlock[](1);
+        outbound[0].messages = new Message[](1);
+        outbound[0].messages[0].messageType = APPLICATION_MESSAGE_TYPE;
+        outbound[0].messages[0].balance.amount = amount;
+        _applyOutboundMessageBlocks(channelId, outbound, newSnapshotData);
+    }
+
+    /// Overrides StateChannelCommon._processCustomOutboundMessage, the hook an application implements for its own
+    /// message types: it accepts the application message instead of reverting, so the withdrawal bound is reached.
+    function _processCustomOutboundMessage(Message memory message) internal pure override returns (bool) {
+        return message.messageType == APPLICATION_MESSAGE_TYPE;
     }
 }
 
@@ -350,22 +368,36 @@ contract InboundHeadPruningTest is Test, StateChannelManagerEvents {
         assertFalse(harness.verifyBalanceInvariantCheckSnapshot(channel, claim, state));
     }
 
-    function test_applyOutboundMessageBlocks_storedNewSnapshotHead_reads() public {
+    /// The stored new head's deposit total (40) bounds the withdrawals, not the old snapshot's (10) or zero: a
+    /// withdrawal of exactly 40 passes only when the read takes the stored block's total.
+    function test_applyOutboundMessageBlocks_storedNewSnapshotHead_allowsAWithdrawalOfTheStoredBlocksDepositTotal()
+        public
+    {
         harness.landSnapshot(CHANNEL_ID, _addresses(a, b), H2, 2);
-        harness.seedInboundJoins(CHANNEL_ID, H3, H2, 3, block.timestamp, _addresses(c));
+        harness.landSnapshotDeposits(CHANNEL_ID, 10);
+        harness.seedDeposit(CHANNEL_ID, H3, H2, 3, 40);
         SnapshotData memory next;
         next.latestInboundMessageBlockHash = H3;
 
-        harness.applyNoOutboundMessageBlocks(CHANNEL_ID, next);
+        vm.expectEmit(address(harness));
+        emit WithdrawalsUpdated(CHANNEL_ID, Balance({amount: 40, data: ""}));
+        harness.applyOneWithdrawal(CHANNEL_ID, 40, next);
     }
 
-    function test_applyOutboundMessageBlocks_snapshotHeadNotStored_reads() public {
+    /// A closed channel pruned its snapshot's head H2: the snapshot's own deposit total (30) bounds the withdrawals,
+    /// so a withdrawal of exactly 30 passes.
+    function test_applyOutboundMessageBlocks_snapshotHeadNotStored_allowsAWithdrawalOfTheSnapshotsDepositTotal()
+        public
+    {
         harness.landSnapshot(CHANNEL_ID, _addresses(a, b), H2, 2);
         harness.clearStorage(CHANNEL_ID, H2, true);
+        harness.landSnapshotDeposits(CHANNEL_ID, 30);
         SnapshotData memory next;
         next.latestInboundMessageBlockHash = H2;
 
-        harness.applyNoOutboundMessageBlocks(CHANNEL_ID, next);
+        vm.expectEmit(address(harness));
+        emit WithdrawalsUpdated(CHANNEL_ID, Balance({amount: 30, data: ""}));
+        harness.applyOneWithdrawal(CHANNEL_ID, 30, next);
     }
 
     /// A same-fork update takes the channel's inbound head and a fork adoption a reduction's head, so no entry point

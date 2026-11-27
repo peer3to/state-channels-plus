@@ -12,7 +12,6 @@ import {
     assertStoredMalformedNetworkCopy
 } from "@test/fixtures/QueueNetworkRetentionFixture";
 import {
-    restoreCommitEligibility,
     signStoredBlockAs,
     stageDepartureHopNotFinal,
     stageJoinAndExitInOneHop,
@@ -535,11 +534,24 @@ describe("Unit: StoredBlockMergeService", function () {
             const { confirmation, blockHash, signature } =
                 await signStoredBlockAs(h, 0, leaveHeight + 1, joinerIndex);
             const sender = h.getPeer(1);
-            await restoreCommitEligibility(h, 0);
             // premise - the leaver is outside peer 0's hop
             expect((await localFinalizedView(h, 0))!.height).to.be.at.least(
                 leaveHeight
             );
+
+            // the merge itself strips the leaver and adds nothing
+            const merged = await h.transition.runStoredBlockMerge({
+                peerIndex: 0,
+                confirmation: {
+                    signedBlock: confirmation.signedBlock,
+                    signatures: [
+                        ...confirmation.signatures.map(String),
+                        signature
+                    ]
+                }
+            });
+            expect(merged.result).to.equal(BlockValidationResult.DUPLICATE);
+            expect(merged.persistedSignatures).to.not.include(signature);
 
             h.event.resetEventSpies(0);
             await h.transition.ingestBlockConfirmationWait({
@@ -606,6 +618,52 @@ describe("Unit: StoredBlockMergeService", function () {
             expect(
                 await query.getInboundMessageBlock(topUpHash).request()
             ).to.equal(null);
+        });
+
+        it("a second never-member key signs the same stored block at that spectator -> stripped, DUPLICATE, with no new chain log scan for the genesis hop whose recovery already failed", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, spectator } =
+                await stageSpectatorWithoutGenesisRun(h);
+            const query = h.control(spectator).query;
+            const stub = h.control(spectator).stub;
+            const height = Number(
+                await query.getLatestBlockHeight(forkId).request()
+            );
+            const stored = await query
+                .getBlockByHeight(forkId, height)
+                .request();
+            const confirmation = decodeConfirmation(
+                stored!.encodedBlockConfirmation
+            );
+            const mergeWithStraySignature = async () =>
+                h.transition.runStoredBlockMerge({
+                    peerIndex: spectator.index,
+                    confirmation: {
+                        signedBlock: confirmation.signedBlock,
+                        signatures: [
+                            ...confirmation.signatures.map(String),
+                            await randomWallet().signMessage(
+                                ethers.getBytes(stored!.hash)
+                            )
+                        ]
+                    }
+                });
+            await stub.stubCountChainLogQueries().request();
+
+            const first = await mergeWithStraySignature();
+            const scansAfterFirst = await stub.getChainLogQueryCount().request();
+            const second = await mergeWithStraySignature();
+
+            expect(first.result).to.equal(BlockValidationResult.DUPLICATE);
+            expect(
+                scansAfterFirst,
+                "the first stray signer's recovery scanned the chain logs"
+            ).to.be.greaterThan(0);
+            expect(second.result).to.equal(BlockValidationResult.DUPLICATE);
+            expect(
+                await stub.getChainLogQueryCount().request(),
+                "the second stray signer is stripped without a scan"
+            ).to.equal(scansAfterFirst);
         });
     });
 });

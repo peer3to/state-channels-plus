@@ -49,7 +49,6 @@ import {
     tryDecodeCustomError,
     Type
 } from "@/utils";
-import { config } from "@/utils/config";
 import { errorMessage } from "@/utils/errorMessage";
 import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
 import { Mutex } from "@/utils/Mutex";
@@ -150,6 +149,7 @@ export type StubKey =
     | "maybePostBlockOnChain"
     | "stateManagerAbort"
     | "snapshotUpdatedEvents"
+    | "channelStorageClearedEvents"
     | "inboundMessageEvents"
     | "inboundMessageStorage"
     | "disputeCommittedEvents"
@@ -707,6 +707,11 @@ export class StubService extends ANetworkRpcService<
     };
     private originalQueueProbe?: SpectateService["syncBlockSource"];
     private timeoutBuildHold?: HeldRpcReply;
+    // resolve on the held timeout build's first entry and first stored claim
+    private timeoutBuildSignals?: {
+        entered: Promise<void>;
+        stored: Promise<void>;
+    };
     private restoreTimeoutBuild?: () => void;
     private restoreChainReads?: () => void;
     private restoreDisputedForkChecks?: () => void;
@@ -805,6 +810,7 @@ export class StubService extends ANetworkRpcService<
     }[] = [];
     /** Event arg-tuples captured by the hold-event stubs. */
     readonly heldSnapshotUpdatedArgs: unknown[][] = [];
+    readonly heldChannelStorageClearedArgs: unknown[][] = [];
     readonly heldDisputeCommittedArgs: unknown[][] = [];
     readonly heldInboundMessageArgs: unknown[][] = [];
     /** onInboundMessage arg-tuples held by the inbound-storage hold stub. */
@@ -1378,18 +1384,18 @@ export class StubService extends ANetworkRpcService<
     }
 
     /**
-     * Lower the chain's per-transaction calldata limit the host sends
-     * against to `maxTransactionBytes`, until `restoreMaxTransactionBytes`.
-     * Per peer only in worker mode (`RUN_SDK_IN_THREAD`); inline hosts share
-     * one config.
+     * Lower the per-transaction calldata limit this host's dispute manager
+     * sends against to `maxTransactionBytes`, until
+     * `restoreMaxTransactionBytes`.
      */
     public limitTransactionBytes(maxTransactionBytes: number): void {
         if (this.restoreTransactionBytes)
             throw new Error("limitTransactionBytes - a limit is already set");
-        const original = config.MAX_TRANSACTION_BYTES;
-        config.MAX_TRANSACTION_BYTES = maxTransactionBytes;
+        const disputeManager = this.sm.disputeManager;
+        const original = disputeManager.maxTransactionBytes;
+        disputeManager.maxTransactionBytes = maxTransactionBytes;
         this.restoreTransactionBytes = () => {
-            config.MAX_TRANSACTION_BYTES = original;
+            disputeManager.maxTransactionBytes = original;
         };
     }
 
@@ -2782,6 +2788,16 @@ export class StubService extends ANetworkRpcService<
         const hold = this.createRpcHold("timeoutBuild");
         this.timeoutBuildHold = hold;
         this.timeoutStoreCalls = 0;
+        let signalEntered: () => void = () => undefined;
+        let signalStored: () => void = () => undefined;
+        this.timeoutBuildSignals = {
+            entered: new Promise((resolve) => {
+                signalEntered = resolve;
+            }),
+            stored: new Promise((resolve) => {
+                signalStored = resolve;
+            })
+        };
         Reflect.set(
             contract,
             "getBlockCallDataCommitment",
@@ -2789,13 +2805,16 @@ export class StubService extends ANetworkRpcService<
                 const result = await original(...args);
                 if (hold.entered > 0) return result;
                 hold.entered += 1;
+                signalEntered();
                 await hold.gate;
                 return result;
             }
         );
         sm.storage.timeout.storeTimeout = (...args) => {
             this.timeoutStoreCalls += 1;
-            return store(...args);
+            const stored = store(...args);
+            signalStored();
+            return stored;
         };
         this.restoreTimeoutBuild = () => {
             hold.release();
@@ -2809,6 +2828,20 @@ export class StubService extends ANetworkRpcService<
             entered: this.timeoutBuildHold?.entered ?? 0,
             stored: this.timeoutStoreCalls
         };
+    }
+
+    /** Resolves once the held timeout build has entered its hold. */
+    public async awaitTimeoutBuildEntered(): Promise<void> {
+        if (!this.timeoutBuildSignals)
+            throw new Error("holdTimeoutBuild was not installed");
+        await this.timeoutBuildSignals.entered;
+    }
+
+    /** Resolves once the held timeout build has stored its claim. */
+    public async awaitTimeoutStored(): Promise<void> {
+        if (!this.timeoutBuildSignals)
+            throw new Error("holdTimeoutBuild was not installed");
+        await this.timeoutBuildSignals.stored;
     }
 
     public releaseTimeoutBuild(): void {

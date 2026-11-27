@@ -327,21 +327,48 @@ contract DisputeConflictsWithFinalStateTest is StateProofStaging {
         _assertConflictKilled(dispute, _none());
     }
 
-    function test_CN5_replacementAfterAKillThatSlashesNobodyIsNotKillableByInvalidDisputeReason() public {
-        Dispute memory replacement = _replacementAfterAnEmptyConflictKill(true);
+    function test_CN5_replacementUploadedInTheKillsMulticallIsCommittedInTheEmptiedWindow() public {
+        Dispute memory killed = _caseTwoDispute();
+        Dispute memory replacement = _replacement(true);
 
-        _apply(replacement, DisputeFraudProofType.InvalidDisputeReason, _reasonProof());
+        _killAndUploadInOneMulticall(killed, replacement);
+
+        _assertTheReplacementAloneIsCommitted(killed, replacement);
+    }
+
+    function test_CN5_replacementUploadedInASecondTransactionIsCommittedInTheEmptiedWindow() public {
+        Dispute memory killed = _caseTwoDispute();
+        Dispute memory replacement = _replacement(true);
+        vm.prank(bob);
+        harness.applyDisputeFraudProofs(_emptyConflictKill(killed));
+        // the next block, inside the evidence period
+        vm.warp(block.timestamp + 1);
+
+        vm.prank(bob);
+        harness.uploadDispute(_uploadConfirmation(replacement));
+
+        _assertTheReplacementAloneIsCommitted(killed, replacement);
+    }
+
+    function test_CN5_replacementAfterAKillThatSlashesNobodyIsNotKillableByInvalidDisputeReason() public {
+        Dispute memory killed = _caseTwoDispute();
+        Dispute memory replacement = _replacement(true);
+        _killAndUploadInOneMulticall(killed, replacement);
+
+        _applyBy(alice, replacement, DisputeFraudProofType.InvalidDisputeReason, _reasonProof());
 
         // the replacement lists no slash, but it needs the open window: that is its reason
-        _assertRejected(replacement);
+        _assertRejectedBy(replacement, alice);
     }
 
     function test_CN5_replacementWithoutTheWindowReasonAfterAKillThatSlashesNobodyIsKilled() public {
-        Dispute memory replacement = _replacementAfterAnEmptyConflictKill(false);
+        Dispute memory killed = _caseTwoDispute();
+        Dispute memory replacement = _replacement(false);
+        _killAndUploadInOneMulticall(killed, replacement);
 
-        _apply(replacement, DisputeFraudProofType.InvalidDisputeReason, _reasonProof());
+        _applyBy(alice, replacement, DisputeFraudProofType.InvalidDisputeReason, _reasonProof());
 
-        _assertKilled(replacement);
+        _assertKilledBy(replacement, alice);
     }
 
     function test_slashSet_singleSignatureOverlapSlashesOnlyThatSigner() public {
@@ -422,29 +449,50 @@ contract DisputeConflictsWithFinalStateTest is StateProofStaging {
         milestone.blockConfirmations[blockIndex] = _blockConfirmation(abi.encode(b), _signers(ALICE_KEY, CAROL_KEY));
     }
 
-    /// case 2's kill (S empty), then C's replacement over the final history 5..7, listing no slash; it needs the
-    /// existing window when `requireExistingDisputeWindow`
-    function _replacementAfterAnEmptyConflictKill(bool requireExistingDisputeWindow)
-        internal
-        returns (Dispute memory replacement)
-    {
+    /// case 2's dispute: D's anchor run 5..8 whose tail block 7 commits another snapshot than F = 7, committed
+    function _caseTwoDispute() internal returns (Dispute memory dispute) {
         _seedAnchor(5);
         MilestoneProof memory run = _run(5, 4, keccak256("block 4"), _signers(ALICE_KEY));
         _commitAt(run, 2, keccak256("a forked state at 7"), _signers(ALICE_KEY, BOB_KEY));
-        Dispute memory dispute = _disputeBy(dave, _one(run));
+        dispute = _disputeBy(dave, _one(run));
         _commit(dispute);
-        _apply(
-            dispute,
-            DisputeFraudProofType.DisputeConflictsWithFinalState,
-            _conflictProof(
+    }
+
+    /// case 2's kill of `dispute` at its tail block 7, which slashes nobody
+    function _emptyConflictKill(Dispute memory dispute) internal view returns (DisputeFraudProof[] memory proofs) {
+        proofs = new DisputeFraudProof[](1);
+        proofs[0] = DisputeFraudProof({
+            proofType: DisputeFraudProofType.DisputeConflictsWithFinalState,
+            participant: dispute.input.disputer,
+            dispute: dispute,
+            encodedProof: _conflictProof(
                 _finalAtSeven(forkId, _signers(ALICE_KEY, BOB_KEY)), 0, 2, _snapshot(5, genesisData.participants)
             )
-        );
-        _assertConflictKilled(dispute, _none());
+        });
+    }
 
-        replacement = _disputeBy(carol, _one(_run(5, 3, keccak256("block 4"), _signers(ALICE_KEY))));
+    /// B's own dispute over the final history 5..7, listing no slash; it needs the existing window when
+    /// `requireExistingDisputeWindow`
+    function _replacement(bool requireExistingDisputeWindow) internal view returns (Dispute memory replacement) {
+        replacement = _disputeBy(bob, _one(_run(5, 3, keccak256("block 4"), _signers(ALICE_KEY))));
         replacement.input.requireExistingDisputeWindow = requireExistingDisputeWindow;
-        _commit(replacement);
+    }
+
+    /// B sends case 2's kill of `killed` and the upload of `replacement` in one multicall, the kill first
+    function _killAndUploadInOneMulticall(Dispute memory killed, Dispute memory replacement) internal {
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeCall(harness.applyDisputeFraudProofs, (_emptyConflictKill(killed)));
+        calls[1] = abi.encodeCall(harness.uploadDispute, (_uploadConfirmation(replacement)));
+        vm.prank(bob);
+        harness.multicall(calls);
+    }
+
+    /// the kill removed `killed` and slashed nobody; the window, still open, holds `replacement` as its one commitment
+    function _assertTheReplacementAloneIsCommitted(Dispute memory killed, Dispute memory replacement) internal view {
+        assertEq(harness.commitmentCount(CHANNEL, forkId), 1, "the window holds one commitment");
+        assertTrue(harness.isCommitted(replacement), "the replacement is committed");
+        assertFalse(harness.isCommitted(killed), "the killed dispute is gone");
+        _assertSlashedExactly(_none());
     }
 
     /// the InvalidDisputeReason proof against a replacement whose latest block is 7

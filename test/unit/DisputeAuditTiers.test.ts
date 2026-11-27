@@ -9,6 +9,7 @@ import {
     runConcurrentVirtualFinalAudits,
     craftInvalidBlockAfter,
     craftInvalidLinkedBlock,
+    postForgedFinalHopDispute,
     hasLocalAnchor,
     holdsState,
     localFinalizedHeight,
@@ -627,51 +628,11 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
 
         it("U42: an auditor holding a final block at the hop's height kills the dispute with DisputeConflictsWithFinalState, which the chain accepts and which slashes exactly the forged hop's signer", async function () {
             const h = TestSession.getHarness();
-            let forgedHopSigner: string | undefined;
-            await stageMirrorMissingConsumedTopUp(h, 1);
-            const forkId = h.activeForkId!;
-            const disputer = h.getPeer(0);
-            const kills = await Promise.all(
-                h.peers.map((peer) => h.rpcStub.suppressDisputeKill(peer.index))
-            );
-            // the lagging peer is not under test: it misses the dispute log
-            await h.rpcStub.holdDisputeCommittedEvents(1, { passFirst: false });
-            const { dispute } = await h.tamper.postTamperedDispute(
-                disputer.index,
-                async (posted) => {
-                    // the hop sits at the height of the dispute's latest
-                    // finalized point, so the auditor's final block there has
-                    // consumed as many inbound blocks as that point
-                    const latestFinalizedHeight = Block.fromBlockConfirmation(
-                        posted.input.stateProof.milestones.at(-1)!
-                            .blockConfirmations[0]!
-                    ).height;
-                    const previous = Block.fromBlockConfirmation(
-                        await blockConfirmationAt(
-                            h,
-                            0,
-                            latestFinalizedHeight - 1
-                        )
-                    );
-                    const real = Block.fromBlockConfirmation(
-                        await blockConfirmationAt(h, 0, latestFinalizedHeight)
-                    );
-                    // a hop committing a snapshot nobody holds
-                    const forgedHop = await craftInvalidLinkedBlock(h, {
-                        height: latestFinalizedHeight,
-                        previousBlockHash: previous.hash,
-                        notAuthor: real.author
-                    });
-                    forgedHopSigner =
-                        Block.fromBlockConfirmation(
-                            forgedHop
-                        ).author.toString();
-                    posted.input.stateProof.milestones = [
-                        { blockConfirmations: [forgedHop] },
-                        ...posted.input.stateProof.milestones
-                    ];
-                }
-            );
+            const { forkId, disputer, kills, dispute, forgedHopSigner } =
+                await postForgedFinalHopDispute(h);
+            // premise: the disputer is in the final point's signer set but
+            // did not sign the forged hop, so slashing it would be wrong
+            expect(forgedHopSigner).to.not.equal(disputer.address);
             const walks = await h.mirror.observe(2, "verifyMilestones");
 
             const run = await h.dispute.auditDispute(2, dispute);
@@ -700,7 +661,43 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             // the forged hop is the first block of its milestone and only its
             // author signed it; every participant signed the auditor's final
             // point, so the author alone signed both
-            await h.assert.dispute.slashedOnChainExactly([forgedHopSigner!]);
+            await h.assert.dispute.slashedOnChainExactly([forgedHopSigner]);
+        });
+
+        it("the same forged hop, but the conflict's kill does not fit the auditor's per-transaction calldata limit -> the audit does not stop at the conflict: it walks the proof, which cannot finish without the omitted data, so the unsendable counter is stored: false + DisputeConflictsWithFinalState", async function () {
+            const h = TestSession.getHarness();
+            // no kill fits: the final-history counter is unsendable, also
+            // for the live audit of the posted dispute
+            const { dispute } = await postForgedFinalHopDispute(h, {
+                auditorTransactionBytes: 1
+            });
+            const conflicts = await h.mirror.observe(
+                2,
+                "isDisputeConflictingWithFinalState"
+            );
+            const walks = await h.mirror.observe(2, "verifyMilestones");
+
+            const run = await h.dispute.auditDispute(2, dispute);
+
+            // premise: the conflict was found and proven on the chain
+            const conflictChecks = (await conflicts.observation()).chain;
+            expect(conflictChecks.answers, "the conflict is proven").to.include(
+                true
+            );
+            // U42 stops at the sendable conflict without a walk; here the
+            // audit goes on and walks the proof
+            const { local, chain } = await walks.observation();
+            expect(
+                local.reads + chain.reads,
+                "the audit walked the proof"
+            ).to.be.greaterThan(0);
+            // the walk finds no other counter: the unsendable one is stored,
+            // so the auditor still uploads its own dispute
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.disputeFraudProofCount).to.equal(1);
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.DisputeConflictsWithFinalState
+            );
         });
     });
 

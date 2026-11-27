@@ -8,7 +8,11 @@ import Clock from "@/Clock";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 
 import type NetworkTransport from "@/transport/NetworkTransport";
-import type { ForkId, Hash } from "@/types/types";
+import {
+    type DisputeFraudProofType,
+    toSolidityDisputeFraudProofType
+} from "@/types/sol-enums";
+import type { Bytes, ForkId, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import type {
     DisputeStruct,
@@ -159,6 +163,27 @@ export class DisputeRpcMethods extends ANetworkRpcMethods<DisputeService> {
             isExpired,
             killPeriodEnd: Number(killPeriodEnd),
             blockTimestamp: Number(blockTimestamp)
+        };
+    }
+
+    /**
+     * The calldata bytes of the kill of `encodedDispute` by a dispute fraud
+     * proof of `proofType` over `encodedProof`, sent alone, as this host's
+     * dispute manager encodes it.
+     */
+    public getKillBytes(
+        encodedDispute: string,
+        proofType: DisputeFraudProofType,
+        encodedProof: Bytes
+    ): { killBytes: number } {
+        const dispute = Codec.decode(encodedDispute, Type.Dispute);
+        return {
+            killBytes: this.service.sm.disputeManager.encodeKill({
+                proofType: toSolidityDisputeFraudProofType(proofType),
+                participant: dispute.input.disputer,
+                dispute,
+                encodedProof
+            }).killBytes
         };
     }
 

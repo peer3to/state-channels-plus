@@ -8,7 +8,11 @@ import type { Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
 import { uploadSelfRemovalDispute } from "@test/fixtures/ChallengeBoundaryStaging";
-import { committedDisputeLogs } from "@test/fixtures/DisputeWindowWorkflowStaging";
+import { ownUploadBytes } from "@test/fixtures/DisputeAuditStaging";
+import {
+    committedDisputeLogs,
+    killedDisputeLogs
+} from "@test/fixtures/DisputeWindowWorkflowStaging";
 import {
     forgeSideChainFinalProof,
     postJoinerBypassDispute,
@@ -122,6 +126,43 @@ describe("E2E: dispute validation / dispute final point regression", function ()
         ]);
     });
 
+    it("the colluders' bypass dispute, and Charlie's regression kill does not fit his per-transaction calldata limit while his own upload does -> he stores the counter but sends no kill, his own dispute still lands in the window, and nobody is slashed", async function () {
+        const h = TestSession.getHarness();
+        const history = await stageSeatedJoinerHistory(h);
+        const alice = h.getPeer(history.aliceIndex);
+        const charlie = h.getPeer(history.charlieIndex);
+        // the colluders' own audits stay out of the kill race
+        await h.rpcStub.suppressDisputeKill(alice.index);
+        await h.rpcStub.suppressDisputeKill(history.bobIndex);
+        const uploadBytes = await ownUploadBytes(h, charlie.index);
+        // a small margin over his upload: the kill carries the whole bypass
+        // dispute and his final proof, far more
+        await h.rpcStub.limitTransactionBytes(charlie.index, uploadBytes + 64);
+
+        await postJoinerBypassDispute(h, history);
+
+        await h.assert.storage.honestPeersStoredDisputeFraudProofWait({
+            disputeFraudProofType:
+                DisputeFraudProofType.DisputeFinalPointRegression,
+            peerIndices: [charlie.index]
+        });
+        await h.assert.dispute.committedWait({
+            peersIndices: [charlie.index],
+            expectedCount: 2
+        });
+        const windowDisputes = (await committedDisputeLogs(h)).filter(
+            (log) => log.forkId === history.forkId
+        );
+        expect(
+            windowDisputes.map((log) => log.disputer),
+            "Charlie's own dispute was committed beside the bypass"
+        ).to.include.members([alice.address, charlie.address]);
+        expect(await killedDisputeLogs(h), "no kill was sent").to.deep.equal(
+            []
+        );
+        await h.assert.dispute.slashedOnChainExactly([]);
+    });
+
     it("the colluders' bypass dispute and Charlie's honest dispute share one window: Charlie kills the bypass, and after the window expires the reduction continues Charlie's history on the successor fork, with exactly Alice and Bob, who signed both final points, slashed", async function () {
         const h = TestSession.getHarness();
         const history = await stageSeatedJoinerHistory(h);
@@ -169,11 +210,11 @@ describe("E2E: dispute validation / dispute final point regression", function ()
             .control(charlie)
             .query.getDispute(charliesCommitment)
             .request();
-        if (!charliesDispute) throw new Error("Charlie lacks his dispute");
+        expect(charliesDispute, "Charlie holds his dispute").to.exist;
         const charliesLatest = await readStoredSnapshot(
             h,
             charlie.index,
-            Codec.decode(charliesDispute.encodedDispute, Type.Dispute).input
+            Codec.decode(charliesDispute!.encodedDispute, Type.Dispute).input
                 .latestStateSnapshotHash as Hash
         );
         const charliesState = await readMathState(
@@ -204,12 +245,11 @@ describe("E2E: dispute validation / dispute final point regression", function ()
             .control(charlie)
             .query.getGenesisSnapshotHash(successorForkId!)
             .request();
-        if (!genesisHash)
-            throw new Error("Charlie lacks the successor genesis");
+        expect(genesisHash, "Charlie holds the successor genesis").to.exist;
         const successorState = await readMathState(
             h,
             charlie.index,
-            await readStoredSnapshot(h, charlie.index, genesisHash)
+            await readStoredSnapshot(h, charlie.index, genesisHash!)
         );
         expect(
             successorState.number,
@@ -305,7 +345,8 @@ describe("E2E: dispute validation / dispute final point regression", function ()
             peersIndices: [charlie.index],
             expectedCount: 1
         });
-        if (!auditingData) throw new Error("Charlie's dispute was not built");
+        expect(auditingData, "Charlie's dispute was built").to.exist;
+        const builtAuditingData = auditingData!;
         const lastMilestoneIndex =
             dispute.input.stateProof.milestones.length - 1;
         const latestFinalized = Block.fromBlockConfirmation(
@@ -313,7 +354,7 @@ describe("E2E: dispute validation / dispute final point regression", function ()
                 .blockConfirmations[0]!
         );
         const latestFinalizedSnapshot = StateSnapshot.from(
-            auditingData.milestoneSnapshots.at(-1)!
+            builtAuditingData.milestoneSnapshots.at(-1)!
         );
         expect(
             latestFinalizedSnapshot.hash,
@@ -330,11 +371,11 @@ describe("E2E: dispute validation / dispute final point regression", function ()
 
         const below = await forgeSideChainFinalProof(h, history, {
             height: latestFinalized.height - 1,
-            genesisStateSnapshotData: auditingData.genesisStateSnapshotData
+            genesisStateSnapshotData: builtAuditingData.genesisStateSnapshotData
         });
         const atG = await forgeSideChainFinalProof(h, history, {
             height: latestFinalized.height,
-            genesisStateSnapshotData: auditingData.genesisStateSnapshotData
+            genesisStateSnapshotData: builtAuditingData.genesisStateSnapshotData
         });
         for (const side of [below, atG]) {
             const walk = await h.channelManager.verifyMilestones.staticCall(

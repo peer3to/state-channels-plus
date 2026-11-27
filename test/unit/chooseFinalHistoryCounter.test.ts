@@ -1,12 +1,13 @@
 import { chooseFinalHistoryCounter } from "@/stateManager/dispute/chooseFinalHistoryCounter";
 import { Address } from "@/types/types";
+import { randomAddress } from "@test/factory";
 import { expect } from "chai";
 
 // the chain's per-transaction calldata limit (64 KiB)
 const LIMIT = 65_536;
-const A = "0x000000000000000000000000000000000000000A" as Address;
-const B = "0x000000000000000000000000000000000000000b" as Address;
-const C = "0x000000000000000000000000000000000000000C" as Address;
+const A = randomAddress();
+const B = randomAddress();
+const C = randomAddress();
 
 function counter(name: string, slashes: Address[], killBytes: number) {
     return { name, slashes, killBytes };

@@ -3252,6 +3252,29 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.heldSnapshotUpdatedArgs.length;
     }
 
+    /**
+     * Hold ChannelStorageCleared events instead of handling them. The chain
+     * emits one in the same transaction as the StateSnapshotUpdated event
+     * that follows it, so holding both keeps the pair consistent.
+     */
+    public stubHoldChannelStorageClearedEvents(): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        if (!this.service.stubOriginals.has("channelStorageClearedEvents")) {
+            this.service.stubOriginals.set(
+                "channelStorageClearedEvents",
+                eventHandler.onChannelStorageCleared.bind(eventHandler)
+            );
+        }
+        eventHandler.onChannelStorageCleared = (async (...args: unknown[]) => {
+            this.service.heldChannelStorageClearedArgs.push(args);
+        }) as typeof eventHandler.onChannelStorageCleared;
+        return true;
+    }
+
+    public getHeldChannelStorageClearedCount(): number {
+        return this.service.heldChannelStorageClearedArgs.length;
+    }
+
     /** Hold InboundMessagesProcessed events instead of handling them. */
     public stubHoldInboundMessageEvents(): boolean {
         const eventHandler = this.service.sm.eventHandler;
@@ -4089,6 +4112,18 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public getTimeoutBuildObservation(): { entered: number; stored: number } {
         return this.service.getTimeoutBuildObservation();
+    }
+
+    /** Answers once the held timeout build entered its hold. */
+    public async awaitTimeoutBuildEntered(): Promise<boolean> {
+        await this.service.awaitTimeoutBuildEntered();
+        return true;
+    }
+
+    /** Answers once the held timeout build stored its claim. */
+    public async awaitTimeoutStored(): Promise<boolean> {
+        await this.service.awaitTimeoutStored();
+        return true;
     }
 
     public releaseTimeoutBuild(): boolean {

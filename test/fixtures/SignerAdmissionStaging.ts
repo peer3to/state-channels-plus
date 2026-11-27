@@ -53,30 +53,6 @@ export async function signStoredBlockAs(
 }
 
 /**
- * After `stageJoinThenLeave`, peer 0 has no source eligibility: its event
- * handler still runs the exit's ChannelStorageCleared (which clears it), and
- * its held snapshot event never restores it. Republish what its latest block
- * commit published, so a participant's gossip reaches the merge.
- */
-export async function restoreCommitEligibility(
-    h: MathPeerTestHarness,
-    peerIndex: number
-): Promise<void> {
-    const published = await h.execOnHost(h.getPeer(peerIndex), (sm) => {
-        const latest = sm.storage.blocks.getLatestBlock(sm.forkId);
-        if (!latest) return false;
-        sm.membershipService.publishOffChainEligibility(
-            sm.storage.getParticipantsUnion(
-                latest.coordinates,
-                latest.stateSnapshotHash
-            )
-        );
-        return true;
-    });
-    expect(published, "a latest stored block").to.equal(true);
-}
-
-/**
  * `stageJoinThenLeave`, then peer 0 holds no final point above the genesis:
  * it lost the joiner's signature on the join block `j` and the blocks `j + 1`
  * and `k`. Its one hop from the genesis spans the join and the exit, and the
@@ -97,7 +73,6 @@ export async function stageJoinAndExitInOneHop(
         .request();
     await dropStoredBlock(h, 0, joinHeight + 1);
     await dropStoredBlock(h, 0, leaveHeight);
-    await restoreCommitEligibility(h, 0);
     expect(
         await localFinalizedView(h, 0),
         "peer 0 proves no final point above the genesis"

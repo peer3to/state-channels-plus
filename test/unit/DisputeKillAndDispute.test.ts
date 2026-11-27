@@ -10,7 +10,10 @@ import {
     stripDisputeReasons,
     waitUntilAuditsSettled
 } from "@test/fixtures/DisputeAuditStaging";
-import { stageSpamAfterOwnDispute } from "@test/fixtures/DisputeWindowWorkflowStaging";
+import {
+    killedDisputeLogs,
+    stageSpamAfterOwnDispute
+} from "@test/fixtures/DisputeWindowWorkflowStaging";
 import {
     killAndDisputeStoredDispute,
     killSpamDispute,
@@ -236,12 +239,75 @@ describe("Unit: kill then dispute", function () {
         expect(replacement.input.disputer).to.equal(auditor.address);
         expect(replacement.input.onChainSlashes).to.deep.equal([]);
         expect(replacement.input.requireExistingDisputeWindow).to.equal(true);
+        // the kill landed in its own transaction, before the upload's
+        const [killed] = await killedDisputeLogs(h);
+        const manager = h.channelManager;
+        const commits = [
+            ...(await manager.queryFilter(
+                manager.filters.DisputeCommitted(h.channelId)
+            )),
+            ...(await manager.queryFilter(
+                manager.filters.DisputeCommittedWithAuditingData(h.channelId)
+            ))
+        ];
+        const ownCommit = commits.find(
+            (log) =>
+                log.args.disputeConfirmation.signedDispute.encodedDispute ===
+                upload.encodedDispute
+        );
+        expect(ownCommit, "the upload's commit log").to.not.equal(undefined);
+        expect(killed.disputer).to.equal(spammer.address);
+        expect(killed.transactionHash).to.not.equal(ownCommit!.transactionHash);
+        expect(
+            [killed.blockNumber, killed.logIndex],
+            "the kill lands first"
+        ).to.satisfy(
+            ([blockNumber, logIndex]: number[]) =>
+                blockNumber < ownCommit!.blockNumber ||
+                (blockNumber === ownCommit!.blockNumber &&
+                    logIndex < ownCommit!.index)
+        );
         await h.assert.dispute.slashedOnChain(spammer.address);
         // the lone kill emptied the window, so the other peers may replace
         // the dispute too
         expect(
             await h.channelManager.getWindowCommitments(h.channelId, forkId)
         ).to.include(hash(Codec.encode(replacement, Type.Dispute)));
+    });
+
+    it("CN-5: the kill and the auditor's own dispute do not fit one transaction, and the lone kill's send fails -> its own dispute is still uploaded and lands without a slash; the spammer stays unslashed and the kill's failure surfaces after the upload", async function () {
+        const h = TestSession.getHarness();
+        const { forkId, auditor, spammer, kills, uploads } =
+            await stageSplitKillAndDispute(h, {
+                lostRace: false,
+                killFailure: { message: "the kill send failed", at: "send" }
+            });
+
+        const applies = await kills.applies();
+        expect(applies).to.have.length(1);
+        expect(applies[0].participants).to.deep.equal([spammer.address]);
+        expect(applies[0].error).to.equal("the kill send failed");
+        const [upload] = await uploads.submissions();
+        expect(upload.revert).to.equal(null);
+        const own = Codec.decode(upload.encodedDispute, Type.Dispute);
+        expect(own.input.disputer).to.equal(auditor.address);
+        expect(own.input.onChainSlashes).to.deep.equal([]);
+        expect(
+            await h.channelManager.getWindowCommitments(h.channelId, forkId)
+        ).to.include(hash(Codec.encode(own, Type.Dispute)));
+        expect(
+            await h.channelManager.getOnChainSlashedParticipants(h.channelId)
+        ).to.not.include(spammer.address);
+        // dispute() rethrew the kill's failure once the upload was sent
+        await h.rpcStub.waitUntilDisputeMutexIdle(auditor.index);
+        expect(await eventPipelineOutcome(h, auditor.index)).to.deep.equal({
+            failedBlocks: 1,
+            isDisposed: false
+        });
+        await TestSession.expectFirstDetachedError({
+            includes: "the kill send failed",
+            timeoutMs: h.event.protocolEventTimeoutMs()
+        });
     });
 
     it("a slow auditor's kill and dispute land after another auditor's kill and replacement closed the evidence period → the multicall lands its kill, its refused upload is a no-op, no kill is sent alone, and its event pipeline stays alive", async function () {
