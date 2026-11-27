@@ -47,10 +47,7 @@ Requester verification chain
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P15` — height-too-old simulation with a different on-chain snapshot fails
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P19` — ordinary pinned sync adopts a verified successor without an optional flag
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P20` — ordinary pinned sync refuses an unknown fork and preserves local fork identity
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P21` — concurrent proof verification does not treat a local simulated reduction as chain finality
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P22` — a chain reduction landing after window persistence cannot reject an honest proof
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P23` — an already-final chain window contributes no local reduction input
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P24` — two source syncs share one local EVM; a second persist after the first reduction cannot reject either proof or blacklist either responder
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P25` — two identical supplied windows cause one finality multicall and reject with dispute window not linked
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P27` — an unfinalized block whose bytes do not decode is refused by the pipeline: the sync rejects with "block confirmation rejected", never "block confirmation threw"
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P28` — a pinned proof whose fork is disputed after it was served is accepted, and the responder is neither rejected nor blacklisted
@@ -70,11 +67,9 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P43` — An unpinned request to a responder on an old local fork installs the verified chain-derived successor without blacklisting either peer
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P44` — A participant sync accepts its local finalized tier without a chain walk or responder penalty
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P45` — After local-final proof verification succeeds, a forged latest-fork outbound block still fails the independent sync check
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P46` — A fresh requester skips absent private finality, accepts the chain proof walk and does not read the mirror
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P47` — A fresh requester whose mirror missed a consumed top-up accepts canonical proof verification, with no penalty
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P46` — A fresh requester skips absent private finality, accepts the chain proof walk
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P48` — A conflicting proof fails the private-final walk but passes the chain walk; subsequent block replay rejects sync and blacklists the responder
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P49` — A requester whose mirror lacks the newer anchor accepts sync through chain-anchor verification
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P50` — A requester whose mirror has the anchor but lacks later consumed inbound evidence accepts chain-anchor verification without penalty
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P49` — A requester whose own finalized state is below a newer chain anchor accepts sync through chain-anchor verification
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P51` — Undecodable retained last-block bytes return false at both proof tiers; sync rejects as invalid milestones and blacklists the responder without throwing
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P52` — Local-final executor failure during sync throws with no later walk, proof-rejection reason or blacklist
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P54` — Node RPC failure during the chain walk of a fresh sync throws without installing a head or penalizing the responder
@@ -141,20 +136,17 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P117` — a requester whose provider lags a snapshot post the responder has seen: the sync waits until its chain head reaches the payload's chain block, verifies from the moved anchor and accepts, with the responder kept
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P118` — the requester's provider never reaches the payload's chain block: after one agreement window the sync fails with no verdict, no rejection, and the responder neither blacklisted nor disconnected
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P119` — the requester's sync service stops while the sync waits for its chain head: the sync fails at once with no verdict
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P120` — the responder's own provider lags logs another node streamed into its local diamond: the payload names the streamed block, the lagging requester waits for it and accepts, with the responder kept
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P121` — genesis-only payload before block zero, chain snapshot still genesis, only the genesis timestamp changed: rejected as genesis timestamp mismatch, responder blacklisted, the stored genesis stays the on-chain one
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P122` — the same genesis-only payload unaltered: accepted, responder not blacklisted, the stored genesis is the on-chain one
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P123` — successor-fork genesis with only its timestamp changed from the origin window's kill-period end: rejected as genesis timestamp mismatch and the altered genesis is not stored
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P124` — successor-fork genesis applied while the requester's local mirror already sees the origin window expired but the chain does not: not synced with no verdict, the origin window named unsettled, no rejection, the responder not blacklisted and the successor genesis not stored
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P124` — successor-fork genesis applied while the chain has not yet expired its origin window: not synced with no verdict, the origin window named unsettled, no rejection, the responder not blacklisted and the successor genesis not stored
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P125` — lagging requester holding the genesis, on-chain snapshot past genesis on the same fork, genesis altered only in its timestamp: accepted with no rejection and the held genesis is kept
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P127` — genesis-case window snapshot with only its timestamp changed: rejected as window genesis timestamp mismatch, responder blacklisted, the held genesis kept
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P128` — the same genesis-case window unaltered: accepted, responder not blacklisted, the genesis stays the genuine one
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P129` — genesis-case window applied while the chain's kill period is still open and the requester's clock runs ahead: not synced with no verdict, the window named unsettled, responder not blacklisted, the held genesis kept
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P126` — block 0's snapshot on chain, height 0 but not a genesis, unaltered payload: accepted with no rejection and the responder not blacklisted
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P130` — a fresh requester whose RPC node lags one block behind the newer exit snapshot its local diamond already applied from the chain's log: the sync waits for the responder's `chainBlock` and ends with no verdict, no rejection, the responder not blacklisted, and the local diamond keeps the newer anchor
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P131` — the same lagging node under the opened-status refresh (`StateManager.refreshOpenedStatusFromChain`): its pinned `isChannelOpen` read at the lagged head loses the event ordering and the local anchor keeps the newer exit snapshot
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P132` — with the light client stubbed in, a fresh requester with no local finalized state: the chain walk accepts, and the sync completes
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P133` — a responder reads the on-chain snapshot from the chain, not its mirror, and the payload is accepted
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P133` — a responder reads the on-chain snapshot from the chain and the payload is accepted
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 

@@ -9,16 +9,14 @@
 
 ## UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1
 
-Merged mirror ABI and binding
+Merged local-diamond ABI and binding
 
 - Setup: `localDiamondAbi` and `connectLocalDiamond(address, runner)`, both against the generated ABIs alone and against a `LocalDiamond` deployed by the real deployment helper; no hand-written ABI, no stubbed runner
-- Oracle: Every fragment of both generated ABIs is present exactly once; a routed selector and a `LocalDiamond`-only selector each encode identically to their own generated interface and each answer on the deployed mirror; a `null` runner yields a read-only binding at the given address; no duplicate-fragment construction error
+- Oracle: Every fragment of both generated ABIs is present exactly once; a routed selector and a `LocalDiamond`-only selector each encode identically to their own generated interface and each answer on the deployed local diamond; a `null` runner yields a read-only binding at the given address; no duplicate-fragment construction error
 
 - [x] `UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P1` — merged ABI carries every fragment of both generated ABIs
 - [x] `UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P2` — a signature declared by both ABIs yields exactly one fragment
 - [x] `UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P3` — a routed facet selector encodes through the binding exactly as the interface ABI encodes it
 - [x] `UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P4` — a `LocalDiamond`-only selector encodes through the binding exactly as `LocalDiamond`'s own ABI encodes it
 - [x] `UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P5` — `connectLocalDiamond` with a `null` runner builds a read-only binding at the given address
-- [x] `UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P6` — a routed facet view answers on the deployed mirror through the binding
-- [x] `UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P7` — a `LocalDiamond`-only handler executes on the deployed mirror through the binding
 - [x] `UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P8` — every manager error appears once in the local ABI

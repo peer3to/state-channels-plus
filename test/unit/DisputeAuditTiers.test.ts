@@ -4,34 +4,32 @@ import { DisputeFraudProofType } from "@/types/sol-enums";
 import type { Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import { hash as randomHash, randomAddress } from "@test/factory";
+import { stageConsumedTopUpAfterSetup } from "@test/fixtures/ConsumedInboundStaging";
 import {
     blockConfirmationAt,
     runConcurrentVirtualFinalAudits,
     craftInvalidBlockAfter,
     craftInvalidLinkedBlock,
-    hasLocalAnchor,
     holdsState,
     localFinalizedHeight,
-    postSnapshotPastLaggingMirrors,
+    postSnapshotWaitingForPeers,
     replaceStateProof,
     runWithInvalidBlock,
     snapshotAt,
-    stageAnchorBehindLaggingMirror,
+    stageAnchorAtLatestBlock,
+    stageAuditorBelowAnchor,
     stageFrozenViewBehindDisputeTail,
-    stageLaggingAuditorBelowAnchor,
     stagePendingJoinerMissingHopBase,
     unsignedOwnMilestonesThrough
 } from "@test/fixtures/DisputeAuditStaging";
 import { killSpamDispute } from "@test/fixtures/EvidenceComparisonStaging";
 import { syncSpectatorOnServedPayload } from "@test/fixtures/MilestoneSyncStaging";
-import { stageMirrorMissingConsumedTopUp } from "@test/fixtures/MirrorDivergenceStaging";
 import { readDisputeKill } from "@test/fixtures/OmittedInboundJoinerStaging";
 import {
     craftConflictingAnchorRun,
     stageFinalBlocks,
     stageFinalityFromNextBlock,
-    stageJoinHopWithLaterFinalPoint,
-    stageMirrorMissingTopUp
+    stageJoinHopWithLaterFinalPoint
 } from "@test/fixtures/ProofOwnerStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -239,29 +237,6 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             expect(chain.failures).to.deep.equal([]);
         });
 
-        it("U28: the local diamond misses the inbound run a hop consumes -> the chain's trusted-start walk accepts, true", async function () {
-            const h = TestSession.getHarness();
-            await stageMirrorMissingConsumedTopUp(h, 1);
-            const { dispute } = await h.dispute.fetchConstructedDispute(0);
-            expect(dispute.postedAuditingData).to.equal(false);
-            const walks = await h.mirror.observe(1, "verifyMilestones");
-            const trustedWalks = await h.mirror.observe(
-                1,
-                "verifyMilestonesFromTrustedStart"
-            );
-
-            const run = await h.dispute.auditDispute(1, dispute);
-
-            expect(run).to.include({ outcome: "returned", isValid: true });
-            expect(run.disputeFraudProofCount).to.equal(0);
-            const { local, chain } = await walks.observation();
-            expect(local.reads).to.equal(0);
-            expect(chain.reads).to.equal(0);
-            const trusted = await trustedWalks.observation();
-            expect(trusted.local.reads).to.equal(0);
-            expect(trusted.chain.answers.at(-1)).to.equal(true);
-        });
-
         it("D4: an authentic block conflicts with the local final point -> the conflict counter is stored before any tier walk", async function () {
             const h = TestSession.getHarness();
             const { anchor } = await stageFinalBlocks(h, {
@@ -301,15 +276,10 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             );
         });
 
-        it("U28 (audit entry): the mirror holds no same-fork anchor -> the chain's anchor walk accepts, true", async function () {
+        it("U28 (audit entry): an auditor whose own finalized state is below the chain anchor -> the chain's anchor walk accepts, true", async function () {
             const h = TestSession.getHarness();
-            const lagging = 2;
-            const { anchor } = await stageMirrorMissingTopUp(h, {
-                laggingIndex: lagging,
-                anchorAfterTopUp: true
-            });
-            expect(await hasLocalAnchor(h, lagging)).to.equal(false);
-            expect(await localFinalizedHeight(h, lagging)).to.equal(null);
+            const { anchor, belowAnchorIndex } =
+                await stageAuditorBelowAnchor(h);
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
             expect(dispute.postedAuditingData).to.equal(false);
             const head = Block.fromBlockConfirmation(
@@ -317,10 +287,13 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
                     .at(-1)!
                     .blockConfirmations.at(-1)!
             );
-            expect(head.height).to.equal(anchor!.height);
-            const walks = await h.mirror.observe(lagging, "verifyMilestones");
+            expect(head.height).to.equal(anchor.blockHeight);
+            const walks = await h.mirror.observe(
+                belowAnchorIndex,
+                "verifyMilestones"
+            );
 
-            const run = await h.dispute.auditDispute(lagging, dispute);
+            const run = await h.dispute.auditDispute(belowAnchorIndex, dispute);
 
             expect(run).to.include({ outcome: "returned", isValid: true });
             expect(run.disputeFraudProofCount).to.equal(0);
@@ -417,7 +390,7 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
     describe("trusted start and earlier history", function () {
         it("U31: an unproven earlier hop below the auditor's final point -> the auditor walks from its final point, never reads it, true", async function () {
             const h = TestSession.getHarness();
-            await stageMirrorMissingConsumedTopUp(h, 1);
+            await stageConsumedTopUpAfterSetup(h);
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
             const invalidPrefix = await unsignedOwnMilestonesThrough(h, 0, 1);
             dispute.input.stateProof.milestones = [
@@ -447,7 +420,7 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
 
         it("U42: a hop whose committed snapshot no tier can supply, at a height the auditor holds no block for, with omitted data -> the audit throws, no unsupported counter", async function () {
             const h = TestSession.getHarness();
-            await stageMirrorMissingConsumedTopUp(h, 1, {
+            await stageConsumedTopUpAfterSetup(h, {
                 suppressWriterTimeouts: true
             });
             const forkId = h.activeForkId!;
@@ -512,7 +485,7 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
 
         it("U42: an auditor holding a final block at the hop's height kills the dispute with DisputeConflictsWithFinalState, which the chain accepts", async function () {
             const h = TestSession.getHarness();
-            await stageMirrorMissingConsumedTopUp(h, 1);
+            await stageConsumedTopUpAfterSetup(h);
             const forkId = h.activeForkId!;
             const disputer = h.getPeer(0);
             const kills = await Promise.all(
@@ -839,7 +812,7 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
         it("U96/U116: an undecodable block after the anchor of an anchored last milestone, omitted auditing data -> false + DisputeInvalidStateProof, no crash", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3);
-            await postSnapshotPastLaggingMirrors(h, []);
+            await postSnapshotWaitingForPeers(h);
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
             expect(dispute.postedAuditingData).to.equal(false);
             const run0 = dispute.input.stateProof.milestones.at(-1)!;
@@ -951,7 +924,7 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
 
         it("U96: an undecodable inner block of a milestone wholly below the chain anchor -> skipped history, true", async function () {
             const h = TestSession.getHarness();
-            const { anchorHeight } = await stageAnchorBehindLaggingMirror(h);
+            const { anchorHeight } = await stageAnchorAtLatestBlock(h);
             expect(anchorHeight).to.be.greaterThan(1);
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
             const block0 = await blockConfirmationAt(h, 0, 0);
@@ -984,16 +957,16 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
     // start of the last milestone; the chain's anchor protects it and every
     // block before it.
     describe("block-specific challenge target", function () {
-        it("U88: a fault right after the chain anchor, audited from a current mirror and from a lagging mirror, after pruning below the anchor -> both challenge last-milestone position 1", async function () {
+        it("U88: a fault right after the chain anchor, audited by an auditor on its own finalized state and by one on the chain tier, after pruning below the anchor -> both challenge last-milestone position 1", async function () {
             const h = TestSession.getHarness();
-            const { anchor, currentIndex, laggingIndex } =
-                await stageLaggingAuditorBelowAnchor(h);
+            const { anchor, currentIndex, belowAnchorIndex } =
+                await stageAuditorBelowAnchor(h);
             const forkId = h.activeForkId!;
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
             const run = [await blockConfirmationAt(h, 0, anchor.blockHeight)];
             run.push(await craftInvalidBlockAfter(h, run));
             replaceStateProof(dispute, [{ blockConfirmations: run }]);
-            for (const index of [currentIndex, laggingIndex])
+            for (const index of [currentIndex, belowAnchorIndex])
                 await h
                     .control(h.getPeer(index))
                     .stub.pruneStoredBlocksBelowAnchor(
@@ -1010,7 +983,7 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             expect(await isEligible(1)).to.equal(true);
             expect(await isEligible(2)).to.equal(false);
             // both replay from the chain's anchor
-            for (const index of [currentIndex, laggingIndex]) {
+            for (const index of [currentIndex, belowAnchorIndex]) {
                 const walks = await h.mirror.observe(index, "verifyMilestones");
                 const audit = await h.dispute.auditDispute(index, dispute);
                 expect(audit).to.include({
@@ -1031,10 +1004,10 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             }
         });
 
-        it("U88: an invalid block below the chain anchor inside one genesis-linked last milestone -> the chain tier replays from the anchor; neither mirror challenges, true", async function () {
+        it("U88: an invalid block below the chain anchor inside one genesis-linked last milestone -> the chain tier replays from the anchor; neither auditor challenges, true", async function () {
             const h = TestSession.getHarness();
-            const { anchor, currentIndex, laggingIndex } =
-                await stageLaggingAuditorBelowAnchor(h);
+            const { anchor, currentIndex, belowAnchorIndex } =
+                await stageAuditorBelowAnchor(h);
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
             const run = await runWithInvalidBlock(h, {
                 fromHeight: 0,
@@ -1051,7 +1024,7 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
                     )
                 ).to.equal(false);
             // both replay from the chain's anchor
-            for (const index of [currentIndex, laggingIndex]) {
+            for (const index of [currentIndex, belowAnchorIndex]) {
                 const walks = await h.mirror.observe(index, "verifyMilestones");
                 const audit = await h.dispute.auditDispute(index, dispute);
                 expect(audit).to.include({
@@ -1065,10 +1038,10 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             }
         });
 
-        it("U88: the chain anchor in the middle of the last milestone, an invalid block before it and a fault after it -> both mirrors challenge the fault's position, never the protected block", async function () {
+        it("U88: the chain anchor in the middle of the last milestone, an invalid block before it and a fault after it -> both auditors challenge the fault's position, never the protected block", async function () {
             const h = TestSession.getHarness();
-            const { anchor, currentIndex, laggingIndex } =
-                await stageLaggingAuditorBelowAnchor(h);
+            const { anchor, currentIndex, belowAnchorIndex } =
+                await stageAuditorBelowAnchor(h);
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
             const run = await runWithInvalidBlock(h, {
                 fromHeight: 0,
@@ -1087,7 +1060,7 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             expect(await isEligible(faultIndex - 1)).to.equal(false);
             expect(await isEligible(faultIndex)).to.equal(true);
             expect(await isEligible(faultIndex + 1)).to.equal(false);
-            for (const index of [currentIndex, laggingIndex]) {
+            for (const index of [currentIndex, belowAnchorIndex]) {
                 const walks = await h.mirror.observe(index, "verifyMilestones");
                 const audit = await h.dispute.auditDispute(index, dispute);
                 expect(audit).to.include({
@@ -1111,12 +1084,12 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
 
     // The replay runs from the chain's anchor, and only that replay can accuse.
     describe("replay precedence", function () {
-        it("an invalid block below the chain anchor -> the chain tier replays from the anchor's verified state, no accusation, true", async function () {
+        it("an invalid block below the chain anchor, audited by an auditor whose own finalized state is below it -> the chain tier replays from the anchor's verified state, no accusation, true", async function () {
             const h = TestSession.getHarness();
-            // peer 1: no locally finalized state (its mirror cannot prove the
-            // top-up hop) and a mirror anchored at the genesis
-            await stageMirrorMissingConsumedTopUp(h, 1);
-            const anchor = await postSnapshotPastLaggingMirrors(h, [1]);
+            // peer 2 is cut off below the chain anchor: its own finalized
+            // state is below it
+            const { anchor, belowAnchorIndex } =
+                await stageAuditorBelowAnchor(h);
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
             // one genesis-linked run whose invalid block lies below the anchor
             const run = await runWithInvalidBlock(h, {
@@ -1126,10 +1099,15 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             });
             replaceStateProof(dispute, [{ blockConfirmations: run }]);
             expect(dispute.input.latestStateSnapshotHash).to.equal(anchor.hash);
-            expect(await localFinalizedHeight(h, 1)).to.equal(null);
-            const walks = await h.mirror.observe(1, "verifyMilestones");
+            const walks = await h.mirror.observe(
+                belowAnchorIndex,
+                "verifyMilestones"
+            );
 
-            const audit = await h.dispute.auditDispute(1, dispute);
+            const audit = await h.dispute.auditDispute(
+                belowAnchorIndex,
+                dispute
+            );
 
             expect(audit).to.include({ outcome: "returned", isValid: true });
             expect(audit.disputeFraudProofCount).to.equal(0);
@@ -1138,10 +1116,10 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             expect(chain.reads).to.equal(1);
         });
 
-        it("the same run with a fault after the chain anchor -> the chain tier's replay accuses, at the fault's position", async function () {
+        it("the same run with a fault after the chain anchor, audited on the chain tier -> the chain tier's replay accuses, at the fault's position", async function () {
             const h = TestSession.getHarness();
-            await stageMirrorMissingConsumedTopUp(h, 1);
-            const anchor = await postSnapshotPastLaggingMirrors(h, [1]);
+            const { anchor, belowAnchorIndex } =
+                await stageAuditorBelowAnchor(h);
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
             const run = await runWithInvalidBlock(h, {
                 fromHeight: 0,
@@ -1151,7 +1129,10 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             run.push(await craftInvalidBlockAfter(h, run));
             replaceStateProof(dispute, [{ blockConfirmations: run }]);
 
-            const audit = await h.dispute.auditDispute(1, dispute);
+            const audit = await h.dispute.auditDispute(
+                belowAnchorIndex,
+                dispute
+            );
 
             expect(audit).to.include({ outcome: "returned", isValid: false });
             expect(audit.storedProof?.disputeFraudProofType).to.equal(

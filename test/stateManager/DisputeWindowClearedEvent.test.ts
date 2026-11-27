@@ -70,7 +70,7 @@ describe("Dispute window cleared before handling", function () {
         expect(await genesisInstalls.count()).to.equal(0);
     });
 
-    it("a synced spectator whose chain events were held through a dispute cycle and a same-fork snapshot update ignores the disputes: nothing persisted, no reduction scheduled, and its mirror holds the chain's snapshot", async function () {
+    it("a synced spectator whose chain events were held through a dispute cycle and a same-fork snapshot update ignores the disputes: nothing persisted and no reduction scheduled", async function () {
         const h = TestSession.getHarness();
         const { forkId, spectatorIndex, releaseLogs } =
             await stageSpectatorAwayThroughDispute(h);
@@ -95,9 +95,6 @@ describe("Dispute window cleared before handling", function () {
             failedBlocks: 0,
             isDisposed: false
         });
-        expect((await h.query.getLocalStateSnapshot(spectator)).hash).to.equal(
-            await h.query.getOnChainSnapshotHash()
-        );
     });
 
     it("a timed-out peer removed by a same-fork snapshot update it never installed stays a participant while the chain lists it as a pending joiner", async function () {

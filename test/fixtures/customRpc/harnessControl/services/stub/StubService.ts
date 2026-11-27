@@ -202,11 +202,13 @@ export type StubKey =
     | "networkConfirmations"
     | "spectateSyncApplication"
     | "onChainSlashesQuery"
-    | "localDiamondInboundMessages"
     | "eventLogs"
     | "chainLogQueries"
     | "onChainSlashesRead"
     | "disputeCommittedHandler"
+    | "inboundMessagesProcessedHandler"
+    | "chainSlashedHandler"
+    | "disputeKilledHandler"
     | "disputeCommittedHandling"
     | "disputeLogQueries"
     | "lobbyCreateRpcMethods"
@@ -2666,36 +2668,28 @@ export class StubService extends ANetworkRpcService<
         return this.heldParticipantChecks?.entered ?? 0;
     }
 
-    // `beforeFetch` parks after the finality read; `afterPersist` after the local window write
-    public holdSyncWindowPersistence(at: "beforeFetch" | "afterPersist"): void {
+    /** Parks the next on-chain dispute window fetch after the finality read, until released. */
+    public holdSyncWindowFetch(): void {
         const service = this.p2pManager.localRpc.spectateService;
-        const original =
-            service.fetchAndPersistOnChainDisputeWindows.bind(service);
+        const original = service.fetchOnChainDisputeWindows.bind(service);
         const hold = this.createRpcHold("spectate");
         this.syncWindowHold = hold;
         this.restoreSyncWindow = () => {
-            service.fetchAndPersistOnChainDisputeWindows = original;
+            service.fetchOnChainDisputeWindows = original;
         };
-        service.fetchAndPersistOnChainDisputeWindows = async (...args) => {
-            if (at === "beforeFetch") {
-                this.restoreSyncWindow?.();
-                hold.entered += 1;
-                await hold.gate;
-                return await original(...args);
-            }
-            const windows = await original(...args);
+        service.fetchOnChainDisputeWindows = async (...args) => {
             this.restoreSyncWindow?.();
             hold.entered += 1;
             await hold.gate;
-            return windows;
+            return await original(...args);
         };
     }
 
-    public getSyncWindowPersistenceEntered(): number {
+    public getSyncWindowFetchEntered(): number {
         return this.syncWindowHold?.entered ?? 0;
     }
 
-    public releaseSyncWindowPersistence(): void {
+    public releaseSyncWindowFetch(): void {
         this.restoreSyncWindow?.();
         this.restoreSyncWindow = undefined;
         this.syncWindowHold?.release();
@@ -5368,6 +5362,71 @@ export class StubService extends ANetworkRpcService<
             this.failedDisputeCommittedCalls += 1;
             throw new Error("stubbed onDisputeCommitted failure");
         };
+    }
+
+    /**
+     * Make `onInboundMessagesProcessed` throw for every dispatched inbound log,
+     * a recovery's dispatch included.
+     */
+    failInboundMessagesProcessedHandler(): void {
+        const eventHandler = this.sm.eventHandler;
+        if (!this.stubOriginals.has("inboundMessagesProcessedHandler")) {
+            this.stubOriginals.set(
+                "inboundMessagesProcessedHandler",
+                eventHandler.onInboundMessagesProcessed.bind(eventHandler)
+            );
+        }
+        eventHandler.onInboundMessagesProcessed = async () => {
+            throw new Error("stubbed onInboundMessagesProcessed failure");
+        };
+    }
+
+    /**
+     * Make `onChainSlashed` and `onDisputeKilled` throw for every dispatched
+     * slash or kill log, a recovery's dispatch included.
+     */
+    failSlashHandlers(): void {
+        const eventHandler = this.sm.eventHandler;
+        if (!this.stubOriginals.has("chainSlashedHandler")) {
+            this.stubOriginals.set(
+                "chainSlashedHandler",
+                eventHandler.onChainSlashed.bind(eventHandler)
+            );
+            this.stubOriginals.set(
+                "disputeKilledHandler",
+                eventHandler.onDisputeKilled.bind(eventHandler)
+            );
+        }
+        eventHandler.onChainSlashed = async () => {
+            throw new Error("stubbed slash handler failure");
+        };
+        eventHandler.onDisputeKilled = async () => {
+            throw new Error("stubbed slash handler failure");
+        };
+    }
+
+    restoreSlashHandlers(): boolean {
+        const slashed = this.stubOriginals.get("chainSlashedHandler");
+        const killed = this.stubOriginals.get("disputeKilledHandler");
+        if (slashed === undefined || killed === undefined) return false;
+        this.sm.eventHandler.onChainSlashed =
+            slashed as typeof this.sm.eventHandler.onChainSlashed;
+        this.sm.eventHandler.onDisputeKilled =
+            killed as typeof this.sm.eventHandler.onDisputeKilled;
+        this.stubOriginals.delete("chainSlashedHandler");
+        this.stubOriginals.delete("disputeKilledHandler");
+        return true;
+    }
+
+    restoreInboundMessagesProcessedHandler(): boolean {
+        const original = this.stubOriginals.get(
+            "inboundMessagesProcessedHandler"
+        );
+        if (original === undefined) return false;
+        this.sm.eventHandler.onInboundMessagesProcessed =
+            original as typeof this.sm.eventHandler.onInboundMessagesProcessed;
+        this.stubOriginals.delete("inboundMessagesProcessedHandler");
+        return true;
     }
 
     restoreDisputeCommittedHandler(): boolean {

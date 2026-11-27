@@ -11,9 +11,7 @@ import { expect } from "chai";
  * peer's provider is pinned at the current block, then the held exit post of
  * the second leaver lands: the chain anchor moves to the second exit, which
  * the first remaining peer (the responder) observes and the pinned requester
- * does not. `responderHeadLags`: the responder's provider is pinned at the
- * same block while another node keeps streaming its logs, so its local
- * diamond holds the moved anchor while its head is behind it. `via`: "apply"
+ * does not. `via`: "apply"
  * applies the responder's payload for its latest height, "sync" runs the
  * requester's real `sync` RPC to the responder. `release`: "duringWait" lets
  * the requester's provider catch up once its sync is waiting on the chain
@@ -27,7 +25,6 @@ export async function applySyncFromChainAheadResponder(
     options: {
         release: "duringWait" | "never" | "dispose";
         via?: "apply" | "sync";
-        responderHeadLags?: boolean;
     }
 ) {
     const { forkId, anchor, remaining, heldPost } =
@@ -35,16 +32,13 @@ export async function applySyncFromChainAheadResponder(
     const responder = h.getPeer(remaining[0]);
     const requester = h.getPeer(remaining[1]);
     const lag = await h.rpcStub.lagChainView(requester.index);
-    const responderLag = options.responderHeadLags
-        ? await h.rpcStub.lagChainView(responder.index, { holdLogs: false })
-        : undefined;
     try {
         expect(await heldPost.release()).to.equal(null);
         const moved = await chainSnapshot(h);
         expect(moved.latestOutboundMessageBlockHeight).to.equal(2);
         await waitFor(
             async () =>
-                (await h.query.getLocalStateSnapshot(responder)).hash ===
+                (await h.query.getPeerChainStateSnapshot(responder)).hash ===
                 moved.hash,
             h.event.protocolEventTimeoutMs()
         );
@@ -63,9 +57,9 @@ export async function applySyncFromChainAheadResponder(
         );
         // premise: the requester's chain view still holds the first exit
         expect(Number(payload.chainBlock)).to.be.greaterThan(lag.pinnedBlock);
-        expect((await h.query.getLocalStateSnapshot(requester)).hash).to.equal(
-            anchor.hash
-        );
+        expect(
+            (await h.query.getPeerChainStateSnapshot(requester)).hash
+        ).to.equal(anchor.hash);
 
         const stub = h.control(requester).stub;
         await stub.recordSyncRejections().request();
@@ -130,7 +124,7 @@ export async function applySyncFromChainAheadResponder(
                     .query.isConnectedTo(responder.address)
                     .request(),
                 requesterSnapshotHash: (
-                    await h.query.getLocalStateSnapshot(requester)
+                    await h.query.getPeerChainStateSnapshot(requester)
                 ).hash,
                 anchorHash: anchor.hash,
                 chainSnapshotHash: moved.hash,
@@ -149,6 +143,5 @@ export async function applySyncFromChainAheadResponder(
         }
     } finally {
         await lag.release();
-        await responderLag?.release();
     }
 }

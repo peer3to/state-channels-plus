@@ -1,29 +1,25 @@
 import {
-    stageMirrorMissingTopUp,
+    stageConsumedTopUp,
     tryBuildProofView
 } from "@test/fixtures/ProofOwnerStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
 // buildStateProof walks the built proof once, from the chain's anchor, on the
-// chain. A mirror that lags a consumed inbound block no longer matters, and
-// no second walk from the stored anchor follows a rejection.
+// chain. No second walk from the stored anchor follows a rejection.
 
 describe("Unit: AgreementManager buildStateProof chain walk", function () {
-    it("the mirror lacks a consumed inbound block → the chain's one trusted-start walk accepts, the proof is returned, no second walk runs", async function () {
+    it("a consumed inbound block → the chain's one trusted-start walk accepts the built proof, the proof is returned, no second walk runs", async function () {
         const h = TestSession.getHarness();
-        const lagging = 2;
-        await stageMirrorMissingTopUp(h, {
-            laggingIndex: lagging,
-            anchorBeforeTopUp: true
-        });
+        const builder = 2;
+        await stageConsumedTopUp(h, { anchorBeforeTopUp: true });
         const localWalk = await h.mirror.observe(
-            lagging,
+            builder,
             "verifyMilestonesFromTrustedStart"
         );
-        const chainWalk = await h.mirror.observe(lagging, "verifyMilestones");
+        const chainWalk = await h.mirror.observe(builder, "verifyMilestones");
 
-        const built = await tryBuildProofView(h, lagging);
+        const built = await tryBuildProofView(h, builder);
         const local = await localWalk.observation();
         const chain = await chainWalk.observation();
         await localWalk.restore();
@@ -40,10 +36,7 @@ describe("Unit: AgreementManager buildStateProof chain walk", function () {
     it("the chain rejects the built proof (it answers from before the consumed inbound block) → buildStateProof throws, no proof, no second walk", async function () {
         const h = TestSession.getHarness();
         const lagging = 2;
-        await stageMirrorMissingTopUp(h, {
-            laggingIndex: lagging,
-            anchorBeforeTopUp: true
-        });
+        await stageConsumedTopUp(h, { anchorBeforeTopUp: true });
         const localWalk = await h.mirror.observe(
             lagging,
             "verifyMilestonesFromTrustedStart"

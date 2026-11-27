@@ -15,7 +15,6 @@
 - [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../../../../../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)
 - [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
 - [`REQ-IX-7-A004VZ` (Chain observation)](../../../../../specification/interactions.md#req-ix-7-a004vz)
-- [`REQ-MIRROR-3-THD7K8` (Cache, never authority)](../../../../../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8)
 - [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../../../../../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)
 - [`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally pending before acknowledgement)](../../../../../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75)
 - [`REQ-RMSTORE-1-BWKVBG` (Monotone observation progress)](../../../../../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg)
@@ -70,10 +69,6 @@ Ordering and recovery
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P8` — authoritative slash recovery rejects a missing chain head
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P9` — authoritative slash recovery rejects exhausted chain log queries
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P10` — a missed JOIN is recovered through EventHandler and appears in both fast eligibility and LocalDiamond before network-copy validation
-- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P12` — membership synchronization applies the whole pending inbound run; a block the local diamond already applied from its live log is applied again as a no-op, and the local diamond ends at the chain's inbound head
-- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P13` — the live log's and the refresh's applications of one inbound block both in flight, the live one applied first: no revert, the block stored, the inbound head and deposit total at the chain's
-- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P14` — the same with the refresh's application applied first and the live log's after it
-- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P15` — membership synchronization fills an inbound block of the pending run that the local diamond misses below its head; the head and deposit total stay at the chain's
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P16` — membership synchronization applies its snapshot at the end of its pinned chain block, so a newer StateSnapshotUpdated log the local diamond applied meanwhile stays
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P17` — the pinned membership read is one multicall, and applying it for a pending joiner makes no other chain call than the head read that confirms the snapshot and one pending-set read: the pending check reads the chain's pending set
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P18` — membership synchronization rejects with the failure of a local handler applying a slash log its recovery read
@@ -81,7 +76,7 @@ Ordering and recovery
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P20` — the reduce, audit and dispute inbound recovery rejects with the failure of a local handler applying a recovered log
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P21` — the dispute-window recovery awaits an in-flight dispute log that succeeds and resolves with the window, its dispute stored
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P22` — the dispute-window recovery joins an in-flight dispute log that stores its dispute and then fails, and resolves with the window
-- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P23` — the dispute-window recovery joins an in-flight dispute log that fails before storing its dispute and rejects with that failure; a second recovery rejects the same way and the dispute stays missing
+- [ ] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P23` — the dispute-window recovery joins an in-flight dispute log that fails before storing its dispute and rejects with that failure; a second recovery rejects the same way and the dispute stays missing
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P24` — the dispute-window recovery rejects with the failure of a local handler applying a dispute log it dispatched itself
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P25` — the dispute-window recovery for a fork the node already left: the handler runs no audit and stores nothing, the recovery stores the chain's copy of each dispute and resolves with the window
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P26` — a handled InboundMessagesProcessed or StateSnapshotUpdated event records its block for the pending-set pin before its handler runs

@@ -2193,7 +2193,7 @@ describe("E2E: Spectate Service", function () {
                 responder,
                 async (sm, args) => {
                     const isDisputed =
-                        await sm.diamondStateMachine.localDiamondContract.isForkDisputed(
+                        await sm.stateChannelManagerContract.isForkDisputed(
                             sm.channelId,
                             args.forkId
                         );

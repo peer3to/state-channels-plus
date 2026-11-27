@@ -744,7 +744,7 @@ async function requestLatestFrom(
  * Peer 0 is past its initial load but lags the chain: peers 2 and 3 reduce
  * the fork that peer 1 corrupted and the chain adopts the successor, while
  * peer 0's own install of that successor is held at its VM write. Once
- * peer 0's chain mirror holds the adopted successor, participant peer 2 asks
+ * the chain holds the adopted successor, participant peer 2 asks
  * it for the latest state. Returns the successor, peer 0's fork and whether
  * it installed the successor, the request result and whether peer 0
  * blacklisted peer 2.
@@ -778,7 +778,7 @@ export async function latestRequestToResponderBehindChainFork(
                     responder,
                     async (sm, args) =>
                         (
-                            await sm.diamondStateMachine.localDiamondContract.getStateSnapshot(
+                            await sm.stateChannelManagerContract.getStateSnapshot(
                                 sm.channelId
                             )
                         ).forkId === args.successor,

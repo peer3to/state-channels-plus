@@ -7,7 +7,6 @@
 - [`REQ-RPC-9-8FFE6S` (Application host root)](../../../../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s)
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
-- [`REQ-MIRROR-2-E9F3TM` (Unconditional replication)](../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
 - [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
@@ -20,14 +19,13 @@
 
 ## UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1
 
-Mirror equivalence
+Local and chain equivalence
 
 - Setup: Evaluate window/proof predicates locally vs on-chain under controlled and drifted local time
 - Oracle: Agreement under controlled context; drift produces detectably non-equivalent results
 
 - [ ] `UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1.P1` — window-predicate agreement
 - [ ] `UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1.P2` — time-drift divergence
-- [ ] `UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1.P3` — replication convergence
 - [ ] `UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1.P4` — proof-predicate agreement
 
 ## UNIT-TEST-EVM-DIAMOND-SM-2-D2B2BG

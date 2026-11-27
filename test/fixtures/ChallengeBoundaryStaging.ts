@@ -43,15 +43,14 @@ export const ANCHORED_TAIL = {
 } as const;
 
 /**
- * Lagging auditor staging (`stageLaggingAuditorBelowChainAnchor`): peer 2's
- * local diamond never applies the snapshot post and it never receives another
- * peer's block or signature after block 1, so its own final point is block 1,
- * its mirror anchor is the genesis, and the chain anchor is block 2 (its own
- * block, whose full state it holds).
+ * Auditor below the chain anchor (`stageAuditorBelowChainAnchor`): peer 2
+ * never receives another peer's block or signature after block 1, so its own
+ * final point is block 1 while the chain anchor is block 2 (its own block,
+ * whose full state it holds).
  */
-export const LAGGING_AUDITOR = {
+export const BELOW_ANCHOR_AUDITOR = {
     anchorHeight: 2,
-    laggingIndex: 2,
+    belowAnchorIndex: 2,
     currentIndices: [0, 1, 3]
 } as const;
 
@@ -87,7 +86,7 @@ function markStaged(h: MathPeerTestHarness): ForkId {
 /**
  * Four peers; blocks 0..2 final on every peer. Publish their snapshot while
  * peer 2 goes offline and blocks 3 and 4 stay unfinalized. Before returning,
- * the chain and every mirror anchor at block 2. Peer 3's own proof is the
+ * the chain anchors at block 2 and every peer has handled the post. Peer 3's own proof is the
  * anchor-holding run [2, 3, 4].
  */
 export async function stageAnchorBeforeUnfinalizedTail(
@@ -173,13 +172,9 @@ export async function stageBlockZeroAnchor(
 /**
  * Three peers. Peer 1 constructs its self-removal dispute at the genesis (an
  * empty proof), then block 0 becomes final on every peer and its resulting
- * snapshot is posted. With `laggingIndex` that peer's mirror never applies
- * the post. The stale construction is returned unsent.
+ * snapshot is posted. The stale construction is returned unsent.
  */
-export async function stageStaleGenesisClaim(
-    h: MathPeerTestHarness,
-    options: { laggingIndex?: number } = {}
-) {
+export async function stageStaleGenesisClaim(h: MathPeerTestHarness) {
     await h.scenario.preDisputeSetup({
         transitionCount: 0,
         timeConfig: { evidenceTime: 12 }
@@ -193,17 +188,8 @@ export async function stageStaleGenesisClaim(
         "the genesis claim has an empty proof"
     ).to.deep.equal([]);
     expect(stale.dispute.postedAuditingData).to.equal(false);
-    const mirror =
-        options.laggingIndex === undefined
-            ? undefined
-            : await h.mirror.holdUpdates(
-                  options.laggingIndex,
-                  "onStateSnapshotUpdated"
-              );
     await h.transition.advanceState({ count: 1 });
-    const anchor = mirror
-        ? await postSnapshotPastLaggingMirror(h)
-        : await h.transition.postSnapshotWait();
+    const anchor = await h.transition.postSnapshotWait();
     if (!anchor) throw new Error("the block-zero snapshot post must land");
     const genesisHash = await h
         .control(h.getPeer(0))
@@ -214,41 +200,17 @@ export async function stageStaleGenesisClaim(
         anchor.hash,
         "block zero's snapshot is not the genesis"
     ).to.not.equal(genesisHash);
-    if (mirror)
-        expect(
-            await mirror.heldCount(),
-            "the lagging mirror must have missed the snapshot post"
-        ).to.be.greaterThan(0);
     return { forkId: markStaged(h), stale, genesisHash };
 }
 
 /**
- * Peer 0 posts the latest finalized snapshot; every peer handles the chain
- * event, also one whose mirror holds snapshot updates.
+ * Four peers. Blocks 0 and 1 are final on every peer. Then peer 2 stops
+ * receiving gossip: it authors block 2, the others sign it (final for them,
+ * not for peer 2), and peer 0 posts its snapshot as the chain anchor.
+ * `tailBlocks` 1 adds block 3 (peer 3), which peer 2 never sees. Returns the
+ * fork and the posted anchor.
  */
-export async function postSnapshotPastLaggingMirror(
-    h: MathPeerTestHarness
-): Promise<StateSnapshot> {
-    const posted = await h.transition.postSameForkSnapshotOnlyWait({
-        peerIndex: 0
-    });
-    if (!posted) throw new Error("the snapshot post must land");
-    await h.event.waitForPeers(
-        "onStateSnapshotUpdated",
-        h.peers.map((peer) => peer.index),
-        1,
-        { mode: "atLeast" }
-    );
-    return posted.snapshot;
-}
-
-/**
- * Four peers. Blocks 0 and 1 are final on every peer. Then peer 2's mirror
- * holds snapshot updates and it stops receiving gossip: it authors block 2,
- * the others sign it (final for them, not for peer 2), and peer 0 posts its
- * snapshot. `tailBlocks` 1 adds block 3 (peer 3), which peer 2 never sees.
- */
-export async function stageLaggingAuditorBelowChainAnchor(
+export async function stageAuditorBelowChainAnchor(
     h: MathPeerTestHarness,
     options: { tailBlocks: 0 | 1 }
 ) {
@@ -259,30 +221,25 @@ export async function stageLaggingAuditorBelowChainAnchor(
     });
     await suppressWriterTimeouts(h, 4);
     await h.transition.advanceState({ count: 2 });
-    const mirror = await h.mirror.holdUpdates(
-        LAGGING_AUDITOR.laggingIndex,
-        "onStateSnapshotUpdated"
+    await h.rpcStub.dropNetworkConfirmations(
+        BELOW_ANCHOR_AUDITOR.belowAnchorIndex
     );
-    await h.rpcStub.dropNetworkConfirmations(LAGGING_AUDITOR.laggingIndex);
     await h.transition.advanceState({
         count: 1,
-        waitForPeers: [...LAGGING_AUDITOR.currentIndices],
+        waitForPeers: [...BELOW_ANCHOR_AUDITOR.currentIndices],
         waitForFinalization: true
     });
-    const anchor = await postSnapshotPastLaggingMirror(h);
+    const anchor = await h.transition.postSnapshotWait();
+    if (!anchor) throw new Error("the snapshot post must land");
     expect(anchor.blockHeight, "the chain anchor must be block 2").to.equal(
-        LAGGING_AUDITOR.anchorHeight
+        BELOW_ANCHOR_AUDITOR.anchorHeight
     );
-    expect(
-        await mirror.heldCount(),
-        "the lagging mirror must have missed the snapshot post"
-    ).to.be.greaterThan(0);
     if (options.tailBlocks === 1)
         await h.transition.advanceState({
             count: 1,
-            waitForPeers: [...LAGGING_AUDITOR.currentIndices]
+            waitForPeers: [...BELOW_ANCHOR_AUDITOR.currentIndices]
         });
-    return { forkId: markStaged(h) };
+    return { forkId: markStaged(h), anchor };
 }
 
 /**

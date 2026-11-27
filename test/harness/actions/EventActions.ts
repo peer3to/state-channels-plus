@@ -77,6 +77,47 @@ export class EventActions<
     }
 
     /**
+     * Wait until every listed peer's event pipeline has processed the chain's
+     * latest StateSnapshotUpdated log: its processed-block watermark reaches
+     * the block of that log.
+     */
+    async waitForSnapshotLogHandled(
+        peerIndices: number[],
+        timeoutMs: number = this.protocolEventTimeoutMs({
+            withFirstBlockGrace: true
+        })
+    ): Promise<void> {
+        const manager = this.harness.channelManager;
+        const logs = await manager.queryFilter(
+            manager.filters.StateSnapshotUpdated(this.harness.channelId)
+        );
+        const latest = logs.at(-1);
+        if (!latest) return;
+        const watermarks: Record<number, number | null> = {};
+        await this.harness.eventCountsBarrier.waitFor(
+            async () => {
+                for (const index of peerIndices) {
+                    watermarks[index] = await this.harness.execOnHost(
+                        this.harness.getPeer(index),
+                        (sm) =>
+                            sm.storage.eventSync.getLatestProcessedBlock(
+                                sm.channelId
+                            ) ?? null
+                    );
+                    if ((watermarks[index] ?? -1) < latest.blockNumber)
+                        return false;
+                }
+                return true;
+            },
+            {
+                timeoutMs,
+                timeoutMessageFn: () =>
+                    `waitForSnapshotLogHandled: peers did not process block ${latest.blockNumber} within ${timeoutMs}ms, watermarks: ${JSON.stringify(watermarks)}`
+            }
+        );
+    }
+
+    /**
      * Wait for specific event counts across multiple peers
      */
     async waitForEventCounts(

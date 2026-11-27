@@ -176,7 +176,7 @@ export function redirectDisputesToChannelWithoutWindow(
  * dispute and audits fail, and the caller settles those errors.
  * The chain snapshot stays on the source fork. The holds stay until
  * `releaseHolds`. Besides the inbound storage it reports whether peer 2
- * blacklisted peer 0, peer 2's fork and its local window's reduced fork.
+ * blacklisted peer 0 and peer 2's fork.
  */
 async function stageAndApplyDisputeWindowInboundSync(
     h: MathPeerTestHarness,
@@ -360,15 +360,13 @@ async function stageAndApplyDisputeWindowInboundSync(
         )
             outcome = await applyPayload(encodedPayload);
         else {
-            await requesterStub
-                .holdSyncWindowPersistence("beforeFetch")
-                .request();
+            await requesterStub.holdSyncWindowFetch().request();
             const pending = applyPayload(encodedPayload);
             try {
                 await waitFor(
                     async () =>
                         (await requesterStub
-                            .getSyncWindowPersistenceEntered()
+                            .getSyncWindowFetchEntered()
                             .request()) === 1
                 );
                 expect(
@@ -378,7 +376,7 @@ async function stageAndApplyDisputeWindowInboundSync(
                     )
                 ).to.equal(true);
             } finally {
-                await requesterStub.releaseSyncWindowPersistence().request();
+                await requesterStub.releaseSyncWindowFetch().request();
                 outcome = await pending;
             }
         }
@@ -430,9 +428,6 @@ async function stageAndApplyDisputeWindowInboundSync(
             .isBlacklisted(responder.address)
             .request(),
         requesterForkId: await requesterControl.query.getForkId().request(),
-        localReducedForkId: await requesterControl.query
-            .getLocalDisputeWindowReducedForkId(sourceForkId)
-            .request(),
         sourceForkId,
         reducedForkId,
         servedInboundHashes,

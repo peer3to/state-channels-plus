@@ -19,9 +19,8 @@ Blind pending-auditor staging persistently disconnects the auditor before the pa
 - `U105: no later final point above the join milestone → the join milestone extends to the latest block, no second milestone at its start`: REQ-SP-8-9ZCCEJ.T2.P5, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P16
 - `U103: block n+1 supplies the finality evidence of n → the proof ends at n+1 and its final point is n`: REQ-SP-8-9ZCCEJ.T2.P6, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P17
 - `U24: a current local diamond → construction starts at its anchor, the chain anchor`: REQ-SP-8-9ZCCEJ.T2.P7, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P18
-- `U24: a local diamond lagging a newer chain anchor → construction starts at the chain's anchor, which the chain walk accepts`: REQ-SP-8-9ZCCEJ.T2.P8, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P19, REQ-MIRROR-6-0WSB4V.T1.P15
 - `U25: a local finalized state ahead of the local diamond anchor → verification starts there, construction still starts at the anchor`: REQ-SP-8-9ZCCEJ.T2.P9, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P20
-- `U93: verifying from local finalized height 3 while the mirror and chain hold anchor 1 → neither moves; construction still starts at anchor 1 and the chain accepts it`: REQ-SP-8-9ZCCEJ.T1.P2, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P21
+- `U93: verifying from local finalized height 3 while the chain holds anchor 1 → neither moves; construction still starts at anchor 1 and the chain accepts it`: REQ-SP-8-9ZCCEJ.T1.P2, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P21
 - `U101: successor fork while the chain anchor is on its ancestor → the empty proof starts at the successor genesis; the chain tier walks from that genesis`: REQ-SP-4-NCSEX4.T3.P1, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P33
 - `U101: successor fork while the chain anchor is on its ancestor → a genesis-linked unfinalized block 0 proof starts at the successor genesis; the chain tier walks from that genesis`: REQ-SP-4-NCSEX4.T3.P2, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P34
 - `U102: the ancestor fork's genesis data supplied for the successor fork → no tier establishes the successor genesis`: REQ-SP-4-NCSEX4.T3.P3, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P35
@@ -43,4 +42,5 @@ Blind pending-auditor staging persistently disconnects the auditor before the pa
 - `TO1: exact exit finality retains the old and new union and needs its sole later confirmation`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P63
 - `TO1: an exact join point above the frozen view keeps later audit votes without advancing the view`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P64
 - `TO1: an exact point after an earlier join builds both overlapping hops above the frozen view`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P65
-- `U24: chain reads proven (light client) and the local diamond lagging a newer chain anchor → construction starts at the chain's anchor, which the chain walk accepts`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P67, REQ-SP-8-9ZCCEJ.T2.P19, REQ-MIRROR-6-0WSB4V.T3.P8
+- `U24: a builder whose own finalized state is below a newer chain anchor → construction starts at the chain's anchor, which the chain walk accepts`: REQ-SP-8-9ZCCEJ.T2.P8, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P19
+- `U24: chain reads proven (light client) and the builder's own finalized state below a newer chain anchor → construction starts at the chain's anchor, which the chain walk accepts`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P67, REQ-SP-8-9ZCCEJ.T2.P19, REQ-MIRROR-6-0WSB4V.T3.P8

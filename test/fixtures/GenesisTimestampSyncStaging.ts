@@ -361,7 +361,7 @@ export async function applyGenesisCaseWindowSyncPayload(
             maliciousPeerIndex: "nextWriter",
             ...(options.clockAhead
                 ? {
-                      // an inline VM reads the clock per call -> the offset reaches the local mirror
+                      // an inline VM reads the clock per call -> the offset reaches the local EVM
                       configOverrides: {
                           RUN_SDK_IN_THREAD: true,
                           VM_DEDICATED_THREAD: false

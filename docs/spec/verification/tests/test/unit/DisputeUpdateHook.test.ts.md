@@ -6,10 +6,10 @@ Exercises: [P2pEventHooksUtils.ts](../../../../implementation/source/src/utils/P
 ## Overview
 
 Both cases open a four-peer channel, let the next writer author an invalid state transition and wait
-until the honest peers' disputes are committed and resolved. One honest peer's mirror and chain
+until the honest peers' disputes are committed and resolved. One honest peer's local and chain
 `getWindowCommitments` reads are recorded (record-only; every read still reaches the real contract).
 
-The first case requires no mirror read, at least one chain read, no failed read, and exactly one
+The first case requires no local read, at least one chain read, no failed read, and exactly one
 `onDisputeUpdate` notification per `DisputeCommitted` event the peer handled. The second (which carries the permutation, as it shows both the chain read and the skip) makes the
 peer's first chain read fail (an ABI-cut revert): exactly one read fails, that update notification is
 skipped (one fewer notification than committed disputes), and the event pipeline has no failed block

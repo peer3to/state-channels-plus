@@ -45,7 +45,6 @@ Blind pending-auditor staging persistently disconnects the auditor before the pa
 - `stateProof.milestones = [] -> stored genesis snapshot + forkId == snapshotDataHash, true`: none
 - `one genesis-linked run from block 0 (partial-signature fork) -> true`: none
 - `dispute.input.forkId = random on an empty stateProof -> no stored genesis, the audit throws`: none
-- `localDiamond.isDisputeInboundHashValid false + RPC true -> no DisputeInboundHashNotInChain`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P29
 - `milestones[-1].blockConfirmations[-1] = forged head committing a forged snapshot -> false + DisputeInvalidBlockInStateProofApplyFraudProof`: none
 - `onBlockConfirmationStruct false with an empty disputeFraudProofs store -> throw`: none
 - `dispute.outputSnapshotDataHash = random -> false + DisputeInvalidOutputState`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P32

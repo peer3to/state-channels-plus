@@ -5,7 +5,7 @@ Exercises: [localDiamond.ts](../../../../implementation/source/src/utils/localDi
 
 ## Overview
 
-Six pure cases over the client binding for the local mirror — no chain, no harness session, no
+Six pure cases over the client binding for the local diamond — no chain, no harness session, no
 deployment. They use the two real generated ABIs (`LocalDiamond__factory.abi` and
 `StateChannelManagerInterface__factory.abi`) and the module's own exports, so a change to either
 Solidity surface flows into the assertions through typechain.
@@ -18,14 +18,14 @@ signature-identical fragments survives, which is not observable.
 The third case proves every generated manager error appears exactly once. The next two are the
 reason the merge exists: a selector the proxy routes to a facet
 (`getStateSnapshot`, absent from `LocalDiamond`'s own ABI) and a selector only `LocalDiamond`
-declares (`getTotalDeposits`) both encode through the binding, byte-identical to the encoding
+declares (`hasDisputeReason`) both encode through the binding, byte-identical to the encoding
 produced by their own generated interface. The last case pins the read-only construction path: a
 `null` runner yields a binding whose `target` is the given address and whose `runner` is `null`.
 
-Scope limit: nothing here calls the mirror. The address is a placeholder, so the suite proves the
-ABI the binding carries, not that the deployed mirror answers it — that half is
-`test/V1/UniversalDeployment.test.ts`, which drives real routed and `LocalDiamond`-only calls
-through `connectLocalDiamond` against a deployed mirror.
+Scope limit: nothing here calls the local diamond. The address is a placeholder, so the suite proves
+the ABI the binding carries, not that the deployed contract answers it — that half is
+`test/V1/UniversalDeployment.test.ts`, which reads a `LocalDiamond`-only call through
+`connectLocalDiamond` against a deployed local diamond.
 
 ## Tests
 

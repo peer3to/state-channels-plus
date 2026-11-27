@@ -8,6 +8,10 @@ import { DisputeFraudProofType } from "@/types/sol-enums";
 import type { Address, ForkId, Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import { buildAndEncodeBlock } from "@test/factory";
+import {
+    BELOW_ANCHOR_AUDITOR,
+    stageAuditorBelowChainAnchor
+} from "@test/fixtures/ChallengeBoundaryStaging";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type {
     RecordedBestEffortEstimate,
@@ -18,7 +22,6 @@ import type {
 import { readTrackedJoin } from "@test/fixtures/ForceJoinCountingStaging";
 import { stageOutboundAroundAnchor } from "@test/fixtures/HistoricSyncStaging";
 import { syncSpectatorOnServedPayload } from "@test/fixtures/MilestoneSyncStaging";
-import { stageMirrorMissingConsumedTopUp } from "@test/fixtures/MirrorDivergenceStaging";
 import {
     addFreshSpectator,
     readLocalFinalizedHeight,
@@ -58,66 +61,16 @@ export async function localFinalizedHeight(
     return readLocalFinalizedHeight(h, peerIndex, h.activeForkId!);
 }
 
-/** Whether `peerIndex`'s local diamond holds a same-fork non-genesis anchor. */
-export async function hasLocalAnchor(
-    h: MathPeerTestHarness,
-    peerIndex: number
-): Promise<boolean> {
-    return await h.execOnHost(
-        h.getPeer(peerIndex),
-        async (sm, args) => {
-            const { canUseOnChainSnapshot } =
-                await sm.diamondStateMachine.localDiamondContract.getAnchorSnapshot.staticCall(
-                    sm.channelId,
-                    args.forkId
-                );
-            return canUseOnChainSnapshot;
-        },
-        { forkId: h.activeForkId! }
-    );
-}
-
 /**
- * Peer 0 posts a snapshot of its latest finalized state while every peer in
- * `laggingIndices` holds its StateSnapshotUpdated events: their local
- * diamonds keep the older anchor while the chain and the other mirrors move.
- * Returns the posted snapshot.
+ * Peer 0 posts a snapshot of its latest finalized state and every honest
+ * peer's event handler sees the post. Returns the posted snapshot.
  */
-export async function postSnapshotPastLaggingMirrors(
-    h: MathPeerTestHarness,
-    laggingIndices: number[]
+export async function postSnapshotWaitingForPeers(
+    h: MathPeerTestHarness
 ): Promise<StateSnapshot> {
-    for (const index of laggingIndices)
-        await h
-            .control(h.getPeer(index))
-            .stub.stubHoldSnapshotUpdatedEvents()
-            .request();
-    const posted = await h.transition.postSnapshot({ peerIndex: 0 });
+    const posted = await h.transition.postSnapshotWait({ peerIndex: 0 });
     if (!posted) throw new Error("No newer finalized snapshot to post");
-    const current = h.peers.filter(
-        (peer) => !laggingIndices.includes(peer.index)
-    );
-    const timeoutMs = h.event.protocolEventTimeoutMs({
-        withFirstBlockGrace: true
-    });
-    await h.eventCountsBarrier.waitFor(
-        async () =>
-            (await h.query.getOnChainSnapshotHash()) === posted.hash &&
-            (
-                await Promise.all(
-                    current.map((peer) => h.query.getLocalStateSnapshot(peer))
-                )
-            ).every((snapshot) => snapshot.hash === posted.hash),
-        {
-            timeoutMs,
-            timeoutMessage: `the chain and the current mirrors did not reach snapshot ${posted.hash} within ${timeoutMs}ms`
-        }
-    );
-    for (const index of laggingIndices)
-        expect(
-            await hasLocalAnchor(h, index),
-            `peer ${index}'s mirror must keep the genesis anchor`
-        ).to.equal(false);
+    expect(await h.query.getOnChainSnapshotHash()).to.equal(posted.hash);
     return posted;
 }
 
@@ -178,63 +131,6 @@ export async function craftInvalidLinkedBlock(
         previousBlockHash: options.previousBlockHash
     });
     return Codec.decode(encoded, Type.BlockConfirmation);
-}
-
-/**
- * Peer 0's blocks `fromHeight`..`toHeight` as one linked run, with the block
- * at `invalidHeight` (>= 1) replaced by {@link craftInvalidLinkedBlock} and
- * every later block relinked onto it: the run's later blocks keep their
- * committed snapshots, so its last block still commits the real state.
- */
-export async function runWithInvalidBlock(
-    h: MathPeerTestHarness,
-    options: { fromHeight: number; invalidHeight: number; toHeight: number }
-): Promise<BlockConfirmationStruct[]> {
-    const run: BlockConfirmationStruct[] = [];
-    for (
-        let height = options.fromHeight;
-        height < options.invalidHeight;
-        height++
-    )
-        run.push(await blockConfirmationAt(h, 0, height));
-    const previous = Block.fromBlockConfirmation(
-        await blockConfirmationAt(h, 0, options.invalidHeight - 1)
-    );
-    const replaced = Block.fromBlockConfirmation(
-        await blockConfirmationAt(h, 0, options.invalidHeight)
-    );
-    let last = await craftInvalidLinkedBlock(h, {
-        height: options.invalidHeight,
-        previousBlockHash: previous.hash,
-        notAuthor: replaced.author
-    });
-    run.push(last);
-    for (
-        let height = options.invalidHeight + 1;
-        height <= options.toHeight;
-        height++
-    ) {
-        last = await relinkBlock(
-            h,
-            await blockConfirmationAt(h, 0, height),
-            Block.fromBlockConfirmation(last).hash
-        );
-        run.push(last);
-    }
-    return run;
-}
-
-/** An invalid block linked after the last block of `run`. */
-export async function craftInvalidBlockAfter(
-    h: MathPeerTestHarness,
-    run: BlockConfirmationStruct[]
-): Promise<BlockConfirmationStruct> {
-    const last = Block.fromBlockConfirmation(run.at(-1)!);
-    return await craftInvalidLinkedBlock(h, {
-        height: last.height + 1,
-        previousBlockHash: last.hash,
-        notAuthor: last.author
-    });
 }
 
 /**
@@ -327,14 +223,13 @@ export async function unsignedOwnMilestonesThrough(
 
 /**
  * Three peers with four final blocks. Peer 0 posts the latest one as the
- * on-chain anchor while peer 2 holds its StateSnapshotUpdated events, so
- * peer 1's mirror is current and peer 2's lags at the genesis.
+ * on-chain anchor.
  */
-export async function stageAnchorBehindLaggingMirror(h: MathPeerTestHarness) {
+export async function stageAnchorAtLatestBlock(h: MathPeerTestHarness) {
     await h.lifecycle.start(3, 3);
     await h.transition.advanceState({ count: 1, waitForFinalization: true });
     await h.assert.sync.peersInSyncWait();
-    const anchor = await postSnapshotPastLaggingMirrors(h, [2]);
+    const anchor = await postSnapshotWaitingForPeers(h);
     const latestHeight = await h
         .control(h.getPeer(0))
         .query.getLatestBlockHeight(h.activeForkId!)
@@ -342,11 +237,7 @@ export async function stageAnchorBehindLaggingMirror(h: MathPeerTestHarness) {
     expect(anchor.blockHeight, "the anchor is the latest block").to.equal(
         latestHeight
     );
-    return {
-        anchorHeight: anchor.blockHeight,
-        currentIndex: 1,
-        laggingIndex: 2
-    };
+    return { anchorHeight: anchor.blockHeight };
 }
 
 /**
@@ -1223,7 +1114,7 @@ export async function stageColludersForkAfterAnchor(h: MathPeerTestHarness) {
     await h.lifecycle.start(3, 3);
     await h.transition.advanceState({ count: 1, waitForFinalization: true });
     await h.assert.sync.peersInSyncWait();
-    const anchor = await postSnapshotPastLaggingMirrors(h, []);
+    const anchor = await postSnapshotWaitingForPeers(h);
     const forkId = h.activeForkId!;
     for (const index of [0, 1, 2]) {
         await h.rpcStub.suppressTimeoutCheck(index);
@@ -1783,23 +1674,6 @@ export async function stagePendingJoinerMissingHopBase(h: MathPeerTestHarness) {
 }
 
 /**
- * {@link stageMirrorMissingConsumedTopUp} (three peers, peer 1's mirror
- * misses the consumed top-up) and then peer 0 posts its latest final block
- * as the chain anchor while peer 1 also holds that snapshot event. Peer 1
- * proves no local final point and its mirror walks from the genesis; peer 2
- * mirrors the anchor.
- */
-export async function stageLaggingAuditorBelowAnchor(h: MathPeerTestHarness) {
-    await stageMirrorMissingConsumedTopUp(h, 1);
-    const anchor = await postSnapshotPastLaggingMirrors(h, [1]);
-    expect(
-        await localFinalizedHeight(h, 1),
-        "the lagging auditor proves no local final point"
-    ).to.equal(null);
-    return { anchor, currentIndex: 2, laggingIndex: 1 };
-}
-
-/**
  * Three participants. A spectator (Charlie) syncs and stops receiving block
  * gossip. The participants then finalize two blocks, post the chain anchor A
  * at the latest and author block A + 1, none of which Charlie holds; Charlie
@@ -2217,4 +2091,77 @@ export async function expectTimeoutOfCalldataPostedBlockKilled(
     await h.assert.dispute.slashedOnChainExactly([
         h.getPeer(staged.disputerIndex).address
     ]);
+}
+
+/** An invalid block linked after the last block of `run`. */
+export async function craftInvalidBlockAfter(
+    h: MathPeerTestHarness,
+    run: BlockConfirmationStruct[]
+): Promise<BlockConfirmationStruct> {
+    const last = Block.fromBlockConfirmation(run.at(-1)!);
+    return await craftInvalidLinkedBlock(h, {
+        height: last.height + 1,
+        previousBlockHash: last.hash,
+        notAuthor: last.author
+    });
+}
+
+/**
+ * Peer 0's blocks `fromHeight`..`toHeight` as one linked run, with the block
+ * at `invalidHeight` (>= 1) replaced by {@link craftInvalidLinkedBlock} and
+ * every later block relinked onto it: the run's later blocks keep their
+ * committed snapshots, so its last block still commits the real state.
+ */
+export async function runWithInvalidBlock(
+    h: MathPeerTestHarness,
+    options: { fromHeight: number; invalidHeight: number; toHeight: number }
+): Promise<BlockConfirmationStruct[]> {
+    const run: BlockConfirmationStruct[] = [];
+    for (
+        let height = options.fromHeight;
+        height < options.invalidHeight;
+        height++
+    )
+        run.push(await blockConfirmationAt(h, 0, height));
+    const previous = Block.fromBlockConfirmation(
+        await blockConfirmationAt(h, 0, options.invalidHeight - 1)
+    );
+    const replaced = Block.fromBlockConfirmation(
+        await blockConfirmationAt(h, 0, options.invalidHeight)
+    );
+    let last = await craftInvalidLinkedBlock(h, {
+        height: options.invalidHeight,
+        previousBlockHash: previous.hash,
+        notAuthor: replaced.author
+    });
+    run.push(last);
+    for (
+        let height = options.invalidHeight + 1;
+        height <= options.toHeight;
+        height++
+    ) {
+        last = await relinkBlock(
+            h,
+            await blockConfirmationAt(h, 0, height),
+            Block.fromBlockConfirmation(last).hash
+        );
+        run.push(last);
+    }
+    return run;
+}
+
+/**
+ * {@link stageAuditorBelowChainAnchor} (four peers; peer 2 is cut off at block
+ * 1 while the chain anchor is block 2). Peer 2's own finalized state is below
+ * the chain anchor, so it audits on the chain tier; peer 1 walks from its own
+ * finalized state at the anchor.
+ */
+export async function stageAuditorBelowAnchor(h: MathPeerTestHarness) {
+    const { anchor } = await stageAuditorBelowChainAnchor(h, { tailBlocks: 0 });
+    const belowAnchorIndex = BELOW_ANCHOR_AUDITOR.belowAnchorIndex;
+    expect(
+        (await localFinalizedHeight(h, belowAnchorIndex)) ?? -1,
+        "the cut-off auditor's own final point is below the chain anchor"
+    ).to.be.lessThan(anchor.blockHeight);
+    return { anchor, currentIndex: 1, belowAnchorIndex };
 }

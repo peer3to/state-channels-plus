@@ -1752,22 +1752,18 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.getMembershipEndChecks();
     }
 
-    /** Hold a sync's chain-window step before its fetch or after its persist. */
-    public holdSyncWindowPersistence(
-        at: "beforeFetch" | "afterPersist"
-    ): boolean {
-        if (at !== "beforeFetch" && at !== "afterPersist")
-            throw new Error("Invalid sync window hold point");
-        this.service.holdSyncWindowPersistence(at);
+    /** Hold a sync's chain-window fetch, after its finality read. */
+    public holdSyncWindowFetch(): boolean {
+        this.service.holdSyncWindowFetch();
         return true;
     }
 
-    public getSyncWindowPersistenceEntered(): number {
-        return this.service.getSyncWindowPersistenceEntered();
+    public getSyncWindowFetchEntered(): number {
+        return this.service.getSyncWindowFetchEntered();
     }
 
-    public releaseSyncWindowPersistence(): boolean {
-        this.service.releaseSyncWindowPersistence();
+    public releaseSyncWindowFetch(): boolean {
+        this.service.releaseSyncWindowFetch();
         return true;
     }
 
@@ -2268,24 +2264,6 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             sm.abort();
             if (repeat) sm.abort();
         }, 0);
-        return true;
-    }
-
-    /**
-     * Stop applying processed inbound messages to the local diamond -> its
-     * in-memory EVM falls behind the RPC node while storage stays whole.
-     */
-    public stubLocalDiamondInboundMessages(): boolean {
-        const localDiamond =
-            this.service.sm.diamondStateMachine.localDiamondContract;
-        if (!this.service.stubOriginals.has("localDiamondInboundMessages")) {
-            this.service.stubOriginals.set(
-                "localDiamondInboundMessages",
-                localDiamond.onInboundMessagesProcessed
-            );
-        }
-        localDiamond.onInboundMessagesProcessed = (async () =>
-            undefined) as unknown as typeof localDiamond.onInboundMessagesProcessed;
         return true;
     }
 
@@ -3451,6 +3429,26 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     public stubFailDisputeCommittedHandler(): boolean {
         this.service.failDisputeCommittedHandler();
         return true;
+    }
+
+    /** Make onInboundMessagesProcessed throw for every dispatched inbound log. */
+    public stubFailInboundMessagesProcessedHandler(): boolean {
+        this.service.failInboundMessagesProcessedHandler();
+        return true;
+    }
+
+    /** Make onChainSlashed and onDisputeKilled throw for every dispatched slash or kill log. */
+    public stubFailSlashHandlers(): boolean {
+        this.service.failSlashHandlers();
+        return true;
+    }
+
+    public restoreSlashHandlers(): boolean {
+        return this.service.restoreSlashHandlers();
+    }
+
+    public restoreInboundMessagesProcessedHandler(): boolean {
+        return this.service.restoreInboundMessagesProcessedHandler();
     }
 
     public restoreDisputeCommittedHandler(): boolean {

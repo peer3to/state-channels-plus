@@ -21,18 +21,20 @@ release the other), then moves to the top-up's block. A third holds a channel th
 watermark yet at the current chain head, opens the channel, checks the watermark is still unset
 while held, and that the release publishes the opening block.
 
-Four dispute-window cases run the real synchronized window load on an observer. Three stage a
+Three dispute-window cases run the real synchronized window load on an observer. Two stage a
 final dispute whose streamed log reaches the observer while its handling is held until the
 recovery's log query has answered, so the recovery finds that handling in flight. When the held
 handling succeeds, the load resolves with the window and the dispute is stored. When the
 handling stores the dispute and then fails its final-dispute preparation, the load still resolves
-with the window. When the local diamond's write, the handling's first step, reverts, the load
-rejects with that revert, a second load rejects the same way and the dispute stays missing. The
-fourth loses the observer's streamed dispute logs and makes its dispute handler throw, so the
+with the window. The third loses the observer's streamed dispute logs and makes its dispute handler throw, so the
 logs the recovery dispatches itself fail and the load rejects with that failure.
 
-One inbound-run case loses a top-up's live inbound log and reverts the local diamond's next inbound
-application once. The recovery rejects with the local EVM revert after its first query.
+One inbound-run case loses a top-up's live inbound log and makes the peer's inbound handler throw.
+The recovery rejects with that failure after its first query.
+
+One slash recovery case loses a kill's slash logs on the target while another peer kills
+a spam dispute: the recovery dispatches the slash once (the node's handled slashes then hold it), the
+chain keeps the kill timestamp, and a repeated recovery finds the slash handled and reports no change.
 
 Two inbound-run cases lose live inbound logs and run the real synchronized load. One loses a
 single top-up's log after the peer already holds the run below it; the load queries the chain and
@@ -51,7 +53,6 @@ listener is left behind.
 
 - `authoritative slash recovery returns no change for an empty chain set`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P34, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P5
 - `authoritative slash recovery exposes a failed source read`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P35, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P6, REQ-CHAINOBS-3-N137ZP.T1.P33
-- `authoritative slash recovery preserves the kill timestamp and deduplicates a repeated query`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P36, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P7, REQ-DISPUTE-PIPE-9-TDWQPV.T1.P42, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P27, REQ-DISPUTE-PIPE-9-TDWQPV.T1.P43
 - `authoritative slash recovery rejects a missing chain head`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P8
 - `authoritative slash recovery rejects exhausted chain log queries`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P9
 - `joins concurrent calldata recovery onto one chain query`: none
@@ -61,13 +62,11 @@ listener is left behind.
 - `only the inbound log we do not hold is dispatched`: none
 - `the widening span stays inside the watermark and the chain`: none
 - `gap survives recovery → undefined, no throw`: none
-- `local diamond failure applying a recovered log → recovery rejects with it`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P20, REQ-CHAINOBS-3-N137ZP.T1.P23
 - `missed calldata log → recovered by query, validation scheduled`: none
 - `dispute recovery defeated → the window is reported unreadable, not thrown`: none
 - `in-flight dispute log succeeds → recovery awaits it and resolves with its dispute stored`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P21
 - `in-flight dispute log stores its dispute, then fails → recovery resolves with the window`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P22
-- `in-flight dispute log fails before storing its dispute → recovery rejects with that failure, also on a second call`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P23
-- `dispute log recovery dispatches itself fails → recovery rejects with that failure`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P24
+- `dispute log recovery dispatches itself fails → recovery rejects with that failure`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P24, REQ-CHAINOBS-3-N137ZP.T1.P23
 - `the subscription filter is unchanged by the shared topic builder`: none
 - `dispatches a log a second stream delivers again only once`: UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P1, INV-CHAINOBS-1-ASVKC1.T1.P1
 - `dispatches a log re-mined in another block after a reorg as a new event`: UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P2, INV-CHAINOBS-1-ASVKC1.T1.P2
@@ -87,3 +86,5 @@ listener is left behind.
 - `keeps the watermark at its block while a later block completes, and publishes that block on release`: UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P7
 - `a repeated release does not release another hold`: UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P8
 - `holds at the given start block before any block completed, and publishes the channel's first block on release`: UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P9
+- `authoritative slash recovery preserves the kill timestamp and deduplicates a repeated query`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P36, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P7, REQ-DISPUTE-PIPE-9-TDWQPV.T1.P42, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P27, REQ-DISPUTE-PIPE-9-TDWQPV.T1.P43
+- `handler failure applying a recovered log → recovery rejects with it`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P20, REQ-CHAINOBS-3-N137ZP.T1.P23

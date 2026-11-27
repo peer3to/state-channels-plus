@@ -458,13 +458,10 @@ export async function observeDisputeRequests(
 /**
  * A pending joiner's force-join deadline runs after a dispute window whose
  * evidence time has expired: the check retains the join and submits no
- * dispute. With `chainReadsProven` the joiner's chain reads count as proven
- * and its local diamond never applies the dispute, so only the chain knows
- * the window; the window's creation time is then read from the chain alone.
+ * dispute.
  */
 export async function assertForceJoinDeadlineSeesExpiredWindow(
-    h: MathPeerTestHarness,
-    options: { chainReadsProven: boolean }
+    h: MathPeerTestHarness
 ): Promise<void> {
     const prepared = await h.scenario.syncSpectatorAndPrepareJoin();
     const joiner = h.getPeer(prepared.joiner.index);
@@ -477,11 +474,6 @@ export async function assertForceJoinDeadlineSeesExpiredWindow(
     await h.dispute.suppressDisputeInitiation(
         h.peers.map((peer) => peer.index)
     );
-    const mirror = options.chainReadsProven
-        ? await h.mirror.holdUpdates(joiner.index, "onDisputeCommitted")
-        : undefined;
-    if (options.chainReadsProven)
-        await h.control(joiner).stub.stubProvenChainReads().request();
     let released = false;
     try {
         expect(
@@ -513,48 +505,22 @@ export async function assertForceJoinDeadlineSeesExpiredWindow(
         await h.event.waitUntilTimestamp(
             created + bounds.timeConfig.evidenceTime + 1
         );
-        const localWindow = () =>
-            h.execOnHost(
-                joiner,
-                async (sm, args) =>
-                    Number(
-                        await sm.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
-                            sm.channelId,
-                            args.forkId
-                        )
-                    ),
-                { forkId: prepared.expectedForkId }
-            );
-        if (options.chainReadsProven)
-            expect(
-                await localWindow(),
-                "the held mirror lacks the window"
-            ).to.equal(0);
-        else await waitFor(async () => (await localWindow()) === created);
-        const reads = options.chainReadsProven
-            ? await h.mirror.observe(
-                  joiner.index,
-                  "getDisputeWindowCreationTimestamp"
-              )
-            : undefined;
+        // the joiner's dispute handler has seen the window
+        await h.event.waitForEventCounts(
+            "onDisputeCommitted",
+            [{ peerId: joiner.index, expectedCount: 1 }],
+            undefined,
+            { mode: "atLeast" }
+        );
         released = true;
         await deadline.release(true);
         await waitForJoinChecks(h, joiner);
-        if (reads) {
-            const { local, chain } = await reads.observation();
-            await reads.restore();
-            expect(local.reads).to.equal(0);
-            expect(chain.reads).to.be.greaterThan(0);
-        }
         expect(await recorder.submissions()).to.deep.equal([]);
         const after = await readForceJoinBounds(h, joiner);
         expect(after.submissionHeight).to.equal(bounds.submissionHeight);
         expect(after.disputeStarted).to.equal(false);
     } finally {
         if (!released) await deadline.release(false);
-        if (options.chainReadsProven)
-            await h.control(joiner).stub.restoreProvenChainReads().request();
-        await mirror?.release();
         await recorder.restore();
     }
 }

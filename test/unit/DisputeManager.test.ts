@@ -212,7 +212,7 @@ describe("Unit: DisputeManager", function () {
                 h.getPeer(honestPeerIndices[0]!),
                 async (sm, args) => {
                     const onChain =
-                        await sm.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
+                        await sm.stateChannelManagerContract.getOnChainSlashedParticipants(
                             sm.channelId
                         );
                     const { dispute } =
@@ -1735,7 +1735,7 @@ describe("Unit: DisputeManager", function () {
                 await waitFor(
                     async () =>
                         !(
-                            await h.query.getLocalStateSnapshot(leaver)
+                            await h.query.getOnChainStateSnapshot()
                         ).snapshotData.participants.includes(leaver.address),
                     h.event.protocolEventTimeoutMs()
                 );

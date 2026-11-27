@@ -442,9 +442,7 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-9-rnxp56.t1.p1"></a>`REQ-SP-9-RNXP56.T1.P1` — Audit with no local final state walks the proof from the chain's anchor and accepts.
 
-<a id="req-sp-9-rnxp56.t1.p2"></a>`REQ-SP-9-RNXP56.T1.P2` — Audit with missing mirrored consumed inbound evidence accepts the canonical chain proof without a counter.
-
-<a id="req-sp-9-rnxp56.t1.p3"></a>`REQ-SP-9-RNXP56.T1.P3` — Audit by a participant whose mirror holds no same-fork anchor walks the proof from the chain's anchor and accepts.
+<a id="req-sp-9-rnxp56.t1.p3"></a>`REQ-SP-9-RNXP56.T1.P3` — Audit by a participant whose own finalized state does not accept the proof walks it from the chain's anchor and accepts.
 
 <a id="req-sp-9-rnxp56.t1.p6"></a>`REQ-SP-9-RNXP56.T1.P6` — Malformed retained tail with posted auditing data produces an invalid-proof counter without crashing.
 
@@ -760,7 +758,7 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-8-9zccej.t2.p7"></a>`REQ-SP-8-9ZCCEJ.T2.P7` — A current local diamond and the chain hold the same anchor: construction starts at that anchor, retains only later final hops and verifies from the chain anchor.
 
-<a id="req-sp-8-9zccej.t2.p8"></a>`REQ-SP-8-9ZCCEJ.T2.P8` — A local diamond lagging a newer chain anchor: construction starts at the chain's anchor and the chain walk accepts the proof.
+<a id="req-sp-8-9zccej.t2.p8"></a>`REQ-SP-8-9ZCCEJ.T2.P8` — A builder whose own finalized state is below a newer chain anchor: construction starts at the chain's anchor and the chain walk accepts the proof.
 
 <a id="req-sp-8-9zccej.t2.p9"></a>`REQ-SP-8-9ZCCEJ.T2.P9` — A private finalized point above the anchor supplies the verification start while construction remains rooted at the chain's anchor.
 
@@ -782,7 +780,7 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-8-9zccej.t2.p18"></a>`REQ-SP-8-9ZCCEJ.T2.P18` — A canonical chain walk connection failure during snapshot posting propagates and leaves the chain snapshot unchanged.
 
-<a id="req-sp-8-9zccej.t2.p19"></a>`REQ-SP-8-9ZCCEJ.T2.P19` — With the light client stubbed in, construction starts at the chain's anchor whether or not the mirror lags it.
+<a id="req-sp-8-9zccej.t2.p19"></a>`REQ-SP-8-9ZCCEJ.T2.P19` — With the light client stubbed in, construction starts at the chain's anchor whether or not the builder's own finalized state is below it.
 
 <a id="req-sp-8-9zccej.t2.p20"></a>`REQ-SP-8-9ZCCEJ.T2.P20` — Construction checks the built proof with one walk from its start on the chain; the chain accepts it though the mirror lacks a consumed inbound block, and no second walk runs.
 
@@ -858,7 +856,7 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-9-rnxp56.t3.p3"></a>`REQ-SP-9-RNXP56.T3.P3` — A proof conflicting at private final height returns false there but is accepted from the chain's anchor.
 
-<a id="req-sp-9-rnxp56.t3.p4"></a>`REQ-SP-9-RNXP56.T3.P4` — A mirror holding no same-fork anchor is not walked: the chain's anchor establishes the same proof.
+<a id="req-sp-9-rnxp56.t3.p4"></a>`REQ-SP-9-RNXP56.T3.P4` — A requester with no finalized state that accepts the proof walks it from the chain's anchor, which establishes the same proof.
 
 <a id="req-sp-9-rnxp56.t3.p6"></a>`REQ-SP-9-RNXP56.T3.P6` — An unlinked block causes the private-final and chain tiers to return false; shared verification returns the chain invalid verdict without throwing.
 
@@ -872,13 +870,9 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-9-rnxp56.t3.p12"></a>`REQ-SP-9-RNXP56.T3.P12` — A fresh requester skips absent private finality, accepts the chain proof walk and does not read the mirror.
 
-<a id="req-sp-9-rnxp56.t3.p13"></a>`REQ-SP-9-RNXP56.T3.P13` — A fresh requester whose mirror missed a consumed top-up accepts canonical proof verification, with no penalty.
-
 <a id="req-sp-9-rnxp56.t3.p14"></a>`REQ-SP-9-RNXP56.T3.P14` — A conflicting proof fails the private-final walk but passes the chain walk; subsequent block replay rejects sync and blacklists the responder.
 
-<a id="req-sp-9-rnxp56.t3.p15"></a>`REQ-SP-9-RNXP56.T3.P15` — A requester whose mirror lacks the newer anchor accepts sync through chain-anchor verification.
-
-<a id="req-sp-9-rnxp56.t3.p16"></a>`REQ-SP-9-RNXP56.T3.P16` — A requester whose mirror has the anchor but lacks later consumed inbound evidence accepts chain-anchor verification without penalty.
+<a id="req-sp-9-rnxp56.t3.p15"></a>`REQ-SP-9-RNXP56.T3.P15` — A requester whose own finalized state is below a newer chain anchor accepts sync through chain-anchor verification.
 
 <a id="req-sp-9-rnxp56.t3.p17"></a>`REQ-SP-9-RNXP56.T3.P17` — Undecodable retained last-block bytes return false at both proof tiers; sync rejects as invalid milestones and blacklists the responder without throwing.
 
@@ -992,7 +986,7 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 **Required permutations:**
 
-<a id="req-sp-8-9zccej.t3.p1"></a>`REQ-SP-8-9ZCCEJ.T3.P1` — With its mirror held behind the chain anchor, a builder produces the same proof as a current builder, starting at the chain's anchor and accepted by chain verification and real spectator sync.
+<a id="req-sp-8-9zccej.t3.p1"></a>`REQ-SP-8-9ZCCEJ.T3.P1` — A builder whose own finalized state is below the chain anchor produces the same proof as a current builder, starting at the chain's anchor and accepted by chain verification and real spectator sync.
 
 <a id="req-sp-8-9zccej.t3.p2"></a>`REQ-SP-8-9ZCCEJ.T3.P2` — Before successor adoption a participant and a fresh synced spectator build chain-valid proofs from successor genesis while the chain snapshot stays on the source fork; after adoption and progress the spectator rebuilds from the successor anchor.
 
@@ -1232,15 +1226,15 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-9-rnxp56.t6.p10"></a>`REQ-SP-9-RNXP56.T6.P10` — When a pending signer makes omission impermissible, auditors accept the posted-data dispute; a direct copy marked unposted instead returns the availability counter, while normal resolution slashes the original block offender.
 
-<a id="req-sp-9-rnxp56.t6.p11"></a>`REQ-SP-9-RNXP56.T6.P11` — A lagging-mirror auditor reaches the chain proof tier, stores the same after-anchor transition-counter index one as a current auditor, and the dispute is killed with only submitter slashed.
+<a id="req-sp-9-rnxp56.t6.p11"></a>`REQ-SP-9-RNXP56.T6.P11` — An auditor whose own finalized state does not accept the proof reaches the chain proof tier, stores the same after-anchor transition-counter index one as an auditor walking from its own finalized state, and the dispute is killed with only submitter slashed.
 
-<a id="req-sp-9-rnxp56.t6.p12"></a>`REQ-SP-9-RNXP56.T6.P12` — With chain anchor at index two inside the last run, lagging and current auditors both store the tail transition counter at original index three; a kill lands and only submitter is slashed.
+<a id="req-sp-9-rnxp56.t6.p12"></a>`REQ-SP-9-RNXP56.T6.P12` — With chain anchor at index two inside the last run, an auditor on the chain tier and one on its own finalized state both store the tail transition counter at original index three; a kill lands and only submitter is slashed.
 
-<a id="req-sp-9-rnxp56.t6.p13"></a>`REQ-SP-9-RNXP56.T6.P13` — For a nonauthentic block immediately after an interior anchor, the lagging auditor stores the structure counter at original index three, the dispute is killed and only submitter is slashed.
+<a id="req-sp-9-rnxp56.t6.p13"></a>`REQ-SP-9-RNXP56.T6.P13` — For a nonauthentic block immediately after an interior anchor, an auditor on the chain tier stores the structure counter at original index three, the dispute is killed and only submitter is slashed.
 
 <a id="req-sp-9-rnxp56.t6.p14"></a>`REQ-SP-9-RNXP56.T6.P14` — A forged below-chain-anchor block followed by an honest retained tail reaches the chain tier; through kill expiry auditors store no counters, observe no kill and nobody is slashed.
 
-<a id="req-sp-9-rnxp56.t6.p15"></a>`REQ-SP-9-RNXP56.T6.P15` — A forged below-anchor prefix does not hide an invalid transition two blocks after the anchor: lagging auditor stores the tail transition counter at original index four, a kill lands and only submitter is slashed.
+<a id="req-sp-9-rnxp56.t6.p15"></a>`REQ-SP-9-RNXP56.T6.P15` — A forged below-anchor prefix does not hide an invalid transition two blocks after the anchor: an auditor on the chain tier stores the tail transition counter at original index four, a kill lands and only submitter is slashed.
 
 <a id="req-sp-9-rnxp56.t6.p16"></a>`REQ-SP-9-RNXP56.T6.P16` — A proof ending at the chain anchor with a forged block below it reaches the chain tier but remains without counters, kills or slashes through kill expiry.
 
@@ -1284,11 +1278,11 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-9-rnxp56.t7.p11"></a>`REQ-SP-9-RNXP56.T7.P11` — An unrecoverable confirmation signature in the last milestone’s first block returns InvalidStateProof and stores none of the missed tail blocks.
 
-<a id="req-sp-9-rnxp56.t7.p12"></a>`REQ-SP-9-RNXP56.T7.P12` — With preanchor blocks pruned, current-anchor and lagging-mirror auditors both counter the postanchor fault at last-milestone index one; chain eligibility excludes anchor and past-run indices.
+<a id="req-sp-9-rnxp56.t7.p12"></a>`REQ-SP-9-RNXP56.T7.P12` — With preanchor blocks pruned, auditors on their own finalized state and on the chain tier both counter the postanchor fault at last-milestone index one; chain eligibility excludes anchor and past-run indices.
 
-<a id="req-sp-9-rnxp56.t7.p13"></a>`REQ-SP-9-RNXP56.T7.P13` — A genesis-linked last milestone containing an invalid preanchor block is accepted by current and lagging auditors without counters; only the lagging auditor needs the canonical chain tier, and every supplied block is challenge-ineligible.
+<a id="req-sp-9-rnxp56.t7.p13"></a>`REQ-SP-9-RNXP56.T7.P13` — A genesis-linked last milestone containing an invalid preanchor block is accepted without counters by an auditor on its own finalized state and one on the chain tier; only the latter needs the canonical chain tier, and every supplied block is challenge-ineligible.
 
-<a id="req-sp-9-rnxp56.t7.p14"></a>`REQ-SP-9-RNXP56.T7.P14` — With the anchor inside a milestone containing both a preanchor invalid block and postanchor fault, both current and lagging auditors counter only the postanchor fault at its actual index; anchor and past-run indices are ineligible.
+<a id="req-sp-9-rnxp56.t7.p14"></a>`REQ-SP-9-RNXP56.T7.P14` — With the anchor inside a milestone containing both a preanchor invalid block and postanchor fault, auditors on their own finalized state and on the chain tier counter only the postanchor fault at its actual index; anchor and past-run indices are ineligible.
 
 #### <a id="req-sp-7-70emat.t5"></a>`REQ-SP-7-70EMAT.T5`
 

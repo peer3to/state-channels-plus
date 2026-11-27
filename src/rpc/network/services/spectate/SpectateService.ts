@@ -412,9 +412,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // set some syncFlag to true that will start executing the onBlockConfirmation pipeline with `SpectateStrategy`
 
             // So what we'll actually do here until the above stuff is implemented:
-            // 1) Fetch the onChainSnapshot and persist/update the local EVM with it
+            // 1) Fetch the onChainSnapshot
             // 2) Fetch all disputeWindows that where provided in the SyncPayload:
-            //      2.1) persist/update the localEVM with them
             //      2.2) verify that they're expired - if they're not expired abort
             //      2.3) reduce them if they're not already reduced, as an eth_call of the chain's reduceAndFinalize: nothing is committed, but the chain checks the inputs and will reduce to the same fork once someone submits it
             //      2.4) ** If more than 1  has to be reduced -> abort **
@@ -433,12 +432,12 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // ******* TODO - updateStateSnapshotFork/updateStateSnapshotSameFork need dummy contracts to process withdrawals
             const diamondStateMachine = stateManager.diamondStateMachine;
 
-            // 1) Fetch the onChainSnapshot and persist/update the local EVM with it
+            // 1) Fetch the onChainSnapshot
             const onChainSnapshot =
                 await this.fetchAndPersistOnChainSnapshot(channelId);
             let currentForkId = onChainSnapshot.forkID;
 
-            // 2) & 2.1) Fetch all disputeWindows that where provided in the SyncPayload:
+            // 2) Fetch all disputeWindows that where provided in the SyncPayload:
             const forkIds = syncPayload.disputeWindows.map(
                 (disputeWindow) => disputeWindow.forkId
             );
@@ -506,11 +505,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     killPeriodEnd
                 };
             }
-            const onChainDisputeWindows =
-                await this.fetchAndPersistOnChainDisputeWindows(
-                    channelId,
-                    forkIds
-                );
+            const onChainDisputeWindows = await this.fetchOnChainDisputeWindows(
+                channelId,
+                forkIds
+            );
 
             // A responder whose local snapshot lags the chain serves windows the chain
             // already adopted. Skip that prefix only while its chain-final reductions
@@ -551,7 +549,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     );
                 // 2.2) the window must exist on chain; whether the chain has
                 // reduced it decides what a reverting reduction means.
-                // Use this request's chain response; a competing persist may be older.
+                // Use this request's chain response; a competing sync's read may be older.
                 const onChainDw = onChainDisputeWindows.find(
                     (window) => window.forkId === dw.forkId
                 );
@@ -1310,23 +1308,14 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     /**
      * Fetch relevant disputeWindows
      */
-    public async fetchAndPersistOnChainDisputeWindows(
+    public async fetchOnChainDisputeWindows(
         channelId: ChannelId,
         forkIds: ForkId[]
     ) {
-        const disputeWindows =
-            await this.p2pManager.stateManager.stateChannelManagerContract.getDisputeWindows(
-                channelId,
-                forkIds
-            );
-
-        for (const dw of disputeWindows) {
-            await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.persistDisputeWindow(
-                channelId,
-                dw
-            );
-        }
-        return disputeWindows;
+        return await this.p2pManager.stateManager.stateChannelManagerContract.getDisputeWindows(
+            channelId,
+            forkIds
+        );
     }
 
     /**

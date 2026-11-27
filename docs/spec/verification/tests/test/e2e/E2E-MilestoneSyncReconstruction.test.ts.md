@@ -8,7 +8,7 @@ Synchronizes real peers from compact and overlapping milestone proofs. Checks pe
 
 The E37 pruned-history case keeps the participants authoring while it prunes below the fixed chain anchor and verifies reconstruction. The exact pruning, anchor-start, served-payload, later snapshot, and constructed-dispute assertions remain intact; observer setup no longer resumes a writer window idled by proof checks.
 
-The shared E37 fixture also continues ordinary authoring while the snapshot publication reaches every mirror, then explicitly finalizes a block after publication. The earlier participating-to-progressed two-block assertion and reconstructed-anchor assertions remain unchanged.
+The shared E37 fixture also continues ordinary authoring while the snapshot publication reaches every peer, then explicitly finalizes a block after publication. The earlier participating-to-progressed two-block assertion and reconstructed-anchor assertions remain unchanged.
 
 ## Tests
 
@@ -16,7 +16,6 @@ The shared E37 fixture also continues ordinary authoring while the snapshot publ
 - `E03: a later joiner that synced past a finalized join reconstructs the join hop and constructs a dispute the chain verifies`: REQ-SP-10-JMVHTB.T4.P2, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P46
 - `E04: a peer synced across a departure and a join serves its reconstructed proof to a participant and posts a snapshot through the union hops`: REQ-SP-10-JMVHTB.T4.P3, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P47
 - `E05: participant changes inside an unfinalized tail stay in the last milestone and a sync-only observer replays them`: REQ-SP-10-JMVHTB.T4.P4, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P63
-- `E06: a builder whose mirror lags a newer chain anchor still builds the same proof as a current builder, starting at the chain anchor, that the chain and a peer accept`: REQ-SP-8-9ZCCEJ.T3.P1, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P48
 - `E07: a lagging spectator accepts a proof that starts below its final point, keeps its own state and replays the newer tail without blacklisting`: REQ-SP-9-RNXP56.T4.P1, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P64
 - `E08: a spectator blacklists a responder whose valid proof ends below its finalized point and keeps its state`: REQ-SP-9-RNXP56.T4.P2, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P65
 - `E08 (honest lagging responder): a spectator blacklists an honest isolated spectator whose own valid proof ends below the requester's finalized point`: REQ-SP-9-RNXP56.T4.P3, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P66
@@ -32,5 +31,6 @@ The shared E37 fixture also continues ordinary authoring while the snapshot publ
 - `E37: a spectator reconstructs chain-valid proofs when synced, pending, participating, after progress and after the anchor moves`: REQ-SP-10-JMVHTB.T4.P12, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P53
 - `E37 (pruned): after the anchor moves the participant prunes history below it and still reconstructs, serves, posts a snapshot and constructs a dispute the chain verifies`: REQ-SP-10-JMVHTB.T4.P13, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P54
 - `E39: before the chain adopts the successor the proof starts at the successor genesis, a fresh spectator syncs and rebuilds it, and after adoption reconstruction starts at the successor anchor`: REQ-SP-8-9ZCCEJ.T3.P2, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P55
+- `E06: a builder whose own finalized state is below a newer chain anchor still builds the same proof as a current builder, starting at the chain anchor, that the chain and a peer accept`: REQ-SP-8-9ZCCEJ.T3.P1, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P48
 
 The restarted-responder case keeps ordinary participant authoring active during runtime disposal and recreation, excluding only the unavailable runtime from harness queries until it is recreated. Its later partition, honest older proof, finalized-state rejection and unchanged requester-state assertions remain.

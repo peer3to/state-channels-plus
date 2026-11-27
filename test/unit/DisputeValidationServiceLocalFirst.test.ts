@@ -2,14 +2,11 @@ import Block from "@/models/Block";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, hash, Type } from "@/utils";
 import { hash as randomHash } from "@test/factory";
+import { stageStaleGenesisDispute } from "@test/fixtures/ConsumedInboundStaging";
 import {
     constructTimeoutOfCalldataPostedBlock,
     stageBlindPendingAuditor
 } from "@test/fixtures/DisputeAuditStaging";
-import {
-    stageMirrorMissingConsumedTopUp,
-    stageStaleGenesisDispute
-} from "@test/fixtures/MirrorDivergenceStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
@@ -348,52 +345,6 @@ describe("Unit: DisputeValidationService chain reads", function () {
             expect(local.reads).to.equal(0);
             expect(chain.answers).to.deep.equal([false]);
         });
-
-        it("mirror missing a consumed top-up: chain valid -> one chain read, no mirror read, the chain answer wins, true, no proof", async function () {
-            const h = TestSession.getHarness();
-            await stageMirrorMissingConsumedTopUp(h, 1);
-            await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(0);
-            const reads = await h.mirror.observe(
-                1,
-                "verifyBalanceInvariantCheckSnapshot"
-            );
-
-            const run = await h.dispute.auditDispute(1, dispute, auditingData);
-
-            const { local, chain } = await reads.observation();
-            expect(local.reads).to.equal(0);
-            expect(chain.answers).to.deep.equal([true]);
-            expect(run).to.include({ outcome: "returned", isValid: true });
-            expect(run.disputeFraudProofCount).to.equal(0);
-        });
-
-        it("mirror missing a consumed top-up: chain RPC refuses the connection -> the audit throws it, no mirror read, no proof", async function () {
-            const h = TestSession.getHarness();
-            await stageMirrorMissingConsumedTopUp(h, 1);
-            await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(0);
-            const reads = await h.mirror.observe(
-                1,
-                "verifyBalanceInvariantCheckSnapshot"
-            );
-            await h.mirror.failNextChainRead(
-                1,
-                "verifyBalanceInvariantCheckSnapshot",
-                "transport"
-            );
-
-            const run = await h.dispute.auditDispute(1, dispute, auditingData);
-
-            const { local, chain } = await reads.observation();
-            expect(local.reads).to.equal(0);
-            expect(chain.failures).to.have.length(1);
-            expect(chain.failureCodes).to.not.include("CALL_EXCEPTION");
-            expect(run.outcome).to.equal("threw");
-            expect(run.disputeFraudProofCount).to.equal(0);
-        });
     });
 
     describe("validateTimeoutCalldataPostedProof", function () {
@@ -420,47 +371,6 @@ describe("Unit: DisputeValidationService chain reads", function () {
             expect(chain.answers).to.deep.equal([true]);
         });
 
-        it("mirror and store missing the previous block's calldata post: chain invalid -> one chain read, no mirror read, true, no proof", async function () {
-            const h = TestSession.getHarness();
-            const {
-                dispute,
-                auditorIndex,
-                previousBlock: block1
-            } = await constructTimeoutOfCalldataPostedBlock(h, {
-                blocksBefore: 2
-            });
-            // the auditor misses the previous block's calldata log: its store
-            // keeps a stale timestamp and its mirror has no commitment, while
-            // the chain commitment carries the real timestamp
-            await h
-                .control(h.getPeer(auditorIndex))
-                .stub.stubCalldataPosting()
-                .request();
-            await h
-                .control(h.getPeer(auditorIndex))
-                .validation.stageBlockCalldata(block1!.encodedSignedBlock, 1)
-                .request();
-            const block1Author = h.peers.find(
-                (p) => p.address === block1!.author
-            )!;
-            await h.transition.postBlockCalldataOnChainWait(
-                block1Author,
-                block1!.encodedSignedBlock
-            );
-            const reads = await h.mirror.observe(
-                auditorIndex,
-                "validateTimeoutCalldataPostedProof"
-            );
-
-            const run = await h.dispute.auditDispute(auditorIndex, dispute);
-
-            const { local, chain } = await reads.observation();
-            expect(local.reads).to.equal(0);
-            expect(chain.answers).to.deep.equal([false]);
-            expect(run).to.include({ outcome: "returned", isValid: true });
-            expect(run.storedProof).to.equal(undefined);
-        });
-
         it("store behind the chain on the previous block's calldata: chain invalid -> one chain read, no mirror read, true, no proof", async function () {
             const h = TestSession.getHarness();
             const {
@@ -479,7 +389,7 @@ describe("Unit: DisputeValidationService chain reads", function () {
                 block1Author,
                 block1!.encodedSignedBlock
             );
-            // the hook fires after the auditor's mirror took the commitment
+            // the hook fires after the auditor stored the commitment
             await h.event.waitForPeers(
                 "onPostedCalldata",
                 [auditor.index],

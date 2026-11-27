@@ -9,15 +9,12 @@ import {
     waitForJoinChecks
 } from "@test/fixtures/ForceJoinCountingStaging";
 import {
-    applyJoinBlockFromLiveAndRefresh,
     readSignerMembershipLookups,
     recordPendingJoinerChainCalls,
-    refreshAfterEligibilityReset,
     refreshAppliedAfterLiveSnapshot,
-    refreshFillsMirrorBelowHead,
     refreshWithFailedRecoveredInboundBlock,
     relayAfterEligibilityReset,
-    stageMirroredPendingJoin,
+    stageObservedPendingJoin,
     stagePendingJoinHandledByJoiner,
     stagePendingJoinMissedByJoinerHandler
 } from "@test/fixtures/PendingJoinEligibilityStaging";
@@ -216,56 +213,7 @@ describe("Unit: MembershipService", function () {
         expect(observed.reads.chainReads).to.equal(1);
     });
 
-    it("a refresh while the local diamond holds a pending JOIN applies its inbound block again as a no-op and applies the snapshot", async () => {
-        const h = TestSession.getHarness();
-        const joiner = await stageMirroredPendingJoin(h);
-        const observed = await refreshAfterEligibilityReset(h, [
-            h.getPeer(1).address,
-            h.getPeer(2).address,
-            joiner.address
-        ]);
-        expect(observed.refreshed).to.equal(true);
-        expect(observed.eligibility).to.deep.equal([
-            SourceEligibility.ELIGIBLE,
-            SourceEligibility.ELIGIBLE,
-            SourceEligibility.ELIGIBLE
-        ]);
-        expect(observed.isMirrorAtChainInboundHead).to.equal(true);
-    });
-
-    it("the live log's application of an inbound block, then the refresh's, stores it once without a revert", async () => {
-        const h = TestSession.getHarness();
-        const observed = await applyJoinBlockFromLiveAndRefresh(h, "recorded");
-        expect(observed.refreshed).to.equal(true);
-        expect(observed.heldCount).to.equal(2);
-        expect(observed.mirror.heldBlocks).to.deep.equal([true]);
-        expect(observed.mirror.isHeadAtChain).to.equal(true);
-        expect(observed.mirror.isTotalDepositsAtChain).to.equal(true);
-    });
-
-    it("the refresh's application of an inbound block, then the live log's, stores it once without a revert", async () => {
-        const h = TestSession.getHarness();
-        const observed = await applyJoinBlockFromLiveAndRefresh(h, "reverse");
-        expect(observed.refreshed).to.equal(true);
-        expect(observed.heldCount).to.equal(2);
-        expect(observed.mirror.heldBlocks).to.deep.equal([true]);
-        expect(observed.mirror.isHeadAtChain).to.equal(true);
-        expect(observed.mirror.isTotalDepositsAtChain).to.equal(true);
-    });
-
-    it("a refresh fills an inbound block the local diamond misses below its head without moving the head back", async () => {
-        const h = TestSession.getHarness();
-        await h.lifecycle.start(2, 0);
-        const observed = await refreshFillsMirrorBelowHead(h);
-        expect(observed.before.heldBlocks).to.deep.equal([false, true]);
-        expect(observed.before.isHeadAtChain).to.equal(true);
-        expect(observed.refreshed).to.equal(true);
-        expect(observed.after.heldBlocks).to.deep.equal([true, true]);
-        expect(observed.after.isHeadAtChain).to.equal(true);
-        expect(observed.after.isTotalDepositsAtChain).to.equal(true);
-    });
-
-    it("a refresh read before a live snapshot update does not overwrite that newer snapshot in the local diamond or in membership", async () => {
+    it("a refresh read before a live snapshot update does not overwrite that newer snapshot in membership", async () => {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0);
         await h.transition.advanceState({
@@ -274,13 +222,12 @@ describe("Unit: MembershipService", function () {
         });
         const observed = await refreshAppliedAfterLiveSnapshot(h);
         expect(observed.refreshed).to.equal(true);
-        expect(observed.mirror.isSnapshotAtChain).to.equal(true);
         expect(observed.membership.isMirroredSnapshotPublished).to.equal(true);
     });
 
     it("a pending joiner's refresh makes its pinned multicall chain call and one pending-set chain read", async () => {
         const h = TestSession.getHarness();
-        const joiner = h.getPeer((await stageMirroredPendingJoin(h)).index);
+        const joiner = h.getPeer((await stageObservedPendingJoin(h)).index);
         const observed = await recordPendingJoinerChainCalls(
             h,
             joiner,
@@ -455,7 +402,7 @@ describe("Unit: MembershipService", function () {
 
     it("a seated participant absent from the pinned and the head pending sets is not pending on chain", async () => {
         const h = TestSession.getHarness();
-        await stageMirroredPendingJoin(h);
+        await stageObservedPendingJoin(h);
         expect(
             await readSignerMembershipLookups(h, h.getPeer(0))
         ).to.deep.include({
@@ -467,7 +414,7 @@ describe("Unit: MembershipService", function () {
 
     it("a participant seated on chain with no pending entry is on chain", async () => {
         const h = TestSession.getHarness();
-        await stageMirroredPendingJoin(h);
+        await stageObservedPendingJoin(h);
         expect(
             await readSignerMembershipLookups(h, h.getPeer(0))
         ).to.deep.include({
@@ -490,7 +437,7 @@ describe("Unit: MembershipService", function () {
 
     it("a snapshot participant unknown to the cache while a JOIN is pending is admitted, not blacklisted", async () => {
         const h = TestSession.getHarness();
-        await stageMirroredPendingJoin(h, 1);
+        await stageObservedPendingJoin(h, 1);
         expect(await relayAfterEligibilityReset(h)).to.equal(0);
         const receiver = h.control(h.getPeer(0));
         expect(
@@ -501,44 +448,19 @@ describe("Unit: MembershipService", function () {
         ).to.equal(true);
     });
 
-    it("a local diamond failure during a refresh throws instead of reporting the refresh unavailable", async () => {
-        const h = TestSession.getHarness();
-        await h.lifecycle.start(2, 0);
-        await h.mirror.failNextUpdate(0, "onStateSnapshotUpdated");
-        const outcome = await h.execOnHost(h.getPeer(0), async (sm) => {
-            try {
-                return {
-                    refreshed:
-                        await sm.membershipService.refreshOnChainEligibility(),
-                    error: null
-                };
-            } catch (error) {
-                return {
-                    refreshed: null,
-                    error:
-                        error instanceof Error ? error.message : String(error)
-                };
-            }
-        });
-        expect(outcome.refreshed).to.equal(null);
-        expect(outcome.error).to.be.a("string");
-    });
-
-    it("a local diamond failure applying a recovered slash log during a refresh throws instead of reporting the refresh unavailable", async () => {
+    it("a handler failure applying a recovered slash log during a refresh throws instead of reporting the refresh unavailable", async () => {
         const outcome = await refreshWithFailedRecoveredSlash();
         expect(outcome.refreshed).to.equal(null);
-        expect(outcome.error).to.match(
-            /^Local contract call failed: Error: Local EVM execution failed: revert/
-        );
+        expect(outcome.error).to.contain("stubbed slash handler failure");
     });
 
-    it("a local diamond failure applying a recovered inbound log during a refresh throws instead of reporting the refresh unavailable", async () => {
+    it("a handler failure applying a recovered inbound log during a refresh throws instead of reporting the refresh unavailable", async () => {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0);
         const outcome = await refreshWithFailedRecoveredInboundBlock(h);
         expect(outcome.refreshed).to.equal(null);
-        expect(outcome.error).to.match(
-            /^Local contract call failed: Error: Local EVM execution failed: revert/
+        expect(outcome.error).to.contain(
+            "stubbed onInboundMessagesProcessed failure"
         );
     });
 

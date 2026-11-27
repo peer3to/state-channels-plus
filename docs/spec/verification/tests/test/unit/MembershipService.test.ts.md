@@ -22,24 +22,17 @@ These cases contribute to `REQ-TJOIN-2-MFWADG` and `REQ-TJOIN-5-Q795M7`.
 
 Cached source checks are optimistic. Misses refresh once, including concurrent misses. Tests also cover failed reads, reset, committed off-chain additions and observed slashes during a refresh.
 
-Three refresh cases run with a real JOIN pending on chain that peer 0's storage and local diamond
-already applied. After a cache reset, the refresh returns `true`, the snapshot participants and the
-joiner are eligible again, and the local diamond's inbound head equals the chain's. A snapshot
-participant whose spectate responses fail relays a real block after the reset; the receiver admits it
-from the refresh alone, sends it no sync request, and keeps it connected and off the blacklist. A
-one-shot revert of the local diamond's snapshot update makes the refresh throw instead of returning
-`false`.
+One refresh case runs with a real JOIN pending on chain that peer 0's storage already applied. A snapshot
+participant whose spectate responses fail relays a real block after a cache reset; the receiver admits it
+from the refresh alone, sends it no sync request, and keeps it connected and off the blacklist.
 
 Two refresh cases fail a log the refresh recovers from the chain. Peer 0 loses the live delivery of a
-real slash's logs (or of a top-up's inbound log), and the local diamond's next slash write (or inbound
-application) reverts once. The refresh rejects with the local EVM revert instead of returning `false`.
+real slash's logs (or of a top-up's inbound log), and its handler of the recovered log (the slash and
+kill handlers, or the inbound handler) throws. The refresh rejects with that failure instead of
+returning `false`.
 
-Four refresh cases stage the local diamond against live logs. Its inbound applications are held while
-a JOIN lands and peer 0 refreshes, then released with the live log's call first or the refresh's call
-first: neither order reverts, the JOIN block is stored, and the inbound head and deposit total equal
-the chain's. Two top-ups by peer 1, the first one's log lost by the local diamond, leave a block
-missing below its head; the refresh stores it and the head stays at the chain's. A refresh held after
-its chain read while peer 0 posts a newer snapshot leaves the local diamond at the chain's snapshot.
+One refresh case holds the refresh after its chain read while peer 0 posts a newer snapshot and handles
+the live log; membership still publishes the chain's snapshot, not the older read.
 
 Three cases record a pending joiner's chain calls. Its refresh makes one multicall, then the head
 read that confirms the snapshot its event announced and one read of the chain's pending set. Applying
@@ -81,11 +74,7 @@ dispute it constructs declares no self-removal.
 - `an unknown source refreshes once and remains absent`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P22
 - `concurrent cache misses share one refresh and decide from chain membership`: none
 - `reset removes both cached sets until a verified chain refresh`: REQ-GOSSIP-4-J5Z4DF.T1.P24, UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P25
-- `a refresh while the local diamond holds a pending JOIN applies its inbound block again as a no-op and applies the snapshot`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P51, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P12, REQ-GOSSIP-4-J5Z4DF.T1.P38
-- `the live log's application of an inbound block, then the refresh's, stores it once without a revert`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P13, REQ-GOSSIP-4-J5Z4DF.T1.P41
-- `the refresh's application of an inbound block, then the live log's, stores it once without a revert`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P14
-- `a refresh fills an inbound block the local diamond misses below its head without moving the head back`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P15, REQ-GOSSIP-4-J5Z4DF.T1.P42
-- `a refresh read before a live snapshot update does not overwrite that newer snapshot in the local diamond or in membership`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P16, REQ-GOSSIP-4-J5Z4DF.T1.P43, REQ-MIRROR-2-E9F3TM.T1.P6, UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P21
+- `a refresh read before a live snapshot update does not overwrite that newer snapshot in membership`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P16, REQ-GOSSIP-4-J5Z4DF.T1.P43, UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P21
 - `a pending joiner's refresh makes its pinned multicall chain call and one pending-set chain read`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P17, UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P19, REQ-GOSSIP-4-J5Z4DF.T1.P44
 - `a pending joiner that handled its JOIN's inbound event reads the pending set from the chain when it applies a snapshot`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P72, REQ-SDK-ARCH-1-7H14H6.T1.P9, REQ-MIRROR-6-0WSB4V.T1.P18
 - `a pending joiner that has not handled its JOIN's inbound event reads the pending set from the chain once`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P20, UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P73, REQ-SDK-ARCH-1-7H14H6.T1.P10
@@ -96,9 +85,6 @@ dispute it constructs declares no self-removal.
 - `a participant seated on chain with no pending entry is on chain`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P75
 - `a joiner pending on chain whose inbound event it has not handled is on chain`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P76
 - `a snapshot participant unknown to the cache while a JOIN is pending is admitted, not blacklisted`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P52, REQ-GOSSIP-4-J5Z4DF.T1.P39
-- `a local diamond failure during a refresh throws instead of reporting the refresh unavailable`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P53, REQ-GOSSIP-4-J5Z4DF.T1.P40
-- `a local diamond failure applying a recovered slash log during a refresh throws instead of reporting the refresh unavailable`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P67, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P18, REQ-GOSSIP-4-J5Z4DF.T1.P45
-- `a local diamond failure applying a recovered inbound log during a refresh throws instead of reporting the refresh unavailable`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P68, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P19, REQ-GOSSIP-4-J5Z4DF.T1.P46
 - `a delivered join event makes a pending-only sender a cache hit`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P26
 - `a JOIN in the linked part above a missing inbound block is eligible after a pushed snapshot`: REQ-MSGSTORE-1-6ME9D7.T2.P5
 - `a pushed snapshot preserves unconsumed pending JOINs without a membership read`: REQ-GOSSIP-4-J5Z4DF.T1.P33, UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P30
@@ -123,3 +109,5 @@ dispute it constructs declares no self-removal.
 - `a clean leave everyone signed → snapshot path, force-exit flag kept`: none
 - `a leaver whose membership ended joins again on the same runtime → the new membership clears the force-exit flag and its dispute carries no self-removal`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P52, REQ-RMSTORE-2-Y2T1PG.T1.P5, REQ-LIF-10-QR8NQ9.T1.P36
 - `a pending joiner with chain reads proven reads the pending set from the chain after it handled its JOIN's inbound event`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P80
+- `a handler failure applying a recovered slash log during a refresh throws instead of reporting the refresh unavailable`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P67, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P18, REQ-GOSSIP-4-J5Z4DF.T1.P45
+- `a handler failure applying a recovered inbound log during a refresh throws instead of reporting the refresh unavailable`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P68, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P19, REQ-GOSSIP-4-J5Z4DF.T1.P46

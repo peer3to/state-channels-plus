@@ -16,10 +16,10 @@ their same-fork snapshot update, posted after a finalized block, clears the disp
 and prunes the inbound blocks the timeout disputes name. The held logs are then started in chain
 order, the dispute events first and the rest after, each group running concurrently, as the resumed
 runtime meets them after the chain moved on. The dispute events reach the peer while it still
-participates on the disputed fork, before its local mirror holds the pruning snapshot, so on the
+participates on the disputed fork, before its event pipeline has handled the pruning snapshot, so on the
 code before the fix it audited them, passed, and reported the settled disputes to the application as
 live ones (`onDisputeStarted`, `onDisputeUpdate`). In the incident the later snapshot events ran at
-the same time and the mirror was already pruned, so it audited them against the pruned chain
+the same time and the chain was already pruned, so it audited them against the pruned chain
 (inbound hash not in chain), tried to kill them, and failed to build a state proof of the settled
 fork, which failed the event pipeline. Oracles: no held log's handling fails, the removed peer
 reports that it left the channel (without `dropIfRemovedWhileAway` it never does), and it fires
@@ -47,7 +47,7 @@ while the three participants dispute an invalid block, reduce without its author
 window. A record-only probe on the spectator's timeout manager records scheduled tasks. Oracles:
 no held log's handling fails, the spectator stores no dispute, schedules no `reduction-<fork>` task
 for the old fork (an uncommitted observer persists and schedules without the gate), its event
-pipeline has no failed block and is not disposed, and its local mirror holds the chain's snapshot.
+pipeline has no failed block and is not disposed.
 A seated peer that misses such a cycle is out of scope
 (`FIND-RUNTIME-4-5ZZD5T`).
 
@@ -70,6 +70,6 @@ and a new block, no runtime error was reported, `onDisputeStarted` never fired a
 - `a timed-out peer whose chain events were held through the disputes, the reduction and a same-fork snapshot update ignores the disputes and leaves`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P27, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P57, REQ-LIF-10-QR8NQ9.T1.P39, REQ-DISPUTE-PIPE-14-5C2SXH.T1.P1
 - `a timed-out peer removed by a same-fork snapshot update it never installed stays a participant while the chain lists it as a pending joiner`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P58, REQ-LIF-10-QR8NQ9.T1.P40, REQ-MIRROR-6-0WSB4V.T1.P32
 - `a double signer whose chain events were held through a threshold-final dispute, its reduction and a same-fork snapshot update ignores the final dispute without installing its output, and leaves`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P28, REQ-DISPUTE-PIPE-14-5C2SXH.T1.P3
-- `a synced spectator whose chain events were held through a dispute cycle and a same-fork snapshot update ignores the disputes: nothing persisted, no reduction scheduled, and its mirror holds the chain's snapshot`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P29, REQ-DISPUTE-PIPE-14-5C2SXH.T1.P2
+- `a synced spectator whose chain events were held through a dispute cycle and a same-fork snapshot update ignores the disputes: nothing persisted and no reduction scheduled`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P29, REQ-DISPUTE-PIPE-14-5C2SXH.T1.P2
 - `an auditor whose read node is behind the block of a fork's first dispute waits for it, then acknowledges, audits and kills the invalid dispute`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P30, REQ-DISPUTE-PIPE-14-5C2SXH.T1.P4
 - `an auditor disposed while its window read waits for a lagging read node ends the wait without handling the dispute and with no runtime error`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P31

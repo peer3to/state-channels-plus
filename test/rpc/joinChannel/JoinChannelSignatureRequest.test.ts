@@ -316,32 +316,38 @@ describe("JoinChannel signature requests", function () {
         }
     });
 
-    it("signs for a threshold member whose mirror misses its own pending join: the chain lists it", async function () {
+    it("signs for a threshold member whose local view does not list its own pending join yet: the chain lists it", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0);
         const member = await h.join.addSpectatorWait();
         const joiner = await h.join.addSpectatorWait();
         await h.assert.sync.peersInSyncWait();
-        const held = await h.mirror.holdUpdates(
-            member.index,
-            "onInboundMessagesProcessed"
-        );
+        // the member's event handler handles no inbound log: its local view
+        // never sees its own join
+        const held = await h.rpcStub.holdInboundMessageEvents(member.index);
         try {
-            await h.join.forceInboundJoinWait({ participant: member.address });
-            // the member's mirror missed its join
+            await h.join.forceInboundJoinWait({
+                participant: member.address,
+                observePeerIndices: [0, 1, joiner.index]
+            });
             await waitFor(async () => (await held.heldCount()) > 0);
+            // its stored inbound head is not the chain's: it never saw the
+            // block of its own join
+            const chainInboundHead = (
+                await h.channelManager.getChannelBalance(h.channelId)
+            ).latestInboundMessageBlockHash;
+            expect(
+                await h
+                    .control(h.getPeer(member.index))
+                    .query.getLatestInboundMessageHash()
+                    .request()
+            ).to.not.equal(chainInboundHead);
             const listing = await h.execOnHost(
                 h.getPeer(member.index),
                 async (sm) => ({
-                    mirror: (
-                        await sm.diamondStateMachine.localDiamondContract.getOnChainThresholdSet(
-                            sm.channelId
-                        )
-                    ).map(String),
                     chain: await sm.membershipService.getOnChainThresholdSet()
                 })
             );
-            expect(listing.mirror).to.not.include(member.address);
             expect(listing.chain).to.include(member.address);
 
             const chainTime = await Clock.getBlockchainTime();

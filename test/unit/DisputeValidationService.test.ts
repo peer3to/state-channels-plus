@@ -857,38 +857,6 @@ describe("Unit: DisputeValidationService", function () {
             ).to.contain("Fork not found");
             expect(unknownFork.disputeFraudProofCount).to.equal(1); // from the audit above
         });
-
-        it("localDiamond.isDisputeInboundHashValid false + RPC true -> no DisputeInboundHashNotInChain", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(4, 2);
-            // the auditor stops applying inbound messages to its in-memory EVM
-            // before the join, so only its local diamond falls behind
-            await h
-                .control(h.getPeer(1))
-                .stub.stubLocalDiamondInboundMessages()
-                .request();
-            await h.join.forceInboundJoinWait();
-            await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(0);
-
-            // premise: the two sources genuinely disagree on this dispute
-            const sources = await h
-                .control(h.getPeer(1))
-                .dispute.probeDisputeInboundHashSources(
-                    Codec.encode(dispute, Type.Dispute) as string
-                )
-                .request({
-                    timeoutMs: h.event.hostExecTimeoutMs()
-                });
-            expect(sources).to.deep.equal({ local: false, rpc: true });
-
-            const run = await h.dispute.auditDispute(1, dispute, auditingData);
-            expect(run.outcome).to.equal("returned");
-            expect(run.storedProof?.disputeFraudProofType).to.not.equal(
-                DisputeFraudProofType.DisputeInboundHashNotInChain
-            );
-        });
     });
 
     describe("pipeline", function () {

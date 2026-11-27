@@ -1,5 +1,6 @@
 import { connectLocalDiamond, localDiamondAbi } from "@/utils/localDiamond";
 import { stateChannelManagerAbi } from "@/utils/stateChannelManager";
+import * as factory from "@test/factory";
 import {
     duplicateFragmentKeys,
     expectedManagerErrorKeys,
@@ -58,16 +59,18 @@ describe("localDiamond binding", function () {
 
     it("encodes a call to a function only the local diamond declares", function () {
         const binding = connectLocalDiamond(MIRROR_ADDRESS, null);
-        const channelId = ethers.id("local-diamond-binding-local-only");
+        const { input } = factory.dispute();
+        const snapshot = factory.stateSnapshot().toStruct();
 
         expect(
-            binding.interface.encodeFunctionData("getTotalDeposits", [
-                channelId
+            binding.interface.encodeFunctionData("hasDisputeReason", [
+                input,
+                snapshot
             ])
         ).to.equal(
             LocalDiamond__factory.createInterface().encodeFunctionData(
-                "getTotalDeposits",
-                [channelId]
+                "hasDisputeReason",
+                [input, snapshot]
             )
         );
     });

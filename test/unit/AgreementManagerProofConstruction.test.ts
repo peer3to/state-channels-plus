@@ -1,3 +1,7 @@
+import {
+    BELOW_ANCHOR_AUDITOR,
+    stageAuditorBelowChainAnchor
+} from "@test/fixtures/ChallengeBoundaryStaging";
 import { stageBlindPendingAuditor } from "@test/fixtures/DisputeAuditStaging";
 import {
     chainSnapshot,
@@ -25,7 +29,7 @@ import {
     stageFinalityFromNextBlock,
     stageJoinThenLeave,
     stageJoinHopWithLaterFinalPoint,
-    stageMirrorMissingTopUp,
+    stageConsumedTopUp,
     stageTwoJoins,
     stageSuccessorBlockZero,
     stageUnpostedSuccessorFork,
@@ -507,45 +511,41 @@ describe("Unit: AgreementManager proof construction", function () {
             expect(view.chainWalk.start!.hash).to.equal(anchor!.hash);
         });
 
-        it("U24: a local diamond lagging a newer chain anchor → construction starts at the chain's anchor, which the chain walk accepts", async function () {
+        it("U24: a builder whose own finalized state is below a newer chain anchor → construction starts at the chain's anchor, which the chain walk accepts", async function () {
             const h = TestSession.getHarness();
-            const lagging = 1;
-            const { anchor } = await stageFinalBlocks(h, {
-                postAnchor: true,
-                finalBlocks: 2,
-                laggingIndices: [lagging]
+            const builder = BELOW_ANCHOR_AUDITOR.belowAnchorIndex;
+            const { anchor } = await stageAuditorBelowChainAnchor(h, {
+                tailBlocks: 0
             });
             expect(
-                (await h.query.getLocalStateSnapshot(h.getPeer(lagging))).hash,
-                "the lagging mirror keeps the older snapshot"
-            ).to.not.equal(anchor!.hash);
+                (await localFinalizedView(h, builder))?.height ?? -1,
+                "the builder's own finalized state is below the chain anchor"
+            ).to.be.lessThan(anchor.blockHeight);
 
-            const view = await buildProofView(h, lagging);
+            const view = await buildProofView(h, builder);
 
-            expect(view.start.hash).to.equal(anchor!.hash);
-            expect(view.chainWalk.start!.hash).to.equal(anchor!.hash);
+            expect(view.start.hash).to.equal(anchor.hash);
+            expect(view.chainWalk.start!.hash).to.equal(anchor.hash);
             expect(view.chainWalk.valid).to.equal(true);
         });
 
-        it("U24: chain reads proven (light client) and the local diamond lagging a newer chain anchor → construction starts at the chain's anchor, which the chain walk accepts", async function () {
+        it("U24: chain reads proven (light client) and the builder's own finalized state below a newer chain anchor → construction starts at the chain's anchor, which the chain walk accepts", async function () {
             const h = TestSession.getHarness();
-            const lagging = 1;
-            const { anchor } = await stageFinalBlocks(h, {
-                postAnchor: true,
-                finalBlocks: 2,
-                laggingIndices: [lagging]
+            const builder = BELOW_ANCHOR_AUDITOR.belowAnchorIndex;
+            const { anchor } = await stageAuditorBelowChainAnchor(h, {
+                tailBlocks: 0
             });
             expect(
-                (await h.query.getLocalStateSnapshot(h.getPeer(lagging))).hash,
-                "the lagging mirror keeps the older snapshot"
-            ).to.not.equal(anchor!.hash);
-            const peer = h.control(h.getPeer(lagging));
+                (await localFinalizedView(h, builder))?.height ?? -1,
+                "the builder's own finalized state is below the chain anchor"
+            ).to.be.lessThan(anchor.blockHeight);
+            const peer = h.control(h.getPeer(builder));
             await peer.stub.stubProvenChainReads().request();
             try {
-                const view = await buildProofView(h, lagging);
+                const view = await buildProofView(h, builder);
 
-                expect(view.start.hash).to.equal(anchor!.hash);
-                expect(view.chainWalk.start!.hash).to.equal(anchor!.hash);
+                expect(view.start.hash).to.equal(anchor.hash);
+                expect(view.chainWalk.start!.hash).to.equal(anchor.hash);
                 expect(view.chainWalk.valid).to.equal(true);
             } finally {
                 await peer.stub.restoreProvenChainReads().request();
@@ -571,13 +571,12 @@ describe("Unit: AgreementManager proof construction", function () {
             expect(verified.walk!.valid).to.equal(true);
         });
 
-        it("U93: verifying from local finalized height 3 while the mirror and chain hold anchor 1 → neither moves; construction still starts at anchor 1 and the chain accepts it", async function () {
+        it("U93: verifying from local finalized height 3 while the chain holds anchor 1 → neither moves; construction still starts at anchor 1 and the chain accepts it", async function () {
             const h = TestSession.getHarness();
             const { anchor, latestHeight } = await stageFinalBlocks(h, {
                 postAnchor: true,
                 finalBlocks: 2
             });
-            const observer = h.getPeer(0);
 
             const localFinalized = await localFinalizedView(h, 0);
             const before = await buildProofView(h, 0);
@@ -588,10 +587,7 @@ describe("Unit: AgreementManager proof construction", function () {
             expect(verified.walk!.tier).to.equal("localFinalized");
             expect(verified.walk!.start!.height).to.equal(latestHeight);
             expect(verified.walk!.valid).to.equal(true);
-            // the mirror and the chain keep the anchor
-            expect(
-                (await h.query.getLocalStateSnapshot(observer)).hash
-            ).to.equal(anchor!.hash);
+            // the chain keeps the anchor
             expect((await chainSnapshot(h)).hash).to.equal(anchor!.hash);
             // construction is unchanged by the verification
             expect(after.start.hash).to.equal(anchor!.hash);
@@ -1169,8 +1165,7 @@ describe("Unit: AgreementManager proof construction", function () {
         it("U98: snapshot posting whose proof construction fails on its chain walk → the post rejects and the chain snapshot stays", async function () {
             const h = TestSession.getHarness();
             const lagging = 2;
-            const { anchor } = await stageMirrorMissingTopUp(h, {
-                laggingIndex: lagging,
+            const { anchor } = await stageConsumedTopUp(h, {
                 anchorBeforeTopUp: true
             });
             const observed = await h.mirror.observe(

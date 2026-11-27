@@ -396,9 +396,9 @@ Engineer decision (Luka): applying an inbound message block to the local mirror 
 source, the mirror's inbound head only moves forward, the membership refresh applies the whole pending run at
 the chain position of its pinned read, and the refresh's apply step makes no chain read its pinned read already
 answers ("query the RPC node the fewest times possible").
-[`REQ-MIRROR-2-E9F3TM` (Unconditional replication)](../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm) and
+The mirror's replication requirement (retired 2026-11-27, see below) and
 [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df) state it, with
-new permutations [`REQ-MIRROR-2-E9F3TM.T1.P4`](../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm.t1.p4)–`.P6` and [`REQ-GOSSIP-4-J5Z4DF.T1.P41`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p41)–`.P44`; each has a test that
+new permutations (the replication ones and GOSSIP-4 P41 and P42 retired 2026-11-27) and [`REQ-GOSSIP-4-J5Z4DF.T1.P43`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p43)–`.P44`; each has a test that
 fails on the old code. The local diamond's inbound family no longer has an event-coordinate gate (a recovered
 older log must still be stored); the chain contract's duplicate revert is unchanged. A pending joiner's refresh now makes one multicall and no separate pending-set read: the pending check reads the local diamond, which the refresh filled with its pinned inbound run before it applies the snapshot; the same local-first check spares the chain read on a live snapshot log when the local diamond lists the signer. Residuals: when the local diamond's pending set does not list the signer, the apply step still reads the chain, because a JOIN that landed after the local diamond's inbound head may already be observed; a snapshot the mirror drops as older no longer reaches membership (the
 handler compares the mirrored snapshot after applying, a local read, no chain call); Luka decided the spectate
@@ -406,6 +406,7 @@ path's apply of a current on-chain read at the trusted coordinate stays, because
 state when it is made; a late or recovered log for
 a block the chain already pruned is stored again below the snapshot head; and an equal-height block with another
 hash does not move the mirror head, where the TypeScript store accepts it. Engineer review remains pending.
+Revised 2026-11-27, on the engineer's decision to remove the mirror ([`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)): the replication and cache requirements and the mirror-only permutations are retired.
 
 ## 2026-10-10 — Countersigners do not check the join pins; membership refresh applies each inbound block once
 

@@ -133,7 +133,6 @@ Status-driven promotion
 - [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P11` — An initial responder eligibility chain read failure reaches one top-level error, calls no successful connection hook and does not itself report runtime abort
 - [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P12` — A throwing initial sync reaches one top-level error and no successful connection hook
 - [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P13` — Teardown during initial handshake work returns without reporting a host error
-- [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P14` — A fresh spectator ignores its first handshake from a chain-slashed peer still listed by the lagging mirror; after successor adoption it sends its first sync to an honest participant and becomes SYNCED on the successor without abort
 - [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P15` — A fresh spectator skips a chain-slashed first-handshake peer when reduction has landed but snapshot adoption is blocked, and synchronizes from an honest participant to the successor without abort
 - [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P16` — A fresh spectator skips a slashed first-handshake peer that has already installed the same successor, and synchronizes from an honest participant to that successor without abort
 - [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P17` — A fresh spectator skips an unslashed synced observer absent from authoritative membership, sends its first sync to a participant and reaches SYNCED on the current fork without abort

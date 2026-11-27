@@ -1,4 +1,8 @@
 import {
+    BELOW_ANCHOR_AUDITOR,
+    stageAuditorBelowChainAnchor
+} from "@test/fixtures/ChallengeBoundaryStaging";
+import {
     buildProofView,
     walkAcrossAnchorAdvance,
     craftConflictingAnchorRun,
@@ -6,7 +10,6 @@ import {
     stageFinalBlocks,
     stageFinalThenUnfinalizedTail,
     stageJoinHopWithLaterFinalPoint,
-    stageMirrorMissingTopUp,
     verifyProofView,
     walkAllTiersView
 } from "@test/fixtures/ProofOwnerStaging";
@@ -137,28 +140,28 @@ describe("Unit: AgreementManager verification tiers", function () {
         expect(verified.walk!.start!.hash).to.equal(anchor!.hash);
     });
 
-    it("U28: the mirror holds no same-fork anchor → the chain's anchor walk accepts the proof", async function () {
+    it("U28: a requester whose own finalized state does not accept the proof (cut off below the chain anchor) → the chain's anchor walk accepts the proof", async function () {
         const h = TestSession.getHarness();
-        const lagging = 2;
-        const { anchor } = await stageMirrorMissingTopUp(h, {
-            laggingIndex: lagging,
-            anchorAfterTopUp: true
+        const cutOff = BELOW_ANCHOR_AUDITOR.belowAnchorIndex;
+        const { anchor } = await stageAuditorBelowChainAnchor(h, {
+            tailBlocks: 0
         });
-        // the anchor block alone, built by a peer whose mirror is current
-        const view = await buildProofView(h, 0, { height: anchor!.height });
-        expect(view.milestoneHeights).to.deep.equal([[anchor!.height]]);
+        // the anchor block alone, built by a peer that is current
+        const view = await buildProofView(h, 0, { height: anchor.blockHeight });
+        expect(view.milestoneHeights).to.deep.equal([[anchor.blockHeight]]);
         expect(
-            await localFinalizedView(h, lagging),
-            "the lagging peer cannot prove a final point"
-        ).to.equal(null);
+            (await localFinalizedView(h, cutOff))?.height ?? -1,
+            "the cut-off peer's own finalized state is below the anchor"
+        ).to.be.lessThan(anchor.blockHeight);
 
-        const tiers = await walkAllTiersView(h, lagging, view.stateProof);
-        const verified = await verifyProofView(h, lagging, view.stateProof);
+        const tiers = await walkAllTiersView(h, cutOff, view.stateProof);
+        const verified = await verifyProofView(h, cutOff, view.stateProof);
 
-        expect(tiers.map((walk) => walk.tier)).to.deep.equal(["chain"]);
+        expect(tiers.at(-1)!.tier).to.equal("chain");
+        expect(tiers.at(-1)!.valid).to.equal(true);
         expect(verified.walk!.tier).to.equal("chain");
         expect(verified.walk!.valid).to.equal(true);
-        expect(verified.walk!.start!.hash).to.equal(anchor!.hash);
+        expect(verified.walk!.start!.hash).to.equal(anchor.hash);
     });
 
     it("U29: a proof every tier rejects (an unlinked block after the anchor) → verification returns the chain's invalid walk", async function () {

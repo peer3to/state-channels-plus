@@ -201,7 +201,7 @@ snapshot once) go to the chain alone (the proven-reads requirement of that day, 
 hash after the chain moved, and each kind of differing answer; and
 the plan item of the proven-reads requirement that ran on the test chain with a harness stub that makes a runtime's chain
 reads count as proven (`stubProvenChainReads`): the timeout check's reads
-([`UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P41`](../implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md#unit-test-participant-timeout-service-1-q0paf5)-`P45`), construction and verification
+(the unapplied-window timeout test (retired 2026-11-27 with the mirror)-`P45`), construction and verification
 ([`UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P67`](../implementation/source/src/agreementManager/AgreementManager.ts.md#unit-test-agreement-manager-1-kj6q9d), `P68`), the pending-set check and the countersigner's
 exception ([`REQ-JOINSIG-1-8X1A4V.T1.P34`](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v.t1.p34)). Each of these failed with its fix removed. On 17a2c37e4
 the whole Mocha suite passed 3615 of 3615 on the distributed runner and the light client suites 83

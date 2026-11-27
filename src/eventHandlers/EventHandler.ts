@@ -76,14 +76,6 @@ export class EventHandler {
             forkId: stateSnapshot.forkId
         });
 
-        await this.diamondStateMachine.localDiamondContract.onChannelOpened(
-            channelId,
-            stateSnapshot,
-            encodedState,
-            coordinate.blockNumber,
-            coordinate.logIndex
-        );
-
         await this.stateManager.withMutex(
             () =>
                 this.stateManager.stateApplicationService.unsafeSetGenesisState(
@@ -118,12 +110,6 @@ export class EventHandler {
             );
             return;
         }
-        await this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
-            channelId,
-            stateSnapshot,
-            coordinate.blockNumber,
-            coordinate.logIndex
-        );
         // Membership publishes only a snapshot the chain still holds: a
         // later update supersedes this event (a read at the head answers
         // with it), and membership then keeps the later one.
@@ -178,13 +164,6 @@ export class EventHandler {
             signedBlock,
             onChainTimestamp: timestamp
         });
-        await this.diamondStateMachine.localDiamondContract.onBlockCalldataPosted(
-            channelId,
-            commitmentHash,
-            sender,
-            signedBlock,
-            timestamp
-        );
         this.p2pEventHooks.onPostedCalldata?.();
 
         await this.stateManager.blockQueueManager.ingestPostedBlock({
@@ -231,11 +210,6 @@ export class EventHandler {
         timestamp: Timestamp
     ): Promise<void> {
         this.stateManager.membershipService.observeOnChainSlash(participant);
-        await this.diamondStateMachine.localDiamondContract.onOnChainSlashAdded(
-            channelId,
-            participant,
-            timestamp
-        );
         this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
             participant
         );
@@ -261,16 +235,6 @@ export class EventHandler {
     ): Promise<void> {
         // The fork's dispute window is over; its evidence comparison with it.
         this.stateManager.disputeManager.clearCache(forkId);
-        // sync LocalDiamond state
-        await this.diamondStateMachine.localDiamondContract.onDisputeReducedResultCommitted(
-            channelId,
-            forkId,
-            reducedForkId,
-            reductionTimestamp,
-            reducer,
-            coordinate.blockNumber,
-            coordinate.logIndex
-        );
 
         // Event synchronization remains pending while reduction validation and
         // any companion dispute-event recovery settle.
@@ -286,26 +250,13 @@ export class EventHandler {
         channelId: ChannelId,
         totalWithdrawals: any,
         coordinate: EventCoordinate
-    ): Promise<void> {
-        await this.diamondStateMachine.localDiamondContract.onWithdrawalsUpdated(
-            channelId,
-            totalWithdrawals,
-            coordinate.blockNumber,
-            coordinate.logIndex
-        );
-    }
+    ): Promise<void> {}
 
     async onChannelStorageCleared(
         channelId: ChannelId,
         firstPrunedInboundMessageBlockHash: Hash,
         coordinate: EventCoordinate
     ): Promise<void> {
-        await this.diamondStateMachine.localDiamondContract.onChannelStorageCleared(
-            channelId,
-            firstPrunedInboundMessageBlockHash,
-            coordinate.blockNumber,
-            coordinate.logIndex
-        );
         this.stateManager.membershipService.resetEligibility();
     }
 
@@ -320,17 +271,6 @@ export class EventHandler {
         // next audit of this fork compares again.
         this.stateManager.disputeManager.clearCache(forkId);
         this.stateManager.membershipService.observeOnChainSlash(disputer);
-        await this.diamondStateMachine.localDiamondContract.onOnChainSlashAdded(
-            channelId,
-            disputer,
-            blockTimestamp
-        );
-        await this.diamondStateMachine.localDiamondContract.onDisputeKilled(
-            channelId,
-            forkId,
-            disputer,
-            disputeHash
-        );
 
         // Log dispute killed event
         // Note: The kill reason is logged earlier when validation fails in onDisputeCommitted
@@ -372,10 +312,6 @@ export class EventHandler {
         await this.stateManager.onInboundMessage(
             messageBlock,
             messageBlockHash
-        );
-        await this.diamondStateMachine.localDiamondContract.onInboundMessagesProcessed(
-            channelId,
-            messageBlock
         );
 
         // A delivered join event publishes eligibility before later gossip.
@@ -535,15 +471,6 @@ export class EventHandler {
             windowCreationTimestamp,
             auditingDataPosted: disputeAuditingData ? true : false
         });
-
-        // sync LocalDiamond state
-        await this.diamondStateMachine.localDiamondContract.onDisputeCommitted(
-            channelId,
-            dispute,
-            disputeCreationTimestamp,
-            isFinal,
-            windowCreationTimestamp
-        );
 
         const window = await this.getRelevantWindow(
             channelId,

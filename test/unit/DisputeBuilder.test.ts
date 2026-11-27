@@ -1,8 +1,8 @@
 import type { Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
+import { stageForcedJoinBeforeHeadFinal } from "@test/fixtures/ConsumedInboundStaging";
 import { stageMissingParticipantSignature } from "@test/fixtures/LateSignatureStaging";
-import { stageMirrorMissingJoin } from "@test/fixtures/MirrorDivergenceStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -257,7 +257,7 @@ describe("Unit: DisputeBuilder", function () {
                 );
                 await control.stub.releaseTimeoutBuild().request();
                 await h.assert.dispute.initiatedWait({ peersIndices: [0] });
-                // the auditor audits once its mirror holds the dispute window
+                // the auditor audits once its handler has committed the dispute window
                 await h.assert.dispute.committedWait({
                     peersIndices: [1],
                     expectedCount: 1
@@ -328,9 +328,8 @@ describe("Unit: DisputeBuilder", function () {
         });
         it("a cached dispute that omits its auditing data, then the chain no longer allows the omission → the next construction builds again and posts the data", async function () {
             const h = TestSession.getHarness();
-            // the chain has a join the head milestone waits on; peer 0's
-            // mirror missed it
-            await stageMirrorMissingJoin(h, 0);
+            // the chain has a join the head milestone waits on
+            await stageForcedJoinBeforeHeadFinal(h);
             const peer = h.getPeer(0);
             const forkId = h.activeForkId!;
             const read = "isAuditingDataOmissionAllowed";

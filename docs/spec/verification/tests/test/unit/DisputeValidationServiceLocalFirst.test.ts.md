@@ -8,16 +8,15 @@ Exercises: [DisputeValidationService.ts.md](../../../../implementation/source/sr
 Each case builds a real dispute on a running math channel (`fetchConstructedDispute`), optionally
 edits its input or auditing data, and audits it on another peer through the harness
 `auditDispute`, which returns the verdict (or the thrown message) and the stored proof. The
-harness mirror service observes one audit read on that peer record-only: every mirror and
+harness mirror service observes one audit read on that peer record-only: every local and
 chain call still reaches the real local diamond and the real manager, and the oracle reads the
 answers and failures of each side. Divergence is staged with real state, never with a stubbed
-answer: the chain view is served from the block just before an event (`serveChainReadsBefore`), the
-auditor's mirror misses a consumed top-up, or the auditor's store and mirror miss or trail the
-previous block's calldata post. `failNextChainRead` makes one chain read fail through the real
+answer: the chain view is served from the block just before an event (`serveChainReadsBefore`), or
+the auditor's store trails the previous block's calldata post. `failNextChainRead` makes one chain read fail through the real
 connection: `transport` sends the chain read to an endpoint that refuses the connection.
 
 The suite covers every audit read of `DisputeValidationService`: each case asserts one chain read
-and no mirror read. For each stateful read, one case makes the chain read fail for transport and
+and no local read. For each stateful read, one case makes the chain read fail for transport and
 asserts that the audit throws and stores no proof. A `light client stubbed` group runs the header,
 latest-state, balance-invariant and calldata-preflight reads with the chain access reporting proven
 reads.
@@ -42,10 +41,7 @@ Blind pending-auditor staging persistently disconnects the auditor before the pa
 - `dispute.input.latestStateSnapshotHash = random: chain RPC refuses the connection -> the audit throws it, no mirror read, no proof`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P31, REQ-MIRROR-6-0WSB4V.T2.P2
 - `chain valid -> one chain read, no mirror read, true, no proof`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P16
 - `forged totalDeposits, audited by a pending auditor without a final block at the forged head: chain invalid -> one chain read, no mirror read, false + DisputeInvalidBalanceInvariant`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P4
-- `mirror missing a consumed top-up: chain valid -> one chain read, no mirror read, the chain answer wins, true, no proof`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P17, REQ-MIRROR-6-0WSB4V.T1.P12
-- `mirror missing a consumed top-up: chain RPC refuses the connection -> the audit throws it, no mirror read, no proof`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P32, REQ-MIRROR-6-0WSB4V.T2.P3
 - `chain valid -> one chain read, no mirror read, false + TimeoutCalldataPosted`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P25
-- `mirror and store missing the previous block's calldata post: chain invalid -> one chain read, no mirror read, true, no proof`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P8, REQ-MIRROR-6-0WSB4V.T1.P6
 - `store behind the chain on the previous block's calldata: chain invalid -> one chain read, no mirror read, true, no proof`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P7
 - `Unit: DisputeValidationService chain reads > validateTimeoutCalldataPostedProof > chain RPC refuses the connection -> the audit throws it, no mirror read, no proof`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P28, REQ-MIRROR-6-0WSB4V.T2.P4
 - `chain reads proven, chain final -> one chain read, no mirror read, true, no proof`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P38, REQ-MIRROR-6-0WSB4V.T3.P1

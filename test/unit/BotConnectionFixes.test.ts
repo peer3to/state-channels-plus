@@ -534,7 +534,7 @@ describe("Unit: bot-connection fixes", function () {
                 await waitFor(
                     async () =>
                         !(
-                            await h.query.getLocalStateSnapshot(leaver)
+                            await h.query.getOnChainStateSnapshot()
                         ).snapshotData.participants.includes(leaver.address) &&
                         (await membershipReads
                             .getChainMembershipReadCount()
@@ -601,7 +601,7 @@ describe("Unit: bot-connection fixes", function () {
                 // the posted exit is the leaver's anchor and settles the leave
                 await h.event.waitUntilLeftChannel(leaver.index);
                 expect(
-                    (await h.query.getLocalStateSnapshot(leaver)).snapshotData
+                    (await h.query.getOnChainStateSnapshot()).snapshotData
                         .participants
                 ).to.not.include(leaver.address);
 
@@ -656,14 +656,10 @@ describe("Unit: bot-connection fixes", function () {
                 expect(
                     await h.channelManager.getParticipants(h.channelId)
                 ).to.not.include(leaver.address);
-                // the leave is still pending and the local mirror still seats the leaver
+                // the leave is still pending
                 expect(
                     h.event.getEventCallCount(leaver.index, "onLeftChannel")
                 ).to.equal(0);
-                expect(
-                    (await h.query.getLocalStateSnapshot(leaver)).snapshotData
-                        .participants
-                ).to.include(leaver.address);
 
                 await expireWatchdog();
                 await h.event.waitUntilLeftChannel(leaver.index);
@@ -1599,15 +1595,7 @@ describe("Unit: bot-connection fixes", function () {
 
         it("AO4: a force-join deadline reads a real expired evidence window and retains the pending join without submitting", async function () {
             await assertForceJoinDeadlineSeesExpiredWindow(
-                TestSession.getHarness(),
-                { chainReadsProven: false }
-            );
-        });
-
-        it("a force-join deadline with chain reads proven reads the expired window's creation time from the chain while its local diamond lacks the window → the join is retained without submitting", async function () {
-            await assertForceJoinDeadlineSeesExpiredWindow(
-                TestSession.getHarness(),
-                { chainReadsProven: true }
+                TestSession.getHarness()
             );
         });
 

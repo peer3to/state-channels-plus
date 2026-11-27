@@ -388,44 +388,19 @@ export async function postSnapshotFrom(
 }
 
 /**
- * Peer 0 posts the latest final point as the chain anchor; every peer not in
- * `laggingIndices` waits until its local diamond mirrors it. A lagging peer
- * holds the StateSnapshotUpdated event (its mirror keeps the older snapshot).
+ * Peer 0 posts the latest final point as the chain anchor; every peer waits
+ * until its event pipeline has processed the post.
  */
 export async function postAnchor(
-    h: MathPeerTestHarness,
-    options: { laggingIndices?: number[] } = {}
+    h: MathPeerTestHarness
 ): Promise<{ hash: string; height: number }> {
-    const lagging = options.laggingIndices ?? [];
-    for (const index of lagging)
-        await h
-            .control(h.getPeer(index))
-            .stub.stubHoldSnapshotUpdatedEvents()
-            .request();
     const before = await chainSnapshot(h);
     expect(await postSnapshotFrom(h, 0), "the anchor post").to.equal("posted");
     const anchor = await chainSnapshot(h);
     expect(anchor.hash, "the post moved the chain anchor").to.not.equal(
         before.hash
     );
-    const current = h.peers.filter((peer) => !lagging.includes(peer.index));
-    await waitFor(async () => {
-        for (const peer of current)
-            if (
-                (await h.query.getLocalStateSnapshot(peer)).hash !== anchor.hash
-            )
-                return false;
-        return true;
-    }, h.event.protocolEventTimeoutMs());
-    for (const index of lagging)
-        await waitFor(
-            async () =>
-                (await h
-                    .control(h.getPeer(index))
-                    .stub.getHeldSnapshotUpdatedCount()
-                    .request()) > 0,
-            h.event.protocolEventTimeoutMs()
-        );
+    await h.event.waitForSnapshotLogHandled(h.peers.map((peer) => peer.index));
     return { hash: String(anchor.hash), height: anchor.blockHeight };
 }
 
@@ -515,8 +490,7 @@ export async function stageFinalThenUnfinalizedTail(
 
 /**
  * Three peers, blocks 0..1 final, every timeout check suppressed. With
- * `postAnchor` peer 0 posts block 1's snapshot as the chain anchor (a peer in
- * `laggingIndices` holds the snapshot event, so its mirror lags). Then
+ * `postAnchor` peer 0 posts block 1's snapshot as the chain anchor. Then
  * `finalBlocks` more fully signed blocks.
  */
 export async function stageFinalBlocks(
@@ -524,7 +498,6 @@ export async function stageFinalBlocks(
     options: {
         postAnchor: boolean;
         finalBlocks: number;
-        laggingIndices?: number[];
     }
 ): Promise<{
     forkId: ForkId;
@@ -533,9 +506,7 @@ export async function stageFinalBlocks(
 }> {
     await h.lifecycle.start(3, 2);
     await suppressTimeoutChecks(h, [0, 1, 2]);
-    const anchor = options.postAnchor
-        ? await postAnchor(h, { laggingIndices: options.laggingIndices })
-        : null;
+    const anchor = options.postAnchor ? await postAnchor(h) : null;
     if (options.finalBlocks > 0)
         await h.transition.advanceState({
             count: options.finalBlocks,
@@ -550,20 +521,13 @@ export async function stageFinalBlocks(
 }
 
 /**
- * Three peers; `laggingIndex`'s local diamond misses the
- * InboundMessagesProcessed log of peer 0's top-up while its storage keeps up;
- * two fully signed blocks consume the top-up. With `anchorBeforeTopUp` peer 0
- * posts block 1's snapshot as the chain anchor before the top-up (every
- * mirror has it); with `anchorAfterTopUp` peer 0 posts the final point that
- * consumed the top-up while the lagging peer also holds that snapshot event.
+ * Three peers; peer 0's top-up is force-joined and two fully signed blocks
+ * consume it. With `anchorBeforeTopUp` peer 0 posts block 1's snapshot as the
+ * chain anchor before the top-up.
  */
-export async function stageMirrorMissingTopUp(
+export async function stageConsumedTopUp(
     h: MathPeerTestHarness,
-    options: {
-        laggingIndex: number;
-        anchorBeforeTopUp?: boolean;
-        anchorAfterTopUp?: boolean;
-    }
+    options: { anchorBeforeTopUp?: boolean } = {}
 ): Promise<{
     forkId: ForkId;
     anchor: { hash: string; height: number } | null;
@@ -571,22 +535,10 @@ export async function stageMirrorMissingTopUp(
 }> {
     await h.lifecycle.start(3, 2);
     await suppressTimeoutChecks(h, [0, 1, 2]);
-    let anchor = options.anchorBeforeTopUp ? await postAnchor(h) : null;
-    const held = await h.mirror.holdUpdates(
-        options.laggingIndex,
-        "onInboundMessagesProcessed"
-    );
+    const anchor = options.anchorBeforeTopUp ? await postAnchor(h) : null;
     await h.join.forceInboundJoinWait({ participant: h.getPeer(0).address });
     await h.transition.advanceState({ count: 2, waitForFinalization: true });
     await h.assert.sync.peersInSyncWait();
-    expect(
-        await held.heldCount(),
-        "the lagging mirror must have missed the top-up"
-    ).to.be.greaterThan(0);
-    if (options.anchorAfterTopUp)
-        anchor = await postAnchor(h, {
-            laggingIndices: [options.laggingIndex]
-        });
     const latestHeight = Number(
         await h
             .control(h.getPeer(0))

@@ -1,5 +1,4 @@
 import { Codec, hash, Type } from "@/utils";
-import { stageMirrorMissingJoin } from "@test/fixtures/MirrorDivergenceStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
@@ -44,53 +43,6 @@ describe("Unit: DisputeManager.constructDispute chain reads", function () {
         const { local, chain } = await reads.observation();
         expect(local.reads).to.equal(0);
         expect(chain.answers).to.deep.equal([true]);
-    });
-
-    it("mirror missing the join, chain not final -> the chain answers: one chain read, no mirror read, the auditing data is posted", async function () {
-        const h = TestSession.getHarness();
-        await stageMirrorMissingJoin(h, 0);
-        const reads = await h.mirror.observe(
-            0,
-            "isAuditingDataOmissionAllowed"
-        );
-
-        const { dispute, auditingData } =
-            await h.dispute.fetchConstructedDispute(0);
-
-        const { local, chain } = await reads.observation();
-        expect(local.reads).to.equal(0);
-        expect(chain.answers).to.deep.equal([false]);
-        expect(dispute.postedAuditingData).to.equal(true);
-        expect(dispute.input.disputeAuditingDataHash).to.equal(
-            hash(Codec.encode(auditingData, Type.DisputeAuditingData))
-        );
-    });
-
-    it("chain reads proven, mirror missing the join -> the chain answers: one chain read, no mirror read, the auditing data is posted", async function () {
-        const h = TestSession.getHarness();
-        await stageMirrorMissingJoin(h, 0);
-        const proven = h.control(h.getPeer(0));
-        await proven.stub.stubProvenChainReads().request();
-        try {
-            const reads = await h.mirror.observe(
-                0,
-                "isAuditingDataOmissionAllowed"
-            );
-
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(0);
-
-            const { local, chain } = await reads.observation();
-            await reads.restore();
-            expect(local.reads).to.equal(0);
-            expect(chain.answers).to.deep.equal([false]);
-            expect(dispute.postedAuditingData).to.equal(true);
-            expect(dispute.input.disputeAuditingDataHash).to.equal(
-                hash(Codec.encode(auditingData, Type.DisputeAuditingData))
-            );
-        } finally {
-            await proven.stub.restoreProvenChainReads().request();
-        }
     });
 
     it("the on-chain slashed participants are read from the chain, not the mirror", async function () {

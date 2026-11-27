@@ -17,7 +17,7 @@
 
 Audit order and evidence
 
-- Setup: Corrupt each check alone; serve unavailable required evidence; force mirror/chain predicate divergence; drive the preflight
+- Setup: Corrupt each check alone; serve unavailable required evidence; force local/chain predicate divergence; drive the preflight
 - Oracle: First counterable failure stores exactly one proof; a missing or false local finalized verification advances to the chain tier; required-state failures throw; canonical logic decides; preflight blocks self-slash
 
 - [ ] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P1` — inbound-tip reality check failure
@@ -42,8 +42,7 @@ Audit order and evidence
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P21` — output-correctness check failure
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P23` — true flag alone supplies a reason: valid state audits successfully without a fraud proof
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P24` — Audit with no local final state walks the proof from the chain's anchor and accepts
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P25` — Audit whose local diamond misses consumed inbound evidence accepts from the chain's trusted-start walk without a counter
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P26` — Audit by a participant whose mirror holds no same-fork anchor walks the proof from the chain's anchor and accepts
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P26` — Audit by a participant whose own finalized state does not accept the proof walks it from the chain's anchor and accepts
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P29` — Malformed retained tail with posted auditing data produces an invalid-proof counter without crashing
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P30` — Malformed retained tail with permitted omitted data produces an invalid-proof counter without crashing
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P31` — Malformed inner block in a wholly skipped milestone is not checked and does not invalidate audit
@@ -101,7 +100,7 @@ Audit order and evidence
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P83` — When a forced pending joiner never signed, an omitted-data dispute with a later state fault is killed by an honest auditor applying only the availability counter, slashing submitter, with no stored InvalidStateProof
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P84` — When a pending signer makes omission impermissible, auditors accept the posted-data dispute; a direct copy marked unposted instead returns the availability counter, while normal resolution slashes the original block offender
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P85` — A blind pending auditor kills a posted forged-total final snapshot using only InvalidBalanceInvariant, then kills the colluders' real-head disputes using final-state-conflict counters; the final slash set contains exactly those colluders
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P86` — A lagging-mirror auditor reaches the chain proof tier, stores the same after-anchor transition-counter index one as a current auditor, and the dispute is killed with only submitter slashed
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P86` — An auditor whose own finalized state does not accept the proof reaches the chain proof tier, stores the same after-anchor transition-counter index one as a current auditor, and the dispute is killed with only submitter slashed
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P87` — With chain anchor at index two inside the last run, lagging and current auditors both store the tail transition counter at original index three; a kill lands and only submitter is slashed
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P88` — For a nonauthentic block immediately after an interior anchor, the lagging auditor stores the structure counter at original index three, the dispute is killed and only submitter is slashed
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P89` — A forged below-chain-anchor block followed by an honest retained tail reaches the chain tier; through kill expiry auditors store no counters, observe no kill and nobody is slashed
@@ -124,7 +123,7 @@ Audit order and evidence
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P106` — A missing participant-change block required to establish the local final point makes audit throw before any chain walk and produce no counter
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P107` — After the local final point cannot establish a consumed-inbound hop, a chain transport failure makes audit throw with no counter
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P108` — An unproven prefix below the local final point is skipped: trusted-start walk accepts without a chain walk and without counter
-- [ ] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P109` — An unproven prefix above the genesis trusted start produces InvalidStateProof pointing inside that prefix without a block index; canonical step verification accepts it, and the auditor kills the dispute and slashes submitter. Untested: needs an auditor without the threshold signatures while the proof's last milestone is final; the only staging found relied on mirror lag
+- [ ] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P109` — An unproven prefix above the genesis trusted start produces InvalidStateProof pointing inside that prefix without a block index; canonical step verification accepts it, and the auditor kills the dispute and slashes submitter. Untested: needs an auditor without the threshold signatures while the proof's last milestone is final; the only staging found relied on mirror lag (the mirror is removed)
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P110` — When no tier can supply a forged hop snapshot, the auditor holds no block at that height and auditing data is omitted, audit throws for missing milestone snapshots without a counter
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P111` — A forged hop conflicting with a held final block is countered at milestone zero/block zero without a chain walk; the auditor kills the dispute with ConflictsWithFinalState and slashes submitter
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P112` — After an honest proof is accepted without a chain walk, replacing its latest snapshot hash with an earlier real snapshot makes audit return InvalidStateProof
@@ -138,7 +137,7 @@ Audit order and evidence
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P120` — Posted finalized-state bytes with the wrong hash are not installed; when the required real replay state is absent, audit throws without a counter and the base state remains absent
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P121` — A missed tail with another participant’s real signature substituted for its author signature returns InvalidBlockStructure and stores none of the tail blocks
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P122` — An unrecoverable confirmation signature in the last milestone’s first block returns InvalidStateProof and stores none of the missed tail blocks
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P123` — With preanchor blocks pruned, current-anchor and lagging-mirror auditors both counter the postanchor fault at last-milestone index one; chain eligibility excludes anchor and past-run indices
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P123` — With preanchor blocks pruned, auditors on their own finalized state and on the chain tier both counter the postanchor fault at last-milestone index one; chain eligibility excludes anchor and past-run indices
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P124` — A genesis-linked last milestone containing an invalid preanchor block is accepted by current and lagging auditors without counters; only the lagging auditor needs the canonical chain tier, and every supplied block is challenge-ineligible
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P125` — With the anchor inside a milestone containing both a preanchor invalid block and postanchor fault, both current and lagging auditors counter only the postanchor fault at its actual index; anchor and past-run indices are ineligible
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P126` — Appending a copy with its author signature replaced by a confirmation signature after the protected head produces DisputeInvalidBlockStructure at original last-milestone index one
@@ -190,7 +189,6 @@ Exhaustive dispute audit, persistence, timeout, and snapshot-hash paths
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P21` — Unit: DisputeValidationService > milestone finality + state proof anchor > dispute.input.latestInboundMessageBlockHash = pre-join head -> joiner still holds milestones[-1].blockConfirmations[0], audits it
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P24` — Unit: DisputeValidationService > milestone finality + state proof anchor > inbound run the auditor does not hold > settled path, recoverable gap -> full audit, zero proofs, the run is now held
 - [ ] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P26` — Unit: DisputeValidationService > milestone finality + state proof anchor > stateProof.milestones = [] -> stored genesis snapshot + forkId == snapshotDataHash, true
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P29` — Unit: DisputeValidationService > milestone finality + state proof anchor > localDiamond.isDisputeInboundHashValid false + RPC true -> no DisputeInboundHashNotInChain
 - [ ] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P31` — Unit: DisputeValidationService > pipeline > onBlockConfirmationStruct false with an empty disputeFraudProofs store -> throw
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P32` — Unit: DisputeValidationService > dispute output > dispute.outputSnapshotDataHash = random -> false + DisputeInvalidOutputState
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P33` — Unit: DisputeValidationService > dispute output > timeout.participant = 0 AND onChainSlashes = [] AND selfRemoval false -> false + InvalidDisputeReason
@@ -220,7 +218,7 @@ Exhaustive dispute audit, persistence, timeout, and snapshot-hash paths
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P129` — while a replay holds the state mutex with the predecessor state installed on the shared state machine, a timeout audit's next-writer peek settles without the mutex and judges the disputed state; the valid timeout dispute stays valid with no `TimeoutParticipantNotNext`.
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P130` — a forced timeout of an honest first block whose calldata is on-chain stores `TimeoutCalldataPosted` against the disputer
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P131` — a forced timeout of an honest block that carries inbound message blocks and whose calldata is on-chain stores `TimeoutCalldataPosted` against the disputer
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P132` — a timely timeout: the dispute window's creation time is read from the chain, not the mirror, and the timeout checks pass
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P132` — a timely timeout: the dispute window's creation time is read from the chain and the timeout checks pass
 
 ## UNIT-TEST-DISPUTE-INBOUND-RECOVERY-32-6PBRKZ
 
@@ -237,28 +235,25 @@ Inbound availability during dispute audit
 
 Chain audit predicates
 
-- Setup: `validateDispute` on a real auditor for each audit read (last milestone final by everyone, correct latest state, balance invariant, state proof, timeout-calldata-posted preflight, proof header, on-chain slashes); the local diamond and the chain manager are made to disagree with real state (a lagging mirror or store, a chain view served before an event) or with forged dispute input, and the chain read is made to revert or to fail for transport; local and chain reads are observed record-only
-- Oracle: Each audit predicate is answered by the chain manager with one chain read and no mirror read; the answer that accuses the submitter stores its proof, the others store none. A thrown chain failure propagates fatally, without becoming a proof verdict. The light-client-stubbed runs answer the same way.
+- Setup: `validateDispute` on a real auditor for each audit read (last milestone final by everyone, correct latest state, balance invariant, state proof, timeout-calldata-posted preflight, proof header, on-chain slashes); the node and the chain manager are made to disagree with real state (a lagging store, a chain view served before an event) or with forged dispute input, and the chain read is made to revert or to fail for transport; local and chain reads are observed record-only
+- Oracle: Each audit predicate is answered by the chain manager with one chain read and no local read; the answer that accuses the submitter stores its proof, the others store none. A thrown chain failure propagates fatally, without becoming a proof verdict. The light-client-stubbed runs answer the same way.
 
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P1` — last milestone: the chain says "final": one chain read, no mirror read and no `DisputeLastMilestoneNotFinalAndNoAuditingData` proof
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P1` — last milestone: the chain says "final": one chain read, no local read and no `DisputeLastMilestoneNotFinalAndNoAuditingData` proof
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P2` — last milestone: the chain says "not final": one chain read, then `DisputeLastMilestoneNotFinalAndNoAuditingData` is stored
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P4` — balance invariant: the chain says "invalid": one chain read, then `DisputeInvalidBalanceInvariant` is stored
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P7` — timeout-calldata-posted preflight: the chain says "invalid" while the store trails the chain on the previous block's calldata: one chain read and no proof
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P8` — timeout-calldata-posted preflight: the chain says "invalid" while the mirror and store miss the previous block's calldata post: no proof is stored and the audit returns valid
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P11` — last milestone: the chain says "final" while its view precedes a join: the chain answer wins and no `DisputeLastMilestoneNotFinalAndNoAuditingData` is stored
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P12` — latest state: the chain says "correct": one chain read, no mirror read and no proof
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P12` — latest state: the chain says "correct": one chain read, no local read and no proof
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P13` — latest state: the chain says "incorrect": one chain read, then `DisputeInvalidStateProof` is stored
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P16` — balance invariant: the chain says "valid": one chain read, no mirror read and no proof
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P17` — balance invariant: the mirror misses a consumed top-up, the chain says "valid": the chain answer wins and no proof is stored
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P16` — balance invariant: the chain says "valid": one chain read, no local read and no proof
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P25` — timeout-calldata-posted preflight: the chain says "valid": one chain read, then `TimeoutCalldataPosted` is stored
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P28` — timeout-calldata-posted preflight: the chain read fails for transport: the audit throws and no proof is stored
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P29` — proof header: the chain says "no mismatch": one chain read, no mirror read, and the audit continues
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P29` — proof header: the chain says "no mismatch": one chain read, no local read, and the audit continues
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P30` — last milestone: the chain read fails for transport: the audit throws and no proof is stored
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P31` — latest state: the chain read fails for transport: the audit throws and no proof is stored
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P32` — balance invariant: the mirror misses a consumed top-up and the chain read fails for transport: the audit throws and no proof is stored
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P38` — last milestone, with the light client stubbed in: the chain says "final": one chain read and no mirror read
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P39` — proof header, with the light client stubbed in: one chain read and no mirror read
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P40` — latest state, with the light client stubbed in: one chain read and no mirror read
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P41` — balance invariant, with the light client stubbed in: one chain read and no mirror read
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P38` — last milestone, with the light client stubbed in: the chain says "final": one chain read and no local read
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P39` — proof header, with the light client stubbed in: one chain read and no local read
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P40` — latest state, with the light client stubbed in: one chain read and no local read
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P41` — balance invariant, with the light client stubbed in: one chain read and no local read
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P42` — timeout-calldata-posted preflight, with the light client stubbed in: one chain read, then `TimeoutCalldataPosted` is stored
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P43` — on-chain slashes: a valid dispute is audited with the slashed participants read from the chain, not the mirror, and no proof is stored
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P43` — on-chain slashes: a valid dispute is audited with the slashed participants read from the chain and no proof is stored

@@ -262,31 +262,13 @@ export class TransitionActions<
         timeoutMs?: number;
     }): Promise<StateSnapshot | undefined> {
         // The post resolves once mined; the barrier below waits until every
-        // honest peer holds the posted snapshot.
+        // honest peer has processed the post's log.
         const expectedSnapshot = await this.requestPostSnapshot(options);
         if (!expectedSnapshot) return undefined;
 
-        const timeoutMs =
-            options?.timeoutMs ??
-            this.harness.event.protocolEventTimeoutMs({
-                withFirstBlockGrace: true
-            });
-        await this.harness.eventCountsBarrier.waitFor(
-            async () => {
-                const honestPeers = this.harness.getHonestPeers();
-                const localSnapshots = await Promise.all(
-                    honestPeers.map((peer) =>
-                        this.harness.query.getLocalStateSnapshot(peer)
-                    )
-                );
-                return localSnapshots.every(
-                    (s) => s.hash === expectedSnapshot.hash
-                );
-            },
-            {
-                timeoutMs,
-                timeoutMessage: `postSnapshotWait: honest peers did not observe expected snapshot ${expectedSnapshot.hash} within ${timeoutMs}ms`
-            }
+        await this.harness.event.waitForSnapshotLogHandled(
+            this.harness.getHonestPeers().map((peer) => peer.index),
+            options?.timeoutMs
         );
         return expectedSnapshot;
     }
