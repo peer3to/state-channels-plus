@@ -7,7 +7,7 @@ validation section of the card is a later step (S6) and is not covered here.
 
 Status: the calls, readiness and first capacity ramps were measured on farm hosts on 2026-11-22 with a
 synthetic workload (see Results). Channel flows of real participants were measured on 2026-11-23 to
-2026-11-26, and capacity again on 2026-11-25 and 2026-11-26 with a workload taken from those flows
+2026-11-27, and capacity again on 2026-11-25 to 2026-11-27 with a workload taken from those flows
 (Channel flows, Capacity with the flows' workload). The fallback strategy was chosen on 2026-11-26.
 
 ## What is compared
@@ -125,7 +125,7 @@ Strategy 2 stays. In the 22 Nov calls, keys known together cost strategy 2 one r
 against 4 requests (19 ms) for strategy 1; on a chain of 8 slots that each name the next, strategy 1
 was 12% faster and spent 26 against 38 ms of peer CPU, because strategy 2 runs the call again. In the
 channel flows a steady-state round needed 0.96 to 1.19 requests to the node with the light client on,
-and 0.11 once received blocks stopped reading their commitment (Channel flows), so how a miss is
+and 0.07 once received blocks stopped reading their commitment (Channel flows), so how a miss is
 fetched changes little there. Strategy 1 is removed, with its
 configuration and its two tests. Strategy 3, the node's own simulation, stays only where the light
 client does not answer: a read that fails falls back to it (`REQ-LC-3-W7RRHM`), and calls with gas
@@ -255,10 +255,8 @@ Where the build departs from the card is listed in
   a relay-chain network.
 - The 22 Nov synthetic ramps never missed a step, so their limits (about 35,000 distinct, 43,000
   shared) are extrapolated. The ramps with the flows' workload were run to their first miss.
-- The skipped commitment read (`03b28d3ec`) was measured in the flows on a development machine only,
-  not on the farm.
-- Watched-key expiry was not measured on its own in the capacity ramps (Capacity with the flows'
-  workload).
+- The shared ramps stopped at the peer hosts' limit, not the node's: one node's limit for shared
+  partitions is above 1,800 subscribers and was not reached (Capacity with the flows' workload).
 - A warm run serves one warm-up flow before the measured one. A node that has served many channels
   for hours, with a manager holding their storage, was not measured.
 
@@ -482,7 +480,7 @@ whose partitions hold more keys, would make each push larger and each build long
 
 ### Channel flows
 
-Measured on testing1 (8 cores of an AMD EPYC 9645, 16 GB) on 2026-11-25 and 2026-11-26, and on a
+Measured on testing1 (8 cores of an AMD EPYC 9645, 16 GB) on 2026-11-25 to 2026-11-27, and on a
 development machine where stated. Driver: `scripts/bench/lightClientFlows.ts`
 (`yarn bench:light-client:flows`). Each flow is a test of the SDK's own suite: three participants run
 a channel on a peer3 node started for that one flow, so every run is a cold start for the node and
@@ -514,41 +512,42 @@ in them, 2 to 10 blocks. In that time the light client pays its start-up and gai
 (steadyState - transitions) / 9 is the cost of one round once the peers follow their channel. Mean of
 the 3 repeat pairs, requests per round:
 
-| SDK                                               | Node      | Where               | Cold              | Warm            |
-| ------------------------------------------------- | --------- | ------------------- | ----------------- | --------------- |
-| light client off                                  | `6bf84b6` | testing1            | 6.04              |                 |
-| on, before watched keys (`66daf0585`)             | `6bf84b6` | testing1            | 3.44              |                 |
-| on, watched keys (`69332517e`)                    | `6bf84b6` | testing1            | 1.19 and 0.96     | 1.67            |
-| on, watched keys (`69332517e`)                    | `6bf84b6` | development machine | 0.89              | 2.33            |
-| on, no commitment read when in time (`03b28d3ec`) | `827ca0d` | development machine | 0.11 (0, 0, 0.33) | 0 (0, -0.67, 0) |
+| SDK                                               | Node      | Where               | Cold                     | Warm            |
+| ------------------------------------------------- | --------- | ------------------- | ------------------------ | --------------- |
+| light client off                                  | `6bf84b6` | testing1            | 6.04                     |                 |
+| on, before watched keys (`66daf0585`)             | `6bf84b6` | testing1            | 3.44                     |                 |
+| on, watched keys (`69332517e`)                    | `6bf84b6` | testing1            | 1.19 and 0.96            | 1.67            |
+| on, watched keys (`69332517e`)                    | `6bf84b6` | development machine | 0.89                     | 2.33            |
+| on, no commitment read when in time (`9482cd7d3`) | `827ca0d` | testing1            | 0.07 (0.22, -0.22, 0.22) | 0 (-0.33, 0, 0) |
 
 Warm runs a warm-up flow on the same node before the measured one, so the node has served other
 peers and the state channel manager holds more storage. Warm cost more per round than cold (1.67
 against 0.96) because of one read: validating each received block read the block's calldata
 commitment on chain, a key that is never written, and with more manager storage that read needed the
 node more often (cold 6 to 16 of 72 such reads per run, warm 23 to 29, five runs each). Since
-`03b28d3ec` a block received in time does not make that read at all (`REQ-BLOCK-PIPE-8-N529VH`). On the
-same development machine a round then cost 0.11 cold and nothing warm: in 4 of the 6 pairs the 9
-extra rounds added no request, and the others differ by 3 requests, the spread between repeats of one
-flow. That run is not from the farm.
+`03b28d3ec` a block received in time does not make that read at all (`REQ-BLOCK-PIPE-8-N529VH`). On
+testing1 a round then cost 0.07 cold and nothing warm: the pairs differ by 0 to 3 requests, within the
+spread between repeats of one flow (transitions 88 to 93). The 9 extra rounds add no watch call either:
+steadyState made 39 in every run, transitions 39 to 42.
 
 **Correctness.** Every flow ran once more in compare mode, where each read the light client answered
 was also asked of the node at the same block: 900 of 900 matched on 2026-11-25, 907 of 907 on
-2026-11-26, 895 of 895 warm. No read failed, no push was refused and no subscription restarted in any
-run.
+2026-11-26, 895 of 895 warm, and 1,576 of 1,576 on 2026-11-27 (778 cold, 798 warm). No read failed,
+no push was refused and no subscription restarted in any run.
 
 **The card's 99%.** Fewer RPC calls by 99% is not reachable in these flows, whatever the light client
 does. 13 to 23% of a flow's requests with the light client off must reach a node (measured on
 2026-11-23): sending a transaction, its gas estimate and receipt, the nonce at the pending block, and
 the subscriptions.
 Over a whole cold flow the light client costs more requests, not fewer (table above). In steady state
-it removes 98% of a round's requests on the development machine (0.11 left of 6.04 measured off on the
-farm), which is the card's case of repeated calls once the state is held; 99% of a round would leave
-0.06, below the spread between repeats, so the measurement cannot tell 98% from 99% there.
+it removes 98.8% of a round's requests cold and all of them warm on testing1 (0.07 and 0 left of 6.04
+off), which is
+the card's case of repeated calls once the state is held. 0.07 is the mean of pair differences of -2
+to +2 requests over 9 rounds, so the measurement cannot tell 98.8% from 99% or 100% there.
 
 ### Capacity with the flows' workload
 
-The 22 Nov ramps above wrote one key per partition and watched nothing. On 2026-11-25 and 2026-11-26
+The 22 Nov ramps above wrote one key per partition and watched nothing. On 2026-11-25 to 2026-11-27
 the ramps ran again with a workload taken from the channel flows on the farm:
 
 | Item                  | Flows (steadyState and transitions, per peer)  | Workload                                   |
@@ -559,7 +558,7 @@ the ramps ran again with a workload taken from the channel flows on the farm:
 | Watched keys at start | 47 to 55                                       | 50, watched after the first message        |
 | Peers per channel     | 3                                              | shared ramps 3, distinct ramps 1           |
 
-Node: peer3-parachain `6bf84b6` (2026-11-25 ramps) and `827ca0d` (2026-11-26), dev mode, one block
+Node: peer3-parachain `6bf84b6` (2026-11-25 ramps) and `827ca0d` (2026-11-26 and 2026-11-27), dev mode, one block
 every 2 s, on testing1 behind a firewall that admits the peer hosts only. Driver on testing1, peers on
 testing2 to testing5. Each step ran 60 s after a 10 s warm-up, and a ramp stopped at its first step
 that was not sustained, twice per model. A step is sustained when every push arrived and no watch
@@ -568,6 +567,8 @@ stayed within 2 s, and the first step missed.
 
 | Watched set per subscriber                        | Partitions | Sustained     | p95 within 2 s | First miss              |
 | ------------------------------------------------- | ---------- | ------------- | -------------- | ----------------------- |
+| 50 keys, watched again every 65 blocks            | distinct   | 1,000         | 600            | 1,200                   |
+| 50 keys, watched again every 65 blocks            | shared     | 1,800         | 1,200          | 2,400 (peer hosts busy) |
 | 50 keys                                           | distinct   | 1,100         | 600            | 1,200                   |
 | 50 keys                                           | shared     | 1,200 or more | 600            | 1,800 (peer hosts busy) |
 | 1,024 keys                                        | distinct   | 150           | 100            | 200                     |
@@ -581,17 +582,27 @@ on a single thread. At 1,100 distinct subscribers building the pushes took 1.77 
 (p95 1.97 s); with 1,024 watched keys each subscriber's push re-proved all of them, about 12 ms per
 subscriber and a 92 KB watch push.
 
-Which row applies: before 2026-11-26 every received block made one commitment read, a key never
-written, and each such key stayed watched, so a long-running peer filled its 1,024 places (third
-and fourth rows). Watching the commitments of the next 32 heights ahead kept them bounded (last two
+Which row applies: the third and fourth rows (2026-11-25) watched 50 keys that never expired. Before 2026-11-26 every received block made one commitment read, a key never
+written, and each such key stayed watched, so a long-running peer filled its 1,024 places (fifth
+and sixth rows). Watching the commitments of the next 32 heights ahead kept them bounded (last two
 rows) but cost about 60% of the node's capacity, and was removed when the read itself was removed:
 a block received in time no longer reads its commitment (`REQ-BLOCK-PIPE-8-N529VH`), and watched keys
-now expire 64 blocks after the last watch that named them (`--light-client-watched-key-blocks`). The
-first two rows are the model for the code as it is, measured without the expiry; the expiry adds at
-most one watch of the 50 keys per subscriber every 65 blocks, which was not measured on its own.
+now expire 64 blocks after the last watch that named them (`--light-client-watched-key-blocks`).
 
-For 10,000 players in channels of 3 (the shared rows), one node per 1,200 or more subscribers gives at
-most 9 nodes at the capacity limit, or about 17 nodes with the p95 within 2 s (600 per node).
+The first two rows are the code as it is (2026-11-27: SDK `9482cd7d3`, driver `b5f627215`, node `827ca0d`): each
+subscriber watches its 50 keys again once the node released them, every 65 blocks. Both rounds of
+each model gave the same limits, with no failed watch. On distinct partitions the node is the limit:
+building the pushes took a median 1.45 to 1.53 s of the 2 s block at 1,000 subscribers and 2.02 to
+3.32 s at 1,200, while the peer threads were at most 66% busy. On shared partitions the peer hosts
+are the limit: their threads were 98 to 99% busy at 1,800 and fully busy at 2,400, while building
+took 1.33 to 1.36 s at 2,400. The steps were 200 apart (distinct) and 600 apart (shared), so 1,000
+against the 1,100 of the third row is within one step. In the first distinct round each step first
+set up 200 new channels, about 50 blocks, and every watch-again fell in that setup, outside the
+measured window; the second round reused the channels and counted 200 to 400 watches per step, at
+the same limits.
+
+For 10,000 players in channels of 3 (the shared rows), one node per 1,800 or more subscribers gives at
+most 6 nodes at the capacity limit, or 9 nodes with the p95 within 2 s (1,200 per node).
 
 Measured with the farm drained of tests; results, logs and scripts are kept outside the repository
-with the bench notes of 2026-11-25 and 2026-11-26.
+with the bench notes of 2026-11-25 to 2026-11-27.

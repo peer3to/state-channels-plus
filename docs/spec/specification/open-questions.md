@@ -918,8 +918,8 @@ decided by the engineer on the date given.
 7. **Strategy 2 is chosen.** The card asks to benchmark the strategies before choosing one. Strategy 1
    (prove each miss as the call reaches it and go on) and strategy 2 (prove each pass's misses in one
    request and run the call again) were measured on 2026-11-22 (`docs/light-client-report.md`, Calls).
-   In the channel flows a steady-state round needs 0.11 requests to the endpoint once received blocks
-   no longer read their commitment (development machine, 2026-11-26), so how a miss is fetched changes
+   In the channel flows a steady-state round needs 0.07 requests to the endpoint once received blocks
+   no longer read their commitment (testing1, 2026-11-27), so how a miss is fetched changes
    little. Strategy 2 stays and strategy 1, which was a benchmark
    configuration, is removed (2026-11-26). Strategy 3, the endpoint's own simulation, stays as the
    fallback of a read that fails ([`REQ-LC-3-W7RRHM` (A failed read falls back to the endpoint and is made known)](runtime/light-client.md#req-lc-3-w7rrhm)) and for
