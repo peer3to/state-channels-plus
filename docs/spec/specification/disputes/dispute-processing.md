@@ -88,9 +88,12 @@ one, and escalate.
    applications alone while the upload could still land. Among several accepted final-history
    counters against one dispute, the node sends the one with the largest slash set S that fits the
    65,536-byte transaction limit (the earliest on a tie); a counter that fits no transaction is
-   stored but not sent. When the kill fits but the kill plus the upload does not, the kill is sent
-   alone first and the node's own dispute is still uploaded in a second transaction; a kill that
-   another auditor landed first makes the lone kill a no-op and the upload still lands. Classify races: ineligibility (the node was slashed), a window
+   never sent and does not end the audit: the remaining checks still run, and that counter is
+   stored only when they find no other counter or cannot finish. When the kill fits but the kill plus the upload
+   does not, the kill is sent alone first and the node's own dispute is still uploaded in a second
+   transaction; a kill that another auditor landed first makes the lone kill a no-op and the upload
+   still lands, and a lone kill whose send fails still lets the upload go, its failure reported
+   after the upload. Classify races: ineligibility (the node was slashed), a window
    opened too early for the timeout, or an expired evidence window (a lost evidence race: a no-op reported to the caller,
    [`OQ-SPEC-EVIDENCE-RACE-1-TKNWBJ` (Interpreting a lost evidence race)](../open-questions.md#oq-spec-evidence-race-1-tknwbj)); roll back the once-per-fork guard on failure. An upload carries the signer's estimate plus headroom, not a fixed gas limit, so a concurrent dispute landing between estimate and inclusion cannot push a late disputer out of gas and past the evidence window; in a replaying batch the replay requirement gives that margin while the batch stays under the cap.
 

@@ -161,11 +161,14 @@ Sub-unanimous thresholds are not supported anywhere in the protocol definition.
 
 **Signature admission follows the threshold.** A signature on a later block counts toward an
 earlier block's finality, so a node admits every counter-signature the chain counts for a hop that
-is not final at that node: the union of the hop from its final point to the block, not only the
-block's own previous and resulting sets. A joiner added and removed within that hop, or a leaver
-whose departure hop is not yet final, is admitted. Nodes at different final points can disagree
-on one signer; such a signer is stripped without blame, and only a signer outside the hop from the
-fork genesis penalizes its supplier
+is not final at that node: the union of the hop from its final point to the block's previous
+snapshot (its resulting snapshot when it has no previous one), not only the block's own previous
+and resulting sets. A joiner added and removed within that hop, or a leaver whose departure hop is
+not yet final, is admitted. Nodes at different final points can disagree on one signer; such a
+signer is stripped without blame, and only a signer outside the hop from the fork genesis
+penalizes its supplier. When the inbound run of the hop from the fork genesis is missing and event
+recovery cannot supply it, waiting cannot help, so the signer is stripped without blame like a
+view-dependent signer
 ([`REQ-BLOCK-PIPE-11-DCHAJ2` (Signature admission by participant union)](../block-progression/block-processing.md#req-block-pipe-11-dchaj2)).
 
 **One agreement threshold; the chain verifies views of it.** The formulas above are not

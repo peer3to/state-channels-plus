@@ -26,7 +26,7 @@ head is missing reverts. The clearing also deletes a slash record of an address 
 - `test_reduce_afterOpenChannelPrune_readsTheSnapshotInboundHeadHeight`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P34
 - `test_isDisputeInboundHashValid_afterOpenChannelPrune_acceptsTheSnapshotHeadAtItsHeight`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P216
 - `test_historicThresholdSet_afterOpenChannelPrune_countsNoJoinOfTheKeptHead`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P217
-- `test_reduce_cutAboveTheSnapshotHead_readsTheStoredBlocksHeight`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P32
+- `test_reduce_cutAboveTheSnapshotHead_readsTheStoredBlocksHeight`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P58
 - `test_reduce_snapshotHeadNotStored_readsTheSnapshotsHeight`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P39
 - `test_reduce_windowOpenedInThePrunesBlock_stopsAtTheSnapshotHead`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P40
 - `test_reduceAndFinalize_windowOpenedBeforeThePrune_isDeletedAndReducesNothing`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P41
@@ -37,8 +37,8 @@ head is missing reverts. The clearing also deletes a slash record of an address 
 - `test_verifyBalanceInvariant_snapshotHeadNotStored_readsTheSnapshotsDepositTotal`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P46
 - `test_verifyBalanceInvariant_missingInboundHead_answersFalseWithoutRevert`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P47
 - `test_verifyBalanceInvariant_zeroInboundHead_answersFalseWithoutRevert`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P48
-- `test_applyOutboundMessageBlocks_storedNewSnapshotHead_reads`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P55
-- `test_applyOutboundMessageBlocks_snapshotHeadNotStored_reads`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P56
+- `test_applyOutboundMessageBlocks_storedNewSnapshotHead_allowsAWithdrawalOfTheStoredBlocksDepositTotal`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P55
+- `test_applyOutboundMessageBlocks_snapshotHeadNotStored_allowsAWithdrawalOfTheSnapshotsDepositTotal`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P56
 - `test_applyOutboundMessageBlocks_missingNewSnapshotHead_reverts`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P57
 - `test_applyOutboundMessageBlocks_zeroNewSnapshotHead_reverts`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P58
 - `test_clearStorage_openChannel_dropsTheSlashOfAnExitedAddress`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P59

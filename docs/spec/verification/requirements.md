@@ -39,7 +39,7 @@ Specification cases tested: 0/21.
 Specification cases tested: 2/18. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16, T1.P17.
 
 [`INV-DIS-8-1GY6Q5` (A fork applies at most one timeout, targeting the participant at the lowest…)](../specification/disputes/disputes.md#inv-dis-8-1gy6q5)
-Specification cases tested: 9/27. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16, T1.P17, T1.P18.
+Specification cases tested: 15/33. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16, T1.P17, T1.P18.
 
 [`INV-DISPUTE-PIPE-1-BN0K81` (Equivalent audit)](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81)
 Specification cases tested: 4/5. Untested: T1.P4.
@@ -249,7 +249,7 @@ Specification cases tested: 1/6. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P6.
 Specification cases tested: 1/5. Untested: T1.P1, T1.P2, T1.P4, T1.P5.
 
 [`REQ-BLOCK-PIPE-11-DCHAJ2` (Signature admission by participant union)](../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2)
-Specification cases tested: 14/18. Untested: T1.P1, T1.P5, T1.P6, T1.P12.
+Specification cases tested: 15/19. Untested: T1.P1, T1.P5, T1.P6, T1.P12.
 
 [`REQ-CDSTORE-1-ECWBNY` (Coordinate-keyed calldata with exact matching)](../specification/storage/calldata-and-timeouts.md#req-cdstore-1-ecwbny)
 Specification cases tested: 2/5. Untested: T1.P1, T1.P4, T1.P5.
@@ -525,7 +525,7 @@ Specification cases tested: 0/15.
 Specification cases tested: 0/11.
 
 [`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)
-Specification cases tested: 301/322. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16, T1.P17, T1.P18, T1.P19, T1.P20, T1.P21.
+Specification cases tested: 312/335. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16, T1.P17, T1.P18, T1.P19, T1.P20, T1.P21, T11.P27, T11.P28.
 
 [`REQ-FP-9-QG4PW5` (The fraud-proof taxonomy MUST NOT be treated as complete)](../specification/disputes/fraud-proofs.md#req-fp-9-qg4pw5)
 Specification cases tested: 0/9.
@@ -924,7 +924,7 @@ Specification cases tested: 14/28. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, 
 Specification cases tested: 0/12.
 
 [`REQ-SP-7-70EMAT` (In the retained region, verification checks consecutive heights, hash links,…)](../specification/disputes/state-proofs.md#req-sp-7-70emat)
-Specification cases tested: 33/47. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
+Specification cases tested: 34/48. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
 
 [`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor, which may lag the chain but…)](../specification/disputes/state-proofs.md#req-sp-8-9zccej)
 Specification cases tested: 32/32.

@@ -206,9 +206,8 @@ an already proposed timeout.
    period — intended; the observation moment of non-slash inputs is immaterial.
 
 [protocol/disputes.md](./disputes/disputes.md) §5, §6.1, and §6.2 record the decisions.
-Remaining mechanics are implementation-tracked in [`OQ-14-5C8KV7` (Empty-timeout fold can suppress a real timeout)](../implementation/open-questions.md#oq-14-5c8kv7): the exact
-inclusive/exclusive boundary comparisons of the `Timeout*` dispute-fraud-proof rules. The fold
-fix (empty timeout structs do not participate) is implemented.
+The exact inclusive/exclusive boundary comparisons of the `Timeout*` dispute-fraud-proof rules
+remain a mechanism question, outside this protocol decision.
 Unquantified underlying-chain timestamp-manipulation bounds relative to the protocol windows
 remain with [`OQ-8-PEYAAQ`](open-questions.md#oq-8-peyaaq) / [protocol/time.md](./protocol-model/time.md) §5.3.
 

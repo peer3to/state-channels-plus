@@ -38,8 +38,8 @@ Reduction algebra
 
 - [ ] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P1` — latest-block tie-break
 - [ ] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P2` — slash union + filtering
-- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P3` — lowest-height real timeout, in either order around a dispute without a timeout claim; a timeout at height 0 is real
-- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P4` — an empty timeout never cancels a real timeout: a dispute without a timeout claim (unset participant, any height, with or without slashes) takes no part; only disputes without a claim give no timeout
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P3` — lowest-height real timeout wins, the higher timeout first around a dispute without a timeout claim
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P4` — an empty timeout never cancels a real timeout: a real timeout committed before a dispute without a timeout claim is kept
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P5` — slashes-suppress-timeout
 - [ ] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P6` — order permutations (documents [`OQ-4-JGDCNX` (Dispute-reduction order-independence)](../../../../../verification/open-questions.md#oq-4-jgdcnx))
 - [ ] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P7` — idempotent finalize
@@ -79,6 +79,14 @@ Reduction algebra
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P48` — the balance-invariant check of a state naming the zero inbound hash on a channel with inbound blocks answers false and does not revert
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P49` — an on-chain slash of an address outside the reduced state takes no effect: balances keep and the real timeout still applies
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P50` — an exited address that joins again in the pending inbound run is removed by its on-chain slash, and that effective slash suppresses the timeout
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P51` — lowest-height real timeout wins, the lower timeout first around a dispute without a timeout claim
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P52` — a real timeout at height 0 committed before a dispute without a timeout claim is kept
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P53` — a real timeout at height 0 committed after a dispute without a timeout claim is kept
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P54` — a dispute without a timeout claim committed before a real timeout does not cancel it
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P55` — only disputes without a timeout claim: no timeout
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P56` — an unset timeout participant with a nonzero height is no claim and is skipped
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P57` — a slash-carrying dispute without a timeout claim does not cancel the fold's real timeout
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P58` — `reduce` with a cut above the kept snapshot inbound head after `clearStorage` reads the stored inbound block's hash and height
 
 ## UNIT-TEST-SM-DISPUTE-VERIFICATION-1-ZAJQV6
 

@@ -118,7 +118,8 @@ Shared predicates
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P87` — `_walkMilestone` judges a threshold hop whose committed snapshot names another height than its first block an invalid step, not a snapshot mismatch or a block fault
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P88` — the same height rule fails a later hop of a multi-hop walk at that hop's step
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P89` — hops whose committed snapshots carry their blocks' heights stay final
-- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P90` — `LocalDiamond.verifyMilestonesFromTrustedStart` applies the height rule from a trusted start, and finalizes the honest hop
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P90` — `LocalDiamond.verifyMilestonesFromTrustedStart` applies the height rule from a trusted start
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P91` — `LocalDiamond.verifyMilestonesFromTrustedStart` finalizes an honest hop whose snapshot names its block's height
 
 ## UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7
 

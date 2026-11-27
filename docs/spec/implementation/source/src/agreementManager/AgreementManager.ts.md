@@ -104,3 +104,14 @@ Reduction inbound evidence
 - [ ] `UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX.P3` — recovery exhaustion returns unavailable for retry
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX.P4` — a non-genesis reduced head whose snapshot the node never received returns unavailable for retry, not a throw
 - [ ] `UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX.P5` — a non-genesis reduced head whose snapshot the node stored without its state (a verified proof hop) returns unavailable for retry, not a throw
+
+## UNIT-TEST-AGREEMENT-MANAGER-3-ZBC869
+
+A failed recovery of a genesis-hop inbound run is remembered per fork and upper inbound hash, so later signer-admission checks of the same hop do not rescan chain logs.
+
+- Setup: A spectator that holds no inbound run below its synced point and cannot fetch one; stored-block merges whose copies add stray never-member signatures; a chain-log query counter
+- Oracle: Each stray signature is stripped and the copy is `DUPLICATE`; the chain-log query count after the second merge equals the count after the first; a fork change or more than 256 remembered misses forgets the oldest miss
+
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-3-ZBC869.P1` — a second never-member signer of the same stored block after the genesis hop's recovery failed: no new chain-log scan
+- [ ] `UNIT-TEST-AGREEMENT-MANAGER-3-ZBC869.P2` — after a fork change, the same hop's recovery scans the chain logs again
+- [ ] `UNIT-TEST-AGREEMENT-MANAGER-3-ZBC869.P3` — past 256 remembered misses, the oldest is forgotten and its hop is scanned again

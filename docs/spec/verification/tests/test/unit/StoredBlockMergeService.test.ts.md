@@ -25,5 +25,6 @@ Drive the real merge service under live, spectating, calldata and dispute strate
 - `under DisputeValidationStrategy a genuine new signature → DUPLICATE, not re-gossiped`: UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P9
 - `a joiner whose JOIN and exit fall in one hop from this peer's final point signs the block after its exit → admitted, BROADCAST and persisted`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P8
 - `a leaver signs a block after its exit while its departure hop is not final at this peer → admitted, BROADCAST and persisted`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P9
-- `a leaver signs a block after its exit and this peer's final point is past the exit → stripped, DUPLICATE, and the honest sender is not cut`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P11
+- `a leaver signs a block after its exit and this peer's final point is past the exit → stripped, DUPLICATE, and the honest sender is not cut`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P19
 - `a never-member key signs a stored block at a spectator that holds no inbound run below its synced point and cannot fetch one → stripped, DUPLICATE, not re-queued`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P18
+- `a second never-member key signs the same stored block at that spectator -> stripped, DUPLICATE, with no new chain log scan for the genesis hop whose recovery already failed`: UNIT-TEST-AGREEMENT-MANAGER-3-ZBC869.P1

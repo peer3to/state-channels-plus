@@ -126,7 +126,7 @@ dispute-fraud-proof rules (inherited here from the resolution of [`OQ-9-XR1MFS` 
 **Implemented (2026-11-26):** `reduce()` skips every dispute whose timeout `participant` is unset,
 with or without slashes; otherwise the lowest real `blockHeight` wins, the first folded one on a
 tie. A slash still suppresses the timeout at output ([`INV-DIS-7-9GGZSD` (In a fork whose reduction applies an on-chain slash of a participant of the…)](../specification/disputes/disputes.md#inv-dis-7-9ggzsd)). The fold and
-both commit orders are covered by [`INV-DIS-8-1GY6Q5.T1.P19`](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p19)–[`P27`](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p27). Still open: the exact
+both commit orders are covered by [`INV-DIS-8-1GY6Q5.T1.P19`](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p19)–[`P33`](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p33). Still open: the exact
 inclusive/exclusive boundary comparisons of the `Timeout*` dispute-fraud-proof rules.
 
 <a id="oq-15-2j4y1z"></a>

@@ -63,7 +63,7 @@ Proof predicates
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P91` — `isDisputeConflictingWithFinalState` reverts with `ErrorInboundMessageBlockNotStored` when the latest finalized point names an inbound hash that is neither stored nor the anchor's head
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P92` — `isDisputeFinalPointRegression` rejects a final point whose extra inbound blocks hold only a top-up of a participant of the latest finalized point
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P93` — `isDisputeConflictingWithFinalState` is not refused by a latest finalized point whose extra inbound blocks hold only a top-up of a participant of the final point
-- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P94` — `isDisputeFinalPointRegression` reverts with `ErrorInboundMessageBlockNotStored` for the upper inbound head when the run down to the lower head is not stored: the upper head is the anchor's unstored head, or the run reaches a block pruned below the anchor
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P94` — `isDisputeFinalPointRegression` reverts with `ErrorInboundMessageBlockNotStored` when the upper inbound head is the anchor's unstored head
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P95` — `isDisputeFinalPointRegression` finds a new participant's JOIN above a run of top-ups, from a lower head below the run and from one at its top
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P96` — `isDisputeFinalPointRegression` and `isDisputeConflictingWithFinalState` answer false when the first block of the dispute's last milestone does not decode
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P97` — `isDisputeFinalPointRegression` and `isDisputeConflictingWithFinalState` answer false when the first block of the dispute's last milestone belongs to another fork
@@ -78,3 +78,4 @@ Proof predicates
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P106` — `isDisputeConflictingWithFinalState` with a final proof whose hop snapshot names another height than its block returns false
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P107` — `isDisputeFinalPointRegression` with a final proof whose last hop snapshot names a lower height than its block returns false
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P108` — `isStateProofStepInvalid` judges a hop whose snapshot names another height than its block invalid at that step
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P109` — `isDisputeFinalPointRegression` reverts with `ErrorInboundMessageBlockNotStored` when the run down to the lower inbound head reaches a block pruned below the anchor

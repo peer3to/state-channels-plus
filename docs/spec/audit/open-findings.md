@@ -353,10 +353,19 @@ of 4 hops fits one 64 KiB kill (about 1.8 KB to spare). An honest dispute at the
 does not fit, it uploads the highest lower dispute that fits, never one below this peer's own
 latest signed block (that one is killable as not latest), and none when no such height fits.
 Residual: colluders who refuse snapshot updates can grow F past 4 hops, and then the kill exceeds
-64 KiB; an honest history that refuses snapshot updates can also grow its own dispute past the
+64 KiB. The auditor then sends no kill: its audit goes on, and it stores the unsendable counter only
+when no other counter applies, while its own dispute still lands
+([`REQ-FP-7-4DD0D7.T11.P23`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t11.p23),
+[`REQ-FP-7-4DD0D7.T11.P24`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t11.p24)). An honest history that refuses snapshot updates can also grow its own dispute past the
 cap.
 
-**Status:** Open; high. Engineer decision pending on the direction.
+**Accepted residual (decided 2026-11-26):** with the 30,720-byte cap, an honest dispute above the
+cap (more than 5 hops at 32 participants) builds no dispute. This is accepted: channels are not
+expected to reach 32 participants, and their histories rarely span more than three or four hops
+between snapshot updates. No further work is planned for it.
+
+**Status:** Open; high. The dispute-upload residual above is accepted; the other submission paths
+still need their bounds.
 
 ## Membership-read ownership consolidation
 
@@ -2846,8 +2855,9 @@ this way (or kill its own dispute) and leave the window without a slash, where a
 counter would slash it. The kill still removes the dispute, so it gains no reduction outcome; it
 only avoids the slash.
 
-**Status:** Open; medium. Accepted by the slash-set decision; the PR notes carry it for the
-engineer's review.
+**Status:** Open; medium. Accepted by the slash-set decision (Ljuba, 2026-11-23), which is
+implemented: the final-history kill spares the submitter and slashes only S. The PR notes carry it
+for the engineer's review.
 
 **Evidence:**
 [DisputeConflictsWithFinalState.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeConflictsWithFinalState.t.sol.md)

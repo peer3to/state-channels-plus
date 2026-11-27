@@ -129,7 +129,7 @@ Audit order and evidence
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P108` — An unproven prefix below the local final point is skipped: trusted-start walk accepts without mirror-anchor or chain walk and without counter
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P109` — An unproven prefix above the genesis trusted start produces InvalidStateProof pointing inside that prefix without a block index; canonical step verification accepts it, and the auditor kills the dispute and slashes submitter
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P110` — When no tier can supply a forged hop snapshot, the auditor holds no block at that height and auditing data is omitted, audit throws for missing milestone snapshots without a counter
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P111` — A forged hop conflicting with a held final block is countered at milestone zero/block zero without a mirror-anchor or chain walk; the auditor kills the dispute with ConflictsWithFinalState and slashes submitter
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P111` — A forged hop conflicting with a held final block is countered at milestone zero/block zero without a mirror-anchor or chain walk; the auditor kills the dispute with ConflictsWithFinalState, which slashes S, the forged hop's signer, not the disputer
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P112` — After an honest proof is accepted without mirror-anchor or chain walk, replacing its latest snapshot hash with an earlier real snapshot makes audit return InvalidStateProof
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P113` — After posted-data audit succeeds without mirror-anchor or chain walk, omitting data from a dispute requiring it produces LastMilestoneNotFinalAndNoAuditingData
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P114` — A dispute listing an unslashed address produces OnChainSlashesNotSubset without mirror-anchor or chain proof walks
@@ -171,7 +171,9 @@ Audit order and evidence
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P150` — A latest finalized point at block zero of a genesis start has no final point below it and sends no regression check to the chain
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P151` — A verified proof that cannot be persisted because a block now conflicts with stored history makes the audit try the final-history counters again, and a regression that became provable during the audit is stored
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P152` — `findSkippedJoin` names the inbound block of the first JOIN by an address outside G's participants, also when G's inbound head is a block this peer does not hold, and the stored regression proof carries it
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P153` — `findSkippedJoin` over a run of top-ups by G's participants only names no JOIN, so no regression proof is built
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P154` — Of two accepted final-history counters that both fit one transaction, the audit stores the later one with the larger slash set
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P155` — When no final-history kill fits one transaction, the audit walks and replays the proof, and the replay's counter is stored instead
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P156` — When no final-history kill fits one transaction and the walk cannot finish without omitted data, the unsendable counter is stored and the audit returns false
 
 ## UNIT-TEST-DISPUTE-VALIDATION-SERVICE-2-7H4K2D
 

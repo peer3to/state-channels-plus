@@ -13,4 +13,4 @@ same hop committing its own height is final.
 ## Tests
 
 - `test_CN3_trustedStartWalkRejectsAHopSnapshotAtAnotherHeight`: REQ-SP-7-70EMAT.T2.P18, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P90
-- `test_CN3_trustedStartWalkFinalizesAHopSnapshotAtItsBlocksHeight`: REQ-SP-7-70EMAT.T2.P18, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P90
+- `test_CN3_trustedStartWalkFinalizesAHopSnapshotAtItsBlocksHeight`: REQ-SP-7-70EMAT.T2.P19, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P91

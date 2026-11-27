@@ -16,12 +16,12 @@ JOIN again reverts with the exact `ErrorDisputeInboundMessageBlocksInvalid` hash
 
 ## Tests
 
-- `test_K1_sideChainBypassingALaterJoinerLosesTheReductionToTheJoinersFinalHistory`: REQ-FP-7-4DD0D7.T10.P1, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P218, REQ-FP-7-4DD0D7.T11.P7
+- `test_K1_sideChainBypassingALaterJoinerLosesTheReductionToTheJoinersFinalHistory`: REQ-FP-7-4DD0D7.T10.P1, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P218
 - `test_K2_sideChainWhoseUnfinalTailConsumedTheJoinWithoutTheJoinersSignatureIsStillKilled`: REQ-FP-7-4DD0D7.T10.P32
 - `test_K3_disputeExtendingTheFinalPointIsNotKilledAndWinsTheReductionByLength`: REQ-FP-7-4DD0D7.T10.P33
 - `test_K4_signaturesWithheldFromOurTailLetTheAttackerProveOnlyAPointOurHeadExtends`: REQ-FP-7-4DD0D7.T10.P34
-- `test_K5_latestFinalizedPointBelowTheFinalPointWithATailPastItIsKilledByTheConflict`: REQ-FP-7-4DD0D7.T9.P16, REQ-FP-7-4DD0D7.T11.P3
-- `test_K8_latestFinalizedSnapshotWithAFalseLargerInboundHeightIsReadAtItsStoredHeight`: REQ-FP-7-4DD0D7.T10.P35, REQ-FP-7-4DD0D7.T11.P7
+- `test_K5_latestFinalizedPointBelowTheFinalPointWithATailPastItIsKilledByTheConflict`: REQ-FP-7-4DD0D7.T9.P16
+- `test_K8_latestFinalizedSnapshotWithAFalseLargerInboundHeightIsReadAtItsStoredHeight`: REQ-FP-7-4DD0D7.T10.P35
 - `test_K9_anchorInsideTheLastMilestoneIsTheLatestFinalizedPointNotATailBlock`: REQ-FP-7-4DD0D7.T10.P36
 - `test_K9_anchorInsideTheLastMilestoneIsTheLatestFinalizedPointOfTheConflictCheck`: REQ-FP-7-4DD0D7.T9.P17
 - `test_K11_chainAnchorAsTheFinalPointKillsASideChainBelowItsInbound`: REQ-FP-7-4DD0D7.T10.P37, REQ-FP-7-4DD0D7.T11.P8
@@ -47,12 +47,12 @@ JOIN again reverts with the exact `ErrorDisputeInboundMessageBlocksInvalid` hash
 - `test_latestFinalized_undecodableFirstBlockOfTheLastMilestoneGivesFalseOnBothChecks`: REQ-FP-7-4DD0D7.T10.P40, REQ-FP-7-4DD0D7.T9.P18, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P96
 - `test_latestFinalized_firstBlockOfTheLastMilestoneOnAnotherForkGivesFalseOnBothChecks`: REQ-FP-7-4DD0D7.T10.P41, REQ-FP-7-4DD0D7.T9.P19, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P97
 - `test_latestFinalized_genesisBlockZeroThatDoesNotWalkFromTheGenesisGivesFalse`: REQ-FP-7-4DD0D7.T9.P20, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P98
-- `test_regression_largestKillWithinTheCalldataLimitFitsTheGasLimit`: REQ-FP-7-4DD0D7.T10.P9, REQ-FP-7-4DD0D7.T11.P12
+- `test_regression_largestKillOfOneParticipantSetWithinTheCalldataLimitFitsTheGasLimit`: REQ-FP-7-4DD0D7.T10.P9, REQ-FP-7-4DD0D7.T11.P12
 - `test_regression_finalPointWhoseExtraInboundIsOnlyATopUpDoesNotKill`: REQ-FP-7-4DD0D7.T10.P26, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P92
 - `test_regression_finalPointWhoseExtraInboundHoldsATopUpAndANewJoinerKills`: REQ-FP-7-4DD0D7.T10.P27
 - `test_conflict_latestFinalizedPointWhoseExtraInboundIsOnlyATopUpKills`: REQ-FP-7-4DD0D7.T9.P15, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P93
 - `test_lookup_extraInboundFromTheAnchorsUnstoredInboundHeadReverts`: REQ-FP-7-4DD0D7.T10.P28, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P94
-- `test_lookup_latestFinalizedHeadPrunedBelowTheAnchorReverts`: REQ-FP-7-4DD0D7.T10.P29, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P94
+- `test_lookup_latestFinalizedHeadPrunedBelowTheAnchorReverts`: REQ-FP-7-4DD0D7.T10.P29, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P109
 - `test_regression_hintAddsNoSecondPassOverARunOfTopUps`: REQ-FP-7-4DD0D7.T10.P30, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P95
 - `test_hint_topUpInsideTheSkippedRunDoesNotKill`: REQ-FP-7-4DD0D7.T10.P44, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P99
 - `test_hint_joinAtTheLatestFinalizedInboundHeightDoesNotKill`: REQ-FP-7-4DD0D7.T10.P45, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P100
@@ -65,4 +65,4 @@ JOIN again reverts with the exact `ErrorDisputeInboundMessageBlocksInvalid` hash
 - `test_regression_disputeAtTheUploadCapLeavesRoomForTheKill`: REQ-FP-7-4DD0D7.T10.P50
 - `test_K16_victimsDisputeWithTheSideChainItSyncedIsKilledAndOnlyTheDoubleSignersAreSlashed`: REQ-FP-7-4DD0D7.T11.P7
 - `test_T3_sideChainAboveTheFinalHeightCarryingATimeoutIsKilledByTheRegression`: REQ-FP-7-4DD0D7.T11.P9
-- `test_T4_sideChainWhoseTailPassesTheFinalHeightCarryingATimeoutIsKilledByTheConflict`: REQ-FP-7-4DD0D7.T11.P9, REQ-FP-7-4DD0D7.T11.P3
+- `test_T4_sideChainWhoseTailPassesTheFinalHeightCarryingATimeoutIsKilledByTheConflict`: REQ-FP-7-4DD0D7.T11.P16

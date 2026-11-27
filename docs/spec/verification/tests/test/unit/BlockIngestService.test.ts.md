@@ -72,7 +72,7 @@ held, strips a never-member signature without cutting the sender and stores the 
 - `a rejected block carrying a real inbound run → the run is not stored, the head stays put`: none
 - `a valid block parked on the state mutex when the runtime is disposed → nothing leaves the runtime once the mutex frees`: UNIT-TEST-BLOCK-INGEST-1-JV64AS.P15
 - `a leaver signs a fresh block above its exit at a peer whose final point is past the exit → its signature is stripped, the sender is kept and not cut`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P11
-- `a key that was never in the channel signs a fresh block → its signature is stripped, the sender cut, and the block stored`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P2, REQ-BLOCK-PIPE-11-DCHAJ2.T1.P10
+- `a key that was never in the channel signs a fresh block → its signature is stripped, the sender cut, and the block stored`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P10
 - `a never-member key signs a fresh block whose own carried inbound run the peer cannot fetch → judged at once: its signature is stripped, the sender cut, and the block stored while the run's events are still held`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P15
 - `a leaver signs a fresh block above its exit, the block carrying an inbound run the peer cannot fetch, at a peer whose departure hop is not final → admitted at once: the block is stored with that signature and the sender is not cut`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P14
 - `a never-member key signs a fresh block at a spectator that holds no inbound run below its synced point and cannot fetch one → stripped without penalty on the first judgement: the block is stored without it and the sender is not cut`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P17

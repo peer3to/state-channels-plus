@@ -689,7 +689,9 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-7-70emat.t2.p17"></a>`REQ-SP-7-70EMAT.T2.P17` — The invalid-state-proof counter pointed at a hop whose snapshot names another height than its block kills the dispute at that step.
 
-<a id="req-sp-7-70emat.t2.p18"></a>`REQ-SP-7-70EMAT.T2.P18` — The local walk from a trusted start (synchronization) rejects a hop whose snapshot names another height than its block, and finalizes the same hop at its block's height.
+<a id="req-sp-7-70emat.t2.p18"></a>`REQ-SP-7-70EMAT.T2.P18` — The local walk from a trusted start (synchronization) rejects a hop whose snapshot names another height than its block.
+
+<a id="req-sp-7-70emat.t2.p19"></a>`REQ-SP-7-70EMAT.T2.P19` — Control: the same local walk finalizes that hop when its snapshot names its block's height.
 
 #### <a id="req-sp-3-sp1jg4.t2"></a>`REQ-SP-3-SP1JG4.T2`
 

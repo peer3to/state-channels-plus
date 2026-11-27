@@ -29,8 +29,8 @@ boundaries, predecessor-post reschedules, per-fork retention) remain with the de
 - `should handle timeout when author peer disconnects`: none
 - `should create forced timeout when peer posts junk calldata that is rejected`: UNIT-TEST-STATE-MANAGER-3-32QM46.P6
 - `should handle timeout when previous peer posted junk calldata and next peer doesn't author block`: none
-- `timeout dispute committed before a self-removal dispute without a timeout → the successor fork removes the stalled writer and the leaver`: INV-DIS-8-1GY6Q5.T1.P20
-- `self-removal dispute without a timeout committed before a timeout dispute → the successor fork removes the stalled writer and the leaver`: INV-DIS-8-1GY6Q5.T1.P20
+- `timeout dispute committed before a self-removal dispute without a timeout → the successor fork removes the stalled writer and the leaver`: INV-DIS-8-1GY6Q5.T1.P29
+- `self-removal dispute without a timeout committed before a timeout dispute → the successor fork removes the stalled writer and the leaver`: INV-DIS-8-1GY6Q5.T1.P30
 - `should maintain liveness when peer disconnects mid-transaction`: none
 - `junk calldata lands while the timeout dispute is in flight → the pipeline rejects it and the forced timeout commits`: REQ-DISPUTE-PIPE-12-F85KF2.T1.P2
 - `authentic junk failing its state transition lands while the timeout dispute is in flight → the fraud-proof dispute slashes the writer with no timeout`: REQ-DISPUTE-PIPE-12-F85KF2.T1.P8

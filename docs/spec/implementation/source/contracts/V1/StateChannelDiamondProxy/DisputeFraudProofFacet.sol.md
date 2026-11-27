@@ -243,7 +243,7 @@ Kill application
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P215` — the same nested route embedding a fabricated inbound block above the snapshot's inbound head kills the dispute and slashes the disputer; the killer is not slashed
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P216` — after an open-channel storage clearing, `isDisputeInboundHashValid` accepts a dispute anchored at the kept snapshot head with its real height and refuses height zero
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P217` — after an open-channel storage clearing, the historic threshold set of a dispute anchored at the kept snapshot head counts no JOIN of that head (a joiner who left since is not pending); a JOIN above the head is pending
-- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P218` — A true `DisputeFinalPointRegression` verdict kills the dispute and slashes its disputer, not the submitter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P218` — A true `DisputeFinalPointRegression` verdict kills the dispute and slashes S, the addresses that signed both final points, not the disputer
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P219` — A false `DisputeFinalPointRegression` verdict keeps the dispute and slashes the submitter
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P220` — A `DisputeFinalPointRegression` check that reverts reverts the whole application, slashing nobody
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P221` — A `DisputeConflictsWithFinalState` check that reverts reverts the whole application, slashing nobody
@@ -251,3 +251,4 @@ Kill application
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P223` — `DisputeInboundAnchorBehindLatestState` kills a dispute whose tail consumes an inbound block not yet on chain
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P224` — a nested `ForgedInboundMessageBlock` against the tail block kills the same dispute
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P225` — a dispute that omits the recorded on-chain slash of an exited address is a subset of the record: `DisputeOnChainSlashesNotSubset` does not kill it
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P226` — a dispute that lists the recorded on-chain slash of an exited address is a subset of the record: `DisputeOnChainSlashesNotSubset` does not kill it
